@@ -267,7 +267,7 @@ fn llvm_struct_to_simd[
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
-        simd[i] = e
+        simd[i] = Scalar[dtype](e)
     return simd
 
 
@@ -400,5 +400,5 @@ fn llvm_struct_to_array[
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
-        array[i] = e
+        array[i] = Scalar[dtype](e)
     return array

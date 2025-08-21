@@ -1,5 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
+_NVIDIA_ONLY_TESTS = [
+    "test_float8_e4m3fn.py",
+    "test_irfft.py",
+]
+
 modular_py_library(
     name = "modular_graph_test",
     testonly = True,
@@ -21,7 +26,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = ["modular_graph_test.py"],
+        exclude = _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
     ),
     data = [
         "//SDK/integration-test:compile_config_ops",
@@ -40,13 +45,9 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
-    # TODO(MAXPLAT-103): Inherit transitive mojo deps
     mojo_deps = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
-        "//SDK/lib/API/mojo/max/tensor",
-        "@mojo//:register",
-        "@mojo//:stdlib",
     ],
     tags = [
         "gpu",
@@ -54,12 +55,23 @@ modular_py_test(
     deps = [
         ":modular_graph_test",
         "//SDK/lib/API/python/max",
-        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
         requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
         requirement("torchvision"),
-        requirement("pytest-asyncio"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nvidia_tests",
+    size = "large",
+    srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
     ],
 )

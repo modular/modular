@@ -526,14 +526,18 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
             output_len = (
                 len(completion_token_ids)
                 if output_lengths is None
-                else output_lengths[i]
+                else output_lengths[len(filtered_dataset)]
             )
             assert output_len is not None, "Unexpected null output length"
-            if prompt_len < 4 or output_len < 4:
+            if prompt_len < 4:
                 # Prune too short sequences.
                 continue
             if prompt_len > 1024 or prompt_len + output_len > 2048:
                 # Prune too long sequences.
+                continue
+            # If we're given explicit output lengths, then run with whatever
+            # we're given. Otherwise, filter requests with super short responses.
+            if output_lengths is None and output_len < 4:
                 continue
             filtered_dataset.append(
                 SampledRequest(prompt, prompt_len, output_len, None)
@@ -755,7 +759,7 @@ class RandomBenchmarkDataset(BenchmarkDataset):
 
     def _generate_random_image(self, height: int, width: int) -> Image.Image:
         # Truly random images end up being too large and incompressible.
-        # Instead create a much more limited block based random image with limited color pallete.
+        # Instead create a much more limited block based random image with limited color palette.
         block_size = 16
         colors = np.array([0, 64, 128, 192, 255], dtype=np.uint8)
 
@@ -887,6 +891,7 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         num_requests: int,
         tokenizer: PreTrainedTokenizerBase,
         output_lengths: Sequence[int] | None,
+        shuffle: bool = True,
     ) -> Sequence[SampledRequest]:
         """Sample requests from an Axolotl-formatted dataset.
         The dataset should be in the following JSON format:
@@ -931,10 +936,18 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
 
         print("Total number of prompts:", len(prompts))
 
-        # Randomly sample with replacement
-        sampled_prompts = np.random.choice(
-            prompts, size=num_requests, replace=True
-        )
+        if shuffle:
+            if output_lengths is not None:
+                raise NotImplementedError(
+                    "TODO: Add support for shuffling + pinned output lengths"
+                )
+            # Randomly sample with replacement
+            sampled_prompts = np.random.choice(
+                prompts, size=num_requests, replace=True
+            )
+        else:
+            num_repeats = int(np.ceil(num_requests / len(prompts)))
+            sampled_prompts = np.array((prompts * num_repeats)[0:num_requests])
 
         sampled_requests: list[SampledRequest] = []
         for i, prompt in enumerate(sampled_prompts):

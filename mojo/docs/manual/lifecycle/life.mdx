@@ -120,7 +120,7 @@ takes no arguments, and then additional constructors that accept more arguments.
 
 Just be aware that, in order to modify any fields, each constructor must
 declare the `self` argument with the [`out`
-convention](/mojo/manual/values/ownership#mutable-arguments-mut). If you
+convention](/mojo/manual/values/ownership#argument-conventions). If you
 want to call one constructor from another, you simply call upon that
 constructor as you would externally (you don't need to pass `self`).
 
@@ -288,17 +288,18 @@ A Mojo type is *copyable* if one of the following is true:
 - It's a [trivial type](#trivial-types) like `Int`, which is trivially copyable
   and movable.
 
-When Mojo encounters an assignment statement that doesn't use the [transfer
-sigil (`^`)](/mojo/manual/values/ownership#transfer-arguments-var-and-), it
-tries to make a copy of the right-side value by calling upon that type's copy
-constructor: the `__copyinit__()` method.
+Just like the `+` and `-` [operators invoke special
+methods](/mojo/manual/operators#implement-operators-for-custom-types) for
+adjacent types, so does the `=` sign. In specific circumstances, the `=` sign
+will try to make a copy of the right-side value by calling upon that type's
+copy constructor: the `__copyinit__()` method.
 
 For example, the `MyPet` type above does not have a copy constructor,
 so this code fails to compile:
 
 ```mojo
-var mine = MyPet("Loki", 4)
-var yours = mine  # This requires a copy, but MyPet has no copy constructor
+var mine = MyPet("Loki", 4)  # Calls the MyPet constructor
+var yours = mine  # Tries to make a copy, but MyPet has no copy constructor
 ```
 
 To make a struct copyable, you need to:
@@ -597,11 +598,18 @@ fn __moveinit__(out self, deinit existing: Self):
     self.age = existing.age
 ```
 
+The move constructor takes its `existing` argument using the `deinit`
+[argument convention](/mojo/manual/values/ownership#argument-conventions), which
+grants exclusive ownership of the value and marks it as destroyed at the end of
+the function. (For more information on the `deinit` convention, see
+[Field lifetimes during destruct and move](/mojo/manual/lifecycle/death#field-lifetimes-during-destruct-and-move)).
+
 The move constructor uses the transfer sigil (`^`) to indicate that ownership of
-the value is being transferred from `existing` to `self`. For register-passable
-types like `Int`, the transfer sigil is omitted: register-passable types are
-always treated as movable, but they can't define custom move constructors or
-destructors, so there's no special logic to run for a move.
+the `name` value is being transferred from `existing` to `self`. For
+register-passable types like `Int`, the transfer sigil is omitted:
+register-passable types are always treated as movable, but they can't define
+custom move constructors or destructors, so there's no special logic to run for
+a move.
 
 At the end of the `__moveinit__()` method, Mojo immediately invalidates the
 original variable, preventing any access to it. It does **not** call the

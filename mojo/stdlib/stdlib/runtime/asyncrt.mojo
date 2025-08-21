@@ -197,7 +197,6 @@ struct Task[type: AnyType, origins: OriginSet]:
     var _result: type
     """Storage for the result value produced by the task."""
 
-    @implicit
     fn __init__(out self, var handle: Coroutine[type, origins]):
         """Initialize a task with a coroutine.
 
@@ -344,7 +343,7 @@ struct TaskGroup(Defaultable):
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
-        var prev: Int = self.counter.fetch_sub(1).value
+        var prev: Int = Int(self.counter.fetch_sub(1).value)
         return prev - 1
 
     @staticmethod
@@ -448,7 +447,6 @@ struct DeviceContextPtr(Defaultable):
         """
         self._handle = OpaquePointer()
 
-    @implicit
     fn __init__(out self, handle: OpaquePointer):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 

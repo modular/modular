@@ -14,8 +14,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import Model
@@ -79,11 +81,11 @@ def compute_log_probabilities_ragged(
     device: Device,
     model: Model,
     *,
-    input_row_offsets: np.ndarray,
+    input_row_offsets: npt.NDArray[np.integer[Any]],
     logits: Tensor | None,
     next_token_logits: Tensor,
-    tokens: np.ndarray,
-    sampled_tokens: np.ndarray,
+    tokens: npt.NDArray[np.integer[Any]],
+    sampled_tokens: npt.NDArray[np.integer[Any]],
     batch_top_n: Sequence[int],
     batch_echo: Sequence[bool],
 ) -> list[LogProbabilities | None]:
@@ -136,6 +138,7 @@ def compute_log_probabilities_ragged(
         assert logits.dtype == DType.float32
     assert next_token_logits.device == device
     assert next_token_logits.dtype == DType.float32
+    logit_row_offsets: npt.NDArray[np.integer[Any]]
     if logits is None:
         assert not any(batch_echo)
         kernel_logits = next_token_logits

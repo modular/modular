@@ -17,6 +17,7 @@ import dataclasses
 from collections.abc import Iterator
 from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
 
+import numpy.typing as npt
 from max.driver import CPU, DLPackArray, Tensor
 from max.dtype import DType
 
@@ -111,7 +112,7 @@ class Weights(Protocol):
         """
         ...
 
-    def __getattr__(self: _Self, attr) -> _Self: ...  # noqa: ANN001
+    def __getattr__(self: _Self, attr: str) -> _Self: ...
 
     def __getitem__(self: _Self, idx: int | str) -> _Self: ...
 
@@ -244,7 +245,7 @@ class WeightData:
         return self.data.__dlpack_device__()
 
     @classmethod
-    def from_numpy(cls, arr, name):  # noqa: ANN001
+    def from_numpy(cls, arr: npt.NDArray[Any], name: str) -> WeightData:
         """Create WeightData from a numpy array.
 
         Args:

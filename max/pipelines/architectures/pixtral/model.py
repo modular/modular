@@ -156,15 +156,19 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[1]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -203,14 +207,14 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 1,
                 fill_val,
             )
-            attention_mask = Tensor.from_numpy(attention_mask).to(
+            attention_mask_tensor = Tensor.from_numpy(attention_mask).to(
                 self.devices[0]
             )
             return PixtralInputs(
                 input_ids=input_ids,
                 input_row_offsets=input_row_offsets,
                 pixel_values=pixel_values,
-                attention_mask=attention_mask,
+                attention_mask=attention_mask_tensor,
                 return_n_logits=Tensor.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
                 ),

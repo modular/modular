@@ -112,7 +112,7 @@ fn run_reduce[
         fn kernel_launch(ctx: DeviceContext) raises:
             reduce_launch[
                 num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
-            ](shape, axis, init, ctx)
+            ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
 
         b.iter_custom[kernel_launch](ctx)
 

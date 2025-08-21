@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the `str` function.
+"""Provides the `Stringable` and `StringableRaising` traits.
 
 These are Mojo built-ins, so you don't need to import them.
 """

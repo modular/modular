@@ -13,6 +13,8 @@
 
 import contextlib
 import time
+from collections.abc import Generator
+from types import TracebackType
 from typing import Callable, Optional
 
 
@@ -53,7 +55,12 @@ class StopWatch:
         self.exit_ns = 0
         return self
 
-    def __exit__(self, _exc_type, _exc_value, _exc_tb):  # noqa: ANN001
+    def __exit__(
+        self,
+        _exc_type: type[BaseException],
+        _exc_value: BaseException,
+        _exc_tb: TracebackType,
+    ) -> None:
         self.exit_ns = self.time_ns()
 
     @property
@@ -74,7 +81,9 @@ class StopWatch:
 
 
 @contextlib.contextmanager
-def record_ms(fn: Callable[[float], None], on_error: bool = False):
+def record_ms(
+    fn: Callable[[float], None], on_error: bool = False
+) -> Generator[StopWatch, None, None]:
     """Start a StopWatch and call fn(elapsed_ms) when complete. yields a stopwatch for intermediate timings.
 
     fn: call this function with the duration of the stopwatch.  duration passed in ms

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
+from transformers import AutoConfig
 
 # Maps from Safetensor to MAX weight names.
 GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
@@ -21,16 +22,31 @@ GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
 }
 
 
+def _apply_name_mappings(name: str) -> str:
+    """Apply all name mappings to a given name."""
+    for before, after in GEMMA3_SAFETENSOR_MAP.items():
+        name = name.replace(before, after)
+    return name
+
+
 def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+    state_dict: dict[str, Weights],
+    huggingface_config: AutoConfig,
+    **unused_kwargs,
 ) -> dict[str, WeightData]:
     new_state_dict: dict[str, WeightData] = {}
 
     # Remap HuggingFace -> MAX-style names
     for weight_name, value in state_dict.items():
-        max_name = weight_name
-        for before, after in GEMMA3_SAFETENSOR_MAP.items():
-            max_name = max_name.replace(before, after)
+        max_name = _apply_name_mappings(weight_name)
         new_state_dict[max_name] = value.data()
+
+    # For quantized model, we apply the same name re-mapping to the `ignore` list
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    if hf_quant_config and "ignore" in hf_quant_config:
+        hf_quant_config["ignore"] = [
+            _apply_name_mappings(module_name)
+            for module_name in hf_quant_config["ignore"]
+        ]
 
     return new_state_dict

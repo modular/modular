@@ -122,11 +122,13 @@ build --@llvm-project//mlir:enable_cuda=true
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries
-build:macos --remote_download_regex='.*\.a$'
+build:macos --remote_download_regex='.*\.(a|dylib)$'
 build --experimental_remote_cache_eviction_retries=3
 build --grpc_keepalive_time=30s
 build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
+# Set local builds to higher than CI priority
+build --remote_execution_priority=-1
 
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
@@ -144,20 +146,23 @@ build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
 
 # TODO: Remove when https://github.com/bazelbuild/bazel/pull/26724 is fixed
-build --strategy=UvLock=sandboxed,standalone
+build --strategy=UvLock=remote,sandboxed,standalone
 
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone
 
-# Separate CI config that doesn't affect build output for verifing we share caches
+# Separate CI config that doesn't affect build output for verifying we share caches
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
 build:ci-no-config --disk_cache=
-build:ci-no-config --remote_grpc_log=.derived/bazel/logs/grpc.log
 build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
 build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
+
+build:ci --config=ci-no-config
+# Set CI builds to lower priority than local builds, some CI builds override this
+build:ci --remote_execution_priority=20
 
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test

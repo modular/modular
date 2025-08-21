@@ -334,7 +334,8 @@ fn fused_qk_rope_ragged[
 
                     @parameter
                     for i in range(len(mrope_section.value())):
-                        if head_dim_idx < mrope_section.value().value(i):
+                        alias val = mrope_section.value().value(i)
+                        if head_dim_idx < val:
                             section_idx = i
                             break
                     position_ids_idx = Int(
@@ -406,7 +407,7 @@ fn fused_qk_rope_ragged[
         @parameter
         for i in range(len(mrope_section.value())):
             constrained[
-                mrope_section.value().value(i) % kernel_simd_width == 0,
+                Int(mrope_section.value()[i]) % kernel_simd_width == 0,
                 "mrope_section must be divisible by rope kernel simd_width",
             ]()
 

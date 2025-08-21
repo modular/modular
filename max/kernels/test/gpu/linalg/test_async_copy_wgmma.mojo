@@ -34,6 +34,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_mn_major,
     wgmma_c_layout,
+    warpgroup_fence,
 )
 from linalg import vendor_blas
 from testing import assert_almost_equal
@@ -136,9 +137,11 @@ fn cpasync_wgmma_kernel[
 
         barrier()
 
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
         wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()

@@ -560,9 +560,14 @@ fn test_random_fill():
     print("== test_random_fill")
     alias layout = Layout(8 * 8 * 8 * 8)
 
-    var dynamic_layout = RuntimeLayout[
+    alias RuntimeLayoutType = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
-    ](layout.size(), 1)
+    ]
+
+    var dynamic_layout = RuntimeLayoutType(
+        RuntimeLayoutType.ShapeType(layout.size()),
+        RuntimeLayoutType.StrideType(1),
+    )
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,

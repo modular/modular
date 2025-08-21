@@ -1242,7 +1242,7 @@ struct PythonObject(
         """
         return Python.float(self)
 
-    @always_inline
+    @no_inline
     fn __str__(self) raises -> PythonObject:
         """Convert the PythonObject to a Python `str`.
 

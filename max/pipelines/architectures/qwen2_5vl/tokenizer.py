@@ -17,9 +17,10 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import TextGenerationRequest
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     process_vision_info,
@@ -46,7 +47,7 @@ def _convert_image_mode(image: Image.Image, to_mode: str) -> Image.Image:
 
 def _rgba_to_rgb(
     image: Image.Image,
-    background_color=(255, 255, 255),  # noqa: ANN001
+    background_color: tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
     """Convert an RGBA image to RGB with filled background color."""
     assert image.mode == "RGBA"
@@ -83,12 +84,6 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             raise ValueError(msg)
 
         # Load and process images
-        images = None
-        if request.images:
-            images = [
-                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
-                for image_data in request.images
-            ]
 
         # Process vision info using qwen_vl_utils if using messages
         image_inputs = None
@@ -101,16 +96,22 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             image_inputs, video_inputs, _ = process_vision_info(messages_data)
         else:
             # Fall back to using the loaded images
-            image_inputs = images
+            if request.images:
+                image_inputs = [
+                    _convert_image_mode(
+                        Image.open(io.BytesIO(image_data)), "RGB"
+                    )
+                    for image_data in request.images
+                ]
             video_inputs = None
 
         # Use processor to handle text and vision inputs
         processed_inputs = self.processor(
             text=[prompt] if isinstance(prompt, str) else prompt,
-            images=image_inputs or images,
+            images=image_inputs,
             videos=video_inputs,
             padding=True,
-            return_tensors="np",
+            return_tensors="pt",
         )
 
         if "input_ids" not in processed_inputs:
@@ -138,8 +139,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         extra_model_args = {}
 
         # Process vision inputs for Qwen2.5VL
-        pixel_values: tuple[np.ndarray, ...] = tuple()
-        if images is not None or image_inputs is not None:
+        pixel_values: tuple[npt.NDArray[Any], ...] = tuple()
+        if image_inputs is not None:
             if "pixel_values" in processed_inputs:
                 pixel_values_raw = processed_inputs["pixel_values"]
 

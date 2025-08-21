@@ -133,22 +133,6 @@ fn _project_on_axis[
 alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
-fn _get_len[*values: Int]() -> Int:
-    """Returns the number of variadic integer parameters.
-
-    This utility function counts the number of integer parameters passed to a
-    variadic template function. It's used internally for handling variable
-    numbers of dimensions, tile sizes, or other integer parameters.
-
-    Parameters:
-        values: Variadic integer parameters to count.
-
-    Returns:
-        The count of variadic integer parameters.
-    """
-    return __mlir_op.`pop.variadic.size`(values)
-
-
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     """Calculates the size of a slice in a specific layout dimension.
 
@@ -2314,7 +2298,9 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
 
-        return self.ptr.load[width=width](self._offset(m, n))
+        return self.ptr.load[width=width, alignment = Self.alignment](
+            self._offset(m, n)
+        )
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
@@ -2425,7 +2411,9 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        return self.ptr.store(self._offset(m, n), val)
+        return self.ptr.store[alignment = Self.alignment](
+            self._offset(m, n), val
+        )
 
     @always_inline("nodebug")
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
@@ -3091,7 +3079,7 @@ struct LayoutTensor[
             based on the tensor's layout properties.
         """
 
-        alias num_tiles = _get_len[*tile_sizes]()
+        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3185,7 +3173,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        alias num_tiles = _get_len[*tile_sizes]()
+        alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
         # need to calculate this again because _tiled_layout[1] is required for the offset calculation
         alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
@@ -3339,7 +3327,7 @@ struct LayoutTensor[
         ```
         """
 
-        alias tiles_rank = _get_len[*tile_sizes]()
+        alias tiles_rank = stdlib.builtin.variadic_size(tile_sizes)
         alias __tiled_layout = Self._compute_tile_layout[*tile_sizes]()
         constrained[
             __tiled_layout[1].rank() == tiles_rank,
@@ -3724,17 +3712,21 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor distributed across 4 threads in a 2×2 grid:
+        For a 4×4 row-major tensor distributed across 4 threads in a 2×2 row-major grid:
 
-        - Thread 0 might get the top-left quadrant
-        - Thread 1 might get the top-right quadrant
-        - Thread 2 might get the bottom-left quadrant
-        - Thread 3 might get the bottom-right quadrant
+        - Thread 0 will receive a LayoutTensor with a view into
+            (0,0), (0,2), (2,0), (2,2) of the original tensor.
+        - Thread 1 will receive a LayoutTensor with a view into
+            (0,1), (0,3), (2,1), (2,3) of the original tensor.
+        - Thread 2 will receive a LayoutTensor with a view into
+            (1,0), (1,2), (3,0), (3,2) of the original tensor.
+        - Thread 3 will receive a LayoutTensor with a view into
+            (1,1), (1,3), (3,1), (3,3) of the original tensor.
 
         If axis=0 is specified with the same setup:
 
-        - Thread 0 and Thread 2 would get the same data (left half)
-        - Thread 1 and Thread 3 would get the same data (right half)
+        - Thread (0, 0) and Thread (0, 1) would get the same data (top half)
+        - Thread (1, 0) and Thread (1, 1) would get the same data (bottom half)
 
         Performance:
 
@@ -4688,12 +4680,9 @@ struct LayoutTensor[
             self.ptr.offset(slice_offset)
         )
 
-    alias TransposeType[
-        M: Int = Self.shape[0](),
-        N: Int = Self.shape[1](),
-    ] = LayoutTensor[
+    alias TransposeType = LayoutTensor[
         dtype,
-        composition(layout, Layout([N, M], [M, 1])),
+        layout.transpose(),
         origin,
         address_space=address_space,
         element_layout=element_layout,
@@ -4702,24 +4691,12 @@ struct LayoutTensor[
     ]
 
     @always_inline
-    fn transpose[
-        M: Int = Self.shape[0](),
-        N: Int = Self.shape[1](),
-    ](self) -> Self.TransposeType[M, N]:
-        """Create a transposed view of a rank-2 tensor.
+    fn transpose(self) -> Self.TransposeType:
+        """Create a transposed view of a tensor.
 
         This method creates a view of the tensor with its dimensions swapped, effectively
         converting rows to columns and columns to rows. The transposition is performed
         without copying data, by adjusting the tensor's layout information.
-
-        Constraints:
-            - Only works with rank-2 tensors.
-
-        Parameters:
-            M: The size of the first dimension (rows) of the original tensor.
-               Defaults to the static shape value of the first dimension.
-            N: The size of the second dimension (columns) of the original tensor.
-               Defaults to the static shape value of the second dimension.
 
         Returns:
             A view of the tensor with dimensions transposed (rows become columns and vice versa).
@@ -4754,11 +4731,15 @@ struct LayoutTensor[
 
         - The transposed tensor shares the same memory as the original tensor,
             so modifications to one will affect the other.
-        - Only works with rank-2 tensors.
         - For optimal performance when repeatedly accessing the transposed data,
             consider creating a physical copy with the transposed layout.
+        - Transpose only works with statically known shapes.
         """
-        return Self.TransposeType[M, N](self.ptr)
+        constrained[
+            layout.all_dims_known(),
+            "Transpose only works with statically known shapes.",
+        ]()
+        return Self.TransposeType(self.ptr)
 
     alias ReshapeType[
         dst_layout: Layout,

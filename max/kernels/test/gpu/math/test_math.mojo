@@ -94,15 +94,7 @@ def main():
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            @parameter
-            fn variadic_len[
-                *kernel_fns: fn[dtype: DType, width: Int] (
-                    SIMD[dtype, width]
-                ) -> SIMD[dtype, width]
-            ]() -> Int:
-                return __mlir_op.`pop.variadic.size`(kernel_fns)
-
-            alias ls = variadic_len[*kernel_fns]()
+            alias ls = stdlib.builtin.variadic_size(kernel_fns)
 
             @parameter
             for idx in range(ls):

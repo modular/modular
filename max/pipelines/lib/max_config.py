@@ -18,21 +18,17 @@ import argparse
 import enum
 import logging
 import os
+import types
 from abc import abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import (
-    Any,
-    TypeVar,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import yaml
 from max.dtype import DType
 from max.engine import GPUProfilingMode
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -40,10 +36,13 @@ logger = logging.getLogger("max.pipelines")
 
 T = TypeVar("T", bound="MAXConfig")
 
+# These are global to all MAXConfig classes for now, so they need to be updated
+# if we add new enums.
 STRINGLY_TYPED_ENUM_MAPPING: Mapping[str, type[enum.Enum]] = {
     "DType": DType,
     "GPUProfilingMode": GPUProfilingMode,
     "KVCacheStrategy": KVCacheStrategy,
+    "PipelineTask": PipelineTask,
 }
 
 STRINGLY_TYPED_BASIC_MAPPING: Mapping[str, type] = {
@@ -63,6 +62,30 @@ MAX_CONFIG_METADATA_FIELDS: Mapping[str, type[Any]] = {
 
 # TODO: I believe we have some utils like this in our entrypoint code. We should
 # move and consolidate them.
+def _is_union_type(origin: Any) -> bool:
+    """Check if the given origin represents a union type (Union or Python 3.10+ UnionType).
+
+    Args:
+        origin: The result of get_origin(field_type)
+
+    Returns:
+        True if the origin represents a union type, False otherwise.
+    """
+    # Check for traditional Union syntax
+    is_union = origin is Union
+
+    if not is_union and origin is not None:
+        # Check for Python 3.10+ types.UnionType
+        if hasattr(types, "UnionType"):
+            is_union = origin is types.UnionType
+        if not is_union:
+            # Fallback: check by name
+            origin_name = getattr(origin, "__name__", str(origin))
+            is_union = "UnionType" in origin_name
+
+    return is_union
+
+
 def _get_argparse_type_and_action(
     field_type: Any, field_default: Any
 ) -> tuple[Any, str | type[argparse.Action] | None]:
@@ -85,8 +108,8 @@ def _get_argparse_type_and_action(
     origin = get_origin(field_type)
     args = get_args(field_type)
 
-    # Handle Optional types (which are Union[T1, T2, ...])
-    if origin is Union:
+    # Handle Optional types (which are Union[T1, T2, ...] or Python 3.10+ UnionType)
+    if _is_union_type(origin):
         # Check if this is Optional[T] (Union[T, None])
         if len(args) == 2 and type(None) in args:
             # This is Optional[T], get the non-None type
@@ -167,8 +190,8 @@ def convert_max_config_value(
     origin = get_origin(field_type)
     args = get_args(field_type)
 
-    # Handle Optional types (which are Union[T1, T2, ...])
-    if origin is Union:
+    # Handle Optional types (which are Union[T1, T2, ...] or Python 3.10+ UnionType)
+    if _is_union_type(origin):
         # Check if this is Optional[T] (Union[T, None])
         if len(args) == 2 and type(None) in args:
             # This is Optional[T], get the non-None type
@@ -386,13 +409,16 @@ def deep_merge_max_configs(
 
 
 def resolve_max_config_inheritance(
-    config_dict: dict[str, Any], config_class: type[MAXConfig]
+    config_dict: dict[str, Any],
+    config_class: type[MAXConfig],
+    config_file_path: Path | None = None,
 ) -> dict[str, Any]:
     """Resolve configuration inheritance by loading base config and merging.
 
     Args:
         config_dict: The current configuration dictionary.
         config_class: The config class being loaded.
+        config_file_path: Path to the config file being loaded (used to resolve relative paths).
 
     Returns:
         Merged configuration dictionary with inheritance resolved.
@@ -404,12 +430,12 @@ def resolve_max_config_inheritance(
     # Try to load the base config
     try:
         base_config_path = Path(depends_on)
-        if not base_config_path.is_absolute():
-            raise ValueError(
-                f"Relative path inheritance not supported: {depends_on}. "
-                f"Please use an absolute path for the 'depends_on' configuration."
-            )
-        elif not base_config_path.exists():
+
+        # If the path is relative and we have a config file path, resolve it relative to the config file's directory
+        if not base_config_path.is_absolute() and config_file_path is not None:
+            base_config_path = config_file_path.parent / base_config_path
+
+        if not base_config_path.exists():
             raise FileNotFoundError(
                 f"Base configuration file not found: {base_config_path}"
             )
@@ -428,7 +454,9 @@ def resolve_max_config_inheritance(
 
         # Recursively resolve inheritance in base config
         base_config_dict = resolve_max_config_inheritance(
-            config_dict=base_config_dict, config_class=config_class
+            config_dict=base_config_dict,
+            config_class=config_class,
+            config_file_path=base_config_path,
         )
 
         # Merge base config with current config (current takes precedence)
@@ -446,6 +474,7 @@ def _extract_max_config_data(
     config_dict: dict[str, Any],
     config_class: type[MAXConfig],
     section_name: str | None = None,
+    config_file_path: Path | None = None,
 ) -> dict[str, Any]:
     """Extract config data for a specific MAXConfig class from MAXConfig files.
 
@@ -488,7 +517,9 @@ def _extract_max_config_data(
 
     # Handle inheritance via depends_on
     config_dict = resolve_max_config_inheritance(
-        config_dict=config_dict, config_class=config_class
+        config_dict=config_dict,
+        config_class=config_class,
+        config_file_path=config_file_path,
     )
 
     # Look for the appropriate config section
@@ -533,11 +564,26 @@ class MAXConfig:
     their expected configuration section name.
     """
 
+    @staticmethod
     @abstractmethod
-    def help(self) -> dict[str, str]:
+    def help() -> dict[str, str]:
         """Documentation for this config class. Return a dictionary of config
         options and their descriptions."""
         ...
+
+    @staticmethod
+    def get_default_field_choices() -> dict[str, list[str]]:
+        """Get default valid choices for fields that have constrained values.
+
+        Returns:
+            Dictionary mapping field names to their valid choices.
+        """
+        return {}
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get default required fields for the config."""
+        return set()
 
     @classmethod
     def from_config_file(
@@ -602,10 +648,17 @@ class MAXConfig:
             config_dict=config_dict,
             config_class=cls,
             section_name=section_name,
+            config_file_path=config_path,
         )
 
         # Get the dataclass fields for this MAXConfig class.
         class_fields = {field.name: field for field in fields(cls)}
+
+        # Resolve type hints in case of string annotations (from __future__ import annotations)
+        try:
+            type_hints = get_type_hints(cls)
+        except (NameError, AttributeError):
+            type_hints = {}
 
         # Filter config_data to only include valid fields for this MAXConfig class
         filtered_config = {}
@@ -614,11 +667,13 @@ class MAXConfig:
         for key, value in config_data.items():
             if key in class_fields:
                 field = class_fields[key]
+                # Use resolved type hint if available, otherwise fall back to field.type
+                field_type = type_hints.get(key, field.type)
                 try:
                     # Handle type conversion for specific types
                     converted_value = convert_max_config_value(
                         value=value,
-                        field_type=field.type,
+                        field_type=field_type,
                         field_name=key,
                     )
                     filtered_config[key] = converted_value
@@ -646,6 +701,7 @@ class MAXConfig:
         self,
         choices_provider: dict[str, list[str]] | None = None,
         description: str | None = None,
+        required_params: set[str] | None = None,
     ) -> argparse.ArgumentParser:
         """Create an ArgumentParser populated with all MAXConfig fields as arguments.
 
@@ -659,6 +715,8 @@ class MAXConfig:
             choices_provider: Optional dictionary mapping field names to their valid choices.
                              This allows external code to specify choices for specific fields.
             description: Optional description for the argument parser.
+            required_params: Optional set of field names that should be marked as required
+                           in the argument parser, regardless of their default values.
 
         Usage:
             ```python
@@ -673,6 +731,11 @@ class MAXConfig:
             parser = config.cli_arg_parsers(choices_provider=choices)
             parser.add_argument("--custom-arg", help="Custom argument")
             args = parser.parse_args(["--backend", "vllm"])  # Validates against choices
+
+            # With required parameters
+            required = {"model", "dataset_name"}
+            parser = config.cli_arg_parsers(required_params=required)
+            args = parser.parse_args()  # Will fail if model or dataset_name not provided
 
             # Empty args uses config file defaults
             args = parser.parse_args([])  # All values from config file
@@ -692,7 +755,14 @@ class MAXConfig:
 
         # Create parser
         parser = argparse.ArgumentParser(description=description)
-        choices_provider = choices_provider or {}
+        choices_provider = choices_provider or self.get_default_field_choices()
+        required_params = required_params or self.get_default_required_fields()
+
+        # Resolve type hints in case of string annotations (from __future__ import annotations)
+        try:
+            type_hints = get_type_hints(self.__class__)
+        except (NameError, AttributeError):
+            type_hints = {}
 
         for field_obj in fields(self):
             # Skip internal fields
@@ -701,7 +771,9 @@ class MAXConfig:
 
             field_name = field_obj.name.replace("_", "-")
             arg_name = f"--{field_name}"
-            field_type = field_obj.type
+
+            # Use resolved type hint if available, otherwise fall back to field.type
+            field_type = type_hints.get(field_obj.name, field_obj.type)
 
             # Use helper function to determine argparse parameters
             arg_type, action = _get_argparse_type_and_action(
@@ -736,6 +808,10 @@ class MAXConfig:
                 help_dict = self.help()
                 if field_obj.name in help_dict:
                     arg_kwargs["help"] = help_dict[field_obj.name]
+
+            # Mark as required if specified in required_params
+            if field_obj.name in required_params:
+                arg_kwargs["required"] = True
 
             # Add argument with appropriate type and action
             if action:

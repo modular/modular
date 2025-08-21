@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import (
+    env_get_bool,
+    env_get_dtype,
+    env_get_int,
+    has_nvidia_gpu_accelerator,
+    sizeof,
+)
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -92,7 +98,6 @@ fn bench_matmul[
     transpose_b: Bool = False,
 ](
     ctx: DeviceContext,
-    handle: vendor_blas.Handle,
     mut b: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
@@ -132,7 +137,7 @@ fn bench_matmul[
     if not init_on_gpu:
 
         @parameter
-        if dtype is DType.float8_e4m3fn:
+        if dtype.is_float8():
             random(a_host.tensor)
             random(b_host.tensor)
         else:
@@ -147,9 +152,7 @@ fn bench_matmul[
         init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
 
     @parameter
-    @__copy_capture(
-        cache_a, cache_b, cache_c, stride_a, stride_b, stride_c, handle
-    )
+    @__copy_capture(cache_a, cache_b, cache_c, stride_a, stride_b, stride_c)
     @always_inline
     fn bench_func(mut b: Bencher):
         @parameter
@@ -178,7 +181,6 @@ fn bench_matmul[
             if use_vendor_blas:
                 vendor_blas.matmul[use_tf32=True](
                     ctx,
-                    handle,
                     tensor_c,
                     tensor_a,
                     tensor_b,
@@ -230,7 +232,6 @@ fn create_matmul_bench[
     use_vendor_blas: Bool,
 ](
     ctx: DeviceContext,
-    handle: vendor_blas.Handle,
     mut b: Bench,
     m: ValOrDim,
     n: ValOrDim,
@@ -255,7 +256,6 @@ fn create_matmul_bench[
         use_vendor_blas=use_vendor_blas,
     ](
         ctx,
-        handle,
         b,
         (m.value, n.value),
         (m.value, k.value),
@@ -279,40 +279,18 @@ fn main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-
-        @parameter
-        if dtype is DType.float8_e4m3fn:
-            with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
-                create_matmul_bench[
-                    dtype,
-                    transpose_b=transpose_b,
-                    cache_busting=cache_busting,
-                    use_vendor_blas=use_vendor_blas,
-                ](
-                    ctx,
-                    handle,
-                    m,
-                    dynamic(M),
-                    static[N](),
-                    static[K](),
-                    init_type,
-                )
-
-        else:
-            with vendor_blas.Handle() as handle:
-                create_matmul_bench[
-                    dtype,
-                    transpose_b=transpose_b,
-                    cache_busting=cache_busting,
-                    use_vendor_blas=use_vendor_blas,
-                ](
-                    ctx,
-                    handle,
-                    m,
-                    dynamic(M),
-                    static[N](),
-                    static[K](),
-                    init_type,
-                )
+        create_matmul_bench[
+            dtype,
+            transpose_b=transpose_b,
+            cache_busting=cache_busting,
+            use_vendor_blas=use_vendor_blas,
+        ](
+            ctx,
+            m,
+            dynamic(M),
+            static[N](),
+            static[K](),
+            init_type,
+        )
 
     m.dump_report()

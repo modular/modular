@@ -24,6 +24,7 @@ from algorithm.reduction import (
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from collections import OptionalReg
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext
@@ -709,7 +710,13 @@ fn softmax_kernel[
     dtype: DType,
     rank: Int,
     accum_type: DType = get_accum_type[dtype](),
-](shape: IndexList[rank], output: NDBuffer[dtype, rank, MutableAnyOrigin]):
+    *,
+    sink: Bool = False,
+](
+    shape: IndexList[rank],
+    output: NDBuffer[dtype, rank, MutableAnyOrigin],
+    sink_weights: NDBuffer[dtype, 1, MutableAnyOrigin],
+):
     alias axis = rank - 1
 
     var row_size = UInt(shape[axis])
@@ -742,6 +749,14 @@ fn softmax_kernel[
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        var sink_val = Scalar[accum_type].MIN
+
+        @parameter
+        if sink:
+            sink_val = sink_weights[row_idx % sink_weights.dim[0]()].cast[
+                accum_type
+            ]()
+
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
             Int(row_idx), shape, axis
@@ -756,6 +771,10 @@ fn softmax_kernel[
             accum_type=accum_type,
         ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
 
+        @parameter
+        if sink:
+            row_max = max(row_max, sink_val)
+
         if tid == 0:
             max_buf[0] = row_max
         barrier()
@@ -764,6 +783,7 @@ fn softmax_kernel[
 
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
         var exp_sum = Scalar[accum_type](0)
+
         for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
             row_coords[axis] = Int(row_offset)
 
@@ -779,9 +799,14 @@ fn softmax_kernel[
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
+
         if tid == 0:
             exp_sum_buf[0] = block_exp_sum
         barrier()
+
+        @parameter
+        if sink:
+            block_exp_sum += exp(sink_val - row_max)
 
         # Step 3: Normalize output
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
@@ -798,11 +823,15 @@ fn _softmax_gpu[
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
     ] -> SIMD[dtype, _simd_width],
+    *,
+    sink: Bool = False,
+    sink_type: DType = dtype,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[NDBuffer[sink_type, 1, MutableAnyOrigin]] = None,
 ) raises:
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
@@ -820,8 +849,8 @@ fn _softmax_gpu[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
     ctx.enqueue_function[
-        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, dtype, rank]
-    ](shape, output, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
+        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, dtype, rank, sink=sink]
+    ](shape, output, sink_weights, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 
 
 fn softmax[

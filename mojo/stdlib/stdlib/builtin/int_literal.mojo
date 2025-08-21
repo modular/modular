@@ -24,6 +24,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
+    Intable,
     Stringable,
     Truncable,
 ):

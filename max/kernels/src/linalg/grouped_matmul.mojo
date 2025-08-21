@@ -57,6 +57,7 @@ from linalg.matmul_sm90 import (
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
+from linalg.matmul_dispatch_sm90 import _find_largest_bn_for_sm90_matmul
 from linalg.matmul_loadop_sm90 import async_load_AB
 
 from utils.index import Index, IndexList
@@ -98,17 +99,16 @@ fn naive_grouped_matmul[
 ) raises:
     constrained[transpose_b, "Only support transposed B in grouped matmul."]()
 
-    ctx.enqueue_function[
-        naive_grouped_matmul_kernel[
-            c_type,
-            c_shape,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ]
-    ](
+    alias kernel = naive_grouped_matmul_kernel[
+        c_type,
+        c_shape,
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c,
         a,
         b,
@@ -197,8 +197,9 @@ fn default_config_sm90[
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape]:
+    alias BN = wgmma_shape[1]
     return MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape,](
-        block_tile_shape=Index(128, 256, 64),
+        block_tile_shape=Index(128, BN, 64),
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
@@ -1151,7 +1152,13 @@ fn grouped_matmul[
 
     @parameter
     if is_sm90_kernel_applicable:
-        grouped_matmul_sm90[elementwise_lambda_fn=elementwise_lambda_fn](
+        alias static_N = c.shape.get[1]()
+        alias BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
+        alias wgmma_shape = IndexList[3](64, BN, 16)
+
+        grouped_matmul_sm90[
+            wgmma_shape=wgmma_shape, elementwise_lambda_fn=elementwise_lambda_fn
+        ](
             c,
             a,
             a_offsets,

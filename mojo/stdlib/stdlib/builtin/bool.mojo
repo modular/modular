@@ -115,6 +115,7 @@ struct Bool(
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
+    Intable,
     Movable,
     Representable,
     Stringable,
@@ -149,7 +150,6 @@ struct Bool(
 
     @doc_private
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 

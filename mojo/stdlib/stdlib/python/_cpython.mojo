@@ -196,7 +196,7 @@ struct PyObjectPtr(
     fn __int__(self) -> Int:
         return Int(self._unsized_obj_ptr)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -239,7 +239,6 @@ struct PythonVersion(Copyable, Movable):
     var patch: Int
     """The patch version number."""
 
-    @implicit
     fn __init__(out self, version: StringSlice):
         """Initialize a PythonVersion object from a version string.
 

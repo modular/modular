@@ -11,3 +11,5 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements the builtin package."""
+
+from .variadics import variadic_size

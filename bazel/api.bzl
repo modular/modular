@@ -12,7 +12,6 @@ load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_fi
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
-load("//bazel/internal:nixl_plugin.bzl", _NIXL_PLUGINS = "NIXL_PLUGINS", _NIXL_PLUGINS_DATA = "NIXL_PLUGINS_DATA")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 mojo_filecheck_test = _mojo_filecheck_test
@@ -46,7 +45,7 @@ def _is_internal_reference(dep):
         "//Kernels/",
         "//SDK/integration-test/pipelines/python",
         "//SDK:max",
-    )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml" in dep
+    )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml_files" in dep
 
 def _has_internal_reference(deps):
     return any([_is_internal_reference(dep) for dep in deps])
@@ -163,5 +162,3 @@ mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
-NIXL_PLUGINS_DATA = _NIXL_PLUGINS_DATA
-NIXL_PLUGINS = _NIXL_PLUGINS

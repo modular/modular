@@ -14,26 +14,52 @@
 from testing import assert_equal
 
 
-fn takes_intable(x: InstanceOf[Intable]) -> Int:
-    return x.__int__()
-
-
 @fieldwise_init
 struct Foo[z: Int]:
     pass
 
 
 @fieldwise_init
-struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](Intable):
+struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
+    Intable, Copyable
+):
     fn __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z
 
 
-def test_instance_of():
-    assert_equal(takes_intable(Bar[2, foo = Foo[4]()]()), 12)
-    assert_equal(takes_intable(Bar[foo = Foo[5](), y=6]()), 22)
-    assert_equal(takes_intable(Bar[foo = Foo[5](), bar = Foo[7]()]()), 24)
+fn takes_instance_of_arg(x: Some[Intable]) -> Int:
+    return x.__int__()
+
+
+def test_instance_of_arg():
+    assert_equal(takes_instance_of_arg(Bar[2, foo = Foo[4]()]()), 12)
+    assert_equal(takes_instance_of_arg(Bar[foo = Foo[5](), y=6]()), 22)
+    assert_equal(
+        takes_instance_of_arg(Bar[foo = Foo[5](), bar = Foo[7]()]()), 24
+    )
+
+
+fn takes_instance_of_param[x: Some[Intable]]() -> Int:
+    return x.__int__()
+
+
+def test_instance_of_param():
+    assert_equal(takes_instance_of_param[Bar[2, foo = Foo[4]()]()](), 12)
+    assert_equal(takes_instance_of_param[Bar[foo = Foo[5](), y=6]()](), 22)
+    assert_equal(
+        takes_instance_of_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24
+    )
+
+
+fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
+    return x
+
+
+def test_instance_of_return():
+    assert_equal(takes_multiple_traits(Bar[2, foo = Foo[4]()]()).__int__(), 12)
 
 
 def main():
-    test_instance_of()
+    test_instance_of_arg()
+    test_instance_of_param()
+    test_instance_of_return()

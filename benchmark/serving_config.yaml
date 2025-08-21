@@ -1,0 +1,84 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Serving Benchmark Configuration
+# This configuration inherits from base_config.yaml and adds serving-specific parameters.
+# Used by benchmark_serving.py and other serving benchmarks.
+
+# Configuration metadata
+name: "Serving Benchmark Configuration"
+description: "Configuration for online serving benchmarks (benchmark_serving.py)"
+version: "0.0.1"
+
+# Inherit from base configuration
+depends_on: "base_config.yaml"
+
+# Serving-specific benchmark parameters
+benchmark_config:
+  # Backend and API configuration (serving-specific)
+  backend: "modular"  # choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat
+  base_url: null  # Server or API base url if not using host/port
+  host: "localhost"
+  port: 8000
+  endpoint: "/v1/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
+
+  # Dataset configuration (serving-specific)
+  dataset_name: "sharegpt"  # has to be set to a valid dataset name for serving benchmarks
+
+  # Request configuration (serving-specific)
+  max_concurrency: null  # Maximum concurrent requests (optimized for serving benchmarks)
+  lora: null  # Optional LoRA name
+
+  # Workload configuration (serving-specific)
+  max_benchmark_duration_s: null  # Maximum benchmark duration in seconds
+  num_chat_sessions: null  # Number of multiturn chat sessions
+  delay_between_chat_turns: null  # Delay between chat turns in ms
+
+  # Output control (serving-specific extensions)
+  output_lengths: null  # Path to YAML file with output lengths or int
+  max_output_len: null  # Maximum output length per request
+  temperature: 0.0  # Temperature for sampling
+  top_p: 1.0  # Top-p for sampling
+
+  # Traffic control (serving-specific)
+  request_rate: inf  # Requests per second (finite rate for realistic benchmarking)
+  burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
+  ttft_skip_requests: 0  # Skip first N requests for TTFT measurements
+  chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
+
+  # Dataset-specific parameters (serving workloads)
+  sonnet_input_len: 550
+  sonnet_prefix_len: 200
+  arxiv_summarization_input_len: 15000
+  random_input_len: 1024
+  random_output_len: 128
+  random_coefficient_of_variation: "0.3,0.7"
+  random_image_size: ""
+  random_sys_prompt_ratio: 0.0
+  random_first_turn_ratio: 1.0
+  random_max_num_unique_sys_prompt: 1
+  random_distribution_type: "normal"  # choices: uniform, normal
+  random_num_turns: 1
+
+  # Control flags (serving-specific)
+  skip_test_prompt: false
+  collect_gpu_stats: true  # Enable GPU stats collection for serving benchmarks
+
+  # Result saving (serving-specific extensions)
+  server_args: ""  # Server arguments string
+
+  # Result saving (serving-specific extensions)
+  result_dir: null # Directory to save results
+  result_filename: null  # Custom filename (auto-generated if null)
+  metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
+  

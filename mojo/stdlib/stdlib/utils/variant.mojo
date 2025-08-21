@@ -10,33 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines a Variant type.
-
-You can use this type to implement variant/sum types. For example:
-
-```mojo
-from utils import Variant
-
-alias IntOrString = Variant[Int, String]
-fn to_string(mut x: IntOrString) -> String:
-  if x.isa[String]():
-    return x[String]
-  # x.isa[Int]()
-  return String(x[Int])
-
-# They have to be mutable for now, and implement Copyable & Movable
-var an_int = IntOrString(4)
-var a_string = IntOrString("I'm a string!")
-var who_knows = IntOrString(0)
-import random
-if random.random_ui64(0, 1):
-    who_knows.set[String]("I'm actually a string too!")
-
-print(to_string(an_int))
-print(to_string(a_string))
-print(to_string(who_knows))
-```
-"""
+"""Defines a Variant type."""
 
 from os import abort
 from sys.intrinsics import _type_is_eq
@@ -50,45 +24,103 @@ from sys.intrinsics import _type_is_eq
 struct Variant[*Ts: ExplicitlyCopyable & Movable](
     Copyable, ExplicitlyCopyable, Movable
 ):
-    """A runtime-variant type.
+    """A union that can hold a runtime-variant value from a set of predefined
+    types.
 
-    Data for this type is stored internally. Currently, its size is the
-    largest size of any of its variants plus a 16-bit discriminant.
+    `Variant` is a discriminated union type, similar to `std::variant` in C++
+    or `enum` in Rust. It can store exactly one value that can be any of the
+    specified types, determined at runtime.
 
-    You can
-        - use `isa[T]()` to check what type a variant is
-        - use `unsafe_take[T]()` to take a value from the variant
-        - use `[T]` to get a value out of a variant
-            - This currently does an extra copy/move until we have origins
-            - It also temporarily requires the value to be mutable
-        - use `set[T](var new_value: T)` to reset the variant to a new value
-        - use `is_type_supported[T]` to check if the variant permits the type `T`
+    The key feature is that the actual type stored in a `Variant` is determined
+    at runtime, not compile time. This allows you to change what type a variant
+    holds during program execution. Memory-wise, a variant only uses the space
+    needed for the largest possible type plus a small discriminant field to
+    track which type is currently active.
+
+    Tips:
+
+    - use `isa[T]()` to check what type a variant is
+    - use `unsafe_take[T]()` to take a value from the variant
+    - use `[T]` to get a value out of a variant
+        - This currently does an extra copy/move until we have origins
+        - It also temporarily requires the value to be mutable
+    - use `set[T](var new_value: T)` to reset the variant to a new value
+    - use `is_type_supported[T]` to check if the variant permits the type `T`
+
+    **Note**: Currently, variant operations require the variant to be
+    mutable (`mut`), even for read operations.
 
     Example:
+
     ```mojo
     from utils import Variant
+    import random
+
     alias IntOrString = Variant[Int, String]
+
     fn to_string(mut x: IntOrString) -> String:
         if x.isa[String]():
             return x[String]
-        # x.isa[Int]()
         return String(x[Int])
 
-    # They have to be mutable for now, and implement Copyable & Movable
     var an_int = IntOrString(4)
     var a_string = IntOrString("I'm a string!")
     var who_knows = IntOrString(0)
-    import random
+    # Randomly change who_knows to a string
+    random.seed()
     if random.random_ui64(0, 1):
-        who_knows.set[String]("I'm actually a string too!")
+        who_knows.set[String]("I'm also a string!")
 
-    print(to_string(an_int))
-    print(to_string(a_string))
-    print(to_string(who_knows))
+    print(a_string[String])      # => I'm a string!
+    print(an_int[Int])           # => 4
+    print(to_string(who_knows))  # Either 0 or "I'm also a string!"
+
+    if who_knows.isa[String]():
+        print("It's a String!")
+    ```
+
+    Example usage for error handling:
+
+    ```mojo
+    alias Result = Variant[String, Error]
+
+    fn process_data(data: String) -> Result:
+        if len(data) == 0:
+            return Result(Error("Empty data"))
+        return Result("Processed: " + data)
+
+    var result = process_data("Hello")
+    if result.isa[String]():
+        print("Success:", result[String])
+    else:
+        print("Error:", result[Error])
+    ```
+
+    Example usage in a `List` to create a heterogeneous list:
+
+    ```mojo
+    alias MixedType = Variant[Int, Float64, String, Bool]
+
+    var mixed_list = List[MixedType]()
+    mixed_list.append(MixedType(42))
+    mixed_list.append(MixedType(3.14))
+    mixed_list.append(MixedType("hello"))
+    mixed_list.append(MixedType(True))
+
+    for item in mixed_list:
+        if item.isa[String]():
+            print("String:", item[String])
+        elif item.isa[Int]():
+            print("Integer:", item[Int])
+        elif item.isa[Float64]():
+            print("Float:", item[Float64])
+        elif item.isa[Bool]():
+            print("Boolean:", item[Bool])
     ```
 
     Parameters:
-      Ts: The elements of the variadic.
+        Ts: The possible types that this variant can hold. All types must
+            implement `ExplicitlyCopyable` and `Movable`.
     """
 
     # Fields

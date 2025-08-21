@@ -17,7 +17,7 @@
 import logging
 import signal
 import sys
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import uvloop
 from max.interfaces import PipelineTask
@@ -41,7 +41,7 @@ logger = logging.getLogger("max.entrypoints")
 _server_instance: Optional[Server] = None
 
 
-def sigterm_handler(sig, frame) -> None:  # noqa: ANN001
+def sigterm_handler(sig: int, frame: Any) -> None:
     # If we have a server instance, trigger its shutdown
     if _server_instance is not None:
         _server_instance.should_exit = True
@@ -53,7 +53,7 @@ def sigterm_handler(sig, frame) -> None:  # noqa: ANN001
     sys.exit(0)
 
 
-def sigint_handler(sig, frame) -> None:  # noqa: ANN001
+def sigint_handler(sig: int, frame: Any) -> None:
     """Handle SIGINT by raising KeyboardInterrupt to allow lifespan to handle it."""
     # Trigger server shutdown
     if _server_instance is not None:
@@ -62,6 +62,7 @@ def sigint_handler(sig, frame) -> None:  # noqa: ANN001
 
 
 def serve_api_server_and_model_worker(
+    settings: Settings,
     pipeline_config: PipelineConfig,
     profile: bool = False,
     model_name: Union[str, None] = None,
@@ -70,12 +71,6 @@ def serve_api_server_and_model_worker(
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _server_instance
-
-    # Initialize settings
-    settings = Settings()
-
-    if port is not None:
-        settings.port = port
 
     override_architecture: Optional[str] = None
     # TODO: This is a workaround to support embeddings generation until the

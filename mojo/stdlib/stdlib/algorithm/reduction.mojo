@@ -215,7 +215,7 @@ fn map_reduce[
         var val = input_gen_fn[dtype, 1](i)
         output_fn[dtype, 1, alignof[dtype]()](i, val)
         acc = reduce_vec_to_vec_fn(acc, val)
-    return acc[0].value
+    return acc[0]
 
 
 @always_inline

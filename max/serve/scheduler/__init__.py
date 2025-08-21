@@ -17,6 +17,7 @@ from typing import TypeVar
 import zmq
 from max.interfaces import AudioGenerator, EmbeddingsGenerator, Pipeline
 from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import TTSContext
 from max.pipelines.lib import PipelineConfig, PipelineRole
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
@@ -46,7 +47,7 @@ T = TypeVar("T")
 
 
 def load_scheduler(
-    pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator,
+    pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator[TTSContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
     dispatcher_client: DispatcherClient | None = None,

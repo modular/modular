@@ -303,7 +303,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         """
         return Int(self._scalar_value)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
 
@@ -406,7 +406,6 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         # Letters are not space characters
         assert_fales(Codepoint.ord("a").is_python_space())
         ```
-        .
         """
 
         alias next_line = Codepoint.from_u32(0x85).value()

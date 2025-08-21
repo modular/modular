@@ -60,7 +60,7 @@ class Shape(list[Dim]):
 
     # TypeGuard and TypeIs don't support self/cls narrowing
     @staticmethod
-    def is_static(shape) -> TypeGuard[StaticShape]:  # noqa: ANN001
+    def is_static(shape: Shape) -> TypeGuard[StaticShape]:
         return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in shape)
 
 

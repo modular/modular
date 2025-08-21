@@ -32,3 +32,8 @@ def main():
     # methods
     var mine = MyPair(6, 8)
     print(mine.get_sum())
+
+    # Suppress compiler warnings
+    _ = a^
+    _ = copied_pair^
+    _ = moved_pair^

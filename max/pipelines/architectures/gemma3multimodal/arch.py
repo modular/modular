@@ -42,6 +42,7 @@ gemma3_multimodal_arch = SupportedArchitecture(
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,

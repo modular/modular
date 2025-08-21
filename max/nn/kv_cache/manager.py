@@ -65,7 +65,8 @@ class KVCacheInputs:
                 for item in value:
                     yield from item
             else:
-                yield cast(Tensor, value)
+                assert isinstance(value, Tensor)
+                yield value
 
     @overload
     def __getitem__(self, index: int) -> Tensor: ...
@@ -156,7 +157,7 @@ class KVCacheInputSymbols:
             else:
                 yield value
 
-    def __getitem__(self, index) -> Any:  # noqa: ANN001
+    def __getitem__(self, index: int | slice) -> Any:
         return list(self)[index]
 
 

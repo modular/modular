@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Union
 
 import msgspec
+from max.interfaces import RequestID
 from max.nn.kv_cache import XferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
@@ -47,7 +48,7 @@ class PrefillRequest(
         block_ids: List of block IDs allocated for KV cache storage
     """
 
-    id: str
+    id: RequestID
     context: Union[TextContext, TextAndVisionContext]
     transfer_engine_name: str
     block_ids: list[int]
@@ -66,6 +67,6 @@ class PrefillResponse(
         context: The input context containing the request data and state
     """
 
-    id: str
+    id: RequestID
     context: Union[TextContext, TextAndVisionContext]
     transfer_metadata: XferReqData

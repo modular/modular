@@ -186,7 +186,6 @@ fn random[
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
-        .
     """
     constrained[not is_nvidia_gpu(), "Cannot run random on the gpu"]()
 

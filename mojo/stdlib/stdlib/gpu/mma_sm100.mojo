@@ -83,7 +83,7 @@ struct UMMAKind(Stringable, Writable):
         """
         return self._value != other._value
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Convert UMMA kind to a string, this can be used as the instruction qualifier.
 
@@ -217,8 +217,8 @@ fn _get_f16_mma_shape[
         if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
-                (16, 512),
-                16,
+                (8, 256),
+                8,
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
             ]()
@@ -226,13 +226,13 @@ fn _get_f16_mma_shape[
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
-                32,
+                (16, 256),
+                16,
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
@@ -252,7 +252,7 @@ fn _get_f16_mma_shape[
         if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
+                (32, 256),
                 32,
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
@@ -262,13 +262,13 @@ fn _get_f16_mma_shape[
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
+                (32, 256),
                 32,
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
@@ -315,13 +315,13 @@ fn _get_tf32_mma_shape[
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (16, 512),
+                (16, 256),
                 16,
                 UMMAKind.KIND_TF32,
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
@@ -340,8 +340,8 @@ fn _get_tf32_mma_shape[
         if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (16, 512),
-                16,
+                (32, 256),
+                32,
                 UMMAKind.KIND_TF32,
                 use_cta_pair=use_pair_cta,
             ]()
@@ -350,13 +350,13 @@ fn _get_tf32_mma_shape[
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
+                (32, 256),
                 32,
                 UMMAKind.KIND_TF32,
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 
@@ -403,13 +403,13 @@ fn _get_f8f6f4_mma_shape[
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (16, 512),
+                (16, 256),
                 16,
                 UMMAKind.KIND_F8F6F4,
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 64)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
 
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
@@ -430,7 +430,7 @@ fn _get_f8f6f4_mma_shape[
         if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
+                (32, 256),
                 32,
                 UMMAKind.KIND_F8F6F4,
                 use_cta_pair=use_pair_cta,
@@ -440,13 +440,13 @@ fn _get_f8f6f4_mma_shape[
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
-                (32, 512),
+                (32, 256),
                 32,
                 UMMAKind.KIND_F8F6F4,
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 64)
+            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
         else:
             constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
 

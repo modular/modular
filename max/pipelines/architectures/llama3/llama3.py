@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Sequence
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
+import numpy.typing as npt
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
@@ -84,15 +85,15 @@ class StackedMLP(Module):
 class ConstantLayerNorm(Module):
     """Layer normalization block with constant gamma and beta values."""
 
-    gamma: np.ndarray
-    beta: np.ndarray
+    gamma: npt.NDArray[np.floating[Any]]
+    beta: npt.NDArray[np.floating[Any]]
     eps: float = 1e-5
     device: DeviceRef
     dtype: DType
 
     def __init__(
         self,
-        dims,  # noqa: ANN001
+        dims: int | tuple[int, ...],
         device: DeviceRef,
         dtype: DType,
         eps: float = 1e-5,
@@ -104,7 +105,7 @@ class ConstantLayerNorm(Module):
         self.device = device
         self.dtype = dtype
 
-    def __call__(self, input: TensorValue):
+    def __call__(self, input: TensorValue) -> TensorValue:
         gamma = ops.constant(self.gamma, self.dtype, self.device)
         beta = ops.constant(self.beta, self.dtype, self.device)
         return ops.cast(

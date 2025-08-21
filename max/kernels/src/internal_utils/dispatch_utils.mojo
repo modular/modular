@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.sort import _quicksort, _SortWrapper
+from os import abort
 
 
 # DO NOT CHANGE
@@ -21,54 +22,46 @@ trait TuningConfig(Copyable, Movable, Stringable):
 
 
 # DO NOT CHANGE
-# @fieldwise_init
-@register_passable("trivial")
-struct Table[
-    type: TuningConfig, //, configs: List[type], name: String = "TuningTable"
-](Stringable):
-    alias num_configs = len(configs)
+struct Table[type: TuningConfig](Stringable):
+    var configs: List[type]
+    var name: String
+    var num_configs: UInt
 
-    @always_inline("nodebug")
-    fn __init__(out self):
-        Self.check()
+    fn __init__(out self, configs: List[type], name: String):
+        self.configs = configs
+        self.name = name
+        self.num_configs = len(configs)
+
+        if not self.check():
+            abort(String("Failed to Compile Table: [", self.name, "]"))
 
     # Method to check there are no redundancies in table (based on __str__).
-    @staticmethod
-    @always_inline
-    fn check():
-        @parameter
-        @always_inline
-        fn _check() -> Bool:
-            var keys = List[String]()
-            var is_valid = True
+    fn check(self) -> Bool:
+        var keys = List[String]()
+        var is_valid = True
 
-            @parameter
-            for i in range(len(configs)):
-                var cfg = configs[i]
-                var res = String(cfg)
-                if res in keys:
-                    print(
-                        "ERROR: Redundant Entry [",
-                        Self.name,
-                        "][",
-                        String(i),
-                        "] ",
-                        String(cfg),
-                        sep="",
-                    )
-                    is_valid = False
-                    continue
-                keys.append(res)
-            return is_valid
-
-        constrained[_check()]()
+        for i in range(len(self.configs)):
+            var cfg = self.configs[i]
+            var res = String(cfg)
+            if res in keys:
+                print(
+                    "ERROR: Redundant Entry [",
+                    self.name,
+                    "][",
+                    String(i),
+                    "] ",
+                    String(cfg),
+                    sep="",
+                )
+                is_valid = False
+                continue
+            keys.append(res)
+        return is_valid
 
     fn __str__(self) -> String:
-        var s = List[String](name)
-
-        @parameter
-        for i in range(len(configs)):
-            var cfg = configs[i]
+        var s = List[String](self.name)
+        for i in range(len(self.configs)):
+            var cfg = self.configs[i]
             s += [String("[", i, "] ", String(cfg))]
         return "\n".join(s)
 
@@ -78,60 +71,50 @@ struct Table[
     #   - `domain` is a list of indices to narrow down the search.
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
-    @staticmethod
     fn query_index[
         rule: fn (type) capturing -> Bool, domain: List[Int] = List[Int]()
-    ]() -> List[Int]:
-        var flag: InlineArray[Bool, Self.num_configs]
+    ](self) -> List[Int]:
+        var flag: List[Bool]
 
         @parameter
         if len(domain):
-            flag = InlineArray[Bool, Self.num_configs](fill=False)
-
-            @parameter
+            flag = List[Bool](length=self.num_configs, fill=False)
             for idx in domain:
                 flag[idx] = True
         else:
-            flag = InlineArray[Bool, Self.num_configs](fill=True)
+            flag = List[Bool](length=self.num_configs, fill=True)
 
-        @parameter
-        for i in range(Self.num_configs):
-            flag[i] &= rule(configs[i])
-
+        for i in range(self.num_configs):
+            flag[i] &= rule(self.configs[i])
         var result_idx_list = List[Int]()
 
-        @parameter
-        for i in range(Self.num_configs):
+        for i in range(self.num_configs):
             if flag[i]:
                 result_idx_list.append(i)
         return result_idx_list
 
     # Apply rule on all configs in the table and return list of all the unique results.
-    @staticmethod
     fn query_values[
         ret_type: Comparable & Copyable & Movable,
         rule: fn (type) capturing -> ret_type,
         idx_list: List[Int] = List[Int](),
-    ]() -> List[ret_type]:
+    ](self) -> List[ret_type]:
         var result = List[ret_type]()
 
+        @always_inline
         @parameter
-        if idx_list:
+        fn _get_search_idx_list() -> List[Int]:
+            if idx_list:
+                return idx_list
+            else:
+                return [idx for idx in range(self.num_configs)]
 
-            @parameter
-            for idx in idx_list:
-                alias cfg = configs[idx]
-                alias value = rule(cfg)
-                if value not in result:
-                    result.append(value)
-        else:
+        var search_idx_list = _get_search_idx_list()
 
-            @parameter
-            for idx in range(Self.num_configs):
-                alias cfg = configs[idx]
-                alias value = rule(cfg)
-                if value not in result:
-                    result.append(value)
+        for idx in search_idx_list:
+            value = rule(self.configs[idx])
+            if value not in result:
+                result.append(value)
 
         @parameter
         fn _cmp(
@@ -140,5 +123,4 @@ struct Table[
             return lsh.data < rhs.data
 
         _quicksort[_cmp](result)
-
         return result

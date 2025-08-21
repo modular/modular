@@ -40,7 +40,7 @@ fn test_gather(ctx: DeviceContext) raises:
         ](input_host_ptr)
         for i in range(num_rows):
             for j in range(row_size):
-                input_host[Index(i, j)] = Float32(i).value
+                input_host[Index(i, j)] = Float32(i)
         var input_device_ptr = ctx.enqueue_create_buffer[DType.float32](
             input_host.size() * sizeof[DType.float32]()
         )

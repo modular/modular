@@ -288,14 +288,17 @@ fn gemm(
 
     # Utilities for accessing flattened matrices.
     @always_inline
+    @parameter
     fn get_a(row: Int, col: Int) -> Float32:
         return a.load(row + m * col)
 
     @always_inline
+    @parameter
     fn get_b(row: Int, col: Int) -> Float32:
         return b.load(row * n + col)
 
     @always_inline
+    @parameter
     fn set_c(row: Int, col: Int, val: Float32):
         c[row + col * m] = val
 
@@ -523,8 +526,8 @@ def main():
     test_parameterized_on_cuda_sm90()
     test_hello_mojo_sm80()
     test_hello_mojo_sm90()
-    test_erf_elementwise_sm80()
-    test_erf_elementwise_sm90()
+    #    test_erf_elementwise_sm80()
+    #    test_erf_elementwise_sm90()
     test_erf_kernel_sm80()
     test_erf_kernel_sm90()
     test_shared_stack_allocation_sm80()

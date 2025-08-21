@@ -267,7 +267,6 @@ struct _DictIndex(Movable):
     var data: OpaquePointer
 
     @always_inline
-    @implicit
     fn __init__(out self, reserved: Int):
         if reserved <= 128:
             var data = UnsafePointer[Int8].alloc(reserved)
@@ -350,38 +349,155 @@ struct Dict[
 ](Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
     """A container that stores key-value pairs.
 
-    Parameters:
-        K: The type of the dictionary key. Must be `Hashable` and
-            `EqualityComparable` so we can find the key in the map.
-        V: The value type of the dictionary. Currently must be
-            Copyable & Movable.
-        H: The type of the hasher used to hash the keys.
+    The `Dict` type is Mojo's primary associative collection, similar to
+    Python's `dict` (dictionary). Unlike a `List`, which stores elements by
+    index, a `Dict` stores values associated with unique keys, which enables
+    fast lookups, insertions, and deletions.
 
-    The key type and value type must be specified statically, unlike a Python
-    dictionary, which can accept arbitrary key and value types.
+    You can create a `Dict` in several ways:
 
-    The key type must implement the `KeyElement` trait, which encompasses
-    `Movable`, `Hashable`, and `EqualityComparable`. It also includes `Copyable`
-    and `Movable` until we have references.
+    ```mojo
+    # Empty dictionary
+    var empty_dict = Dict[String, Int]()
 
-    The value type must implement the `Copyable` and `Movable` traits.
+    # Dictionary literal syntax
+    var scores = {"Alice": 95, "Bob": 87, "Charlie": 92}
+
+    # Pre-allocated capacity (must be power of 2, >= 8)
+    var large_dict = Dict[String, Int](power_of_two_initial_capacity=64)
+
+    # From separate key and value lists
+    var keys = ["red", "green", "blue"]
+    var values = [255, 128, 64]
+    var colors = Dict[String, Int]()
+    for i in range(len(keys)):
+        colors[keys[i]] = values[i]
+    ```
+
+    Be aware of the following characteristics:
+
+    - **Type safety**: Both keys and values must be homogeneous types,
+    determined at compile time. This is more restrictive than Python
+    dictionaries but provides better performance:
+
+      ```mojo
+      var string_to_int = {"count": 42}     # Dict[String, Int]
+      var int_to_string = {1: "one"}        # Dict[Int, String]
+      var mixed = {"key": 1, 2: "val"}      # Error! Keys must be same type
+      ```
+
+      However, you can get around this by defining your dictionary key and/or
+      value type as [`Variant`](/mojo/stdlib/utils/variant/Variant). This is
+      a discriminated union type, meaning it can store any number of different
+      types that can vary at runtime.
+
+    - **Value semantics**: A `Dict` is value semantic by default,
+      so assignment creates a deep copy of all key-value pairs:
+
+      ```mojo
+      var dict1 = {"a": 1, "b": 2}
+      var dict2 = dict1        # Deep copy
+      dict2["c"] = 3
+      print(dict1.__str__())   # => {"a": 1, "b": 2}
+      print(dict2.__str__())   # => {"a": 1, "b": 2, "c": 3}
+      ```
+
+      This is different from Python, where assignment creates a reference to
+      the same dictionary. For more information, read about [value
+      semantics](/mojo/manual/values/value-semantics).
+
+    - **Iteration uses immutable references**: When iterating over keys, values,
+      or items, you get immutable references unless you specify `ref`:
+
+      ```mojo
+      var inventory = {"apples": 10, "bananas": 5}
+
+      # Default behavior creates immutable (read-only) references
+      for value in inventory.values():
+          value += 1  # error: expression must be mutable
+
+      # Using `ref` gets mutable (read-write) references
+      for ref value in inventory.values():
+          value += 1  # Modify inventory values in-place
+      print(inventory.__str__())  # => {"apples": 11, "bananas": 6}
+      ```
+
+    - **KeyError handling**: Directly accessing values with the `[]` operator
+      will raise `KeyError` if the key is not found:
+
+      ```mojo
+      var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
+      print(phonebook["Charlie"])  # => KeyError: "Charlie"
+      ```
+
+      For safe access, you should instead use `get()`:
+
+      ```mojo
+      var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
+      var phone = phonebook.get("Charlie")
+      print(phone.__str__()) if phone else print('phone not found')
+      ```
+
 
     Examples:
 
     ```mojo
-    var d = Dict[String, Int]()
-    d["a"] = 1
-    d["b"] = 2
-    print(len(d))      # prints 2
-    print(d["a"])      # prints 1
-    print(d.pop("b"))  # prints 2
-    print(len(d))      # prints 1
+    var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
+
+    # Add/update entries
+    phonebook["Charlie"] = "555-0103"    # Add new entry
+    phonebook["Alice"] = "555-0199"      # Update existing entry
+
+    # Access directly (unsafe and raises KeyError if key not found)
+    print(phonebook["Alice"])            # => 555-0199
+
+    # Access safely
+    var phone = phonebook.get("David")   # Returns Optional type
+    print(phone.or_else("phone not found!"))
+
+    # Access safely with default value
+    phone = phonebook.get("David", "555-0000")
+    print(phone.__str__())               # => '555-0000'
+
+    # Check for keys
+    if "Bob" in phonebook:
+        print("Found Bob")
+
+    # Remove (pop) entries
+    print(phonebook.pop("Charlie"))         # Remove and return: "555-0103"
+    print(phonebook.pop("Unknown", "N/A"))  # Pop with default
+
+    # Iterate over a dictionary
+    for key in phonebook.keys():
+        print("Key:", key)
+
+    for value in phonebook.values():
+        print("Value:", value)
+
+    for item in phonebook.items():
+        print(item.key, "=>", item.value)
+
+    for key in phonebook:
+        print(key, "=>", phonebook[key])
+
+    # Number of key-value pairs
+    print('len:', len(phonebook))        # => len: 2
+
+    # Dictionary operations
+    var backup = phonebook.copy()        # Explicit copy
+    phonebook.clear()                    # Remove all entries
+
+    # Merge dictionaries
+    var more_numbers = {"David": "555-0104", "Eve": "555-0105"}
+    backup.update(more_numbers)          # Merge in-place
+    var combined = backup | more_numbers # Create new merged dict
+    print(combined.__str__())
     ```
 
-    For more information on the Mojo `Dict` type, see the
-    [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
-    Python dictionaries from Mojo, see
-    [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
+    Parameters:
+        K: The type of keys stored in the dictionary.
+        V: The type of values stored in the dictionary.
+        H: The type of hasher used to hash the keys.
     """
 
     # Implementation:

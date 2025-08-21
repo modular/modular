@@ -44,13 +44,7 @@ def test_matmul_sm100_fallback[
     transpose_b: Bool = True,
     BK: Int = 64,
     use_epilogue: Bool = False,
-](
-    ctx: DeviceContext,
-    cublas_handle: vendor_blas.Handle,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -157,9 +151,17 @@ def test_matmul_sm100_fallback[
     ](c, a, b, ctx)
 
     ctx.synchronize()
+
+    constrained[
+        a_type != DType.float8_e4m3fn or transpose_b,
+        (
+            "Testing is only supported for transposed_b==True when"
+            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+        ),
+    ]()
+
     vendor_blas.matmul(
         ctx,
-        cublas_handle,
         c_device_ref.tensor,
         a_device.tensor,
         b_device.tensor,
@@ -205,147 +207,136 @@ def main():
                 alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
                 alias BK = (swizzle.bytes() // sizeof[dtype]())
 
-                alias handle_type = vendor_blas.Backend.CUBLASLT if dtype == DType.float8_e4m3fn else vendor_blas.Backend.CUBLAS
-                with vendor_blas.Handle[handle_type]() as cublas_handle:
-                    test_matmul_sm100_fallback[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
-                        swizzle=swizzle,
-                        transpose_b=True,
-                        BK=BK,
-                    ](
-                        ctx,
-                        cublas_handle,
-                        dynamic(200),
-                        static[128](),
-                        static[128](),
-                    )
-                    test_matmul_sm100_fallback[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
-                        swizzle=swizzle,
-                        transpose_b=True,
-                        BK=BK,
-                        use_epilogue=True,
-                    ](
-                        ctx,
-                        cublas_handle,
-                        dynamic(128),
-                        static[128](),
-                        static[128](),
-                    )
+                test_matmul_sm100_fallback[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    umma_shape = Index(64, 128, MMA_K),
+                    swizzle=swizzle,
+                    transpose_b=True,
+                    BK=BK,
+                ](
+                    ctx,
+                    dynamic(200),
+                    static[128](),
+                    static[128](),
+                )
+                test_matmul_sm100_fallback[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    umma_shape = Index(64, 128, MMA_K),
+                    swizzle=swizzle,
+                    transpose_b=True,
+                    BK=BK,
+                    use_epilogue=True,
+                ](
+                    ctx,
+                    dynamic(128),
+                    static[128](),
+                    static[128](),
+                )
 
-                    test_matmul_sm100_fallback[
-                        dtype,
-                        dtype,
-                        DType.bfloat16,
-                        umma_shape = Index(64, 128, MMA_K),
-                        swizzle=swizzle,
-                        transpose_b=True,
-                        BK=BK,
-                    ](
-                        ctx,
-                        cublas_handle,
-                        dynamic(400),
-                        static[128](),
-                        static[128](),
-                    )
+                test_matmul_sm100_fallback[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    umma_shape = Index(64, 128, MMA_K),
+                    swizzle=swizzle,
+                    transpose_b=True,
+                    BK=BK,
+                ](
+                    ctx,
+                    dynamic(400),
+                    static[128](),
+                    static[128](),
+                )
 
+                test_matmul_sm100_fallback[
+                    dtype,
+                    dtype,
+                    DType.bfloat16,
+                    umma_shape = Index(64, 128, MMA_K),
+                    swizzle=swizzle,
+                    transpose_b=True,
+                    BK=BK,
+                ](
+                    ctx,
+                    dynamic(1024),
+                    static[2048](),
+                    static[2048](),
+                )
+
+                alias BK_list = List[Int](BK, BK * 2)
+
+                @parameter
+                for _BK in BK_list:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
                         DType.bfloat16,
                         umma_shape = Index(64, 128, MMA_K),
-                        swizzle=swizzle,
                         transpose_b=True,
-                        BK=BK,
+                        BK=_BK,
                     ](
                         ctx,
-                        cublas_handle,
                         dynamic(1024),
                         static[2048](),
                         static[2048](),
                     )
 
-                    alias BK_list = List[Int](BK, BK * 2)
+                    test_matmul_sm100_fallback[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        umma_shape = Index(64, 128, MMA_K),
+                        transpose_b=True,
+                        BK=_BK,
+                    ](
+                        ctx,
+                        static[1024](),
+                        static[2048](),
+                        static[2048](),
+                    )
 
-                    @parameter
-                    for _BK in BK_list:
-                        test_matmul_sm100_fallback[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            umma_shape = Index(64, 128, MMA_K),
-                            transpose_b=True,
-                            BK=_BK,
-                        ](
-                            ctx,
-                            cublas_handle,
-                            dynamic(1024),
-                            static[2048](),
-                            static[2048](),
-                        )
+                    test_matmul_sm100_fallback[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        umma_shape = Index(64, 128, MMA_K),
+                        transpose_b=True,
+                        BK=_BK,
+                    ](
+                        ctx,
+                        dynamic(100),
+                        static[512](),
+                        static[256](),
+                    )
 
-                        test_matmul_sm100_fallback[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            umma_shape = Index(64, 128, MMA_K),
-                            transpose_b=True,
-                            BK=_BK,
-                        ](
-                            ctx,
-                            cublas_handle,
-                            static[1024](),
-                            static[2048](),
-                            static[2048](),
-                        )
+                    test_matmul_sm100_fallback[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        umma_shape = Index(64, 128, MMA_K),
+                        transpose_b=True,
+                        BK=_BK,
+                    ](
+                        ctx,
+                        dynamic(99),
+                        static[1024](),
+                        static[1024](),
+                    )
 
-                        test_matmul_sm100_fallback[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            umma_shape = Index(64, 128, MMA_K),
-                            transpose_b=True,
-                            BK=_BK,
-                        ](
-                            ctx,
-                            cublas_handle,
-                            dynamic(100),
-                            static[512](),
-                            static[256](),
-                        )
-
-                        test_matmul_sm100_fallback[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            umma_shape = Index(64, 128, MMA_K),
-                            transpose_b=True,
-                            BK=_BK,
-                        ](
-                            ctx,
-                            cublas_handle,
-                            dynamic(99),
-                            static[1024](),
-                            static[1024](),
-                        )
-
-                        test_matmul_sm100_fallback[
-                            dtype,
-                            dtype,
-                            DType.bfloat16,
-                            umma_shape = Index(64, 128, MMA_K),
-                            transpose_b=True,
-                            BK=_BK,
-                        ](
-                            ctx,
-                            cublas_handle,
-                            dynamic(201),
-                            static[2048](),
-                            static[256](),
-                        )
+                    test_matmul_sm100_fallback[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        umma_shape = Index(64, 128, MMA_K),
+                        transpose_b=True,
+                        BK=_BK,
+                    ](
+                        ctx,
+                        dynamic(201),
+                        static[2048](),
+                        static[256](),
+                    )

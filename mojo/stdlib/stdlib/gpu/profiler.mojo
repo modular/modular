@@ -59,7 +59,6 @@ struct ProfileBlock[enabled: Bool = False](Copyable, Movable):
     """Start time of the profiling block in nanoseconds, captured using perf_counter_ns()."""
 
     @always_inline
-    @implicit
     fn __init__(out self, name: StaticString):
         """Initialize a new ProfileBlock.
 

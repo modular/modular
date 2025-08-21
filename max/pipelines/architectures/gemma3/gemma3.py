@@ -19,19 +19,8 @@ import functools
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    ShardingStrategy,
-    TensorValue,
-    ops,
-)
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Module,
-    ReturnLogits,
-)
+from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.nn import MLP, ColumnParallelLinear, LayerList, Module, ReturnLogits
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
@@ -86,16 +75,22 @@ class Gemma3TextModel(Module):
             scaling_params=None,  # No scaling
         )
 
+        embedding_output_dtype = config.dtype
+        if config.float8_config and config.float8_config.embedding_output_dtype:
+            embedding_output_dtype = config.float8_config.embedding_output_dtype
+
         self.embed_tokens = ScaledWordEmbedding(
             config.vocab_size,
             config.hidden_size,
-            config.dtype,
+            embedding_output_dtype,
             config.devices,
             embed_scale=config.hidden_size**0.5,
         )
 
         self.norm = Gemma3RMSNorm(
-            config.hidden_size, config.dtype, config.rms_norm_eps
+            config.hidden_size,
+            DType.bfloat16,
+            config.rms_norm_eps,
         )
         self.norm.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
@@ -115,7 +110,7 @@ class Gemma3TextModel(Module):
         create_norm = functools.partial(
             Gemma3RMSNorm,
             config.hidden_size,
-            config.dtype,
+            DType.bfloat16,
             eps=config.rms_norm_eps,
         )
 
@@ -133,6 +128,7 @@ class Gemma3TextModel(Module):
                     devices=config.devices,
                     qk_norm_eps=config.rms_norm_eps,
                     local_window_size=config.sliding_window,
+                    float8_config=config.float8_config,
                 ),
                 mlp=MLP(
                     dtype=config.dtype,
@@ -141,6 +137,7 @@ class Gemma3TextModel(Module):
                     feed_forward_length=config.intermediate_size,
                     devices=config.devices,
                     activation_function=config.hidden_activation,
+                    float8_config=config.float8_config,
                 ),
                 input_layernorm=create_norm(),
                 post_attention_layernorm=create_norm(),
@@ -220,10 +217,11 @@ class Gemma3TextModel(Module):
         if self.return_logits == ReturnLogits.VARIABLE and h:
             # Create range and gather indices for variable logits
             return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
+                start=return_n_logits[0],
+                stop=0,
+                step=-1,
                 out_dim="return_n_logits_range",
+                dtype=DType.int64,
                 device=self.devices[0],
             )
             last_indices = [
@@ -243,10 +241,11 @@ class Gemma3TextModel(Module):
                 self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
             )
             offsets = ops.range(
-                ops.constant(0, DType.int64, device=self.devices[0]),
+                0,
                 last_indices[0].shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
+                dtype=DType.int64,
                 device=self.devices[0],
             )
 

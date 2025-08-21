@@ -267,17 +267,9 @@ fn distribute[
     return res
 
 
-# FIXME: Move to a shared utility.
-# Returns the size of variadic integer parameters.
-#
-@always_inline("nodebug")
-fn _get_len[*var_int: Int]() -> Int:
-    return __mlir_op.`pop.variadic.size`(var_int)
-
-
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    alias rank = _get_len[*sizes]()
+    alias rank = stdlib.builtin.variadic_size(sizes)
 
     constrained[
         rank <= 3,

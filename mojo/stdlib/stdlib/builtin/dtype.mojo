@@ -40,7 +40,44 @@ struct DType(
     Stringable,
     Writable,
 ):
-    """Represents DType and provides methods for working with it."""
+    """Represents a data type specification and provides methods for working
+    with it.
+
+    `DType` defines a set of compile-time constant that specify the precise
+    numeric representation of data in order to prevent runtime errors by
+    catching type mismatches at compile time. It directly maps to CPU/GPU
+    instruction sets, allowing the compiler to generate optimal SIMD and vector
+    operations.
+
+    `DType` behaves like an enum rather than a typical object. You don't
+    instantiate it, but instead use its compile-time constants (aliases) to
+    declare data types for SIMD vectors, tensors, and other data structures.
+
+    Key usage patterns:
+
+    - **Type specification**: Use aliases like `DType.float32` to specify types
+      for SIMD vectors, tensors, and other data structures
+    - **Type parameters**: Pass `DType` values as compile-time parameters to
+      parameterized types like `SIMD[dtype, size]`
+    - **Type introspection**: Call methods like `.bitwidth()`, `.is_floating_point()`
+      to query type properties at compile time
+    - **Type conversion**: Use in casting operations to convert between different
+      numeric representations
+
+    **Note:** Not all data types are supported on all platforms. For example,
+    `DType.bfloat16` is currently not supported on Apple Silicon.
+
+    Example:
+
+    ```mojo
+    var data = SIMD[DType.float16, 4](1.5, 2.5, 3.5, 4.5)
+    var dtype = data.dtype
+
+    print("Is float:", dtype.is_floating_point())  # True
+    print("Bit width:", dtype.bitwidth())          # 16
+    print("Is signed:", dtype.is_signed())         # True
+    ```
+    """
 
     alias type = __mlir_type.`!kgen.dtype`
     var value: Self.type
@@ -192,7 +229,6 @@ struct DType(
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Self.type):
         """Construct a DType from MLIR dtype.
 
@@ -366,9 +402,10 @@ struct DType(
     @staticmethod
     @always_inline("nodebug")
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
-        return __mlir_op.`pop.dtype.from_ui8`(
+        var res = __mlir_op.`pop.dtype.from_ui8`(
             __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
         )
+        return DType(res)
 
     @doc_private
     @always_inline("nodebug")
@@ -380,10 +417,11 @@ struct DType(
     @doc_private
     @always_inline("nodebug")
     fn _match(self, mask: UInt8) -> Bool:
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
             __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
@@ -419,9 +457,10 @@ struct DType(
         Returns:
             True if the DTypes are the same and False otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: DType) -> Bool:
@@ -433,9 +472,10 @@ struct DType(
         Returns:
             False if the DTypes are the same and True otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.

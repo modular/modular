@@ -352,20 +352,39 @@ struct NDBuffer[
             other: The other NDBuffer type.
         """
         # It is probably unsafe to convert between address spaces
-        constrained[other.address_space == address_space]()
+        constrained[
+            other.address_space == address_space,
+            "cannot convert between buffer types with different address spaces",
+        ]()
 
         # We can only downgrade our alignment
         constrained[
-            other.alignment >= alignment and other.alignment % alignment == 0
+            other.alignment >= alignment and other.alignment % alignment == 0,
+            "cannot convert between buffers with incompatible alignments",
         ]()
 
         # Exclusivity can only be lost
-        constrained[other.exclusive == exclusive or not exclusive]()
+        constrained[
+            other.exclusive == exclusive or not exclusive,
+            (
+                "Cannot convert a non-exclusive buffer to an exclusive buffer."
+                " This is caused by passing a non-exclusive NDBuffer to a"
+                " function which requires an exclusive NDBuffer. Consider"
+                " unbinding the exclusive parameter for the function if it does"
+                " not require an exclusive buffer for correctness."
+            ),
+        ]()
 
         # We can lose information about shape/stride, but not gain information
         alias unknown_dim_list = DimList.create_unknown[rank]()
-        constrained[other.shape == shape or shape == unknown_dim_list]()
-        constrained[other.strides == strides or strides == unknown_dim_list]()
+        constrained[
+            other.shape == shape or shape == unknown_dim_list,
+            "cannot convert between buffers with incompatible shapes",
+        ]()
+        constrained[
+            other.strides == strides or strides == unknown_dim_list,
+            "cannot convert between buffers with incompatible strides",
+        ]()
 
         self.data = rebind[__type_of(self.data)](other.data)
         self.dynamic_shape = other.dynamic_shape
@@ -821,12 +840,10 @@ struct NDBuffer[
             The tiled buffer at tile_coords.
         """
 
-        @parameter
-        fn num_tile_sizes() -> Int:
-            return __mlir_op.`pop.variadic.size`(tile_sizes)
+        alias num_tile_sizes = stdlib.builtin.variadic_size(tile_sizes)
 
         constrained[
-            num_tile_sizes() == rank,
+            num_tile_sizes == rank,
             "The tile should have the same rank as the buffer",
         ]()
 

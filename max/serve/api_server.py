@@ -29,7 +29,7 @@ from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
-from max.serve.pipelines.kvcache_worker import start_dispatch_service
+from max.serve.pipelines.kvcache_worker import start_kv_cache_service
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -106,7 +106,7 @@ async def lifespan(
 
                 logger.info("Starting Dispatch Service...")
                 await exit_stack.enter_async_context(
-                    start_dispatch_service(settings, dispatcher_factory)
+                    start_kv_cache_service(settings, dispatcher_factory)
                 )
                 logger.info("KV Cache Agent started.")
             else:

@@ -445,13 +445,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, *elements: Int):
         """Initialize an `IntTuple` with a variadic list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: Variable number of integer values to store in the tuple.
@@ -463,7 +461,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: List of integer values to store in the tuple.
@@ -637,13 +634,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, zipper: _zip[_, 2]):
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
-        This constructor is implicit, allowing direct conversion from zip iterators.
 
         Args:
             zipper: A zip iterator containing pairs of elements to append.
@@ -731,7 +726,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             var copy = original.owned_copy()
             # Modifying copy will not affect original
             ```
-            .
         """
         var copy = IntTuple(non_owned=IntArray())
         var size = self.size()
@@ -1257,17 +1251,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             For tuples, writes a comma-separated list of elements enclosed in parentheses.
         """
         if self.is_value():
-            return writer.write(self.value())
-        writer.write("(")
-        var len = len(self)
-        for i in range(len):
-            if self.is_value(i):
-                writer.write(self.value(i))
-            else:
-                writer.write(String(self[i]))
-            if i < len - 1:
-                writer.write(", ")
-        writer.write(")")
+            writer.write(self.value())
+        else:
+            writer.write("(")
+            var len = len(self)
+            for i in range(len):
+                if self.is_value(i):
+                    writer.write(self.value(i))
+                else:
+                    writer.write(String(self[i]))
+                if i < len - 1:
+                    writer.write(", ")
+            writer.write(")")
 
     fn __str__(self) -> String:
         """
@@ -1407,7 +1402,6 @@ fn signum(a: Int) -> Int:
         var result2 = signum(-10)  # Returns -1
         var result3 = signum(0)    # Returns 0
         ```
-        .
     """
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
@@ -1437,7 +1431,6 @@ fn is_int(t: IntTuple) -> Bool:
         var result1 = is_int(single_value)  # Returns True
         var result2 = is_int(nested_tuple)  # Returns False
         ```
-        .
     """
     return t.is_value()
 
@@ -1467,7 +1460,6 @@ fn is_tuple(t: IntTuple) -> Bool:
         var result1 = is_tuple(single_value)  # Returns False
         var result2 = is_tuple(nested_tuple)  # Returns True
         ```
-        .
     """
     return t.is_tuple()
 
@@ -1719,7 +1711,6 @@ fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
         var result = to_nest(IntTuple(2, IntTuple(3, 4), 5), IntTuple(1, 2, 3, 4))
         # returns IntTuple(1, (2, 3), 4)
         ```
-        .
     """
     var result = IntTuple()
     var flat_idx = 0
@@ -2816,7 +2807,6 @@ fn reverse(src: IntTuple) -> IntTuple:
         var t = IntTuple(1, 2, IntTuple(3, 4))
         var reversed = reverse(t) # returns ((4, 3), 2, 1)
         ```
-        .
     """
     if src.is_value():
         return IntTuple(src.value())
@@ -2853,7 +2843,6 @@ fn depth(src: IntTuple) -> Int:
         print(depth(IntTuple(1, 2))) # prints 1
         print(depth((IntTuple(1, 2)))) # prints 2
         ````
-        .
     """
     if is_int(src):
         return 0
@@ -2962,7 +2951,6 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
         # Create a compact layout with nested dimensions and corresponding ordering
         var y = compact_order(IntTuple(2,IntTuple(3,4),5), IntTuple(1,IntTuple(2,3),4))  # returns (1,(2,6),24)
         ```
-        .
     """
     # Flatten both shape and order
     var flat_shape = flatten(shape)

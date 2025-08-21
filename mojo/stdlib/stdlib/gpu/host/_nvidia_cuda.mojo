@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import external_call, sizeof
+from sys.ffi import c_uint, c_int
 
 from gpu._utils import to_llvm_ptr
 from gpu.host import DeviceContext, DeviceStream, DeviceFunction
@@ -41,9 +42,14 @@ struct _CUmod_st:
     pass
 
 
+struct _CUevent_st:
+    pass
+
+
 alias CUcontext = UnsafePointer[_CUctx_st]
 alias CUstream = UnsafePointer[_CUstream_st]
 alias CUmodule = UnsafePointer[_CUmod_st]
+alias CUevent = UnsafePointer[_CUevent_st]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
@@ -194,7 +200,7 @@ struct TensorMapSwizzle(
     fn bytes(self) -> Int:
         return Int((2**self._value) * 16)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 

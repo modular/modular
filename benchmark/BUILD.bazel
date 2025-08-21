@@ -21,22 +21,6 @@ modular_py_binary(
     ],
 )
 
-modular_py_library(
-    name = "benchmark_datasets",
-    srcs = ["benchmark_datasets.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":sample_workload_utils",
-        requirement("datasets"),
-        requirement("huggingface-hub"),
-        requirement("numpy"),
-        requirement("msgspec"),
-        requirement("pillow"),
-        requirement("transformers"),
-    ],
-)
-
 # TODO: Move / refactor this to interfaces/
 modular_py_library(
     name = "sample_workload_utils",
@@ -54,18 +38,35 @@ modular_py_library(
     name = "benchmark_config",
     srcs = ["benchmark_config.py"],
     data = [
-        ":benchmark_config_yaml",
+        ":benchmark_config_yaml_files",
     ],
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        ":benchmark_datasets",
         "//SDK/lib/API/python/max/pipelines/lib",
     ],
 )
 
+modular_py_library(
+    name = "benchmark_datasets",
+    srcs = ["benchmark_datasets.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sample_workload_utils",
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("msgspec"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
 pkg_files(
-    name = "benchmark_config_yaml",
-    srcs = ["base_benchmark_config.yaml"],
+    name = "benchmark_config_yaml_files",
+    srcs = glob(["*.yaml"]),
     visibility = ["//visibility:public"],
 )
 
@@ -78,5 +79,16 @@ pkg_files(
     ),
     prefix = "benchmark",
     strip_prefix = strip_prefix.from_pkg(""),
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "yaml_files",
+    srcs = glob(
+        [
+            "**/*.yaml",
+        ],
+    ),
+    prefix = "benchmark",
     visibility = ["//visibility:public"],
 )

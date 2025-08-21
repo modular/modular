@@ -16,6 +16,7 @@ from typing import Callable, cast
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn.float8_config import Float8Config
 
 from ..attention.attention_with_rope import AttentionWithRope
 from ..attention.mask_config import MHAMaskVariant
@@ -29,7 +30,7 @@ from ..kv_cache import (
     KVCacheParams,
     PagedKVCacheCollection,
 )
-from ..linear import Float8Config, Linear
+from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
 from .linear_lora import LinearLoRA
 

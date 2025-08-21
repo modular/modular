@@ -227,7 +227,7 @@ def main():
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
-    if not can_enable_p2p(ctx):
+    if not can_enable_p2p():
         # Don't benchmark the naive allreduce.
         print("P2P not enabled, skipping benchmark.")
         return

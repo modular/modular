@@ -13,20 +13,26 @@
 """Mixed layout implementation that unifies compile-time and runtime indices."""
 
 from builtin.variadics import VariadicOf
+from sys.intrinsics import _type_is_eq
+from os import abort
 from .int_tuple import IntTuple
 from .layout import LayoutTrait
 from ._mixed_tuple import (
-    crd2idx,
+    Idx,
+    ComptimeInt,
+    RuntimeInt,
     MixedIntTuple,
     MixedIntTupleLike,
-    RuntimeInt,
+    to_mixed_int_tuple,
+    mixed_int_tuple_to_int_tuple,
+    crd2idx,
 )
 
 
 struct MixedLayout[
     shape_types: VariadicOf[MixedIntTupleLike],
     stride_types: VariadicOf[MixedIntTupleLike],
-](LayoutTrait):
+](Copyable, Movable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -84,17 +90,6 @@ struct MixedLayout[
         """
         return Int(crd2idx(index, self.shape, self.stride))
 
-    fn __call__(self, index: IntTuple) -> Int:
-        """Maps a logical coordinate to a linear memory index.
-
-        Args:
-            index: An IntTuple representing the logical coordinates to map.
-
-        Returns:
-            The linear memory index corresponding to the given coordinates.
-        """
-        return Int(crd2idx(index, self.shape, self.stride))
-
     fn size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -115,4 +110,80 @@ struct MixedLayout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return self(self.size() - 1) + 1
+        return self(Idx(self.size() - 1)) + 1
+
+    fn to_layout(self) -> Layout:
+        return Layout(
+            mixed_int_tuple_to_int_tuple(self.shape),
+            mixed_int_tuple_to_int_tuple(self.stride),
+        )
+
+
+# TODO(MOCO-2182): These functions don't work for nested layouts right now.
+# E.g. ((5, 4), (3, 2)) should have a row-major stride of ((24, 6), (2, 1)).
+# A correct solution may need to recurse into the nested layouts in the return
+# type.
+
+
+fn make_row_major[
+    First: MixedIntTupleLike,
+    Second: MixedIntTupleLike, //,
+](shape: MixedIntTuple[First, Second]) -> __type_of(
+    MixedLayout(
+        shape=MixedIntTuple(shape[0], shape[1]),
+        stride=MixedIntTuple(shape[1], Idx[1]()),
+    )
+):
+    return MixedLayout(shape=shape, stride=MixedIntTuple(shape[1], Idx[1]()))
+
+
+# TODO: A cleaner solution for changing return type based on argument types than
+# overloading, since the current overloading algorithm reports ambiguity.
+fn make_row_major[
+    First: MixedIntTupleLike,
+    Second: Int,
+    Third: Int, //,
+](
+    shape: MixedIntTuple[First, ComptimeInt[Second], ComptimeInt[Third]]
+) -> __type_of(
+    MixedLayout(
+        shape=MixedIntTuple(shape[0], shape[1], shape[2]),
+        stride=MixedIntTuple(
+            ComptimeInt[Second * Third](),
+            ComptimeInt[Third](),
+            Idx[1](),
+        ),
+    )
+):
+    return MixedLayout(
+        shape=shape,
+        stride=MixedIntTuple(
+            ComptimeInt[Second * Third](),
+            ComptimeInt[Third](),
+            Idx[1](),
+        ),
+    )
+
+
+fn make_row_major[
+    First: MixedIntTupleLike,
+    Second: MixedIntTupleLike,
+    Third: MixedIntTupleLike, //,
+](shape: MixedIntTuple[First, Second, Third]) -> __type_of(
+    MixedLayout(
+        shape=MixedIntTuple(shape[0], shape[1], shape[2]),
+        stride=MixedIntTuple(
+            RuntimeInt(shape[1].product() * shape[2].product()),
+            shape[2],
+            Idx[1](),
+        ),
+    )
+):
+    return MixedLayout(
+        shape=shape,
+        stride=MixedIntTuple(
+            RuntimeInt(shape[1].product() * shape[2].product()),
+            shape[2],
+            Idx[1](),
+        ),
+    )

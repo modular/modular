@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import deque
+from collections.abc import Generator
 from typing import Any, Optional
 
 from max.graph import TensorValue
@@ -72,9 +73,9 @@ class PrintHook(BasePrintHook):
 _SUPPORTED_TYPES = (Layer, list, tuple)
 
 
-def _walk_layers(model):  # noqa: ANN001
+def _walk_layers(model: Layer) -> Generator[tuple[Layer, str], None, None]:
     """Walks through model and yields all layers with generated names."""
-    seen = IdentitySet()
+    seen = IdentitySet[Layer]()
     seen.add(model)
     queue: deque[tuple[Any, str]] = deque([(model, "model")])
 

@@ -152,6 +152,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_continuous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
@@ -223,7 +224,6 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import (
@@ -270,395 +270,16 @@ from tensor_internal.managed_tensor_slice import (
 from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 from tensor_internal.transitional import managed_tensor_slice_to_ndbuffer
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 
-# ===-----------------------------------------------------------------------===#
-# Nop functions to expose different types to the compiler.
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("float8_e5m2")
-fn DTypeFloat8E5M2TypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e5m2.value
-
-
-@register_internal("float8_e5m2fnuz")
-fn DTypeFloat8E5M2FnuzTypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e5m2fnuz.value
-
-
-@register_internal("float8_e3m4")
-fn DTypeFloat8E3M4TypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e3m4.value
-
-
-@register_internal("float8_e4m3fn")
-fn DTypeFloat8E4M3FnTypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e4m3fn.value
-
-
-@register_internal("float8_e4m3fnuz")
-fn DTypeFloat8E4M3FnuzTypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e4m3fnuz.value
-
-
-@register_internal("bfloat16")
-fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
-    return DType.bfloat16.value
-
-
-@register_internal("float16")
-fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
-    return DType.float16.value
-
-
-@register_internal("float32")
-fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
-    return DType.float32.value
-
-
-@register_internal("float64")
-fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
-    return DType.float64.value
-
-
-@register_internal("int8")
-fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
-    return DType.int8.value
-
-
-@register_internal("int16")
-fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
-    return DType.int16.value
-
-
-@register_internal("int32")
-fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
-    return DType.int32.value
-
-
-@register_internal("uint32")
-fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
-    return DType.uint32.value
-
-
-@register_internal("uint64")
-fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
-    return DType.uint64.value
-
-
-@register_internal("int64")
-fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
-    return DType.int64.value
-
-
-@register_internal("uint8")
-fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
-    return DType.uint8.value
-
-
-@register_internal("uint16")
-fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
-    return DType.uint16.value
-
-
-@register_internal("bool")
-fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
-    return DType.bool.value
-
-
-@register_internal("index")
-fn IndexTypeDef(ty: Int) -> Int:
-    return ty
-
-
-@register_internal("deviceContext")
-fn DeviceContextDef(ty: DeviceContextPtr):
-    pass
-
-
-@register_internal("simd")
-fn SimdTypeDef[
-    dtype: DType, width: Int
-](ty: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    return ty
-
-
-@register_internal("indices")
-fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
-    return ty
-
-
-@register_internal("dim_type")
-fn DimTypeDef(ty: Dim) -> Dim:
-    return ty
-
-
-@register_internal("managed_tensor_slice")
-fn ManagedTensorSliceDef[
-    mut: Bool,
-    input: IO,
-    dtype: DType,
-    rank: Int, //,
-    io_spec: IOSpec[mut, input],
-    static_spec: StaticTensorSpec[dtype, rank],
-](
-    ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
-    return ty
-
-
-@register_internal("list_of_tensor")
-fn ListOfTensorDef[
-    dtype: DType,
-    rank: Int,
-](
-    ty: List[
-        InputTensor[
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-        ]
-    ]
-) -> __type_of(ty):
-    return ty
-
-
-# ===-----------------------------------------------------------------------===#
-# Hooks to help build static shapes.
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("create_unknown_dim")
-fn create_unknown_dim() -> Dim:
-    return Dim()
-
-
-@register_internal("create_known_dim")
-fn create_known_dim[known_val: Int]() -> Dim:
-    return Dim(known_val)
-
-
-@register_internal("reshape_contiguous_managed_tensor_slice")
-@always_inline
-fn reshape_contiguous_buffer[
-    dtype: DType, old_rank: Int, new_rank: Int, mut: Bool, input: IO
-](
-    buffer: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
-    ],
-    shape: IndexList[new_rank],
-) -> DynamicTensor[dtype, new_rank]:
-    return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
-
-
-# ===----------------------------------------------------------------------===#
-# Additional expected primitives
-# ===-----------------------------------------------------------------------===#
-
-
-@register_internal("get_simd_width_for_dtypes")
-@always_inline
-fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
-]() -> Int:
-    constrained[dtypes.size > 0]()
-
-    var width = get_kernel_simd_width[dtypes[0], target]()
-
-    @parameter
-    for i in range(dtypes.size - 1):
-        width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
-
-    return width
-
-
-@register_internal("get_address_space")
-fn get_address_space() -> AddressSpace:
-    return AddressSpace.GENERIC
-
-
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    dtype: DType,
-    rank: Int,
-](
-    shape: DimList,
-    strides: DimList,
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[dtype, rank]:
-    alias SpecType = StaticTensorSpec[dtype, rank]
-
-    return SpecType(
-        shape, strides, alignment, address_space, exclusive, None, None, None
-    )
-
-
-# Build the tuple of StaticTensorSpecs for DPS kernels
-@register_internal("build_static_tensor_specs_tuple")
-fn build_static_tensor_specs_tuple[
-    dtype: DType,
-    rank: Int,
-    size: Int,
-](
-    array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
-    out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
-):
-    return __type_of(result)(array_of_specs)
-
-
-# TODO: this should take IOSpec as a param -- will require graph compiler changes
-# Used by the graph compiler to construct tensors from MGP repr. of tensor
-@register_internal("to_managed_tensor_slice")
-@always_inline
-fn to_managed_tensor_slice[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    data: UnsafePointer[Scalar[dtype]],
-    shape: UnsafePointer[Int],
-) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-]:
-    var shape_ptr = shape
-    var shape_tuple = IndexList[rank]()
-
-    var stride_tuple = IndexList[rank]()
-    var stride: Int = 1
-
-    @parameter
-    for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        shape_tuple[i] = shape_ptr[i]
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ](data, shape_tuple, stride_tuple)
-
-
-@always_inline
-fn _to_managed_tensor_slice_index_list_shape[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    data: UnsafePointer[Scalar[dtype]],
-    shape_tuple: IndexList[rank],
-) -> ManagedTensorSlice[
-    io_spec = IOSpec[mut, input](),
-    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-]:
-    var stride_tuple = IndexList[rank]()
-    var stride: Int = 1
-
-    @parameter
-    for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ](data, shape_tuple, stride_tuple)
-
-
-@always_inline
-fn _get_scalar_from_managed_tensor_slice[
-    dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
-    # Assumes that tensor is on the host!
-    # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
-    # does not work with `register_internal` out of the box.
-    return tensor.load[width=1](IndexList[1](0))
-
-
-# Extract a scalar from a managed tensor slice.
-@register_internal("get_scalar_from_managed_tensor_slice")
-@always_inline
-fn get_scalar_from_managed_tensor_slice[
-    dtype: DType, mut: Bool, input: IO
-](
-    tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
-    ]
-) -> Scalar[dtype]:
-    return _get_scalar_from_managed_tensor_slice(tensor)
-
-
-@always_inline("nodebug")
-fn _int_bitwidth_safety_check[simd_dtype: DType]():
-    constrained[
-        bitwidthof[DType.index]() >= bitwidthof[simd_dtype](),
-        String(
-            (
-                "A kernel was specified with an 'Int' but the type of the"
-                " corresponding value in the graph op was '"
-            ),
-            simd_dtype,
-            "' a fixed size integer with a width greater than Int's",
-        ),
-    ]()
-
-
-@register_internal("get_int_from_shape")
-@always_inline
-fn get_int_from_shape[
-    param_index: Int, rank: Int
-](shape: IndexList[rank]) -> Int:
-    return shape[param_index]
-
-
-@register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
-@no_inline
-fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: AnyTrivialRegType, //,
-    dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dtype, rank],
-    out_compute_lambda: func_type,
-) -> StaticTensorSpec[dtype, rank]:
-    return StaticTensorSpec[dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=rebind[spec.out_compute_lambda_t](
-            out_compute_lambda
-        ),
-    )
-
 
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn input_variadic_tensors_to_static_tuple_ndbuffer[
-    dtype: DType, rank: Int, size: Int
-](indices: InputVariadicTensors[dtype, rank, size=size]) -> StaticTuple[
-    NDBuffer[dtype, rank, MutableAnyOrigin], size
-]:
-    var result = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], size]()
-
-    @parameter
-    for i in range(size):
-        result[i] = managed_tensor_slice_to_ndbuffer(indices[i])
-    return result
 
 
 @always_inline("nodebug")
@@ -716,90 +337,6 @@ fn _unsafe_str_to_int_tuple[str_slice: StaticString]() -> IntTuple:
         int_tuple.append(result)
 
     return int_tuple
-
-
-# ===----------------------------------------------------------------------===#
-# Helpers for Affine Fusion
-# ===----------------------------------------------------------------------===#
-
-
-@register_internal("split_dim_indices")
-@always_inline
-fn split_dim_indices[
-    rank: Int, axis: Int
-](indices: IndexList[rank], new_shape_dim: Int64) -> IndexList[rank + 1]:
-    var out = IndexList[rank + 1]()
-
-    # This op is transforming the INDICES of an access into a reshaped tensor.
-    # Consider the tensor is [40, 30, 2] and we reshape it to [5, 8, 30, 2].
-    # If we are accessing the index [21, 16, 1] in the original shape then to
-    # preserve the reshape we would need to transform the indices into [2, 5, 16, 1].
-    # Or [21 // 8, 21 % 8, ...old dims...].
-    # In this case, the axis = 0 and the new_shape_dim = 8.
-
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i == axis:
-            out[i] = indices[axis] // Int(new_shape_dim)
-        elif i == axis + 1:
-            out[i] = indices[axis] % Int(new_shape_dim)
-        elif i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i - 1]
-
-    return out
-
-
-@register_internal("merge_dim_indices")
-@always_inline
-fn merge_dim_indices[
-    rank: Int, axis: Int
-](indices: IndexList[rank], old_shape_dim: Int64) -> IndexList[rank - 1]:
-    var out = IndexList[rank - 1]()
-
-    # This op is transforming the INDICES of an access into a reshaped tensor.
-    # Consider the tensor is [5, 8, 30, 2] and we reshape it to [40, 30, 2].
-    # If we are accessing the index [2, 5, 16, 1] in the original shape then to
-    # preserve the reshape we would need to transform the indices into [21, 16, 1].
-    # Or [2 * 8 + 5, 16, 1].
-    # In this case, the axis = 0 and the old_shape_dim = 8.
-
-    @parameter
-    for i in range(rank - 1):
-
-        @parameter
-        if i == axis:
-            out[i] = fma(indices[i], Int(old_shape_dim), indices[i + 1])
-        elif i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i + 1]
-
-    return out
-
-
-@register_internal("insert_index")
-@always_inline
-fn insert_index[
-    rank: Int, axis: Int, value: Int
-](indices: IndexList[rank]) -> IndexList[rank + 1]:
-    var out = IndexList[rank + 1]()
-
-    @parameter
-    for i in range(rank + 1):
-
-        @parameter
-        if i < axis:
-            out[i] = indices[i]
-        elif i > axis:
-            out[i] = indices[i - 1]
-        else:
-            out[i] = value
-
-    return out
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -4808,59 +4345,6 @@ struct Concat:
         return concat_shape_impl(Int(axis), inputs)
 
 
-# Helper method used by compiler to reconcile MGP list with dtype Mojo expects.
-@register_internal("to_managed_tensor_slice_list")
-@always_inline
-fn to_managed_tensor_slice_list[
-    dtype: DType, rank: Int, mut: Bool, input: IO
-](
-    raw_list_ptr: OpaquePointer,
-) -> List[
-    ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ]
-]:
-    var num_elements = external_call["MGP_RT_ListSize", Int64](
-        raw_list_ptr
-    ).__int__()
-
-    var data_ptrs = List[OpaquePointer](capacity=num_elements)
-    var dim_values = List[Int64](capacity=num_elements * rank)
-
-    # Collect the data pointers and dimensions of each element from the list.
-    external_call["MGP_RT_ListPopulate", NoneType](
-        raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
-    )
-
-    # TODO: revisit the use of unknown here
-    # Create output list
-    var out_list = List[
-        ManagedTensorSlice[
-            io_spec = IOSpec[mut, input](),
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-        ]
-    ](capacity=num_elements)
-
-    # Convert individual elements of the input list into NDBuffer, and
-    # accumulate the results to output list.
-    for i in range(num_elements):
-        var data = data_ptrs[i].bitcast[Scalar[dtype]]()
-
-        var dims = IndexList[rank]()
-
-        @parameter
-        for dim in range(rank):
-            dims[dim] = dim_values[dim + i * rank].__int__()
-
-        var buffer = _to_managed_tensor_slice_index_list_shape[
-            dtype, rank, mut, input
-        ](data, dims)
-        out_list.append(buffer)
-
-    return out_list^
-
-
 # NOTE: there are a lot of similarities between this and the shape func
 # for mo.concat.
 fn concat_from_list_shape_impl[
@@ -7303,6 +6787,52 @@ struct Struct_mha_ragged_paged:
         )
 
 
+@compiler.register("mo.mha.ragged.paged.sink_weights")
+struct Struct_mha_ragged_paged_sink_weights:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        sink_weights: InputTensor[dtype=dtype, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        var sink_buf = managed_tensor_slice_to_ndbuffer(sink_weights)
+
+        generic_flash_attention_kv_cache_ragged_sink[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+        ](
+            managed_tensor_slice_to_ndbuffer(q),
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            managed_tensor_slice_to_ndbuffer(output),
+            context,
+            sink_buf,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # MLA
 #
@@ -8587,10 +8117,16 @@ fn _check_signal_buffer_size(
     var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
     if signal_buffer_size < min_signal_buffer_size:
         raise Error(
-            "expected signal buffer to be at least ",
+            "Expected signal buffer to be at least ",
             min_signal_buffer_size,
             " bytes, but got ",
             signal_buffer_size,
+            (
+                ". This error can appear when running large requests through"
+                " MAX serve without chunked prefill. If so, try enabling"
+                " chunked prefill with --enable-chunked-prefill. Otherwise,"
+                " consider increasing the signal buffer size."
+            ),
         )
 
 
@@ -9220,6 +8756,8 @@ struct MatmulDynamicScaledFloat8:
         input_type: DType,
         scales_type: DType,
         output_type: DType, //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2],
@@ -9231,7 +8769,12 @@ struct MatmulDynamicScaledFloat8:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        matmul_dynamic_scaled_fp8[transpose_b=True, target=target,](
+        matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),

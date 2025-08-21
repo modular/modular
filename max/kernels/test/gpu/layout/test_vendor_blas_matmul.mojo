@@ -25,12 +25,13 @@ from internal_utils import (
     zero,
 )
 from linalg.matmul_gpu import matmul_kernel_naive
-from linalg.vendor_blas import Backend, Handle, matmul
+from linalg.vendor_blas import matmul
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
-](ctx: DeviceContext, handle: Handle) raises:
+](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
     alias transpose_b = True
@@ -59,7 +60,6 @@ fn test_matmul[
 
     matmul(
         ctx,
-        handle,
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
@@ -69,6 +69,10 @@ fn test_matmul[
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
+    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref.tensor)
+    var a_tensor = from_ndbuffer_row_major(a_device.tensor)
+    var b_tensor = from_ndbuffer_row_major(b_device.tensor)
+
     # Run naive matmul.
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
@@ -76,13 +80,16 @@ fn test_matmul[
             DType.float32,
             input_type,
             input_type,
+            c_tensor_ref.layout,
+            a_tensor.layout,
+            b_tensor.layout,
             BLOCK_DIM,
             transpose_b=True,
         ]
     ](
-        c_device_ref.buffer,
-        a_device.buffer,
-        b_device.buffer,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,
@@ -112,22 +119,20 @@ fn test_matmul[
     _ = c_host_ref
 
 
-fn test_matmul[backend: Backend, input_types: List[DType]]() raises:
-    with DeviceContext() as ctx, Handle[backend]() as handle:
+fn test_matmul[input_types: List[DType]]() raises:
+    with DeviceContext() as ctx:
 
         @parameter
         for input_type in input_types:
-            test_matmul[input_type, 64, 16, 32](ctx, handle)
-            test_matmul[input_type, 512, 2560, 512](ctx, handle)
+            test_matmul[input_type, 64, 16, 32](ctx)
+            test_matmul[input_type, 512, 2560, 512](ctx)
 
 
 fn main() raises:
     @parameter
     if has_amd_gpu_accelerator():
-        test_matmul[
-            Backend.HIPBLASLT, [DType.float8_e4m3fnuz, DType.bfloat16]
-        ]()
+        test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
     elif has_nvidia_gpu_accelerator():
-        test_matmul[Backend.CUBLASLT, [DType.float8_e4m3fn, DType.bfloat16]]()
+        test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()
     else:
         abort("Unknown GPU Accelerator.")

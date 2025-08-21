@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import TextAndVisionTokenizer
@@ -91,7 +92,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         # Initialize default EOS token IDs (required by parent class new_context method)
         self._default_eos_token_ids = set([self.eos])
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
         """Decode token array back into readable text, filtering out special tokens."""
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()

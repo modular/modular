@@ -482,4 +482,4 @@ class StaticDim(Dim):
         return ()
 
 
-DimLike = Union[int, str, Dim, np.integer]
+DimLike = Union[int, str, Dim, np.integer[Any]]

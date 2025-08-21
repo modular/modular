@@ -17,7 +17,7 @@ import logging
 import math
 import time
 from collections.abc import Sequence
-from typing import Optional, cast
+from typing import Optional
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -149,15 +149,19 @@ class MistralModel(PipelineModel[TextContext]):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[1]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(

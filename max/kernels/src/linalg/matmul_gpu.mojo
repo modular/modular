@@ -68,6 +68,8 @@ from .utils_gpu import (
     select_config,
 )
 
+from layout import LayoutTensor
+
 
 fn matmul_kernel[
     c_type: DType,
@@ -187,14 +189,17 @@ fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    c_layout: Layout,
+    a_layout: Layout,
+    b_layout: Layout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c_ptr: UnsafePointer[Scalar[c_type]],
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    b_ptr: UnsafePointer[Scalar[b_type]],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -205,28 +210,28 @@ fn matmul_kernel_naive[
     if x >= m or y >= n:
         return
 
-    var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
     var accum = Scalar[s_type]()
 
     @parameter
     if transpose_b:
-        var b = NDBuffer[b_type, 2](b_ptr, Index(n, k))
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
+            var a_val = a[x, i]
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
+                Scalar[s_type]
+            ](b[y, i].cast[s_type]())
 
     else:
-        var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
         for i in range(k):
-            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
-
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
+                Scalar[s_type]
+            ](b[i, y].cast[s_type]())
 
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
-        c[Index(x, y)] = accum.cast[c_type]()
+        c[x, y] = accum.cast[c_type]()
 
 
 @fieldwise_init
@@ -307,19 +312,27 @@ fn _matmul_sm100[
             logger.info(
                 "Executing: Naive MATMUL kernel (BLOCK_DIM=", BLOCK_DIM, ")"
             )
+
+            var c_layout_tensor = from_ndbuffer_row_major(c)
+            var a_layout_tensor = from_ndbuffer_row_major(a)
+            var b_layout_tensor = from_ndbuffer_row_major(b)
+
             ctx.enqueue_function[
                 matmul_kernel_naive[
                     c_type,
                     a_type,
                     b_type,
+                    c_layout_tensor.layout,
+                    a_layout_tensor.layout,
+                    b_layout_tensor.layout,
                     BLOCK_DIM,
                     transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ](
-                c.data,
-                a.data,
-                b.data,
+                c_layout_tensor,
+                a_layout_tensor,
+                b_layout_tensor,
                 m,
                 n,
                 k,
@@ -948,19 +961,27 @@ fn _matmul_gpu[
 
     logger.info("Executing: Naive MATMUL kernel")
     alias BLOCK_DIM = 16
+
+    var c_layout_tensor = from_ndbuffer_row_major(c)
+    var a_layout_tensor = from_ndbuffer_row_major(a)
+    var b_layout_tensor = from_ndbuffer_row_major(b)
+
     ctx.enqueue_function[
         matmul_kernel_naive[
             c_type,
             a_type,
             b_type,
+            c_layout_tensor.layout,
+            a_layout_tensor.layout,
+            b_layout_tensor.layout,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ]
     ](
-        c.data,
-        a.data,
-        b.data,
+        c_layout_tensor,
+        a_layout_tensor,
+        b_layout_tensor,
         m,
         n,
         k,
@@ -1026,7 +1047,6 @@ fn multistage_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    serial_reduction: Bool = False,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],
@@ -1041,58 +1061,55 @@ fn multistage_gemm[
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(String(config))
     logger.info("K partitions: ", runtime_config.num_k_partitions)
-    logger.info("Serial reduction: ", serial_reduction)
 
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b = from_ndbuffer_row_major(b)
 
     if runtime_config.num_k_partitions > 1:
+        logger.info(
+            "Executing: split-K with parallel reduction (workspace-based)"
+        )
+        alias work_space_type = config.split_k_reduction_type
+        var work_space_data = ctx.enqueue_create_buffer[work_space_type](
+            Int(runtime_config.num_k_partitions * M * N)
+        )
+        var work_space = NDBuffer[work_space_type, 3](
+            work_space_data._unsafe_ptr(),
+            Index(Int(runtime_config.num_k_partitions), M, N),
+        )
+
+        alias gemm_kernel_type = multistage_gemm_split_k_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            work_space_type,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ]
 
         @parameter
-        if serial_reduction:
-            logger.info("Executing: split-K with serial reduction (lock-based)")
-            constrained[
-                c_type is DType.bfloat16,
-                "serial reduction is unsupported for this config",
-            ]()
-            alias work_space_type = config.split_k_reduction_type
-
-            # For the serial reduction we don't use workspace
-            var work_space = NDBuffer[work_space_type, 3](
-                UnsafePointer[Scalar[work_space_type]](),
-                Index(0, 0, 0),
-            )
-
-            alias BM = config.block_tile_shape[0]
-            alias BN = config.block_tile_shape[1]
-
-            var locks_data = ctx.enqueue_create_buffer[DType.int32](
-                ceildiv(M, BM) * ceildiv(N, BN)
-            )
-            ctx.enqueue_memset(locks_data, 0)
-
-            alias gemm_kernel_type = multistage_gemm_split_k_kernel[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                work_space_type,
-                transpose_b,
-                config,
-                elementwise_lambda_fn,
-                serial_reduction,
-            ]
-
+        if has_amd_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
                 work_space,
                 runtime_config.num_k_partitions,
-                locks_data,
+                grid_dim=runtime_config.grid_dim(M, N),
+                block_dim=runtime_config.block_dim(),
+            )
+        else:
+            ctx.enqueue_function[gemm_kernel_type](
+                tensor_c,
+                tensor_a,
+                tensor_b,
+                work_space,
+                runtime_config.num_k_partitions,
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
@@ -1101,74 +1118,16 @@ fn multistage_gemm[
                 ),
             )
 
-            _ = locks_data^
-            return
+        split_k_reduce[
+            c_type,
+            work_space_type,
+            c_shape,
+            work_space.shape,
+            elementwise_lambda_fn,
+        ](c, work_space, ctx)
 
-        else:
-            logger.info(
-                "Executing: split-K with parallel reduction (workspace-based)"
-            )
-            alias work_space_type = config.split_k_reduction_type
-            var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-                Int(runtime_config.num_k_partitions * M * N)
-            )
-            var work_space = NDBuffer[work_space_type, 3](
-                work_space_data._unsafe_ptr(),
-                Index(Int(runtime_config.num_k_partitions), M, N),
-            )
-
-            alias gemm_kernel_type = multistage_gemm_split_k_kernel[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                work_space_type,
-                transpose_b,
-                config,
-                elementwise_lambda_fn,
-                False,
-            ]
-
-            @parameter
-            if has_amd_gpu_accelerator():
-                ctx.enqueue_function[gemm_kernel_type](
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    work_space,
-                    runtime_config.num_k_partitions,
-                    UnsafePointer[Int32](),
-                    grid_dim=runtime_config.grid_dim(M, N),
-                    block_dim=runtime_config.block_dim(),
-                )
-            else:
-                ctx.enqueue_function[gemm_kernel_type](
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    work_space,
-                    runtime_config.num_k_partitions,
-                    UnsafePointer[Int32](),
-                    grid_dim=runtime_config.grid_dim(M, N),
-                    block_dim=runtime_config.block_dim(),
-                    shared_mem_bytes=runtime_config.shared_mem_usage(),
-                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        config.shared_mem_usage()
-                    ),
-                )
-
-            split_k_reduce[
-                c_type,
-                work_space_type,
-                c_shape,
-                work_space.shape,
-                elementwise_lambda_fn,
-            ](c, work_space, ctx)
-
-            _ = work_space_data^
-            return
+        _ = work_space_data^
+        return
 
     # Dispatch w/o split K
     @parameter
@@ -1223,7 +1182,6 @@ fn multistage_gemm[
             tensor_c,
             tensor_a,
             tensor_b,
-            UnsafePointer[Int32](),
             grid_dim=runtime_config.grid_dim(M, N),
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),

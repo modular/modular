@@ -104,12 +104,13 @@ fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   This should use a unique compiler type ID, not the Python name of this
     #   type.
 
-    alias type_name = get_type_name[T]()
+    alias type_name = get_type_name[T, qualified_builtins=True]()
     if entry := type_dict[].find(type_name):
         return entry.take()
 
     raise Error(
-        "No Python type object registered for Mojo type with name: ", type_name
+        "No Python type object registered for Mojo type with name: ",
+        get_type_name[T](),
     )
 
 
@@ -599,7 +600,7 @@ struct PythonTypeBuilder(Copyable, Movable):
         b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
 
         b.methods = List[PyMethodDef]()
-        b._type_id = get_type_name[T]()
+        b._type_id = get_type_name[T, qualified_builtins=True]()
 
         return b^
 

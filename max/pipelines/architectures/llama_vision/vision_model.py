@@ -18,7 +18,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    StaticDim,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.graph.weights import Weights
 from max.nn import Conv2DV1, EmbeddingV1, LayerNormV1, LinearV1
 from max.nn.layer import Layer
@@ -170,9 +177,9 @@ class VisionModel(Layer):
     def _manual_constant_pad_4d(
         self,
         dtype: DType,
-        input_tensor,  # noqa: ANN001
+        input_tensor: TensorValue,
         pad: tuple[int, int, int, int],
-        value=0,  # noqa: ANN001
+        value: float = 0,
     ) -> TensorValue:
         """
         Manually pads a 4D tensor (batch of images) with constant values.
@@ -187,6 +194,8 @@ class VisionModel(Layer):
         """
         left, right, top, bottom = pad
         batch_size, channels, height, width = input_tensor.shape
+        assert isinstance(height, StaticDim)
+        assert isinstance(width, StaticDim)
 
         # Compute new height and width after padding
         new_height = height + top + bottom

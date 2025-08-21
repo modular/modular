@@ -698,7 +698,6 @@ struct ManagedTensorSlice[
         )
 
     @doc_private
-    @implicit
     fn __init__(out self, ndbuffer: NDBuffer[dtype, rank]):
         """Initializes a ManagedTensorSlice from an NDBuffer.
 

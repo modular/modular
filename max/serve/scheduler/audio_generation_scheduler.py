@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import queue
 import time
 import uuid
 from collections import deque
@@ -31,13 +30,14 @@ from max.interfaces import (
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
-from max.profiler import Tracer, traced
+from max.profiler import Tracer
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
-from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
+from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
+from .utils import release_cancelled_requests, release_terminated_requests
 
 logger = logging.getLogger("max.serve")
 
@@ -70,7 +70,7 @@ class SchedulerLogger:
         batch_execution_time_s: float,
         num_steps: int,
     ) -> None:
-        batch_type = batch.batch_type.concise_name()
+        batch_type = batch.batch_type.value
         batch_creation_latency_str = to_human_readable_latency(
             batch_creation_time_s
         )
@@ -213,7 +213,9 @@ class AudioGenerationScheduler(Scheduler):
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
-        self.response_q = ZmqPushSocket[dict[str, AudioGeneratorOutput]](
+        self.response_q = ZmqPushSocket[
+            dict[str, SchedulerResult[AudioGeneratorOutput]]
+        ](
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
@@ -239,52 +241,7 @@ class AudioGenerationScheduler(Scheduler):
         )
 
     def _retrieve_pending_requests(self) -> None:
-        while True:
-            try:
-                req_id, req_data = self.request_q.get_nowait()
-                self.pending_reqs.append((req_id, req_data))
-            except queue.Empty:
-                break
-
-    @traced
-    def _handle_terminated_responses(
-        self,
-        batch: AudioGenerationSchedulerOutput,
-        responses: dict[str, AudioGeneratorOutput],
-    ) -> None:
-        """Task that handles responses"""
-        if not responses:
-            return
-
-        for req_id, response in batch.reqs.items():
-            if not response.is_done:
-                continue
-
-            # Release from cache
-            req_data = batch.reqs[req_id]
-            self.pipeline.release(req_data)
-            batch.num_terminated += 1
-
-            # Remove from active batch
-            del self.decode_reqs[req_id]
-
-    @traced
-    def _handle_cancelled_requests(self) -> None:
-        while True:
-            try:
-                req_ids = self.cancel_q.get_nowait()
-            except queue.Empty:
-                break
-            for req_id in req_ids:
-                if req_id not in self.decode_reqs:
-                    continue
-                req_data = self.decode_reqs[req_id]
-                self.pipeline.release(req_data)
-                del self.decode_reqs[req_id]
-
-                self.response_q.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
-                )
+        self.pending_reqs.extend(self.request_q.drain_nowait())
 
     def _create_tg_batch(
         self,
@@ -305,7 +262,7 @@ class AudioGenerationScheduler(Scheduler):
 
         return AudioGenerationSchedulerOutput(
             scheduled_reqs,
-            batch_type=BatchType.TokenGeneration,
+            batch_type=BatchType.TG,
         )
 
     def _create_ce_batch(self) -> AudioGenerationSchedulerOutput:
@@ -314,9 +271,7 @@ class AudioGenerationScheduler(Scheduler):
         ce_batch: dict[str, TTSContext] = {}
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
-        max_input_len = (
-            self.scheduler_config.target_tokens_per_batch_ce or float("inf")
-        )
+        max_input_len = self.scheduler_config.target_tokens_per_batch_ce
 
         input_len = 0
 
@@ -333,9 +288,7 @@ class AudioGenerationScheduler(Scheduler):
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
 
-        return AudioGenerationSchedulerOutput(
-            ce_batch, batch_type=BatchType.ContextEncoding
-        )
+        return AudioGenerationSchedulerOutput(ce_batch, batch_type=BatchType.CE)
 
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
         assert batch.batch_size > 0
@@ -348,18 +301,17 @@ class AudioGenerationScheduler(Scheduler):
         self.decode_reqs.update(batch.reqs)
 
         # remove terminated requests from the batch
-        self._handle_terminated_responses(batch, responses)
+        release_terminated_requests(
+            batch,
+            responses,
+            self.pipeline,
+            self.decode_reqs,
+        )
 
         # send the responses to the API process
-        def _to_sch_result(response: AudioGeneratorOutput) -> SchedulerResult:
-            if response.is_done:
-                return SchedulerResult.complete(response)
-            else:
-                return SchedulerResult.active(response)
-
         self.response_q.put_nowait(
             {
-                req_id: _to_sch_result(response)
+                req_id: SchedulerResult.create(response)
                 for req_id, response in responses.items()
             }
         )
@@ -407,7 +359,6 @@ class AudioGenerationScheduler(Scheduler):
     def run_iteration(self) -> None:
         # Construct the batch to execute
         t0 = time.monotonic()
-        self._retrieve_pending_requests()
         batch = next(self.batch_generator)
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
@@ -433,4 +384,9 @@ class AudioGenerationScheduler(Scheduler):
             num_steps,
         )
 
-        self._handle_cancelled_requests()
+        release_cancelled_requests(
+            self.cancel_q,
+            self.response_q,
+            self.decode_reqs,
+            self.pipeline,
+        )

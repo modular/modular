@@ -12,26 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@extern("nvshmem_int_p")
-fn nvshmem_int_p(destination: UnsafePointer[c_int], mype: c_int, peer: c_int):
-    ...
+from .arch import gpt_oss_arch
 
-
-@extern("nvshmem_int_g")
-fn nvshmem_int_g(destination: UnsafePointer[c_int], mype: c_int, peer: c_int):
-    ...
-
-
-@extern("nvshmem_barrier_all")
-fn nvshmem_barrier_all():
-    ...
-
-
-@extern("nvshmem_my_pe")
-fn nvshmem_my_pe() -> c_int:
-    ...
-
-
-@extern("nvshmem_n_pes")
-fn nvshmem_n_pes() -> c_int:
-    ...
+__all__ = ["gpt_oss_arch"]

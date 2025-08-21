@@ -1,5 +1,5 @@
 ---
-title: Mojo🔥 roadmap & sharp edges
+title: Mojo roadmap & sharp edges
 sidebar_label: Roadmap & sharp edges
 description: A summary of our Mojo plans, including upcoming features and things we need to fix.
 ---
@@ -17,8 +17,8 @@ the coming months. We are highly focused on building Mojo the right way (for
 the long-term), so we want to fully build-out the core Mojo language features
 before we work on other dependent features and enhancements.
 
-Currently, that means we are focused on the core GPU programming features
-that are essential to [Mojo's mission](/mojo/why-mojo), and as outlined in the
+Currently, that means we are focused on the core GPU programming features that
+are essential to [Mojo's mission](/mojo/faq#motivation), and as outlined in the
 following sections of this roadmap.
 
 In the near-term, we will **not** prioritize "general goodness" work such as:

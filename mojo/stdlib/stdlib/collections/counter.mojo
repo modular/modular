@@ -79,7 +79,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    @implicit
     fn __init__(out self, items: List[V, *_]):
         """Create a from an input iterable.
 

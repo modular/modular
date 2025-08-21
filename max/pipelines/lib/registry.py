@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 from max.driver import Device, load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
@@ -160,7 +160,7 @@ class SupportedArchitecture:
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
-    def __eq__(self, other) -> bool:  # noqa: ANN001
+    def __eq__(self, other: Any) -> bool:
         if other.__class__ == self.__class__:
             for field in [
                 "name",
@@ -427,10 +427,7 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[
-        PipelineTokenizer,
-        Callable[[], PipelineTypes],
-    ]:
+    ) -> tuple[PipelineTokenizer, Callable[[], PipelineTypes]]:
         tokenizer: PipelineTokenizer
         pipeline_factory: Callable[[], PipelineTypes]
 

@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 
+# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n 1 %t
+# RUN: %mpirun -n $NUM_GPUS %t
 
 from gpu.host import DeviceContext, DeviceBuffer
 from shmem import *
@@ -28,15 +29,15 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
 
-    shmem_int_p(destination, mype, peer)
+    shmem_p(destination, mype, peer)
 
 
 def main():
     var msg = Int32(0)
 
     shmem_init()
-    var mype_node = shmem_team_my_pe(SHMEM_TEAM_MODE)
-    var ctx = DeviceContext(device_id=mype_node)
+    var mype_node = shmem_team_my_pe(SHMEM_TEAM_NODE)
+    var ctx = DeviceContext(device_id=Int(mype_node))
 
     var destination = shmem_malloc[DType.int32](1)
 
@@ -45,7 +46,7 @@ def main():
     shmem_module_init(func)
 
     ctx.enqueue_function(func, destination, grid_dim=1, block_dim=1)
-    shmem_barrier_all_on_stream(ctx)
+    shmem_barrier_all_on_stream(ctx.stream())
     DeviceBuffer(ctx, destination, 1, owning=False).enqueue_copy_to(
         UnsafePointer(to=msg)
     )

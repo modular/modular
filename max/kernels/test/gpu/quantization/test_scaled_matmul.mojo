@@ -129,7 +129,12 @@ fn test_matmul_dynamic_scaled_fp8[
     ctx.enqueue_copy(a_device_ref.buffer, a_host_ref.tensor.data)
     ctx.enqueue_copy(b_device_ref.buffer, b_host_ref.tensor.data)
 
-    matmul_dynamic_scaled_fp8[transpose_b=transpose_b, target="gpu",](
+    matmul_dynamic_scaled_fp8[
+        input_scale_granularity="colwise",
+        weight_scale_granularity="rowwise",
+        transpose_b=transpose_b,
+        target="gpu",
+    ](
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,

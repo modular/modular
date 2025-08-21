@@ -104,7 +104,7 @@ class DeviceKind(str, Enum):
         return self.value
 
     @staticmethod
-    def from_string(txt) -> DeviceKind:  # noqa: ANN001
+    def from_string(txt: str) -> DeviceKind:
         if txt == str(DeviceKind.CPU):
             return DeviceKind.CPU
         elif txt == str(DeviceKind.GPU):

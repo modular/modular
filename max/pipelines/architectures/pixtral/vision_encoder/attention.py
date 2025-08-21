@@ -64,7 +64,7 @@ class Attention(Module):
         xk: TensorValue,
         cos: TensorValue,
         sin: TensorValue,
-        unsqueeze_dim=0,  # noqa: ANN001
+        unsqueeze_dim: int = 0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies Rotary Position Embedding to the query and key tensors.
 

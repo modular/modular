@@ -186,6 +186,13 @@ def test_optional_unwrap():
         _ = a[]
 
 
+def test_optional_repr_wrap():
+    var o = Optional(10)
+    assert_equal(repr(o), "Optional(10)")
+    o = None
+    assert_equal(repr(o), "Optional(None)")
+
+
 def main():
     test_basic()
     test_optional_reg_basic()
@@ -199,3 +206,4 @@ def main():
     test_optional_equality()
     test_optional_copied()
     test_optional_unwrap()
+    test_optional_repr_wrap()

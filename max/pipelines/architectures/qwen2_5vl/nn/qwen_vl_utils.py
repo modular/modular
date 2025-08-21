@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import logging
 import math
 import os
@@ -31,8 +32,10 @@ import sys
 import time
 from functools import lru_cache
 from io import BytesIO
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import requests
 from PIL import Image
 
@@ -121,11 +124,20 @@ def to_rgb(pil_image: Image.Image) -> Image.Image:
 def fetch_image(ele: dict, size_factor: int = IMAGE_FACTOR) -> Image.Image:
     if "image" in ele:
         image = ele["image"]
+        if isinstance(image, dict):
+            # Support for OpenAI image format
+            image = image["file_id"]
     else:
         image = ele["image_url"]
+        if isinstance(image, dict):
+            # Support for OpenAI image_url format
+            image = image["url"]
+
     image_obj = None
     if isinstance(image, Image.Image):
         image_obj = image
+    elif isinstance(image, bytes):
+        image_obj = Image.open(io.BytesIO(image))
     elif image.startswith("http://") or image.startswith("https://"):
         # fix memory leak issue while using BytesIO
         with requests.get(image, stream=True) as response:
@@ -288,9 +300,7 @@ def calculate_video_frame_range(
     return start_frame, end_frame, end_frame - start_frame + 1
 
 
-def _read_video_decord(
-    ele: dict,
-) -> tuple[np.ndarray, float]:
+def _read_video_decord(ele: dict) -> tuple[npt.NDArray[np.integer[Any]], float]:
     """read video using decord.VideoReader
 
     Args:
@@ -362,9 +372,8 @@ def get_video_reader_backend() -> str:
 
 
 def fetch_video(
-    ele: dict,
-    image_factor: int = IMAGE_FACTOR,
-) -> tuple[np.ndarray | list[Image.Image], float]:
+    ele: dict, image_factor: int = IMAGE_FACTOR
+) -> tuple[npt.NDArray[np.float32] | list[Image.Image], float]:
     if isinstance(ele["video"], str):
         video_reader_backend = get_video_reader_backend()
         video, sample_fps = VIDEO_READER_BACKENDS[video_reader_backend](ele)
@@ -420,9 +429,7 @@ def fetch_video(
             resized_frame = np.array(resized_frame_pil).astype(np.float32)
             resized_video[i] = np.transpose(resized_frame, (2, 0, 1))
 
-        video = resized_video
-
-        return video, sample_fps
+        return resized_video, sample_fps
     else:
         assert isinstance(ele["video"], (list, tuple))
         process_info = ele.copy()
@@ -467,13 +474,15 @@ def process_vision_info(
     return_video_kwargs: bool = False,
 ) -> tuple[
     list[Image.Image] | None,
-    list[np.ndarray | list[Image.Image]] | None,
+    list[npt.NDArray[np.floating[Any]] | list[Image.Image]] | None,
     dict | None,
 ]:
     vision_infos = extract_vision_info(conversations)
     ## Read images or videos
     image_inputs: list[Image.Image] | None = []
-    video_inputs: list[np.ndarray | list[Image.Image]] | None = []
+    video_inputs: (
+        list[npt.NDArray[np.floating[Any]] | list[Image.Image]] | None
+    ) = []
     video_sample_fps_list: list[float] = []
     assert image_inputs is not None
     assert video_inputs is not None

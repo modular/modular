@@ -12,6 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-noop-destructor
+@fieldwise_init
+struct Balloons:
+    var color: String
+    var count: Int
+
+    fn __del__(deinit self):
+        # Mojo destroys all the fields when they're last used
+        pass
+        # end-noop-destructor
+
+
+# start-basic-destructor
 @fieldwise_init
 struct Balloon(Writable):
     var color: String
@@ -21,16 +34,6 @@ struct Balloon(Writable):
 
     fn __del__(deinit self):
         print("Destroyed", String(self))
-
-
-@fieldwise_init
-struct Balloons:
-    var color: String
-    var count: Int
-
-    fn __del__(deinit self):
-        # Mojo destroys all the fields when they're last used
-        pass
 
 
 def main():
@@ -44,3 +47,5 @@ def main():
 
     print(b)
     # b.__del__() runs here
+    # end-basic-destructor
+    _ = a^

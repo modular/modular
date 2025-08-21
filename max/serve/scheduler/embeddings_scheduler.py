@@ -14,7 +14,6 @@
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Any
 
 from max.interfaces import (
     EmbeddingsGenerator,
@@ -63,10 +62,10 @@ class EmbeddingsScheduler(Scheduler):
         )
 
     @traced
-    def _create_batch_to_execute(self):
+    def _create_batch_to_execute(self) -> dict[str, TextContext]:
         max_batch_size_to_create = self.scheduler_config.max_batch_size
 
-        batch = {}
+        batch: dict[str, TextContext] = {}
         try:
             while max_batch_size_to_create > 0:
                 req_id, data = self.request_q.get_nowait()
@@ -88,8 +87,8 @@ class EmbeddingsScheduler(Scheduler):
     @traced
     def _handle_terminated_responses(
         self,
-        batch_executed: dict[str, Any],
-        batch_response: dict[str, Any],
+        batch_executed: dict[str, TextContext],
+        batch_response: dict[str, SchedulerResult[EmbeddingsOutput]],
     ) -> None:
         """Task that handles responses"""
         already_terminated = set()
@@ -101,7 +100,9 @@ class EmbeddingsScheduler(Scheduler):
             already_terminated.add(req_id)
 
     @traced
-    def _schedule_encode(self, batch_to_execute) -> None:  # noqa: ANN001
+    def _schedule_encode(
+        self, batch_to_execute: dict[str, TextContext]
+    ) -> None:
         # execute the batch
         batch_responses = self.pipeline.encode(batch_to_execute)
         # remove terminated requests from the batch
@@ -109,7 +110,7 @@ class EmbeddingsScheduler(Scheduler):
         # send the responses to the API process
         self.response_q.put_nowait(
             {
-                request_id: SchedulerResult.complete(response)
+                request_id: SchedulerResult.create(response)
                 for request_id, response in batch_responses.items()
             }
         )

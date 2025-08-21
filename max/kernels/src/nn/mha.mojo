@@ -123,6 +123,7 @@ fn flash_attention[
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
+    sink: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
@@ -132,6 +133,7 @@ fn flash_attention[
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
+    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
 ) raises:
     # TODO docstring
     @always_inline
@@ -157,6 +159,7 @@ fn flash_attention[
             config=config,
             decoding_warp_split_k=decoding_warp_split_k,
             naive_kernel=naive_kernel,
+            sink=sink,
         ](
             output,
             q,
@@ -167,6 +170,7 @@ fn flash_attention[
             scale,
             context.get_device_context(),
             num_partitions,
+            sink_weights=sink_weights,
         )
 
 
@@ -208,6 +212,7 @@ fn flash_attention[
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     ragged: Bool = False,
+    sink: Bool = False,
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
@@ -225,6 +230,7 @@ fn flash_attention[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
+    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -314,6 +320,7 @@ fn flash_attention[
             use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
+            sink=sink,
             _is_flash_attention_applicable=flash_attention_applicable,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
@@ -331,7 +338,22 @@ fn flash_attention[
             ctx,
             kv_input_row_offsets,
             num_partitions,
+            sink_weights,
         )
+
+
+@always_inline
+fn q_num_matrix_view_rows[
+    type: DType, rank: Int, q_shape: DimList, //, *, decoding: Bool, depth: Int
+](q: NDBuffer[type, rank, _, q_shape, *_]) -> Int:
+    # for tma if decoding, we view q as a rows x depth matrix
+    # otherwise, we view q as a rows x (depth*num_heads) matrix
+    var num_rows: Int = q.dim[0]()
+
+    @parameter
+    for i in range(1, rank - 1 if decoding else rank - 2):
+        num_rows *= q.dim[i]()
+    return num_rows * (depth // 64) if decoding else num_rows
 
 
 @always_inline
@@ -349,6 +371,7 @@ fn flash_attention_dispatch[
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     ragged: Bool = False,
+    sink: Bool = False,
     _is_flash_attention_applicable: Bool = True,
     # Work arounds to unify KVCache and NDBuffer inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
@@ -378,6 +401,7 @@ fn flash_attention_dispatch[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
+    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
@@ -415,6 +439,9 @@ fn flash_attention_dispatch[
                 and (ragged or not _use_valid_length)
                 and config.algorithm == FlashAttentionAlgorithm(3)
             ):
+                num_rows_q = q_num_matrix_view_rows[
+                    decoding=False, depth=depth
+                ](q)
 
                 @parameter
                 if is_sm90:
@@ -423,12 +450,14 @@ fn flash_attention_dispatch[
                         group=group,
                         use_score_mod=use_score_mod,
                         ragged=ragged,
+                        sink=sink,
                         _is_cache_length_accurate=_is_cache_length_accurate,
                     ](
                         output.data,
                         q.data,
                         k,
-                        v,
+                        rebind[k_t](v),
+                        num_rows_q,
                         mask_functor,
                         score_mod_functor,
                         valid_length,
@@ -439,6 +468,7 @@ fn flash_attention_dispatch[
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
+                        sink_weights,
                     )
                 else:
                     constrained[is_sm100]()
@@ -447,12 +477,14 @@ fn flash_attention_dispatch[
                         group=group,
                         use_score_mod=use_score_mod,
                         ragged=ragged,
+                        sink=sink,
                         _is_cache_length_accurate=_is_cache_length_accurate,
                     ](
                         output.data,
                         q.data,
                         k,
                         rebind[k_t](v),
+                        num_rows_q,
                         mask_functor,
                         score_mod_functor,
                         valid_length,
@@ -463,6 +495,7 @@ fn flash_attention_dispatch[
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
+                        sink_weights,
                     )
 
             else:
@@ -480,10 +513,12 @@ fn flash_attention_dispatch[
                     use_score_mod=use_score_mod,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
+                    sink=sink,
                     _use_valid_length=_use_valid_length,
                     _is_cache_length_accurate=_is_cache_length_accurate,
                     _padded_ndbuffer=_padded_ndbuffer,
                 ]
+
                 ctx.enqueue_function[kernel](
                     q.data,
                     k,
@@ -495,6 +530,7 @@ fn flash_attention_dispatch[
                     max_cache_valid_length,
                     valid_length,
                     kv_input_row_offsets,
+                    sink_weights,
                     mask_functor,
                     score_mod_functor,
                     grid_dim=(
@@ -557,6 +593,7 @@ fn flash_attention_dispatch[
                 and mask_t.mask_safe_out_of_bounds
                 and config.algorithm == FlashAttentionAlgorithm(3)
             )
+
             alias kernel = mha_decoding[
                 q.dtype,
                 k_t,
@@ -577,6 +614,7 @@ fn flash_attention_dispatch[
                 use_score_mod=use_score_mod,
                 ragged=ragged,
                 is_shared_kv=is_shared_kv,
+                sink=sink,
                 _use_valid_length=_use_valid_length,
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
@@ -586,6 +624,9 @@ fn flash_attention_dispatch[
 
                 @parameter
                 if use_fa3_kernel:
+                    num_rows_q = q_num_matrix_view_rows[
+                        decoding=True, depth=depth
+                    ](q)
 
                     @parameter
                     if is_sm90:
@@ -594,12 +635,14 @@ fn flash_attention_dispatch[
                             group=group,
                             use_score_mod=use_score_mod,
                             ragged=ragged,
+                            sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
                         ](
                             output.data,
                             q.data,
                             k,
-                            v,
+                            rebind[k_t](v),
+                            num_rows_q,
                             mask_functor,
                             score_mod_functor,
                             valid_length,
@@ -610,6 +653,7 @@ fn flash_attention_dispatch[
                             batch_size,
                             NoPartition[accum_type](),
                             ctx,
+                            sink_weights,
                         )
                     else:
                         mha_sm100_dispatch[
@@ -617,12 +661,14 @@ fn flash_attention_dispatch[
                             group=group,
                             use_score_mod=use_score_mod,
                             ragged=ragged,
+                            sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
                         ](
                             output.data,
                             q.data,
                             k,
                             rebind[k_t](v),
+                            num_rows_q,
                             mask_functor,
                             score_mod_functor,
                             valid_length,
@@ -633,6 +679,7 @@ fn flash_attention_dispatch[
                             batch_size,
                             NoPartition[accum_type](),
                             ctx,
+                            sink_weights,
                         )
                 else:
                     alias nullptr = UnsafePointer[Scalar[accum_type]]()
@@ -648,6 +695,7 @@ fn flash_attention_dispatch[
                         num_partitions_value,
                         max_cache_valid_length,
                         valid_length,
+                        sink_weights,
                         mask_functor,
                         score_mod_functor,
                         grid_dim=(
@@ -704,6 +752,9 @@ fn flash_attention_dispatch[
 
                 @parameter
                 if use_fa3_kernel:
+                    num_rows_q = q_num_matrix_view_rows[
+                        decoding=True, depth=depth
+                    ](q)
 
                     @parameter
                     if is_sm90:
@@ -712,12 +763,14 @@ fn flash_attention_dispatch[
                             group=group,
                             use_score_mod=use_score_mod,
                             ragged=ragged,
+                            sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
                         ](
                             output_intermediate.data,
                             q.data,
                             k,
-                            v,
+                            rebind[k_t](v),
+                            num_rows_q,
                             mask_functor,
                             score_mod_functor,
                             valid_length,
@@ -731,6 +784,7 @@ fn flash_attention_dispatch[
                                 num_partitions_value,
                             ),
                             ctx,
+                            sink_weights,
                         )
                     else:
                         mha_sm100_dispatch[
@@ -738,12 +792,14 @@ fn flash_attention_dispatch[
                             group=group,
                             use_score_mod=use_score_mod,
                             ragged=ragged,
+                            sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
                         ](
                             output_intermediate.data,
                             q.data,
                             k,
                             rebind[k_t](v),
+                            num_rows_q,
                             mask_functor,
                             score_mod_functor,
                             valid_length,
@@ -757,6 +813,7 @@ fn flash_attention_dispatch[
                                 num_partitions_value,
                             ),
                             ctx,
+                            sink_weights,
                         )
                 else:
                     ctx.enqueue_function[kernel](
@@ -771,6 +828,7 @@ fn flash_attention_dispatch[
                         num_partitions_value,
                         max_cache_valid_length,
                         valid_length,
+                        sink_weights,
                         mask_functor,
                         score_mod_functor,
                         grid_dim=(
@@ -817,6 +875,7 @@ fn flash_attention_dispatch[
             # Assumes BSHD.
             mha_gpu_naive[
                 ragged=ragged,
+                sink=sink,
                 _use_valid_length=_use_valid_length,
                 _is_cache_length_accurate=_is_cache_length_accurate,
             ](
@@ -834,6 +893,7 @@ fn flash_attention_dispatch[
                 depth,
                 group,
                 ctx,
+                sink_weights,
             )
 
     # Not supported by fast flash attention kernel.
@@ -843,6 +903,7 @@ fn flash_attention_dispatch[
             ragged=ragged,
             _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
+            sink=sink,
         ](
             q,
             k,
@@ -858,6 +919,7 @@ fn flash_attention_dispatch[
             depth,
             group,
             ctx,
+            sink_weights,
         )
 
 
@@ -873,6 +935,7 @@ fn flash_attention[
     _use_valid_length: Bool = False,
     _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
+    sink: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
@@ -890,6 +953,7 @@ fn flash_attention[
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ]
     ] = None,
+    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
@@ -922,6 +986,7 @@ fn flash_attention[
         use_score_mod=use_score_mod,
         config=config,
         ragged=False,
+        sink=sink,
         _is_flash_attention_applicable=flash_attention_applicable,
         _is_cache_length_accurate=True,
         _use_valid_length=_use_valid_length,
@@ -942,6 +1007,7 @@ fn flash_attention[
         ctx,
         None,
         num_partitions,
+        sink_weights,
     )
 
 
@@ -968,6 +1034,7 @@ fn mha[
     use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
+    sink: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
     _padded_ndbuffer: Bool = False,
@@ -984,6 +1051,7 @@ fn mha[
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -1070,6 +1138,7 @@ fn mha[
                 config=config,
                 group=group,
                 use_score_mod=use_score_mod,
+                sink=sink,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
@@ -1084,12 +1153,14 @@ fn mha[
                 mask,
                 score_mod,
                 batch_idx,
+                sink_weights,
             )
         else:
             mha_single_batch[
                 config=config,
                 group=group,
                 use_score_mod=use_score_mod,
+                sink=sink,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
@@ -1104,13 +1175,14 @@ fn mha[
                 mask,
                 score_mod,
                 batch_idx,
+                sink_weights,
             )
     elif is_amd_gpu():
         constrained[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        mha_single_batch_amd[group=group, config=config](
+        mha_single_batch_amd[group=group, config=config, sink=sink](
             output_ptr.offset(q_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -1121,6 +1193,7 @@ fn mha[
             batch_idx,
             Int(start_pos),
             mask,
+            sink_weights,
         )
     else:
         return CompilationTarget.unsupported_target_error[operation="mha"]()
@@ -1140,6 +1213,7 @@ fn mha_single_batch[
     config: MHAConfig,
     group: Int = 1,
     use_score_mod: Bool = False,
+    sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -1154,6 +1228,7 @@ fn mha_single_batch[
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1166,6 +1241,7 @@ fn mha_single_batch[
       TODO: use more optimized kernels for them
 
     """
+    alias accum_type = get_accum_type[q_type]()
     alias k_type = k_t.dtype
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
@@ -1272,7 +1348,7 @@ fn mha_single_batch[
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
-    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias mma_shape = get_mma_shape[q_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
@@ -1281,7 +1357,6 @@ fn mha_single_batch[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
@@ -1312,8 +1387,24 @@ fn mha_single_batch[
 
     @parameter
     for i in range(0, Int(WM), 2):
-        rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
-        rowsum.store(i, SIMD[accum_type, 2](0))
+
+        @parameter
+        if sink:
+            debug_assert(
+                Bool(sink_weights),
+                "expect sink_weights to be non-null when sink=true",
+            )
+            rowmax.store(
+                i,
+                SIMD[accum_type, 2](
+                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
+                ),
+            )
+            # exp(sink_val-sink_val) = exp(0) = 1
+            rowsum.store(i, SIMD[accum_type, 2](SIMD[accum_type, 2](1)))
+        else:
+            rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
+            rowsum.store(i, SIMD[accum_type, 2](0))
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
@@ -1826,6 +1917,7 @@ fn mha_single_batch_pipelined[
     config: MHAConfig,
     group: Int = 1,
     use_score_mod: Bool = False,
+    sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -1840,6 +1932,7 @@ fn mha_single_batch_pipelined[
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1852,6 +1945,7 @@ fn mha_single_batch_pipelined[
       TODO: use more optimized kernels for them
 
     """
+    alias accum_type = get_accum_type[q_type]()
     alias k_type = k_t.dtype
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
@@ -1949,7 +2043,7 @@ fn mha_single_batch_pipelined[
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
 
-    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias mma_shape = get_mma_shape[q_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
@@ -1958,7 +2052,6 @@ fn mha_single_batch_pipelined[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
@@ -1989,10 +2082,29 @@ fn mha_single_batch_pipelined[
 
     @parameter
     for i in range(0, Int(WM), p_frag_simdwidth):
-        rowmax.store(
-            i, SIMD[accum_type, p_frag_simdwidth](min_or_neg_inf[accum_type]())
-        )
-        rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](0))
+
+        @parameter
+        if sink:
+            debug_assert(
+                Bool(sink_weights),
+                "expect sink_weights to be non-null when sink=true",
+            )
+            rowmax.store(
+                i,
+                SIMD[accum_type, p_frag_simdwidth](
+                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
+                ),
+            )
+            # exp(sink_val-sink_val) = exp(0) = 1
+            rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](1))
+        else:
+            rowmax.store(
+                i,
+                SIMD[accum_type, p_frag_simdwidth](
+                    min_or_neg_inf[accum_type]()
+                ),
+            )
+            rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](0))
 
     # Shared memory for P = Q * K^t
     # Only use BN/BK tiles. Setting circular so that the prefetch in matmul
@@ -2488,6 +2600,7 @@ fn mha_decoding[
     use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
+    sink: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
@@ -2505,9 +2618,11 @@ fn mha_decoding[
     valid_length: NDBuffer[
         DType.uint32, 1, MutableAnyOrigin
     ],  # valid length per batch
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
+    alias accum_type = get_accum_type[q_type]()
     var batch_idx = block_idx.z
 
     # split-k offsets
@@ -2573,6 +2688,7 @@ fn mha_decoding[
                 group=group,
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
+                sink=sink,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
@@ -2584,6 +2700,7 @@ fn mha_decoding[
                 num_keys,
                 num_partitions,
                 max_cache_valid_length,
+                sink_weights,
                 mask,
                 score_mod,
                 batch_idx,
@@ -2602,6 +2719,7 @@ fn mha_decoding[
                 group=group,
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
+                sink=sink,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
@@ -2616,6 +2734,7 @@ fn mha_decoding[
                 mask,
                 score_mod,
                 batch_idx,
+                sink_weights,
             )
     elif is_amd_gpu():
         alias config = MHAConfig(
@@ -2634,7 +2753,7 @@ fn mha_decoding[
             use_score_mod == False,
             "use_score_mod must be False for AMD flash attention",
         ]()
-        mha_decoding_single_batch_amd[group=group, config=config](
+        mha_decoding_single_batch_amd[group=group, config=config, sink=sink,](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
@@ -2648,6 +2767,7 @@ fn mha_decoding[
             batch_idx,
             Int(0),
             mask,
+            sink_weights,
         )
 
     else:
@@ -2788,6 +2908,7 @@ fn mha_decoding_single_batch[
     group: UInt = 1,
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
+    sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -2802,8 +2923,10 @@ fn mha_decoding_single_batch[
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ):
     """Flash attention v2 algorithm."""
+    alias accum_type = get_accum_type[q_type]()
     alias k_type = k_t.dtype
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
@@ -2882,15 +3005,16 @@ fn mha_decoding_single_batch[
     ](v_smem, v_smem_size)
 
     var kv_head_idx = block_idx.y
+    var q_head_idx = kv_head_idx * group + thread_idx.x // 4
+    var partition_idx = block_idx.x
 
-    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias mma_shape = get_mma_shape[q_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
@@ -2927,8 +3051,27 @@ fn mha_decoding_single_batch[
 
     @parameter
     for i in range(WM):
-        rowmax[i] = min_or_neg_inf[accum_type]()
-        rowsum[i] = 0.0
+
+        @parameter
+        if sink:
+            debug_assert(
+                Bool(sink_weights),
+                "expect sink_weights to be non-null when sink=true",
+            )
+            if thread_idx.x < 4 * group:
+                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
+                    accum_type
+                ]()
+                if partition_idx == 0 and thread_idx.x % 4 == 0:
+                    rowsum[i] = 1.0
+                else:
+                    rowsum[i] = 0.0
+            else:
+                rowmax[i] = min_or_neg_inf[accum_type]()
+                rowsum[i] = 0.0
+        else:
+            rowmax[i] = min_or_neg_inf[accum_type]()
+            rowsum[i] = 0.0
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
@@ -3302,6 +3445,8 @@ fn mha_decoding_single_batch[
             address_space = AddressSpace.SHARED,
         ](o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN)
 
+        # Note: Sink handling is done after warp reduction in partition-specific logic below.
+        # The warp reduction just combines warps; sink contribution is added to rowsum later.
         _online_softmax_iter_for_mma_output_split_warp_reduce[
             accum_type,
             Layout.row_major(num_m_mmas, num_n_mmas),
@@ -3345,7 +3490,6 @@ fn mha_decoding_single_batch[
         if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group:
             var row_sum = rowsum[0]
             var row_max = rowmax[0]
-            var q_head_idx = kv_head_idx * group + thread_idx.x // 4
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
@@ -3437,6 +3581,7 @@ fn mha_decoding_single_batch_pipelined[
     group: UInt = 1,
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
+    sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -3448,11 +3593,13 @@ fn mha_decoding_single_batch_pipelined[
     num_keys: UInt,
     num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
+    alias accum_type = get_accum_type[q_type]()
     alias k_type = k_t.dtype
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
@@ -3524,14 +3671,13 @@ fn mha_decoding_single_batch_pipelined[
 
     var kv_head_idx = block_idx.y
 
-    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias mma_shape = get_mma_shape[q_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
-    alias accum_type = get_accum_type[q_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
@@ -3555,15 +3701,40 @@ fn mha_decoding_single_batch_pipelined[
         .fill(0.0)
     )
 
+    # Account for group query.
+    alias kv_num_heads = num_heads // group
+    var q_head_idx = kv_head_idx * group + thread_idx.x // 4
+
     # Rowwise max and sum for online softmax
     alias row_align = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
 
+    var partition_idx = block_idx.x
+
     @parameter
     for i in range(WM):
-        rowmax[i] = min_or_neg_inf[accum_type]()
-        rowsum[i] = 0.0
+
+        @parameter
+        if sink:
+            debug_assert(
+                Bool(sink_weights),
+                "expect sink_weights to be non-null when sink=true",
+            )
+            if thread_idx.x < 4 * group:
+                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
+                    accum_type
+                ]()
+                if partition_idx == 0 and thread_idx.x % 4 == 0:
+                    rowsum[i] = 1.0
+                else:
+                    rowsum[i] = 0.0
+            else:
+                rowmax[i] = min_or_neg_inf[accum_type]()
+                rowsum[i] = 0.0
+        else:
+            rowmax[i] = min_or_neg_inf[accum_type]()
+            rowsum[i] = 0.0
 
     # Share memory tile for Value, reuse K's shared memory tile.
     alias v_smem_size = num_pipeline_stages * BN * BK
@@ -3597,9 +3768,6 @@ fn mha_decoding_single_batch_pipelined[
 
     # Mask global memory iterator, seq_len = 1
     var stride = max_cache_valid_length
-
-    # Account for group query.
-    alias kv_num_heads = num_heads // group
 
     var q_offset = depth * kv_head_idx * group
 
@@ -3984,6 +4152,7 @@ fn mha_gpu_naive[
     mask_t: MHAMask,
     rank: Int, //,
     ragged: Bool = False,
+    sink: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
@@ -4001,6 +4170,7 @@ fn mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[NDBuffer[q.dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     alias q_type = q.dtype
     alias k_type = k_t.dtype
@@ -4055,11 +4225,14 @@ fn mha_gpu_naive[
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         return p_buffer.load[width=_simd_width](rebind[IndexList[3]](coords))
 
-    _softmax_gpu[p_type, 1, 3, DimList.create_unknown[3](), input_fn_device](
+    _softmax_gpu[
+        p_type, 1, 3, DimList.create_unknown[3](), input_fn_device, sink=sink
+    ](
         Index(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
         ctx,
+        sink_weights=sink_weights,
     )
     ctx.enqueue_function[
         _bmm1_bs[
@@ -4305,6 +4478,7 @@ fn mha_gpu_naive[
     rank: Int,
     mask_type: DType,
     mask_rank: Int, //,
+    sink: Bool = False,
 ](
     q: NDBuffer[q_type, rank, *_],
     k: NDBuffer[k_type, rank, *_],
@@ -4319,6 +4493,7 @@ fn mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
@@ -4327,7 +4502,7 @@ fn mha_gpu_naive[
         static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
     ](UnsafePointer[UInt32](), IndexList[1](0), IndexList[1](0))
 
-    mha_gpu_naive[_is_cache_length_accurate=True](
+    mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](
         q,
         k_operand,
         v_operand,
@@ -4342,6 +4517,7 @@ fn mha_gpu_naive[
         depth,
         group,
         ctx,
+        sink_weights,
     )
 
 
@@ -4352,6 +4528,7 @@ fn mha_gpu_naive[
     mask_t: MHAMask,
     rank: Int, //,
     ragged: Bool = False,
+    sink: Bool = False,
 ](
     q: NDBuffer[q_type, rank, *_],
     k: cache_t,
@@ -4367,11 +4544,14 @@ fn mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k_operand = KVCacheMHAOperand(k)
     var v_operand = KVCacheMHAOperand(v)
 
-    mha_gpu_naive[_use_valid_length=True, _is_cache_length_accurate=False,](
+    mha_gpu_naive[
+        _use_valid_length=True, _is_cache_length_accurate=False, sink=sink
+    ](
         q,
         k_operand,
         v_operand,
@@ -4386,6 +4566,7 @@ fn mha_gpu_naive[
         depth,
         group,
         ctx,
+        sink_weights,
     )
 
 

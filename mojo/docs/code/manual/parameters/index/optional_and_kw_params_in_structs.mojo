@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-opt-and-kw-params-struct
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
     fn __init__(out self):
         print(greeting, name)
@@ -21,6 +22,10 @@ fn use_kw_params():
     var a = KwParamStruct[]()  # prints 'Hello 🔥mojo🔥'
     var b = KwParamStruct[name="World"]()  # prints 'Hello World'
     var c = KwParamStruct[greeting="Hola"]()  # prints 'Hola 🔥mojo🔥'
+    # end-opt-and-kw-params-struct
+    _ = a^
+    _ = b^
+    _ = c^
 
 
 def main():

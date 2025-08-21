@@ -1,0 +1,131 @@
+---
+title: "Mojo Manual"
+sidebar_label: Introduction
+description: A comprehensive guide to the Mojo programming language.
+---
+
+Welcome to the Mojo Manual, your complete guide to the Mojo🔥 programming language!
+
+Combined with the [Mojo API reference](/mojo/lib), this documentation provides
+everything you need to write high-performance Mojo code for CPUs and GPUs. If
+you see anything that can be improved, please [file an
+issue](https://github.com/modular/modular/issues/new?assignees=&labels=documentation%2Cmodular-repo%2Cmojo&projects=&template=doc_issue.yaml&title=%5BDocs%5D)
+or send a pull request for the [docs on
+GitHub](https://github.com/modular/modular/tree/main/mojo/docs).
+
+import { Button } from '@mantine/core';
+import DocLink from '@site/src/components/DocLink';
+
+<Button component={DocLink} to='/mojo/manual/get-started'>
+  Get started with a tutorial
+</Button>
+
+## What is Mojo
+
+Mojo is a systems programming language specifically designed for
+high-performance AI infrastructure and heterogeneous hardware. Its Pythonic
+syntax makes it easy for Python programmers to learn and it fully integrates
+the existing Python ecosystem, including its wealth of AI and machine-learning
+libraries.
+
+It's the first programming language built from the ground-up using
+[MLIR](https://mlir.llvm.org/)—a modern compiler infrastructure for
+heterogeneous hardware, from CPUs to GPUs and other AI ASICs. That means you
+can use one language to write all your code, from high-level AI applications
+all the way down to low-level GPU kernels, without using any hardware-specific
+libraries (such as CUDA and ROCm).
+
+## Key features
+
+- **Python syntax & interop**: Mojo adopts (and extends) Python's syntax and
+integrates with existing Python code. Mojo's interoperability works in both
+directions, so you can import Python libraries into Mojo and create Mojo
+bindings to call from Python. [Read about Python
+interop](/mojo/manual/python/).
+
+- **Struct-based types**: All data types—including basic types such as `String`
+and `Int`—are defined as structs. No types are built into the language itself.
+That means you can define your own types that have all the the same
+capabilities as the standard library types. [Read about
+structs](/mojo/manual/structs).
+
+- **Zero-cost traits**: Mojo's trait system solves the problem of static typing
+by letting you define a shared set of behaviors that types (structs) can
+implement. It allows you to write functions that depend on traits rather than
+specific types, similar to interfaces in Java or protocols in Swift, except
+with compile-time type checking and no run-time performance cost. [Read about
+traits](/mojo/manual/traits).
+
+- **Value ownership**: Mojo's ownership system ensures that only one variable
+"owns" a specific value at a given time—such that Mojo can safely deallocate
+the value when the owner's lifetime ends—while still allowing you to share
+references to the value. This provides safety from errors such as
+use-after-free, double-free, and memory leaks without the overhead cost of a
+garbage collector. [Read about ownership](/mojo/manual/values).
+
+- **Compile-time metaprogramming**: Mojo's parameterization system enables
+powerful metaprogramming in which the compiler generates a unique version of a
+type or function based on parameter values, similar to C++ templates, but more
+intuitive.
+[Read about parameterization](/mojo/manual/parameters/).
+
+- **Hardware portability**: Mojo is designed from the ground up to support
+heterogeneous hardware—the Mojo compiler makes no assumptions about whether
+your code is written for CPUs, GPUs, or something else. Instead, hardware
+behaviors are handled by Mojo libraries, as demonstrated by types such as
+`SIMD` that allows you to write vectorized code for CPUs, and the `gpu`
+package that enables hardware-agnostic GPU programming. [Read about GPU
+programming](/mojo/manual/gpu/fundamentals).
+
+## Get started
+
+import MDXListing from '@site/src/components/Listing/MDXListing';
+
+export const Puzzles ={
+  title: "GPU Puzzles",
+  description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
+  metadata: {
+    permalink: "https://puzzles.modular.com/introduction.html"
+  }
+};
+
+export const getStarted = [
+    'get-started',
+    'gpu/intro-tutorial',
+    Puzzles,
+]
+
+<MDXListing mdxList={getStarted} />
+
+:::tip
+
+**Tip:** To use AI coding assistants with Mojo, see our guide for
+[using AI coding assistants](/max/coding-assistants/).
+
+:::
+
+## More resources
+
+export const Examples ={
+  title: "Code examples",
+  description: "Browse a wide range of Mojo code examples on GitHub",
+  metadata: {
+    permalink: "https://github.com/modular/modular/tree/main/examples/mojo"
+  }
+};
+
+export const Community ={
+  title: "Community",
+  description: "Chat with us and the community in our forum and Discord channels",
+  metadata: {
+    permalink: "https://www.modular.com/community"
+  }
+};
+
+export const resources = [
+    '../lib',
+    Examples,
+    Community,
+]
+
+<MDXListing mdxList={resources} />

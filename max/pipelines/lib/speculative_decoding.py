@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Tensor, load_devices, scan_available_devices
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,10 +40,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import traced
 from transformers import AutoConfig
@@ -443,7 +441,9 @@ class SpeculativeDecodingTextGenerationPipeline(
             draft_inputs.update(
                 tokens=merged_draft_tokens,
                 input_row_offsets=merged_draft_offsets,
-                signal_buffers=[],
+                signal_buffers=getattr(
+                    self._target_model, "signal_buffers", []
+                ),
                 kv_cache_inputs=kv_cache_updated_inputs,
                 return_n_logits=Tensor.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
@@ -693,9 +693,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
 
-        res = self.build_response(
-            batch=inputs.batch, context_batch=context_batch
-        )
+        res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
         self._target_model.kv_manager.step(context_batch)
@@ -723,10 +721,10 @@ class SpeculativeDecodingTextGenerationPipeline(
     def update_contexts(
         self,
         context_batch: list[Union[TextContext, TextAndVisionContext]],
-        first_rejected_tokens: np.ndarray,
-        recovered_tokens: np.ndarray,
-        bonus_tokens: np.ndarray,
-        draft_tokens: np.ndarray,
+        first_rejected_tokens: npt.NDArray[np.integer[Any]],
+        recovered_tokens: npt.NDArray[np.integer[Any]],
+        bonus_tokens: npt.NDArray[np.integer[Any]],
+        draft_tokens: npt.NDArray[np.integer[Any]],
         num_draft_tokens_generated: int,
     ) -> None:
         """Update contexts with the results of token generation.
@@ -784,7 +782,6 @@ class SpeculativeDecodingTextGenerationPipeline(
 
     def build_response(
         self,
-        batch: dict[RequestID, Union[TextContext, TextAndVisionContext]],
         context_batch: list[Union[TextContext, TextAndVisionContext]],
     ) -> dict[RequestID, TextGenerationOutput]:
         """Build response from updated contexts.
@@ -797,47 +794,20 @@ class SpeculativeDecodingTextGenerationPipeline(
             Dictionary mapping request IDs to TextGenerationOutput objects
         """
         res: dict[RequestID, TextGenerationOutput] = {}
-        request_ids = list(batch.keys())
 
-        for _, context in enumerate(context_batch):
-            tokens = []
-            log_probabilities = []
-            final_status = context.status
-
+        for context in context_batch:
             # Identify the Max Length
             context_max_length = upper_bounded_default(
                 upper_bound=self._max_length, default=context.max_length
             )
 
-            # TODO: This resets the context object for a new sequence.
-            # We may want to make this more explicit
-            for i, (token, log_probs) in enumerate(  # noqa: B007
-                context.outstanding_completion_tokens()
-            ):
-                # Break early if beyond max length
-                current_length = context.start_idx + 1
+            # Break early if beyond max length
+            current_length = context.start_idx + 1
+            if current_length >= context_max_length:
+                context.status = GenerationStatus.MAXIMUM_LENGTH
 
-                if current_length >= context_max_length:
-                    context.status = GenerationStatus.MAXIMUM_LENGTH
-                    final_status = context.status
-                    tokens.append(token)
-                    if log_probs is not None:
-                        log_probabilities.append(log_probs)
-                    break
-                else:
-                    tokens.append(token)
-                    if log_probs is not None:
-                        log_probabilities.append(log_probs)
-
-            # Create TextGenerationOutput
-            res[context.request_id] = TextGenerationOutput(
-                request_id=context.request_id,
-                tokens=tokens,
-                final_status=final_status,
-                log_probabilities=log_probabilities
-                if log_probabilities
-                else None,
-            )
+            # Construct generation output
+            res[context.request_id] = context.to_generation_output()
 
         return res
 

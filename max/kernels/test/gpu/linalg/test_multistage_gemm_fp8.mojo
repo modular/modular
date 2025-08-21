@@ -38,7 +38,7 @@ fn test_fp8_multistage_gemm[
     /,
     *,
     transpose_b: Bool = False,
-](ctx: DeviceContext, handle: vendor_blas.Handle) raises:
+](ctx: DeviceContext) raises:
     print("test fp8 multistage matmul")
 
     alias static_a_shape = DimList(M, K)
@@ -100,7 +100,6 @@ fn test_fp8_multistage_gemm[
         c_tensor,
         a_tensor,
         b_tensor,
-        UnsafePointer[Int32](),
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
@@ -114,7 +113,6 @@ fn test_fp8_multistage_gemm[
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device.tensor,
@@ -138,7 +136,6 @@ fn test_fp8_multistage_gemm[
 
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device_col_major.tensor,
@@ -172,16 +169,15 @@ fn test_fp8_multistage_gemm[
 
 def main():
     with DeviceContext() as ctx:
-        with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
-            test_fp8_multistage_gemm[
-                DType.float8_e4m3fn, 128, 128, 64, transpose_b=True
-            ](ctx, handle)
-            test_fp8_multistage_gemm[
-                DType.float8_e4m3fn, 128, 128, 128, transpose_b=True
-            ](ctx, handle)
-            test_fp8_multistage_gemm[
-                DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
-            ](ctx, handle)
-            test_fp8_multistage_gemm[
-                DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
-            ](ctx, handle)
+        test_fp8_multistage_gemm[
+            DType.float8_e4m3fn, 128, 128, 64, transpose_b=True
+        ](ctx)
+        test_fp8_multistage_gemm[
+            DType.float8_e4m3fn, 128, 128, 128, transpose_b=True
+        ](ctx)
+        test_fp8_multistage_gemm[
+            DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
+        ](ctx)
+        test_fp8_multistage_gemm[
+            DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
+        ](ctx)

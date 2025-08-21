@@ -662,6 +662,18 @@ def test_dict_comprehension():
     assert_true(is_equal(s2, d1reference))
 
 
+def test_dict_repr_wrap():
+    var tmp_dict = Dict[String, Float64]()
+    tmp_dict = {"one": 1.0, "two": 2.0}
+    assert_equal(
+        repr(tmp_dict),
+        (
+            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
+            " 1](2.0)}"
+        ),
+    )
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -678,3 +690,4 @@ def main():
     test_dict_setdefault()
     test_compile_time_dict()
     test_dict_comprehension()
+    test_dict_repr_wrap()

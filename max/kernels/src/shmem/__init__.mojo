@@ -16,7 +16,7 @@ with a symmetric heap that is accessible by inter-node and intra-node GPUs.
 
 ```mojo
 from testing import assert_equal
-from shmem import shmem_my_pe, shmem_n_pes, shmem_int_p, DeviceContextSHMEM
+from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 
 fn simple_shift_kernel(destination: UnsafePointer[Int32]):
@@ -24,40 +24,61 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
 
-    shmem_int_p(destination, mype, peer)
+    shmem_p(destination, mype, peer)
 
 
 def main():
-    with DeviceContextSHMEM() as shmem:
-        var destination = shmem.enqueue_create_buffer[DType.int32](1)
-        shmem.enqueue_function[simple_shift_kernel](
+    with SHMEMContext() as ctx:
+        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+        ctx.enqueue_function[simple_shift_kernel](
             destination.unsafe_ptr(), grid_dim=1, block_dim=1
         )
-        shmem.barrier_all()
+        ctx.barrier_all()
 
         var msg = Int32(0)
         destination.enqueue_copy_to(UnsafePointer(to=msg))
 
-        print("PE:", shmem.my_pe(), "received message:", msg)
-        shmem.synchronize()
+        ctx.synchronize()
 
-        assert_equal(msg, (shmem.my_pe() + 1) % shmem.n_pes())
+        print("PE:", ctx.my_pe(), "received message:", msg)
+
+        assert_equal(msg, (ctx.my_pe() + 1) % ctx.n_pes())
 ```
 """
-from .buffer import SHMEMBuffer
-from .host import (
-    DeviceContextSHMEM,
+from .shmem_buffer import SHMEMBuffer
+from .shmem_context import SHMEMContext
+from .shmem_api import (
+    shmem_barrier_all_on_stream,
+    shmem_barrier_all,
+    shmem_calloc,
+    shmem_fence,
+    shmem_finalize,
+    shmem_free,
+    shmem_g,
     shmem_init,
     shmem_malloc,
-    shmem_calloc,
     shmem_module_init,
-    shmem_barrier_all_on_stream,
     shmem_module_init,
-    shmem_free,
-    shmem_finalize,
+    shmem_my_pe,
+    shmem_n_pes,
+    shmem_p,
+    shmem_put,
+    shmem_put_signal_nbi,
+    shmem_signal_op,
+    shmem_signal_wait_until,
     shmem_team_my_pe,
-    SHMEM_TEAM_MODE,
+    SHMEM_CMP_EQ,
+    SHMEM_CMP_GE,
+    SHMEM_CMP_GT,
+    SHMEM_CMP_LE,
+    SHMEM_CMP_LT,
+    SHMEM_CMP_NE,
+    SHMEM_CMP_SENTINEL,
+    SHMEM_SIGNAL_ADD,
+    SHMEM_SIGNAL_SET,
+    SHMEM_TEAM_INVALID,
+    SHMEM_TEAM_NODE,
+    SHMEM_TEAM_SHARED,
+    SHMEM_TEAM_WORLD,
+    SHMEMScope,
 )
-from sys.ffi import c_int
-from .device_and_host import shmem_my_pe, shmem_n_pes
-from .device import shmem_int_p, shmem_int_g, shmem_barrier_all

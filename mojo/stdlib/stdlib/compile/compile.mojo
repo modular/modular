@@ -270,8 +270,8 @@ fn compile_info[
     ]()
 
     return CompiledFunctionInfo[func_type, func, target](
-        asm=offload.asm,
+        asm=StaticString(offload.asm),
         function_name=get_linkage_name[target, func](),
-        module_name=offload.module_name,
+        module_name=StaticString(offload.module_name),
         num_captures=offload.num_captures,
     )

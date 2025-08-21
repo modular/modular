@@ -8,22 +8,14 @@ image: /images/artwork/mojo-get-started.jpg
 import Requirements from '@site/src/components/Requirements';
 import { requirementsNoGPU } from '@site/docs/max/requirements';
 
-:::tip
+Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
+complete program that does much more than simply printing "Hello, world!"
 
-Want to write a GPU function with Mojo? See how to [get started with GPU
-programming with Mojo](/mojo/manual/gpu/intro-tutorial).
-
-:::
-
-Get ready to learn Mojo! This tutorial is designed to give you a tour of several
-features of Mojo by building a complete program that does much more than simply
-printing "Hello, world!"
-
-In fact, we'll build a version of [Conway's Game of
-Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life), which is a simple
-simulation to explore self-replicating systems. If you haven't heard of it
-before, don't worry, it will make sense when you see it in action. Let's just
-get started so you can learn Mojo programming basics, including the following:
+We'll build a version of [Conway's Game of
+Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life), which is a
+simulation of self-replicating systems. If you haven't heard of it before,
+don't worry, it will make sense when you see it in action. Let's just get
+started so you can learn Mojo programming basics, including the following:
 
 - Using basic built-in types like `Int` and `String`
 - Using a `List` to manage a sequence of values
@@ -31,22 +23,13 @@ get started so you can learn Mojo programming basics, including the following:
 - Creating and importing Mojo modules
 - Importing and using Python libraries
 
-This tutorial might be a little long because there's a lot to learn, but we
-tried to keep the explanations simple, and we included links along the way for
-you to go learn more about each topic. If you just want to see the finished
-code, you can [get it on
+There's a lot to learn, but we tried to keep the explanations simple. If you
+just want to see the finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/examples/mojo/life).
 
 System requirements:
 
 <Requirements requirementsData={requirementsNoGPU} />
-
-:::tip
-
-See [Using AI coding assistants](/max/coding-assistants/) for tips on how to
-configure AI coding assistants to help you write Mojo code.
-
-:::
 
 ## 1. Create a Mojo project
 
@@ -1335,28 +1318,38 @@ way, you got a taste of:
 
 ## Next steps
 
-Now that you've seen a bit of what Mojo can do, here are some suggested next
-steps:
+Now that you've seen what Mojo can do, here are some suggestions to keep
+learning:
 
-- Read through the [Mojo manual](/mojo/manual/) for more detail about all of
-  Mojo's features.
+import MDXListing from '@site/src/components/Listing/MDXListing';
 
-- See [Using AI coding assistants](/max/coding-assistants/) for tips on how to
-  configure AI coding assistants to help you write Mojo code.
+export const Puzzles ={
+  title: "GPU Puzzles",
+  description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
+  metadata: {
+    permalink: "https://puzzles.modular.com/introduction.html"
+  }
+};
 
-- Check out [Get started with GPU programming with Mojo and the MAX
-  Driver](/mojo/manual/gpu/intro-tutorial) for an example of how to write GPU
-  functions with Mojo.
+export const Examples ={
+  title: "Code examples",
+  description: "Browse a wide range of Mojo code examples on GitHub",
+  metadata: {
+    permalink: "https://github.com/modular/modular/tree/main/examples/mojo"
+  }
+};
 
-- Explore more Mojo
-  [examples](https://github.com/modular/modular/tree/main/examples/mojo) in the
-  public [Modular GitHub repository](https://github.com/modular/modular).
+export const nextSteps = [
+  '../gpu/intro-tutorial',
+  Puzzles,
+  Examples,
+]
 
-import TutorialStack from '@site/src/components/TutorialStack';
+<MDXListing mdxList={nextSteps} />
 
-export const mojoTutorials = [
-  'gpu/intro-tutorial',
-];
+:::tip
 
-<TutorialStack mojoTutorials={mojoTutorials}
-  analyticsName="Get started with Mojo: Next steps" />
+**Tip:** To use AI coding assistants with Mojo, see our guide for
+[using AI coding assistants](/max/coding-assistants/).
+
+:::

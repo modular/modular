@@ -160,7 +160,7 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
             while (item := await queue.get()).result is not None:
                 yield item.result
 
-                if item.stop_stream:
+                if item.is_done:
                     break
 
     async def response_worker(self) -> None:

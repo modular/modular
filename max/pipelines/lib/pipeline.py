@@ -496,7 +496,7 @@ class KVCacheMixin(Protocol):
 
 def get_paged_manager(
     pipeline: Pipeline,
-) -> Optional[PagedKVCacheManager]:
+) -> PagedKVCacheManager | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
@@ -1202,7 +1202,7 @@ class TextGenerationPipeline(
                 next_token = int(generated_tokens_host[batch_index, step])
 
                 # Get log probs if needed.
-                log_probs: Optional[LogProbabilities] = None
+                log_probs: LogProbabilities | None = None
                 if compute_log_probabilities and (
                     log_probs_for_step := batch_log_probabilities[step]
                 ):
@@ -1214,24 +1214,7 @@ class TextGenerationPipeline(
                 if context.is_done:
                     break
 
-            # Walk outstanding completion tokens, and return to user.
-            tokens = []
-            log_probabilities: Optional[list[LogProbabilities]] = None
-            if compute_log_probabilities:
-                log_probabilities = []
-
-            status = context.status
-            for token, log_probs in context.outstanding_completion_tokens():
-                tokens.append(token)
-                if log_probabilities is not None and log_probs is not None:
-                    log_probabilities.append(log_probs)
-
-            res[request_id] = TextGenerationOutput(
-                request_id=request_id,
-                tokens=tokens,
-                log_probabilities=log_probabilities,
-                final_status=status,
-            )
+            res[request_id] = context.to_generation_output()
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

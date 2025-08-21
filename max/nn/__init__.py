@@ -28,17 +28,20 @@ from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv1DV1, Conv2D, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
+from .float8_config import (
+    Float8Config,
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+    parse_float8_config,
+)
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     MLPV1,
     ColumnParallelLinear,
     DistributedGemmConfig,
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
     GPTQLinear,
     Linear,
     LinearV1,
@@ -59,6 +62,8 @@ from .rotary_embedding import (
     LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
     RotaryEmbedding,
+    YarnRotaryEmbedding,
+    YarnScalingParams,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -128,5 +133,8 @@ __all__ = [
     "TransformerBlock",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
+    "YarnRotaryEmbedding",
+    "YarnScalingParams",
     "clamp",
+    "parse_float8_config",
 ]

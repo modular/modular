@@ -236,12 +236,9 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         )
 
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
-        hf_llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
-        )
         llm_config = Llama3Config.generate(
             pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config.llm_config,
+            huggingface_config=huggingface_config,
             state_dict=llm_state_dict,
             dtype=dtype,
             n_devices=n_devices,

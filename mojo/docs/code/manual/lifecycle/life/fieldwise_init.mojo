@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# NOTE: This exact example is not currently included in the docs.
+# start-fieldwise-init-example
 @fieldwise_init
 struct MyPet(Copyable, Movable):
     var name: String
@@ -25,3 +27,6 @@ struct MyPet(Copyable, Movable):
 def main():
     spot = MyPet("Spot")  # Use new constructor
     willow = MyPet("Willow", 4)  # Use the field-wise constructor
+    # end-fieldwise-init-example
+    _ = spot^
+    _ = willow^

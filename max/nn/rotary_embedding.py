@@ -72,9 +72,7 @@ class RotaryEmbedding(Module):
 
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
-        iota = ops.range(
-            0, n - 1, 2, out_dim=n // 2, dtype=DType.float64, device=self.device
-        )
+        iota = ops.range(0, n, step=2, dtype=DType.float64, device=self.device)
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
         return inv_freq
@@ -95,12 +93,7 @@ class RotaryEmbedding(Module):
 
             # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
             t = ops.range(
-                0,
-                self.max_seq_len * 2.0,
-                1,
-                out_dim=self.max_seq_len * 2,
-                device=self.device,
-                dtype=DType.float32,
+                0, self.max_seq_len * 2, device=self.device, dtype=DType.float32
             )
             # Rotation matrix for block i =  [cos(m*theta_i) -sin(m*theta_i); sin(m*theta_i) -cos(m*theta_i)] for each position_id m.
             freqs = ops.outer(t, inv_freqs)  # [max_seq_len*2, head_dim // 2]
@@ -268,9 +261,7 @@ class DynamicRotaryEmbedding(RotaryEmbedding):
         if self._freqs_cis is None:
             t = ops.range(
                 0,
-                self.max_seq_len_cached * 2.0,
-                1,
-                out_dim=self.max_seq_len_cached * 2,
+                self.max_seq_len_cached * 2,
                 device=self.device,
                 dtype=DType.float32,
             )
@@ -291,6 +282,20 @@ class Llama3RopeScalingParams:
     """Factor to scale the high frequency components of the rope."""
     orig_max_position: int
     """The original maximum position length supported by the model."""
+
+
+@dataclass
+class YarnScalingParams:
+    factor: float
+    """Main scaling factor for the frequency components of the rope."""
+    beta_fast: float
+    """Yarn parameter for fast frequencies."""
+    beta_slow: float
+    """Yarn parameter for slow frequencies."""
+    original_max_position_embeddings: int
+    """The original maximum position length supported by the model."""
+    truncate: bool
+    """Whether to truncate the frequencies or not."""
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):
@@ -443,12 +448,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             inv_freqs = self._compute_yarn_freqs()
 
             t = ops.range(
-                0,
-                self.max_seq_len,
-                1,
-                out_dim=self.max_seq_len,
-                device=self.device,
-                dtype=DType.float32,
+                0, self.max_seq_len, device=self.device, dtype=DType.float32
             )
             freqs = ops.outer(t, inv_freqs)
             cos = ops.cos(freqs) * _mscale
@@ -469,15 +469,8 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         if self.scaling_params is None:
             raise ValueError("scaling_params must be provided")
 
-        dim_2 = Dim(self.dim // 2)
-
-        start = ops.constant(0, dtype=DType.float32, device=DeviceRef.CPU())
-        end = ops.constant(
-            self.dim, dtype=DType.float32, device=DeviceRef.CPU()
-        )
-        step = ops.constant(2, dtype=DType.float32, device=DeviceRef.CPU())
         range_output = ops.range(
-            start, end, step, out_dim=dim_2, device=self.device
+            0, self.dim, step=2, dtype=DType.float32, device=self.device
         )
 
         freq_base = self.theta ** (range_output / float(self.dim))
@@ -502,7 +495,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
 
         # Ensure the mask has the correct dimension
         inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
-            low, high, dim_2
+            low, high, Dim(self.dim // 2)
         ).cast(DType.float32)
 
         inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
@@ -609,10 +602,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
             max += 0.001  # Prevent singularity
 
         linear_func = (
-            ops.range(
-                0, dim, 1, out_dim=dim, device=self.device, dtype=DType.int64
-            ).cast(DType.float32)
-            - min
+            ops.range(0, dim, device=self.device, dtype=DType.float32) - min
         ) / (max - min)
 
         return ops.min(ops.max(linear_func, 0), 1)
@@ -744,9 +734,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             # Generate position ids for the "short" part (0 to original_max_position)
             t_short = ops.range(
                 0,
-                float(self.scaling_params.original_max_position),
-                1,
-                out_dim=self.scaling_params.original_max_position,
+                self.scaling_params.original_max_position,
                 device=self.device,
                 dtype=DType.float32,
             )
@@ -757,12 +745,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             long_length = long_end - long_start
 
             t_long = ops.range(
-                float(long_start),
-                float(long_end),
-                1,
-                out_dim=long_length,
-                device=self.device,
-                dtype=DType.float32,
+                long_start, long_end, device=self.device, dtype=DType.float32
             )
 
             # Compute frequencies for both parts
@@ -804,3 +787,222 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
                 scale = scale * attention_factor
 
         return scale
+
+
+class YarnRotaryEmbedding(RotaryEmbedding):
+    """
+    Generic YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
+
+    This implementation provides YARN scaling for models that require it,
+    with configurable parameters for beta_fast, beta_slow, and scaling factor.
+    """
+
+    scaling_params: Optional[YarnScalingParams] = None
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        device: DeviceRef,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+        scaling_params: Optional[YarnScalingParams] = None,
+    ) -> None:
+        """
+        Initialize YarnRotaryEmbedding.
+
+        Args:
+            dim: The dimension of the rotary embedding (usually hidden_size).
+            n_heads: Number of attention heads.
+            theta: Base frequency for rotary embeddings.
+            max_seq_len: Maximum sequence length.
+            device: Device to place the embeddings on.
+            head_dim: Optional head dimension override.
+            _freqs_cis: Optional precomputed frequencies.
+            interleaved: Whether to use interleaved complex format.
+            scaling_params: YARN scaling parameters.
+        """
+        # For YARN, we need to compute custom frequencies before calling super().__init__
+        if scaling_params is not None:
+            self.scaling_params = scaling_params
+            # We'll override freqs_cis_base to compute YARN frequencies
+
+        super().__init__(
+            dim,
+            n_heads,
+            theta,
+            max_seq_len,
+            device,
+            head_dim,
+            _freqs_cis,
+            interleaved,
+        )
+
+    def freqs_cis_base(self) -> TensorValue:
+        """
+        Computes the frequency tensor for complex exponentials (cis)
+        with YARN scaling applied.
+        """
+        if self._freqs_cis is None:
+            if self.scaling_params is None:
+                # No scaling, use base implementation
+                return super().freqs_cis_base()
+
+            # Compute YARN frequencies
+            inv_freqs = self._compute_yarn_freqs()
+
+            t = ops.range(
+                0,
+                self.max_seq_len,
+                1,
+                out_dim=self.max_seq_len,
+                device=self.device,
+                dtype=DType.float32,
+            )
+
+            freqs = ops.outer(t, inv_freqs)
+
+            # Unused in this type of RoPE
+            mscale = self._yarn_get_mscale(self.scaling_params.factor, 1.0)
+
+            cos = ops.cos(freqs) * mscale
+            sin = ops.sin(freqs) * mscale
+            self._freqs_cis = ops.stack([cos, sin], axis=-1)
+
+        return TensorValue(self._freqs_cis)
+
+    def _compute_yarn_freqs(self) -> TensorValue:
+        """Compute YARN-scaled inverse frequencies."""
+        if self.scaling_params is None:
+            raise ValueError("scaling_params must be provided for YARN")
+
+        # Calculate rope dimension (considering head_dim if provided)
+        rope_dim = (
+            self.dim // self.n_heads if self.head_dim is None else self.head_dim
+        )
+        dim_2 = Dim(rope_dim // 2)
+
+        # Base frequencies
+        # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
+        range_output = ops.range(
+            start=0,
+            stop=rope_dim,
+            step=2,
+            out_dim=dim_2,
+            device=self.device,
+            dtype=DType.float64,
+        )
+
+        freq_base = self.theta ** (range_output / float(rope_dim))
+        freq_extra = ops.cast(1.0 / freq_base, DType.float32)
+        freq_inter = ops.cast(
+            1.0 / (self.scaling_params.factor * freq_base), DType.float32
+        )
+
+        # Find correction range
+        low, high = self._yarn_find_correction_range(
+            self.scaling_params.beta_fast,
+            self.scaling_params.beta_slow,
+            rope_dim,
+            self.theta,
+            self.scaling_params.original_max_position_embeddings,
+        )
+
+        # Create interpolation mask
+        inv_freq_mask = 1.0 - self._yarn_linear_ramp_mask(
+            low, high, dim_2
+        ).cast(DType.float32)
+
+        # Interpolate between scaled and original frequencies
+        inv_freq = freq_inter * (1 - inv_freq_mask) + freq_extra * inv_freq_mask
+
+        return inv_freq
+
+    def _yarn_get_mscale(
+        self, scale: float = 1.0, mscale: float = 1.0
+    ) -> float:
+        """Calculate the scaling factor for YARN interpolation."""
+        if scale <= 1:
+            return 1.0
+        return 0.1 * mscale * math.log(scale) + 1.0
+
+    def _yarn_find_correction_range(
+        self,
+        beta_fast: float,
+        beta_slow: float,
+        dim: int,
+        base: float,
+        original_max_position: int,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Find the correction range for YARN scaling."""
+        # Convert to tensors
+        low_rot = ops.constant(
+            beta_fast, dtype=DType.float32, device=self.device
+        )
+        high_rot = ops.constant(
+            beta_slow, dtype=DType.float32, device=self.device
+        )
+
+        low = ops.floor(
+            self._yarn_find_correction_dim(
+                low_rot, dim, base, original_max_position
+            )
+        )
+        high = (
+            ops.trunc(
+                self._yarn_find_correction_dim(
+                    high_rot, dim, base, original_max_position
+                )
+            )
+            + 1
+        )
+
+        return ops.max(low, 0), ops.min(high, dim - 1)
+
+    def _yarn_find_correction_dim(
+        self,
+        num_rotations: TensorValue,
+        dim: int,
+        base: float,
+        max_position_embeddings: int,
+    ) -> TensorValue:
+        """Find dimension based on number of rotations."""
+        max_pos = ops.constant(
+            float(max_position_embeddings),
+            dtype=DType.float32,
+            device=self.device,
+        )
+        base_tensor = ops.constant(
+            float(base), dtype=DType.float32, device=self.device
+        )
+        dim_tensor = ops.constant(
+            float(dim), dtype=DType.float32, device=self.device
+        )
+
+        return (
+            dim_tensor * ops.log(max_pos / (num_rotations * 2 * math.pi))
+        ) / (2 * ops.log(base_tensor))
+
+    def _yarn_linear_ramp_mask(
+        self, min_val: TensorValue, max_val: TensorValue, dim: Dim
+    ) -> TensorValue:
+        """Create a linear ramp mask for interpolation."""
+        # Avoid division by zero
+        diff = max_val - min_val
+        diff = ops.where(
+            diff == 0,
+            ops.constant(0.001, dtype=DType.float32, device=self.device),
+            diff,
+        )
+
+        linear_func = (
+            ops.range(
+                0, dim, 1, out_dim=dim, device=self.device, dtype=DType.int64
+            ).cast(DType.float32)
+            - min_val
+        ) / diff
+
+        return ops.min(ops.max(linear_func, 0), 1)

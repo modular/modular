@@ -20,6 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import LinearScalingParams, ReturnLogits
+from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -123,6 +124,9 @@ class Gemma3ConfigBase(MAXModelConfigBase):
 
     kv_params: KVCacheParams
     """KV cache parameters."""
+
+    float8_config: Float8Config | None = None
+    """Float8 quantization configuration."""
 
 
 @dataclass
@@ -275,6 +279,16 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             huggingface_config.hidden_activation,
         )
 
+        # Parse the float8 config from compressed-tensors
+        layer_name_prefix = "language_model."
+        float8_config = parse_float8_config(
+            huggingface_config,
+            state_dict,
+            dtype,
+            state_dict_name_prefix=layer_name_prefix,
+            ignored_modules_prefix=layer_name_prefix,
+        )
+
         return Gemma3Config(
             vocab_size=huggingface_config.vocab_size,
             hidden_size=huggingface_config.hidden_size,
@@ -306,6 +320,7 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
+            float8_config=float8_config,
         )
 
 

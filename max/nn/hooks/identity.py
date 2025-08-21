@@ -12,12 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Utility classes for using objects as keys in data structures."""
 
+from __future__ import annotations
+
 from collections.abc import MutableMapping, MutableSet
-from typing import Any
+from typing import Any, Generic, TypeVar
+
+_T = TypeVar("_T")
+_K = TypeVar("_K")
+_V = TypeVar("_V")
 
 
 # From https://stackoverflow.com/questions/16994307/identityset-in-python
-class IdentitySet(MutableSet):
+class IdentitySet(Generic[_T], MutableSet[_T]):
     """Set that uses object `id` as keys to support unhashable types."""
 
     def __init__(self, iterable=()) -> None:  # noqa: ANN001
@@ -47,7 +53,7 @@ class IdentitySet(MutableSet):
         return f"{self.__class__.__name__}({list(self)!r})"
 
 
-class IdentityMap(MutableMapping):
+class IdentityMap(Generic[_K, _V], MutableMapping[_K, _V]):
     """Map that uses object `id` as keys to support unhashable types."""
 
     def __init__(self) -> None:

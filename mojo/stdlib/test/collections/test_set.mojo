@@ -520,6 +520,17 @@ def test_set_comprehension():
     assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
 
 
+def test_set_repr_wrap():
+    var tmp_set = Set[Float64]()
+    tmp_set.add(1.0)
+    tmp_set.add(8.0)
+
+    assert_equal(
+        repr(tmp_set),
+        "{SIMD[DType.float64, 1](1.0), SIMD[DType.float64, 1](8.0)}",
+    )
+
+
 def main():
     test["test_set_construction", test_set_construction]()
     test["test_set_move", test_set_move]()
@@ -547,3 +558,4 @@ def main():
     test["test_clear", test_clear]()
     test["test_set_str", test_set_str]()
     test["test_set_comprehension", test_set_comprehension]()
+    test["test_set_repr_wrapper", test_set_repr_wrap]()

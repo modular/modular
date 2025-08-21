@@ -33,7 +33,9 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 
 @register_passable("trivial")
-struct ComplexSIMD[dtype: DType, size: Int](Stringable, Writable, _Expable):
+struct ComplexSIMD[dtype: DType, size: Int](
+    EqualityComparable, Stringable, Writable, _Expable
+):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
@@ -253,9 +255,44 @@ struct ComplexSIMD[dtype: DType, size: Int](Stringable, Writable, _Expable):
         """
         return ComplexSIMD(-self.re, -self.im)
 
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
+        """Compares two ComplexSIMD for equality.
+
+        Args:
+            rhs: The ComplexSIMD to compare with.
+
+        Returns:
+            True if all elements of the ComplexSIMD are equal, False otherwise.
+        """
+        return Bool((self.re.eq(rhs.re) & self.im.eq(rhs.im)).reduce_and())
+
+    # TODO: remove this implementation once we have default trait methods.
+    @always_inline
+    fn __ne__(self, rhs: Self) -> Bool:
+        """Compares two ComplexSIMD for inequality.
+
+        Args:
+            rhs: The ComplexSIMD to compare with.
+
+        Returns:
+            True if any elements of the ComplexSIMD are not equal, False
+            otherwise.
+        """
+        return not self == rhs
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn conj(self) -> Self:
+        """Return the complex conjugate of self.
+
+        Returns:
+            The complex conjugate of self.
+        """
+        return Self(self.re, -self.im)
 
     @always_inline
     fn norm(self) -> SIMD[dtype, size]:

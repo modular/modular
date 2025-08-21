@@ -15,7 +15,7 @@ from collections import OptionalReg
 from sys.intrinsics import _type_is_eq
 from sys.info import _current_target, simdwidthof
 from buffer import Dim, DimList, NDBuffer
-from algorithm.functional import elementwise
+from algorithm.functional import elementwise, unswitch
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
@@ -1911,14 +1911,19 @@ fn generic_flash_attention_kv_cache_ragged[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
-            trace_arg("q", q),
-            "scale=" + String(scale),
-            "layer_idx=" + String(layer_idx),
-            "num_heads=" + String(collection_t.kv_params.num_heads),
-            "head_size=" + String(collection_t.kv_params.head_size),
-            "local_window_size=" + String(local_window_size),
+        var desc_parts = List[String]()
+        desc_parts.append(trace_arg("q", q))
+        desc_parts.append("scale=" + String(scale))
+        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(
+            "num_heads=" + String(collection_t.kv_params.num_heads)
         )
+        desc_parts.append(
+            "head_size=" + String(collection_t.kv_params.head_size)
+        )
+        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append("sink=False")
+        return String(";").join(desc_parts)
 
     alias name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
@@ -1962,6 +1967,7 @@ fn _flash_attention_dispatch[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -1972,36 +1978,44 @@ fn _flash_attention_dispatch[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
-        if is_cpu[target]():
-            return flash_attention_kv_cache_cpu(
-                q,
-                valid_length_managed_tensor_slice_to_ndbuffer(
-                    input_row_offsets
-                ),
-                valid_length_managed_tensor_slice_to_ndbuffer(
-                    input_row_offsets
-                ),
-                k,
-                v,
-                mask,
-                scale,
-                output,
-            )
-        else:
-            alias use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[use_score_mod=use_score_mod, ragged=True](
-                output,
-                q,
-                k,
-                v,
-                mask,
-                score_mod,
-                input_row_offsets,
-                scale,
-                context.get_device_context(),
-            )
+        fn call_flash_attention[sink: Bool]() raises:
+            @parameter
+            if is_cpu[target]():
+                return flash_attention_kv_cache_cpu(
+                    q,
+                    valid_length_managed_tensor_slice_to_ndbuffer(
+                        input_row_offsets
+                    ),
+                    valid_length_managed_tensor_slice_to_ndbuffer(
+                        input_row_offsets
+                    ),
+                    k,
+                    v,
+                    mask,
+                    scale,
+                    output,
+                    sink_weights,
+                )
+            else:
+                alias use_score_mod = not _type_is_eq[
+                    score_mod_t, IdentityScoreMod
+                ]()
+                gpu_flash_attention[
+                    use_score_mod=use_score_mod, ragged=True, sink=sink
+                ](
+                    output,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    score_mod,
+                    input_row_offsets,
+                    scale,
+                    context.get_device_context(),
+                    sink_weights=sink_weights,
+                )
+
+        unswitch[call_flash_attention](Bool(sink_weights))
 
     return dispatch_mask_and_score_mod[
         mask_str,
@@ -2010,6 +2024,69 @@ fn _flash_attention_dispatch[
         local_window_size,
         collection_t.kv_params.num_heads,
     ]()
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_ragged_sink[
+    collection_t: KVCollectionT,
+    dtype: DType, //,
+    *,
+    target: StaticString,
+    mask_str: StaticString,
+    score_mod_str: StaticString,
+    local_window_size: Int = -1,
+](
+    q: NDBuffer[dtype, 3, *_],
+    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[mut=True, dtype, 3, *_],
+    context: DeviceContextPtr,
+    sink_weights: NDBuffer[dtype, 1, MutableAnyOrigin],
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        var desc_parts = List[String]()
+        desc_parts.append(trace_arg("q", q))
+        desc_parts.append("scale=" + String(scale))
+        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(
+            "num_heads=" + String(collection_t.kv_params.num_heads)
+        )
+        desc_parts.append(
+            "head_size=" + String(collection_t.kv_params.head_size)
+        )
+        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append("sink=True")
+        return String(";").join(desc_parts)
+
+    alias name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+        collection_t.kv_params.num_heads
+    ) + ".hdim_" + String(
+        collection_t.kv_params.head_size
+    )
+
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_dispatch[
+            target=target,
+            mask_str=mask_str,
+            score_mod_str=score_mod_str,
+            local_window_size=local_window_size,
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+            sink_weights,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2431,6 +2508,7 @@ fn _cross_attention_dispatch[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -2456,12 +2534,15 @@ fn _cross_attention_dispatch[
                 mask,
                 scale,
                 output,
+                sink_weights,
             )
         else:
             alias use_score_mod = not _type_is_eq[
                 score_mod_t, IdentityScoreMod
             ]()
-            gpu_flash_attention[use_score_mod=use_score_mod, ragged=True](
+            gpu_flash_attention[
+                use_score_mod=use_score_mod, ragged=True, sink=False
+            ](
                 output,
                 q,
                 k,
@@ -2505,6 +2586,7 @@ fn generic_cross_attention_kv_cache[
     scale: Float32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     @always_inline
     @parameter
@@ -2547,6 +2629,7 @@ fn generic_cross_attention_kv_cache[
             scale,
             output,
             context,
+            sink_weights,
         )
 
 

@@ -25,6 +25,10 @@ from gpu.cluster import (
 )
 from sys._assembly import inlined_assembly
 from sys import _RegisterPackType
+from utils.fast_div import FastDiv
+from utils.static_tuple import StaticTuple
+
+from linalg.matmul_tile_scheduler import RasterOrder
 
 
 @fieldwise_init
@@ -64,9 +68,21 @@ struct WorkInfo(Copyable, Movable, Stringable, Writable):
 @register_passable("trivial")
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
+        dtype = DType.uint32
+    ](1, 1, 1),
+    rasterize_order: RasterOrder = RasterOrder.AlongN,
 ]:
     alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
+    alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
+    alias log_cluster_n = FastDiv[DType.uint32](cluster_shape[1])
+    alias log_cluster_k = FastDiv[DType.uint32](cluster_shape[2])
+
+    var cluster_dim: StaticTuple[Int32, 3]
+    var log_cluster_dim_m: FastDiv[DType.uint32]
+    var log_cluster_dim_n: FastDiv[DType.uint32]
+    var log_cluster_dim_k: FastDiv[DType.uint32]
+
     var clc_response: UnsafePointer[
         UInt128, address_space = AddressSpace.SHARED
     ]
@@ -80,6 +96,7 @@ struct TileScheduler[
     @always_inline
     fn __init__(
         out self,
+        cluster_dim: StaticTuple[Int32, 3],
         clc_response_ptr: UnsafePointer[
             UInt128, address_space = AddressSpace.SHARED
         ],
@@ -90,6 +107,10 @@ struct TileScheduler[
             SharedMemBarrier, address_space = AddressSpace.SHARED
         ],
     ):
+        self.cluster_dim = cluster_dim
+        self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
+        self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
+        self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
         self.clc_response = clc_response_ptr
         self.full_mbar = full_mbar_ptr
         self.empty_mbar = empty_mbar_ptr
@@ -127,15 +148,33 @@ struct TileScheduler[
     @staticmethod
     fn work_info_from_cluster(
         work_info: WorkInfo,
+        cluster_dim: StaticTuple[Int32, 3],
+        log_cluster_dim_m: FastDiv[DType.uint32],
+        log_cluster_dim_n: FastDiv[DType.uint32],
     ) -> WorkInfo:
-        var normalized_m = work_info.m // Self.cluster_shape[0]
-        var normalized_n = work_info.n // Self.cluster_shape[1]
-        var normalized_k = work_info.k_start // Self.cluster_shape[2]
+        var normalized_m = Int(work_info.m) / Self.log_cluster_m
+        var normalized_n = Int(work_info.n) / Self.log_cluster_n
+        var normalized_k = Int(work_info.k_start) / Self.log_cluster_k
+
+        var linear_cluster_id = Int(normalized_m) * cluster_dim[1] + Int(
+            normalized_n
+        )
+
+        # CLC rasterize along M by default.
+        @parameter
+        if Self.rasterize_order == RasterOrder.AlongM:
+            new_normalized_m = normalized_m
+            new_normalized_n = normalized_n
+        else:
+            new_normalized_m = Int(linear_cluster_id) % log_cluster_dim_m
+            new_normalized_n = Int(linear_cluster_id) / log_cluster_dim_m
 
         return WorkInfo(
-            m=normalized_m * Self.cluster_shape[0] + block_id_in_cluster.x,
-            n=normalized_n * Self.cluster_shape[1] + block_id_in_cluster.y,
-            k_start=normalized_k * Self.cluster_shape[2]
+            m=Int(new_normalized_m) * Self.cluster_shape[0]
+            + block_id_in_cluster.x,
+            n=Int(new_normalized_n) * Self.cluster_shape[1]
+            + block_id_in_cluster.y,
+            k_start=Int(normalized_k) * Self.cluster_shape[2]
             + block_id_in_cluster.z,
             is_valid_tile=work_info.is_valid_tile,
         )
@@ -148,7 +187,10 @@ struct TileScheduler[
                 block_idx.y,
                 block_idx.z,
                 is_valid_tile=True,
-            )
+            ),
+            self.cluster_dim,
+            self.log_cluster_dim_m,
+            self.log_cluster_dim_n,
         )
 
     @always_inline
@@ -163,7 +205,12 @@ struct TileScheduler[
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
-        return self.work_info_from_cluster(work_tile)
+        return self.work_info_from_cluster(
+            work_tile,
+            self.cluster_dim,
+            self.log_cluster_dim_m,
+            self.log_cluster_dim_n,
+        )
 
     @always_inline
     fn advance_to_next_work(

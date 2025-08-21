@@ -193,7 +193,7 @@ fn reduce_inner_test[
 
     reduce_launch[
         num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
-    ](shape, axis, init, ctx)
+    ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
 
     with res_device.map_to_host() as res_host:
         for i in range(out_shape.flattened_length()):

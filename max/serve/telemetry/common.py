@@ -138,10 +138,27 @@ COLOR_MAP = {
 }
 
 
+class PrefixFormatter(logging.Formatter):
+    """Custom formatter that adds a prefix to log messages."""
+
+    def __init__(self, prefix: str, base_formatter: logging.Formatter):
+        super().__init__()
+        self.prefix = prefix
+        self.base_formatter = base_formatter
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Format the message using the base formatter
+        formatted_message = self.base_formatter.format(record)
+        # Add the prefix to the message
+        return f"{self.prefix} {formatted_message}"
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
-def configure_logging(settings: Settings, color: str | None = None) -> None:
+def configure_logging(
+    settings: Settings, color: str | None = None, silent: bool = False
+) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry
 
@@ -163,8 +180,13 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
             "ERROR: Failed to parse logging components setting!  Using default."
         )
 
-    def LogFilter(record):  # noqa: ANN001
-        return record.name in components_to_log
+    def LogFilter(record: logging.LogRecord) -> bool:
+        # Check if the logger name starts with any of the allowed component prefixes
+        # This handles hierarchical logger names like "max.pipelines.architectures.llama3"
+        return any(
+            record.name == component or record.name.startswith(component + ".")
+            for component in components_to_log
+        )
 
     # Create a console handler
     if settings.logs_console_level is not None:
@@ -192,6 +214,13 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
                 ),
                 datefmt="%H:%M:%S",
             )
+
+        # Apply log prefix if provided
+        if settings.log_prefix is not None:
+            console_formatter = PrefixFormatter(
+                settings.log_prefix, console_formatter
+            )
+
         console_handler.setFormatter(console_formatter)
         console_handler.setLevel(settings.logs_console_level)
         console_handler.addFilter(LogFilter)
@@ -218,6 +247,13 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
                 ),
                 datefmt="%y:%m:%d-%H:%M:%S",
             )
+
+        # Apply log prefix if provided
+        if settings.log_prefix is not None:
+            file_formatter = PrefixFormatter(
+                settings.log_prefix, file_formatter
+            )
+
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(settings.logs_file_level)
         file_handler.addFilter(LogFilter)
@@ -241,6 +277,9 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
     # Configure root logger level
     logger = logging.getLogger()
     if len(logging_handlers) > 0:
+        # Clear existing handlers to prevent duplicates when configure_logging is called multiple times
+        logger.handlers.clear()
+
         logger_level = min(h.level for h in logging_handlers)
         logger.setLevel(logger_level)
         for handler in logging_handlers:
@@ -254,12 +293,13 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
             max(logger_level, logging.INFO)
         )
 
-    logger.info(
-        "Logging initialized: Console: %s, File: %s, Telemetry: %s",
-        settings.logs_console_level,
-        settings.logs_file_level,
-        otlp_level,
-    )
+    if not silent:
+        logger.info(
+            "Logging initialized: Console: %s, File: %s, Telemetry: %s",
+            settings.logs_console_level,
+            settings.logs_file_level,
+            otlp_level,
+        )
 
 
 def configure_metrics(settings: Settings) -> None:

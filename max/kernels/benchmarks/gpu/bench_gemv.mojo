@@ -22,6 +22,7 @@ from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from sys import env_get_int, env_get_string
 
 from utils import IndexList
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn _get_run_name[
@@ -163,6 +164,10 @@ fn bench_matmul_naive[
     var mat_a = DeviceNDBuffer[in_type, 2, shape_a](shape_a_dim, ctx=ctx)
     var mat_b = DeviceNDBuffer[in_type, 2, shape_b](shape_b_dim, ctx=ctx)
 
+    var c_tensor = from_ndbuffer_row_major(mat_c.tensor)
+    var a_tensor = from_ndbuffer_row_major(mat_a.tensor)
+    var b_tensor = from_ndbuffer_row_major(mat_b.tensor)
+
     var M = shape_c_dim[0]
     var N = shape_c_dim[1]
     var K = shape_a_dim[1]
@@ -178,11 +183,19 @@ fn bench_matmul_naive[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[
-                matmul_kernel_naive[out_type, in_type, in_type, BLOCK_DIM]
+                matmul_kernel_naive[
+                    out_type,
+                    in_type,
+                    in_type,
+                    c_tensor.layout,
+                    a_tensor.layout,
+                    b_tensor.layout,
+                    BLOCK_DIM,
+                ]
             ](
-                mat_c.tensor.data,
-                mat_a.tensor.data,
-                mat_b.tensor.data,
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 UInt(M),
                 UInt(N),
                 UInt(K),

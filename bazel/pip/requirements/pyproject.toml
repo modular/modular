@@ -82,7 +82,7 @@ dependencies = [
   "tokenicer",
   "tomli",
   "tqdm",
-  "transformers>=4.51.1", # v4.47.0 and v4.49.0 introduced changes that break our torch.compile backend.
+  "transformers>=4.55.2", # v4.47.0 and v4.49.0 introduced changes that break our torch.compile backend.
   "tokenizers",
   "typing-extensions",
   "uvloop>=0.21.0",

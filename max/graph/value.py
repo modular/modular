@@ -13,8 +13,8 @@
 
 from __future__ import annotations
 
-import sys
-from collections.abc import Iterable
+import builtins
+from collections.abc import Iterable, Sequence
 from typing import (
     Any,
     Generic,
@@ -25,16 +25,13 @@ from typing import (
     runtime_checkable,
 )
 
-if sys.version_info >= (3, 10):
-    from typing import TypeGuard
-else:
-    from typing_extensions import TypeGuard
-
 import numpy as np
+import numpy.typing as npt
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core.dialects import mo
 from max.dtype import DType
+from typing_extensions import TypeAlias, TypeGuard
 
 from . import ops
 from .dim import Dim, DimLike
@@ -50,6 +47,9 @@ from .type import (
 )
 
 MlirType = TypeVar("MlirType", bound=_Type)
+
+_SliceIndex: TypeAlias = "TensorValue | int | slice | tuple[slice, DimLike]"
+_SliceIndices: TypeAlias = "Sequence[_SliceIndex | builtins.ellipsis]"
 
 
 class Value(Generic[MlirType]):
@@ -268,7 +268,9 @@ class BufferValue(Value[mo.BufferType]):
         device = self.device
         return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
-    def __getitem__(self, index) -> TensorValue:  # noqa: ANN001
+    def __getitem__(
+        self, index: builtins.ellipsis | int | slice | _SliceIndices
+    ) -> TensorValue:
         """Loads data from the buffer at the specified index.
 
         Args:
@@ -278,13 +280,12 @@ class BufferValue(Value[mo.BufferType]):
         if index is Ellipsis:
             return x
         return ops.slice_tensor(
-            x,
-            index if isinstance(index, Iterable) else (index,),  # type: ignore
+            x, index if isinstance(index, Sequence) else (index,)
         )
 
     def __setitem__(
         self,
-        index,  # noqa: ANN001
+        index: builtins.ellipsis | int | slice | _SliceIndices,
         val: TensorValue,
     ) -> None:
         """Stores data into the buffer at the specified index.
@@ -296,9 +297,7 @@ class BufferValue(Value[mo.BufferType]):
         if index is Ellipsis:
             return ops.buffer_store(self, val)
         return ops.buffer_store_slice(
-            self,
-            val,
-            index if isinstance(index, Iterable) else (index,),  # type: ignore
+            self, val, index if isinstance(index, Sequence) else (index,)
         )
 
     def print(self, label: str = "debug_buffer") -> None:
@@ -1043,7 +1042,10 @@ class HasTensorValue(Protocol):
     def __tensorvalue__(self) -> Value: ...
 
 
-Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
+Numeric = Union[
+    int, float, np.integer[Any], np.floating[Any], npt.NDArray[np.number[Any]]
+]
+Scalar = Union[int, float, np.integer[Any], np.floating[Any], Dim]
 StrongTensorValueLike = Union[
     _Value[mo.TensorType], TensorValue, Shape, Dim, HasTensorValue
 ]
@@ -1052,8 +1054,17 @@ TensorValueLike = Union[StrongTensorValueLike, Numeric]
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
 _numeric = (int, float, np.integer, np.floating, np.ndarray)
+_scalar = (int, float, np.integer, np.floating, Dim)
 _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
+
+
+def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
+    return isinstance(obj, _numeric)
+
+
+def _is_scalar(obj: Any) -> TypeGuard[Scalar]:
+    return isinstance(obj, _scalar)
 
 
 def _is_strong_tensor_value_like(obj: Any) -> TypeGuard[StrongTensorValueLike]:

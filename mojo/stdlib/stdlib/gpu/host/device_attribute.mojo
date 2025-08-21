@@ -102,6 +102,9 @@ struct DeviceAttribute:
     alias MAX_REGISTERS_PER_MULTIPROCESSOR = Self(82)
     """Maximum number of 32-bit registers available per multiprocessor
     """
+    alias COOPERATIVE_LAUNCH = Self(95)
+    """Device supports launching cooperative kernels
+    """
     alias MAX_BLOCKS_PER_MULTIPROCESSOR = Self(106)
     """Maximum resident blocks per multiprocessor
     """

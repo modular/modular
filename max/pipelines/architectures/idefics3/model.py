@@ -18,9 +18,10 @@ import math
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -147,7 +148,9 @@ class _VisionStacker:
         """
         self._pool = ThreadPoolExecutor(max_workers=max_workers)
 
-    def stack(self, images: list[np.ndarray]) -> np.ndarray:
+    def stack(
+        self, images: list[npt.NDArray[np.floating[Any]]]
+    ) -> npt.NDArray[np.floating[Any]]:
         """Stack images using parallel bulk copy operations.
 
         Args:
@@ -183,7 +186,9 @@ class _VisionStacker:
 
     @staticmethod
     def _copy_block(
-        out: np.ndarray, images: list[np.ndarray], sl: slice
+        out: npt.NDArray[np.floating[Any]],
+        images: list[npt.NDArray[np.floating[Any]]],
+        sl: slice,
     ) -> None:
         """Copy a block of images using bulk numpy operations.
 
@@ -722,15 +727,19 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Return model outputs based on what the language model returns
         if len(language_outputs) == 3:
+            assert isinstance(language_outputs[0], Tensor)
+            assert isinstance(language_outputs[1], Tensor)
+            assert isinstance(language_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, language_outputs[0]),
-                logits=cast(Tensor, language_outputs[1]),
-                logit_offsets=cast(Tensor, language_outputs[2]),
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[1],
+                logit_offsets=language_outputs[2],
             )
         else:
+            assert isinstance(language_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, language_outputs[0]),
-                logits=cast(Tensor, language_outputs[0]),
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[0],
             )
 
     def prepare_initial_token_inputs(

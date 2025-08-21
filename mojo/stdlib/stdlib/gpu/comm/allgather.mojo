@@ -278,10 +278,8 @@ fn allgather[
     # Default max blocks if not specified
     var max_num_blocks = _max_num_blocks.or_else(216)
 
-    # Check P2P availability
-    var can_p2p = can_enable_p2p(ctxs)
-
-    if not can_p2p:
+    # Check P2P availability.
+    if not can_enable_p2p():
         return _allgather_naive(input_buffers, output_buffers, ctxs)
     else:
         return _allgather_p2p(

@@ -12,26 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-field-lifetimes-during-destruct
 fn consume(var str: String):
     print("Consumed", str)
 
 
 @fieldwise_init
-struct TwoStrings:
+struct TwoStrings(Copyable, Movable):
     var str1: String
     var str2: String
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.str1 = existing.str1^
-        self.str2 = existing.str2^
-
     fn __del__(deinit self):
-        self.dump()  # Self is still whole here
-        # Mojo calls self.str2.__del__() since str2 isn't used anymore
+        # self value is whole at the beginning of the function
+        self.dump()
+        # After dump(): str2 is never used again, so str2.__del__() runs now
 
         consume(self.str1^)
-        # self.str1 has been transferred so it is also destroyed now;
-        # `self.__del__()` is not called (avoiding an infinite loop).
+        # self.str1 has been transferred so str1 becomes uninitialized, and
+        # no destructor is called for str1.
+        # self.__del__() is not called (avoiding an infinite loop).
 
     fn dump(mut self):
         print("str1:", self.str1)
@@ -40,3 +39,5 @@ struct TwoStrings:
 
 def main():
     var two_strings = TwoStrings("foo", "bar")
+    # end-field-lifetimes-during-destruct
+    _ = two_strings^

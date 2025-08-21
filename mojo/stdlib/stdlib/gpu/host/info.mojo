@@ -54,6 +54,9 @@ struct Vendor(Writable):
     alias NVIDIA_GPU = Self(2)
     """Represents NVIDIA GPU vendor."""
 
+    alias APPLE_GPU = Self(3)
+    """Represents Apple GPU vendor."""
+
     fn __eq__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are equal.
 
@@ -114,7 +117,12 @@ struct Vendor(Writable):
         if self is Vendor.AMD_GPU:
             writer.write("amd_gpu")
             return
-        writer.write("nvidia_gpu")
+        if self is Vendor.APPLE_GPU:
+            writer.write("apple_gpu")
+        if self is Vendor.NVIDIA_GPU:
+            writer.write("nvidia_gpu")
+
+        abort("unable to format unrecognized `Vendor` value")
 
     @no_inline
     fn __str__(self) -> String:
@@ -174,6 +182,183 @@ alias NoGPU = GPUInfo(
     warp_allocation_granularity=0,
     max_thread_block_size=0,
 )
+
+
+# ===-----------------------------------------------------------------------===#
+# Apple M1
+# ===-----------------------------------------------------------------------===#
+fn _get_metal_m1_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for M1 Metal GPU.
+    Returns:
+        MLIR target configuration for M1 Metal.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m1", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+fn _get_metal_m2_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for M2 Metal GPU.
+    Returns:
+        MLIR target configuration for M2 Metal.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m2", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+fn _get_metal_m3_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for M3 Metal GPU.
+    Returns:
+        MLIR target configuration for M3 Metal.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m3", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+fn _get_metal_m4_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for M4 Metal GPU.
+    Returns:
+        MLIR target configuration for M4 Metal.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m4", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias MetalM1 = GPUInfo(
+    name="M1",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m1",
+    compute=3.0,  # Metal version 3.0
+    version="metal_3",
+    sm_count=8,  # M1 has 8 GPU cores
+    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
+    threads_per_sm=1024,  # Threads per compute unit
+    threads_per_warp=32,
+    warps_per_multiprocessor=32,  # 1024 / 32 = 32
+    threads_per_multiprocessor=1024,
+    thread_blocks_per_multiprocessor=8,  # Threadgroups per compute unit
+    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
+    register_file_size=65536,  # Register file size
+    register_allocation_unit_size=256,
+    allocation_granularity="simdgroup",  # Metal uses SIMD groups
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=8,
+    shared_memory_allocation_unit_size=16,  # Metal threadgroup memory allocation unit
+    warp_allocation_granularity=1,  # Metal SIMD group allocation
+    max_thread_block_size=1024,  # Max threads per threadgroup
+)
+
+alias MetalM2 = GPUInfo(
+    name="M2",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m2",
+    compute=3.0,  # Metal version 3.0
+    version="metal_3",
+    sm_count=10,  # M2 has 10 GPU cores
+    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
+    threads_per_sm=1024,  # Threads per compute unit
+    threads_per_warp=32,
+    warps_per_multiprocessor=32,  # 1024 / 32 = 32
+    threads_per_multiprocessor=1024,
+    thread_blocks_per_multiprocessor=8,  # Threadgroups per compute unit
+    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
+    register_file_size=65536,  # Register file size
+    register_allocation_unit_size=256,
+    allocation_granularity="simdgroup",  # Metal uses SIMD groups
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=8,
+    shared_memory_allocation_unit_size=16,  # Metal threadgroup memory allocation unit
+    warp_allocation_granularity=1,  # Metal SIMD group allocation
+    max_thread_block_size=1024,  # Max threads per threadgroup
+)
+
+alias MetalM3 = GPUInfo(
+    name="M3",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m3",
+    compute=3.0,  # Metal version 3.0 for M3
+    version="metal_3",
+    sm_count=10,  # M3 has 10 GPU cores
+    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
+    threads_per_sm=1024,  # Threads per compute unit
+    threads_per_warp=32,
+    warps_per_multiprocessor=32,  # 1024 / 32 = 32
+    threads_per_multiprocessor=1024,
+    thread_blocks_per_multiprocessor=8,  # Threadgroups per compute unit
+    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
+    register_file_size=65536,  # Register file size
+    register_allocation_unit_size=256,
+    allocation_granularity="simdgroup",  # Metal uses SIMD groups
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=8,
+    shared_memory_allocation_unit_size=16,  # Metal threadgroup memory allocation unit
+    warp_allocation_granularity=1,  # Metal SIMD group allocation
+    max_thread_block_size=1024,  # Max threads per threadgroup
+)
+
+alias MetalM4 = GPUInfo(
+    name="M4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m4",
+    compute=4.0,  # Metal version 4.0 for M4
+    version="metal_4",
+    sm_count=10,  # M4 has 10 GPU cores
+    warp_size=32,  # Metal uses 32-thread SIMD groups (like warps)
+    threads_per_sm=1024,  # Threads per compute unit
+    threads_per_warp=32,
+    warps_per_multiprocessor=32,  # 1024 / 32 = 32
+    threads_per_multiprocessor=1024,
+    thread_blocks_per_multiprocessor=8,  # Threadgroups per compute unit
+    shared_memory_per_multiprocessor=32768,  # 32KB shared memory per compute unit
+    register_file_size=65536,  # Register file size
+    register_allocation_unit_size=256,
+    allocation_granularity="simdgroup",  # Metal uses SIMD groups
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=8,
+    shared_memory_allocation_unit_size=16,  # Metal threadgroup memory allocation unit
+    warp_allocation_granularity=1,  # Metal SIMD group allocation
+    max_thread_block_size=1024,  # Max threads per threadgroup
+)
+
 
 # ===-----------------------------------------------------------------------===#
 # A100
@@ -833,6 +1018,57 @@ alias MI300X = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# MI355X
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_mi355x_target() -> _TargetType:
+    """
+    Creates an MLIR target configuration for AMD MI355X GPU.
+
+    Returns:
+        MLIR target configuration for MI355X.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx950", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias MI355X = GPUInfo(
+    name="MI355X",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx950",
+    compute=9.5,
+    version="CDNA4",
+    sm_count=256,
+    warp_size=64,
+    threads_per_sm=2048,
+    threads_per_warp=64,
+    warps_per_multiprocessor=32,  # 2048 threads per sm / 64 threads per warp = 32 warps per sm
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=2,
+    shared_memory_per_multiprocessor=160 * _KB,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=2,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # Radeon 7xxx, 9xxx, 780m
 # ===-----------------------------------------------------------------------===#
 
@@ -1403,6 +1639,8 @@ struct GPUInfo(Stringable, Writable):
             return _get_rtx5090_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
+        if self.name == "MI355X":
+            return _get_mi355x_target()
         if self.name == "Radeon 780M":
             return _get_780m_target()
         if self.name == "Radeon 880M":
@@ -1423,6 +1661,15 @@ struct GPUInfo(Stringable, Writable):
             return _get_9070_target()
         if self.name == "Radeon 9060":
             return _get_9060_target()
+        if self.name == "M1":
+            return _get_metal_m1_target()
+        if self.name == "M2":
+            return _get_metal_m2_target()
+        if self.name == "M3":
+            return _get_metal_m3_target()
+        if self.name == "M4":
+            return _get_metal_m4_target()
+
         if self.name == "":
             return _get_empty_target()
         return _get_a100_target()
@@ -1883,7 +2130,8 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> GPUInfo:
         `GPUInfo` instance for the specified compute capability.
     """
     constrained[
-        compute_capability in (0, 75, 80, 86, 87, 89, 90, 94, 100, 110, 120),
+        compute_capability
+        in (0, 1, 2, 3, 4, 75, 80, 86, 87, 89, 90, 94, 95, 100, 110, 120),
         "invalid compute capability",
     ]()
 
@@ -1910,6 +2158,16 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> GPUInfo:
         return RTX5090
     elif compute_capability == 94:
         return MI300X
+    elif compute_capability == 95:
+        return MI355X
+    elif compute_capability == 1:
+        return MetalM1
+    elif compute_capability == 2:
+        return MetalM2
+    elif compute_capability == 3:
+        return MetalM3
+    elif compute_capability == 4:
+        return MetalM4
     return abort[GPUInfo]("invalid compute capability")
 
 
@@ -1943,12 +2201,22 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> GPUInfo:
         return _get_info_from_compute_capability[90]()
     if compute_capability == 94:
         return _get_info_from_compute_capability[94]()
+    if compute_capability == 95:
+        return _get_info_from_compute_capability[95]()
     if compute_capability == 100:
         return _get_info_from_compute_capability[100]()
     if compute_capability == 110:
         return _get_info_from_compute_capability[110]()
     if compute_capability == 120:
         return _get_info_from_compute_capability[120]()
+    if compute_capability == 1:
+        return _get_info_from_compute_capability[1]()
+    if compute_capability == 2:
+        return _get_info_from_compute_capability[2]()
+    if compute_capability == 3:
+        return _get_info_from_compute_capability[3]()
+    if compute_capability == 4:
+        return _get_info_from_compute_capability[4]()
     raise "invalid compute capability"
 
 
@@ -1967,7 +2235,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """
     alias target_arch = target_arch0.replace("sm_", "").replace(
         "nvidia:", ""
-    ).replace("amdgpu:", "")
+    ).replace("amdgpu:", "").replace("metal:", "apple-m")
 
     constrained[
         StaticString(target_arch)
@@ -1987,7 +2255,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("120a"),
             # AMD
             StaticString("mi300x"),
+            StaticString("mi355x"),
             StaticString("gfx942"),
+            StaticString("gfx950"),
             StaticString("gfx1030"),
             StaticString("gfx1100"),
             StaticString("gfx1101"),
@@ -1998,6 +2268,11 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("gfx1152"),
             StaticString("gfx1200"),
             StaticString("gfx1201"),
+            # Apple
+            StaticString("apple-m1"),
+            StaticString("apple-m2"),
+            StaticString("apple-m3"),
+            StaticString("apple-m4"),
         ),
         "the target architecture '",
         target_arch,
@@ -2025,6 +2300,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return RTX5090
     elif target_arch == "gfx942" or target_arch == "mi300x":
         return MI300X
+    elif target_arch == "gfx950" or target_arch == "mi355x":
+        return MI355X
     elif target_arch == "gfx1030":
         return Radeon6900
     elif target_arch == "gfx1100":
@@ -2045,6 +2322,14 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return Radeon9060
     elif target_arch == "gfx1201":
         return Radeon9070
+    elif target_arch == "apple-m1":
+        return MetalM1
+    elif target_arch == "apple-m2":
+        return MetalM2
+    elif target_arch == "apple-m3":
+        return MetalM3
+    elif target_arch == "apple-m4":
+        return MetalM4
     elif _accelerator_arch() == "":
         return NoGPU
     else:

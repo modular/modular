@@ -23,7 +23,6 @@ from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.telemetry.common import configure_logging
 
 logger = logging.getLogger("max.serve")
 
@@ -33,7 +32,6 @@ async def run_kvcache_agent_process(
     settings: Settings,
     dispatcher_factory: DispatcherFactory,
 ) -> None:
-    configure_logging(settings)
     pid = os.getpid()
     logger.info("Starting KV Cache Agent on process %d!", pid)
 
@@ -73,7 +71,7 @@ def _kvcache_agent_process_fn(
 
 
 @asynccontextmanager
-async def start_dispatch_service(
+async def start_kv_cache_service(
     settings: Settings,
     dispatcher_factory: DispatcherFactory,
 ) -> AsyncGenerator[None, None]:

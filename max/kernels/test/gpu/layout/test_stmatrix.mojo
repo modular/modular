@@ -24,6 +24,9 @@ from memory import stack_allocation
 from testing import assert_almost_equal
 
 from utils.numerics import get_accum_type
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
+from utils.index import IndexList
 
 
 fn test_stmatrix(
@@ -207,14 +210,28 @@ fn check_stmatrix_gen[
 
     ctx.enqueue_copy(c_host, c_device)
 
+    var c_tensor_ref = LayoutTensor[output_type, Layout.row_major(M, N)](
+        c_device_ref
+    )
+    var a_tensor = LayoutTensor[input_type, Layout.row_major(M, K)](a_device)
+    var b_tensor = LayoutTensor[input_type, Layout.row_major(K, N)](b_device)
+
     # Run naive matmul.
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
-        matmul_kernel_naive[output_type, input_type, input_type, BLOCK_DIM]
+        matmul_kernel_naive[
+            output_type,
+            input_type,
+            input_type,
+            a_tensor.layout,
+            b_tensor.layout,
+            c_tensor_ref.layout,
+            BLOCK_DIM,
+        ]
     ](
-        c_device_ref,
-        a_device,
-        b_device,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,
@@ -295,14 +312,37 @@ fn check_stmatrix(
     # Run naive matmul.
     alias BLOCK_DIM = 16
 
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor_ref = LayoutTensor[DType.float32, layout](
+        c_device_ref._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[DType.float32, layout](
+        a_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[DType.float32, layout](
+        b_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
     ctx.enqueue_function[
         matmul_kernel_naive[
-            DType.float32, DType.float32, DType.float32, BLOCK_DIM
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            a_tensor.layout,
+            b_tensor.layout,
+            c_tensor_ref.layout,
+            BLOCK_DIM,
         ]
     ](
-        c_device_ref,
-        a_device,
-        b_device,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

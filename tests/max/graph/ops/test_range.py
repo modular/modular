@@ -17,7 +17,7 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph import DeviceRef, Dim, Graph, Shape, TensorType, ops
 
 
 @pytest.mark.parametrize(
@@ -42,7 +42,12 @@ def test_range(start: int, stop: int, step: int) -> None:
         stop_val = ops.constant(stop, DType.int64, device=DeviceRef.CPU())
         step_val = ops.constant(step, DType.int64, device=DeviceRef.CPU())
         out = ops.range(
-            start_val, stop_val, step_val, out_dim=dim, device=DeviceRef.CPU()
+            start_val,
+            stop_val,
+            step_val,
+            out_dim=dim,
+            dtype=DType.int64,
+            device=DeviceRef.CPU(),
         )
         graph.output(out)
         assert out.shape == Shape(
@@ -95,12 +100,7 @@ def valid_range_params(draw):  # noqa: ANN001
 def test_range_dtypes_hypothesis(dtype: DType) -> None:
     """Tests ops.range with different data types using hypothesis."""
     with Graph("range_dtypes", input_types=()) as graph:
-        start_val = ops.constant(0, dtype, device=DeviceRef.CPU())
-        stop_val = ops.constant(5, dtype, device=DeviceRef.CPU())
-        step_val = ops.constant(1, dtype, device=DeviceRef.CPU())
-        out = ops.range(
-            start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
-        )
+        out = ops.range(0, 5, dtype=dtype, device=DeviceRef.CPU())
         graph.output(out)
         assert out.shape == Shape([5])
         assert out.dtype == dtype
@@ -110,10 +110,7 @@ def test_range_dtypes_hypothesis(dtype: DType) -> None:
 def test_range_devices_hypothesis(device: DeviceRef) -> None:
     """Tests ops.range with different device types using hypothesis."""
     with Graph("range_devices", input_types=()) as graph:
-        start_val = ops.constant(0, DType.int32, device=DeviceRef.CPU())
-        stop_val = ops.constant(3, DType.int32, device=DeviceRef.CPU())
-        step_val = ops.constant(1, DType.int32, device=DeviceRef.CPU())
-        out = ops.range(start_val, stop_val, step_val, out_dim=3, device=device)
+        out = ops.range(0, 3, dtype=DType.int32, device=device)
         graph.output(out)
         assert out.shape == Shape([3])
         assert out.device == device
@@ -129,11 +126,14 @@ def test_range_tensor_inputs() -> None:
             TensorType(shape=(), dtype=DType.int32, device=DeviceRef.CPU()),
         ),
     ) as graph:
-        start_val = graph.inputs[0]
-        stop_val = graph.inputs[1]
-        step_val = graph.inputs[2]
+        start, stop, step = graph.inputs
         out = ops.range(
-            start_val, stop_val, step_val, out_dim=10, device=DeviceRef.CPU()
+            start,
+            stop,
+            step,
+            out_dim=10,
+            dtype=start.dtype,
+            device=DeviceRef.CPU(),
         )
         graph.output(out)
         assert out.shape == Shape([10])
@@ -188,13 +188,11 @@ def test_range_numeric(start: int, stop: int, step: int) -> None:
     """Tests ops.range cases that should pass."""
     with Graph("range", input_types=()) as graph:
         dim = (stop - start) // step if step != 0 else 0
-        out = ops.range(start, stop, step, device=DeviceRef.CPU())
-        graph.output(out)
-        assert out.shape == Shape(
-            [
-                dim,
-            ]
+        out = ops.range(
+            start, stop, step, dtype=DType.int64, device=DeviceRef.CPU()
         )
+        graph.output(out)
+        assert out.shape == [dim]
 
 
 @pytest.mark.parametrize(
@@ -226,36 +224,24 @@ def test_range_exceptions_numeric(start: int, stop: int, step: int) -> None:
 def test_range_dtype_mismatch(dtype1: DType, dtype2: DType) -> None:
     """Tests ops.range with mismatched dtypes raises ValueError using hypothesis."""
     assume(dtype1 != dtype2)  # Only test when dtypes are actually different
-    with pytest.raises(
-        ValueError, match="range expected inputs of the same type!"
-    ):
-        with Graph("range_dtype_mismatch", input_types=()) as graph:
-            start_val = ops.constant(0, dtype1, device=DeviceRef.CPU())
-            stop_val = ops.constant(
-                5, dtype2, device=DeviceRef.CPU()
-            )  # Different dtype
-            step_val = ops.constant(1, dtype1, device=DeviceRef.CPU())
-            out = ops.range(
-                start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
-            )
-            graph.output(out)
+    with Graph("range_dtype_mismatch", input_types=()) as graph:
+        start = ops.constant(0, dtype1, device=DeviceRef.CPU())
+        out = ops.range(
+            start, 5, out_dim=5, dtype=dtype2, device=DeviceRef.CPU()
+        )
+        graph.output(out)
 
 
-def test_range_dtype_mismatch_specific_error() -> None:
-    """Tests ops.range with mismatched dtypes raises ValueError."""
-    with pytest.raises(
-        ValueError, match="range expected inputs of the same type!"
-    ):
-        with Graph("range_dtype_mismatch", input_types=()) as graph:
-            start_val = ops.constant(0, DType.int32, device=DeviceRef.CPU())
-            stop_val = ops.constant(
-                5, DType.float32, device=DeviceRef.CPU()
-            )  # Different dtype
-            step_val = ops.constant(1, DType.int32, device=DeviceRef.CPU())
-            out = ops.range(
-                start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
+def test_range_gpu_scalar_errors() -> None:
+    """Tests ops.range with non-scalar inputs raises ValueError."""
+    with Graph("range_non_scalar", input_types=()):
+        start = ops.constant(0, DType.int32, device=DeviceRef.GPU())
+        with pytest.raises(
+            ValueError, match="Range input values must be on CPU"
+        ):
+            _ = ops.range(
+                start, 5, out_dim=5, dtype=DType.int32, device=DeviceRef.GPU()
             )
-            graph.output(out)
 
 
 def test_range_non_scalar_inputs_specific_error() -> None:
@@ -267,10 +253,13 @@ def test_range_non_scalar_inputs_specific_error() -> None:
             start_val = ops.constant(
                 np.array([0]), DType.int32, device=DeviceRef.CPU()
             )  # Non-scalar
-            stop_val = ops.constant(5, DType.int32, device=DeviceRef.CPU())
-            step_val = ops.constant(1, DType.int32, device=DeviceRef.CPU())
             out = ops.range(
-                start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
+                start_val,
+                5,
+                1,
+                out_dim=5,
+                dtype=DType.int32,
+                device=DeviceRef.CPU(),
             )
             graph.output(out)
 
@@ -279,7 +268,7 @@ def test_range_missing_out_dim_with_dynamic_inputs() -> None:
     """Tests ops.range with dynamic inputs and no out_dim raises ValueError."""
     with pytest.raises(
         ValueError,
-        match="range expected out_dim for non-numeric values as inputs!",
+        match="Dynamic ranges must provide an explicit out_dim",
     ):
         with Graph(
             "range_missing_out_dim",
@@ -288,13 +277,8 @@ def test_range_missing_out_dim_with_dynamic_inputs() -> None:
             ),
         ) as graph:
             start_val = graph.inputs[0]  # Dynamic input
-            stop_val = ops.constant(5, DType.int32, device=DeviceRef.CPU())
-            step_val = ops.constant(1, DType.int32, device=DeviceRef.CPU())
             out = ops.range(
-                start_val,
-                stop_val,
-                step_val,
-                device=DeviceRef.CPU(),  # No out_dim provided
+                start_val, 5, dtype=DType.int32, device=DeviceRef.CPU()
             )
             graph.output(out)
 
@@ -310,7 +294,12 @@ def test_range_step_zero() -> None:
             0, DType.int32, device=DeviceRef.CPU()
         )  # step = 0
         out = ops.range(
-            start_val, stop_val, step_val, out_dim=0, device=DeviceRef.CPU()
+            start_val,
+            stop_val,
+            step_val,
+            out_dim=0,
+            dtype=DType.int32,
+            device=DeviceRef.CPU(),
         )
         graph.output(out)
         # Currently this passes graph construction but would fail at execution
@@ -353,7 +342,12 @@ def test_range_sign_mismatch(params) -> None:  # noqa: ANN001
         stop_val = ops.constant(stop, DType.int32, device=DeviceRef.CPU())
         step_val = ops.constant(step, DType.int32, device=DeviceRef.CPU())
         out = ops.range(
-            start_val, stop_val, step_val, out_dim=dim, device=DeviceRef.CPU()
+            start_val,
+            stop_val,
+            step_val,
+            out_dim=dim,
+            dtype=DType.int32,
+            device=DeviceRef.CPU(),
         )
         graph.output(out)
         # Currently this passes graph construction but produces empty range
@@ -364,52 +358,28 @@ def test_range_sign_mismatch(params) -> None:  # noqa: ANN001
 def test_range_valid_params(dtype: DType, device: DeviceRef) -> None:
     """Tests ops.range with valid parameters using hypothesis fuzzing."""
     # Use safe small values that work with all dtypes
-    start, stop, step, expected_dim = 0, 10, 1, 10
     with Graph("range_valid", input_types=()) as graph:
-        start_val = ops.constant(start, dtype, device=DeviceRef.CPU())
-        stop_val = ops.constant(stop, dtype, device=DeviceRef.CPU())
-        step_val = ops.constant(step, dtype, device=DeviceRef.CPU())
-        out = ops.range(
-            start_val, stop_val, step_val, out_dim=expected_dim, device=device
-        )
+        out = ops.range(0, 10, dtype=dtype, device=device)
         graph.output(out)
-        assert out.shape == Shape([expected_dim])
+        assert out.shape == [10]
         assert out.dtype == dtype
         assert out.device == device
 
 
-# Strategy for testing non-scalar inputs
-@st.composite
-def non_scalar_arrays(draw):  # noqa: ANN001
-    """Generate non-scalar numpy arrays for testing."""
-    shape = draw(
-        st.lists(st.integers(min_value=1, max_value=5), min_size=1, max_size=3)
-    )
-    size = 1
-    for dim in shape:
-        size *= dim
-    # Generate values that fit in the shape
-    values = draw(
-        st.lists(
-            st.integers(min_value=0, max_value=10), min_size=size, max_size=size
+def test_range_with_dim_respects_dtype() -> None:
+    """Tests that ops.range respects the dtype parameter when using Dim objects."""
+    # Test case from the bug report: using Dim objects with explicit float32 dtype
+    with Graph("range_dim_dtype", input_types=()) as graph:
+        range_call = ops.range(
+            Dim(0),  # start
+            Dim(1),  # stop
+            Dim(1),  # step
+            out_dim=Dim(1),
+            device=DeviceRef.CPU(),
+            dtype=DType.float32,  # Explicitly requesting float32
         )
-    )
-    return np.array(values).reshape(shape)
-
-
-@given(array=non_scalar_arrays())
-def test_range_non_scalar_inputs(array) -> None:  # noqa: ANN001
-    """Tests ops.range with non-scalar inputs raises ValueError using hypothesis."""
-    with pytest.raises(
-        ValueError, match="range expected scalar values as inputs!"
-    ):
-        with Graph("range_non_scalar", input_types=()) as graph:
-            start_val = ops.constant(
-                array, DType.int32, device=DeviceRef.CPU()
-            )  # Non-scalar
-            stop_val = ops.constant(5, DType.int32, device=DeviceRef.CPU())
-            step_val = ops.constant(1, DType.int32, device=DeviceRef.CPU())
-            out = ops.range(
-                start_val, stop_val, step_val, out_dim=5, device=DeviceRef.CPU()
-            )
-            graph.output(out)
+        graph.output(range_call)
+        # The bug is that this assertion fails - it returns int64 instead of float32
+        assert range_call.dtype == DType.float32, (
+            f"Expected float32 but got {range_call.dtype}"
+        )

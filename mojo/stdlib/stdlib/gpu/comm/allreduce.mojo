@@ -63,6 +63,7 @@ from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
+from gpu.memory import AddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -163,40 +164,9 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
-fn _can_enable_p2p_impl(ctxs: List[DeviceContext]) raises -> Bool:
+fn can_enable_p2p() raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
-
-    Args:
-        ctxs: List of device contexts representing different GPUs.
-
-    Returns:
-        True if P2P access is possible between all GPU pairs, False otherwise.
-    """
-    for i in range(len(ctxs)):
-        for j in range(i + 1, len(ctxs)):
-            if not ctxs[i].can_access(ctxs[j]):
-                return False
-            try:
-                ctxs[i].enable_peer_access(ctxs[j])
-                ctxs[j].enable_peer_access(ctxs[i])
-            except e:
-                # Only ignore the benign "already enabled" error
-                if "PEER_ACCESS_ALREADY_ENABLED" in String(e):
-                    continue
-
-                # Any other error means P2P cannot be established
-                return False
-
-    return True
-
-
-fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
-    """
-    If peer-to-peer access is supported, enables it between all GPU pairs.
-
-    Args:
-        ctxs: List of device contexts representing different GPUs.
 
     Returns:
         True if P2P access is possible between all GPU pairs, False otherwise.
@@ -204,40 +174,34 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     alias p2p_not_available = Scalar[DType.index](1)
     alias p2p_available = Scalar[DType.index](2)
 
-    # grab context IDs
-    var ctx_ids = List[Int]()
-    for ctx in ctxs:
-        ctx_ids.append(Int(ctx.id()))
-
-    # sort context IDs for consistent cache key
-    @parameter
-    @always_inline
-    fn _less_than(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    sort[_less_than](Span[Int](ctx_ids.unsafe_ptr(), len(ctx_ids)))
-
     var cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
-    for ctx_id in ctx_ids:
-        cache_name += "_" + String(ctx_id)
 
     # We use 0 to indicate that the cache is not found, 1 to indicate that it is
     # found and p2p is not present and 2 to indicate that the cache is found and
     # that p2p is present.
     var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
-    if found:
-        return found == p2p_available
+    if found == p2p_available:
+        # If p2p was previously enabled, then return available.
+        return True
 
-    var res = _can_enable_p2p_impl(ctxs)
-    var ok = p2p_available if res else p2p_not_available
+    # Otherwise try to enable P2P.
+    is_peer_to_peer_enabled: Bool
+    try:
+        DeviceContext.enable_all_peer_access()
+        is_peer_to_peer_enabled = True
+    except e:
+        # If enabling fails, P2P is not available.
+        is_peer_to_peer_enabled = False
+
+    # Cache the result.
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_name),
-        _unsafe_aliasing_address_to_pointer[DType.index](ok).bitcast[
-            OpaquePointer
-        ](),
+        _unsafe_aliasing_address_to_pointer[DType.index](
+            p2p_available if is_peer_to_peer_enabled else p2p_not_available
+        ).bitcast[OpaquePointer](),
     )
 
-    return res
+    return is_peer_to_peer_enabled
 
 
 fn _naive_reduce_kernel_with_lambda[
@@ -603,7 +567,9 @@ fn _allreduce_2stage_kernel[
         ptrs[i] = src_ptrs[target]
 
         # Skip Signal header.
-        tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[dtype]]()
+        tmps[i] = (
+            rank_sigs[target].address_space_cast[_GPUAddressSpace.GENERIC]() + 1
+        ).bitcast[Scalar[dtype]]()
 
     # Current rank's output buffer.
     var tmp_out = tmps[0]
@@ -622,6 +588,7 @@ fn _allreduce_2stage_kernel[
         var elem_idx = idx * simd_width
         var accum = (
             ptrs[0]
+            .address_space_cast[AddressSpace.GLOBAL]()
             .load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
@@ -632,6 +599,7 @@ fn _allreduce_2stage_kernel[
         for gpu_idx in range(1, ngpus):
             accum += (
                 ptrs[gpu_idx]
+                .address_space_cast[AddressSpace.GLOBAL]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
                     elem_idx
                 )
@@ -640,9 +608,9 @@ fn _allreduce_2stage_kernel[
 
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
-        tmp_out.store[alignment=alignment](
-            elem_idx - elem_start, accum.cast[dtype]()
-        )
+        tmp_out.address_space_cast[AddressSpace.GLOBAL]().store[
+            alignment=alignment
+        ](elem_idx - elem_start, accum.cast[dtype]())
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -671,9 +639,9 @@ fn _allreduce_2stage_kernel[
                     input_index=my_rank, width=simd_width, alignment=alignment
                 ](
                     result.get_nd_index(elem_dst_idx),
-                    tmps[gpu_idx].load[width=simd_width, alignment=alignment](
-                        elem_idx
-                    ),
+                    tmps[gpu_idx]
+                    .address_space_cast[AddressSpace.GLOBAL]()
+                    .load[width=simd_width, alignment=alignment](elem_idx),
                 )
 
 
@@ -747,6 +715,7 @@ fn _allreduce_1stage_kernel[
         var elem_idx = idx * simd_width
         var accum = (
             ptrs[0]
+            .address_space_cast[AddressSpace.GLOBAL]()
             .load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
@@ -757,6 +726,7 @@ fn _allreduce_1stage_kernel[
         for _id in range(1, ngpus):
             accum += (
                 ptrs[_id]
+                .address_space_cast[AddressSpace.GLOBAL]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
                     elem_idx
                 )
@@ -969,9 +939,8 @@ fn allreduce[
             + String(max_num_blocks)
         )
 
-    var can_p2p = can_enable_p2p(ctxs)
-
-    if not can_p2p:
+    # Check P2P availability.
+    if not can_enable_p2p():
         return _allreduce_naive[outputs_lambda=outputs_lambda](
             input_buffers, output_buffers, max_num_blocks, ctxs
         )

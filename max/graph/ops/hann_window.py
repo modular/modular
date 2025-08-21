@@ -71,9 +71,7 @@ def hann_window(
     if periodic:
         window_length += 1
 
-    window = range(
-        0, window_length, 1, out_dim=window_length, device=device, dtype=dtype
-    )
+    window = range(0, window_length, 1, dtype=dtype, device=device)
     window = window * (2.0 * np.pi / np.float64(window_length - 1))
     window = cos(window) * (-0.5) + 0.5
 

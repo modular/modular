@@ -67,9 +67,9 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
         next_chunk = getattr(self.pipeline_model, "next_chunk")  # type: ignore[has-type]  # noqa: B009
         return next_chunk(batch)
 
-    def release(self, context: TTSContext) -> None:
+    def release(self, request_id: str) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
-        release(context)
+        release(request_id)
 
     @property
     def decoder_sample_rate(self) -> int:

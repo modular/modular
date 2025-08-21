@@ -200,7 +200,6 @@ fn shuffle_idx[
             # Get value from lane 5
             result = shuffle_idx(val, 5)
         ```
-        .
     """
     return shuffle_idx(_FULL_MASK, val, offset)
 
@@ -257,7 +256,6 @@ fn shuffle_idx[
             var val = SIMD[DType.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
-        .
     """
 
     @parameter
@@ -547,7 +545,6 @@ fn shuffle_xor[
             var val = SIMD[DType.float32, 16](42.0)  # Example value
             result = shuffle_xor(mask, val, 4.0)
         ```
-        .
     """
 
     @parameter
@@ -614,7 +611,6 @@ fn lane_group_reduce[
             var val = SIMD[DType.float32, 16](42.0)
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
-        .
     """
     var res = val
 
@@ -671,7 +667,6 @@ fn reduce[
         val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
         result = reduce[shuffle_down, add](val)
     ```
-    .
     """
     return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
 

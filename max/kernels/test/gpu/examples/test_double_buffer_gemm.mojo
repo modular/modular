@@ -303,16 +303,6 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device._unsafe_ptr()
-    )
-    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
-        a_device._unsafe_ptr()
-    )
-    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
-        b_device._unsafe_ptr()
-    )
-
     var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
     var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
@@ -368,18 +358,23 @@ fn test(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
+    var c_tensor_ref = LayoutTensor[DType.float32, c_layout](c_device_ref)
+
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[
-        DType.float32, DType.float32, DType.float32, BLOCK_DIM
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        a_tensor.layout,
+        b_tensor.layout,
+        c_tensor_ref.layout,
+        BLOCK_DIM,
     ]
-    var c_buffer_ref = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device_ref._unsafe_ptr()
-    )
     ctx.enqueue_function[gemm_naive](
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

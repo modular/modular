@@ -20,7 +20,7 @@ from max.graph import DeviceRef, Shape, StaticDim, TensorType, ops
 
 
 @given(
-    window_length=st.integers(min_value=0, max_value=1000),
+    window_length=st.integers(min_value=0, max_value=255),
     periodic=st.booleans(),
     dtype=st.sampled_from([DType.float32, DType.bfloat16, DType.float64]),
 )

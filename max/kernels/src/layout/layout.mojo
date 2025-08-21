@@ -181,7 +181,6 @@ fn make_layout(*layouts: Layout) -> Layout:
     var combined = make_layout(layout1, layout2)
     # Result: Layout with shape ((2, 3), (4, 5)) and stride ((3, 1), (5, 1))
     ```
-    .
     """
     var shape = IntTuple()
     var stride = IntTuple()
@@ -241,7 +240,6 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
     )
     # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
     ```
-    .
     """
     var stride = compact_order(shape, order)
     return Layout(shape, stride)
@@ -433,7 +431,6 @@ struct Layout(
         var layout = Layout.col_major(3, 4)
         # Result: Layout with shape (3,4) and stride (1,3)
         ```
-        .
         """
         var shape = IntTuple(dims)
         return Self.col_major(shape)
@@ -461,7 +458,6 @@ struct Layout(
         var layout = Layout.col_major(IntTuple(3, 4))
         # Result: Layout with shape (3,4) and stride (1,3)
         ```
-        .
         """
         return Layout(shape, prefix_product(shape))
 
@@ -494,7 +490,6 @@ struct Layout(
             var layout = Layout.col_major[2](dims)
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
-            .
         """
         var c_stride = 1
         var shape = IntTuple()
@@ -591,7 +586,6 @@ struct Layout(
         var layout = Layout.row_major(3, 4)
         # Result: Layout with shape (3,4) and stride (4,1)
         ```
-        .
         """
         var shape = IntTuple(dims)
         return Self.row_major(shape)
@@ -625,7 +619,6 @@ struct Layout(
             var layout = Layout.row_major[2](dims)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
-            .
         """
         var c_stride = 1
         var shape = IntTuple()
@@ -677,7 +670,6 @@ struct Layout(
             var layout = Layout.row_major[2](idx_list)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
-            .
         """
         var c_stride = 1
         var shape = IntTuple()
@@ -753,7 +745,6 @@ struct Layout(
         var layout = Layout.row_major(shape)
         # Result: Layout with shape (3,4) and stride (4,1)
         ```
-        .
         """
         return Layout(shape, reverse(prefix_product(reverse(shape))))
 
@@ -789,7 +780,6 @@ struct Layout(
         var partial = layout.make_shape_unknown[0]()
         # Result: Layout with shape (?, 3) and original strides
         ```
-        .
         """
 
         @parameter
@@ -1010,7 +1000,6 @@ struct Layout(
         var trans_nested = nested.transpose()
         # Result: shape (4, (2,3)), stride (1, (12,4))
         ```
-        .
         """
         # Reverse only the top level, not nested tuples
         var reversed_shape = IntTuple()
@@ -1086,14 +1075,12 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         A LayoutList containing layouts for each tile size.
     """
 
-    @parameter
-    fn num_tiles() -> Int:
-        return __mlir_op.`pop.variadic.size`(tile_sizes)
+    alias num_tiles = stdlib.builtin.variadic_size(tile_sizes)
 
-    var layout_list = LayoutList(capacity=num_tiles())
+    var layout_list = LayoutList(capacity=num_tiles)
 
     @parameter
-    for i in range(num_tiles()):
+    for i in range(num_tiles):
         alias arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
@@ -1126,7 +1113,6 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     var coalesced = coalesce(layout)
     # Result: Layout with shape (8) and stride (1)
     ```
-    .
     """
     if keep_rank:
         # Fast path for single-element layouts
@@ -1222,7 +1208,6 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
     # Result: A layout that represents a 3x2 tile from
     # layout_a
     ```
-    .
     """
     if len(layout_b) == 0:
         return layout_a
@@ -1290,7 +1275,6 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     var composed = composition(base, tilers)
     # Result: A layout with hierarchical tiling based on the tiler list
     ```
-    .
     """
     var result = Layout()
     for i in range(len(tiler)):
@@ -1328,10 +1312,11 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     var comp = complement(base, 10)
     # Result: A layout that fills the gaps in the original layout
     ```
-    .
     """
     var current_idx = 1
-    var sorted = sorted(zip(flatten(layout.stride), flatten(layout.shape)))
+    var sorted = sorted(
+        IntTuple(zip(flatten(layout.stride), flatten(layout.shape)))
+    )
     var sorted_len = len(sorted)
 
     var result_shape = IntTuple(num_elems=sorted_len + 1)
@@ -1399,7 +1384,6 @@ fn apply_tiler[
     tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
     var result = apply_tiler[logical_divide](base, tilers)
     ```
-    .
     """
     if len(tiler) == 0:
         return layout_a
@@ -1544,7 +1528,6 @@ fn blocked_product(
     3  | 14 | 15 | 18 | 19 | 22 | 23 |
        +----+----+----+----+----+----+
     ```
-    .
     """
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
     var lp = logical_product(layout_a, layout_b)
@@ -1587,7 +1570,6 @@ fn tile_to_shape(
     var tiled = tile_to_shape(tile, IntTuple(6, 4))
     # Result: A layout with 3x2 tiles of size 2x2 each
     ```
-    .
     """
     var flat_tile_shape = product_each(tile.shape)
     var flat_target_shape = product_each(target_shape)
@@ -1640,7 +1622,6 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     tilers.append(Layout(IntTuple(2, 2)))
     var result = logical_product(base, tilers)
     ```
-    .
     """
     if len(tiler) == 1:
         return logical_product(layout_a, tiler[0])
@@ -1675,7 +1656,6 @@ fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     tilers.append(Layout(IntTuple(2, 2)))
     var result = hierarchical_unzip(base, tilers)
     ```
-    .
     """
     var res_1 = Layout()
     var res_2 = Layout()
@@ -1722,7 +1702,6 @@ fn hierarchical_unzip(
     var pattern = Layout(IntTuple(2, 2))
     var result = hierarchical_unzip(base, pattern)
     ```
-    .
     """
     if len(layout_a) == 1 or len(layout_b) == 1:
         return logical_divide(layout_a, Layout(layout_b.shape))
@@ -1770,7 +1749,6 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     var pattern = Layout(IntTuple(2, 2))
     var result = zipped_divide(base, pattern)
     ```
-    .
     """
     return hierarchical_unzip(layout_a, layout_b)
 
@@ -1804,7 +1782,6 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     tilers.append(Layout(IntTuple(2, 2)))
     var result = zipped_divide(base, tilers)
     ```
-    .
     """
     return hierarchical_unzip(layout_a, tiler)
 
@@ -2059,7 +2036,6 @@ fn expand_modes_alike(
     print(uc[1])
     # (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
     ```
-    .
     """
     var uc = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride

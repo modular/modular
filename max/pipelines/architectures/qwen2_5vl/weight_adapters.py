@@ -19,6 +19,9 @@ from max.graph.weights import WeightData, Weights
 QWEN2_5_VL_MODEL_MAPPING = {
     "model.": "language_model.",
     "visual.": "vision_encoder.",
+    "merger.ln_q.": "merger.norm.",
+    "merger.mlp.0.": "merger.linear1.",
+    "merger.mlp.2.": "merger.linear2.",
 }
 
 
@@ -49,12 +52,10 @@ def convert_qwen2_5vl_model_state_dict(
     llm_state_dict: dict[str, WeightData] = {}
 
     for checkpoint_name, weight in state_dict.items():
-        # Only process language model weights
+        # Special case for lm_head.
         if checkpoint_name.startswith("lm_head."):
             llm_state_dict["language_model.lm_head.weight"] = weight.data()
-
         else:
-            # Apply mapping to strip "language_model." prefixes
             llm_name = checkpoint_name
             for before, after in QWEN2_5_VL_MODEL_MAPPING.items():
                 llm_name = llm_name.replace(before, after)

@@ -31,8 +31,10 @@ fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
-    alias info = GPUInfo.from_name[target_arch]() if target_arch else A100
-    return info.target()
+    constrained[
+        target_arch != "", "target_arch must be a valid GPU architecture."
+    ]()
+    return GPUInfo.from_name[target_arch]().target()
 
 
 # ===-----------------------------------------------------------------------===#

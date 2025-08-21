@@ -504,6 +504,7 @@ class HuggingFaceRepo:
 
         # Get torch dtype for pytorch files.
         if WeightsFormat.pytorch in self.formats_available:
+            # TODO: We shouldn't have to make another AutoConfig call here.
             cfg = AutoConfig.from_pretrained(
                 self.repo_id,
                 trust_remote_code=self.trust_remote_code,
@@ -514,18 +515,19 @@ class HuggingFaceRepo:
                 # This is a pt file, we require pytorch to open it
                 try:
                     import torch  # type: ignore
-                except ImportError:
-                    raise ImportError(
-                        "Tried loading a PyTorch weights file, but PyTorch isn't installed."
-                    ) from None
 
-                if torch_dtype == torch.float32:
-                    supported_encodings.add(SupportedEncoding.float32)
-                elif torch_dtype == torch.bfloat16:
-                    supported_encodings.add(SupportedEncoding.bfloat16)
+                    if torch_dtype == torch.float32:
+                        supported_encodings.add(SupportedEncoding.float32)
+                    elif torch_dtype == torch.bfloat16:
+                        supported_encodings.add(SupportedEncoding.bfloat16)
+                except ImportError:
+                    logger.warning(
+                        "Tried loading a PyTorch weights file, but PyTorch isn't installed. "
+                        "Not adding PyTorch supported encodings."
+                    )
             else:
                 logger.warning(
-                    "torch_dtype not available, cant infer encoding from config.json"
+                    "torch_dtype not available, can't infer encoding from config.json"
                 )
 
         return list(supported_encodings)

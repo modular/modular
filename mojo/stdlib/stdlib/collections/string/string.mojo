@@ -374,7 +374,6 @@ struct String(
         %# from testing import assert_equal
         %# assert_equal(string, "1, 2.0, three")
         ```
-        .
         """
         alias length = args.__len__()
         var total_bytes = _TotalWritableBytes()
@@ -978,7 +977,6 @@ struct String(
         assert_equal(len(s), 3)
         assert_equal(len(s.codepoints()), 3)
         ```
-        .
         """
         return self.byte_length()
 
@@ -1135,7 +1133,6 @@ struct String(
         assert_equal(iter.__next__().to_u32(), 0x0301)
         assert_equal(iter.__has_next__(), False)
         ```
-        .
         """
         return self.as_string_slice().codepoints()
 
@@ -1162,7 +1159,6 @@ struct String(
         assert_true(iter.__next__() == "c")
         assert_equal(iter.__has_next__(), False)
         ```
-        .
         """
         return self.as_string_slice().codepoint_slices()
 

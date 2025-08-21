@@ -33,7 +33,7 @@ from sys import (
     sizeof,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char
+from sys.ffi import c_char, c_int, c_uint
 from sys.info import (
     is_triple,
     _TargetType,
@@ -46,6 +46,7 @@ from sys.param_env import _is_bool_like
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
 from builtin.variadics import VariadicOf
+from compile import get_type_name
 from compile.compile import CompiledFunctionInfo
 from gpu.host.compile import (
     _compile_code,
@@ -83,6 +84,10 @@ struct _DeviceStreamCpp:
     pass
 
 
+struct _DeviceEventCpp:
+    pass
+
+
 struct _DeviceTimerCpp:
     pass
 
@@ -96,6 +101,7 @@ alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
 alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
 alias _DeviceMulticastBufferPtr = UnsafePointer[_DeviceMulticastBufferCpp]
 alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
+alias _DeviceEventPtr = UnsafePointer[_DeviceEventCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _DeviceContextScopePtr = UnsafePointer[_DeviceContextScopeCpp]
 alias _CharPtr = UnsafePointer[UInt8]
@@ -163,7 +169,6 @@ fn _check_dim[
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
-    @implicit
     fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
@@ -171,6 +176,27 @@ struct _DeviceTimer:
         # void AsyncRT_DeviceTimer_release(const DviceTimer *timer)
         external_call["AsyncRT_DeviceTimer_release", NoneType, _DeviceTimerPtr](
             self._handle
+        )
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct StreamPriorityRange(Copyable, Movable, Stringable, Writable):
+    var least: Int
+    var greatest: Int
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @always_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "StreamPriorityRange(least=",
+            self.least,
+            ", greatest=",
+            self.greatest,
+            ")",
         )
 
 
@@ -1335,7 +1361,7 @@ struct DeviceBuffer[dtype: DType](
 
 
 # @doc_private does not work on structs - see MOTO-992.
-struct DeviceStream:
+struct DeviceStream(Copyable, Movable):
     """Represents a CUDA/HIP stream for asynchronous GPU operations.
 
     A DeviceStream provides a queue for GPU operations that can execute concurrently
@@ -1366,11 +1392,21 @@ struct DeviceStream:
 
     @doc_private
     @always_inline
-    fn __init__(out self, ctx: DeviceContext) raises:
-        """Creates a new stream associated with the given device context.
+    fn __init__(out self, handle: _DeviceStreamPtr):
+        """Initializes a new DeviceStream with the given stream handle.
 
         Args:
-            ctx: The device context to associate this stream with.
+            handle: The stream handle to initialize the DeviceStream with.
+        """
+        self._handle = handle
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, ctx: DeviceContext) raises:
+        """Retrieves the stream associated with the given device context.
+
+        Args:
+            ctx: The device context to retrieve the stream from.
 
         Raises:
             - If stream creation fails.
@@ -1451,6 +1487,321 @@ struct DeviceStream:
                 "AsyncRT_DeviceStream_synchronize",
                 _CharPtr,
                 _DeviceStreamPtr,
+            ](self._handle)
+        )
+
+    @always_inline
+    fn enqueue_wait_for(self, event: DeviceEvent) raises:
+        """Makes this stream wait for the specified event.
+
+        This function inserts a wait operation into this stream that will
+        block all subsequent operations in the stream until the specified
+        event has been recorded and completed.
+
+        Args:
+            event: The event to wait for.
+
+        Raises:
+            If the wait operation fails.
+        """
+        # const char *AsyncRT_DeviceStream_enqueue_enqueue_wait_for(const DeviceStream *stream, const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_waitForEvent",
+                _CharPtr,
+                _DeviceStreamPtr,
+                _DeviceEventPtr,
+            ](self._handle, event._handle)
+        )
+
+    @always_inline
+    fn record_event(self, event: DeviceEvent) raises:
+        """Records an event in this stream.
+
+        This function records the given event at the current point in this stream.
+        All operations in the stream that were enqueued before this call will
+        complete before the event is triggered.
+
+        Args:
+            event: The event to record.
+
+        Raises:
+            If event recording fails.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create event on the default stream
+        var event = default_stream.create_event()
+
+        # Wait for the event on the new stream
+        new_stream.enqueue_wait_for(event)
+
+        # Stream 2 can continue
+        default_stream.record_event(event)
+        ```
+        """
+        # const char *AsyncRT_DeviceStream_event_record(const DeviceStream *stream, const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_eventRecord",
+                _CharPtr,
+                _DeviceStreamPtr,
+                _DeviceEventPtr,
+            ](self._handle, event._handle)
+        )
+
+    @parameter
+    @always_inline
+    fn enqueue_function[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Enqueues a compiled function for execution on this device.
+
+        Parameters:
+            Ts: Argument dtypes.
+
+        Args:
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            grid_dim: Dimensions of the compute grid, made up of thread
+                blocks.
+            block_dim: Dimensions of each thread block in the grid.
+            cluster_dim: Dimensions of clusters (if the thread blocks are
+                grouped into clusters).
+            shared_mem_bytes: Amount of shared memory per thread block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mapping.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        fn kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+
+        If you are reusing the same function and parameters multiple times, this
+        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
+        the function first to remove the overhead:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+
+        constrained[
+            not f.declared_arg_types,
+            (
+                "A checked DeviceFunction should be called with"
+                " `enqueue_function_checked`."
+            ),
+        ]()
+        self._enqueue_function_unchecked(
+            f,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @parameter
+    @always_inline
+    fn _enqueue_function_unchecked[
+        *Ts: AnyType
+    ](
+        self,
+        f: DeviceFunction,
+        args: VariadicPack[_, _, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        f._call_with_pack(
+            self,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+
+struct DeviceEvent(Copyable, Movable):
+    """Represents a GPU event for synchronization between streams.
+
+    A DeviceEvent allows for fine-grained synchronization between different
+    GPU streams. Events can be recorded in one stream and waited for in another,
+    enabling efficient coordination of asynchronous GPU operations.
+
+    Example:
+
+    ```mojo
+    from gpu.host import DeviceContext
+
+    var ctx = DeviceContext()
+
+    var default_stream = ctx.stream()
+    var new_stream = ctx.create_stream()
+
+    # Create event in default_stream
+    var event = ctx.create_event()
+
+    # Wait for the event in new_stream
+    new_stream.enqueue_wait_for(event)
+
+    # Stream 2 can continue
+    default_stream.record_event(event)
+    ```
+    """
+
+    var _handle: _DeviceEventPtr
+    """Internal handle to the native event object."""
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, stream: DeviceStream) raises:
+        """Creates a new event recorded on the given stream.
+
+        Args:
+            stream: The stream to record the event on.
+
+        Raises:
+            - If event creation or recording fails.
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceStream_enqueue_event(const DeviceEvent **result, const DeviceStream *stream)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_eventCreate",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceStreamPtr,
+            ](UnsafePointer(to=result), stream._handle)
+        )
+        self._handle = result
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, ctx: DeviceContext) raises:
+        """Creates a new event recorded on the given context's default stream.
+
+        Args:
+            ctx: The device context to record the event on.
+
+        Raises:
+            - If event creation or recording fails.
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceContext_enqueue_event(const DeviceEvent **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enqueue_event",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceContextPtr,
+            ](UnsafePointer(to=result), ctx._handle)
+        )
+        self._handle = result
+
+    @doc_private
+    @always_inline
+    fn __init__(out self, existing: _DeviceEventPtr):
+        """Creates a DeviceEvent from an existing pointer.
+
+        Args:
+            existing: Pointer to existing DeviceEvent.
+        """
+        # Increment the reference count.
+        external_call["AsyncRT_DeviceEvent_retain", NoneType, _DeviceEventPtr](
+            existing
+        )
+        self._handle = existing
+
+    @doc_private
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of an existing event by incrementing its reference count.
+
+        Args:
+            existing: The event to copy.
+        """
+        # Increment the reference count.
+        external_call["AsyncRT_DeviceEvent_retain", NoneType, _DeviceEventPtr](
+            existing._handle
+        )
+        self._handle = existing._handle
+
+    @doc_private
+    fn __moveinit__(out self, deinit existing: Self):
+        """Moves an existing event into this one.
+
+        Args:
+            existing: The event to move from.
+        """
+        self._handle = existing._handle
+
+    fn __del__(deinit self):
+        """Releases resources associated with this event."""
+        # void AsyncRT_DeviceEvent_release(const DeviceEvent *event)
+        external_call["AsyncRT_DeviceEvent_release", NoneType, _DeviceEventPtr](
+            self._handle,
+        )
+
+    @always_inline
+    fn synchronize(self) raises:
+        """Blocks the calling CPU thread until this event completes.
+
+        This function waits until the event has been recorded and all
+        operations before the event in the stream have completed.
+
+        Raises:
+            If synchronization fails.
+        """
+        # const char *AsyncRT_DeviceEvent_synchronize(const DeviceEvent *event)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceEvent_synchronize",
+                _CharPtr,
+                _DeviceEventPtr,
             ](self._handle)
         )
 
@@ -1876,6 +2227,154 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_sizes = UnsafePointer[UInt]()
+        if num_captures > num_captures_static:
+            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+            dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer
+            ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt
+            ]()
+
+        @parameter
+        for i in range(num_args):
+            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+
+        @parameter
+        fn _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = sizeof[Ts[i]]()
+
+        @parameter
+        for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        if cluster_dim:
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
+
+        for i in range(len(constant_memory)):
+            self._copy_to_constant_memory(constant_memory[i])
+
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
+        #     const DeviceContext *ctx, const DeviceFunction *func,
+        #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #     void **args, const size_t *argSizes)
+
+        if num_captures > 0:
+            # Call the populate function to initialize the captured values in the arguments array.
+            # The captured values are always at the end of the argument list.
+            # This function (generated by the compiler) has to be inlined here
+            # and be in the same scope as the user of dense_args_addr
+            # (i.e. the following external_call).
+            # Because this closure uses stack allocated ptrs
+            # to store the captured values in dense_args_addrs, they need to
+            # not go out of the scope before dense_args_addr is being use.
+            var capture_args_start = dense_args_addrs.offset(num_args)
+            populate(capture_args_start.bitcast[NoneType]())
+
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    _CharPtr,
+                    _DeviceContextPtr,
+                    _DeviceFunctionPtr,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UnsafePointer[LaunchAttribute],
+                    UInt32,
+                    UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
+                ](
+                    ctx._handle,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                    dense_args_sizes,
+                )
+            )
+        else:
+            _checked(
+                external_call[
+                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    _CharPtr,
+                    _DeviceContextPtr,
+                    _DeviceFunctionPtr,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UInt32,
+                    UnsafePointer[LaunchAttribute],
+                    UInt32,
+                    UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
+                ](
+                    ctx._handle,
+                    self._handle,
+                    grid_dim.x(),
+                    grid_dim.y(),
+                    grid_dim.z(),
+                    block_dim.x(),
+                    block_dim.y(),
+                    block_dim.z(),
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr(),
+                    len(attributes),
+                    dense_args_addrs,
+                    dense_args_sizes,
+                )
+            )
+
+        if num_captures > num_captures_static:
+            dense_args_addrs.free()
+            dense_args_sizes.free()
+
+    # Enqueue function on a stream
+    @always_inline
+    @parameter
+    fn _call_with_pack[
+        *Ts: AnyType
+    ](
+        self,
+        stream: DeviceStream,
+        args: VariadicPack[_, _, AnyType, *Ts],
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        alias num_args = len(VariadicList(Ts))
+        var num_captures = self._func_impl.num_captures
+        alias populate = __type_of(self._func_impl).populate
+        alias num_captures_static = 16
+
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[OpaquePointer]
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
         else:
@@ -1913,25 +2412,12 @@ struct DeviceFunction[
             # not go out of the scope before dense_args_addr is being use.
             var capture_args_start = dense_args_addrs.offset(num_args)
             populate(capture_args_start.bitcast[NoneType]())
-
             _checked(
                 external_call[
-                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
                     _CharPtr,
-                    _DeviceContextPtr,
-                    _DeviceFunctionPtr,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UnsafePointer[LaunchAttribute],
-                    UInt32,
-                    UnsafePointer[OpaquePointer],
                 ](
-                    ctx._handle,
+                    stream,
                     self._handle,
                     grid_dim.x(),
                     grid_dim.y(),
@@ -1948,22 +2434,10 @@ struct DeviceFunction[
         else:
             _checked(
                 external_call[
-                    "AsyncRT_DeviceContext_enqueueFunctionDirect",
+                    "AsyncRT_DeviceStream_enqueueFunctionDirect",
                     _CharPtr,
-                    _DeviceContextPtr,
-                    _DeviceFunctionPtr,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UInt32,
-                    UnsafePointer[LaunchAttribute],
-                    UInt32,
-                    UnsafePointer[OpaquePointer],
                 ](
-                    ctx._handle,
+                    stream,
                     self._handle,
                     grid_dim.x(),
                     grid_dim.y(),
@@ -2029,7 +2503,6 @@ struct DeviceFunction[
 
                 # Now we'll check if the given argument's device_type is
                 # what the kernel expects.
-                # TODO: Print out the expected dtype if possible.
 
                 # First, check if they're handing in a device dtype, in other
                 # words, a dtype that can be passed directly and doesn't need to
@@ -2045,6 +2518,8 @@ struct DeviceFunction[
                         String(i),
                         ", received a ",
                         actual_arg_type.get_type_name(),
+                        ", but actual type name is: ",
+                        get_type_name[declared_arg_type](),
                     ]()
                 else:
                     # They handed in a host dtype, in other words, a dtype that
@@ -2101,15 +2576,21 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[OpaquePointer]
+        var dense_args_sizes = UnsafePointer[UInt]()
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(
+                num_captures + num_passed_args
+            )
+            dense_args_sizes = dense_args_sizes.alloc(
                 num_captures + num_passed_args
             )
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
-
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_passed_args, UInt
+            ]()
         # Since we skip over zero sized declared dtypes when passing arguments
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
@@ -2173,6 +2654,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2186,6 +2668,7 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
         else:
@@ -2205,6 +2688,7 @@ struct DeviceFunction[
                     UnsafePointer[LaunchAttribute],
                     UInt32,
                     UnsafePointer[OpaquePointer],
+                    UnsafePointer[UInt],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2218,11 +2702,13 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    dense_args_sizes,
                 )
             )
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+            dense_args_sizes.free()
 
     @always_inline
     fn get_attribute(self, attr: Attribute) raises -> Int:
@@ -2265,6 +2751,31 @@ struct DeviceFunction[
                 UnsafePointer(to=result),
                 self._handle,
                 attr.code,
+            )
+        )
+        return Int(result)
+
+    @always_inline
+    fn occupancy_max_active_blocks_per_multiprocessor(
+        self, block_size: Int, dynamic_shared_mem_size: Int
+    ) raises -> Int:
+        """Returns the maximum number of active blocks per multiprocessor for the given function.
+        """
+        var result: Int32 = 0
+        # const char *AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor(int *numBlocks, const DeviceContext *ctx, const DeviceFunction *func, int blockSize, size_t dynamicSharedMemSize)
+        _checked(
+            external_call[
+                "AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor",
+                _CharPtr,
+                UnsafePointer[Int32],
+                _DeviceFunctionPtr,
+                Int32,
+                _SizeT,
+            ](
+                UnsafePointer(to=result),
+                self._handle,
+                block_size,
+                dynamic_shared_mem_size,
             )
         )
         return Int(result)
@@ -2652,7 +3163,6 @@ struct DeviceContext(Copyable, Movable):
         ](self._handle)
 
     @doc_private
-    @implicit
     fn __init__(out self, handle: OpaquePointer):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -2660,7 +3170,6 @@ struct DeviceContext(Copyable, Movable):
         self._retain()
 
     @doc_private
-    @implicit
     fn __init__(out self, ctx_ptr: _DeviceContextPtr):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
@@ -5144,6 +5653,126 @@ struct DeviceContext(Copyable, Movable):
         return DeviceStream(self)
 
     @always_inline
+    fn create_event(self) raises -> DeviceEvent:
+        """Creates a new event on this device context.
+
+        Creates a new event that can be used for synchronization between streams.
+
+        Returns:
+            A DeviceEvent that can be used for synchronization.
+
+        Raises:
+            If event creation fails.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create event in default_stream
+        var event = ctx.create_event()
+
+        # Wait for the event in new_stream
+        new_stream.enqueue_wait_for(event)
+
+        # Stream 2 can continue
+        default_stream.record_event(event)
+        ```
+        """
+        var result = _DeviceEventPtr()
+        # const char *AsyncRT_DeviceContext_event_create(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_eventCreate",
+                _CharPtr,
+                UnsafePointer[_DeviceEventPtr],
+                _DeviceContextPtr,
+                c_uint,
+            ](UnsafePointer(to=result), self._handle, c_uint(0))
+        )
+        return DeviceEvent(result)
+
+    fn stream_priority_range(self) raises -> StreamPriorityRange:
+        """Returns the range of stream priorities supported by this device context.
+
+        Returns:
+            A StreamPriorityRange object containing the minimum and maximum stream priorities.
+        """
+        var least_priority = c_int(0)
+        var greatest_priority = c_int(0)
+        # const char *AsyncRT_DeviceContext_streamPriorityRange(int *leastPriority, int *greatestPriority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamPriorityRange",
+                _CharPtr,
+            ](
+                UnsafePointer(to=least_priority),
+                UnsafePointer(to=greatest_priority),
+                self._handle,
+            )
+        )
+        return StreamPriorityRange(Int(least_priority), Int(greatest_priority))
+
+    fn create_stream(self, *, blocking: Bool = True) raises -> DeviceStream:
+        """Creates a new stream associated with the given device context.
+
+        Args:
+            blocking: Whether the stream should be blocking.
+
+        Raises:
+            - If stream creation fails.
+        """
+        var flags: c_uint = 0 if blocking else 1
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamCreate",
+                _CharPtr,
+            ](UnsafePointer(to=result), self._handle, flags)
+        )
+        return DeviceStream(result)
+
+    fn create_stream(
+        self, *, priority: Int, blocking: Bool = True
+    ) raises -> DeviceStream:
+        """Creates a new stream associated with the given device context.
+
+        To create a non-blocking stream with the highest priority, use:
+
+        ```mojo
+        from gpu.host import DeviceContext
+        var ctx = DeviceContext()
+        var priority = ctx.stream_priority_range().largest
+        var stream = ctx.create_stream(priority=priority, blocking=False)
+        ```
+
+        Args:
+            priority: The priority of the stream.
+            blocking: Whether the stream should be blocking.
+
+        Raises:
+            - If stream creation fails.
+        """
+        var flags: c_uint = 0 if blocking else 1
+        var result = _DeviceStreamPtr()
+
+        # const char *AsyncRT_cuda_create_stream_with_priority(CUstream *stream, int priority, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_streamCreateWithPriority",
+                _CharPtr,
+            ](UnsafePointer(to=result), flags, c_int(priority), self._handle)
+        )
+        return DeviceStream(result)
+
+    @always_inline
     fn synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
         this device context have completed.
@@ -5629,6 +6258,78 @@ struct DeviceContext(Copyable, Movable):
                 api.unsafe_ptr(),
             )
         )
+
+    @staticmethod
+    fn enable_all_peer_access() raises:
+        """Enable peer-to-peer memory access between all available accelerators.
+
+        This function detects all available accelerators in the system and enables
+        peer-to-peer (P2P) memory access between every pair of devices.
+
+        When peer access is enabled, kernels running on one device can directly access
+        memory allocated on another device without going through host memory. This is
+        crucial for efficient multi-GPU operations like allreduce.
+
+        The function is a no-op when:
+        - No accelerators are available
+        - Only one accelerator is available
+        - Peer access is already enabled between devices
+
+        Raises:
+            Error: If peer access cannot be enabled between any pair of devices.
+                   This can happen if the hardware doesn't support P2P access or if
+                   there's a configuration issue.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        # Enable P2P access between all GPUs
+        DeviceContext.enable_all_peer_access()
+
+        # Now GPUs can directly access each other's memory
+        ```
+        """
+        # Get number of available devices
+        var num_devices = DeviceContext.number_of_devices()
+        if num_devices < 2:
+            return  # Nothing to do
+
+        # Create device contexts for all devices
+        var devices = List[DeviceContext](capacity=num_devices)
+        for i in range(num_devices):
+            devices.append(DeviceContext(device_id=i))
+
+        # Enable peer access between every pair of devices
+        for i in range(num_devices):
+            for j in range(num_devices):
+                if i == j:
+                    continue
+
+                # Check if peer access is possible.
+                if not devices[i].can_access(devices[j]):
+                    raise Error(
+                        "Cannot enable peer access from GPU "
+                        + String(i)
+                        + " to GPU "
+                        + String(j)
+                        + ": hardware does not support P2P access"
+                    )
+
+                try:
+                    devices[i].enable_peer_access(devices[j])
+                except e:
+                    # Ignore "already enabled" errors.
+                    if "PEER_ACCESS_ALREADY_ENABLED" not in String(e):
+                        raise Error(
+                            "Failed to enable peer access from GPU "
+                            + String(i)
+                            + " to GPU "
+                            + String(j)
+                            + ": "
+                            + String(e)
+                        )
 
 
 struct DeviceMulticastBuffer[dtype: DType]:

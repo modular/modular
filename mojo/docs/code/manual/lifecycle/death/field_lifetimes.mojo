@@ -12,42 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-field-lifetimes-during-destruct
+fn consume(var str: String):
+    print("Consumed", str)
+
+
 @fieldwise_init
-struct Balloons:
-    var color: String
-    var count: Int
+struct TwoStrings(Copyable, Movable):
+    var str1: String
+    var str2: String
 
+    fn __del__(deinit self):
+        # self value is whole at the beginning of the function
+        self.dump()
+        # After dump(): str2 is never used again, so str2.__del__() runs now
 
-fn consume(var arg: String):
-    pass
+        consume(self.str1^)
+        # self.str1 has been transferred so str1 becomes uninitialized, and
+        # no destructor is called for str1.
+        # self.__del__() is not called (avoiding an infinite loop).
 
-
-fn use(arg: Balloons):
-    print(arg.count, arg.color, "balloons.")
-
-
-fn consume_and_use():
-    var balloons = Balloons("blue", 8)
-    consume(balloons.color^)
-    # String.__moveinit__() runs here, which invalidates balloons.color
-    # Now balloons is only partially initialized
-
-    # use(balloons)  # This fails because balloons.color is uninitialized
-
-    balloons.color = String("orange")  # All together now
-    use(balloons)  # This is ok
-    # balloons.__del__() runs here (and only if the object is whole)
+    fn dump(mut self):
+        print("str1:", self.str1)
+        print("str2:", self.str2)
 
 
 def main():
-    var balloons = Balloons("red", 5)
-    print(balloons.color)
-    # balloons.color.__del__() runs here, because this instance is
-    # no longer used; it's replaced below
-
-    balloons.color = "blue"  # Overwrite balloons.color
-    print(balloons.color)
-    # balloons.__del__() runs here
-
-    # second example
-    consume_and_use()
+    var two_strings = TwoStrings("foo", "bar")
+    # end-field-lifetimes-during-destruct
+    _ = two_strings^

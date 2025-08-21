@@ -24,8 +24,6 @@ from internal_utils import (
     fill,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-
-from linalg.vendor_blas import Backend, Handle, matmul
 from utils.index import Index, IndexList
 from internal_utils._utils import ValOrDim, dynamic, static
 
@@ -34,22 +32,16 @@ fn test_naive_blockwise_fp8_matmul[
     input_type: DType,
     block_scales_sizes: IndexList[3],
     transpose_b: Bool = True,
-](
-    ctx: DeviceContext,
-    handle: Handle,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-) raises:
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
     alias BLOCK_SCALE_M = block_scales_sizes[0]
     alias BLOCK_SCALE_N = block_scales_sizes[1]
     alias BLOCK_SCALE_K = block_scales_sizes[2]
 
+    constrained[BLOCK_SCALE_M == 1, "BLOCK_SCALE_M must be 1"]()
+
     var M = m.value
     var N = n.value
     var K = k.value
-
-    constrained[BLOCK_SCALE_M == 1, "BLOCK_SCALE_M must be 1"]()
 
     print(
         "== test_naive_blockwise_fp8_matmul",
@@ -216,7 +208,7 @@ fn test_naive_blockwise_fp8_matmul[
 
 
 fn main() raises:
-    with DeviceContext() as ctx, Handle[Backend.CUBLASLT]() as handle:
+    with DeviceContext() as ctx:
 
         @parameter
         for transpose_b in range(0, 2):
@@ -224,16 +216,16 @@ fn main() raises:
                 DType.float8_e4m3fn,
                 Index(1, 128, 128),
                 transpose_b=transpose_b,
-            ](ctx, handle, dynamic(120), static[128](), static[128]())
+            ](ctx, dynamic(120), static[128](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 128),
                 transpose_b=transpose_b,
-            ](ctx, handle, dynamic(128), static[256](), static[128]())
+            ](ctx, dynamic(128), static[256](), static[128]())
 
             test_naive_blockwise_fp8_matmul[
                 DType.float8_e4m3fn,
                 Index(1, 64, 16),
                 transpose_b=transpose_b,
-            ](ctx, handle, dynamic(128), static[128](), static[128]())
+            ](ctx, dynamic(128), static[128](), static[128]())

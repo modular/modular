@@ -9,6 +9,26 @@ load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
+_TESTONLY_DEPS = [
+    "accelerate",
+    "einx",
+    "frozendict",
+    "hypothesis",
+    "librosa",
+    "lm-eval",
+    "mteb",
+    "nvitop",
+    "peft",
+    "pygame",
+    "reference_residual_fsq",
+    "sentence-transformers",
+    "soxr",
+    "timm",
+    "torchmetrics",
+    "torchvision",
+    "zhconv",
+]
+
 PINS = {
     "absl-py": "absl-py@2.1.0",
     "accelerate": "accelerate@1.0.1",
@@ -35,7 +55,7 @@ PINS = {
     "grpcio": "grpcio@1.73.1",
     "hf-transfer": "hf-transfer@0.1.9",
     "httpx": "httpx@0.27.2",
-    "huggingface-hub": "huggingface-hub@0.30.1",
+    "huggingface-hub": "huggingface-hub@0.34.3",
     "hypothesis": "hypothesis@6.108.4",
     "ipython": "ipython@8.18.1",
     "jinja2": "jinja2@3.1.4",
@@ -123,7 +143,7 @@ PINS = {
     "torchmetrics": "torchmetrics@1.7.2",
     "torchvision": "torchvision@multiple",
     "tqdm": "tqdm@4.66.5",
-    "transformers": "transformers@4.52.4",
+    "transformers": "transformers@4.55.2",
     "types-protobuf": "types-protobuf@5.28.3.20241030",
     "types-pyyaml": "types-pyyaml@6.0.12.20240917",
     "types-setuptools": "types-setuptools@75.5.0.20241121",
@@ -144,6 +164,7 @@ def targets():
         native.alias(
             name = pin_name,
             actual = ":" + pin_target,
+            testonly = pin_name in _TESTONLY_DEPS,
         )
 
     native.alias(
@@ -169,6 +190,7 @@ def targets():
 
     native.alias(
         name = "torchvision@multiple",
+        testonly = True,
         actual = select({
             "@@//:amd_gpu": ":torchvision@0.22.0+rocm6.3",
             "@@//:nvidia_gpu": ":torchvision@0.22.0+cu128",
@@ -221,10 +243,11 @@ def targets():
     pycross_wheel_library(
         name = "absl-py@2.1.0",
         wheel = ":_wheel_absl-py@2.1.0",
+        testonly = "absl-py" in _TESTONLY_DEPS,
     )
 
     _accelerate_1_0_1_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":psutil@7.0.0",
@@ -242,6 +265,7 @@ def targets():
         name = "accelerate@1.0.1",
         deps = _accelerate_1_0_1_deps,
         wheel = ":_wheel_accelerate@1.0.1",
+        testonly = "accelerate" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -252,6 +276,7 @@ def targets():
     pycross_wheel_library(
         name = "aiofiles@24.1.0",
         wheel = ":_wheel_aiofiles@24.1.0",
+        testonly = "aiofiles" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -262,6 +287,7 @@ def targets():
     pycross_wheel_library(
         name = "aiohappyeyeballs@2.6.1",
         wheel = ":_wheel_aiohappyeyeballs@2.6.1",
+        testonly = "aiohappyeyeballs" in _TESTONLY_DEPS,
     )
 
     _aiohttp_3_10_5_deps = [
@@ -318,6 +344,7 @@ def targets():
         name = "aiohttp@3.10.5",
         deps = _aiohttp_3_10_5_deps,
         wheel = ":_wheel_aiohttp@3.10.5",
+        testonly = "aiohttp" in _TESTONLY_DEPS,
     )
 
     _aiosignal_1_3_1_deps = [
@@ -333,6 +360,7 @@ def targets():
         name = "aiosignal@1.3.1",
         deps = _aiosignal_1_3_1_deps,
         wheel = ":_wheel_aiosignal@1.3.1",
+        testonly = "aiosignal" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -343,6 +371,7 @@ def targets():
     pycross_wheel_library(
         name = "alabaster@0.7.16",
         wheel = ":_wheel_alabaster@0.7.16",
+        testonly = "alabaster" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -353,6 +382,7 @@ def targets():
     pycross_wheel_library(
         name = "annotated-types@0.7.0",
         wheel = ":_wheel_annotated-types@0.7.0",
+        testonly = "annotated-types" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -363,6 +393,7 @@ def targets():
     pycross_wheel_library(
         name = "antlr4-python3-runtime@4.11.0",
         wheel = ":_wheel_antlr4-python3-runtime@4.11.0",
+        testonly = "antlr4-python3-runtime" in _TESTONLY_DEPS,
     )
 
     _anyio_4_4_0_deps = [
@@ -405,6 +436,7 @@ def targets():
         name = "anyio@4.4.0",
         deps = _anyio_4_4_0_deps,
         wheel = ":_wheel_anyio@4.4.0",
+        testonly = "anyio" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -415,6 +447,7 @@ def targets():
     pycross_wheel_library(
         name = "appnope@0.1.4",
         wheel = ":_wheel_appnope@0.1.4",
+        testonly = "appnope" in _TESTONLY_DEPS,
     )
 
     _argon2_cffi_23_1_0_deps = [
@@ -430,6 +463,7 @@ def targets():
         name = "argon2-cffi@23.1.0",
         deps = _argon2_cffi_23_1_0_deps,
         wheel = ":_wheel_argon2-cffi@23.1.0",
+        testonly = "argon2-cffi" in _TESTONLY_DEPS,
     )
 
     _argon2_cffi_bindings_21_2_0_deps = [
@@ -461,6 +495,7 @@ def targets():
         name = "argon2-cffi-bindings@21.2.0",
         deps = _argon2_cffi_bindings_21_2_0_deps,
         wheel = ":_wheel_argon2-cffi-bindings@21.2.0",
+        testonly = "argon2-cffi-bindings" in _TESTONLY_DEPS,
     )
 
     _arrow_1_3_0_deps = [
@@ -477,6 +512,7 @@ def targets():
         name = "arrow@1.3.0",
         deps = _arrow_1_3_0_deps,
         wheel = ":_wheel_arrow@1.3.0",
+        testonly = "arrow" in _TESTONLY_DEPS,
     )
 
     _asgiref_3_8_1_deps = [
@@ -511,6 +547,7 @@ def targets():
         name = "asgiref@3.8.1",
         deps = _asgiref_3_8_1_deps,
         wheel = ":_wheel_asgiref@3.8.1",
+        testonly = "asgiref" in _TESTONLY_DEPS,
     )
 
     _asttokens_2_4_1_deps = [
@@ -526,6 +563,7 @@ def targets():
         name = "asttokens@2.4.1",
         deps = _asttokens_2_4_1_deps,
         wheel = ":_wheel_asttokens@2.4.1",
+        testonly = "asttokens" in _TESTONLY_DEPS,
     )
 
     _async_asgi_testclient_1_4_11_deps = [
@@ -548,6 +586,7 @@ def targets():
         sdist = ":_sdist_async-asgi-testclient@1.4.11",
         target_environment = _target,
         deps = _async_asgi_testclient_1_4_11_deps + _async_asgi_testclient_1_4_11_build_deps,
+        testonly = "async-asgi-testclient" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -560,6 +599,7 @@ def targets():
         name = "async-asgi-testclient@1.4.11",
         deps = _async_asgi_testclient_1_4_11_deps,
         wheel = ":_wheel_async-asgi-testclient@1.4.11",
+        testonly = "async-asgi-testclient" in _TESTONLY_DEPS,
     )
 
     _async_lru_2_0_4_deps = [
@@ -594,6 +634,7 @@ def targets():
         name = "async-lru@2.0.4",
         deps = _async_lru_2_0_4_deps,
         wheel = ":_wheel_async-lru@2.0.4",
+        testonly = "async-lru" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -604,6 +645,7 @@ def targets():
     pycross_wheel_library(
         name = "async-timeout@4.0.3",
         wheel = ":_wheel_async-timeout@4.0.3",
+        testonly = "async-timeout" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -614,6 +656,7 @@ def targets():
     pycross_wheel_library(
         name = "attrs@24.2.0",
         wheel = ":_wheel_attrs@24.2.0",
+        testonly = "attrs" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -624,6 +667,7 @@ def targets():
     pycross_wheel_library(
         name = "audioread@3.0.1",
         wheel = ":_wheel_audioread@3.0.1",
+        testonly = "audioread" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -650,6 +694,7 @@ def targets():
     pycross_wheel_library(
         name = "av@14.2.0",
         wheel = ":_wheel_av@14.2.0",
+        testonly = "av" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -660,6 +705,7 @@ def targets():
     pycross_wheel_library(
         name = "babel@2.15.0",
         wheel = ":_wheel_babel@2.15.0",
+        testonly = "babel" in _TESTONLY_DEPS,
     )
 
     _beautifulsoup4_4_12_3_deps = [
@@ -675,6 +721,7 @@ def targets():
         name = "beautifulsoup4@4.12.3",
         deps = _beautifulsoup4_4_12_3_deps,
         wheel = ":_wheel_beautifulsoup4@4.12.3",
+        testonly = "beautifulsoup4" in _TESTONLY_DEPS,
     )
 
     _bleach_6_1_0_deps = [
@@ -691,6 +738,7 @@ def targets():
         name = "bleach@6.1.0",
         deps = _bleach_6_1_0_deps,
         wheel = ":_wheel_bleach@6.1.0",
+        testonly = "bleach" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -701,6 +749,7 @@ def targets():
     pycross_wheel_library(
         name = "blinker@1.8.2",
         wheel = ":_wheel_blinker@1.8.2",
+        testonly = "blinker" in _TESTONLY_DEPS,
     )
 
     _boto3_1_34_128_deps = [
@@ -718,6 +767,7 @@ def targets():
         name = "boto3@1.34.128",
         deps = _boto3_1_34_128_deps,
         wheel = ":_wheel_boto3@1.34.128",
+        testonly = "boto3" in _TESTONLY_DEPS,
     )
 
     _botocore_1_34_128_deps = [
@@ -735,6 +785,7 @@ def targets():
         name = "botocore@1.34.128",
         deps = _botocore_1_34_128_deps,
         wheel = ":_wheel_botocore@1.34.128",
+        testonly = "botocore" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -761,6 +812,7 @@ def targets():
     pycross_wheel_library(
         name = "brotli@1.1.0",
         wheel = ":_wheel_brotli@1.1.0",
+        testonly = "brotli" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -771,6 +823,7 @@ def targets():
     pycross_wheel_library(
         name = "cachetools@5.4.0",
         wheel = ":_wheel_cachetools@5.4.0",
+        testonly = "cachetools" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -781,6 +834,7 @@ def targets():
     pycross_wheel_library(
         name = "certifi@2024.7.4",
         wheel = ":_wheel_certifi@2024.7.4",
+        testonly = "certifi" in _TESTONLY_DEPS,
     )
 
     _cffi_1_17_0_deps = [
@@ -812,6 +866,7 @@ def targets():
         name = "cffi@1.17.0",
         deps = _cffi_1_17_0_deps,
         wheel = ":_wheel_cffi@1.17.0",
+        testonly = "cffi" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -822,6 +877,7 @@ def targets():
     pycross_wheel_library(
         name = "cfgv@3.4.0",
         wheel = ":_wheel_cfgv@3.4.0",
+        testonly = "cfgv" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -832,6 +888,7 @@ def targets():
     pycross_wheel_library(
         name = "chardet@5.2.0",
         wheel = ":_wheel_chardet@5.2.0",
+        testonly = "chardet" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -858,6 +915,7 @@ def targets():
     pycross_wheel_library(
         name = "charset-normalizer@3.3.2",
         wheel = ":_wheel_charset-normalizer@3.3.2",
+        testonly = "charset-normalizer" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -868,6 +926,7 @@ def targets():
     pycross_wheel_library(
         name = "click@8.1.7",
         wheel = ":_wheel_click@8.1.7",
+        testonly = "click" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -878,6 +937,7 @@ def targets():
     pycross_wheel_library(
         name = "colorama@0.4.6",
         wheel = ":_wheel_colorama@0.4.6",
+        testonly = "colorama" in _TESTONLY_DEPS,
     )
 
     _coloredlogs_15_0_1_deps = [
@@ -893,6 +953,7 @@ def targets():
         name = "coloredlogs@15.0.1",
         deps = _coloredlogs_15_0_1_deps,
         wheel = ":_wheel_coloredlogs@15.0.1",
+        testonly = "coloredlogs" in _TESTONLY_DEPS,
     )
 
     _comm_0_2_2_deps = [
@@ -908,6 +969,7 @@ def targets():
         name = "comm@0.2.2",
         deps = _comm_0_2_2_deps,
         wheel = ":_wheel_comm@0.2.2",
+        testonly = "comm" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -918,6 +980,7 @@ def targets():
     pycross_wheel_library(
         name = "configargparse@1.7.1",
         wheel = ":_wheel_configargparse@1.7.1",
+        testonly = "configargparse" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -928,6 +991,7 @@ def targets():
     pycross_wheel_library(
         name = "contextlib2@21.6.0",
         wheel = ":_wheel_contextlib2@21.6.0",
+        testonly = "contextlib2" in _TESTONLY_DEPS,
     )
 
     _contourpy_1_3_0_deps = [
@@ -959,6 +1023,7 @@ def targets():
         name = "contourpy@1.3.0",
         deps = _contourpy_1_3_0_deps,
         wheel = ":_wheel_contourpy@1.3.0",
+        testonly = "contourpy" in _TESTONLY_DEPS,
     )
 
     _ctranslate2_4_6_0_deps = [
@@ -992,6 +1057,7 @@ def targets():
         name = "ctranslate2@4.6.0",
         deps = _ctranslate2_4_6_0_deps,
         wheel = ":_wheel_ctranslate2@4.6.0",
+        testonly = "ctranslate2" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1002,6 +1068,7 @@ def targets():
     pycross_wheel_library(
         name = "cycler@0.12.1",
         wheel = ":_wheel_cycler@0.12.1",
+        testonly = "cycler" in _TESTONLY_DEPS,
     )
 
     _dataproperty_1_0_1_deps = [
@@ -1018,6 +1085,7 @@ def targets():
         name = "dataproperty@1.0.1",
         deps = _dataproperty_1_0_1_deps,
         wheel = ":_wheel_dataproperty@1.0.1",
+        testonly = "dataproperty" in _TESTONLY_DEPS,
     )
 
     _datasets_2_21_0_deps = [
@@ -1025,7 +1093,7 @@ def targets():
         ":dill@0.3.8",
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":multiprocess@0.70.16",
         ":numpy@2.0.2",
         ":packaging@24.1",
@@ -1046,6 +1114,7 @@ def targets():
         name = "datasets@2.21.0",
         deps = _datasets_2_21_0_deps,
         wheel = ":_wheel_datasets@2.21.0",
+        testonly = "datasets" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1072,6 +1141,7 @@ def targets():
     pycross_wheel_library(
         name = "debugpy@1.8.1",
         wheel = ":_wheel_debugpy@1.8.1",
+        testonly = "debugpy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1082,6 +1152,7 @@ def targets():
     pycross_wheel_library(
         name = "decorator@5.1.1",
         wheel = ":_wheel_decorator@5.1.1",
+        testonly = "decorator" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1092,6 +1163,7 @@ def targets():
     pycross_wheel_library(
         name = "defusedxml@0.7.1",
         wheel = ":_wheel_defusedxml@0.7.1",
+        testonly = "defusedxml" in _TESTONLY_DEPS,
     )
 
     _device_smi_0_4_1_build_deps = [
@@ -1109,6 +1181,7 @@ def targets():
         sdist = ":_sdist_device-smi@0.4.1",
         target_environment = _target,
         deps = _device_smi_0_4_1_build_deps,
+        testonly = "device-smi" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -1120,6 +1193,7 @@ def targets():
     pycross_wheel_library(
         name = "device-smi@0.4.1",
         wheel = ":_wheel_device-smi@0.4.1",
+        testonly = "device-smi" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1130,6 +1204,7 @@ def targets():
     pycross_wheel_library(
         name = "dill@0.3.8",
         wheel = ":_wheel_dill@0.3.8",
+        testonly = "dill" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1140,6 +1215,7 @@ def targets():
     pycross_wheel_library(
         name = "distlib@0.3.9",
         wheel = ":_wheel_distlib@0.3.9",
+        testonly = "distlib" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1150,6 +1226,7 @@ def targets():
     pycross_wheel_library(
         name = "distro@1.9.0",
         wheel = ":_wheel_distro@1.9.0",
+        testonly = "distro" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1160,6 +1237,7 @@ def targets():
     pycross_wheel_library(
         name = "docutils@0.20.1",
         wheel = ":_wheel_docutils@0.20.1",
+        testonly = "docutils" in _TESTONLY_DEPS,
     )
 
     _editdistance_0_8_1_build_deps = [
@@ -1177,6 +1255,7 @@ def targets():
         sdist = ":_sdist_editdistance@0.8.1",
         target_environment = _target,
         deps = _editdistance_0_8_1_build_deps,
+        testonly = "editdistance" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -1204,6 +1283,7 @@ def targets():
     pycross_wheel_library(
         name = "editdistance@0.8.1",
         wheel = ":_wheel_editdistance@0.8.1",
+        testonly = "editdistance" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1214,6 +1294,7 @@ def targets():
     pycross_wheel_library(
         name = "einops@0.8.0",
         wheel = ":_wheel_einops@0.8.0",
+        testonly = "einops" in _TESTONLY_DEPS,
     )
 
     _einx_0_3_0_deps = [
@@ -1231,6 +1312,7 @@ def targets():
         name = "einx@0.3.0",
         deps = _einx_0_3_0_deps,
         wheel = ":_wheel_einx@0.3.0",
+        testonly = "einx" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1241,13 +1323,14 @@ def targets():
     pycross_wheel_library(
         name = "eval-type-backport@0.2.2",
         wheel = ":_wheel_eval-type-backport@0.2.2",
+        testonly = "eval-type-backport" in _TESTONLY_DEPS,
     )
 
     _evaluate_0_4_3_deps = [
         ":datasets@2.21.0",
         ":dill@0.3.8",
         ":fsspec@2024.6.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":multiprocess@0.70.16",
         ":numpy@2.0.2",
         ":packaging@24.1",
@@ -1266,6 +1349,7 @@ def targets():
         name = "evaluate@0.4.3",
         deps = _evaluate_0_4_3_deps,
         wheel = ":_wheel_evaluate@0.4.3",
+        testonly = "evaluate" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1276,6 +1360,7 @@ def targets():
     pycross_wheel_library(
         name = "exceptiongroup@1.2.2",
         wheel = ":_wheel_exceptiongroup@1.2.2",
+        testonly = "exceptiongroup" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1286,6 +1371,7 @@ def targets():
     pycross_wheel_library(
         name = "execnet@2.1.1",
         wheel = ":_wheel_execnet@2.1.1",
+        testonly = "execnet" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1296,6 +1382,7 @@ def targets():
     pycross_wheel_library(
         name = "executing@2.1.0",
         wheel = ":_wheel_executing@2.1.0",
+        testonly = "executing" in _TESTONLY_DEPS,
     )
 
     _fastapi_0_116_1_deps = [
@@ -1313,12 +1400,13 @@ def targets():
         name = "fastapi@0.116.1",
         deps = _fastapi_0_116_1_deps,
         wheel = ":_wheel_fastapi@0.116.1",
+        testonly = "fastapi" in _TESTONLY_DEPS,
     )
 
     _faster_whisper_1_1_1_deps = [
         ":av@14.2.0",
         ":ctranslate2@4.6.0",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":onnxruntime@1.19.2",
         ":tokenizers@0.21.0",
         ":tqdm@4.66.5",
@@ -1333,6 +1421,7 @@ def targets():
         name = "faster-whisper@1.1.1",
         deps = _faster_whisper_1_1_1_deps,
         wheel = ":_wheel_faster-whisper@1.1.1",
+        testonly = "faster-whisper" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1343,6 +1432,7 @@ def targets():
     pycross_wheel_library(
         name = "fastjsonschema@2.20.0",
         wheel = ":_wheel_fastjsonschema@2.20.0",
+        testonly = "fastjsonschema" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1353,6 +1443,7 @@ def targets():
     pycross_wheel_library(
         name = "filelock@3.16.1",
         wheel = ":_wheel_filelock@3.16.1",
+        testonly = "filelock" in _TESTONLY_DEPS,
     )
 
     _fire_0_7_0_deps = [
@@ -1374,6 +1465,7 @@ def targets():
         sdist = ":_sdist_fire@0.7.0",
         target_environment = _target,
         deps = _fire_0_7_0_deps + _fire_0_7_0_build_deps,
+        testonly = "fire" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -1386,6 +1478,7 @@ def targets():
         name = "fire@0.7.0",
         deps = _fire_0_7_0_deps,
         wheel = ":_wheel_fire@0.7.0",
+        testonly = "fire" in _TESTONLY_DEPS,
     )
 
     _flask_3_0_3_deps = [
@@ -1416,6 +1509,7 @@ def targets():
         name = "flask@3.0.3",
         deps = _flask_3_0_3_deps,
         wheel = ":_wheel_flask@3.0.3",
+        testonly = "flask" in _TESTONLY_DEPS,
     )
 
     _flask_basicauth_0_2_0_deps = [
@@ -1437,6 +1531,7 @@ def targets():
         sdist = ":_sdist_flask-basicauth@0.2.0",
         target_environment = _target,
         deps = _flask_basicauth_0_2_0_deps + _flask_basicauth_0_2_0_build_deps,
+        testonly = "flask-basicauth" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -1449,6 +1544,7 @@ def targets():
         name = "flask-basicauth@0.2.0",
         deps = _flask_basicauth_0_2_0_deps,
         wheel = ":_wheel_flask-basicauth@0.2.0",
+        testonly = "flask-basicauth" in _TESTONLY_DEPS,
     )
 
     _flask_cors_5_0_0_deps = [
@@ -1464,6 +1560,7 @@ def targets():
         name = "flask-cors@5.0.0",
         deps = _flask_cors_5_0_0_deps,
         wheel = ":_wheel_flask-cors@5.0.0",
+        testonly = "flask-cors" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1474,6 +1571,7 @@ def targets():
     pycross_wheel_library(
         name = "flatbuffers@25.2.10",
         wheel = ":_wheel_flatbuffers@25.2.10",
+        testonly = "flatbuffers" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1500,6 +1598,7 @@ def targets():
     pycross_wheel_library(
         name = "fonttools@4.53.0",
         wheel = ":_wheel_fonttools@4.53.0",
+        testonly = "fonttools" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1510,6 +1609,7 @@ def targets():
     pycross_wheel_library(
         name = "fqdn@1.5.1",
         wheel = ":_wheel_fqdn@1.5.1",
+        testonly = "fqdn" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1536,6 +1636,7 @@ def targets():
     pycross_wheel_library(
         name = "frozendict@2.4.6",
         wheel = ":_wheel_frozendict@2.4.6",
+        testonly = "frozendict" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1562,6 +1663,7 @@ def targets():
     pycross_wheel_library(
         name = "frozenlist@1.4.1",
         wheel = ":_wheel_frozenlist@1.4.1",
+        testonly = "frozenlist" in _TESTONLY_DEPS,
     )
 
     _fsspec_2024_6_1_deps = [
@@ -1577,6 +1679,7 @@ def targets():
         name = "fsspec@2024.6.1",
         deps = _fsspec_2024_6_1_deps,
         wheel = ":_wheel_fsspec@2024.6.1",
+        testonly = "fsspec" in _TESTONLY_DEPS,
     )
 
     _gevent_24_2_1_deps = [
@@ -1600,6 +1703,7 @@ def targets():
         sdist = ":_sdist_gevent@24.2.1",
         target_environment = _target,
         deps = _gevent_24_2_1_deps + _gevent_24_2_1_build_deps,
+        testonly = "gevent" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -1628,6 +1732,7 @@ def targets():
         name = "gevent@24.2.1",
         deps = _gevent_24_2_1_deps,
         wheel = ":_wheel_gevent@24.2.1",
+        testonly = "gevent" in _TESTONLY_DEPS,
     )
 
     _geventhttpclient_2_3_4_deps = [
@@ -1662,6 +1767,7 @@ def targets():
         name = "geventhttpclient@2.3.4",
         deps = _geventhttpclient_2_3_4_deps,
         wheel = ":_wheel_geventhttpclient@2.3.4",
+        testonly = "geventhttpclient" in _TESTONLY_DEPS,
     )
 
     _gguf_0_17_1_deps = [
@@ -1679,6 +1785,7 @@ def targets():
         name = "gguf@0.17.1",
         deps = _gguf_0_17_1_deps,
         wheel = ":_wheel_gguf@0.17.1",
+        testonly = "gguf" in _TESTONLY_DEPS,
     )
 
     _google_api_core_2_25_1_deps = [
@@ -1700,6 +1807,7 @@ def targets():
         name = "google-api-core@2.25.1",
         deps = _google_api_core_2_25_1_deps,
         wheel = ":_wheel_google-api-core@2.25.1",
+        testonly = "google-api-core" in _TESTONLY_DEPS,
     )
 
     _google_auth_2_29_0_deps = [
@@ -1717,6 +1825,7 @@ def targets():
         name = "google-auth@2.29.0",
         deps = _google_auth_2_29_0_deps,
         wheel = ":_wheel_google-auth@2.29.0",
+        testonly = "google-auth" in _TESTONLY_DEPS,
     )
 
     _google_cloud_bigquery_3_22_0_deps = [
@@ -1738,6 +1847,7 @@ def targets():
         name = "google-cloud-bigquery@3.22.0",
         deps = _google_cloud_bigquery_3_22_0_deps,
         wheel = ":_wheel_google-cloud-bigquery@3.22.0",
+        testonly = "google-cloud-bigquery" in _TESTONLY_DEPS,
     )
 
     _google_cloud_core_2_4_1_deps = [
@@ -1754,6 +1864,7 @@ def targets():
         name = "google-cloud-core@2.4.1",
         deps = _google_cloud_core_2_4_1_deps,
         wheel = ":_wheel_google-cloud-core@2.4.1",
+        testonly = "google-cloud-core" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1780,6 +1891,7 @@ def targets():
     pycross_wheel_library(
         name = "google-crc32c@1.7.1",
         wheel = ":_wheel_google-crc32c@1.7.1",
+        testonly = "google-crc32c" in _TESTONLY_DEPS,
     )
 
     _google_resumable_media_2_7_1_deps = [
@@ -1795,6 +1907,7 @@ def targets():
         name = "google-resumable-media@2.7.1",
         deps = _google_resumable_media_2_7_1_deps,
         wheel = ":_wheel_google-resumable-media@2.7.1",
+        testonly = "google-resumable-media" in _TESTONLY_DEPS,
     )
 
     _googleapis_common_protos_1_70_0_deps = [
@@ -1810,6 +1923,7 @@ def targets():
         name = "googleapis-common-protos@1.70.0",
         deps = _googleapis_common_protos_1_70_0_deps,
         wheel = ":_wheel_googleapis-common-protos@1.70.0",
+        testonly = "googleapis-common-protos" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1820,6 +1934,7 @@ def targets():
     pycross_wheel_library(
         name = "gptqmodel@2.0.0+cu126torch2.6",
         wheel = ":_wheel_gptqmodel@2.0.0+cu126torch2.6",
+        testonly = "gptqmodel" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1846,6 +1961,7 @@ def targets():
     pycross_wheel_library(
         name = "greenlet@3.1.1",
         wheel = ":_wheel_greenlet@3.1.1",
+        testonly = "greenlet" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1872,6 +1988,7 @@ def targets():
     pycross_wheel_library(
         name = "grpcio@1.73.1",
         wheel = ":_wheel_grpcio@1.73.1",
+        testonly = "grpcio" in _TESTONLY_DEPS,
     )
 
     _grpcio_status_1_57_0_deps = [
@@ -1889,6 +2006,7 @@ def targets():
         name = "grpcio-status@1.57.0",
         deps = _grpcio_status_1_57_0_deps,
         wheel = ":_wheel_grpcio-status@1.57.0",
+        testonly = "grpcio-status" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1899,6 +2017,7 @@ def targets():
     pycross_wheel_library(
         name = "h11@0.16.0",
         wheel = ":_wheel_h11@0.16.0",
+        testonly = "h11" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1925,6 +2044,7 @@ def targets():
     pycross_wheel_library(
         name = "hf-transfer@0.1.9",
         wheel = ":_wheel_hf-transfer@0.1.9",
+        testonly = "hf-transfer" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -1951,6 +2071,7 @@ def targets():
     pycross_wheel_library(
         name = "hf-xet@1.1.5",
         wheel = ":_wheel_hf-xet@1.1.5",
+        testonly = "hf-xet" in _TESTONLY_DEPS,
     )
 
     _httpcore_1_0_9_deps = [
@@ -1967,6 +2088,7 @@ def targets():
         name = "httpcore@1.0.9",
         deps = _httpcore_1_0_9_deps,
         wheel = ":_wheel_httpcore@1.0.9",
+        testonly = "httpcore" in _TESTONLY_DEPS,
     )
 
     _httpx_0_27_2_deps = [
@@ -1986,9 +2108,10 @@ def targets():
         name = "httpx@0.27.2",
         deps = _httpx_0_27_2_deps,
         wheel = ":_wheel_httpx@0.27.2",
+        testonly = "httpx" in _TESTONLY_DEPS,
     )
 
-    _huggingface_hub_0_30_1_deps = [
+    _huggingface_hub_0_34_3_deps = [
         ":filelock@3.16.1",
         ":fsspec@2024.6.1",
         ":hf-xet@1.1.5",
@@ -2000,14 +2123,15 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_huggingface-hub@0.30.1",
-        actual = "@pycross_lock_file_wheel_huggingface_hub_0.30.1_py3_none_any//file",
+        name = "_wheel_huggingface-hub@0.34.3",
+        actual = "@pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "huggingface-hub@0.30.1",
-        deps = _huggingface_hub_0_30_1_deps,
-        wheel = ":_wheel_huggingface-hub@0.30.1",
+        name = "huggingface-hub@0.34.3",
+        deps = _huggingface_hub_0_34_3_deps,
+        wheel = ":_wheel_huggingface-hub@0.34.3",
+        testonly = "huggingface-hub" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2018,6 +2142,7 @@ def targets():
     pycross_wheel_library(
         name = "humanfriendly@10.0",
         wheel = ":_wheel_humanfriendly@10.0",
+        testonly = "humanfriendly" in _TESTONLY_DEPS,
     )
 
     _hypothesis_6_108_4_deps = [
@@ -2054,6 +2179,7 @@ def targets():
         name = "hypothesis@6.108.4",
         deps = _hypothesis_6_108_4_deps,
         wheel = ":_wheel_hypothesis@6.108.4",
+        testonly = "hypothesis" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2064,6 +2190,7 @@ def targets():
     pycross_wheel_library(
         name = "identify@2.6.3",
         wheel = ":_wheel_identify@2.6.3",
+        testonly = "identify" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2074,6 +2201,7 @@ def targets():
     pycross_wheel_library(
         name = "idna@3.8",
         wheel = ":_wheel_idna@3.8",
+        testonly = "idna" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2084,6 +2212,7 @@ def targets():
     pycross_wheel_library(
         name = "imagesize@1.4.1",
         wheel = ":_wheel_imagesize@1.4.1",
+        testonly = "imagesize" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2094,6 +2223,7 @@ def targets():
     pycross_wheel_library(
         name = "immutabledict@4.2.1",
         wheel = ":_wheel_immutabledict@4.2.1",
+        testonly = "immutabledict" in _TESTONLY_DEPS,
     )
 
     _importlib_metadata_7_1_0_deps = [
@@ -2109,6 +2239,7 @@ def targets():
         name = "importlib-metadata@7.1.0",
         deps = _importlib_metadata_7_1_0_deps,
         wheel = ":_wheel_importlib-metadata@7.1.0",
+        testonly = "importlib-metadata" in _TESTONLY_DEPS,
     )
 
     _importlib_resources_6_4_5_deps = [
@@ -2134,6 +2265,7 @@ def targets():
         name = "importlib-resources@6.4.5",
         deps = _importlib_resources_6_4_5_deps,
         wheel = ":_wheel_importlib-resources@6.4.5",
+        testonly = "importlib-resources" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2144,6 +2276,7 @@ def targets():
     pycross_wheel_library(
         name = "iniconfig@2.0.0",
         wheel = ":_wheel_iniconfig@2.0.0",
+        testonly = "iniconfig" in _TESTONLY_DEPS,
     )
 
     _ipykernel_6_29_4_deps = [
@@ -2187,6 +2320,7 @@ def targets():
         name = "ipykernel@6.29.4",
         deps = _ipykernel_6_29_4_deps,
         wheel = ":_wheel_ipykernel@6.29.4",
+        testonly = "ipykernel" in _TESTONLY_DEPS,
     )
 
     _ipython_8_18_1_deps = [
@@ -2232,6 +2366,7 @@ def targets():
         name = "ipython@8.18.1",
         deps = _ipython_8_18_1_deps,
         wheel = ":_wheel_ipython@8.18.1",
+        testonly = "ipython" in _TESTONLY_DEPS,
     )
 
     _isoduration_20_11_0_deps = [
@@ -2247,6 +2382,7 @@ def targets():
         name = "isoduration@20.11.0",
         deps = _isoduration_20_11_0_deps,
         wheel = ":_wheel_isoduration@20.11.0",
+        testonly = "isoduration" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2257,6 +2393,7 @@ def targets():
     pycross_wheel_library(
         name = "itsdangerous@2.2.0",
         wheel = ":_wheel_itsdangerous@2.2.0",
+        testonly = "itsdangerous" in _TESTONLY_DEPS,
     )
 
     _jedi_0_19_1_deps = [
@@ -2272,6 +2409,7 @@ def targets():
         name = "jedi@0.19.1",
         deps = _jedi_0_19_1_deps,
         wheel = ":_wheel_jedi@0.19.1",
+        testonly = "jedi" in _TESTONLY_DEPS,
     )
 
     _jinja2_3_1_4_deps = [
@@ -2287,6 +2425,7 @@ def targets():
         name = "jinja2@3.1.4",
         deps = _jinja2_3_1_4_deps,
         wheel = ":_wheel_jinja2@3.1.4",
+        testonly = "jinja2" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2313,6 +2452,7 @@ def targets():
     pycross_wheel_library(
         name = "jiter@0.6.1",
         wheel = ":_wheel_jiter@0.6.1",
+        testonly = "jiter" in _TESTONLY_DEPS,
     )
 
     _jiwer_3_0_5_deps = [
@@ -2329,6 +2469,7 @@ def targets():
         name = "jiwer@3.0.5",
         deps = _jiwer_3_0_5_deps,
         wheel = ":_wheel_jiwer@3.0.5",
+        testonly = "jiwer" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2339,6 +2480,7 @@ def targets():
     pycross_wheel_library(
         name = "jmespath@1.0.1",
         wheel = ":_wheel_jmespath@1.0.1",
+        testonly = "jmespath" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2349,6 +2491,7 @@ def targets():
     pycross_wheel_library(
         name = "joblib@1.4.2",
         wheel = ":_wheel_joblib@1.4.2",
+        testonly = "joblib" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2359,6 +2502,7 @@ def targets():
     pycross_wheel_library(
         name = "json5@0.9.25",
         wheel = ":_wheel_json5@0.9.25",
+        testonly = "json5" in _TESTONLY_DEPS,
     )
 
     _jsonlines_4_0_0_deps = [
@@ -2374,6 +2518,7 @@ def targets():
         name = "jsonlines@4.0.0",
         deps = _jsonlines_4_0_0_deps,
         wheel = ":_wheel_jsonlines@4.0.0",
+        testonly = "jsonlines" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2384,6 +2529,7 @@ def targets():
     pycross_wheel_library(
         name = "jsonpointer@3.0.0",
         wheel = ":_wheel_jsonpointer@3.0.0",
+        testonly = "jsonpointer" in _TESTONLY_DEPS,
     )
 
     _jsonschema_4_23_0_deps = [
@@ -2410,6 +2556,7 @@ def targets():
         name = "jsonschema@4.23.0",
         deps = _jsonschema_4_23_0_deps,
         wheel = ":_wheel_jsonschema@4.23.0",
+        testonly = "jsonschema" in _TESTONLY_DEPS,
     )
 
     _jsonschema_specifications_2023_12_1_deps = [
@@ -2425,6 +2572,7 @@ def targets():
         name = "jsonschema-specifications@2023.12.1",
         deps = _jsonschema_specifications_2023_12_1_deps,
         wheel = ":_wheel_jsonschema-specifications@2023.12.1",
+        testonly = "jsonschema-specifications" in _TESTONLY_DEPS,
     )
 
     _jupyter_client_8_6_2_deps = [
@@ -2455,6 +2603,7 @@ def targets():
         name = "jupyter-client@8.6.2",
         deps = _jupyter_client_8_6_2_deps,
         wheel = ":_wheel_jupyter-client@8.6.2",
+        testonly = "jupyter-client" in _TESTONLY_DEPS,
     )
 
     _jupyter_core_5_7_2_deps = [
@@ -2471,6 +2620,7 @@ def targets():
         name = "jupyter-core@5.7.2",
         deps = _jupyter_core_5_7_2_deps,
         wheel = ":_wheel_jupyter-core@5.7.2",
+        testonly = "jupyter-core" in _TESTONLY_DEPS,
     )
 
     _jupyter_events_0_10_0_deps = [
@@ -2492,6 +2642,7 @@ def targets():
         name = "jupyter-events@0.10.0",
         deps = _jupyter_events_0_10_0_deps,
         wheel = ":_wheel_jupyter-events@0.10.0",
+        testonly = "jupyter-events" in _TESTONLY_DEPS,
     )
 
     _jupyter_lsp_2_2_5_deps = [
@@ -2518,6 +2669,7 @@ def targets():
         name = "jupyter-lsp@2.2.5",
         deps = _jupyter_lsp_2_2_5_deps,
         wheel = ":_wheel_jupyter-lsp@2.2.5",
+        testonly = "jupyter-lsp" in _TESTONLY_DEPS,
     )
 
     _jupyter_server_2_14_1_deps = [
@@ -2550,6 +2702,7 @@ def targets():
         name = "jupyter-server@2.14.1",
         deps = _jupyter_server_2_14_1_deps,
         wheel = ":_wheel_jupyter-server@2.14.1",
+        testonly = "jupyter-server" in _TESTONLY_DEPS,
     )
 
     _jupyter_server_terminals_0_5_3_deps = [
@@ -2565,6 +2718,7 @@ def targets():
         name = "jupyter-server-terminals@0.5.3",
         deps = _jupyter_server_terminals_0_5_3_deps,
         wheel = ":_wheel_jupyter-server-terminals@0.5.3",
+        testonly = "jupyter-server-terminals" in _TESTONLY_DEPS,
     )
 
     _jupyterlab_4_2_7_deps = [
@@ -2615,6 +2769,7 @@ def targets():
         name = "jupyterlab@4.2.7",
         deps = _jupyterlab_4_2_7_deps,
         wheel = ":_wheel_jupyterlab@4.2.7",
+        testonly = "jupyterlab" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2625,6 +2780,7 @@ def targets():
     pycross_wheel_library(
         name = "jupyterlab-pygments@0.3.0",
         wheel = ":_wheel_jupyterlab-pygments@0.3.0",
+        testonly = "jupyterlab-pygments" in _TESTONLY_DEPS,
     )
 
     _jupyterlab_server_2_27_2_deps = [
@@ -2657,6 +2813,7 @@ def targets():
         name = "jupyterlab-server@2.27.2",
         deps = _jupyterlab_server_2_27_2_deps,
         wheel = ":_wheel_jupyterlab-server@2.27.2",
+        testonly = "jupyterlab-server" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2683,6 +2840,7 @@ def targets():
     pycross_wheel_library(
         name = "kaleido@0.2.1",
         wheel = ":_wheel_kaleido@0.2.1",
+        testonly = "kaleido" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2709,6 +2867,7 @@ def targets():
     pycross_wheel_library(
         name = "kiwisolver@1.4.7",
         wheel = ":_wheel_kiwisolver@1.4.7",
+        testonly = "kiwisolver" in _TESTONLY_DEPS,
     )
 
     _langdetect_1_0_9_deps = [
@@ -2730,6 +2889,7 @@ def targets():
         sdist = ":_sdist_langdetect@1.0.9",
         target_environment = _target,
         deps = _langdetect_1_0_9_deps + _langdetect_1_0_9_build_deps,
+        testonly = "langdetect" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -2742,6 +2902,7 @@ def targets():
         name = "langdetect@1.0.9",
         deps = _langdetect_1_0_9_deps,
         wheel = ":_wheel_langdetect@1.0.9",
+        testonly = "langdetect" in _TESTONLY_DEPS,
     )
 
     _lazy_loader_0_4_deps = [
@@ -2757,6 +2918,7 @@ def targets():
         name = "lazy-loader@0.4",
         deps = _lazy_loader_0_4_deps,
         wheel = ":_wheel_lazy-loader@0.4",
+        testonly = "lazy-loader" in _TESTONLY_DEPS,
     )
 
     _librosa_0_10_2_deps = [
@@ -2784,6 +2946,7 @@ def targets():
         name = "librosa@0.10.2",
         deps = _librosa_0_10_2_deps,
         wheel = ":_wheel_librosa@0.10.2",
+        testonly = "librosa" in _TESTONLY_DEPS,
     )
 
     _lightning_utilities_0_14_3_deps = [
@@ -2801,6 +2964,7 @@ def targets():
         name = "lightning-utilities@0.14.3",
         deps = _lightning_utilities_0_14_3_deps,
         wheel = ":_wheel_lightning-utilities@0.14.3",
+        testonly = "lightning-utilities" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2827,6 +2991,7 @@ def targets():
     pycross_wheel_library(
         name = "llguidance@1.0.1",
         wheel = ":_wheel_llguidance@1.0.1",
+        testonly = "llguidance" in _TESTONLY_DEPS,
     )
 
     _llvmlite_0_43_0_build_deps = [
@@ -2844,6 +3009,7 @@ def targets():
         sdist = ":_sdist_llvmlite@0.43.0",
         target_environment = _target,
         deps = _llvmlite_0_43_0_build_deps,
+        testonly = "llvmlite" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -2871,6 +3037,7 @@ def targets():
     pycross_wheel_library(
         name = "llvmlite@0.43.0",
         wheel = ":_wheel_llvmlite@0.43.0",
+        testonly = "llvmlite" in _TESTONLY_DEPS,
     )
 
     _lm_eval_0_4_7_deps = [
@@ -2900,7 +3067,7 @@ def targets():
         ":torch@multiple",
         ":tqdm-multiprocess@0.0.11",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.2",
         ":word2number@1.1",
         ":zstandard@0.23.0",
     ]
@@ -2914,6 +3081,7 @@ def targets():
         name = "lm-eval@0.4.7",
         deps = _lm_eval_0_4_7_deps,
         wheel = ":_wheel_lm-eval@0.4.7",
+        testonly = "lm-eval" in _TESTONLY_DEPS,
     )
 
     _locust_2_18_4_deps = [
@@ -2940,6 +3108,7 @@ def targets():
         name = "locust@2.18.4",
         deps = _locust_2_18_4_deps,
         wheel = ":_wheel_locust@2.18.4",
+        testonly = "locust" in _TESTONLY_DEPS,
     )
 
     _logbar_0_0_3_build_deps = [
@@ -2957,6 +3126,7 @@ def targets():
         sdist = ":_sdist_logbar@0.0.3",
         target_environment = _target,
         deps = _logbar_0_0_3_build_deps,
+        testonly = "logbar" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -2968,6 +3138,7 @@ def targets():
     pycross_wheel_library(
         name = "logbar@0.0.3",
         wheel = ":_wheel_logbar@0.0.3",
+        testonly = "logbar" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -2994,6 +3165,7 @@ def targets():
     pycross_wheel_library(
         name = "lxml@5.3.0",
         wheel = ":_wheel_lxml@5.3.0",
+        testonly = "lxml" in _TESTONLY_DEPS,
     )
 
     _markdown_it_py_3_0_0_deps = [
@@ -3009,6 +3181,7 @@ def targets():
         name = "markdown-it-py@3.0.0",
         deps = _markdown_it_py_3_0_0_deps,
         wheel = ":_wheel_markdown-it-py@3.0.0",
+        testonly = "markdown-it-py" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3035,6 +3208,7 @@ def targets():
     pycross_wheel_library(
         name = "markupsafe@3.0.2",
         wheel = ":_wheel_markupsafe@3.0.2",
+        testonly = "markupsafe" in _TESTONLY_DEPS,
     )
 
     _matplotlib_3_9_4_deps = [
@@ -3085,6 +3259,7 @@ def targets():
         name = "matplotlib@3.9.4",
         deps = _matplotlib_3_9_4_deps,
         wheel = ":_wheel_matplotlib@3.9.4",
+        testonly = "matplotlib" in _TESTONLY_DEPS,
     )
 
     _matplotlib_inline_0_1_7_deps = [
@@ -3100,6 +3275,7 @@ def targets():
         name = "matplotlib-inline@0.1.7",
         deps = _matplotlib_inline_0_1_7_deps,
         wheel = ":_wheel_matplotlib-inline@0.1.7",
+        testonly = "matplotlib-inline" in _TESTONLY_DEPS,
     )
 
     _mbstrdecoder_1_1_3_deps = [
@@ -3115,6 +3291,7 @@ def targets():
         name = "mbstrdecoder@1.1.3",
         deps = _mbstrdecoder_1_1_3_deps,
         wheel = ":_wheel_mbstrdecoder@1.1.3",
+        testonly = "mbstrdecoder" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3125,6 +3302,7 @@ def targets():
     pycross_wheel_library(
         name = "mdurl@0.1.2",
         wheel = ":_wheel_mdurl@0.1.2",
+        testonly = "mdurl" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3135,6 +3313,7 @@ def targets():
     pycross_wheel_library(
         name = "mistune@3.0.2",
         wheel = ":_wheel_mistune@3.0.2",
+        testonly = "mistune" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3145,6 +3324,7 @@ def targets():
     pycross_wheel_library(
         name = "more-itertools@10.5.0",
         wheel = ":_wheel_more-itertools@10.5.0",
+        testonly = "more-itertools" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3155,6 +3335,7 @@ def targets():
     pycross_wheel_library(
         name = "mpmath@1.3.0",
         wheel = ":_wheel_mpmath@1.3.0",
+        testonly = "mpmath" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3181,6 +3362,7 @@ def targets():
     pycross_wheel_library(
         name = "msgpack@1.1.0",
         wheel = ":_wheel_msgpack@1.1.0",
+        testonly = "msgpack" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3207,6 +3389,7 @@ def targets():
     pycross_wheel_library(
         name = "msgspec@0.19.0",
         wheel = ":_wheel_msgspec@0.19.0",
+        testonly = "msgspec" in _TESTONLY_DEPS,
     )
 
     _mteb_1_29_12_deps = [
@@ -3235,6 +3418,7 @@ def targets():
         name = "mteb@1.29.12",
         deps = _mteb_1_29_12_deps,
         wheel = ":_wheel_mteb@1.29.12",
+        testonly = "mteb" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3261,6 +3445,7 @@ def targets():
     pycross_wheel_library(
         name = "multidict@6.0.5",
         wheel = ":_wheel_multidict@6.0.5",
+        testonly = "multidict" in _TESTONLY_DEPS,
     )
 
     _multiprocess_0_70_16_deps = [
@@ -3292,6 +3477,7 @@ def targets():
         name = "multiprocess@0.70.16",
         deps = _multiprocess_0_70_16_deps,
         wheel = ":_wheel_multiprocess@0.70.16",
+        testonly = "multiprocess" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3302,6 +3488,7 @@ def targets():
     pycross_wheel_library(
         name = "munch@4.0.0",
         wheel = ":_wheel_munch@4.0.0",
+        testonly = "munch" in _TESTONLY_DEPS,
     )
 
     _mypy_1_16_1_deps = [
@@ -3355,6 +3542,7 @@ def targets():
         name = "mypy@1.16.1",
         deps = _mypy_1_16_1_deps,
         wheel = ":_wheel_mypy@1.16.1",
+        testonly = "mypy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3365,6 +3553,7 @@ def targets():
     pycross_wheel_library(
         name = "mypy-extensions@1.0.0",
         wheel = ":_wheel_mypy-extensions@1.0.0",
+        testonly = "mypy-extensions" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3375,6 +3564,7 @@ def targets():
     pycross_wheel_library(
         name = "narwhals@1.39.0",
         wheel = ":_wheel_narwhals@1.39.0",
+        testonly = "narwhals" in _TESTONLY_DEPS,
     )
 
     _nbclient_0_10_0_deps = [
@@ -3393,6 +3583,7 @@ def targets():
         name = "nbclient@0.10.0",
         deps = _nbclient_0_10_0_deps,
         wheel = ":_wheel_nbclient@0.10.0",
+        testonly = "nbclient" in _TESTONLY_DEPS,
     )
 
     _nbconvert_7_16_4_deps = [
@@ -3433,6 +3624,7 @@ def targets():
         name = "nbconvert@7.16.4",
         deps = _nbconvert_7_16_4_deps,
         wheel = ":_wheel_nbconvert@7.16.4",
+        testonly = "nbconvert" in _TESTONLY_DEPS,
     )
 
     _nbformat_5_10_4_deps = [
@@ -3451,6 +3643,7 @@ def targets():
         name = "nbformat@5.10.4",
         deps = _nbformat_5_10_4_deps,
         wheel = ":_wheel_nbformat@5.10.4",
+        testonly = "nbformat" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3461,6 +3654,7 @@ def targets():
     pycross_wheel_library(
         name = "nest-asyncio@1.6.0",
         wheel = ":_wheel_nest-asyncio@1.6.0",
+        testonly = "nest-asyncio" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3471,6 +3665,7 @@ def targets():
     pycross_wheel_library(
         name = "networkx@3.2.1",
         wheel = ":_wheel_networkx@3.2.1",
+        testonly = "networkx" in _TESTONLY_DEPS,
     )
 
     _nltk_3_9_1_deps = [
@@ -3489,6 +3684,7 @@ def targets():
         name = "nltk@3.9.1",
         deps = _nltk_3_9_1_deps,
         wheel = ":_wheel_nltk@3.9.1",
+        testonly = "nltk" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3499,6 +3695,7 @@ def targets():
     pycross_wheel_library(
         name = "nodeenv@1.9.1",
         wheel = ":_wheel_nodeenv@1.9.1",
+        testonly = "nodeenv" in _TESTONLY_DEPS,
     )
 
     _notebook_7_2_1_deps = [
@@ -3518,6 +3715,7 @@ def targets():
         name = "notebook@7.2.1",
         deps = _notebook_7_2_1_deps,
         wheel = ":_wheel_notebook@7.2.1",
+        testonly = "notebook" in _TESTONLY_DEPS,
     )
 
     _notebook_shim_0_2_4_deps = [
@@ -3533,6 +3731,7 @@ def targets():
         name = "notebook-shim@0.2.4",
         deps = _notebook_shim_0_2_4_deps,
         wheel = ":_wheel_notebook-shim@0.2.4",
+        testonly = "notebook-shim" in _TESTONLY_DEPS,
     )
 
     _numba_0_60_0_deps = [
@@ -3555,6 +3754,7 @@ def targets():
         sdist = ":_sdist_numba@0.60.0",
         target_environment = _target,
         deps = _numba_0_60_0_deps + _numba_0_60_0_build_deps,
+        testonly = "numba" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -3583,6 +3783,7 @@ def targets():
         name = "numba@0.60.0",
         deps = _numba_0_60_0_deps,
         wheel = ":_wheel_numba@0.60.0",
+        testonly = "numba" in _TESTONLY_DEPS,
     )
 
     _numexpr_2_10_2_deps = [
@@ -3614,6 +3815,7 @@ def targets():
         name = "numexpr@2.10.2",
         deps = _numexpr_2_10_2_deps,
         wheel = ":_wheel_numexpr@2.10.2",
+        testonly = "numexpr" in _TESTONLY_DEPS,
     )
 
     _numpy_2_0_2_build_deps = [
@@ -3631,6 +3833,7 @@ def targets():
         sdist = ":_sdist_numpy@2.0.2",
         target_environment = _target,
         deps = _numpy_2_0_2_build_deps,
+        testonly = "numpy" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -3658,6 +3861,7 @@ def targets():
     pycross_wheel_library(
         name = "numpy@2.0.2",
         wheel = ":_wheel_numpy@2.0.2",
+        testonly = "numpy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3679,6 +3883,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cublas-cu12@12.8.3.14",
         wheel = ":_wheel_nvidia-cublas-cu12@12.8.3.14",
+        testonly = "nvidia-cublas-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3700,6 +3905,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cuda-cupti-cu12@12.8.57",
         wheel = ":_wheel_nvidia-cuda-cupti-cu12@12.8.57",
+        testonly = "nvidia-cuda-cupti-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3721,6 +3927,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cuda-nvrtc-cu12@12.8.61",
         wheel = ":_wheel_nvidia-cuda-nvrtc-cu12@12.8.61",
+        testonly = "nvidia-cuda-nvrtc-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3742,6 +3949,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cuda-runtime-cu12@12.8.57",
         wheel = ":_wheel_nvidia-cuda-runtime-cu12@12.8.57",
+        testonly = "nvidia-cuda-runtime-cu12" in _TESTONLY_DEPS,
     )
 
     _nvidia_cudnn_cu12_9_7_1_26_deps = [
@@ -3783,6 +3991,7 @@ def targets():
         name = "nvidia-cudnn-cu12@9.7.1.26",
         deps = _nvidia_cudnn_cu12_9_7_1_26_deps,
         wheel = ":_wheel_nvidia-cudnn-cu12@9.7.1.26",
+        testonly = "nvidia-cudnn-cu12" in _TESTONLY_DEPS,
     )
 
     _nvidia_cufft_cu12_11_3_3_41_deps = [
@@ -3824,6 +4033,7 @@ def targets():
         name = "nvidia-cufft-cu12@11.3.3.41",
         deps = _nvidia_cufft_cu12_11_3_3_41_deps,
         wheel = ":_wheel_nvidia-cufft-cu12@11.3.3.41",
+        testonly = "nvidia-cufft-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3845,6 +4055,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cufile-cu12@1.13.0.11",
         wheel = ":_wheel_nvidia-cufile-cu12@1.13.0.11",
+        testonly = "nvidia-cufile-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3866,6 +4077,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-curand-cu12@10.3.9.55",
         wheel = ":_wheel_nvidia-curand-cu12@10.3.9.55",
+        testonly = "nvidia-curand-cu12" in _TESTONLY_DEPS,
     )
 
     _nvidia_cusolver_cu12_11_7_2_55_deps = [
@@ -3917,6 +4129,7 @@ def targets():
         name = "nvidia-cusolver-cu12@11.7.2.55",
         deps = _nvidia_cusolver_cu12_11_7_2_55_deps,
         wheel = ":_wheel_nvidia-cusolver-cu12@11.7.2.55",
+        testonly = "nvidia-cusolver-cu12" in _TESTONLY_DEPS,
     )
 
     _nvidia_cusparse_cu12_12_5_7_53_deps = [
@@ -3958,6 +4171,7 @@ def targets():
         name = "nvidia-cusparse-cu12@12.5.7.53",
         deps = _nvidia_cusparse_cu12_12_5_7_53_deps,
         wheel = ":_wheel_nvidia-cusparse-cu12@12.5.7.53",
+        testonly = "nvidia-cusparse-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3979,6 +4193,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-cusparselt-cu12@0.6.3",
         wheel = ":_wheel_nvidia-cusparselt-cu12@0.6.3",
+        testonly = "nvidia-cusparselt-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -3989,6 +4204,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-ml-py@12.560.30",
         wheel = ":_wheel_nvidia-ml-py@12.560.30",
+        testonly = "nvidia-ml-py" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4010,6 +4226,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-nccl-cu12@2.26.2",
         wheel = ":_wheel_nvidia-nccl-cu12@2.26.2",
+        testonly = "nvidia-nccl-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4031,6 +4248,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-nvjitlink-cu12@12.8.61",
         wheel = ":_wheel_nvidia-nvjitlink-cu12@12.8.61",
+        testonly = "nvidia-nvjitlink-cu12" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4052,6 +4270,7 @@ def targets():
     pycross_wheel_library(
         name = "nvidia-nvtx-cu12@12.8.55",
         wheel = ":_wheel_nvidia-nvtx-cu12@12.8.55",
+        testonly = "nvidia-nvtx-cu12" in _TESTONLY_DEPS,
     )
 
     _nvitop_1_4_0_deps = [
@@ -4070,6 +4289,7 @@ def targets():
         name = "nvitop@1.4.0",
         deps = _nvitop_1_4_0_deps,
         wheel = ":_wheel_nvitop@1.4.0",
+        testonly = "nvitop" in _TESTONLY_DEPS,
     )
 
     _onnxruntime_1_19_2_deps = [
@@ -4103,6 +4323,7 @@ def targets():
         name = "onnxruntime@1.19.2",
         deps = _onnxruntime_1_19_2_deps,
         wheel = ":_wheel_onnxruntime@1.19.2",
+        testonly = "onnxruntime" in _TESTONLY_DEPS,
     )
 
     _openai_1_52_2_deps = [
@@ -4125,6 +4346,7 @@ def targets():
         name = "openai@1.52.2",
         deps = _openai_1_52_2_deps,
         wheel = ":_wheel_openai@1.52.2",
+        testonly = "openai" in _TESTONLY_DEPS,
     )
 
     _opencv_python_4_12_0_88_deps = [
@@ -4146,6 +4368,7 @@ def targets():
         sdist = ":_sdist_opencv-python@4.12.0.88",
         target_environment = _target,
         deps = _opencv_python_4_12_0_88_deps + _opencv_python_4_12_0_88_build_deps,
+        testonly = "opencv-python" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -4174,6 +4397,7 @@ def targets():
         name = "opencv-python@4.12.0.88",
         deps = _opencv_python_4_12_0_88_deps,
         wheel = ":_wheel_opencv-python@4.12.0.88",
+        testonly = "opencv-python" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_api_1_35_0_deps = [
@@ -4190,6 +4414,7 @@ def targets():
         name = "opentelemetry-api@1.35.0",
         deps = _opentelemetry_api_1_35_0_deps,
         wheel = ":_wheel_opentelemetry-api@1.35.0",
+        testonly = "opentelemetry-api" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_exporter_otlp_proto_common_1_35_0_deps = [
@@ -4205,6 +4430,7 @@ def targets():
         name = "opentelemetry-exporter-otlp-proto-common@1.35.0",
         deps = _opentelemetry_exporter_otlp_proto_common_1_35_0_deps,
         wheel = ":_wheel_opentelemetry-exporter-otlp-proto-common@1.35.0",
+        testonly = "opentelemetry-exporter-otlp-proto-common" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_exporter_otlp_proto_http_1_35_0_deps = [
@@ -4226,6 +4452,7 @@ def targets():
         name = "opentelemetry-exporter-otlp-proto-http@1.35.0",
         deps = _opentelemetry_exporter_otlp_proto_http_1_35_0_deps,
         wheel = ":_wheel_opentelemetry-exporter-otlp-proto-http@1.35.0",
+        testonly = "opentelemetry-exporter-otlp-proto-http" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_exporter_prometheus_0_56b0_deps = [
@@ -4243,6 +4470,7 @@ def targets():
         name = "opentelemetry-exporter-prometheus@0.56b0",
         deps = _opentelemetry_exporter_prometheus_0_56b0_deps,
         wheel = ":_wheel_opentelemetry-exporter-prometheus@0.56b0",
+        testonly = "opentelemetry-exporter-prometheus" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_proto_1_35_0_deps = [
@@ -4258,6 +4486,7 @@ def targets():
         name = "opentelemetry-proto@1.35.0",
         deps = _opentelemetry_proto_1_35_0_deps,
         wheel = ":_wheel_opentelemetry-proto@1.35.0",
+        testonly = "opentelemetry-proto" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_sdk_1_35_0_deps = [
@@ -4275,6 +4504,7 @@ def targets():
         name = "opentelemetry-sdk@1.35.0",
         deps = _opentelemetry_sdk_1_35_0_deps,
         wheel = ":_wheel_opentelemetry-sdk@1.35.0",
+        testonly = "opentelemetry-sdk" in _TESTONLY_DEPS,
     )
 
     _opentelemetry_semantic_conventions_0_56b0_deps = [
@@ -4291,14 +4521,15 @@ def targets():
         name = "opentelemetry-semantic-conventions@0.56b0",
         deps = _opentelemetry_semantic_conventions_0_56b0_deps,
         wheel = ":_wheel_opentelemetry-semantic-conventions@0.56b0",
+        testonly = "opentelemetry-semantic-conventions" in _TESTONLY_DEPS,
     )
 
     _optimum_1_24_0_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":torch@multiple",
-        ":transformers@4.52.4",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -4310,6 +4541,7 @@ def targets():
         name = "optimum@1.24.0",
         deps = _optimum_1_24_0_deps,
         wheel = ":_wheel_optimum@1.24.0",
+        testonly = "optimum" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4320,6 +4552,7 @@ def targets():
     pycross_wheel_library(
         name = "overrides@7.7.0",
         wheel = ":_wheel_overrides@7.7.0",
+        testonly = "overrides" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4330,6 +4563,7 @@ def targets():
     pycross_wheel_library(
         name = "packaging@24.1",
         wheel = ":_wheel_packaging@24.1",
+        testonly = "packaging" in _TESTONLY_DEPS,
     )
 
     _pandas_2_3_1_deps = [
@@ -4364,6 +4598,7 @@ def targets():
         name = "pandas@2.3.1",
         deps = _pandas_2_3_1_deps,
         wheel = ":_wheel_pandas@2.3.1",
+        testonly = "pandas" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4374,6 +4609,7 @@ def targets():
     pycross_wheel_library(
         name = "pandocfilters@1.5.1",
         wheel = ":_wheel_pandocfilters@1.5.1",
+        testonly = "pandocfilters" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4384,6 +4620,7 @@ def targets():
     pycross_wheel_library(
         name = "parso@0.8.4",
         wheel = ":_wheel_parso@0.8.4",
+        testonly = "parso" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4394,6 +4631,7 @@ def targets():
     pycross_wheel_library(
         name = "pathspec@0.12.1",
         wheel = ":_wheel_pathspec@0.12.1",
+        testonly = "pathspec" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4404,11 +4642,12 @@ def targets():
     pycross_wheel_library(
         name = "pathvalidate@3.2.1",
         wheel = ":_wheel_pathvalidate@3.2.1",
+        testonly = "pathvalidate" in _TESTONLY_DEPS,
     )
 
     _peft_0_13_2_deps = [
         ":accelerate@1.0.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":psutil@7.0.0",
@@ -4416,7 +4655,7 @@ def targets():
         ":safetensors@0.4.4",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -4428,6 +4667,7 @@ def targets():
         name = "peft@0.13.2",
         deps = _peft_0_13_2_deps,
         wheel = ":_wheel_peft@0.13.2",
+        testonly = "peft" in _TESTONLY_DEPS,
     )
 
     _pexpect_4_9_0_deps = [
@@ -4443,6 +4683,7 @@ def targets():
         name = "pexpect@4.9.0",
         deps = _pexpect_4_9_0_deps,
         wheel = ":_wheel_pexpect@4.9.0",
+        testonly = "pexpect" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4469,6 +4710,7 @@ def targets():
     pycross_wheel_library(
         name = "pillow@10.4.0",
         wheel = ":_wheel_pillow@10.4.0",
+        testonly = "pillow" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4479,6 +4721,7 @@ def targets():
     pycross_wheel_library(
         name = "platformdirs@4.2.2",
         wheel = ":_wheel_platformdirs@4.2.2",
+        testonly = "platformdirs" in _TESTONLY_DEPS,
     )
 
     _plotly_6_0_1_deps = [
@@ -4495,6 +4738,7 @@ def targets():
         name = "plotly@6.0.1",
         deps = _plotly_6_0_1_deps,
         wheel = ":_wheel_plotly@6.0.1",
+        testonly = "plotly" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4505,6 +4749,7 @@ def targets():
     pycross_wheel_library(
         name = "pluggy@1.5.0",
         wheel = ":_wheel_pluggy@1.5.0",
+        testonly = "pluggy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4531,6 +4776,7 @@ def targets():
     pycross_wheel_library(
         name = "polars@1.20.0",
         wheel = ":_wheel_polars@1.20.0",
+        testonly = "polars" in _TESTONLY_DEPS,
     )
 
     _pooch_1_8_2_deps = [
@@ -4548,6 +4794,7 @@ def targets():
         name = "pooch@1.8.2",
         deps = _pooch_1_8_2_deps,
         wheel = ":_wheel_pooch@1.8.2",
+        testonly = "pooch" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4558,6 +4805,7 @@ def targets():
     pycross_wheel_library(
         name = "portalocker@2.10.1",
         wheel = ":_wheel_portalocker@2.10.1",
+        testonly = "portalocker" in _TESTONLY_DEPS,
     )
 
     _pre_commit_4_0_1_deps = [
@@ -4577,6 +4825,7 @@ def targets():
         name = "pre-commit@4.0.1",
         deps = _pre_commit_4_0_1_deps,
         wheel = ":_wheel_pre-commit@4.0.1",
+        testonly = "pre-commit" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4587,6 +4836,7 @@ def targets():
     pycross_wheel_library(
         name = "prometheus-client@0.20.0",
         wheel = ":_wheel_prometheus-client@0.20.0",
+        testonly = "prometheus-client" in _TESTONLY_DEPS,
     )
 
     _prompt_toolkit_3_0_47_deps = [
@@ -4602,6 +4852,7 @@ def targets():
         name = "prompt-toolkit@3.0.47",
         deps = _prompt_toolkit_3_0_47_deps,
         wheel = ":_wheel_prompt-toolkit@3.0.47",
+        testonly = "prompt-toolkit" in _TESTONLY_DEPS,
     )
 
     _proto_plus_1_26_1_deps = [
@@ -4617,6 +4868,7 @@ def targets():
         name = "proto-plus@1.26.1",
         deps = _proto_plus_1_26_1_deps,
         wheel = ":_wheel_proto-plus@1.26.1",
+        testonly = "proto-plus" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4643,6 +4895,7 @@ def targets():
     pycross_wheel_library(
         name = "protobuf@6.31.1",
         wheel = ":_wheel_protobuf@6.31.1",
+        testonly = "protobuf" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4669,6 +4922,7 @@ def targets():
     pycross_wheel_library(
         name = "psutil@7.0.0",
         wheel = ":_wheel_psutil@7.0.0",
+        testonly = "psutil" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4679,6 +4933,7 @@ def targets():
     pycross_wheel_library(
         name = "ptyprocess@0.7.0",
         wheel = ":_wheel_ptyprocess@0.7.0",
+        testonly = "ptyprocess" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4689,6 +4944,7 @@ def targets():
     pycross_wheel_library(
         name = "pure-eval@0.2.2",
         wheel = ":_wheel_pure-eval@0.2.2",
+        testonly = "pure-eval" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4699,6 +4955,7 @@ def targets():
     pycross_wheel_library(
         name = "py-cpuinfo@9.0.0",
         wheel = ":_wheel_py-cpuinfo@9.0.0",
+        testonly = "py-cpuinfo" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4725,6 +4982,7 @@ def targets():
     pycross_wheel_library(
         name = "pyarrow@20.0.0",
         wheel = ":_wheel_pyarrow@20.0.0",
+        testonly = "pyarrow" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4735,6 +4993,7 @@ def targets():
     pycross_wheel_library(
         name = "pyasn1@0.6.0",
         wheel = ":_wheel_pyasn1@0.6.0",
+        testonly = "pyasn1" in _TESTONLY_DEPS,
     )
 
     _pyasn1_modules_0_4_0_deps = [
@@ -4750,6 +5009,7 @@ def targets():
         name = "pyasn1-modules@0.4.0",
         deps = _pyasn1_modules_0_4_0_deps,
         wheel = ":_wheel_pyasn1-modules@0.4.0",
+        testonly = "pyasn1-modules" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4760,6 +5020,7 @@ def targets():
     pycross_wheel_library(
         name = "pybind11@2.10.3",
         wheel = ":_wheel_pybind11@2.10.3",
+        testonly = "pybind11" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4770,6 +5031,7 @@ def targets():
     pycross_wheel_library(
         name = "pycparser@2.22",
         wheel = ":_wheel_pycparser@2.22",
+        testonly = "pycparser" in _TESTONLY_DEPS,
     )
 
     _pydantic_2_10_4_deps = [
@@ -4787,6 +5049,7 @@ def targets():
         name = "pydantic@2.10.4",
         deps = _pydantic_2_10_4_deps,
         wheel = ":_wheel_pydantic@2.10.4",
+        testonly = "pydantic" in _TESTONLY_DEPS,
     )
 
     _pydantic_core_2_27_2_deps = [
@@ -4818,6 +5081,7 @@ def targets():
         name = "pydantic-core@2.27.2",
         deps = _pydantic_core_2_27_2_deps,
         wheel = ":_wheel_pydantic-core@2.27.2",
+        testonly = "pydantic-core" in _TESTONLY_DEPS,
     )
 
     _pydantic_settings_2_3_4_deps = [
@@ -4834,6 +5098,7 @@ def targets():
         name = "pydantic-settings@2.3.4",
         deps = _pydantic_settings_2_3_4_deps,
         wheel = ":_wheel_pydantic-settings@2.3.4",
+        testonly = "pydantic-settings" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4860,6 +5125,7 @@ def targets():
     pycross_wheel_library(
         name = "pygame@2.6.1",
         wheel = ":_wheel_pygame@2.6.1",
+        testonly = "pygame" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4870,6 +5136,7 @@ def targets():
     pycross_wheel_library(
         name = "pygments@2.18.0",
         wheel = ":_wheel_pygments@2.18.0",
+        testonly = "pygments" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4896,6 +5163,7 @@ def targets():
     pycross_wheel_library(
         name = "pyinstrument@4.7.3",
         wheel = ":_wheel_pyinstrument@4.7.3",
+        testonly = "pyinstrument" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -4906,6 +5174,7 @@ def targets():
     pycross_wheel_library(
         name = "pyparsing@3.1.2",
         wheel = ":_wheel_pyparsing@3.1.2",
+        testonly = "pyparsing" in _TESTONLY_DEPS,
     )
 
     _pytablewriter_1_2_0_deps = [
@@ -4927,6 +5196,7 @@ def targets():
         name = "pytablewriter@1.2.0",
         deps = _pytablewriter_1_2_0_deps,
         wheel = ":_wheel_pytablewriter@1.2.0",
+        testonly = "pytablewriter" in _TESTONLY_DEPS,
     )
 
     _pytest_8_2_2_deps = [
@@ -4970,6 +5240,7 @@ def targets():
         name = "pytest@8.2.2",
         deps = _pytest_8_2_2_deps,
         wheel = ":_wheel_pytest@8.2.2",
+        testonly = "pytest" in _TESTONLY_DEPS,
     )
 
     _pytest_asyncio_0_23_7_deps = [
@@ -4985,6 +5256,7 @@ def targets():
         name = "pytest-asyncio@0.23.7",
         deps = _pytest_asyncio_0_23_7_deps,
         wheel = ":_wheel_pytest-asyncio@0.23.7",
+        testonly = "pytest-asyncio" in _TESTONLY_DEPS,
     )
 
     _pytest_benchmark_4_0_0_deps = [
@@ -5001,6 +5273,7 @@ def targets():
         name = "pytest-benchmark@4.0.0",
         deps = _pytest_benchmark_4_0_0_deps,
         wheel = ":_wheel_pytest-benchmark@4.0.0",
+        testonly = "pytest-benchmark" in _TESTONLY_DEPS,
     )
 
     _pytest_grpc_0_8_0_deps = [
@@ -5016,6 +5289,7 @@ def targets():
         name = "pytest-grpc@0.8.0",
         deps = _pytest_grpc_0_8_0_deps,
         wheel = ":_wheel_pytest-grpc@0.8.0",
+        testonly = "pytest-grpc" in _TESTONLY_DEPS,
     )
 
     _pytest_mock_3_14_0_deps = [
@@ -5031,6 +5305,7 @@ def targets():
         name = "pytest-mock@3.14.0",
         deps = _pytest_mock_3_14_0_deps,
         wheel = ":_wheel_pytest-mock@3.14.0",
+        testonly = "pytest-mock" in _TESTONLY_DEPS,
     )
 
     _pytest_xdist_3_6_1_deps = [
@@ -5047,6 +5322,7 @@ def targets():
         name = "pytest-xdist@3.6.1",
         deps = _pytest_xdist_3_6_1_deps,
         wheel = ":_wheel_pytest-xdist@3.6.1",
+        testonly = "pytest-xdist" in _TESTONLY_DEPS,
     )
 
     _python_dateutil_2_9_0_post0_deps = [
@@ -5062,6 +5338,7 @@ def targets():
         name = "python-dateutil@2.9.0.post0",
         deps = _python_dateutil_2_9_0_post0_deps,
         wheel = ":_wheel_python-dateutil@2.9.0.post0",
+        testonly = "python-dateutil" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5072,6 +5349,7 @@ def targets():
     pycross_wheel_library(
         name = "python-dotenv@1.0.1",
         wheel = ":_wheel_python-dotenv@1.0.1",
+        testonly = "python-dotenv" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5082,6 +5360,7 @@ def targets():
     pycross_wheel_library(
         name = "python-json-logger@2.0.7",
         wheel = ":_wheel_python-json-logger@2.0.7",
+        testonly = "python-json-logger" in _TESTONLY_DEPS,
     )
 
     _pytorch_triton_rocm_3_3_0_deps = [
@@ -5118,6 +5397,7 @@ def targets():
         name = "pytorch-triton-rocm@3.3.0",
         deps = _pytorch_triton_rocm_3_3_0_deps,
         wheel = ":_wheel_pytorch-triton-rocm@3.3.0",
+        testonly = "pytorch-triton-rocm" in _TESTONLY_DEPS,
     )
 
     _pytrec_eval_terrier_0_5_7_build_deps = [
@@ -5135,6 +5415,7 @@ def targets():
         sdist = ":_sdist_pytrec-eval-terrier@0.5.7",
         target_environment = _target,
         deps = _pytrec_eval_terrier_0_5_7_build_deps,
+        testonly = "pytrec-eval-terrier" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5162,6 +5443,7 @@ def targets():
     pycross_wheel_library(
         name = "pytrec-eval-terrier@0.5.7",
         wheel = ":_wheel_pytrec-eval-terrier@0.5.7",
+        testonly = "pytrec-eval-terrier" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5172,6 +5454,7 @@ def targets():
     pycross_wheel_library(
         name = "pytz@2024.1",
         wheel = ":_wheel_pytz@2024.1",
+        testonly = "pytz" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5198,6 +5481,7 @@ def targets():
     pycross_wheel_library(
         name = "pyyaml@6.0.2",
         wheel = ":_wheel_pyyaml@6.0.2",
+        testonly = "pyyaml" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5224,6 +5508,7 @@ def targets():
     pycross_wheel_library(
         name = "pyzmq@26.3.0",
         wheel = ":_wheel_pyzmq@26.3.0",
+        testonly = "pyzmq" in _TESTONLY_DEPS,
     )
 
     _qwen_vl_utils_0_0_11_deps = [
@@ -5242,6 +5527,7 @@ def targets():
         name = "qwen-vl-utils@0.0.11",
         deps = _qwen_vl_utils_0_0_11_deps,
         wheel = ":_wheel_qwen-vl-utils@0.0.11",
+        testonly = "qwen-vl-utils" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5268,6 +5554,7 @@ def targets():
     pycross_wheel_library(
         name = "rapidfuzz@3.13.0",
         wheel = ":_wheel_rapidfuzz@3.13.0",
+        testonly = "rapidfuzz" in _TESTONLY_DEPS,
     )
 
     _referencing_0_35_1_deps = [
@@ -5284,6 +5571,7 @@ def targets():
         name = "referencing@0.35.1",
         deps = _referencing_0_35_1_deps,
         wheel = ":_wheel_referencing@0.35.1",
+        testonly = "referencing" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5310,6 +5598,7 @@ def targets():
     pycross_wheel_library(
         name = "regex@2024.11.6",
         wheel = ":_wheel_regex@2024.11.6",
+        testonly = "regex" in _TESTONLY_DEPS,
     )
 
     _requests_2_32_3_deps = [
@@ -5328,6 +5617,7 @@ def targets():
         name = "requests@2.32.3",
         deps = _requests_2_32_3_deps,
         wheel = ":_wheel_requests@2.32.3",
+        testonly = "requests" in _TESTONLY_DEPS,
     )
 
     _responses_0_25_3_deps = [
@@ -5345,6 +5635,7 @@ def targets():
         name = "responses@0.25.3",
         deps = _responses_0_25_3_deps,
         wheel = ":_wheel_responses@0.25.3",
+        testonly = "responses" in _TESTONLY_DEPS,
     )
 
     _rfc3339_validator_0_1_4_deps = [
@@ -5360,6 +5651,7 @@ def targets():
         name = "rfc3339-validator@0.1.4",
         deps = _rfc3339_validator_0_1_4_deps,
         wheel = ":_wheel_rfc3339-validator@0.1.4",
+        testonly = "rfc3339-validator" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5370,6 +5662,7 @@ def targets():
     pycross_wheel_library(
         name = "rfc3986-validator@0.1.1",
         wheel = ":_wheel_rfc3986-validator@0.1.1",
+        testonly = "rfc3986-validator" in _TESTONLY_DEPS,
     )
 
     _rich_13_7_1_deps = [
@@ -5386,6 +5679,7 @@ def targets():
         name = "rich@13.7.1",
         deps = _rich_13_7_1_deps,
         wheel = ":_wheel_rich@13.7.1",
+        testonly = "rich" in _TESTONLY_DEPS,
     )
 
     _rouge_score_0_1_2_deps = [
@@ -5410,6 +5704,7 @@ def targets():
         sdist = ":_sdist_rouge-score@0.1.2",
         target_environment = _target,
         deps = _rouge_score_0_1_2_deps + _rouge_score_0_1_2_build_deps,
+        testonly = "rouge-score" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5422,6 +5717,7 @@ def targets():
         name = "rouge-score@0.1.2",
         deps = _rouge_score_0_1_2_deps,
         wheel = ":_wheel_rouge-score@0.1.2",
+        testonly = "rouge-score" in _TESTONLY_DEPS,
     )
 
     _roundrobin_0_0_4_build_deps = [
@@ -5439,6 +5735,7 @@ def targets():
         sdist = ":_sdist_roundrobin@0.0.4",
         target_environment = _target,
         deps = _roundrobin_0_0_4_build_deps,
+        testonly = "roundrobin" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5450,6 +5747,7 @@ def targets():
     pycross_wheel_library(
         name = "roundrobin@0.0.4",
         wheel = ":_wheel_roundrobin@0.0.4",
+        testonly = "roundrobin" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5476,6 +5774,7 @@ def targets():
     pycross_wheel_library(
         name = "rpds-py@0.20.0",
         wheel = ":_wheel_rpds-py@0.20.0",
+        testonly = "rpds-py" in _TESTONLY_DEPS,
     )
 
     _rsa_4_9_deps = [
@@ -5491,6 +5790,7 @@ def targets():
         name = "rsa@4.9",
         deps = _rsa_4_9_deps,
         wheel = ":_wheel_rsa@4.9",
+        testonly = "rsa" in _TESTONLY_DEPS,
     )
 
     _s3transfer_0_10_1_deps = [
@@ -5506,6 +5806,7 @@ def targets():
         name = "s3transfer@0.10.1",
         deps = _s3transfer_0_10_1_deps,
         wheel = ":_wheel_s3transfer@0.10.1",
+        testonly = "s3transfer" in _TESTONLY_DEPS,
     )
 
     _sacrebleu_2_4_3_deps = [
@@ -5526,6 +5827,7 @@ def targets():
         name = "sacrebleu@2.4.3",
         deps = _sacrebleu_2_4_3_deps,
         wheel = ":_wheel_sacrebleu@2.4.3",
+        testonly = "sacrebleu" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5552,6 +5854,7 @@ def targets():
     pycross_wheel_library(
         name = "safetensors@0.4.4",
         wheel = ":_wheel_safetensors@0.4.4",
+        testonly = "safetensors" in _TESTONLY_DEPS,
     )
 
     _schema_0_7_5_deps = [
@@ -5567,6 +5870,7 @@ def targets():
         name = "schema@0.7.5",
         deps = _schema_0_7_5_deps,
         wheel = ":_wheel_schema@0.7.5",
+        testonly = "schema" in _TESTONLY_DEPS,
     )
 
     _scikit_learn_1_5_2_deps = [
@@ -5601,6 +5905,7 @@ def targets():
         name = "scikit-learn@1.5.2",
         deps = _scikit_learn_1_5_2_deps,
         wheel = ":_wheel_scikit-learn@1.5.2",
+        testonly = "scikit-learn" in _TESTONLY_DEPS,
     )
 
     _scipy_1_13_1_deps = [
@@ -5622,6 +5927,7 @@ def targets():
         sdist = ":_sdist_scipy@1.13.1",
         target_environment = _target,
         deps = _scipy_1_13_1_deps + _scipy_1_13_1_build_deps,
+        testonly = "scipy" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5650,6 +5956,7 @@ def targets():
         name = "scipy@1.13.1",
         deps = _scipy_1_13_1_deps,
         wheel = ":_wheel_scipy@1.13.1",
+        testonly = "scipy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5660,16 +5967,17 @@ def targets():
     pycross_wheel_library(
         name = "send2trash@1.8.3",
         wheel = ":_wheel_send2trash@1.8.3",
+        testonly = "send2trash" in _TESTONLY_DEPS,
     )
 
     _sentence_transformers_3_3_1_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":pillow@10.4.0",
         ":scikit-learn@1.5.2",
         ":scipy@1.13.1",
         ":torch@multiple",
         ":tqdm@4.66.5",
-        ":transformers@4.52.4",
+        ":transformers@4.55.2",
     ]
 
     native.alias(
@@ -5681,6 +5989,7 @@ def targets():
         name = "sentence-transformers@3.3.1",
         deps = _sentence_transformers_3_3_1_deps,
         wheel = ":_wheel_sentence-transformers@3.3.1",
+        testonly = "sentence-transformers" in _TESTONLY_DEPS,
     )
 
     _sentencepiece_0_2_0_build_deps = [
@@ -5698,6 +6007,7 @@ def targets():
         sdist = ":_sdist_sentencepiece@0.2.0",
         target_environment = _target,
         deps = _sentencepiece_0_2_0_build_deps,
+        testonly = "sentencepiece" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5725,6 +6035,7 @@ def targets():
     pycross_wheel_library(
         name = "sentencepiece@0.2.0",
         wheel = ":_wheel_sentencepiece@0.2.0",
+        testonly = "sentencepiece" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5735,6 +6046,7 @@ def targets():
     pycross_wheel_library(
         name = "setuptools@80.9.0",
         wheel = ":_wheel_setuptools@80.9.0",
+        testonly = "setuptools" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5745,6 +6057,7 @@ def targets():
     pycross_wheel_library(
         name = "simpy@4.1.1",
         wheel = ":_wheel_simpy@4.1.1",
+        testonly = "simpy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5755,6 +6068,7 @@ def targets():
     pycross_wheel_library(
         name = "six@1.16.0",
         wheel = ":_wheel_six@1.16.0",
+        testonly = "six" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5765,6 +6079,7 @@ def targets():
     pycross_wheel_library(
         name = "sniffio@1.3.1",
         wheel = ":_wheel_sniffio@1.3.1",
+        testonly = "sniffio" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5775,6 +6090,7 @@ def targets():
     pycross_wheel_library(
         name = "snowballstemmer@2.2.0",
         wheel = ":_wheel_snowballstemmer@2.2.0",
+        testonly = "snowballstemmer" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5785,6 +6101,7 @@ def targets():
     pycross_wheel_library(
         name = "sortedcontainers@2.4.0",
         wheel = ":_wheel_sortedcontainers@2.4.0",
+        testonly = "sortedcontainers" in _TESTONLY_DEPS,
     )
 
     _soundfile_0_12_1_deps = [
@@ -5816,6 +6133,7 @@ def targets():
         name = "soundfile@0.12.1",
         deps = _soundfile_0_12_1_deps,
         wheel = ":_wheel_soundfile@0.12.1",
+        testonly = "soundfile" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5826,6 +6144,7 @@ def targets():
     pycross_wheel_library(
         name = "soupsieve@2.5",
         wheel = ":_wheel_soupsieve@2.5",
+        testonly = "soupsieve" in _TESTONLY_DEPS,
     )
 
     _soxr_0_5_0_post1_deps = [
@@ -5857,6 +6176,7 @@ def targets():
         name = "soxr@0.5.0.post1",
         deps = _soxr_0_5_0_post1_deps,
         wheel = ":_wheel_soxr@0.5.0.post1",
+        testonly = "soxr" in _TESTONLY_DEPS,
     )
 
     _sphinx_7_4_7_deps = [
@@ -5909,6 +6229,7 @@ def targets():
         name = "sphinx@7.4.7",
         deps = _sphinx_7_4_7_deps,
         wheel = ":_wheel_sphinx@7.4.7",
+        testonly = "sphinx" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5919,6 +6240,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-applehelp@2.0.0",
         wheel = ":_wheel_sphinxcontrib-applehelp@2.0.0",
+        testonly = "sphinxcontrib-applehelp" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5929,6 +6251,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-devhelp@2.0.0",
         wheel = ":_wheel_sphinxcontrib-devhelp@2.0.0",
+        testonly = "sphinxcontrib-devhelp" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5939,6 +6262,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-htmlhelp@2.1.0",
         wheel = ":_wheel_sphinxcontrib-htmlhelp@2.1.0",
+        testonly = "sphinxcontrib-htmlhelp" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5949,6 +6273,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-jsmath@1.0.1",
         wheel = ":_wheel_sphinxcontrib-jsmath@1.0.1",
+        testonly = "sphinxcontrib-jsmath" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5959,6 +6284,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-qthelp@2.0.0",
         wheel = ":_wheel_sphinxcontrib-qthelp@2.0.0",
+        testonly = "sphinxcontrib-qthelp" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -5969,6 +6295,7 @@ def targets():
     pycross_wheel_library(
         name = "sphinxcontrib-serializinghtml@2.0.0",
         wheel = ":_wheel_sphinxcontrib-serializinghtml@2.0.0",
+        testonly = "sphinxcontrib-serializinghtml" in _TESTONLY_DEPS,
     )
 
     _sqlitedict_2_1_0_build_deps = [
@@ -5986,6 +6313,7 @@ def targets():
         sdist = ":_sdist_sqlitedict@2.1.0",
         target_environment = _target,
         deps = _sqlitedict_2_1_0_build_deps,
+        testonly = "sqlitedict" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -5997,6 +6325,7 @@ def targets():
     pycross_wheel_library(
         name = "sqlitedict@2.1.0",
         wheel = ":_wheel_sqlitedict@2.1.0",
+        testonly = "sqlitedict" in _TESTONLY_DEPS,
     )
 
     _sse_starlette_2_1_2_deps = [
@@ -6014,6 +6343,7 @@ def targets():
         name = "sse-starlette@2.1.2",
         deps = _sse_starlette_2_1_2_deps,
         wheel = ":_wheel_sse-starlette@2.1.2",
+        testonly = "sse-starlette" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6024,6 +6354,7 @@ def targets():
     pycross_wheel_library(
         name = "sseclient-py@1.8.0",
         wheel = ":_wheel_sseclient-py@1.8.0",
+        testonly = "sseclient-py" in _TESTONLY_DEPS,
     )
 
     _stack_data_0_6_3_deps = [
@@ -6041,6 +6372,7 @@ def targets():
         name = "stack-data@0.6.3",
         deps = _stack_data_0_6_3_deps,
         wheel = ":_wheel_stack-data@0.6.3",
+        testonly = "stack-data" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6051,6 +6383,7 @@ def targets():
     pycross_wheel_library(
         name = "stack-pr@0.1.3",
         wheel = ":_wheel_stack-pr@0.1.3",
+        testonly = "stack-pr" in _TESTONLY_DEPS,
     )
 
     _starlette_0_47_2_deps = [
@@ -6104,6 +6437,7 @@ def targets():
         name = "starlette@0.47.2",
         deps = _starlette_0_47_2_deps,
         wheel = ":_wheel_starlette@0.47.2",
+        testonly = "starlette" in _TESTONLY_DEPS,
     )
 
     _sympy_1_13_3_deps = [
@@ -6119,6 +6453,7 @@ def targets():
         name = "sympy@1.13.3",
         deps = _sympy_1_13_3_deps,
         wheel = ":_wheel_sympy@1.13.3",
+        testonly = "sympy" in _TESTONLY_DEPS,
     )
 
     _tabledata_1_3_3_deps = [
@@ -6135,6 +6470,7 @@ def targets():
         name = "tabledata@1.3.3",
         deps = _tabledata_1_3_3_deps,
         wheel = ":_wheel_tabledata@1.3.3",
+        testonly = "tabledata" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6145,6 +6481,7 @@ def targets():
     pycross_wheel_library(
         name = "tabulate@0.9.0",
         wheel = ":_wheel_tabulate@0.9.0",
+        testonly = "tabulate" in _TESTONLY_DEPS,
     )
 
     _taskgroup_0_2_2_deps = [
@@ -6161,6 +6498,7 @@ def targets():
         name = "taskgroup@0.2.2",
         deps = _taskgroup_0_2_2_deps,
         wheel = ":_wheel_taskgroup@0.2.2",
+        testonly = "taskgroup" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6171,6 +6509,7 @@ def targets():
     pycross_wheel_library(
         name = "tcolorpy@0.1.6",
         wheel = ":_wheel_tcolorpy@0.1.6",
+        testonly = "tcolorpy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6181,6 +6520,7 @@ def targets():
     pycross_wheel_library(
         name = "tenacity@8.4.1",
         wheel = ":_wheel_tenacity@8.4.1",
+        testonly = "tenacity" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6191,6 +6531,7 @@ def targets():
     pycross_wheel_library(
         name = "termcolor@2.5.0",
         wheel = ":_wheel_termcolor@2.5.0",
+        testonly = "termcolor" in _TESTONLY_DEPS,
     )
 
     _terminado_0_18_1_deps = [
@@ -6207,6 +6548,7 @@ def targets():
         name = "terminado@0.18.1",
         deps = _terminado_0_18_1_deps,
         wheel = ":_wheel_terminado@0.18.1",
+        testonly = "terminado" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6217,6 +6559,7 @@ def targets():
     pycross_wheel_library(
         name = "threadpoolctl@3.5.0",
         wheel = ":_wheel_threadpoolctl@3.5.0",
+        testonly = "threadpoolctl" in _TESTONLY_DEPS,
     )
 
     _tiktoken_0_8_0_deps = [
@@ -6249,10 +6592,11 @@ def targets():
         name = "tiktoken@0.8.0",
         deps = _tiktoken_0_8_0_deps,
         wheel = ":_wheel_tiktoken@0.8.0",
+        testonly = "tiktoken" in _TESTONLY_DEPS,
     )
 
     _timm_1_0_15_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":pyyaml@6.0.2",
         ":safetensors@0.4.4",
         ":torch@multiple",
@@ -6268,6 +6612,7 @@ def targets():
         name = "timm@1.0.15",
         deps = _timm_1_0_15_deps,
         wheel = ":_wheel_timm@1.0.15",
+        testonly = "timm" in _TESTONLY_DEPS,
     )
 
     _tinycss2_1_3_0_deps = [
@@ -6283,10 +6628,11 @@ def targets():
         name = "tinycss2@1.3.0",
         deps = _tinycss2_1_3_0_deps,
         wheel = ":_wheel_tinycss2@1.3.0",
+        testonly = "tinycss2" in _TESTONLY_DEPS,
     )
 
     _tokenicer_0_0_4_deps = [
-        ":transformers@4.52.4",
+        ":transformers@4.55.2",
     ]
 
     _tokenicer_0_0_4_build_deps = [
@@ -6304,6 +6650,7 @@ def targets():
         sdist = ":_sdist_tokenicer@0.0.4",
         target_environment = _target,
         deps = _tokenicer_0_0_4_deps + _tokenicer_0_0_4_build_deps,
+        testonly = "tokenicer" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -6316,10 +6663,11 @@ def targets():
         name = "tokenicer@0.0.4",
         deps = _tokenicer_0_0_4_deps,
         wheel = ":_wheel_tokenicer@0.0.4",
+        testonly = "tokenicer" in _TESTONLY_DEPS,
     )
 
     _tokenizers_0_21_0_deps = [
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
     ]
 
     native.alias(
@@ -6347,6 +6695,7 @@ def targets():
         name = "tokenizers@0.21.0",
         deps = _tokenizers_0_21_0_deps,
         wheel = ":_wheel_tokenizers@0.21.0",
+        testonly = "tokenizers" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -6357,6 +6706,7 @@ def targets():
     pycross_wheel_library(
         name = "tomli@2.0.1",
         wheel = ":_wheel_tomli@2.0.1",
+        testonly = "tomli" in _TESTONLY_DEPS,
     )
 
     _torch_2_7_0_deps = [
@@ -6423,6 +6773,7 @@ def targets():
         wheel = ":_wheel_torch@2.7.0",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
+        testonly = "torch" in _TESTONLY_DEPS,
     )
 
     _torch_2_7_0_cpu_deps = [
@@ -6536,6 +6887,7 @@ def targets():
         wheel = ":_wheel_torch@2.7.0+cpu",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
+        testonly = "torch" in _TESTONLY_DEPS,
     )
 
     _torch_2_7_0_cu128_deps = [
@@ -6670,6 +7022,7 @@ def targets():
         wheel = ":_wheel_torch@2.7.0+cu128",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
+        testonly = "torch" in _TESTONLY_DEPS,
     )
 
     _torch_2_7_0_rocm6_3_deps = [
@@ -6740,6 +7093,7 @@ def targets():
         wheel = ":_wheel_torch@2.7.0+rocm6.3",
         tags = ["no-remote"],
         exec_compatible_with = HOST_CONSTRAINTS,
+        testonly = "torch" in _TESTONLY_DEPS,
     )
 
     _torchaudio_2_7_0_deps = [
@@ -6766,6 +7120,7 @@ def targets():
         name = "torchaudio@2.7.0",
         deps = _torchaudio_2_7_0_deps,
         wheel = ":_wheel_torchaudio@2.7.0",
+        testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
     _torchaudio_2_7_0_cpu_deps = [
@@ -6787,6 +7142,7 @@ def targets():
         name = "torchaudio@2.7.0+cpu",
         deps = _torchaudio_2_7_0_cpu_deps,
         wheel = ":_wheel_torchaudio@2.7.0+cpu",
+        testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
     _torchaudio_2_7_0_cu128_deps = [
@@ -6808,6 +7164,7 @@ def targets():
         name = "torchaudio@2.7.0+cu128",
         deps = _torchaudio_2_7_0_cu128_deps,
         wheel = ":_wheel_torchaudio@2.7.0+cu128",
+        testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
     _torchaudio_2_7_0_rocm6_3_deps = [
@@ -6829,6 +7186,7 @@ def targets():
         name = "torchaudio@2.7.0+rocm6.3",
         deps = _torchaudio_2_7_0_rocm6_3_deps,
         wheel = ":_wheel_torchaudio@2.7.0+rocm6.3",
+        testonly = "torchaudio" in _TESTONLY_DEPS,
     )
 
     _torchmetrics_1_7_2_deps = [
@@ -6847,6 +7205,7 @@ def targets():
         name = "torchmetrics@1.7.2",
         deps = _torchmetrics_1_7_2_deps,
         wheel = ":_wheel_torchmetrics@1.7.2",
+        testonly = "torchmetrics" in _TESTONLY_DEPS,
     )
 
     _torchvision_0_22_0_deps = [
@@ -6915,6 +7274,7 @@ def targets():
         name = "torchvision@0.22.0",
         deps = _torchvision_0_22_0_deps,
         wheel = ":_wheel_torchvision@0.22.0",
+        testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
     _torchvision_0_22_0_cpu_deps = [
@@ -6958,6 +7318,7 @@ def targets():
         name = "torchvision@0.22.0+cpu",
         deps = _torchvision_0_22_0_cpu_deps,
         wheel = ":_wheel_torchvision@0.22.0+cpu",
+        testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
     _torchvision_0_22_0_cu128_deps = [
@@ -7000,6 +7361,7 @@ def targets():
         name = "torchvision@0.22.0+cu128",
         deps = _torchvision_0_22_0_cu128_deps,
         wheel = ":_wheel_torchvision@0.22.0+cu128",
+        testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
     _torchvision_0_22_0_rocm6_3_deps = [
@@ -7042,6 +7404,7 @@ def targets():
         name = "torchvision@0.22.0+rocm6.3",
         deps = _torchvision_0_22_0_rocm6_3_deps,
         wheel = ":_wheel_torchvision@0.22.0+rocm6.3",
+        testonly = "torchvision" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7068,6 +7431,7 @@ def targets():
     pycross_wheel_library(
         name = "tornado@6.5.1",
         wheel = ":_wheel_tornado@6.5.1",
+        testonly = "tornado" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7078,6 +7442,7 @@ def targets():
     pycross_wheel_library(
         name = "tqdm@4.66.5",
         wheel = ":_wheel_tqdm@4.66.5",
+        testonly = "tqdm" in _TESTONLY_DEPS,
     )
 
     _tqdm_multiprocess_0_0_11_deps = [
@@ -7094,6 +7459,7 @@ def targets():
         name = "tqdm-multiprocess@0.0.11",
         deps = _tqdm_multiprocess_0_0_11_deps,
         wheel = ":_wheel_tqdm-multiprocess@0.0.11",
+        testonly = "tqdm-multiprocess" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7104,11 +7470,12 @@ def targets():
     pycross_wheel_library(
         name = "traitlets@5.14.3",
         wheel = ":_wheel_traitlets@5.14.3",
+        testonly = "traitlets" in _TESTONLY_DEPS,
     )
 
-    _transformers_4_52_4_deps = [
+    _transformers_4_55_2_deps = [
         ":filelock@3.16.1",
-        ":huggingface-hub@0.30.1",
+        ":huggingface-hub@0.34.3",
         ":numpy@2.0.2",
         ":packaging@24.1",
         ":pyyaml@6.0.2",
@@ -7120,14 +7487,15 @@ def targets():
     ]
 
     native.alias(
-        name = "_wheel_transformers@4.52.4",
-        actual = "@pycross_lock_file_wheel_transformers_4.52.4_py3_none_any//file",
+        name = "_wheel_transformers@4.55.2",
+        actual = "@pycross_lock_file_wheel_transformers_4.55.2_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "transformers@4.52.4",
-        deps = _transformers_4_52_4_deps,
-        wheel = ":_wheel_transformers@4.52.4",
+        name = "transformers@4.55.2",
+        deps = _transformers_4_55_2_deps,
+        wheel = ":_wheel_transformers@4.55.2",
+        testonly = "transformers" in _TESTONLY_DEPS,
     )
 
     _triton_3_3_0_deps = [
@@ -7164,6 +7532,7 @@ def targets():
         name = "triton@3.3.0",
         deps = _triton_3_3_0_deps,
         wheel = ":_wheel_triton@3.3.0",
+        testonly = "triton" in _TESTONLY_DEPS,
     )
 
     _typepy_1_3_2_deps = [
@@ -7182,6 +7551,7 @@ def targets():
         name = "typepy@1.3.2",
         deps = _typepy_1_3_2_deps,
         wheel = ":_wheel_typepy@1.3.2",
+        testonly = "typepy" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7192,6 +7562,7 @@ def targets():
     pycross_wheel_library(
         name = "types-protobuf@5.28.3.20241030",
         wheel = ":_wheel_types-protobuf@5.28.3.20241030",
+        testonly = "types-protobuf" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7202,6 +7573,7 @@ def targets():
     pycross_wheel_library(
         name = "types-python-dateutil@2.9.0.20240316",
         wheel = ":_wheel_types-python-dateutil@2.9.0.20240316",
+        testonly = "types-python-dateutil" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7212,6 +7584,7 @@ def targets():
     pycross_wheel_library(
         name = "types-pyyaml@6.0.12.20240917",
         wheel = ":_wheel_types-pyyaml@6.0.12.20240917",
+        testonly = "types-pyyaml" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7222,6 +7595,7 @@ def targets():
     pycross_wheel_library(
         name = "types-setuptools@75.5.0.20241121",
         wheel = ":_wheel_types-setuptools@75.5.0.20241121",
+        testonly = "types-setuptools" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7232,6 +7606,7 @@ def targets():
     pycross_wheel_library(
         name = "types-tabulate@0.9.0.20240106",
         wheel = ":_wheel_types-tabulate@0.9.0.20240106",
+        testonly = "types-tabulate" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7242,6 +7617,7 @@ def targets():
     pycross_wheel_library(
         name = "typing-extensions@4.12.2",
         wheel = ":_wheel_typing-extensions@4.12.2",
+        testonly = "typing-extensions" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7252,6 +7628,7 @@ def targets():
     pycross_wheel_library(
         name = "tzdata@2024.1",
         wheel = ":_wheel_tzdata@2024.1",
+        testonly = "tzdata" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7262,6 +7639,7 @@ def targets():
     pycross_wheel_library(
         name = "uri-template@1.3.0",
         wheel = ":_wheel_uri-template@1.3.0",
+        testonly = "uri-template" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7272,6 +7650,7 @@ def targets():
     pycross_wheel_library(
         name = "urllib3@1.26.19",
         wheel = ":_wheel_urllib3@1.26.19",
+        testonly = "urllib3" in _TESTONLY_DEPS,
     )
 
     _uvicorn_0_30_6_deps = [
@@ -7308,6 +7687,7 @@ def targets():
         name = "uvicorn@0.30.6",
         deps = _uvicorn_0_30_6_deps,
         wheel = ":_wheel_uvicorn@0.30.6",
+        testonly = "uvicorn" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7334,6 +7714,7 @@ def targets():
     pycross_wheel_library(
         name = "uvloop@0.21.0",
         wheel = ":_wheel_uvloop@0.21.0",
+        testonly = "uvloop" in _TESTONLY_DEPS,
     )
 
     _virtualenv_20_28_0_deps = [
@@ -7351,6 +7732,7 @@ def targets():
         name = "virtualenv@20.28.0",
         deps = _virtualenv_20_28_0_deps,
         wheel = ":_wheel_virtualenv@20.28.0",
+        testonly = "virtualenv" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7361,6 +7743,7 @@ def targets():
     pycross_wheel_library(
         name = "wcwidth@0.2.13",
         wheel = ":_wheel_wcwidth@0.2.13",
+        testonly = "wcwidth" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7371,6 +7754,7 @@ def targets():
     pycross_wheel_library(
         name = "webcolors@24.6.0",
         wheel = ":_wheel_webcolors@24.6.0",
+        testonly = "webcolors" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7381,6 +7765,7 @@ def targets():
     pycross_wheel_library(
         name = "webencodings@0.5.1",
         wheel = ":_wheel_webencodings@0.5.1",
+        testonly = "webencodings" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7391,6 +7776,7 @@ def targets():
     pycross_wheel_library(
         name = "websocket-client@1.8.0",
         wheel = ":_wheel_websocket-client@1.8.0",
+        testonly = "websocket-client" in _TESTONLY_DEPS,
     )
 
     _werkzeug_3_0_4_deps = [
@@ -7406,6 +7792,7 @@ def targets():
         name = "werkzeug@3.0.4",
         deps = _werkzeug_3_0_4_deps,
         wheel = ":_wheel_werkzeug@3.0.4",
+        testonly = "werkzeug" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7416,6 +7803,7 @@ def targets():
     pycross_wheel_library(
         name = "wheel@0.45.1",
         wheel = ":_wheel_wheel@0.45.1",
+        testonly = "wheel" in _TESTONLY_DEPS,
     )
 
     _word2number_1_1_build_deps = [
@@ -7433,6 +7821,7 @@ def targets():
         sdist = ":_sdist_word2number@1.1",
         target_environment = _target,
         deps = _word2number_1_1_build_deps,
+        testonly = "word2number" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -7444,6 +7833,7 @@ def targets():
     pycross_wheel_library(
         name = "word2number@1.1",
         wheel = ":_wheel_word2number@1.1",
+        testonly = "word2number" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7470,6 +7860,7 @@ def targets():
     pycross_wheel_library(
         name = "xxhash@3.5.0",
         wheel = ":_wheel_xxhash@3.5.0",
+        testonly = "xxhash" in _TESTONLY_DEPS,
     )
 
     _yarl_1_9_4_deps = [
@@ -7502,6 +7893,7 @@ def targets():
         name = "yarl@1.9.4",
         deps = _yarl_1_9_4_deps,
         wheel = ":_wheel_yarl@1.9.4",
+        testonly = "yarl" in _TESTONLY_DEPS,
     )
 
     _zhconv_1_4_3_build_deps = [
@@ -7519,6 +7911,7 @@ def targets():
         sdist = ":_sdist_zhconv@1.4.3",
         target_environment = _target,
         deps = _zhconv_1_4_3_build_deps,
+        testonly = "zhconv" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
@@ -7530,6 +7923,7 @@ def targets():
     pycross_wheel_library(
         name = "zhconv@1.4.3",
         wheel = ":_wheel_zhconv@1.4.3",
+        testonly = "zhconv" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7540,6 +7934,7 @@ def targets():
     pycross_wheel_library(
         name = "zhon@2.1.1",
         wheel = ":_wheel_zhon@2.1.1",
+        testonly = "zhon" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7550,6 +7945,7 @@ def targets():
     pycross_wheel_library(
         name = "zipp@3.20.1",
         wheel = ":_wheel_zipp@3.20.1",
+        testonly = "zipp" in _TESTONLY_DEPS,
     )
 
     _zope_event_5_0_deps = [
@@ -7565,6 +7961,7 @@ def targets():
         name = "zope-event@5.0",
         deps = _zope_event_5_0_deps,
         wheel = ":_wheel_zope-event@5.0",
+        testonly = "zope-event" in _TESTONLY_DEPS,
     )
 
     _zope_interface_7_1_0_deps = [
@@ -7596,6 +7993,7 @@ def targets():
         name = "zope-interface@7.1.0",
         deps = _zope_interface_7_1_0_deps,
         wheel = ":_wheel_zope-interface@7.1.0",
+        testonly = "zope-interface" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -7622,6 +8020,7 @@ def targets():
     pycross_wheel_library(
         name = "zstandard@0.23.0",
         wheel = ":_wheel_zstandard@0.23.0",
+        testonly = "zstandard" in _TESTONLY_DEPS,
     )
 
 def repositories():
@@ -10918,12 +11317,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_huggingface_hub_0.30.1_py3_none_any",
+        name = "pycross_lock_file_wheel_huggingface_hub_0.34.3_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/99/e3/2232d0e726d4d6ea69643b9593d97d0e7e6ea69c2fe9ed5de34d476c1c47/huggingface_hub-0.30.1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/59/a8/4677014e771ed1591a87b63a2392ce6923baf807193deef302dcfde17542/huggingface_hub-0.34.3-py3-none-any.whl",
         ],
-        sha256 = "0f6aa5ec5a4e68e5b9e45d556b4e5ea180c58f5a5ffa734e7f38c9d573028959",
-        downloaded_file_path = "huggingface_hub-0.30.1-py3-none-any.whl",
+        sha256 = "5444550099e2d86e68b2898b09e85878fbd788fc2957b506c6a79ce060e39492",
+        downloaded_file_path = "huggingface_hub-0.34.3-py3-none-any.whl",
     )
 
     maybe(
@@ -18328,12 +18727,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_transformers_4.52.4_py3_none_any",
+        name = "pycross_lock_file_wheel_transformers_4.55.2_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/96/f2/25b27b396af03d5b64e61976b14f7209e2939e9e806c10749b6d277c273e/transformers-4.52.4-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/db/5a/022ac010bedfb5119734cf9d743cf1d830cb4c604f53bb1552216f4344dc/transformers-4.55.2-py3-none-any.whl",
         ],
-        sha256 = "203f5c19416d5877e36e88633943761719538a25d9775977a24fe77a1e5adfc7",
-        downloaded_file_path = "transformers-4.52.4-py3-none-any.whl",
+        sha256 = "097e3c2e2c0c9681db3da9d748d8f9d6a724c644514673d0030e8c5a1109f1f1",
+        downloaded_file_path = "transformers-4.55.2-py3-none-any.whl",
     )
 
     maybe(

@@ -1048,6 +1048,11 @@ def test_deque_literal():
     assert_equal(0, len(q3))
 
 
+def test_repr_wrap():
+    var s = Deque[StaticString]("a", "b", "c")
+    assert_equal(repr(s), "Deque('a', 'b', 'c')")
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -1099,3 +1104,4 @@ def main():
     test_reversed_iter()
     test_str_and_repr()
     test_deque_literal()
+    test_repr_wrap()

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -18,7 +20,8 @@ import queue
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, NoReturn, Optional
+from types import TracebackType
+from typing import Callable, NoReturn
 
 from max.serve.config import MetricLevel
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
@@ -73,9 +76,9 @@ class AsyncioTelemetryController:
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
 
-    def __init__(self, maxsize=0) -> None:  # noqa: ANN001
+    def __init__(self, maxsize: int = 0) -> None:
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task[object] | None = None
 
     def start(self) -> None:
         if self.task is not None:
@@ -130,7 +133,12 @@ class AsyncioTelemetryController:
         self.start()
         return self
 
-    async def __aexit__(self, type, value, traceback):  # noqa: ANN001
+    async def __aexit__(
+        self,
+        type: type[BaseException],
+        value: BaseException,
+        traceback: TracebackType,
+    ) -> None:
         await self.shutdown()
 
 

@@ -144,11 +144,7 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
             The tuple length.
         """
 
-        @parameter
-        fn variadic_size(x: VariadicOf[ExplicitlyCopyable & Movable]) -> Int:
-            return __mlir_op.`pop.variadic.size`(x)
-
-        alias result = variadic_size(element_types)
+        alias result = stdlib.builtin.variadic_size(element_types)
         return result
 
     @always_inline("nodebug")

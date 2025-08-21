@@ -59,13 +59,7 @@ fn test_matmul_sm90[
     ] = None,
     measure_threshold: OptionalReg[Float64] = None,
     backend: Backend = Backend.CUBLAS,
-](
-    ctx: DeviceContext,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-    handle: Optional[linalg.vendor_blas.Handle[backend=backend]] = None,
-) raises:
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -217,29 +211,22 @@ fn test_matmul_sm90[
         ctx,
     )
 
-    @parameter
-    if a_type is DType.float8_e4m3fn:
-        if not handle:
-            raise Error("Handle is required for float8_e4m3fn")
+    constrained[
+        a_type != DType.float8_e4m3fn or transpose_b,
+        (
+            "Testing is only supported for transposed_b==True when"
+            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+        ),
+    ]()
 
-        vendor_blas.matmul(
-            ctx,
-            handle.value(),
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
-    else:
-        vendor_blas.matmul(
-            ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    vendor_blas.matmul(
+        ctx,
+        c_device_ref.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)

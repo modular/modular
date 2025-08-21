@@ -71,6 +71,7 @@ fn named_barrier[
           need to synchronize independently.
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
+        - The number of threads value must be a multiple of the warp size.
     """
 
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
@@ -80,6 +81,35 @@ fn named_barrier[
     __mlir_op.`nvvm.barrier`[
         _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1>}`
     ](to_i32(id), to_i32(num_threads))
+
+
+@always_inline("nodebug")
+fn named_barrier_arrive[
+    num_threads: Int32,
+](id: Int32 = 0):
+    """Arrives at a named synchronization barrier at the block level.
+
+    This function marks the arrival of a named synchronization barrier point using a specific barrier ID.
+
+    Parameters:
+        num_threads: The number of threads that must reach the barrier before any can proceed.
+
+    Args:
+        id: The barrier identifier (0-16). Default is 0.
+
+    Notes:
+        - Only supported on NVIDIA GPUs.
+        - Maps directly to the `nvvm.barrier.arrive` instruction.
+        - Useful for fine-grained synchronization when different subsets of threads
+          need to synchronize independently.
+        - The barrier ID must not exceed 16.
+        - All threads participating in the barrier must specify the same num_threads value.
+    """
+    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    constrained[
+        is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
+    ]()
+    __mlir_op.`nvvm.barrier.arrive`(to_i32(id), to_i32(num_threads))
 
 
 @always_inline("nodebug")
@@ -163,7 +193,6 @@ struct AMDScheduleBarrierMask(Intable):
     alias TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
-    @implicit
     fn __init__(out self, value: Int):
         """Initializes an `AMDScheduleBarrierMask` from an integer value.
 

@@ -56,7 +56,7 @@ fn bench_vec_add(
     @always_inline
     @parameter
     fn run_func() raises:
-        context.enqueue_function[vec_func](
+        context.enqueue_function_checked[vec_func, vec_func](
             in0_device,
             in1_device,
             out_device,

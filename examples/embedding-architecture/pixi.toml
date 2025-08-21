@@ -1,0 +1,61 @@
+# ========================================
+# MAX Encode Examples
+# ========================================
+# 
+# This file demonstrates how to use MAX encode with custom prompts.
+# Users can pass custom text or use the default prompt.
+#
+# Usage:
+#   pixi run encode                      # Use default prompt
+#   pixi run encode "Your text here"     # Custom prompt
+#   pixi run encode-large "Your text"    # Large model with custom prompt
+#
+# ========================================
+
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "MAX encode examples with RoBERTa models"
+name = "MAX Encode Examples"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+# ========================================
+# MAIN ENCODE TASKS
+# ========================================
+
+# Default encode - accepts custom prompt or uses default
+[tasks.encode]
+cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model-path roberta-base --prompt "${1:-An example sentence for embedding.}"', '--']
+
+# Large model encode - more accurate embeddings
+[tasks.encode-large]
+cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model-path roberta-large --prompt "${1:-An example sentence for embedding.}"', '--']
+
+# ========================================
+# UTILITY TASKS
+# ========================================
+
+# Format code
+[tasks.fmt]
+cmd = "ruff format ."
+
+# Show usage help
+[tasks.help]
+cmd = ['bash', '-c', '''
+echo "=== MAX Encode Examples ==="
+echo ""
+echo "Basic usage:"
+echo "  pixi run encode                         # Use default prompt"
+echo "  pixi run encode \"Your text here\"        # Custom prompt"
+echo "  pixi run encode-large \"Your text\"       # Large model"
+echo ""
+echo "All tasks accept custom prompts as the first argument."
+echo "If no prompt is provided, a default example will be used."
+''']
+
+[dependencies]
+python = ">=3.13.5,<3.14"
+modular = ">=25.6.0.dev2025081205,<26"
+ruff = ">=0.12.8,<0.13"

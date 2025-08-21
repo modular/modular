@@ -13,33 +13,31 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import Conv1DV1, EmbeddingV1, LayerNormV1, LinearV1, Sequential
-from max.nn.layer import Layer
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
+from max.nn.layer import Module
+from transformers import AutoConfig
 
 
-@dataclass
-class WhisperSdpaAttention(Layer):
-    n_heads: int
-    head_dim: int
+class WhisperSdpaAttention(Module):
+    def __init__(
+        self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
+    ) -> None:
+        super().__init__()
+        d_model = huggingface_config.d_model
+        self.n_heads = huggingface_config.n_heads
+        self.head_dim = d_model // huggingface_config.encoder_attention_heads
 
-    wq: LinearV1
-    wk: LinearV1
-    wv: LinearV1
-    wo: LinearV1
+        self.wq = Linear(d_model, d_model, dtype, device, has_bias=True)
+        self.wk = Linear(d_model, d_model, dtype, device, has_bias=False)
+        self.wv = Linear(d_model, d_model, dtype, device, has_bias=True)
+        self.wo = Linear(d_model, d_model, dtype, device, has_bias=True)
 
     def scaled_dot_product_attention(
-        self,
-        xq: TensorValueLike,
-        xk: TensorValueLike,
-        xv: TensorValueLike,
+        self, xq: TensorValue, xk: TensorValue, xv: TensorValue
     ) -> TensorValue:
-        xq = TensorValue(xq)
-        xk = TensorValue(xk)
-        xv = TensorValue(xv)
         xq = xq.transpose(1, 2)
         xk = xk.transpose(1, 2)
         xv = xv.transpose(1, 2)
@@ -51,11 +49,7 @@ class WhisperSdpaAttention(Layer):
         # operator.
         return ops.softmax(scores * scale) @ xv
 
-    def __call__(
-        self,
-        x: TensorValue,
-        **kwargs,
-    ) -> TensorValue:
+    def __call__(self, x: TensorValue) -> TensorValue:
         """Computes attention on x.
 
         Args:
@@ -63,7 +57,6 @@ class WhisperSdpaAttention(Layer):
 
         Returns the result of WhisperSdpaAttention self attention on the input.
         """
-        x = TensorValue(x)
         batch, seq_len = x.shape[0], x.shape[1]
         # matmul weights
         xq = self.wq(x)
@@ -71,25 +64,8 @@ class WhisperSdpaAttention(Layer):
         xv = self.wv(x)
 
         xq = ops.reshape(xq, [batch, seq_len, self.n_heads, self.head_dim])
-
-        xk = ops.reshape(
-            xk,
-            [
-                batch,
-                seq_len,
-                self.n_heads,
-                self.head_dim,
-            ],
-        )
-        xv = ops.reshape(
-            xv,
-            [
-                batch,
-                seq_len,
-                self.n_heads,
-                self.head_dim,
-            ],
-        )
+        xk = ops.reshape(xk, [batch, seq_len, self.n_heads, self.head_dim])
+        xv = ops.reshape(xv, [batch, seq_len, self.n_heads, self.head_dim])
 
         output = (
             self.scaled_dot_product_attention(xq, xk, xv)
@@ -99,21 +75,51 @@ class WhisperSdpaAttention(Layer):
         return self.wo(output)
 
 
-@dataclass
-class WhisperEncoderLayer(Layer):
-    """Stack of Attention, FeedForward, and LayerNormV1 layers."""
+class MLP(Module):
+    def __init__(
+        self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
+    ) -> None:
+        super().__init__()
+        self.fc1 = Linear(
+            huggingface_config.d_model,
+            huggingface_config.encoder_ffn_dim,
+            dtype,
+            device,
+            has_bias=True,
+        )
+        self.fc2 = Linear(
+            huggingface_config.encoder_ffn_dim,
+            huggingface_config.d_model,
+            dtype,
+            device,
+            has_bias=True,
+        )
 
-    attention: WhisperSdpaAttention
-    mlp: Sequential
-    attention_norm: LayerNormV1
-    mlp_norm: LayerNormV1
+    def __call__(self, x: TensorValue) -> TensorValue:
+        x = self.fc1(x)
+        x = ops.gelu(x)
+        x = self.fc2(x)
+        return x
 
-    def __call__(
-        self,
-        x: TensorValue,
-        **kwargs,
-    ) -> TensorValue:
-        attn_out = self.attention(self.attention_norm(x), **kwargs)
+
+class WhisperEncoderLayer(Module):
+    """Stack of Attention, FeedForward, and LayerNorm layers."""
+
+    def __init__(
+        self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
+    ) -> None:
+        super().__init__()
+        self.attention = WhisperSdpaAttention(huggingface_config, dtype, device)
+        self.mlp = MLP(huggingface_config, dtype, device)
+        self.attention_norm = LayerNorm(
+            huggingface_config.d_model, device, dtype, eps=1e-5
+        )
+        self.mlp_norm = LayerNorm(
+            huggingface_config.d_model, device, dtype, eps=1e-5
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        attn_out = self.attention(self.attention_norm(x))
 
         h = x + attn_out
         h = h + self.mlp(self.mlp_norm(h))
@@ -121,8 +127,7 @@ class WhisperEncoderLayer(Layer):
         return h
 
 
-@dataclass
-class WhisperEncoder(Layer):
+class WhisperEncoder(Module):
     """A Transformer consisting of a stem, positional embeddings, and self attention layers.
 
     The differences between this transformer and `nn.Transformer` are:
@@ -138,26 +143,53 @@ class WhisperEncoder(Layer):
         3. No final transformer linear layer "output".
     """
 
-    conv1: Conv1DV1
-    conv2: Conv1DV1
-    embed_positions: EmbeddingV1
-    layers: list[WhisperEncoderLayer]
-    norm: (
-        LayerNormV1  # TODO: Is LayerNormV1 here not the same as nn.LayerNormV1
-    )
+    def __init__(
+        self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
+    ) -> None:
+        super().__init__()
+        self.conv1 = Conv1D(
+            kernel_size=3,
+            in_channels=huggingface_config.num_mel_bins,
+            out_channels=huggingface_config.d_model,
+            dtype=dtype,
+            stride=1,
+            padding=1,
+            device=device,
+            has_bias=True,
+        )
+        self.conv2 = Conv1D(
+            kernel_size=3,
+            in_channels=huggingface_config.d_model,
+            out_channels=huggingface_config.d_model,
+            dtype=dtype,
+            stride=2,
+            padding=1,
+            device=device,
+            has_bias=True,
+        )
+        # TODO: Not sure how to handle this. It learns embeddings to a max size.
+        self.embed_positions = Embedding(
+            vocab_size=huggingface_config.max_source_positions,
+            hidden_dim=huggingface_config.d_model,
+            dtype=dtype,
+            device=device,
+        )
+        self.layers = Sequential(
+            [
+                WhisperEncoderLayer(huggingface_config, dtype, device)
+                for i in range(huggingface_config.encoder_layers)
+            ]
+        )
+        # Hugging Face model uses default eps for nn.LayerNormV1 which is = 1e-5
+        # TODO: Is LayerNorm here not the same as nn.LayerNorm
+        self.norm = LayerNorm(
+            huggingface_config.d_model, device, dtype, eps=1e-5
+        )
 
-    all_logits: bool = False
-
-    def __call__(
-        self,
-        input_features: TensorValueLike,
-        **kwargs,
-    ) -> tuple[TensorValue, ...]:
+    def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:
         """
         Args:
             input_features: Tensor of shape (batch_size, feature_size, sequence_length)
-            expected_seq_length = config.max_source_positions * self.conv1.stride[0] * self.conv2.stride[0]
-
         """
         # Encoder stem: two convolution layers and the GELU activation function.
         inputs_embeds = ops.gelu(self.conv1(input_features))
@@ -168,10 +200,9 @@ class WhisperEncoder(Layer):
         # inputs_embeds = ops.permute(inputs_embeds, [0, 2, 1])
 
         # Add sinusoidal position embeddings to the output of the stem
-        h = inputs_embeds + self.embed_positions.weights
+        h = inputs_embeds + self.embed_positions.weight
 
-        for _, layer in enumerate(self.layers):
-            h = layer(h, **kwargs)
+        h = self.layers(h)
 
         # # A final layer normalization is applied to the encoder output
         normalized = self.norm(h)

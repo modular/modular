@@ -37,6 +37,7 @@ struct UInt(
     ExplicitlyCopyable,
     Hashable,
     Indexer,
+    Intable,
     KeyElement,
     Movable,
     Representable,
@@ -93,7 +94,6 @@ struct UInt(
 
     @doc_private
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct UInt from the given Index value.
 

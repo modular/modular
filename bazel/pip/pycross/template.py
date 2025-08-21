@@ -23,6 +23,26 @@ load("@module_versions//:config.bzl", "PYTHON_VERSIONS_DOTTED")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
+_TESTONLY_DEPS = [
+    "accelerate",
+    "einx",
+    "frozendict",
+    "hypothesis",
+    "librosa",
+    "lm-eval",
+    "mteb",
+    "nvitop",
+    "peft",
+    "pygame",
+    "reference_residual_fsq",
+    "sentence-transformers",
+    "soxr",
+    "timm",
+    "torchmetrics",
+    "torchvision",
+    "zhconv",
+]
+
 PINS = {{
 {pins}
 }}
@@ -35,6 +55,7 @@ def targets():
         native.alias(
             name = pin_name,
             actual = ":" + pin_target,
+            testonly = pin_name in _TESTONLY_DEPS,
         )
 
     native.alias(
@@ -60,6 +81,7 @@ def targets():
 
     native.alias(
         name = "torchvision@multiple",
+        testonly = True,
         actual = select({{
             "@@//:amd_gpu": ":torchvision@0.22.0+rocm6.3",
             "@@//:nvidia_gpu": ":torchvision@0.22.0+cu128",

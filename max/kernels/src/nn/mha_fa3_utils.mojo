@@ -15,24 +15,36 @@ from algorithm.functional import unswitch
 from buffer import NDBuffer
 from collections import OptionalReg
 from gpu import thread_idx
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.sync import async_copy_arrive
 import gpu.warp as warp
 from layout.int_tuple import IntTuple
-from layout.layout import Layout
+from layout.layout import Layout, UNKNOWN_VALUE
 from layout.layout_tensor import (
     LayoutTensor,
     cp_async_k_major,
     cp_async_mn_major,
 )
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.tma_async import SharedMemBarrier
+from layout.tma_async import (
+    PipelineState,
+    SharedMemBarrier,
+    TMANestedTensorTile,
+    create_nested_tma_tile,
+)
+from layout.tensor_core_async import tile_layout_k_major
 from math import ceildiv
 from math.constants import log2e
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
+    MHASchedulerSynchronization,
+    MHATileScheduler,
+    MHATileState,
+    MHATileSummary,
     SeqInfo,
 )
 from nn.mha_utils import (
@@ -45,18 +57,21 @@ from nn.mha_utils import (
 )
 from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
+from sys import sizeof
 
 
 @register_passable("trivial")
 struct MHAPosition[
-    BM: Int, BN: Int, depth: Int, num_heads: Int, group: Int, decoding: Bool
+    BM: Int, BN: Int, depth: Int, q_num_heads: Int, group: Int, decoding: Bool
 ](Copyable, Movable):
     """
     Position of the MHA-kernel.
-    When `decoding=False`, `q_head_stride == num_heads`.
+    When `decoding=False`, `q_head_stride == q_num_heads`.
     When `decoding=True`, `q_head_stride == 1`.
     """
 
+    var q_row: UInt32
+    var q_col: UInt32
     var q_out_offset: Int
     var num_keys: UInt32
     var start_pos: UInt32
@@ -65,7 +80,7 @@ struct MHAPosition[
     var prompt_offset: UInt32  # when decoding, this is the position_idx
     var prompt_idx: UInt32
 
-    alias q_stride: Int = Self.depth if decoding else Self.depth * Self.num_heads
+    alias q_stride: Int = Self.depth if decoding else Self.depth * Self.q_num_heads
     alias q_output_gmem_layout = Layout(
         IntTuple(Self.BM, Self.depth), IntTuple(Self.q_stride, 1)
     )
@@ -73,11 +88,15 @@ struct MHAPosition[
     @always_inline
     fn __init__(
         out self,
+        q_row: UInt32,
+        q_col: UInt32,
         q_out_offset: Int,
         num_keys: UInt32,
         start_pos: UInt32,
         seq_info: SeqInfo,
     ):
+        self.q_row = q_row
+        self.q_col = q_col
         self.q_out_offset = q_out_offset
         self.num_keys = num_keys
         self.start_pos = start_pos
@@ -204,14 +223,14 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype]],
         UnsafePointer[Scalar[partition_t.accum_dtype]],
     ]:
-        exp_sum_offset = Self.num_heads * (
+        exp_sum_offset = Self.q_num_heads * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
         exp_sum_ptr = partition.get_exp_sum_qk_max_pointer().offset(
             exp_sum_offset
         )
         qk_max_ptr = exp_sum_ptr.offset(
-            Self.num_heads * batch_size * partition.num_partitions()
+            Self.q_num_heads * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)
 
@@ -233,43 +252,42 @@ struct MHAPosition[
 
 @always_inline
 fn _get_position[
-    k_t: MHAOperand,
-    max_seq_len_t: OptionallyStaticInt, //,
-    config: MHAConfig,
+    KVLUTType: MHAOperand,
+    MaxSeqLenType: OptionallyStaticInt, //,
+    BM: Int,
+    BN: Int,
+    depth: Int,
+    q_num_heads: Int,
     group: Int,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
 ](
     out ret: MHAPosition[
-        config.block_m(),
-        config.block_n(),
-        config.depth,
-        config.num_heads,
+        BM,
+        BN,
+        depth,
+        q_num_heads,
         group,
-        _is_decoding[max_seq_len_t](),
+        _is_decoding[MaxSeqLenType](),
     ],
     seq_info: SeqInfo,
-    k: k_t,
-    max_seq_len: max_seq_len_t,
+    kv_lut: KVLUTType,
+    max_seq_len: MaxSeqLenType,
     num_keys_arg: UInt32,
-    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
 ):
-    alias depth = config.depth
-    alias num_heads = config.num_heads
-
     var batch_idx: UInt32 = seq_info.prompt_idx
     # mha inputs
     var seq_len: UInt32 = seq_info.seq_len
     var num_keys: UInt32
     var start_pos: UInt32
-    var q_offset: Int
+    var q_row: UInt32
 
     @parameter
     if ragged:
-        cache_len = k.cache_length(Int(batch_idx))
+        cache_len = kv_lut.cache_length(Int(batch_idx))
 
         @parameter
         if not _is_cache_length_accurate:
@@ -287,7 +305,7 @@ fn _get_position[
             num_keys = cur_kv_len + cache_len
         else:
             num_keys = seq_len + cache_len
-        q_offset = Int(seq_info.start_of_seq) * Int(num_heads)
+        q_row = seq_info.start_of_seq
 
     # NDBuffer inputs, homogeneous batching.
     else:
@@ -296,23 +314,63 @@ fn _get_position[
         # When cache length (num_keys) is greater, we assume it has
         # prefix preceding the input seq_len.
         start_pos = num_keys - seq_len
-        q_offset = Int(num_heads * batch_idx) * Int(max_seq_len)
+        q_row = batch_idx * max_seq_len.as_uint32()
 
-    var kv_head_idx: UInt32
+    var q_offset: Int
+    var q_col: UInt32
 
     @parameter
-    if _is_decoding[max_seq_len_t]():
-        q_offset += Int(seq_info.head_idx) * group
+    if _is_decoding[MaxSeqLenType]():
+        # q matrix view is rows x depth
+        q_row = q_row * q_num_heads + seq_info.head_idx * group
+        q_col = 0
+        q_offset = Int(depth) * Int(q_row)
     else:  # head_idx is for q_heads
-        q_offset += Int(seq_info.head_idx) + Int(seq_info.prompt_offset) * Int(
-            num_heads
-        )
+        # q matrix view is rows x (depth*q_num_heads)
+        q_row += seq_info.prompt_offset
+        q_col = seq_info.head_idx * depth
+        q_offset = Int(depth * q_num_heads) * Int(q_row) + Int(q_col)
     ret = __type_of(ret)(
-        Int(depth) * q_offset,
+        q_row,
+        q_col,
+        q_offset,
         num_keys,
         start_pos,
         seq_info,
     )
+
+
+@always_inline
+fn q_out_tma[
+    dtype: DType, //,
+    BM: Int,
+    depth: Int,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    q_num_heads: Int,
+    decoding: Bool,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype]],
+    rows: Int,
+    out res: TMANestedTensorTile[
+        dtype,
+        max(8, BM),
+        64 if decoding else depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+) raises:
+    alias tile_cols: Int = 64 if decoding else depth
+    alias matrix_cols: Int = depth if decoding else depth * q_num_heads
+
+    alias layout = Layout.row_major(UNKNOWN_VALUE, matrix_cols)
+    rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, matrix_cols))
+    var tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](ptr, rt_layout)
+
+    return create_nested_tma_tile[
+        max(8, BM), tile_cols, swizzle_mode, is_k_major=True
+    ](ctx, tensor)
 
 
 @always_inline("nodebug")
@@ -324,10 +382,11 @@ fn _produce[
     depth: Int,
     num_heads: Int,
     group: Int,
-    decoding: Bool, //,
+    decoding: Bool,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool, //,
     kv_num_heads: Int,
     *,
-    axis: Int,
     wait: Bool,
 ](
     write_idx: UInt32,
@@ -341,6 +400,9 @@ fn _produce[
         SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     kv: kv_t,
+    tma_tile: TMANestedTensorTile[
+        kv_t.dtype, BN, depth, swizzle_mode, is_k_major=is_k_major
+    ],
     smem_tile: LayoutTensor[
         kv_t.dtype,
         smem_layout,
@@ -350,72 +412,16 @@ fn _produce[
         linear_idx_type = DType.int32,
     ],
 ):
-    kv_tile_num_rows = min(
-        Int(BN), Int(position.num_keys) - Int(kv_tile_start_row)
-    )
-    alias kv_gmem_layout = Layout(
-        IntTuple(Int(BN), Int(depth)),
-        IntTuple(Int(kv_num_heads * depth), 1),
-    )
-    alias kv_runtime_layout_t = RuntimeLayout[
-        kv_gmem_layout,
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ]
-
-    kv_runtime_layout = kv_runtime_layout_t(
-        RuntimeTuple[
-            kv_gmem_layout.shape,
-            element_type = kv_runtime_layout_t.element_type,
-        ](kv_tile_num_rows, depth),
-        RuntimeTuple[
-            kv_gmem_layout.stride,
-            element_type = kv_runtime_layout_t.linear_idx_type,
-        ](kv_num_heads * depth, 1),
-    )
-
-    # Int(batch_idx), # prompt_idx
-    # Int(start_tok_idx), # Int(kv_tile_start_row)
-    # Int(head_idx),   # Int(position.kv_head_idx())
-    # Int(head_dim_idx), # 0
-    gmem_ptr = kv.block_paged_ptr[BN](
-        position.prompt_idx,
-        Int(kv_tile_start_row),
-        Int(position.kv_head_idx()),
-        0,
-    )
+    src_col = kv.col_idx(position.kv_head_idx())
+    src_row = kv.row_idx(position.prompt_idx, kv_tile_start_row)
 
     @parameter
     if wait:
         consumed_mbar[write_idx].wait(write_phase)
 
-    @parameter
-    @always_inline("nodebug")
-    fn copy_gmem_to_smem[masked: Bool]():
-        gmem_block = LayoutTensor[
-            kv_t.dtype,
-            kv_gmem_layout,
-            MutableAnyOrigin,
-            layout_int_type = DType.int32,
-            linear_idx_type = DType.int32,
-            masked=masked,
-        ](gmem_ptr, kv_runtime_layout)
-
-        @parameter
-        if axis == 0:
-            cp_async_mn_major(smem_tile, gmem_block)
-        else:
-            cp_async_k_major(smem_tile, gmem_block)
-
-    # if kv_tile_num_rows >= BN:
-    #     copy_gmem_to_smem[False]()
-    # else:
-    #     copy_gmem_to_smem[True]()
-    unswitch[copy_gmem_to_smem](kv_tile_num_rows < BN)
-
     p_mbar = produced_mbar + write_idx
-    async_copy_arrive(p_mbar)
-    _ = p_mbar[].arrive()
+    p_mbar[0].expect_bytes(BN * depth * sizeof[kv_t.dtype]())
+    tma_tile.async_copy(smem_tile, p_mbar[0], (UInt(src_col), UInt(src_row)))
 
 
 @always_inline
@@ -607,3 +613,317 @@ fn valid_length_managed_tensor_slice_to_ndbuffer(
     return NDBuffer[DType.uint32, 1, MutableAnyOrigin](
         ptr, tensor.shape(), tensor._runtime_strides
     )
+
+
+@always_inline
+fn produce[
+    qkv_type: DType,
+    BM: Int,
+    BN: Int,
+    depth: Int,
+    num_heads: Int,
+    group: Int,
+    PartitionType: MHAPartitionScheme,
+    swizzle_mode: TensorMapSwizzle,
+    q_tma_rows: Int,
+    q_tma_cols: Int,
+    MaxSeqLenType: OptionallyStaticInt,
+    SchedulerType: MHATileScheduler,
+    KVLUTType: MHAOperand,
+    MaskType: MHAMask, //,
+    *,
+    pipeline_stages: Int,
+    ragged: Bool,
+    _is_cache_length_accurate: Bool,
+](
+    q_tma_op: TMANestedTensorTile[
+        qkv_type,
+        q_tma_rows,
+        q_tma_cols,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    k_tma_op: TMANestedTensorTile[
+        qkv_type,
+        BN,
+        depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    v_tma_op: TMANestedTensorTile[
+        qkv_type,
+        BN,
+        depth,
+        swizzle_mode,
+        is_k_major=False,
+    ],
+    q_smem: UnsafePointer[
+        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment=128
+    ],
+    kv_smem: UnsafePointer[
+        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment=128
+    ],
+    produced_mbar_kv: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    consumed_mbar_kv: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    produced_mbar_q: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    consumed_mbar_q: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    kv_lut: KVLUTType,
+    initial_position: MHAPosition[
+        BM, BN, depth, num_heads, group, _is_decoding[MaxSeqLenType]()
+    ],
+    partition: PartitionType,
+    scheduler: SchedulerType,
+    mask: MaskType,
+    tile_summary: MHATileSummary,
+    tile_state_arg: MHATileState,
+    max_seq_len: MaxSeqLenType,  # sequence length after padding.
+    num_keys_arg: UInt32,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
+):
+    alias decoding: Bool = _is_decoding[MaxSeqLenType]()
+    alias PositionType = MHAPosition[BM, BN, depth, num_heads, group, decoding]
+    alias persistent = SchedulerType.may_advance
+
+    alias q_smem_layout_producer = q_tma_op.layout
+    alias q_smem_layout_consumer = tile_layout_k_major[
+        DType.bfloat16, BM, depth, swizzle_mode=swizzle_mode
+    ]()
+    alias k_smem_layout = k_tma_op.layout
+    alias v_smem_layout = v_tma_op.layout
+
+    alias q_size = q_smem_layout_consumer.size()
+    alias q_smem_size = (2 * q_size if persistent else q_size)
+
+    alias q_copy_rows = max(group, 8) if decoding else Int(BM)
+    alias qk_bytes = (q_copy_rows + BN) * depth * sizeof[qkv_type]()
+
+    tile_state = tile_state_arg
+    position = initial_position
+
+    @parameter
+    @always_inline("nodebug")
+    fn q_producer[
+        depth_idx: Int
+    ](
+        q_idx: UInt32,
+    ) -> LayoutTensor[
+        qkv_type,
+        q_smem_layout_producer,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]:
+        # alias stride = q_smem_layout_consumer.stride[1][1].value()
+        # alias depth_offset = depth_idx * stride
+        alias depth_offset = q_smem_layout_consumer(
+            IntTuple(0, 64 * depth_idx)
+        ) if decoding else 0
+        return {q_smem + depth_offset + q_size * q_idx}
+
+    @parameter
+    @always_inline
+    fn k_tile(
+        idx: UInt32,
+        out k_smem: LayoutTensor[
+            qkv_type,
+            k_smem_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            alignment=128,
+        ],
+    ):
+        alias sz = BN * depth
+        k_smem = __type_of(k_smem)(kv_smem + sz * idx)
+
+    @parameter
+    @always_inline
+    fn v_tile(
+        idx: UInt32,
+        out v_smem: LayoutTensor[
+            qkv_type,
+            v_smem_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            alignment=128,
+        ],
+    ):
+        alias sz = BN * depth
+        v_smem = __type_of(v_smem)(kv_smem + sz * idx)
+
+    @parameter
+    @always_inline("nodebug")
+    fn produce_k[
+        wait: Bool
+    ](mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32):
+        var write_idx: UInt32 = state.index()
+        var write_phase: UInt32 = state.phase()
+
+        ref p_mbar = produced_mbar_kv[write_idx]
+        k_sub = k_tile(write_idx)
+
+        @parameter
+        if wait:
+            consumed_mbar_kv[write_idx].wait(write_phase)
+            alias bytes = BN * depth * sizeof[qkv_type]()
+            p_mbar.expect_bytes(bytes)
+        k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
+        state.step()
+
+    @parameter
+    @always_inline("nodebug")
+    fn produce_v(
+        mut state: PipelineState[pipeline_stages], row: UInt32, col: UInt32
+    ):
+        var write_idx: UInt32 = state.index()
+        var write_phase: UInt32 = state.phase()
+
+        ref p_mbar = produced_mbar_kv[write_idx]
+        v_sub = v_tile(write_idx)
+        consumed_mbar_kv[write_idx].wait(write_phase)
+        alias bytes = BN * depth * sizeof[qkv_type]()
+        p_mbar.expect_bytes(bytes)
+        v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
+        state.step()
+
+    @parameter
+    @always_inline
+    fn get_position(seq_info: SeqInfo) -> PositionType:
+        return _get_position[
+            BM, BN, depth, num_heads, group, ragged, _is_cache_length_accurate
+        ](
+            seq_info,
+            kv_lut,
+            max_seq_len,
+            num_keys_arg,
+            kv_input_row_offsets,
+        )
+
+    write_pipeline_states = PipelineState[pipeline_stages]()
+    q_pipeline_state = PipelineState[2 if persistent else 1]()
+
+    @parameter
+    if PartitionType.do_partition:
+        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        start = startend[0]
+        end = startend[1]
+        if start >= end:
+            return
+    else:
+        # delay partitioning until after we've begun copying `q`
+        start = 0
+        end = 0
+
+    produced_mbar_kv[0].expect_bytes(qk_bytes)
+
+    @parameter
+    for d in range((depth // 64) if decoding else 1):
+        q_tma_op.async_copy(
+            q_producer[d](q_pipeline_state.index()),
+            produced_mbar_kv[0],
+            (UInt(position.q_col + 64 * d), UInt(position.q_row)),
+        )
+
+    @parameter
+    if not PartitionType.do_partition:
+        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+        start = startend[0]
+        end = startend[1]
+    var kv_tile_start_row: UInt32 = start
+    var kv_col: UInt32 = kv_lut.col_idx(position.kv_head_idx())
+
+    while (
+        position.mask_status(mask, kv_tile_start_row)
+        == TileMaskStatus.FULL_MASK
+    ):
+        kv_tile_start_row += BN
+
+    var kv_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
+
+    produce_k[False](write_pipeline_states, kv_row, kv_col)
+
+    var kv_row_prev: UInt32 = kv_row
+    var kv_col_prev: UInt32 = kv_col
+
+    # wait to flip phase, but only bother after producing
+    # there isn't any memory we can throttle
+    # the order of the consumer's arrivals determines the
+    # order of the producer's waits.
+    # few_keys = num_keys <= BN
+
+    # Process work with the tile size until there's not enough remaining work
+    # to fit in a tile.
+    # Production order:
+    # Preheader: Q0, K0
+    # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+    # Exit: V{-1}
+    while True:
+        # this loops over num_keys
+        kv_tile_start_row += BN
+        if kv_tile_start_row >= end:
+
+            @parameter
+            if persistent:
+                kv_tile_start_row = 0
+                var q_idx_old: UInt32 = q_pipeline_state.index()
+                var q_phase_old: UInt32 = q_pipeline_state.phase()
+                q_pipeline_state.step()
+                consumed_mbar_q[q_idx_old].wait(q_phase_old)
+                # we must wait before advancing, as this mbar
+                # is for both `q_smem` and `sidx_ptr`
+                var q_idx: UInt32 = q_pipeline_state.index()
+                docontinue = scheduler.advance[
+                    ragged, True, MHASchedulerSynchronization.DEFAULT
+                ](tile_summary, tile_state, q_idx_old)
+                # FIXME: persistent kernel that uses a counter
+                # must signal somehow
+                if not docontinue:
+                    break
+                ref pq_mbar = produced_mbar_q[q_idx_old]
+                position = get_position(docontinue.value())
+                pq_mbar.expect_bytes(q_copy_rows * depth * sizeof[qkv_type]())
+
+                @parameter
+                for d in range((depth // 64) if decoding else 1):
+                    q_tma_op.async_copy(
+                        q_producer[d](q_idx),
+                        pq_mbar,
+                        (
+                            UInt(position.q_col + 64 * d),
+                            UInt(position.q_row),
+                        ),
+                    )
+                kv_col = kv_lut.col_idx(position.kv_head_idx())
+                start, new_end = position.get_start_and_end_for_partitions[
+                    BN=BN
+                ](partition)
+                kv_tile_start_row = start
+                end = new_end
+            else:
+                break
+
+        if (
+            position.mask_status(mask, kv_tile_start_row)
+            == TileMaskStatus.FULL_MASK
+        ):
+            continue
+        kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
+        produce_k[True](write_pipeline_states, kv_row, kv_col)
+        produce_v(write_pipeline_states, kv_row_prev, kv_col_prev)
+        kv_row_prev = kv_row
+        kv_col_prev = kv_col
+
+    produce_v(write_pipeline_states, kv_row_prev, kv_col_prev)

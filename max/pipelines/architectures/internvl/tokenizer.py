@@ -16,9 +16,10 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
+import numpy.typing as npt
 from max.pipelines.lib import TextAndVisionTokenizer
 from PIL import Image
 from transformers import (
@@ -32,6 +33,8 @@ from transformers import (
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
 
+_T = TypeVar("_T", bound=np.generic)
+
 # The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer.
 # This is used to identify where to insert image embeddings in the text.
 IMAGE_CONTEXT_TOKEN_ID = 151667
@@ -41,7 +44,9 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-def float32_to_bfloat16_as_uint16(arr: np.ndarray) -> np.ndarray:
+def float32_to_bfloat16_as_uint16(
+    arr: npt.NDArray[np.float32],
+) -> npt.NDArray[np.uint16]:
     """Convert float32 array to bfloat16 representation stored as uint16.
 
     BFloat16 is the upper 16 bits of float32 with proper rounding.
@@ -179,7 +184,9 @@ def calculate_num_patches_for_image(
     return blocks
 
 
-def imagenet_normalize(img: Image.Image, input_size: int) -> np.ndarray:
+def imagenet_normalize(
+    img: Image.Image, input_size: int
+) -> npt.NDArray[np.float32]:
     """Normalize image using ImageNet normalization.
 
     This converts PIL image to normalized numpy array with proper preprocessing.
@@ -258,10 +265,10 @@ def crop_into_patches(
 
 
 def extract_patches_from_image(
-    normalized_image: np.ndarray,
+    normalized_image: npt.NDArray[_T],
     *,
     patch_size: int = 14,
-) -> np.ndarray:
+) -> npt.NDArray[_T]:
     """Extract patches from a normalized image array.
 
     This replicates the exact patch extraction operations from
@@ -298,7 +305,7 @@ def preprocess_image_to_tensor(
     input_size: int = 448,
     max_num: int = 12,
     patch_size: int = 14,
-) -> np.ndarray:
+) -> npt.NDArray[np.uint16]:
     """Preprocess image to tensor with dynamic patching - must match InternVLProcessor.
 
     This function replicates the exact patch extraction operations from
@@ -345,7 +352,7 @@ class InternVLProcessor:
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
-        config,  # noqa: ANN001
+        config: AutoConfig,
         vision_overrides: dict | None = None,
     ) -> None:
         self.tokenizer = tokenizer

@@ -41,7 +41,7 @@ fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
         @parameter
         @always_inline
         fn launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function[empty_kernel](
+            ctx.enqueue_function_checked[empty_kernel, empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
@@ -70,7 +70,9 @@ fn bench_empty_launch_many_params_caller(
     fn bench_empty_launch_many_params(mut b: Bencher) raises:
         @parameter
         fn launch() raises:
-            ctx.enqueue_function[func_alias](grid_dim=Dim(1), block_dim=Dim(1))
+            ctx.enqueue_function_checked[func_alias, func_alias](
+                grid_dim=Dim(1), block_dim=Dim(1)
+            )
 
         b.iter[launch]()
         ctx.synchronize()

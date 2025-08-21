@@ -72,7 +72,7 @@ class LayerNorm(Module):
         device: DeviceRef,
         dtype: DType,
         eps: float = 1e-5,
-        use_bias=True,  # noqa: ANN001
+        use_bias: bool = True,
     ) -> None:
         self.weight = Weight("weight", dtype, (dims,), device=device)
         self.bias = (

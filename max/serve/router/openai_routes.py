@@ -470,10 +470,11 @@ class OpenAISpeechResponseGenerator:
         return response
 
 
-def openai_parse_chat_completion_request(
+async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
-) -> tuple[list[TextGenerationRequestMessage], list[AnyUrl]]:
+    settings: Settings,
+) -> tuple[list[TextGenerationRequestMessage], list[bytes]]:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image references while we are here so they can be
@@ -481,6 +482,8 @@ def openai_parse_chat_completion_request(
     """
     messages: list[TextGenerationRequestMessage] = []
     image_refs: list[AnyUrl] = []
+    image_content_to_update: list[dict | None] = []
+    resolve_image_tasks = []
     for m in completion_request.messages:
         if isinstance(m.root.content, list):
             message_content: list[dict[str, Any]] = []
@@ -488,9 +491,12 @@ def openai_parse_chat_completion_request(
                 if content_part.root.type == "image_url":
                     image_refs.append(content_part.root.image_url.url)
                     if wrap_content:
-                        message_content.append({"type": "image"})
+                        new_content = {"type": "image"}
+                        message_content.append(new_content)
+                        image_content_to_update.append(new_content)
                     else:
                         message_content.append(content_part.model_dump())
+                        image_content_to_update.append(None)
                 elif content_part.root.type == "text":
                     if wrap_content:
                         message_content.append(
@@ -509,11 +515,21 @@ def openai_parse_chat_completion_request(
                     "content": m.root.content if m.root.content else "",
                 }
             )
-    return messages, image_refs
+
+    resolve_image_tasks = [
+        resolve_image_from_url(image_url, settings) for image_url in image_refs
+    ]
+    request_images = await asyncio.gather(*resolve_image_tasks)
+    for i, image_content in enumerate(image_content_to_update):
+        if image_content is not None:
+            image_content["image"] = request_images[i]
+
+    return messages, request_images
 
 
 async def resolve_image_from_url(
-    image_ref: AnyUrl, settings: Settings
+    image_ref: AnyUrl,
+    settings: Settings,
 ) -> bytes:
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
@@ -627,20 +643,14 @@ async def openai_create_chat_completion(
             completion_request.model,
         )
 
-        request_messages, request_images_urls = (
-            openai_parse_chat_completion_request(
-                completion_request, pipeline.tokenizer.expects_content_wrapping
-            )
+        (
+            request_messages,
+            request_images,
+        ) = await openai_parse_chat_completion_request(
+            completion_request,
+            pipeline.tokenizer.expects_content_wrapping,
+            request.app.state.settings,
         )
-
-        request_images = None
-        if request_images_urls:
-            settings: Settings = request.app.state.settings
-            resolve_image_tasks = [
-                resolve_image_from_url(image_url, settings)
-                for image_url in request_images_urls
-            ]
-            request_images = await asyncio.gather(*resolve_image_tasks)
 
         tools = None
         if (
@@ -682,6 +692,7 @@ async def openai_create_chat_completion(
             request_path=request.url.path,
             response_format=response_format,
             sampling_params=sampling_params,
+            target_endpoint=completion_request.target_endpoint,
         )
 
         if completion_request.stream:
@@ -1124,6 +1135,7 @@ async def openai_create_completion(
                 ),
                 echo=completion_request.echo or False,
                 sampling_params=sampling_params,
+                target_endpoint=completion_request.target_endpoint,
             )
             token_requests.append(tgr)
 

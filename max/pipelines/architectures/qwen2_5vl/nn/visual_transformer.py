@@ -104,11 +104,22 @@ class VisionPatchEmbed(Module):
 
         seq_len = h.shape[0]
         # Reshape into a 3D tensor of blocks.
+        h = h.rebind(
+            [
+                (seq_len // self.spatial_merge_unit) * self.spatial_merge_unit,
+                self.embed_dim,
+            ]
+        )
         h = h.reshape(
             [seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1]
         )
+
         # Reorders patch_embeddings according to window_index indices.
-        h = ops.gather(h, window_index, axis=0).reshape([seq_len, -1])
+        h = (
+            ops.gather(h, window_index, axis=0)
+            .reshape([-1, self.embed_dim])
+            .rebind([seq_len, self.embed_dim])
+        )
         return h
 
 
@@ -119,9 +130,7 @@ class VisionRotaryEmbedding(Module):
     Differences compared to `max.nn.RotaryEmbedding`:
 
     - In _compute_inv_freqs, the head dimension (n) is divided by 2.
-    - inv_freqs is cached rather than freqs. generate_rot_pos_embeddings takes seq_len as input because it depends on the image and video inputs
-        rather than using a fixed value for the model.
-        TODO: We might change this depending on how our infra handles seq_length now.
+    - inv_freqs is cached instead of freqs.
     """
 
     dim: int
@@ -178,7 +187,6 @@ class VisionRotaryEmbedding(Module):
             0,
             max_grid_size,
             1,
-            # out_dim=max_grid_size,
             out_dim="max_grid_size",
             device=rot_pos_ids.device,
             dtype=DType.int32,
@@ -187,14 +195,23 @@ class VisionRotaryEmbedding(Module):
         # Retrieve position embeddings for each patch in input images or videos.
         rotary_pos_emb = ops.gather(rotary_pos_emb_full, rot_pos_ids, axis=0)
         rotary_pos_emb = rotary_pos_emb.flatten(1)
+
+        rotary_pos_emb = rotary_pos_emb.rebind(
+            [
+                (seq_len // spatial_merge_unit) * spatial_merge_unit,
+                rotary_pos_emb.shape[-1],
+            ]
+        )
         rotary_pos_emb = rotary_pos_emb.reshape(
             [seq_len // spatial_merge_unit, spatial_merge_unit, -1]
         )
 
         # Reorders patches' rot position embeddings according to window_index indices.
-        rotary_pos_emb = ops.gather(
-            rotary_pos_emb, window_index, axis=0
-        ).reshape([seq_len, -1])
+        rotary_pos_emb = (
+            ops.gather(rotary_pos_emb, window_index, axis=0)
+            .reshape([-1, rotary_pos_emb.shape[-1]])
+            .rebind([seq_len, rotary_pos_emb.shape[-1]])
+        )
         # Generates a cos and a sin of rotary position embeddings which will be applied later. Shape = (seq_len, 2 * hidden_size).
         rotary_pos_emb = ops.concat((rotary_pos_emb, rotary_pos_emb), -1)
 
@@ -416,6 +433,7 @@ class PatchMerger(Module):
     ):
         super().__init__()
         self.input_dim = hidden_size * (spatial_merge_size**2)
+        self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
         self.out_hidden_size = out_hidden_size
 
         # Create RMSNorm layer
@@ -442,7 +460,15 @@ class PatchMerger(Module):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         # Apply RMSNorm and reshape for MLP input
-        x = self.norm(x).reshape((-1, self.input_dim))
+        x = self.norm(x)
+        x = x.rebind(
+            [
+                (x.shape[0] // self.spatial_merge_unit)
+                * self.spatial_merge_unit,
+                x.shape[-1],
+            ]
+        )
+        x = x.reshape((-1, self.input_dim))
 
         # Apply first linear layer, then GELU, then second linear layer
         x = self.linear1(x)
@@ -604,6 +630,11 @@ class VisionTransformer(Module):
             seq_len,
         )
 
+        # Cast input attention masks to bfloat16 because they are computed
+        # as float32 (due to numpy not supporting bfloat16).
+        attention_mask_full = attention_mask_full.cast(h.dtype)
+        attention_mask_window = attention_mask_window.cast(h.dtype)
+
         # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
         for layer_num, blk in enumerate(self.blocks):
             if layer_num in self.fullatt_block_indexes:
@@ -623,5 +654,4 @@ class VisionTransformer(Module):
         # TODO(GEX-1863): Implement ops.argsort
         reverse_indices = ops.argsort(window_index)
         h = ops.gather(h, reverse_indices, axis=0)
-
         return h

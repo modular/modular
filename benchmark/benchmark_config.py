@@ -11,36 +11,134 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""BenchmarkConfig MAXConfig subclass for MAX benchmark configurations."""
+"""Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
+import enum
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from benchmark_datasets import DATASET_REGISTRY
 from max.pipelines.lib import MAXConfig
 
 
+class Backend(str, enum.Enum):
+    vllm = "vllm"
+    vllm_chat = "vllm-chat"
+    trt_llm = "trt-llm"
+    modular = "modular"
+    modular_chat = "modular-chat"
+    sglang = "sglang"
+    sglang_chat = "sglang-chat"
+
+
 @dataclass
-class BenchmarkConfig(MAXConfig):
-    """Configuration class for MAX benchmark parameters.
+class BaseBenchmarkConfig(MAXConfig):
+    """Base configuration class containing parameters common to all benchmark types.
 
-    This class can handle both known parameters (validated against the dataclass)
-    and unknown parameters (stored as additional fields via _unknown_fields).
-    This provides flexibility for extensions while maintaining validation for core parameters.
-
-    Base configuration is loaded from base_benchmark_config.yaml with optional overrides.
-    This ensures that CLI parsing doesn't need to know default values since they're
-    all specified in the configuration file.
+    This class contains the core parameters that are shared across all benchmark types:
+    - Model and tokenizer configuration
+    - Basic dataset configuration
+    - Common workload parameters
+    - Basic output control
+    - Result saving configuration
+    - Common control flags
     """
 
     # Config file section name for MAXConfig interface
     _config_file_section_name: str = "benchmark_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
+    """The section name to use when loading this config from a MAXConfig file."""
 
-    # Backend and API configuration
-    # TODO: Make this an enum.
-    backend: str = "modular"
+    # Model and tokenizer configuration (common to all benchmarks)
+    model: Optional[str] = None
+    """Name of the model. Required when running benchmark."""
+
+    tokenizer: Optional[str] = None
+    """Name or path of the tokenizer, if not using the default tokenizer."""
+
+    trust_remote_code: bool = False
+    """Trust remote code from huggingface."""
+
+    # Dataset configuration (common across all benchmark types)
+    dataset_name: str = "sharegpt"
+    """Name of the dataset to benchmark on."""
+
+    dataset_path: Optional[str] = None
+    """Path to the dataset."""
+
+    # Basic workload parameters
+    num_prompts: int = 1000
+    """Number of prompts to process."""
+
+    seed: int = 42
+    """Random seed for reproducibility."""
+
+    # Control flags
+    disable_tqdm: bool = False
+    """Specify to disable tqdm progress bar."""
+
+    print_inputs_and_outputs: bool = False
+    """Print all input and outputs to console."""
+
+    # Unknown fields storage (not a dataclass field)
+    _unknown_fields: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        """Documentation for base benchmark config parameters.
+
+        Returns:
+            Dictionary of config options and their descriptions.
+        """
+        return {
+            "model": "Name of the model. Required when running benchmark.",
+            "tokenizer": "Name or path of the tokenizer, if not using the default tokenizer.",
+            "trust_remote_code": "Trust remote code from huggingface.",
+            "dataset_name": "Name of the dataset to benchmark on.",
+            "dataset_path": "Path to the dataset.",
+            "num_prompts": "Number of prompts to process.",
+            "seed": "Random seed for reproducibility.",
+            "disable_tqdm": "Specify to disable tqdm progress bar.",
+            "print_inputs_and_outputs": "Print all input and outputs to console.",
+        }
+
+    @staticmethod
+    def get_default_field_choices() -> dict[str, list[str]]:
+        """Get valid choices for fields that have constrained values.
+
+        Returns:
+            Dictionary mapping field names to their valid choices.
+        """
+        return {
+            # TODO: Propagate proper enum choices here than just the string values
+            "backend": [backend.value for backend in Backend],
+            "dataset_name": list(DATASET_REGISTRY.keys()),
+            "random_distribution_type": ["uniform", "normal"],
+        }
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the benchmark config."""
+        return super().get_default_required_fields().union({"model"})
+
+
+@dataclass
+class ServingBenchmarkConfig(BaseBenchmarkConfig):
+    """Configuration class for serving benchmarks (benchmark_serving.py).
+
+    Inherits from BaseBenchmarkConfig and adds serving-specific parameters:
+    - Backend and API configuration
+    - Request configuration (concurrency, LoRA)
+    - Traffic control (request rate, burstiness, TTFT)
+    - Chat session configuration
+    - Serving-specific dataset parameters
+    - GPU stats collection
+    """
+
+    # Backend and API configuration (serving-specific)
+    # TODO: Propagate proper enum choices here than just the string values
+    backend: str = Backend.modular.value
     """Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat"""
 
     base_url: Optional[str] = None
@@ -52,178 +150,116 @@ class BenchmarkConfig(MAXConfig):
     port: int = 8000
     """Server port."""
 
-    # TODO: Make this an enum.
     endpoint: str = "/v1/completions"
     """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
 
-    # Dataset configuration
-    dataset_name: str = "sharegpt"
-    """Name of the dataset to benchmark on."""
-
-    dataset_path: Optional[str] = None
-    """Path to the dataset."""
-
-    # Request configuration
+    # Request configuration (serving-specific)
     max_concurrency: Optional[int] = None
-    """Maximum number of concurrent requests. This can be used to help simulate an environment where a higher level component is enforcing a maximum number of concurrent requests. While the --request-rate argument controls the rate at which requests are initiated, this argument will control how many are actually allowed to execute at a time. This means that when used in combination, the actual request rate may be lower than specified with --request-rate, if the server is not processing requests fast enough to keep up."""
-
-    model: Optional[str] = None
-    """Name of the model. Required when running benchmark."""
+    """Maximum concurrent requests (optimized for serving benchmarks)."""
 
     lora: Optional[str] = None
-    """Name of the lora."""
+    """Optional LoRA name."""
 
-    tokenizer: Optional[str] = None
-    """Name or path of the tokenizer, if not using the default tokenizer."""
-
-    # Workload configuration
-    num_prompts: int = 1000
-    """Number of prompts to process."""
-
+    # Workload configuration (serving-specific)
     max_benchmark_duration_s: Optional[int] = None
-    """Maximum duration of the benchmark in seconds. If specified, the benchmark will run for max_benchmark_duration_s seconds. It works if max_concurrency is not None. If not specified, the benchmark will run for num_prompts requests."""
+    """Maximum benchmark duration in seconds."""
 
     num_chat_sessions: Optional[int] = None
-    """Number of multiturn chat sessions to spawn. Single turn mode if not specified / set to None."""
+    """Number of multiturn chat sessions."""
 
     delay_between_chat_turns: Optional[int] = None
-    """Optional delay before sending next chat turn request in ms."""
+    """Delay between chat turns in ms."""
 
-    # Output control
+    # Output control (serving-specific extensions)
     output_lengths: Optional[str] = None
-    """Path to YAML file containing list of output lengths, or an int. If an int is given, all responses are forced to the given length. Default: None"""
+    """Path to YAML file with output lengths or int."""
 
     max_output_len: Optional[int] = None
-    """Max output length for each request."""
+    """Maximum output length per request."""
 
     temperature: float = 0.0
-    """Temperature used for token sampling."""
+    """Temperature for sampling."""
 
-    # Traffic control
+    top_p: float = 1.0
+    """Top-p for sampling."""
+
+    # Traffic control (serving-specific)
     request_rate: float = float("inf")
-    """Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times."""
+    """Requests per second (finite rate for realistic benchmarking)."""
 
     burstiness: float = 1.0
-    """Burstiness factor of the request generation. Only take effect when request_rate is not inf. Default value is 1, which follows Poisson process. Otherwise, the request intervals follow a gamma distribution. A lower burstiness value (0 < burstiness < 1) results in more bursty requests. A higher burstiness value (burstiness > 1) results in a more uniform arrival of requests."""
+    """Burstiness factor (1.0 = Poisson process)."""
 
     ttft_skip_requests: int = 0
-    """Number of requests to skip when measuring TTFT latencies; i.e, ignore the first N requests in TTFT calculations. This mitigates the effect of artificial queuing, particularly at infinite request rates. Defaults to zero."""
+    """Skip first N requests for TTFT measurements."""
 
     chat_warmup_delay_ms: float = 0.0
-    """Delay between starting chat sessions when the number of active sessions is below max_concurrency, in ms. This prevents all of the chat sessions from starting at the same time. Default: 0.0"""
+    """Delay between starting chat sessions."""
 
-    # Dataset-specific parameters
+    # Dataset-specific parameters (serving workloads)
     sonnet_input_len: int = 550
-    """Number of input tokens per request, used only for sonnet dataset."""
-
     sonnet_prefix_len: int = 200
-    """Number of prefix tokens per request, used only for sonnet dataset."""
-
     arxiv_summarization_input_len: int = 15000
-    """Number of input tokens per request, used only for arxiv-summarization dataset."""
-
     random_input_len: int = 1024
-    """Number of input tokens per request, used only for random sampling."""
-
     random_output_len: int = 128
-    """Number of output tokens per request, used only for random sampling."""
-
     random_coefficient_of_variation: str = "0.3,0.7"
-    """Coefficient of variation for input/output length, used only for random sampling."""
-
     random_image_size: str = ""
-    """Size of random images to generate."""
-
     random_sys_prompt_ratio: float = 0.0
-    """Ratio to determine the system prompt length, used only for random sampling."""
-
     random_first_turn_ratio: float = 1.0
-    """Ratio of the length of the first turn to the length of subsequent turns."""
-
     random_max_num_unique_sys_prompt: int = 1
-    """Maximum number of unique system prompts, used only for random sampling."""
-
-    random_distribution_type: str = "normal"
-    """Type of probability distribution for sampled input/output length. Choices: uniform, normal"""
-
+    random_distribution_type: str = "normal"  # choices: uniform, normal
     random_num_turns: int = 1
-    """Number of turns per session, used only for random sampling and --num-chat-sessions."""
 
-    # Control flags
-    seed: int = 0
-    """Random seed."""
-
-    trust_remote_code: bool = False
-    """Trust remote code from huggingface."""
-
-    disable_tqdm: bool = False
-    """Specify to disable tqdm progress bar."""
-
+    # Control flags (serving-specific)
     skip_test_prompt: bool = False
-    """Skip the test prompt. Useful when doing external profiling."""
+    collect_gpu_stats: bool = True
+    """Enable GPU stats collection for serving benchmarks."""
 
-    collect_gpu_stats: bool = False
-    """Collect GPU stats with NVML (NVIDIA only)."""
+    # Result saving (serving-specific extensions)
+    server_args: str = ""
+    """Server arguments string."""
 
+    # Result saving (serving-specific extensions)
     save_result: bool = False
     """Specify to save benchmark results to a json file."""
 
-    print_inputs_and_outputs: bool = False
-    """Print all input and outputs to console."""
-
-    # Result saving
-    metadata: list[str] = field(default_factory=list)
-    """Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes."""
-
     result_dir: Optional[str] = None
-    """Specify directory to save benchmark json results. If not specified, results are saved in the current directory."""
+    """Directory to save results."""
 
     result_filename: Optional[str] = None
-    """Specify the filename to save benchmark json results. If not specified, results will be saved in {backend}-{args.request_rate}qps(-concurrency{args.max_concurrency})?-{base_model_id}-{current_dt}.json format. (Note that, concurrency exists in filename when args.max_concurrency is specified.)"""
+    """Custom filename (auto-generated if null)."""
 
-    server_args: str = ""
-    """Server args."""
-
-    # File operations (Note: record_output_lengths is handled specially in argparse)
-    record_output_lengths: Optional[str] = None
-    """Path to save output lengths in YAML format. If not specified, output lengths are not saved."""
-
-    # Unknown fields storage (not a dataclass field)
-    _unknown_fields: dict[str, Any] = field(
-        default_factory=dict, init=False, repr=False
-    )
+    metadata: list[str] = field(default_factory=list)
+    """Key-value pairs for metadata (format: ["key=value", ...])."""
 
     @staticmethod
     def help() -> dict[str, str]:
-        """Documentation for this config class.
+        """Documentation for serving benchmark config parameters.
 
         Returns:
             Dictionary of config options and their descriptions.
         """
-
-        return {
+        # Get base help and extend with serving-specific parameters
+        base_help = BaseBenchmarkConfig.help()
+        serving_help = {
             "backend": "Backend to use for benchmarking. Choices: vllm, vllm-chat, trt-llm, modular, modular-chat, sglang, sglang-chat",
             "base_url": "Server or API base url if not using http host and port.",
             "host": "Server host.",
             "port": "Server port.",
             "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream",
-            "dataset_name": "Name of the dataset to benchmark on.",
-            "dataset_path": "Path to the dataset.",
-            "max_concurrency": "Maximum number of concurrent requests. This can be used to help simulate an environment where a higher level component is enforcing a maximum number of concurrent requests. While the --request-rate argument controls the rate at which requests are initiated, this argument will control how many are actually allowed to execute at a time. This means that when used in combination, the actual request rate may be lower than specified with --request-rate, if the server is not processing requests fast enough to keep up.",
-            "model": "Name of the model. Required when running benchmark.",
-            "lora": "Name of the lora.",
-            "tokenizer": "Name or path of the tokenizer, if not using the default tokenizer.",
-            "num_prompts": "Number of prompts to process.",
-            "max_benchmark_duration_s": "Maximum duration of the benchmark in seconds. If specified, the benchmark will run for max_benchmark_duration_s seconds. It works if max_concurrency is not None. If not specified, the benchmark will run for num_prompts requests.",
-            "num_chat_sessions": "Number of multiturn chat sessions to spawn. Single turn mode if not specified / set to None.",
-            "delay_between_chat_turns": "Optional delay before sending next chat turn request in ms.",
-            "output_lengths": "Path to YAML file containing list of output lengths, or an int. If an int is given, all responses are forced to the given length. Default: None",
-            "max_output_len": "Max output length for each request.",
-            "temperature": "Temperature used for token sampling.",
-            "request_rate": "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.",
-            "burstiness": "Burstiness factor of the request generation. Only take effect when request_rate is not inf. Default value is 1, which follows Poisson process. Otherwise, the request intervals follow a gamma distribution. A lower burstiness value (0 < burstiness < 1) results in more bursty requests. A higher burstiness value (burstiness > 1) results in a more uniform arrival of requests.",
-            "ttft_skip_requests": "Number of requests to skip when measuring TTFT latencies; i.e, ignore the first N requests in TTFT calculations. This mitigates the effect of artificial queuing, particularly at infinite request rates. Defaults to zero.",
-            "chat_warmup_delay_ms": "Delay between starting chat sessions when the number of active sessions is below max_concurrency, in ms. This prevents all of the chat sessions from starting at the same time. Default: 0.0",
+            "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
+            "lora": "Optional LoRA name.",
+            "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
+            "num_chat_sessions": "Number of multiturn chat sessions.",
+            "delay_between_chat_turns": "Delay between chat turns in ms.",
+            "output_lengths": "Path to YAML file with output lengths or int.",
+            "max_output_len": "Maximum output length per request.",
+            "temperature": "Temperature for sampling.",
+            "top_p": "Top-p for sampling.",
+            "request_rate": "Requests per second (finite rate for realistic benchmarking).",
+            "burstiness": "Burstiness factor (1.0 = Poisson process).",
+            "ttft_skip_requests": "Skip first N requests for TTFT measurements.",
+            "chat_warmup_delay_ms": "Delay between starting chat sessions.",
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
             "arxiv_summarization_input_len": "Number of input tokens per request, used only for arxiv-summarization dataset.",
@@ -236,16 +272,56 @@ class BenchmarkConfig(MAXConfig):
             "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
             "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal",
             "random_num_turns": "Number of turns per session, used only for random sampling and --num-chat-sessions.",
-            "seed": "Random seed.",
-            "trust_remote_code": "Trust remote code from huggingface.",
-            "disable_tqdm": "Specify to disable tqdm progress bar.",
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
-            "collect_gpu_stats": "Collect GPU stats with NVML (NVIDIA only).",
+            "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
+            "server_args": "Server arguments string.",
             "save_result": "Specify to save benchmark results to a json file.",
-            "print_inputs_and_outputs": "Print all input and outputs to console.",
-            "metadata": "Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
-            "result_dir": "Specify directory to save benchmark json results. If not specified, results are saved in the current directory.",
-            "result_filename": "Specify the filename to save benchmark json results. If not specified, results will be saved in {backend}-{args.request_rate}qps(-concurrency{args.max_concurrency})?-{base_model_id}-{current_dt}.json format. (Note that, concurrency exists in filename when args.max_concurrency is specified.)",
-            "server_args": "Server args.",
-            "record_output_lengths": "Path to save output lengths in YAML format. If not specified, output lengths are not saved.",
+            "result_dir": "Directory to save results.",
+            "result_filename": "Custom filename (auto-generated if null).",
+            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
+        return {**base_help, **serving_help}
+
+    @classmethod
+    def get_default_required_fields(cls) -> set[str]:
+        """Get required fields for the benchmark config."""
+        return super().get_default_required_fields().union({"dataset_name"})
+
+
+# Convenience functions for loading specific configuration types
+def load_base_benchmark_config(
+    config_file: str = "base_config.yaml", overrides: Optional[dict] = None
+) -> BaseBenchmarkConfig:
+    """Load base benchmark configuration with optional overrides.
+
+    Args:
+        config_file: Path to configuration file
+        overrides: Optional dictionary of parameter overrides
+
+    Returns:
+        BaseBenchmarkConfig instance
+    """
+    config = BaseBenchmarkConfig.from_config_file(config_file)
+    if overrides:
+        for key, value in overrides.items():
+            setattr(config, key, value)
+    return config
+
+
+def load_serving_benchmark_config(
+    config_file: str = "serving_config.yaml", overrides: Optional[dict] = None
+) -> ServingBenchmarkConfig:
+    """Load serving benchmark configuration with optional overrides.
+
+    Args:
+        config_file: Path to configuration file
+        overrides: Optional dictionary of parameter overrides
+
+    Returns:
+        ServingBenchmarkConfig instance
+    """
+    config = ServingBenchmarkConfig.from_config_file(config_file)
+    if overrides:
+        for key, value in overrides.items():
+            setattr(config, key, value)
+    return config

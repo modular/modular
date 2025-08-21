@@ -13,6 +13,8 @@
 
 """Benchmark online serving throughput."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import itertools
@@ -25,17 +27,17 @@ import sys
 import time
 import traceback
 import warnings
-from argparse import ArgumentParser as FlexibleArgumentParser
 from collections.abc import AsyncGenerator, Awaitable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 import aiohttp
 import numpy as np
 import yaml
+from benchmark_config import ServingBenchmarkConfig
 from benchmark_datasets import (
-    DATASET_REGISTRY,
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
     BenchmarkDataset,
@@ -72,6 +74,7 @@ class RequestFuncInput:
     lora: str
     session_id: Optional[str] = None
     temperature: float = 0.0
+    top_p: float = 1.0
 
 
 @dataclass
@@ -81,9 +84,8 @@ class RequestFuncOutput:
     success: bool = False
     latency: float = 0.0
     ttft: float = 0.0  # Time to first token
-    itl: list[float] = field(
-        default_factory=list
-    )  # List of inter-token latencies
+    # List of inter-token latencies
+    itl: list[float] = field(default_factory=list)
     prompt_len: int = 0
     error: str = ""
 
@@ -146,7 +148,7 @@ async def async_request_trt_llm(
             "accumulate_tokens": True,
             "text_input": request_func_input.prompt,
             "temperature": request_func_input.temperature,
-            "top_p": 1.0,
+            "top_p": request_func_input.top_p,
             "ignore_eos": request_func_input.ignore_eos,
             "stream": True,
         }
@@ -216,6 +218,7 @@ async def async_request_openai_completions(
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "temperature": request_func_input.temperature,
+            "top_p": request_func_input.top_p,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -321,6 +324,7 @@ async def async_request_openai_chat_completions(
             "model": request_func_input.model,
             "messages": messages_data,
             "temperature": request_func_input.temperature,
+            "top_p": request_func_input.top_p,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
             "skip_special_tokens": False,
@@ -428,6 +432,7 @@ def get_tokenizer(
     )
 
 
+# TODO: The keys here should match the backend enum in benchmark_config.py
 ASYNC_REQUEST_FUNCS = {
     "vllm": async_request_openai_completions,
     "vllm-chat": async_request_openai_chat_completions,
@@ -437,9 +442,6 @@ ASYNC_REQUEST_FUNCS = {
     "sglang": async_request_openai_completions,
     "sglang-chat": async_request_openai_chat_completions,
 }
-
-MIN_PROMPT_LEN = 4
-MIN_OUTPUT_LEN = 4
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
@@ -771,8 +773,7 @@ def calculate_metrics(
 
     if len(outputs) == 0:
         warnings.warn(
-            ("No responses were received from the server."),
-            stacklevel=2,
+            "No responses were received from the server.", stacklevel=2
         )
 
     if failures != 0:
@@ -978,6 +979,7 @@ async def benchmark(
     ttft_skip_requests: int,
     max_output_len: Optional[int],
     temperature: float,
+    top_p: float,
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
 ):
@@ -1109,6 +1111,7 @@ async def benchmark(
                 prompt_len=request.prompt_len,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                top_p=top_p,
                 ignore_eos=ignore_eos,
                 img=request.encoded_img,
             )
@@ -1517,6 +1520,9 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
+            shuffle=(
+                args.output_lengths is None and not args.record_output_lengths
+            ),
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
@@ -1563,6 +1569,7 @@ def main(args: argparse.Namespace) -> None:
             ttft_skip_requests=args.ttft_skip_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
+            top_p=args.top_p,
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
         )
@@ -1673,6 +1680,7 @@ def main(args: argparse.Namespace) -> None:
             "request_rate",
             "seed",
             "temperature",
+            "top_p",
         )
         output_lens_dict = {}
         output_lens_dict["args"] = {x: vars(args)[x] for x in args_to_save}
@@ -1684,330 +1692,29 @@ def main(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = FlexibleArgumentParser(
-        description="Benchmark the online serving throughput."
+    """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
+
+    This function leverages the enhanced ServingBenchmarkConfig.cli_parse_args() method
+    to eliminate code duplication while providing proper CLI argument parsing
+    with choices and help text.
+    """
+    # Load configuration from YAML file to get defaults
+    # Use __file__ to get the directory of this module and construct the path
+    config_file_path = Path(__file__).parent / "serving_config.yaml"
+    benchmark_config = ServingBenchmarkConfig.from_config_file(config_file_path)
+
+    # Create parser using the enhanced MAXConfig functionality with required model field
+    parser = benchmark_config.cli_arg_parsers(
+        description="Benchmark the online serving throughput.",
     )
-    parser.add_argument(
-        "--backend",
-        type=str,
-        default="modular",
-        choices=list(ASYNC_REQUEST_FUNCS.keys()),
-    )
-    parser.add_argument(
-        "--base-url",
-        type=str,
-        default=None,
-        help="Server or API base url if not using http host and port.",
-    )
-    parser.add_argument("--host", type=str, default="localhost")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument(
-        "--endpoint",
-        type=str,
-        default="/v1/completions",
-        help="API endpoint.",
-    )
-    # TODO: Use a str Enum for dataset_names.
-    parser.add_argument(
-        "--dataset-name",
-        type=str,
-        default="sharegpt",
-        choices=list(DATASET_REGISTRY.keys()),
-        help="Name of the dataset to benchmark on.",
-    )
-    parser.add_argument(
-        "--dataset-path", type=str, default=None, help="Path to the dataset."
-    )
-    parser.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=None,
-        help="Maximum number of concurrent requests. This can be used "
-        "to help simulate an environment where a higher level component "
-        "is enforcing a maximum number of concurrent requests. While the "
-        "--request-rate argument controls the rate at which requests are "
-        "initiated, this argument will control how many are actually allowed "
-        "to execute at a time. This means that when used in combination, the "
-        "actual request rate may be lower than specified with --request-rate, "
-        "if the server is not processing requests fast enough to keep up.",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        help="Name of the model.",
-    )
-    parser.add_argument(
-        "--lora",
-        type=str,
-        required=False,
-        help="Name of the lora.",
-    )
-    parser.add_argument(
-        "--tokenizer",
-        type=str,
-        help=(
-            "Name or path of the tokenizer, if not using the default tokenizer."
-        ),
-    )
-    parser.add_argument(
-        "--num-prompts",
-        type=int,
-        default=1000,
-        help="Number of prompts to process.",
-    )
-    parser.add_argument(
-        "--max-benchmark-duration-s",
-        type=int,
-        default=None,
-        help="Maximum duration of the benchmark in seconds. If specified, the benchmark will run for max_benchmark_duration_s seconds. It works if max_concurrency is not None. If not specified, the benchmark will run for num_prompts requests.",
-    )
-    parser.add_argument(
-        "--num-chat-sessions",
-        type=int,
-        default=None,
-        help="Number of multiturn chat sessions to spawn. Single turn mode if not specified / set to None.",
-    )
-    parser.add_argument(
-        "--delay-between-chat-turns",
-        type=int,
-        default=None,
-        help="Optional delay before sending next chat turn request in ms.",
-    )
+
+    # Additional arguments
     parser.add_argument(
         "--record-output-lengths",
         type=argparse.FileType("w"),
+        default=None,
         metavar="/path/to/save/outputs",
         help="Save output lengths to given file in YAML format",
-    )
-    parser.add_argument(
-        "--output-lengths",
-        type=str,
-        default=None,
-        metavar="/path/to/lengths.yaml | int",
-        help=(
-            "Path to YAML file containing list of output lengths, or an int. "
-            "If an int is given, all responses are forced to the given length. "
-            "Default: None"
-        ),
-    )
-    parser.add_argument(
-        "--max-output-len",
-        type=int,
-        default=None,
-        help="Max output length for each request",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.0,
-        help="Temperature used for token sampling. Default: 0.0",
-    )
-    parser.add_argument(
-        "--sonnet-input-len",
-        type=int,
-        default=550,
-        help=(
-            "Number of input tokens per request, used only for sonnet dataset."
-        ),
-    )
-    parser.add_argument(
-        "--sonnet-prefix-len",
-        type=int,
-        default=200,
-        help=(
-            "Number of prefix tokens per request, used only for sonnet dataset."
-        ),
-    )
-    parser.add_argument(
-        "--arxiv-summarization-input-len",
-        type=int,
-        default=15000,
-        help="Number of input tokens per request, used only for arxiv-summarization dataset.",
-    )
-    parser.add_argument(
-        "--random-input-len",
-        type=int,
-        default=1024,
-        help=(
-            "Number of input tokens per request, used only for random sampling."
-        ),
-    )
-    parser.add_argument(
-        "--random-output-len",
-        type=int,
-        default=128,
-        help=(
-            "Number of output tokens per request, used only for random"
-            " sampling."
-        ),
-    )
-    parser.add_argument(
-        "--random-coefficient-of-variation",
-        metavar="[input,]<output>",
-        type=str,
-        default="0.3,0.7",
-        help=(
-            "Coefficient of variation for input/output length, used only for random sampling.\n"
-            "<input> is optional; default the same ratio as output.\n"
-            "<output> is required."
-        ),
-    )
-    parser.add_argument(
-        "--random-image-size",
-        type=str,
-        default="",
-        help=(
-            "Size of random images to generate. Defaults to None (which does not generate images)."
-        ),
-    )
-    parser.add_argument(
-        "--random-sys-prompt-ratio",
-        type=float,
-        default=0.0,
-        help=(
-            "Ratio to determine the system prompt length, used only for random sampling."
-        ),
-    )
-    parser.add_argument(
-        "--random-first-turn-ratio",
-        type=float,
-        default=1.0,
-        help="Ratio of the length of the first turn to the length of subsequent turns (default: 1.0).",
-    )
-    parser.add_argument(
-        "--random-max-num-unique-sys-prompt",
-        type=int,
-        default=1,
-        help=(
-            "Maximum number of unique system prompts, used only for random sampling."
-        ),
-    )
-    parser.add_argument(
-        "--random-distribution-type",
-        type=str,
-        default="normal",
-        choices=["uniform", "normal"],
-        help="Type of probability distribution for sampled input/output length, used only for random sampling.",
-    )
-    parser.add_argument(
-        "--random-num-turns",
-        type=int,
-        default=1,
-        help="Number of turns per session, used only for random sampling and --num-chat-sessions.",
-    )
-    parser.add_argument(
-        "--request-rate",
-        type=float,
-        default=float("inf"),
-        help=(
-            "Number of requests per second. If this is inf, "
-            "then all the requests are sent at time 0. "
-            "Otherwise, we use Poisson process to synthesize "
-            "the request arrival times."
-        ),
-    )
-    parser.add_argument(
-        "--burstiness",
-        type=float,
-        default=1.0,
-        help="Burstiness factor of the request generation. "
-        "Only take effect when request_rate is not inf. "
-        "Default value is 1, which follows Poisson process. "
-        "Otherwise, the request intervals follow a gamma distribution. "
-        "A lower burstiness value (0 < burstiness < 1) results in more "
-        "bursty requests. A higher burstiness value (burstiness > 1) "
-        "results in a more uniform arrival of requests.",
-    )
-    parser.add_argument(
-        "--ttft-skip-requests",
-        type=int,
-        default=0,
-        help=(
-            "Number of requests to skip when measuring TTFT latencies; i.e, "
-            "ignore the first N requests in TTFT calculations. This mitigates "
-            "the effect of artificial queuing, particularly at infinite request "
-            "rates. Defaults to zero."
-        ),
-    )
-    parser.add_argument(
-        "--chat-warmup-delay-ms",
-        type=float,
-        default=0.0,
-        help=(
-            "Delay between starting chat sessions when the number of active "
-            "sessions is below max_concurrency, in ms.  This prevents all "
-            "of the chat sessions from starting at the same time.  Default: 0"
-        ),
-    )
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--trust-remote-code",
-        action="store_true",
-        help="Trust remote code from huggingface",
-    )
-    parser.add_argument(
-        "--disable-tqdm",
-        action="store_true",
-        help="Specify to disable tqdm progress bar.",
-    )
-    parser.add_argument(
-        "--skip-test-prompt",
-        action="store_true",
-        help="Skip the test prompt.  Useful when doing external profiling.",
-    )
-    parser.add_argument(
-        "--collect-gpu-stats",
-        action="store_true",
-        help="Collect GPU stats with NVML (NVIDIA only).",
-    )
-    parser.add_argument(
-        "--save-result",
-        action="store_true",
-        help="Specify to save benchmark results to a json file",
-    )
-    parser.add_argument(
-        "--metadata",
-        metavar="KEY=VALUE",
-        nargs="*",
-        help=(
-            "Key-value pairs (e.g, --metadata version=0.3.3 tp=1) "
-            "for metadata of this run to be saved in the result JSON file "
-            "for record keeping purposes."
-        ),
-    )
-    parser.add_argument(
-        "--result-dir",
-        type=str,
-        default=None,
-        help=(
-            "Specify directory to save benchmark json results."
-            "If not specified, results are saved in the current directory."
-        ),
-    )
-    parser.add_argument(
-        "--result-filename",
-        type=str,
-        default=None,
-        help=(
-            "Specify the filename to save benchmark json results."
-            "If not specified, results will be saved in "
-            "{backend}-{args.request_rate}qps(-concurrency{args.max_concurrency})?-{base_model_id}-{current_dt}.json"
-            " format. (Note that, concurrency exists in filename when args.max_concurrency is specified.)"
-        ),
-    )
-    parser.add_argument(
-        "--print-inputs-and-outputs",
-        action="store_true",
-        help="Print all input and outputs to console.",
-    )
-
-    parser.add_argument(
-        "--server-args",
-        type=str,
-        default="",
-        help="Server args",
     )
 
     return parser.parse_args()

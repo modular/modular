@@ -72,12 +72,10 @@ from utils.index import Index, IndexList
 fn _to_int_tuple[*vals: Int]() -> IntTuple:
     res = IntTuple()
 
-    @parameter
-    fn length() -> Int:
-        return __mlir_op.`pop.variadic.size`(vals)
+    alias num_vals = stdlib.builtin.variadic_size(vals)
 
     @parameter
-    for i in range(length()):
+    for i in range(num_vals):
         res.append(vals[i])
     return res
 
@@ -165,7 +163,7 @@ struct SharedMemBarrier(Copyable, Movable):
     space to be accessible by all threads in a block.
     """
 
-    @always_inline
+    @always_inline("nodebug")
     fn init(ref [AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
@@ -848,9 +846,7 @@ struct TMATensorTile[
     @always_inline
     fn async_store(
         self,
-        src: LayoutTensor[
-            dtype, layout, address_space = AddressSpace.SHARED, **_
-        ],
+        src: LayoutTensor[dtype, _, address_space = AddressSpace.SHARED, **_],
         coords: Tuple[UInt, UInt],
     ):
         """
