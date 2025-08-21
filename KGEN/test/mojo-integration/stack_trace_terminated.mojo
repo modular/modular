@@ -41,6 +41,9 @@ fn main():
 # RUN: cat %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-NO-STACK-TRACE-ASAN %s
 
+# RUN: mojo run %s 2> %t.log || true
+# RUN: cat %t.log | FileCheck --check-prefix=O3-JIT-HELP-MESSAGE %s
+
 # O3-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}
 # O3-FULL: #{{.*}} stdlib::builtin::_startup::__wrap_and_execute_main[fn() -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stack_trace_terminated::main()" {{.*}}stdlib/builtin/_startup.mojo:{{.*}}:{{.*}}
 
@@ -64,3 +67,5 @@ fn main():
 
 # O0-FULL-NO-STACK-TRACE-ASAN-NOT: PrintStackTrace
 # O0-FULL-NO-STACK-TRACE-ASAN: AddressSanitizer: SEGV on unknown address
+
+# O3-JIT-HELP-MESSAGE: To get symbolicated stack trace, compile your program using `mojo build` with debug info enabled, e.g. `-debug-level=line-tables`.
