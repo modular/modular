@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+modular_cc_binary(
+    name = "kgen-llvm-opt",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Config",
+        "//KGEN:Compiler",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:ToolCommon",
+        "//Support:Base",
+        "//Support:Globals",
+        "@llvm-project//llvm:Support",
+    ],
+)

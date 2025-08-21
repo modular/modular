@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMPassesPipeline.h"
+#include "KGEN/Compiler/LLVMOptimizationPipeline.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLVMAccessorHelper.h"
 #include "MCLinker.h"
