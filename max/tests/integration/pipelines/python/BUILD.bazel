@@ -176,26 +176,6 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_pipelines_speculative_decoding_gpu",
-    srcs = ["test_pipelines_speculative_decoding_gpu.py"],
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "no-sandbox",
-        "requires-network",
-    ],
-    deps = [
-        ":hf_repo_lock",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        requirement("transformers"),
-        requirement("gguf"),
-        requirement("safetensors"),
-        requirement("torch"),
-    ],
-)
-
-modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
     deps = [
