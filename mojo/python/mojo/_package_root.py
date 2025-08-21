@@ -35,8 +35,8 @@ def get_package_root() -> Path | None:
     # - Monolithic Pip wheel installation.
     # lib/python3.12/site-packages
     # ->
-    # lib/python3.12/site-packages/max
-    wheel_root = site_packages_root / "max"
+    # lib/python3.12/site-packages/modular/bin/mojo
+    wheel_root = site_packages_root / "modular"
 
     # Make sure we check the wheel root first!
     # conda_root / bin / mojo should exist in both cases here, but when using
@@ -44,7 +44,7 @@ def get_package_root() -> Path | None:
     # from here since we'd end up in an infinite loop.
     for root in (wheel_root, conda_root):
         if (root / "bin" / "mojo").exists():
-            logging.debug(f"Located MAX SDK assets at {root}")
+            logging.debug(f"Located Modular SDK assets at {root}")
             return root
 
     if "BUILD_WORKSPACE_DIRECTORY" in os.environ or "BAZEL_TEST" in os.environ:
@@ -53,5 +53,5 @@ def get_package_root() -> Path | None:
         return None
     else:
         raise RuntimeError(
-            "Unable to locate MAX SDK library assets root directory."
+            "Unable to locate Modular SDK library assets root directory."
         )

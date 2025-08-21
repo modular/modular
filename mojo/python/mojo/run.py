@@ -99,12 +99,6 @@ def _mojo_env() -> dict[str, str]:
     return _sdk_default_env() | dict(os.environ)
 
 
-def exec_mojo() -> None:
-    env = _mojo_env()
-
-    os.execve(env["MODULAR_MOJO_MAX_DRIVER_PATH"], sys.argv, env)
-
-
 def subprocess_run_mojo(
     mojo_args: list[str],
     **kwargs: Any,
@@ -125,7 +119,3 @@ def subprocess_run_mojo(
         env=env,
         **kwargs,
     )
-
-
-if __name__ == "__main__":
-    exec_mojo()

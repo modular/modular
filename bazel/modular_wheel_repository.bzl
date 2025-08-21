@@ -1,44 +1,33 @@
 """A repository rule for creating wheel accessors. Not enabled by default for compatibility with modular's internal repo."""
 
-def _symlink_bindings(ctx):
-    # Strip the leading max-<version>.data/platlib from bindings files to make all files in the archive have a single import
-
-    symlinks = []
-    for i in range(len(ctx.attr.files)):
-        file = ctx.files.files[i]
-        string = ctx.attr.file_strings[i]
-        output = string.split("/", 2)[2]
-        output_file = ctx.actions.declare_file(output)
-        ctx.actions.symlink(
-            output = output_file,
-            target_file = file,
-        )
-        symlinks.append(output_file)
-
-    return DefaultInfo(files = depset(symlinks))
-
-symlink_bindings = rule(
-    implementation = _symlink_bindings,
-    attrs = {
-        "files": attr.label_list(allow_files = True),
-        "file_strings": attr.string_list(),
-    },
-)
-
 _PLATFORM_MAPPINGS = {
     "linux_aarch64": "manylinux_2_34_aarch64",
     "linux_x86_64": "manylinux_2_34_x86_64",
     "macos_arm64": "macosx_13_0_arm64",
 }
 
+_WHEELS = [
+    "max",
+    "max_core",
+    "mojo_compiler",
+]
+
 def _rebuild_wheel(rctx):
-    rctx.download_and_extract(
-        url = "{}/max-{}-py3-none-{}.whl".format(
-            rctx.attr.base_url,
-            rctx.attr.version,
-            _PLATFORM_MAPPINGS[rctx.attr.platform],
-        ),
-    )
+    for name in _WHEELS:
+        strip_prefix = "" if name == "max" else "{}-{}.data/platlib/".format(name, rctx.attr.version)
+        rctx.download_and_extract(
+            url = "{}/{}-{}-py3-none-{}.whl".format(
+                rctx.attr.base_url,
+                name,
+                rctx.attr.version,
+                _PLATFORM_MAPPINGS[rctx.attr.platform],
+            ),
+            strip_prefix = strip_prefix,
+        )
+
+    rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
+    rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
+    rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
     rctx.file(
         "BUILD.bazel",
@@ -47,7 +36,7 @@ def _rebuild_wheel(rctx):
 # be removed so that they're not accidentally used when testing changes that
 # depend on some closed-source portions of the wheel.
 _OPEN_SOURCE_GLOBS = [
-    "*/platlib/max/lib/mojo/*",
+    "modular/lib/mojo/*",
     "max/entrypoints/**",
     "max/graph/**",
     "max/nn/**",
@@ -56,25 +45,15 @@ _OPEN_SOURCE_GLOBS = [
     "mojo/**",
 ]
 
-load("@@//bazel:modular_wheel_repository.bzl", "symlink_bindings")
-
-symlink_bindings(
-    name = "symlinks",
-    files = glob(["*/platlib/**"]),
-    file_strings = glob(["*/platlib/**"]),
-)
-
 py_library(
     name = "max",
     data = glob([
         "max/**",
-        "*/platlib/max/**",
-    ], exclude = _OPEN_SOURCE_GLOBS) + [
-        ":symlinks",
-    ],
+        "modular/**",
+    ], exclude = _OPEN_SOURCE_GLOBS),
     visibility = ["//visibility:public"],
     imports = ["."],
-)""".format(rctx.attr.version),
+)""",
     )
 
 rebuild_wheel = repository_rule(
