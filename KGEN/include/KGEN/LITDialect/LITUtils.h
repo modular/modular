@@ -102,11 +102,24 @@ void printOptionalParameterSpec(AsmPrinter &p,
                                 PogListAttr paramListAttr,
                                 ParameterEvaluator &evaluator);
 
+/// Parse an optional 'requires' clause containing constraint attributes.
+ParseResult
+parseOptionalRequiresClauses(AsmParser &p,
+                             SmallVectorImpl<ConstraintAttr> &constraints);
+
+/// Print an optional 'requires' clause containing constraint attributes. The
+/// ParameterEvaluator is used to rebind references in the constraints.
+void printOptionalRequiresClauses(AsmPrinter &p,
+                                  ArrayRef<ConstraintAttr> constraints,
+                                  ParameterEvaluator &evaluator);
+
 /// Parse a parameter signature (input/result types with optional default
-/// values) if present.
+/// values) if present. If `parseBody` is provided, it will be called after
+/// parsing the input parameter spec, but before parsing requires clauses.
 ParseResult parseOptionalParamSignature(AsmParser &p,
                                         SmallVectorImpl<Type> &inputParamTypes,
-                                        PogListAttr &paramListAttr);
+                                        PogListAttr &paramListAttr,
+                                        function_ref<ParseResult()> parseBody);
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.

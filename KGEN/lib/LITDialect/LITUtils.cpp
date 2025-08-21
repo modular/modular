@@ -266,6 +266,39 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   return success();
 }
 
+ParseResult LIT::parseOptionalRequiresClauses(
+    AsmParser &p, SmallVectorImpl<ConstraintAttr> &constraints) {
+  // Parse an optional 'requires' clause.
+  if (succeeded(p.parseOptionalKeyword("requires"))) {
+    if (p.parseLBrace())
+      return failure();
+    do {
+      auto constraint =
+          llvm::cast_if_present<ConstraintAttr>(ConstraintAttr::parse(p, {}));
+      if (!constraint)
+        return failure();
+      constraints.push_back(cast<ConstraintAttr>(constraint));
+    } while (succeeded(p.parseOptionalComma()));
+    if (p.parseRBrace())
+      return failure();
+  }
+  return success();
+}
+
+void LIT::printOptionalRequiresClauses(AsmPrinter &p,
+                                       ArrayRef<ConstraintAttr> constraints,
+                                       ParameterEvaluator &evaluator) {
+  if (constraints.empty())
+    return;
+  p << " requires {";
+  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
+    constraint =
+        cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint));
+    constraint.print(p);
+  });
+  p << "}";
+}
+
 ParseResult LIT::parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
     std::optional<ArgConvention> &origArgPackConvention,
@@ -365,10 +398,9 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
                              printWithDefault);
 }
 
-ParseResult
-LIT::parseOptionalParamSignature(AsmParser &p,
-                                 SmallVectorImpl<Type> &inputParamTypes,
-                                 PogListAttr &paramListAttr) {
+ParseResult LIT::parseOptionalParamSignature(
+    AsmParser &p, SmallVectorImpl<Type> &inputParamTypes,
+    PogListAttr &paramListAttr, function_ref<ParseResult()> parseBody) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -420,11 +452,17 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr =
-      PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                       defaultPosParams, defaultKwOnlyParams, argVariadics,
-                       std::nullopt, std::move(origVariadicConvention),
-                       /*constraints=*/{});
+  if (parseBody && failed(parseBody()))
+    return failure();
+
+  SmallVector<ConstraintAttr> constraints;
+  if (failed(parseOptionalRequiresClauses(p, constraints)))
+    return failure();
+
+  paramListAttr = PogListAttr::get(
+      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
+      defaultKwOnlyParams, argVariadics, std::nullopt,
+      std::move(origVariadicConvention), constraints);
   return success();
 }
 

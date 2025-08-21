@@ -504,6 +504,7 @@ static ParseResult parseLITFunctionSignature(
     return success();
   };
 
+  // Parse the parameter spec, which does NOT include requires clauses.
   PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
@@ -574,6 +575,18 @@ static ParseResult parseLITFunctionSignature(
   if (failed(parseSignatureValues(p, parseArg, functionType, effects,
                                   /*optionalResultList=*/true)))
     return failure();
+
+  SmallVector<ConstraintAttr> constraints;
+  if (failed(parseOptionalRequiresClauses(p, constraints)))
+    return failure();
+  if (!constraints.empty()) {
+    // Add constraints to the param list attr.
+    paramListAttr = PogListAttr::get(
+        paramListAttr.getContext(), paramListAttr.getPogs(),
+        paramListAttr.getDefaultPos(), paramListAttr.getDefaultKwOnly(),
+        paramListAttr.getOrigPackConvention(),
+        paramListAttr.getOrigVariadicConvention(), constraints);
+  }
 
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
@@ -685,6 +698,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
                        signature.getFnEffects(),
                        /*optionalResultList=*/true);
+
+  printOptionalRequiresClauses(
+      p, signature.getParamListAttrs().getConstraints(), evaluator);
 }
 
 /// Parses a LIT Generator.

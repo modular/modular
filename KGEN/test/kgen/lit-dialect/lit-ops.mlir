@@ -574,3 +574,20 @@ lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, 
   %0 = lit.call @useIt[mut C]<:!kgen.type #type_value>(%impl) : !lit.generator<[1](!lit.ref<!Impl, mut C>) -> !kgen.none>
   lit.end_fn
 }
+
+// -----
+
+// COM: Requires clauses on functions
+
+// CHECK-DAG: #[[LOC1:.+]] = loc("test.mlir":1:2)
+#loc = loc("test.mlir":1:2)
+// CHECK-DAG: #[[LOC2:.+]] = loc("test.mlir":3:4)
+#loc1 = loc("test.mlir":3:4)
+
+// CHECK-LABEL: lit.fn @has_requires
+// CHECK-SAME: requires {<ge(x, 2), #[[LOC1]], "x must be greater than 2">, <lt(x, 10), #[[LOC2]]>}
+lit.fn @has_requires<x: index>() -> !kgen.none requires {<ge(x, 2), #loc, "x must be greater than 2">, <lt(x, 10), #loc1>} attributes {sourceName = "has_requires"} {
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}
