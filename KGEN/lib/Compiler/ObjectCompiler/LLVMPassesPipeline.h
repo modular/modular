@@ -15,11 +15,6 @@ namespace M::KGEN {
 class CompilationOptions;
 struct MCInfo;
 
-/// Build a module pass pipeline for a given set of compilation options.
-llvm::ModulePassManager
-buildLLVMOptimizationPipeline(llvm::PassBuilder &passBuilder,
-                              const CompilationOptions &options);
-
 bool addPassesToEmitFile(CompilationOptions &options,
                          llvm::TargetMachine &targetMachine,
                          llvm::legacy::PassManagerBase &pm,

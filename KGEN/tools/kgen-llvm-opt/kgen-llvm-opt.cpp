@@ -1,0 +1,358 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// The kgen-llvm-opt tool is similar to LLVM's opt tool, but can only build
+// KGEN's optimization pipeline (i.e. entire pipeline for -O0, -O1, -O2 and
+// -O3). It does not yet support -passes option to specify custom pipeline as it
+// requires to reimplement PassBuilder::parsePassPipeline() function including
+// getting of *.def files from LLVM.
+//
+// LLVM, however, provides plugin mechanism to load custom passes
+//  llvm/docs/WritingAnLLVMNewPMPass.rst
+// but that has several limitations:
+//  1. It cannot support building of entire mojo pipeline for -O0, -O1, -O2 and
+//     -O3
+//  2. It requires to define passes in LLVM directory.
+
+#include "KGEN/Compiler/LLVMOptimizationPipeline.h"
+#include "KGEN/ToolCommon/CLOptions.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
+#include "Support/CommonCLOptions.h"
+#include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/IRPrinter/IRPrintingPasses.h"
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/InitializePasses.h"
+#include "llvm/LinkAllIR.h"
+#include "llvm/LinkAllPasses.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Remarks/HotnessThresholdParser.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/PluginLoader.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Target/TargetMachine.h"
+
+using namespace llvm;
+
+namespace {
+struct CLOptions : public M::CLOptionsBase {
+  CLOptions(int argc, char **argv, bool skipInitLLVM = true)
+      : M::CLOptionsBase(argc, argv, options, skipInitLLVM) {}
+
+  M::OptionsBase options;
+  std::string inputFilename{"-"};
+  std::string outputFilename{"-"};
+  std::string passPipeline = "";
+  bool optLevelO0 = false;
+  bool optLevelO1 = false;
+  bool optLevelO2 = false;
+  bool optLevelO3 = false;
+  std::string targetTriple = "";
+  std::string dataLayout = "";
+  bool noOutput = false;
+  bool outputAssembly = false;
+  unsigned codeGenOptLevel = 0;
+
+private:
+  llvm::cl::OptionCategory cat{"Common command line options"};
+
+  M::cl::MOpt<std::string, true> inputFilenameOp{
+      cl::Positional, cl::desc("<input bitcode file>"),
+      cl::value_desc("filename"), cl::location(inputFilename), cl::cat(cat)};
+
+  M::cl::MOpt<std::string, true> outputFilenameOpt{
+      "o", cl::desc("Override output filename"), cl::value_desc("filename"),
+      cl::location(outputFilename), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> OptLevelO0Opt{
+      "O0", cl::desc("Optimization level 0. Similar to mojo -O0. "),
+      cl::location(optLevelO0), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> OptLevelO1Opt{
+      "O1", cl::desc("Optimization level 1. Similar to mojo -O1. "),
+      cl::location(optLevelO1), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> OptLevelO2Opt{
+      "O2", cl::desc("Optimization level 2. Similar to mojo -O2. "),
+      cl::location(optLevelO2), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> OptLevelO3Opt{
+      "O3", cl::desc("Optimization level 3. Similar to mojo -O3. "),
+      cl::location(optLevelO3), cl::cat(cat)};
+
+  M::cl::MOpt<std::string, true> targetTripleOpt{
+      "mtriple", cl::desc("Override target triple for module"),
+      cl::location(targetTriple), cl::cat(cat)};
+
+  M::cl::MOpt<std::string, true> dataLayoutOpt{
+      "data-layout", cl::desc("data layout string to use"),
+      cl::value_desc("layout-string"), cl::location(dataLayout), cl::cat(cat)};
+  M::cl::MOpt<bool, true> noOutputOpt{
+      "disable-output", cl::desc("Do not write result bitcode file"),
+      cl::Hidden, cl::location(noOutput), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> outputAssemblyOpt{
+      "S", cl::desc("Write output as LLVM assembly"),
+      cl::location(outputAssembly), cl::cat(cat)};
+
+  M::cl::MOpt<unsigned, true> codeGenOptLevelOpt{
+      "codegen-opt-level",
+      cl::desc("Override optimization level for codegen hooks, legacy PM only"),
+      cl::location(codeGenOptLevel), cl::cat(cat)};
+};
+
+enum OutputKind {
+  OK_NoOutput,
+  OK_OutputAssembly,
+  OK_OutputBitcode,
+  OK_OutputThinLTOBitcode,
+};
+} // anonymous namespace
+
+static CodeGenOptLevel getCodeGenOptLevel(const CLOptions &clOptions) {
+  return static_cast<CodeGenOptLevel>(unsigned(clOptions.codeGenOptLevel));
+}
+
+static ModulePassManager
+buildPipeline(PassBuilder &pb, const CLOptions &clOptions, Triple triple) {
+  M::KGEN::CompilationOptions options(/*optimizationLevel=*/-1U);
+  options.targetTriple = triple.str();
+  if (clOptions.optLevelO0)
+    options.optimizationLevel = 0;
+  if (clOptions.optLevelO1)
+    options.optimizationLevel = 1;
+  if (clOptions.optLevelO2)
+    options.optimizationLevel = 2;
+  if (clOptions.optLevelO3)
+    options.optimizationLevel = 3;
+
+  if (options.optimizationLevel == -1U) {
+    llvm_unreachable(
+        "Specify optimization level. Support of running individual passes or "
+        "custom pipline is not implemented yet.");
+  }
+  return M::KGEN::buildLLVMOptimizationPipeline(pb, options);
+}
+
+// Custom hack to handle Metal that is not supported in upstream
+// Replace air64 with arm64
+static std::string fixTargetTriple(std::string triple) {
+  if (triple.find("air64") != std::string::npos)
+    triple = triple.replace(triple.find("air64"), 5, "arm64");
+  return triple;
+}
+
+int main(int argc, char **argv) {
+  static codegen::RegisterCodeGenFlags cfg;
+  CLOptions clOptions(argc, argv);
+  InitLLVM llvm(argc, argv);
+
+  InitializeAllTargets();
+  InitializeAllTargetMCs();
+  InitializeAllAsmPrinters();
+  InitializeAllAsmParsers();
+
+  PassRegistry &registry = *PassRegistry::getPassRegistry();
+  initializeCore(registry);
+  initializeScalarOpts(registry);
+  initializeVectorization(registry);
+  initializeIPO(registry);
+  initializeAnalysis(registry);
+  initializeTransformUtils(registry);
+  initializeInstCombine(registry);
+  initializeTarget(registry);
+  // For codegen passes, only passes that do IR to IR transformation are
+  // supported.
+  initializeExpandLargeDivRemLegacyPassPass(registry);
+  initializeExpandFpLegacyPassPass(registry);
+  initializeExpandMemCmpLegacyPassPass(registry);
+  initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
+  initializeSelectOptimizePass(registry);
+  initializeCallBrPreparePass(registry);
+  initializeCodeGenPrepareLegacyPassPass(registry);
+  initializeAtomicExpandLegacyPass(registry);
+  initializeWinEHPreparePass(registry);
+  initializeDwarfEHPrepareLegacyPassPass(registry);
+  initializeSafeStackLegacyPassPass(registry);
+  initializeSjLjEHPreparePass(registry);
+  initializePreISelIntrinsicLoweringLegacyPassPass(registry);
+  initializeGlobalMergePass(registry);
+  initializeIndirectBrExpandLegacyPassPass(registry);
+  initializeInterleavedLoadCombinePass(registry);
+  initializeInterleavedAccessPass(registry);
+  initializePostInlineEntryExitInstrumenterPass(registry);
+  initializeUnreachableBlockElimLegacyPassPass(registry);
+  initializeExpandReductionsPass(registry);
+  initializeWasmEHPreparePass(registry);
+  initializeWriteBitcodePassPass(registry);
+  initializeReplaceWithVeclibLegacyPass(registry);
+  initializeJMCInstrumenterPass(registry);
+
+  // Register the Target and CPU printer for --version.
+  cl::AddExtraVersionPrinter(sys::printDefaultTargetAndDetectedCPU);
+
+  cl::ParseCommandLineOptions(
+      argc, argv, "llvm .bc -> .bc modular optimizer and analysis printer\n");
+
+  LLVMContext context;
+  SMDiagnostic err;
+  std::unique_ptr<Module> module;
+  auto setDataLayout = [&](StringRef irTriple,
+                           StringRef irLayout) -> std::optional<std::string> {
+    if (!clOptions.dataLayout.empty())
+      return std::nullopt;
+
+    // If an explicit data layout is already defined in the IR, don't infer.
+    if (!irLayout.empty())
+      return std::nullopt;
+
+    // If an explicit triple was specified (either in the IR or on the
+    // command line), use that to infer the default data layout. However, the
+    // command line target triple should override the IR file target triple.
+    std::string tripleStr = clOptions.targetTriple.empty()
+                                ? irTriple.str()
+                                : Triple::normalize(clOptions.targetTriple);
+
+    tripleStr = fixTargetTriple(tripleStr);
+
+    // If the triple string is still empty, we don't fall back to
+    // sys::getDefaultTargetTriple() since we do not want to have differing
+    // behaviour dependent on the configured default triple. Therefore, if the
+    // user did not pass -mtriple or define an explicit triple/datalayout in
+    // the IR, we should default to an empty (default) DataLayout.
+    if (tripleStr.empty())
+      return std::nullopt;
+
+    // Otherwise we infer the DataLayout from the target machine.
+    Expected<std::unique_ptr<TargetMachine>> expectedTM =
+        codegen::createTargetMachineForTriple(tripleStr,
+                                              getCodeGenOptLevel(clOptions));
+    if (!expectedTM) {
+      errs() << argv[0] << ": warning: failed to infer data layout: "
+             << toString(expectedTM.takeError()) << "\n";
+      return std::nullopt;
+    }
+    return (*expectedTM)->createDataLayout().getStringRepresentation();
+  };
+
+  module = parseIRFile(clOptions.inputFilename, err, context,
+                       ParserCallbacks(setDataLayout));
+
+  if (!module) {
+    err.print(argv[0], errs());
+    return 1;
+  }
+
+  OutputKind outputKind = OK_NoOutput;
+  if (!clOptions.noOutput)
+    outputKind =
+        clOptions.outputAssembly ? OK_OutputAssembly : OK_OutputBitcode;
+
+  std::unique_ptr<ToolOutputFile> out;
+  if (clOptions.noOutput) {
+    if (!clOptions.outputFilename.empty())
+      errs() << "WARNING: The -o (output filename) option is ignored when\n"
+                "the --disable-output option is used.\n";
+  } else {
+    // Default to standard output.
+    if (clOptions.outputFilename.empty())
+      clOptions.outputFilename = "-";
+
+    std::error_code errorCode;
+    sys::fs::OpenFlags flags =
+        clOptions.outputAssembly ? sys::fs::OF_TextWithCRLF : sys::fs::OF_None;
+    out.reset(new ToolOutputFile(clOptions.outputFilename, errorCode, flags));
+    if (errorCode) {
+      errs() << errorCode.message() << '\n';
+      return 1;
+    }
+  }
+
+  if (!clOptions.targetTriple.empty())
+    module->setTargetTriple(Triple(Triple::normalize(clOptions.targetTriple)));
+
+  Triple moduleTriple(fixTargetTriple(module->getTargetTriple().str()));
+  TargetLibraryInfoImpl tlii(moduleTriple);
+  std::string cpuStr, featuresStr;
+  std::unique_ptr<TargetMachine> targetMachine;
+
+  if (M::KGEN::isMetalTriple(moduleTriple) || moduleTriple.getArch()) {
+    const TargetOptions options =
+        codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
+    cpuStr = codegen::getCPUStr();
+    featuresStr = codegen::getFeaturesStr();
+    Expected<std::unique_ptr<TargetMachine>> expectedTM =
+        codegen::createTargetMachineForTriple(moduleTriple.str(),
+                                              getCodeGenOptLevel(clOptions));
+    if (auto e = expectedTM.takeError()) {
+      errs() << argv[0] << ": WARNING: failed to create target machine for '"
+             << moduleTriple.str() << "': " << toString(std::move(e)) << "\n";
+    } else {
+      targetMachine = std::move(*expectedTM);
+    }
+  } else if (moduleTriple.getArchName() != "unknown" &&
+             moduleTriple.getArchName() != "") {
+    errs() << argv[0] << ": unrecognized architecture '"
+           << moduleTriple.getArchName() << "' provided.\n";
+    return 1;
+  }
+
+  // Override function attributes based on cpuStr, featuresStr, and command line
+  // flags.
+  codegen::setFunctionAttributes(cpuStr, featuresStr, *module);
+
+  llvm::PassInstrumentationCallbacks pic;
+  PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),
+                 /*PGOOpt=*/std::nullopt, &pic);
+  ModulePassManager mpm =
+      buildPipeline(pb, clOptions, module->getTargetTriple());
+
+  switch (outputKind) {
+  case OK_NoOutput:
+    break; // No output pass needed.
+  case OK_OutputAssembly:
+    mpm.addPass(PrintModulePass(out->os(), "",
+                                /*ShouldPreserveAssemblyUseListOrder=*/false,
+                                /*EmitSummaryIndex=*/false));
+    break;
+  case OK_OutputBitcode:
+    mpm.addPass(BitcodeWriterPass(out->os(),
+                                  /*ShouldPreserveBitcodeUseListOrder=*/false,
+                                  /*EmitSummaryIndex=*/false,
+                                  /*EmitModuleHash=*/false));
+    break;
+  case OK_OutputThinLTOBitcode:
+    llvm_unreachable("Not implemented.");
+  }
+
+  AAManager aa;
+  LoopAnalysisManager lam;
+  FunctionAnalysisManager fam;
+  CGSCCAnalysisManager cgam;
+  ModuleAnalysisManager mam;
+
+  fam.registerPass([&] { return std::move(aa); });
+  fam.registerPass([&] { return TargetLibraryAnalysis(tlii); });
+  pb.registerModuleAnalyses(mam);
+  pb.registerCGSCCAnalyses(cgam);
+  pb.registerFunctionAnalyses(fam);
+  pb.registerLoopAnalyses(lam);
+  pb.crossRegisterProxies(lam, fam, cgam, mam);
+  mpm.run(*module, mam);
+
+  // Declare success.
+  if (outputKind != OK_NoOutput)
+    out->keep();
+  return 0;
+}

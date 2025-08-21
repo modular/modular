@@ -13,6 +13,7 @@ lit_tests(
     tools = [
         "//KGEN/tools/hash-mlir",
         "//KGEN/tools/kgen",
+        "//KGEN/tools/kgen-llvm-opt",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
