@@ -21,6 +21,7 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.schemas.openai import (
+    CreateChatCompletionRequest,
     CreateChatCompletionResponse,
 )
 
@@ -115,3 +116,33 @@ def test_vllm_response_deserialization() -> None:
 def test_max_server_response() -> None:
     response = """{"id":"7a0d00d-8f85-4a69-aa07-f51724787e3f","choices":[{"finish_reason":"stop","index":0,"message":{"content":"Arrrr, here be another one:nnWhy did the pirate quit his job?nnBecause he was sick o' all the arrrr-guments with his boss! (get it? arrrr-guments? ahh, never mind, matey, I'll just be walkin' the plank if I don't get a laugh out o' ye!)","refusal":"","tool_calls":null,"role":"assistant","function_call":null},"logprobs":{"content":[],"refusal":[]}}],"created":1730310250,"model":"","service_tier":null,"system_fingerprint":null,"object":"chat.completion","usage":null}"""
     CreateChatCompletionResponse.model_validate_json(response)
+
+
+def test_create_chat_completion_request_with_target_endpoint() -> None:
+    """Test that CreateChatCompletionRequest correctly parses target_endpoint field."""
+    # Test with target_endpoint provided
+    request_with_target = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+        "target_endpoint": "endpoint-instance-123",
+    }
+
+    parsed_request = CreateChatCompletionRequest.model_validate(
+        request_with_target
+    )
+    assert parsed_request.target_endpoint == "endpoint-instance-123"
+    assert parsed_request.model == "gpt-3.5-turbo"
+    assert len(parsed_request.messages) == 1
+    assert parsed_request.messages[0].root.content == "Hello, world!"
+
+    # Test without target_endpoint (should default to None)
+    request_without_target = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello, world!"}],
+    }
+
+    parsed_request_default = CreateChatCompletionRequest.model_validate(
+        request_without_target
+    )
+    assert parsed_request_default.target_endpoint is None
+    assert parsed_request_default.model == "gpt-3.5-turbo"
