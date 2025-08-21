@@ -157,7 +157,12 @@ fn _memmem_baseline[
     if needle_len > haystack_len:
         return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
-        return _memchr(haystack, needle[0], haystack_len)
+        return _memchr(
+            Span[Scalar[dtype], ImmutableAnyOrigin](
+                ptr=haystack.origin_cast[mut=False](), length=haystack_len
+            ),
+            needle[0],
+        )
 
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](needle[0])
@@ -213,12 +218,7 @@ fn bench_find_optimized(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        _ = _memmem(
-            local_haystack.unsafe_ptr(),
-            len(local_haystack),
-            local_needle.unsafe_ptr(),
-            len(local_needle),
-        )
+        _ = _memmem(haystack.as_bytes(), needle.as_bytes())
 
     b.iter[call_fn]()
 

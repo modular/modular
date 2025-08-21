@@ -100,14 +100,16 @@ struct Span[
     """The mutable version of the `Span`."""
     alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
-    # Fields
-    var _data: UnsafePointer[
+    alias UnsafePointerType = UnsafePointer[
         T,
         mut=mut,
         origin=origin,
         address_space=address_space,
         alignment=alignment,
     ]
+    """The UnsafePointer type that corresponds to this `Span`."""
+    # Fields
+    var _data: Self.UnsafePointerType
     var _len: Int
 
     # ===------------------------------------------------------------------===#
@@ -135,18 +137,7 @@ struct Span[
         self = rebind[__type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(
-        out self,
-        *,
-        ptr: UnsafePointer[
-            T,
-            address_space=address_space,
-            alignment=alignment,
-            mut=mut,
-            origin=origin, **_,
-        ],
-        length: UInt,
-    ):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
         """Unsafe construction from a pointer and length.
 
         Args:
