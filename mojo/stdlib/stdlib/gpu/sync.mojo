@@ -71,6 +71,7 @@ fn named_barrier[
           need to synchronize independently.
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
+        - The number of threads value must be a multiple of the warp size.
     """
 
     debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")

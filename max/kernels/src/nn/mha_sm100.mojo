@@ -40,12 +40,14 @@ from gpu.mma_sm100 import (
 from gpu.sync import named_barrier
 from gpu.tcgen05 import (
     tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_fence_after,
+    tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
+    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_store_wait,
-    tcgen05_release_allocation_lock,
-    tcgen05_dealloc,
 )
 from layout.int_tuple import IntTuple
 from layout.layout import Layout
@@ -122,7 +124,7 @@ struct RegisterAccumulatorDescription:
 
 # consumer_group_size equals
 # sm90: 128 (warp group size)
-# sm100: num_consumer_threads
+# sm100: num_softmax_threads
 @register_passable("trivial")
 struct RegisterAccumulatorLayout[
     MMA_M: Int,
@@ -289,9 +291,9 @@ trait AccumulatorTile(Copyable, Movable):
     ):
         ...
 
+    @staticmethod
     @always_inline
     fn allocate_register_tile(
-        self,
         out res: __type_of(Self._empty_tensor()),
     ):
         ...
@@ -308,79 +310,6 @@ trait AccumulatorTile(Copyable, Movable):
         self,
         dst: __type_of(Self._empty_tensor()),
     ):
-        ...
-
-
-# We have a 4-step process:
-# 1 Describe
-# 2 Initialize
-# 3 Barrier
-# 4 Can use
-@register_passable("trivial")
-trait AsyncTensorAccumulator:
-    alias operand_t: DType
-    alias accum_t: DType
-    alias ab_t: DescriptorPair
-    alias a_t: MMAOperandDescriptor
-    alias b_t: MMAOperandDescriptor
-    alias c_t: AccumulatorTile
-
-    @always_inline
-    fn __init__(
-        out self,
-        smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
-        ],
-    ):
-        ...
-
-    @staticmethod
-    @always_inline
-    fn mma_descriptors[
-        dtype_a: DType, dtype_b: DType
-    ](
-        p_a: UnsafePointer[
-            Scalar[dtype_a], address_space = AddressSpace.SHARED
-        ],
-        p_b: UnsafePointer[
-            Scalar[dtype_b], address_space = AddressSpace.SHARED
-        ],
-    ) -> ab_t:
-        ...
-
-    @always_inline
-    fn mma(self, a: a_t, b: b_t, c: c_t, c_scale: UInt32, wg_idx: UInt32 = 0):
-        ...
-
-    @always_inline
-    fn wait(mut self):
-        ...
-
-
-@register_passable("trivial")
-trait AsyncTensorAccumulatorTS:
-    alias operand_t: DType
-    alias accum_t: DType
-    alias ab_t: DescriptorPairTS
-    alias a_t: WriteableMMAOperandDescriptor
-    alias b_t: MMAOperandDescriptor
-    alias c_t: AccumulatorTile
-
-    @always_inline
-    fn __init__(
-        out self,
-        smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
-        ],
-    ):
-        ...
-
-    @always_inline
-    fn mma(self, a: a_t, b: b_t, c: c_t, c_scale: UInt32, wg_idx: UInt32 = 0):
-        ...
-
-    @always_inline
-    fn wait(mut self):
         ...
 
 
@@ -429,22 +358,21 @@ struct TMemAccumulator[
     MMA_N: Int,
     num_m_mmas: Int,
     num_n_mmas: Int,
-    num_consumer_threads: Int,
+    num_softmax_threads: Int,
 ](AccumulatorTile):
     alias dtype: DType = dtype_
     alias layout_t = RegisterAccumulatorLayout[
-        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_consumer_threads
+        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_softmax_threads
     ]
     alias vec_output_layout = Self.layout_t.vec_output_layout
     alias element_layout = Self.layout_t.element_layout
     alias rows_of_frags_layout = Self.layout_t.rows_of_frags_layout
     alias frag_size = Self.layout_t.frag_size
 
-    alias tmem_addr_t = UInt32
-    var tmem_addr: Self.tmem_addr_t
+    var tmem_addr: UInt32
 
     @always_inline
-    fn __init__(out self, tmem_addr: Self.tmem_addr_t):
+    fn __init__(out self, tmem_addr: UInt32):
         Self.check_constraints()
         self.tmem_addr = tmem_addr
 
@@ -463,8 +391,23 @@ struct TMemAccumulator[
         ]()
 
     @always_inline
+    fn __getitem__(self, i: UInt32) -> Self:
+        return {self.tmem_addr + i * MMA_N}
+
+    @always_inline
     @staticmethod
     fn check_constraints():
+        constrained[
+            Self.vec_output_layout[0].size() > 0,
+            "layout: "
+            + String(Self.vec_output_layout)
+            + "\nnum_m_mmas = "
+            + String(num_m_mmas),
+        ]()
+        constrained[
+            Self.vec_output_layout[1].size() > 0,
+            "layout: " + String(Self.vec_output_layout),
+        ]()
         constrained[
             MMA_M > 0,
             "MMA_M = "
@@ -515,7 +458,7 @@ struct TMemAccumulator[
         ]()
 
     @always_inline
-    fn offset[m_mma: Int, n_mma: Int](self) -> Self.tmem_addr_t:
+    fn offset[m_mma: Int, n_mma: Int](self) -> UInt32:
         Self.check_constraints()
 
         @parameter
@@ -542,22 +485,11 @@ struct TMemAccumulator[
         Self.check_constraints()
         res = __type_of(res)(src.ptr)
 
+    @staticmethod
     @always_inline
     fn allocate_register_tile(
-        self,
         out res: __type_of(Self._empty_tensor()),
     ):
-        constrained[
-            Self.vec_output_layout[0].size() > 0,
-            "layout: "
-            + String(Self.vec_output_layout)
-            + "\nnum_m_mmas = "
-            + String(num_m_mmas),
-        ]()
-        constrained[
-            Self.vec_output_layout[1].size() > 0,
-            "layout: " + String(Self.vec_output_layout),
-        ]()
         res = __type_of(res).stack_allocation()
 
     @always_inline
@@ -596,7 +528,7 @@ struct TMemAccumulator[
                     pack=False,
                 ](tmem, frag)
         tcgen05_store_wait()
-        named_barrier[Self.num_consumer_threads]()
+        named_barrier[Self.num_softmax_threads]()
 
     @always_inline
     fn copy_to(
@@ -655,12 +587,12 @@ struct TMemOperand[
     MMA_M: Int,
     MMA_N: Int,
     MMA_K: Int,
-    num_consumer_threads: Int,
+    num_softmax_threads: Int,
 ](WriteableMMAOperandDescriptor):
     var tmem_addr: UInt32
 
     alias reg_layout = RegisterAccumulatorLayout[
-        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_consumer_threads
+        MMA_M, MMA_N, num_m_mmas, num_n_mmas, num_softmax_threads
     ]
     alias frag_size = Self.reg_layout.frag_size
     alias vec_output_layout = Self.reg_layout.vec_output_layout
@@ -761,7 +693,7 @@ struct TMemOperand[
                 pack=False,
             ](tmem, frag)
         tcgen05_store_wait()
-        named_barrier[Self.num_consumer_threads]()
+        named_barrier[Self.num_softmax_threads]()
 
     @always_inline
     fn copy_to[
@@ -876,12 +808,14 @@ struct SM100TensorAccumulatorSS[
     BM: Int,
     BN: Int,
     BK: Int,
-    num_consumer_threads: Int,
+    num_softmax_threads: Int,
     swizzle_a: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    *,
     transpose_b: Bool = True,
     cta_group: Int = 1,
-](AsyncTensorAccumulator):
+    pipeline_stages: Int = 1,
+]:
     alias operand_t: DType = operand_type
     alias accum_t: DType = accum_type
 
@@ -891,7 +825,7 @@ struct SM100TensorAccumulatorSS[
     alias num_n_mmas = BN // MMA_N
     alias num_k_mmas = BK // Self.MMA_K
 
-    alias num_m_blocks_per_warp = 2 * BM // num_consumer_threads
+    alias num_m_blocks_per_warp = 2 * BM // num_softmax_threads
 
     alias smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t], address_space = AddressSpace.SHARED
@@ -921,13 +855,13 @@ struct SM100TensorAccumulatorSS[
         MMA_N,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        num_consumer_threads,
+        num_softmax_threads,
     ]
 
     var mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
     ]
-    var phase: UInt32
+    var pipeline: PipelineState[pipeline_stages]
 
     @always_inline
     @staticmethod
@@ -954,16 +888,14 @@ struct SM100TensorAccumulatorSS[
     ):
         Self.check_constraints()
         self.mbar = smem
-        self.phase = 0
+        self.pipeline = {}
 
     @always_inline
     fn init(self):
-        self.mbar[0].init()
-
-    # @staticmethod
-    # @always_inline
-    # fn accumulator_sizes[N: Int](sizes: StaticTuple[Tuple[DType,Layout],N]) -> StaticTuple[Tuple[DType,Layout],N+1]:
-    #     pass
+        @parameter
+        for i in range(pipeline_stages):
+            self.mbar[i].init()
+            self.mbar[i + pipeline_stages].init(num_softmax_threads)
 
     @staticmethod
     @always_inline
@@ -1000,15 +932,13 @@ struct SM100TensorAccumulatorSS[
 
     @always_inline
     fn mma(
-        self,
+        mut self,
         a: Self.a_t,
         b: Self.b_t,
-        c: Self.c_t,
+        c_base: Self.c_t,
         scale_c: UInt32,
-        wg_idx: UInt32 = 0,  # FIXME: remove wgidx arg
     ):
-        if thread_idx.x != 128:
-            return
+        c = c_base[self.pipeline.index()]
 
         @parameter
         for k_mma in range(Self.num_k_mmas):
@@ -1044,12 +974,53 @@ struct SM100TensorAccumulatorSS[
                             a_desc, b_desc, c_tmem, Self.idesc
                         )
 
-        mma_arrive(self.mbar)
+        mma_arrive(self.mbar + self.pipeline.index())
+        self.pipeline.step()
+
+    # the mma thread
+    # loop:
+    #   wait_for_tmem() # self.mbar[Stages + index()].wait(phase())
+    #   mma()           # self.mbar[index()].arrive(), step()
+    #
+    # the softmax thread
+    #
+    # tmem_arrive_init() # for i in range(Stages): self.mbar[Stages + i].arrive()
+    #
+    # loop:
+    #   wait_for_mma()   # self.mbar[index()].wait(phase())
+    #   use accumulator
+    #   tmem_arrive()    # self.mbar[Stages + index()].arrive(), step()
+    @always_inline
+    fn wait_for_tmem(self):
+        """
+        Wait for the accumulator tmem to finish being read.
+        """
+        self.mbar[pipeline_stages + self.pipeline.index()].wait(
+            self.pipeline.phase()
+        )
 
     @always_inline
-    fn wait(mut self):
-        self.mbar[0].wait(self.phase)
-        self.phase ^= 1
+    fn wait_for_mma(self, c_base: Self.c_t) -> Self.c_t:
+        """
+        Wait for the accumulator tmem to finish being read.
+        """
+        var idx: UInt32 = self.pipeline.index()
+        self.mbar[idx].wait(self.pipeline.phase())
+        return c_base[idx]
+
+    @always_inline
+    fn tmem_arrive_init(self):
+        @parameter
+        for i in range(pipeline_stages):
+            _ = self.mbar[pipeline_stages + i].arrive()
+
+    @always_inline
+    fn tmem_arrive(mut self):
+        """
+        Indicate that the accumulator is ready to be updated.
+        """
+        _ = self.mbar[pipeline_stages + self.pipeline.index()].arrive()
+        self.pipeline.step()
 
 
 @register_passable("trivial")
@@ -1061,11 +1032,11 @@ struct SM100TensorAccumulatorTS[
     BM: Int,
     BN: Int,
     BK: Int,
-    num_consumer_threads: Int,
+    num_softmax_threads: Int,
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     cta_group: Int = 1,
-](AsyncTensorAccumulatorTS):
+]:
     alias operand_t: DType = operand_type
     alias accum_t: DType = accum_type
 
@@ -1077,9 +1048,9 @@ struct SM100TensorAccumulatorTS[
     alias num_m_mmas = BM // Self.MMA_M
     alias num_n_mmas = BN // MMA_N
     alias num_k_mmas = BK // Self.MMA_K
-    alias c_frag_size = Self.MMA_M * MMA_N // num_consumer_threads
-    alias a_frag_size = Self.MMA_M * Self.MMA_K // num_consumer_threads
-    alias num_m_blocks_per_warp = 2 * BM // num_consumer_threads
+    alias c_frag_size = Self.MMA_M * MMA_N // num_softmax_threads
+    alias a_frag_size = Self.MMA_M * Self.MMA_K // num_softmax_threads
+    alias num_m_blocks_per_warp = 2 * BM // num_softmax_threads
     alias ab_t: DescriptorPairTS = UMMADescriptorTS[
         Self.operand_t,
         Self.num_m_blocks_per_warp,
@@ -1087,7 +1058,7 @@ struct SM100TensorAccumulatorTS[
         MMA_M = BM // Self.num_m_blocks_per_warp,
         MMA_N=BK,
         MMA_K = Self.MMA_K,
-        consumer_group_size=num_consumer_threads,
+        consumer_group_size=num_softmax_threads,
     ]
     alias a_t: WriteableMMAOperandDescriptor = Self.ab_t.a_t
     alias b_t: MMAOperandDescriptor = Self.ab_t.b_t
@@ -1101,7 +1072,7 @@ struct SM100TensorAccumulatorTS[
         Self.MMA_N,
         Self.num_m_blocks_per_warp,
         Self.num_n_mmas,
-        num_consumer_threads,
+        num_softmax_threads,
     ]
 
     alias idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -1147,6 +1118,7 @@ struct SM100TensorAccumulatorTS[
     @always_inline
     fn init(self):
         self.mbar[0].init()
+        self.mbar[1].init(num_softmax_threads)
 
     @staticmethod
     @always_inline
@@ -1184,11 +1156,7 @@ struct SM100TensorAccumulatorTS[
         b: Self.b_t,
         c: Self.c_t,
         c_scale: UInt32,
-        wg_idx: UInt32 = 0,
     ):
-        if thread_idx.x != 128:
-            return
-
         @parameter
         for k_mma in range(Self.num_k_mmas):
 
@@ -1219,10 +1187,46 @@ struct SM100TensorAccumulatorTS[
                         )
         mma_arrive(self.mbar)
 
+    # the mma thread
+    # loop:
+    #   wait_for_tmem()   # self.mbar[1].wait(self.phase), self.phase ^= 1
+    #   mma()             # self.mbar[0].arrive()
+    #
+    # the softmax thread
+    # tmem_arrive()       # self.mbar[1].arrive()
+    #
+    # loop:
+    #   wait_for_mma()    # self.mbar[0].wait(self.phase), self.phase ^= 1
+    #   scale output, write P
+    #   tmem_arrive()     # self.mbar[1].arrive()
     @always_inline
-    fn wait(mut self):
-        self.mbar[0].wait(self.phase)
-        self.phase ^= 1
+    fn wait(mut self, idx: UInt32):
+        # update the phase before waiting
+        var old_phase: UInt32 = self.phase
+        self.phase = old_phase ^ 1
+        self.mbar[idx].wait(old_phase)
+
+    @always_inline
+    fn wait_for_mma(mut self):
+        """
+        Wait for the mma to be complete.
+        """
+        self.wait(0)
+
+    @always_inline
+    fn wait_for_tmem(mut self):
+        """
+        Wait for the `output` and `A` tmem to be ready.
+        """
+        self.wait(1)
+
+    @always_inline
+    fn tmem_arrive(self):
+        """
+        Indicate that the accumulator and the tensor memory arguments
+        are ready for the MMA to begin.
+        """
+        _ = self.mbar[1].arrive()
 
 
 @always_inline
@@ -1282,9 +1286,15 @@ fn mha_sm100_dispatch[
         String(BK),
     ]()
     alias BN = new_config.block_n()
+    alias max_tmem_cols = 512
+    alias num_s = (max_tmem_cols - (BN // 2) - config.depth) // BN
     # we add smem use for SharedMemBarrier synchronization
-    alias extra_b200 = 32
-    alias smem_use = new_config.shared_mem_bytes[True, sm_90=True]() + 32
+    # 2*8 for mma mbars
+    #
+    alias extra_B200_smem = (2 * num_s + 3) * 8
+    alias smem_use = new_config.shared_mem_bytes[
+        True, sm_90=True
+    ]() + extra_B200_smem
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     alias num_threads = new_config.num_threads[True]()
     constrained[
@@ -1531,8 +1541,8 @@ fn _mha_sm100[
 
     alias simd_size: Int = simdwidthof[kv_type]()
 
-    alias num_consumer_threads: Int = config.num_consumer_threads()
-    alias num_consumer_warps = num_consumer_threads // 32
+    alias num_softmax_threads: Int = config.num_consumer_threads()
+    alias num_softmax_warps = num_softmax_threads // 32
 
     alias cta_group = 1
     alias BM: Int = config.block_m()
@@ -1547,12 +1557,12 @@ fn _mha_sm100[
     alias MMA_N0 = BN
     alias MMA_N1 = depth
     alias MMA_K = 16
-    # alias WM = BM // num_consumer_warps
+    # alias WM = BM // num_softmax_warps
     # alias WN = BN
     # alias num_m_mmas = BM // MMA_M  # WM // MMA_M
     # mmas are now handled separately from in-register processing
     # in-register processing is divided up by warps, mmas are not
-    alias num_row_fragments = num_consumer_threads // 128
+    alias num_row_fragments = num_softmax_threads // 128
     constrained[(32 % num_row_fragments) == 0]()
     alias row_fragment_size = min(32 // num_row_fragments, BM // 4)
     constrained[num_row_fragments * row_fragment_size <= 32]()
@@ -1563,36 +1573,36 @@ fn _mha_sm100[
     # Because we can load a minimum of 16 lanes at a time,
     # we prefer at least 2x blocks per warp, meaning we
     # can divide up to 8 ways.
-    alias num_m_blocks_per_warp = BM // (16 * num_consumer_warps)
+    alias num_m_blocks_per_warp = BM // (16 * num_softmax_warps)
     # before we had num_m_mmas * MMA_M = BM
-    # now, we have num_m_blocks_per_warp * 16*num_consumer_warps == BM
+    # now, we have num_m_blocks_per_warp * 16*num_softmax_warps == BM
     # num_m_blocks_per_warp is like `num_m_mmas`, but for non-mma consumers.
     constrained[num_m_blocks_per_warp * 16 == WM]()
     #
     # The following constraint is effectively equivalent to
     # BM == 128 or BM == 64
     # If 32 // num_row_fragments is smaller, we have
-    # 32*128*num_consumer_warps // num_consumer_threads == BM
-    # 128*num_consumer_threads // num_consumer_threads == BM
+    # 32*128*num_softmax_warps // num_softmax_threads == BM
+    # 128*num_softmax_threads // num_softmax_threads == BM
     # 128 == BM
     # Or if BM // 4 is smaller, we have
-    # BM // 4 * num_consumer_warps == BM
-    # num_consumer_threads*BM // (4 * 32) == BM
-    # num_consumer_threads == 128
-    # 32*128 // BM == num_consumer_threads
-    constrained[WM * num_consumer_warps == BM]()
+    # BM // 4 * num_softmax_warps == BM
+    # num_softmax_threads*BM // (4 * 32) == BM
+    # num_softmax_threads == 128
+    # 32*128 // BM == num_softmax_threads
+    constrained[WM * num_softmax_warps == BM]()
     # The above should also be true because:
-    # num_consumer_warps = BM // (16 * num_m_blocks_per_warp)
+    # num_softmax_warps = BM // (16 * num_m_blocks_per_warp)
     # -> BM // WM = BM // (16 * num_m_blocks_per_warp)
     # -> WM = (16 * num_m_blocks_per_warp)
     alias num_m_mmas = 1
     alias num_n_mmas = 1
     alias num_k_mmas = BK // MMA_K
-    # alias num_warps_m = BM // WM  # 4 * num_consumer
+    # alias num_warps_m = BM // WM  # 4 * num_softmax
     # alias num_warps_n = BN // WN  # 1
     alias num_heads = config.num_heads
-    # num_consumer_threads ignores the producers
-    # actual number of threads is num_consumer_threads + 128
+    # num_softmax_threads ignores the producers
+    # actual number of threads is num_softmax_threads + 128
     alias pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
     # warp group idx concept is still useful for sm100
@@ -1601,37 +1611,40 @@ fn _mha_sm100[
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
     # warp_group_tid = tid % 128
     alias accum_type = get_accum_type[kv_type]()
-    alias wgmma_0_t = SM100TensorAccumulatorSS[
+    alias max_tmem_cols = 512
+    alias num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
+    alias UMMA0Type = SM100TensorAccumulatorSS[
         kv_type,
         accum_type,
         MMA_M=MMA_M,  # 128
-        MMA_N=MMA_N0,  # 64
+        MMA_N=MMA_N0,  # BN
         BM=BM,  # 128
-        BN=BN,  # 128
-        BK=BK,  # depth # 256
-        num_consumer_threads=num_consumer_threads,
+        BN=BN,  # BN
+        BK=BK,  # depth
+        num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
         transpose_b=True,
+        pipeline_stages=num_s,
     ]
     # Second WGMMA is a
     # BM x BN tile of p_frag @ BN x depth tile of V
-    alias wgmma_1_t = SM100TensorAccumulatorTS[
+    alias UMMA1Type = SM100TensorAccumulatorTS[
         kv_type,
         accum_type,
         MMA_M=MMA_M,
         MMA_N=MMA_N1,  # depth
         BM=BM,
         BN=MMA_N1,  # depth
-        BK=BN,
-        num_consumer_threads=num_consumer_threads,
+        BK=BN,  # BN
+        num_softmax_threads=num_softmax_threads,
         swizzle_b=swizzle_mode,
         transpose_b=False,
     ]
 
     # var warp_x: UInt32 = warp_id % num_warps_n
 
-    # first wgmma is BM x BK @ BK x BN
+    # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
     q_smem = external_memory[
@@ -1655,10 +1668,10 @@ fn _mha_sm100[
     # that is, we have a (WM//8) x (MMA_N//8) grid of 8x4<1x2> blocks
     # Each such block has 2 elements.
     alias p_frag_size = BM * MMA_N0 // (
-        num_consumer_threads * num_m_blocks_per_warp
+        num_softmax_threads * num_m_blocks_per_warp
     )
     alias o_frag_size = BM * MMA_N1 // (
-        num_consumer_threads * num_m_blocks_per_warp
+        num_softmax_threads * num_m_blocks_per_warp
     )
     constrained[p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)]()
     constrained[o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)]()
@@ -1668,12 +1681,12 @@ fn _mha_sm100[
         == BK
         * num_n_mmas
         * p_frag_size
-        * num_consumer_threads
+        * num_softmax_threads
         * num_m_blocks_per_warp
     ]()
 
     alias num_row_blocks_per_mma = 2
-    # a wgmma.m64n32k16 `D` fragment looks like
+    # a umma.m64n32k16 `D` fragment looks like
     #
     # 0,1  4,5   8, 9  12,13
     # 2,3  6,7  10,11  14,15
@@ -1771,20 +1784,20 @@ fn _mha_sm100[
     )
     consumed_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
     mma_mbar = consumed_mbar_kv + pipeline_stages  # 16
-    wgmma_0 = wgmma_0_t(mma_mbar)
-    wgmma_1 = wgmma_1_t(mma_mbar + 2)
-    ptr_tmem_addr = (mma_mbar + 3).bitcast[UInt32]()  # 8
+    umma_0 = UMMA0Type(mma_mbar)  # needs num_s
+    umma_1 = UMMA1Type(mma_mbar + 2 * num_s)
+    ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
 
     alias USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    alias num_producer_regs = 56 if num_consumer_warps == 4 else (
-        (24 if USE_TMA else 56) if num_consumer_warps == 8 else 32
+    alias num_producer_regs = 56 if num_softmax_warps == 4 else (
+        (24 if USE_TMA else 56) if num_softmax_warps == 8 else 32
     )
-    alias num_consumer_regs = 256 if num_consumer_warps == 4 else (
-        (240 if USE_TMA else 224) if num_consumer_warps == 8 else 160
+    alias num_softmax_regs = 256 if num_softmax_warps == 4 else (
+        (240 if USE_TMA else 224) if num_softmax_warps == 8 else 160
     )
     # alias num_producer_regs = 56
-    # alias num_consumer_regs = 224
+    # alias num_softmax_regs = 224
 
     # constructing calls barrier() if static
     var tile_summary = MHATileSummary(
@@ -1814,7 +1827,9 @@ fn _mha_sm100[
         for i in range(pipeline_stages):
             # until we can use TMA, we need 128 producers working on async copies
             produced_mbar_kv[i].init(1)
-            consumed_mbar_kv[i].init(num_consumer_threads)
+            consumed_mbar_kv[i].init(num_softmax_threads)
+        umma_0.init()
+        umma_1.init()
 
     alias PositionType = MHAPosition[BM, BN, depth, num_heads, group, decoding]
 
@@ -1832,17 +1847,22 @@ fn _mha_sm100[
         )
 
     var position: PositionType = get_position(initial_seq_info)
+    startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+    var kv_tile_start_row: UInt32 = startend[0]
+    var end: UInt32 = startend[1]
+
+    constrained[num_s > 0]()
 
     barrier()
-    # For intra-warp overlap, we initiate wgmmas as
+    # For intra-warp overlap, we initiate ummas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
     #
-    # Due to this, we can overlap wgmmas and softmax calculations.
+    # Due to this, we can overlap ummas and softmax calculations.
     if warp_group_idx == 0:
         # producer
         warpgroup_reg_dealloc[num_producer_regs]()
-        if thread_idx.x == 0:
+        if tid == 96:  # thread 0 of warp id 3
             produce[
                 pipeline_stages=pipeline_stages,
                 ragged=ragged,
@@ -1868,113 +1888,192 @@ fn _mha_sm100[
                 num_keys_arg,
                 kv_input_row_offsets,
             )
+        elif tid // 32 == 0:  # warp id == 0: Q @ K'
+            startend = position.get_start_and_end_for_partitions[BN=BN](
+                partition
+            )
+            var kv_tile_start_row: UInt32 = startend[0]
+            var end: UInt32 = startend[1]
 
-    else:
-        warpgroup_reg_alloc[num_consumer_regs]()
+            @parameter
+            if PartitionType.do_partition:
+                # we exit before allocating so we don't need to deallocate
+                if kv_tile_start_row >= end:
+                    return
+
+            alias tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
+            constrained[tmem_cols <= max_tmem_cols]()
+            tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+
+            qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
+
+            named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+            if tid != 0:
+                return
+            q_desc = qk_desc.get_a()
+            k_desc = qk_desc.get_b()
+            var tmem_addr: UInt32 = ptr_tmem_addr[0]
+            var s_tmem: UInt32 = tmem_addr
+            var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
+            var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+            s_accumulator = UMMA0Type.c_t(s_tmem)
+
+            @parameter
+            @always_inline
+            fn q_mul_k(read_idx: UInt32, read_phase: UInt32):
+                q = q_desc
+                k = k_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
+                umma_0.wait_for_tmem()
+                produced_mbar_kv[read_idx].wait(read_phase)
+
+                umma_0.mma(
+                    rebind[UMMA0Type.a_t](q),
+                    rebind[UMMA0Type.b_t](k),
+                    s_accumulator,
+                    0,
+                )
+
+            var mask_status: TileMaskStatus
+            while True:
+                mask_status = position.mask_status(mask, kv_tile_start_row)
+                if mask_status != TileMaskStatus.FULL_MASK:
+                    break
+                kv_tile_start_row += BN
+
+            kv_pipeline_states = PipelineState[pipeline_stages]()
+            s_pipeline_states = PipelineState[pipeline_stages]()
+            q_mul_k(
+                kv_pipeline_states.index(),
+                kv_pipeline_states.phase(),
+            )
+            kv_pipeline_states.step()
+            # Consumption order:
+            # Preheader: Q0, K0
+            # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+            # Exit: V{-1}
+            while True:
+                # this loops over num_keys
+                kv_tile_start_row += BN
+                if kv_tile_start_row >= end:
+                    break
+                # this loops over num_keys
+                mask_status = position.mask_status(mask, kv_tile_start_row)
+                if mask_status == TileMaskStatus.FULL_MASK:
+                    continue
+
+                # new pipeline states
+                # start ummas
+                q_mul_k(
+                    kv_pipeline_states.index(), kv_pipeline_states.phase()
+                )  # can't rw `p_reg_tile`
+                kv_pipeline_states.step()
+                kv_pipeline_states.step()
+
+        elif tid // 32 == 1:  # warp id 1: P @ V
+            startend = position.get_start_and_end_for_partitions[BN=BN](
+                partition
+            )
+            var kv_tile_start_row: UInt32 = startend[0]
+            var end: UInt32 = startend[1]
+
+            @parameter
+            if PartitionType.do_partition:
+                if kv_tile_start_row >= end:
+                    return
+
+            named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+            var tmem_addr: UInt32 = ptr_tmem_addr[0]
+            if tid == 32:
+                var s_tmem: UInt32 = tmem_addr
+                var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
+                var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+                p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
+                v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+                output_accumulator = UMMA1Type.c_t(o_tmem)
+
+                @parameter
+                @always_inline("nodebug")
+                fn p_mul_v(
+                    read_idx: UInt32, read_phase: UInt32, scale_c: UInt32
+                ):
+                    v = v_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
+                    produced_mbar_kv[read_idx].wait(read_phase)
+                    umma_1.wait_for_tmem()
+                    umma_1.mma(
+                        rebind[UMMA1Type.a_t](p_desc),
+                        rebind[UMMA1Type.b_t](v),
+                        output_accumulator,
+                        scale_c,
+                    )
+
+                var mask_status: TileMaskStatus
+                while True:
+                    mask_status = position.mask_status(mask, kv_tile_start_row)
+                    if mask_status != TileMaskStatus.FULL_MASK:
+                        break
+                    kv_tile_start_row += BN
+
+                kv_pipeline_states = PipelineState[pipeline_stages]()
+                var read_idx_q: UInt32 = kv_pipeline_states.index()
+                kv_pipeline_states.step()
+
+                var output_scale: UInt32 = 0
+                # Consumption order:
+                # Preheader: Q0, K0
+                # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
+                # Exit: V{-1}
+                while True:
+                    # this loops over num_keys
+                    kv_tile_start_row += BN
+                    if kv_tile_start_row >= end:
+                        break
+                    # this loops over num_keys
+                    mask_status = position.mask_status(mask, kv_tile_start_row)
+                    if mask_status == TileMaskStatus.FULL_MASK:
+                        continue
+                    # copy new pfrag, used by `p_mul_v` on next iter
+                    # start ummas
+                    kv_pipeline_states.step()
+                    var read_idx_v: UInt32 = kv_pipeline_states.index()
+                    p_mul_v(
+                        read_idx_v, kv_pipeline_states.phase(), output_scale
+                    )  # can't rw output or pfrag
+                    output_scale = 1
+                    kv_pipeline_states.step()
+
+                p_mul_v(
+                    kv_pipeline_states.index(),
+                    kv_pipeline_states.phase(),
+                    output_scale,
+                )
+            tcgen05_release_allocation_lock[cta_group]()
+            tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+
+    else:  # softmax
+        warpgroup_reg_alloc[num_softmax_regs]()
 
         # arrive to unblock the producers
         # TODO: skip this by not waiting on the first set
         @parameter
         for i in range(pipeline_stages):
             _ = consumed_mbar_kv[i].arrive()
+        umma_0.tmem_arrive_init()
 
         var warp_id: UInt32 = warp.broadcast((tid - 128) // WARP_SIZE)
 
         # Coordinates of the current warp.
         var elect_one_warp = warp_id == 0
 
-        alias max_tmem_cols = 512
-        alias tmem_cols = MMA_N0 + (MMA_N0 // 2) + MMA_N1
-        constrained[tmem_cols <= max_tmem_cols]()
-        if elect_one_warp:
-            # we still use max_tmem_cols, as it must be a power of 2
-            tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
-            wgmma_0.init()
-            wgmma_1.init()
-
-        qk_desc = wgmma_0_t.mma_descriptors(q_smem, kv_smem)
-
-        q_desc = qk_desc.get_a()
-        k_desc = qk_desc.get_b()
-
-        v_desc = wgmma_1_t.b_mma_descriptor(kv_smem)
         var lane: UInt32 = lane_id()
         var elect_one_thread = thread_idx.x == 128
 
         var warp_y: UInt32 = warp_id  # // num_warps_n
 
         @parameter
-        if num_consumer_threads > 128:
+        if num_softmax_threads > 128:
             warp_y = 2 * (warp_y % 4) + (warp_y // 4)
         alias warp_x: UInt32 = 0
-        named_barrier[num_consumer_threads]()
-
-        var tmem_addr = ptr_tmem_addr[0]
-
-        constrained[num_consumer_warps == 4 or num_consumer_warps == 8]()
-
-        @parameter
-        if num_consumer_warps > 4:
-            if warp_group_idx != 1:  # elect_one_warp will be false
-                tmem_addr += 1 << 20
-        var s_tmem: UInt32 = tmem_addr
-        var o_tmem: UInt32 = tmem_addr + MMA_N0
-        var p_tmem: UInt32 = tmem_addr + MMA_N0 + MMA_N1
-
-        p_desc = wgmma_1_t.a_mma_descriptor(p_tmem)
-
-        # layout is
-        # shape  = (2, num_m_blocks_per_warp) x (2, num_n_mmas)
-        # stride = (2, 4*num_n_mmas) x (1, 4)
-        p_accumulator = wgmma_0_t.c_t(s_tmem)
-        alias p_accumulator_t = __type_of(p_accumulator)
-        alias p_reg_t = __type_of(p_accumulator_t._empty_tensor())
-
-        output_accumulator = wgmma_1_t.c_t(o_tmem)
-        alias output_accumulator_t = __type_of(output_accumulator)
-        alias output_reg_t = __type_of(output_accumulator_t._empty_tensor())
-
-        p_reg_tile = p_accumulator.allocate_register_tile()
-        output_reg_tile = output_accumulator.allocate_register_tile()
-
-        @parameter
-        @always_inline
-        fn vectorize_p_reg_tile(
-            out result: LayoutTensor[
-                accum_type,
-                p_vec_output_layout,
-                MutableAnyOrigin,
-                address_space = AddressSpace.LOCAL,
-                element_layout=element_layout,
-            ],
-        ):
-            result = __type_of(result)(p_reg_tile.ptr)
-
-        @parameter
-        @always_inline
-        fn vectorize_o_reg_tile(
-            out result: LayoutTensor[
-                accum_type,
-                o_vec_output_layout,
-                MutableAnyOrigin,
-                address_space = AddressSpace.LOCAL,
-                element_layout=element_layout,
-            ],
-        ):
-            result = __type_of(result)(output_reg_tile.ptr)
-
-        rowmax = LayoutTensor[
-            __type_of(p_reg_tile).dtype,
-            Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
-        rowsum = LayoutTensor[
-            __type_of(p_reg_tile).dtype,
-            Layout.row_major(num_rows_per_warp),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ].stack_allocation()
+        constrained[num_softmax_warps == 4 or num_softmax_warps == 8]()
 
         # Mask global memory iterator.
 
@@ -1985,45 +2084,53 @@ fn _mha_sm100[
             * log2e
         )
 
+        # layout is
+        # shape  = (2, num_m_blocks_per_warp) x (2, num_n_mmas)
+        # stride = (2, 4*num_n_mmas) x (1, 4)
+
+        rowmax = LayoutTensor[
+            UMMA0Type.accum_t,
+            Layout.row_major(num_rows_per_warp),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+        rowsum = LayoutTensor[
+            UMMA0Type.accum_t,
+            Layout.row_major(num_rows_per_warp),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
+        alias VecPType = LayoutTensor[
+            accum_type,
+            p_vec_output_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+            element_layout=element_layout,
+        ]
+        alias VecOType = LayoutTensor[
+            accum_type,
+            o_vec_output_layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+            element_layout=element_layout,
+        ]
+
+        p_reg_tile = UMMA0Type.c_t.allocate_register_tile()
+        output_reg_tile = UMMA1Type.c_t.allocate_register_tile()
+
         @parameter
         @always_inline
-        fn q_mul_k(read_idx: UInt32, read_phase: UInt32):
-            q = q_desc
-            k = k_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
-            produced_mbar_kv[read_idx].wait(read_phase)
-
-            wgmma_0.mma(
-                rebind[wgmma_0_t.a_t](q),
-                rebind[wgmma_0_t.b_t](k),
-                p_accumulator,
-                0,
-            )
-
-        @parameter
-        @always_inline("nodebug")
-        fn p_mul_v(read_idx: UInt32, read_phase: UInt32, scale_c: UInt32):
-            v = v_desc + Int(BN * depth * sizeof[kv_type]() * read_idx)
-            produced_mbar_kv[read_idx].wait(read_phase)
-            wgmma_1.mma(
-                rebind[wgmma_1_t.a_t](p_desc),
-                rebind[wgmma_1_t.b_t](v),
-                output_accumulator,
-                scale_c,
-            )
+        fn vectorize_p_reg_tile(
+            out result: VecPType,
+        ):
+            result = __type_of(result)(p_reg_tile.ptr)
 
         @parameter
         @always_inline
-        fn wait_for_q_mul_k(read_idx: UInt32):
-            wgmma_0.wait()  # P is available
-            _ = consumed_mbar_kv[read_idx].arrive()
-            p_accumulator.copy_to(p_reg_tile)
-
-        @parameter
-        @always_inline
-        fn wait_for_p_mul_v(read_idx: UInt32):
-            wgmma_1.wait()  # output is available
-            _ = consumed_mbar_kv[read_idx].arrive()
-            output_accumulator.copy_to(output_reg_tile)
+        fn vectorize_o_reg_tile(
+            out result: VecOType,
+        ):
+            result = __type_of(result)(output_reg_tile.ptr)
 
         @parameter
         @always_inline
@@ -2050,9 +2157,7 @@ fn _mha_sm100[
 
         @parameter
         @always_inline
-        fn scale_output(correction: __type_of(rowmax)):
-            vout = vectorize_o_reg_tile()
-
+        fn scale(correction: __type_of(rowmax), vout: VecOType):
             # Correct output
             # We could avoid this on the first iter
             # if we specialize and unswitch on `first_iter`
@@ -2084,9 +2189,8 @@ fn _mha_sm100[
         fn write_output(
             position: PositionType,
             rowsum_inv: __type_of(rowsum),
+            vout: VecOType,
         ):
-            vout = vectorize_o_reg_tile()
-
             # Apply softmax denumerator.
             @parameter
             for row in range(num_rows_per_warp):
@@ -2125,23 +2229,23 @@ fn _mha_sm100[
             )
 
             # ensure all threads have finished reading `q_smem`
-            named_barrier[num_consumer_threads]()
+            named_barrier[num_softmax_threads]()
             copy_local_to_shared[
                 thread_layout=mma_thread_layout, swizzle=swizzle
             ](
                 accum_smem_warp_tile.vectorize[1, 2](),
-                output_accumulator_t.rows_of_frags(output_reg_tile)
+                UMMA1Type.c_t.rows_of_frags(output_reg_tile)
                 .vectorize[1, 2]()
                 .transpose(),
             )
             # Guard writing to shared memory.
-            named_barrier[num_consumer_threads]()
+            named_barrier[num_softmax_threads]()
             # Vectorized copy from shared to global memory, during which every 2 FP32
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_consumer_threads * simd_size // depth,
+                    num_softmax_threads * simd_size // depth,
                     depth // simd_size,
                 ),
                 swizzle=swizzle,
@@ -2149,10 +2253,6 @@ fn _mha_sm100[
                 output_gmem_tile.vectorize[1, simd_size](),
                 accum_smem_tile.vectorize[1, simd_size](),
             )
-
-        startend = position.get_start_and_end_for_partitions[BN=BN](partition)
-        var kv_tile_start_row: UInt32 = startend[0]
-        var end: UInt32 = startend[1]
 
         @parameter
         if (
@@ -2171,11 +2271,39 @@ fn _mha_sm100[
                         PartitionType.accum_dtype
                     ]()
 
-                if elect_one_warp:
-                    tcgen05_release_allocation_lock[cta_group]()
-                    tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
-                write_output(position, rowsum)
+                write_output(position, rowsum, vectorize_o_reg_tile().fill(0))
                 return
+
+        named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+        var tmem_addr = ptr_tmem_addr[0]
+
+        @parameter
+        if num_softmax_warps > 4:
+            if warp_group_idx != 1:  # elect_one_warp will be false
+                tmem_addr += 1 << 20
+        var s_tmem: UInt32 = tmem_addr
+        var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
+        var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+        p_accumulator = UMMA0Type.c_t(s_tmem)
+        p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
+        output_accumulator = UMMA1Type.c_t(o_tmem)
+        v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
+
+        @parameter
+        @always_inline
+        fn wait_for_q_mul_k(read_idx: UInt32):
+            p_acc = umma_0.wait_for_mma(p_accumulator)  # P is available
+            _ = consumed_mbar_kv[read_idx].arrive()
+            p_acc.copy_to(p_reg_tile)
+            umma_0.tmem_arrive()
+
+        @parameter
+        @always_inline
+        fn wait_for_p_mul_v(read_idx: UInt32):
+            umma_1.wait_for_mma()  # output is available
+            _ = consumed_mbar_kv[read_idx].arrive()
+            output_accumulator.copy_to(output_reg_tile)
+
         var mask_status: TileMaskStatus
         while True:
             mask_status = position.mask_status(mask, kv_tile_start_row)
@@ -2183,15 +2311,15 @@ fn _mha_sm100[
                 break
             kv_tile_start_row += BN
 
-        read_pipeline_states = PipelineState[pipeline_stages]()
+        kv_pipeline_states = PipelineState[pipeline_stages]()
         # q_mul_k must wait on fetching q and k
         # therefore, we find `kv_tile_start_row` first.
-        var read_idx_q: UInt32 = read_pipeline_states.index()
-        q_mul_k(
-            read_idx_q,
-            read_pipeline_states.phase(),
-        )
-        read_pipeline_states.step()
+        var read_idx_q: UInt32 = kv_pipeline_states.index()
+        # q_mul_k(
+        #     read_idx_q,
+        #     kv_pipeline_states.phase(),
+        # )
+        kv_pipeline_states.step()
 
         wait_for_q_mul_k(read_idx_q)
         apply_mask(position, mask_status, kv_tile_start_row)
@@ -2239,7 +2367,7 @@ fn _mha_sm100[
 
         rowsum.copy_from(attention_rowsum)
 
-        var output_scale: UInt32 = 0
+        # var output_scale: UInt32 = 0
         # Consumption order:
         # Preheader: Q0, K0
         # Body: Q1, K1, V0, Q2, K2, V1, ..., Q{-1}, K{-1}, V{-2}
@@ -2254,28 +2382,25 @@ fn _mha_sm100[
             if mask_status == TileMaskStatus.FULL_MASK:
                 continue
             # copy new pfrag, used by `p_mul_v` on next iter
-            p_desc.copy_from(p_accumulator_t.rows_of_frags(p_reg_tile))
+            p_desc.copy_from(UMMA0Type.c_t.rows_of_frags(p_reg_tile))
+            umma_1.tmem_arrive()
 
             # new pipeline states
-            var read_idx_q: UInt32 = read_pipeline_states.index()
-            # start wgmmas
-            q_mul_k(
-                read_idx_q, read_pipeline_states.phase()
-            )  # can't rw `p_reg_tile`
-            read_pipeline_states.step()
-            var read_idx_v: UInt32 = read_pipeline_states.index()
-            p_mul_v(
-                read_idx_v, read_pipeline_states.phase(), output_scale
-            )  # can't rw output or pfrag
-            output_scale = 1
-            read_pipeline_states.step()
-            p_reg_tensor = wait_for_q_mul_k(read_idx_q)
+            var read_idx_q: UInt32 = kv_pipeline_states.index()
+            # start ummas
+            # q_mul_k(
+            #     read_idx_q, kv_pipeline_states.phase()
+            # )  # can't rw `p_reg_tile`
+            kv_pipeline_states.step()
+            var read_idx_v: UInt32 = kv_pipeline_states.index()
+            # p_mul_v(
+            #     read_idx_v, kv_pipeline_states.phase(), output_scale
+            # )  # can't rw output or pfrag
+            # output_scale = 1
+            kv_pipeline_states.step()
+            wait_for_q_mul_k(read_idx_q)
 
-            apply_mask(
-                position,
-                mask_status,
-                kv_tile_start_row,
-            )
+            apply_mask(position, mask_status, kv_tile_start_row)
             # Compute rowmax for current scores
             var current_rowmax = _rowmax_online_softmax[
                 1, mma_thread_layout, use_exp2=True
@@ -2325,16 +2450,17 @@ fn _mha_sm100[
                 )
 
             wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
-            scale_output(score_frag_rowmax)  # scale output
+            scale(score_frag_rowmax, vectorize_o_reg_tile())  # scale output
             output_accumulator.copy_from(output_reg_tile)
 
-        p_desc.copy_from(p_accumulator_t.rows_of_frags(p_reg_tile))
+        p_desc.copy_from(UMMA0Type.c_t.rows_of_frags(p_reg_tile))
+        umma_1.tmem_arrive()
 
-        p_mul_v(
-            read_pipeline_states.index(),
-            read_pipeline_states.phase(),
-            output_scale,
-        )
+        # p_mul_v(
+        #     kv_pipeline_states.index(),
+        #     kv_pipeline_states.phase(),
+        #     output_scale,
+        # )
 
         @parameter
         if decoding and PartitionType.do_partition:
@@ -2353,7 +2479,7 @@ fn _mha_sm100[
         @parameter
         for row in range(num_rows_per_warp):
             rowsum[row] = recip(rowsum[row])[0]
-        wgmma_1.wait()
+        umma_1.wait_for_mma()
 
         output_accumulator.copy_to(output_reg_tile)
         constrained[
@@ -2362,8 +2488,5 @@ fn _mha_sm100[
             + String(__type_of(output_reg_tile).layout)
             + "\n",
         ]()
-        if elect_one_warp:
-            tcgen05_release_allocation_lock[cta_group]()
-            tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
-        write_output(position, rowsum)
+        write_output(position, rowsum, vectorize_o_reg_tile())
         # don't arrive
