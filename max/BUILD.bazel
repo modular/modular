@@ -5,7 +5,7 @@ modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["_core.cpp"],
     module_name = "_core",
-    new_link_root = "lib",
+    new_link_root = "../modular/lib",
     deps = [
         "//SDK/lib/API/python/max/_core/src:modules",
         "@llvm-project//llvm:Support",
@@ -17,9 +17,11 @@ modular_py_library(
     name = "_core.stubfile_generator_library",
     data = [
         ":_core.bindings",
-        "//SDK/lib/API/python/max/mlir",
     ],
     imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/mlir",
+    ],
 )
 
 modular_py_binary(
@@ -47,6 +49,7 @@ modular_genrule(
     # When profiling is enabled, it replaces the bound methods entirely, which causes weird things to
     # happen with the stubfiles. Avoid the issue entirely by just forcing it off when generating.
     export MODULAR_ENABLE_PROFILING=OFF
+    export BAZEL_TEST=1
 
     export folder=$(dirname $(location stubfiles/dtype.pyi))
     $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet

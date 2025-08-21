@@ -32,6 +32,7 @@ modular_nanobind_extension(
         # Set definition used in Interop.h to prefix the MLIR package.
         "MLIR_PYTHON_PACKAGE_PREFIX=max._mlir.",
     ],
+    new_link_root = "../../../modular/lib",
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
     deps = [
