@@ -50,7 +50,7 @@ from layout import (
     IntTuple,
     UNKNOWN_VALUE,
 )
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import make_swizzle, make_ldmatrix_swizzle, Swizzle
 
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -337,11 +337,45 @@ fn consumer_main_loop[
 
 
 @always_inline
+fn stsm_helper[
+    swizzle: Swizzle
+](
+    vec: SIMD,
+    dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
+):
+    # Number of elements in one row per stsmx4 tile, a row is 32B.
+    alias stsmx4_row_size = 32 // sizeof[dst.dtype]()
+    # Number of elements owned by each lane, each lane has 16B
+    alias stsmx4_lane_size = 16 // sizeof[dst.dtype]()
+    # TODO: constrain the shared memory layout to be 2D row-major.
+    # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
+    # row-major(16, 32). The map should use tile's stride to calculate
+    # the dst row offset.
+    alias stride0 = dst.layout.stride[0].value()
+    alias shape0 = dst.layout.shape[1].value()
+
+    var lane = lane_id()
+    var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
+
+    # Assume the dst tile has 16 rows and only use stsm in N dim.
+    @parameter
+    for i in range(shape0 // stsmx4_row_size):
+        alias n_offset = i * stsmx4_row_size
+        var offset = swizzle(stsm_lane_offset + n_offset)
+        var v = vec.slice[
+            stsmx4_lane_size, offset = i * stsmx4_lane_size
+        ]().cast[dst.dtype]()
+        st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
+
+
+@always_inline
 fn multi_stage_store_C[
     c_type: DType,
     c_smem_layout: Layout,
     c_layout: Layout,
     c_desc_layout: Layout,
+    c_layout_complete: Layout,
+    c_desc_layout_complete: Layout,
     num_accum_pipeline_stages: UInt,
     /,
     *,
@@ -360,7 +394,10 @@ fn multi_stage_store_C[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op_split: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op_complete: TMATensorTile[
+        c_type, c_layout_complete, c_desc_layout_complete
+    ],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
         SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
@@ -392,7 +429,7 @@ fn multi_stage_store_C[
     # stage N is 32
     alias stageN = c_smem_layout.shape[1].value()
     # so num stages is usually 256 by 32 is 8
-    alias num_stages = MMA_N // stageN
+    alias num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
     alias tmem_cell_bytes = 4
     alias data_paths = 16
     alias bits = 256
@@ -451,78 +488,54 @@ fn multi_stage_store_C[
         var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
 
         # Pack the upper frag to shared memory
-        var vec_1 = upper_frag
-        var vec_2 = lower_frag
-        var dst_1 = c_smem_warp_tile.tile[16, stageN](0, 0)
-        var dst_2 = c_smem_warp_tile.tile[16, stageN](1, 0)
-
-        # Number of elements in one row per stsmx4 tile, a row is 32B, so 16 elements in a stmatrix row
-        alias stsmx4_row_size = 32 // sizeof[dst_1.dtype]()
-        # Number of elements owned by each lane, each lane has 16B, so 8 elements per lane
-        alias stsmx4_lane_size = 16 // sizeof[dst_1.dtype]()
-        alias stride0 = dst_1.layout.stride[0].value()
-        # 32 elements across the output tile
-        alias shape0 = dst_1.layout.shape[1].value()
-
-        var lane = lane_id()
-        var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
-
-        # Assume the dst tile has 16 rows and only use stsm in N dim.
-        @parameter
-        for i in range(shape0 // stsmx4_row_size):
-            alias n_offset = i * stsmx4_row_size
-            var offset = swizzle(stsm_lane_offset + n_offset)
-            var v = vec_1.slice[
-                stsmx4_lane_size, offset = i * stsmx4_lane_size
-            ]().cast[dst_1.dtype]()
-            st_matrix[simd_width=4](
-                dst_1.ptr + offset, bitcast[DType.float32, 4](v)
-            )
-
-        # Pack the lower frag to shared memory
-        # Number of elements in one row per stsmx4 tile, a row is 32B.
-        alias stsmx4_row_size_2 = 32 // sizeof[dst_2.dtype]()
-        # Number of elements owned by each lane, each lane has 16B
-        alias stsmx4_lane_size_2 = 16 // sizeof[dst_2.dtype]()
-        alias stride0_2 = dst_2.layout.stride[0].value()
-        alias shape0_2 = dst_2.layout.shape[1].value()
-
-        var stsm_lane_offset_2 = (lane & 15) * stride0_2 + (lane >> 4) * 8
-
-        # Assume the dst tile has 16 rows and only use stsm in N dim.
-        @parameter
-        for i in range(shape0_2 // stsmx4_row_size_2):
-            alias n_offset = i * stsmx4_row_size_2
-            var offset = swizzle(stsm_lane_offset_2 + n_offset)
-            var v = vec_2.slice[
-                stsmx4_lane_size_2, offset = i * stsmx4_lane_size_2
-            ]().cast[dst_2.dtype]()
-            st_matrix[simd_width=4](
-                dst_2.ptr + offset, bitcast[DType.float32, 4](v)
-            )
+        stsm_helper[swizzle](
+            upper_frag, c_smem_warp_tile.tile[16, stageN](0, 0)
+        )
+        stsm_helper[swizzle](
+            lower_frag, c_smem_warp_tile.tile[16, stageN](1, 0)
+        )
 
         # Guard the write to shared memory is done.
         named_barrier[num_output_warps * WARP_SIZE]()
 
-        if elect_one_warp and lane == 0:
-            fence_async_view_proxy()
-            c_tma_op.async_store(
-                c_smem_tile,
-                (
-                    work_tile_coord[1] * MMA_N + stage * stageN,
-                    work_tile_coord[0] * BM,
-                ),
-            )
-            c_tma_op.commit_group()
-            # c_tma_op.wait_group[0]()
+        var lane = lane_id()
 
-            # Keep one tma store in fly
-            @parameter
-            if stage < num_stages - 1:
-                c_tma_op.wait_group[1]()
-            # Last stage guard all tma store to finish
-            else:
-                c_tma_op.wait_group[0]()
+        @parameter
+        if MMA_M == 256:
+            if warp_id == 0 and lane == 0:
+                fence_async_view_proxy()
+                c_tma_op_complete.async_store(
+                    c_smem_tile,
+                    (
+                        work_tile_coord[1] * MMA_N + stage * stageN,
+                        work_tile_coord[0] * BM,
+                    ),
+                )
+                c_tma_op_complete.commit_group()
+        else:
+            var c_smem_tile_left_right = c_smem_tile.tile[BM, stageN](
+                (warp_id // 2), 0
+            )
+            if warp_id % 2 == 0 and lane == 0:
+                fence_async_view_proxy()
+                c_tma_op_split.async_store(
+                    c_smem_tile_left_right,
+                    (
+                        work_tile_coord[1] * MMA_N
+                        + stage * stageN
+                        + BN * (warp_id // 2),
+                        work_tile_coord[0] * BM,
+                    ),
+                )
+                c_tma_op_split.commit_group()
+
+        # Keep one tma store in fly
+        @parameter
+        if stage < num_stages - 1:
+            c_tma_op_split.wait_group[1]()
+        # Last stage guard all tma store to finish
+        else:
+            c_tma_op_split.wait_group[0]()
 
         @parameter
         if stage > 0 and stage < num_stages - 1:
@@ -797,7 +810,8 @@ fn store_C[
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op_split, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op_complete, `nvvm.grid_constant`)
 fn blackwell_tma_pair_umma_kernel[
     a_type: DType,
     b_type: DType,
@@ -805,9 +819,11 @@ fn blackwell_tma_pair_umma_kernel[
     a_layout: Layout,
     b_layout: Layout,
     c_layout: Layout,  # must pass mma_m by mma_n as this layout, since that's how much each output has to be
+    c_layout_complete: Layout,
     a_desc_layout: Layout,
     b_desc_layout: Layout,
     c_desc_layout: Layout,
+    c_desc_layout_complete: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
@@ -824,7 +840,10 @@ fn blackwell_tma_pair_umma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op_split: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op_complete: TMATensorTile[
+        c_type, c_layout_complete, c_desc_layout_complete
+    ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: UInt,
 ):
@@ -1243,7 +1262,8 @@ fn blackwell_tma_pair_umma_kernel[
                 max_tmem_cols=max_tmem_cols,
             ](
                 c_smem_iter,
-                c_tma_op,
+                c_tma_op_split,
+                c_tma_op_complete,
                 accum_pipeline_consumer_state,
                 accum_full_mbar,
                 accum_empty_mbar,
@@ -1321,15 +1341,21 @@ fn blackwell_matmul_tma_pair_mma[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias output_tile_shape = Index(BM, 32)
-    alias c_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
-    var c_tma_op = create_tma_tile[
+    alias output_tile_shape = Index(128, 32)
+    alias split_tile_shape = Index(64, 32)
+    var c_tma_op_split = create_tma_tile[
+        c_type,
+        2,
+        split_tile_shape,
+        swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+    ](ctx, c)
+
+    var c_tma_op_complete = create_tma_tile[
         c_type,
         2,
         output_tile_shape,
-        swizzle_mode=c_swizzle_mode,
+        swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
     ](ctx, c)
-
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
     alias a_smem_bytes_per_stage = BM * BK * sizeof[a_type]()
@@ -1399,10 +1425,12 @@ fn blackwell_matmul_tma_pair_mma[
         c_type,
         a_tma_op.layout,
         b_tma_op.layout,
-        c_tma_op.layout,
+        c_tma_op_split.layout,
+        c_tma_op_complete.layout,
         a_tma_op.desc_layout,
         b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        c_tma_op_split.desc_layout,
+        c_tma_op_complete.desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=transpose_b,
@@ -1431,7 +1459,8 @@ fn blackwell_matmul_tma_pair_mma[
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c_tma_op,
+        c_tma_op_split,
+        c_tma_op_complete,
         cluster_dim,
         K // BK,
         grid_dim=grid_dim,
@@ -1452,8 +1481,9 @@ def test_blackwell_matmul_tma_pair_mma[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -1529,9 +1559,6 @@ def test_blackwell_matmul_tma_pair_mma[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
-
     blackwell_matmul_tma_pair_mma[
         transpose_b=transpose_b,
         umma_shape=mma_shape,
@@ -1539,6 +1566,7 @@ def test_blackwell_matmul_tma_pair_mma[
         cluster_shape=cluster_shape,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
+        c_swizzle=c_swizzle,
         cta_group=2,
     ](
         c_device.tensor,
@@ -1579,7 +1607,6 @@ def test_blackwell_matmul_tma_pair_mma[
         for _ in range(num_warmup):
             run_kernel(ctx)
         ctx.synchronize()
-        # print("finished warmup")
 
         var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
         var sectime = nstime * 1e-9
@@ -1648,20 +1675,21 @@ fn get_dic_of_shapes(
 fn make_dic_of_shapes() -> (
     Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
 ):
-    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
-    dic[0] = (4096, 4096, 4096)
-    dic[1] = (512, 2560, 8192)
-    dic[2] = (512, 8192, 2048)
-    dic[3] = (512, 14336, 8192)
-    dic[4] = (512, 8192, 7168)
-    dic[5] = (4096, 2560, 8192)
-    dic[6] = (4096, 8192, 2048)
-    dic[7] = (4096, 14336, 8192)
-    dic[8] = (4096, 8192, 7168)
-    dic[9] = (8192, 2560, 8192)
-    dic[10] = (8192, 8192, 2048)
-    dic[11] = (8192, 14336, 8192)
-    dic[12] = (8192, 8192, 7168)
+    var dic: Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher] = {
+        0: (4096, 4096, 4096),
+        1: (512, 2560, 8192),
+        2: (512, 8192, 2048),
+        3: (512, 14336, 8192),
+        4: (512, 8192, 7168),
+        5: (4096, 2560, 8192),
+        6: (4096, 8192, 2048),
+        7: (4096, 14336, 8192),
+        8: (4096, 8192, 7168),
+        9: (8192, 2560, 8192),
+        10: (8192, 8192, 2048),
+        11: (8192, 14336, 8192),
+        12: (8192, 8192, 7168),
+    }
     return dic
 
 
@@ -1754,7 +1782,7 @@ def main():
                 print("Testing remaining cases")
 
                 @parameter
-                for mma_m_scale in range(2, 3):
+                for mma_m_scale in range(1, 3):
 
                     @parameter
                     for mma_n_scale in range(1, 3):
