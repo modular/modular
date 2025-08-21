@@ -81,13 +81,17 @@ modular_cc_test(
     name = "GPUDeviceContextTest",
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
+    # Setup environment ensuring that the buffer cache is properly configured
+    # for the tests being run.
     env = {
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "1073741824",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "100",
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "true",
+        # Log buffer cache operations for debugging.
+        "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_LOG": "true",
         # These tests exercise the host buffer cache, so give them 8GB
         # to use for the tests.
         "MODULAR_DEVICE_CONTEXT_HOST_BUFFER_CACHE_SIZE": "8589934592",
-    },
-    exec_properties = {
-        "test.resources:gpu-memory": "1",
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
