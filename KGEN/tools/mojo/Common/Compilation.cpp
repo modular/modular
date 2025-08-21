@@ -254,6 +254,9 @@ ErrorOrSuccess M::parseTargetOptions(
   if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();
     compilationOptions.isCrossCompilation = true;
+  } else {
+    compilationOptions.targetAccelerator =
+        M::AsyncRT::Device::getAcceleratorArchOrEmpty();
   }
 
   if (!mcmodel.empty()) {
