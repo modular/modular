@@ -1330,8 +1330,39 @@ fn align_down(value: UInt, alignment: UInt) -> UInt:
 
 
 # ===----------------------------------------------------------------------=== #
-# align_up
+# next_multiple_of
 # ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn next_multiple_of[multiple_of: UInt](value: UInt) -> UInt:
+    """Returns the closest multiple of `multiple_of` that is greater than or
+    equal to value.
+
+    Parameters:
+        multiple_of: Value to round up to.
+
+    Args:
+        value: The value to round up.
+
+    Returns:
+        Closest multiple of `multiple_of` that is greater than or equal to the
+        input value.
+
+    Notes:
+        Zero is a multiple of every number. If value is zero, then the
+        rounded number will be zero.
+    """
+    constrained[multiple_of != 0, "multiple_of must be > 0"]()
+
+    @parameter
+    if multiple_of == 1:
+        return value
+    elif multiple_of.is_power_of_two():
+        alias offset = multiple_of - 1
+        return (value + offset) & ~offset
+    else:
+        return ceildiv(value, multiple_of) * multiple_of
 
 
 @always_inline

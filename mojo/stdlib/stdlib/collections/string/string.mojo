@@ -90,6 +90,7 @@ from sys.info import is_32bit
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
+from math import next_multiple_of
 from memory import memcpy, memset, memcmp
 from python import PythonObject, ConvertibleFromPython, ConvertibleToPython
 
@@ -204,8 +205,9 @@ struct String(
                 __get_mvalue_as_litref(self)
             )
         else:
-            self._capacity_or_data = (capacity + 7) >> 3
-            self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
+            var mul = next_multiple_of[8](capacity)
+            self._capacity_or_data = mul >> 3
+            self._ptr_or_data = Self._alloc(mul)
             self._len_or_data = 0
             self._set_ref_counted()
 
