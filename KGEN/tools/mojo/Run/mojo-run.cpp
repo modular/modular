@@ -45,9 +45,12 @@
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
+
+#include <signal.h>
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
 #include "KGEN/ToolCommon/CLOptions.h"
@@ -256,6 +259,20 @@ static void internTimeTraceProfile(M::Context &maxContext) {
     profilerOr->intern();
 }
 
+/// With JIT compilation, printed stack trace is not useful. Recommend user to
+/// use build + run mode to get symbolicated stack trace.
+static void printHelpMessageToEnableStackTrace(int sig) {
+  if (sig != SIGSEGV && sig != SIGABRT)
+    return;
+
+  signal(sig, SIG_DFL);
+  const char *message =
+      "\nTo get symbolicated stack trace, compile your program using `mojo "
+      "build` with debug info enabled, e.g. `-debug-level=line-tables`.\n";
+  llvm::errs() << message;
+  exit(1);
+}
+
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
@@ -311,6 +328,20 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
   ErrorOr<CompiledFunc> funcOr = engine.lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
+
+  // Since program has been compiled successfully, we can register own signal
+  // handler that will print help message to get stack trace. Before that,
+  // remove as many signal handlers registered by LLVM as possible.
+  // NOTE: Even after that call, somehow there's still one signal handler
+  // registered that invokes `PrintStackTraceSignalHandler`.
+  llvm::sys::unregisterHandlers();
+  // Register our own signal handler that will print help message to user on
+  // how to get symbolicated stack trace.
+  struct sigaction psa;
+  psa.sa_handler = printHelpMessageToEnableStackTrace;
+  sigemptyset(&psa.sa_mask); // Clear the mask
+  sigaction(SIGSEGV, &psa, nullptr);
+  sigaction(SIGABRT, &psa, nullptr);
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
