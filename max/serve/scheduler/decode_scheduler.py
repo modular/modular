@@ -130,6 +130,7 @@ class DecodeScheduler(Scheduler):
             paged_cache=paged_manager,
         )
         self.scheduler_logger = SchedulerLogger()
+        self.remote_endpoints: set[str] = set()
 
     @traced
     def handle_transfer_engine_response(
@@ -159,12 +160,16 @@ class DecodeScheduler(Scheduler):
             zmq.ZMQError: If there is an error sending on the socket
         """
 
-        if len(self.transfer_engine.remote_connections) == 0:
+        if (
+            data.target_endpoint is not None
+            and data.target_endpoint not in self.remote_endpoints
+        ):
             self.dispatcher_client.send(
                 MessageType.TRANSFER_ENGINE_REQUEST,
                 self.transfer_engine.metadata,
                 destination_address=data.target_endpoint,
             )
+            self.remote_endpoints.add(data.target_endpoint)
 
         self.dispatcher_client.send(
             MessageType.PREFILL_REQUEST,
