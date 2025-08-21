@@ -191,7 +191,7 @@ def DebugInfo_DIStructType : DIType<"DIStruct", "struct"> {
   );
   let builders = [
     TypeBuilderWithInferredContext<(ins
-      "StringAttr":$name, CArg<"ArrayRef<DIMemberType>", "std::nullopt">:$members
+      "StringAttr":$name, CArg<"ArrayRef<DIMemberType>", "{}">:$members
     ), [{
       return $_get(name.getContext(), name, members);
     }]>
@@ -351,7 +351,7 @@ def DebugInfo_DIVariantType : DIType<"DIVariant", "variant"> {
   let description = [{
     The `debuginfo.variant` type represents the debug information for a variant
     type.
-    
+
     It is emitted as a DWARF composite type with DW_TAG_variant_part, and with
     each of the variant types as members of the composite type.
 
@@ -379,7 +379,7 @@ def DebugInfo_DIVariantType : DIType<"DIVariant", "variant"> {
       "StringAttr":$name,
       "uint64_t":$sizeInBits,
       "uint32_t":$alignInBits,
-      CArg<"ArrayRef<DIMemberType>", "std::nullopt">:$variants,
+      CArg<"ArrayRef<DIMemberType>", "{}">:$variants,
       CArg<"DIMemberType", "{}">:$discriminatorRef
     ), [{
       return $_get(name.getContext(), name, sizeInBits, alignInBits, variants,

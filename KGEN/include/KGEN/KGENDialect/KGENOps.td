@@ -86,8 +86,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     UnitAttr:$external, UnitAttr:$convergent,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
-    DefaultValuedAttr<DictArrayAttr, "std::nullopt">:$LLVMArgMetadata,
+    DefaultValuedAttr<DictionaryAttr, "{}">:$LLVMMetadata,
+    DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType
   );
@@ -185,8 +185,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -396,7 +396,7 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<SymbolRefAttr>:$traitRef,
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "std::nullopt">:$immediateParents
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents
   );
   let regions = (region SizedRegion<1>:$body);
 
@@ -750,8 +750,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
