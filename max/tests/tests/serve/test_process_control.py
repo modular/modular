@@ -207,7 +207,7 @@ async def test_crashed_process() -> None:
         assert dead
         assert p.is_alive() == False
 
-        assert pc.is_unhealthy()
+        assert not pc.is_healthy()
         assert pc.is_completed() == False
         # we never canceleed it, but it is dead all the same
         assert pc.is_canceled() == False
