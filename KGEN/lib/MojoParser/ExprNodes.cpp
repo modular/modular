@@ -44,6 +44,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include <Support/LLVMForwardDecls.h>
 
 using namespace M;
 using namespace M::KGEN;
@@ -1712,6 +1713,30 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         Operand(strLiteral, getLoc(), Operand::kPositional), dest, emitter);
   }
   shared.notifyListenerOnRef(memberDecls, spelling, this);
+
+  // We place this here rather than earlier in the function because we want to
+  // emit an error if the trait member doesn't exist at all (handled right above
+  // in emitGetterSetterAccess).
+  //
+  // TODO(MOCO-2303): We do want to support this eventually for trait methods as
+  // we want to be a able to call defaulted trait methods directly with a value
+  // of a conforming struct, for example:
+  //
+  // trait Foo
+  //   fn foo(self):
+  //     print("Foo.foo")
+  //
+  // struct Bar(Foo):
+  //   fn foo(self):
+  //     print("Bar.foo")
+  //
+  // var b = Bar()
+  // Foo.foo(b) # want this to print Foo.foo
+  if (mlir::isa_and_present<TraitType>(baseVal.getIfTypeValue())) {
+    emitter.emitError(getLoc(),
+                      "Direct access of trait members is not supported.");
+    return {};
+  }
 
   // Handle method references, which might be overloaded.
   if (isa_and_nonnull<FnOp>(memberDecls[0]->getIfOperation())) {

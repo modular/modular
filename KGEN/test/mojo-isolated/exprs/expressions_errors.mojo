@@ -928,3 +928,21 @@ fn test_comptime_materialize():
   # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, mut=False, origin=ComptimeOrigin]' to a runtime value}}
   # expected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
+
+
+##===----------------------------------------------------------------------===##
+# Trait member access errors
+##===----------------------------------------------------------------------===##
+
+trait TraitWithMember:
+    fn member_method(self) -> Int:
+        return 42
+
+    alias MemberAlias: AnyType
+
+fn test_trait_member_access_error():
+    # expected-error @below {{Direct access of trait members is not supported.}}
+    _ = TraitWithMember.member_method
+
+    # expected-error @below {{Direct access of trait members is not supported.}}
+    alias SomeAlias = TraitWithMember.MemberAlias
