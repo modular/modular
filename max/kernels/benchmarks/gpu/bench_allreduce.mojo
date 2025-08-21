@@ -161,27 +161,13 @@ fn bench_reduce[
         fn call_fn() raises:
             @parameter
             if max_num_blocks:
-
-                @parameter
-                for i in range(ngpus):
-                    allreduce[
-                        ngpus=ngpus,
-                        output_lambda = outputs_lambda[input_index=i],
-                    ](
-                        in_bufs,
-                        out_bufs[i],
-                        rank_sigs,
-                        list_of_ctx[i],
-                        max_num_blocks,
-                    )
+                allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                    in_bufs, out_bufs, rank_sigs, list_of_ctx, max_num_blocks
+                )
             else:
-
-                @parameter
-                for i in range(ngpus):
-                    allreduce[
-                        ngpus=ngpus,
-                        output_lambda = outputs_lambda[input_index=i],
-                    ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+                allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                    in_bufs, out_bufs, rank_sigs, list_of_ctx
+                )
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 

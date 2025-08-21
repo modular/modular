@@ -275,7 +275,7 @@ fn allgather[
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
 
-    # Default max blocks if not specified.
+    # Default max blocks if not specified
     var max_num_blocks = _max_num_blocks.or_else(216)
 
     # Check P2P availability.

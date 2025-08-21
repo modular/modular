@@ -21,11 +21,9 @@ from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
-    _allreduce_naive_single,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal, assert_true
-
 
 from utils import IndexList, StaticTuple
 
@@ -78,6 +76,7 @@ fn allreduce_test[
     var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * length
 
     # Initialize buffers for each GPU
+    @parameter
     for i in range(ngpus):
         # Create and store device buffers
         in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
@@ -113,6 +112,7 @@ fn allreduce_test[
         fill={}
     )
 
+    @parameter
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
             in_bufs_list[i].unsafe_ptr(), DimList(length)
@@ -121,6 +121,7 @@ fn allreduce_test[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
+    @parameter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -129,6 +130,7 @@ fn allreduce_test[
         NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
     ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
+    @parameter
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
@@ -151,29 +153,26 @@ fn allreduce_test[
 
     # Warm up.
     for _ in range(num_warmups):
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+            in_bufs, out_bufs, rank_sigs, list_of_ctx
+        )
 
     # Synchronize all devices.
+    @parameter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Perform a benchmarked allreduce.
     start_t = time.perf_counter_ns()
 
+    @parameter
     for _ in range(num_iters):
-
-        @parameter
-        for i in range(ngpus):
-            allreduce[
-                ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]
-            ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+            in_bufs, out_bufs, rank_sigs, list_of_ctx
+        )
 
     # Synchronize all devices.
+    @parameter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
@@ -186,11 +185,13 @@ fn allreduce_test[
     # Copy results back and verify
     var expected_sum = Scalar[dtype](0)
 
+    @parameter
     for i in range(ngpus):
         expected_sum += i + 1
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
     # Verify results
+    @parameter
     for i in range(ngpus):
         for j in range(length):
             try:
@@ -218,107 +219,7 @@ fn _get_test_str[dtype: DType](ngpus: Int, length: Int) -> String:
     )
 
 
-def allreduce_naive_test() -> None:
-    """Explicit smoke test for the allreduce naive path."""
-    print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
-    alias ngpus = 2
-    alias length = 8 * 1024
-
-    # Create contexts for two devices
-    var ctxs = List[DeviceContext]()
-    for i in range(ngpus):
-        ctxs.append(DeviceContext(device_id=i))
-
-    # Allocate input/output buffers and initialize inputs
-    var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Scalar[DType.float32]]](capacity=ngpus)
-
-    for i in range(ngpus):
-        in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        var h = UnsafePointer[Scalar[DType.float32]].alloc(length)
-        host_ptrs.append(h)
-        var h_nd = NDBuffer[DType.float32, 1](h, DimList(length))
-        h_nd.fill(Scalar[DType.float32](i + 1))
-        ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
-
-    # Wrap as NDBuffers for the kernel API
-    var in_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
-    var out_bufs = InlineArray[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](fill={})
-
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[DType.float32, 1](
-            in_dev[i].unsafe_ptr(), DimList(length)
-        )
-        out_bufs[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
-        )
-
-    # Prepare an output lambda that writes into the correct device's out buffer.
-    var out_bufs_capture = StaticTuple[
-        NDBuffer[DType.float32, 1, MutableAnyOrigin], ngpus
-    ](NDBuffer[DType.float32, 1, MutableAnyOrigin]())
-    for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
-        )
-
-    @always_inline
-    @parameter
-    @__copy_capture(out_bufs_capture)
-    fn outputs_lambda[
-        input_index: Int,
-        _dtype: DType,
-        _rank: Int,
-        _width: Int,
-        *,
-        _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[1]](coords),
-            rebind[SIMD[DType.float32, _width]](val),
-        )
-
-    # Launch naive allreduce per device
-    @parameter
-    for i in range(ngpus):
-        _allreduce_naive_single[
-            dtype = DType.float32,
-            rank=1,
-            ngpus=ngpus,
-            output_lambda = outputs_lambda[input_index=i],
-        ](in_bufs, out_bufs[i], 216, ctxs[i])
-
-    # Synchronize and verify
-    for i in range(ngpus):
-        ctxs[i].synchronize()
-
-    var expected = Scalar[DType.float32](0)
-    for i in range(ngpus):
-        expected += i + 1
-        ctxs[i].enqueue_copy(host_ptrs[i], out_dev[i])
-
-    for i in range(ngpus):
-        for j in range(length):
-            assert_almost_equal(host_ptrs[i][j], expected)
-
-    for i in range(ngpus):
-        host_ptrs[i].free()
-
-
 def main():
-    assert_true(
-        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
-    )
-
-    # First, explicitly exercise the naive allreduce path by calling it directly.
-    allreduce_naive_test()
-
     # Test configurations covering edge cases
     # fmt: off
     alias test_lengths = (
@@ -333,6 +234,10 @@ def main():
     # Test hyperparameters.
     alias test_dtypes = (DType.bfloat16, DType.float32)
     alias test_gpu_counts = (2, 4, 8)
+
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
 
     # Run tests for each configuration.
     @parameter
