@@ -19,6 +19,8 @@ import os
 from typing import Any, Callable, TypeVar
 
 import click
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
 
 logger = logging.getLogger("max.entrypoints")
@@ -114,10 +116,9 @@ def main() -> None:
 
 def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_logging, configure_metrics
+    from max.serve.telemetry.common import configure_metrics
 
     settings = Settings()
-    configure_logging(settings, color)
     configure_metrics(settings)
 
 
@@ -150,6 +151,11 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         default=False,
         help="Run only the dispatcher service and model worker without the API server.",
     )
+    @click.option(
+        "--log-prefix",
+        type=str,
+        help="Optional prefix to add to all log messages for this server instance.",
+    )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
@@ -174,6 +180,7 @@ def cli_serve(
     sim_failure: int,
     port: int,
     headless: bool,
+    log_prefix: str | None,
     task: str,
     task_arg: tuple[str, ...],
     **config_kwargs: Any,
@@ -206,13 +213,27 @@ def cli_serve(
     if sim_failure > 0:
         failure_percentage = sim_failure
 
+    # Initialize Settings
+    settings = Settings()
+
+    if port is not None:
+        settings.port = port
+
+    if log_prefix is not None:
+        settings.log_prefix = log_prefix
+
+    # Configure Logging Globally
+    configure_logging(settings)
+
     if headless:
         serve_model_worker(
+            settings=settings,
             pipeline_config=pipeline_config,
             pipeline_task=PipelineTask(task),
         )
     else:
         serve_api_server_and_model_worker(
+            settings=settings,
             pipeline_config=pipeline_config,
             profile=profile_serve,
             model_name=model_name,

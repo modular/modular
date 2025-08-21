@@ -267,6 +267,12 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_DISPATCHER_CONFIG",
     )
 
+    log_prefix: Optional[str] = Field(
+        default=None,
+        description="",
+        alias="MAX_SERVE_LOG_PREFIX",
+    )
+
 
 def api_prefix(settings: Settings, api_type: APIType):
     return "/" + str(api_type) if len(settings.api_types) > 1 else ""

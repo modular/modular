@@ -79,6 +79,7 @@ def sigint_handler(sig: int, frame: Optional[FrameType]) -> None:
 
 
 def serve_model_worker(
+    settings: Settings,
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
@@ -100,9 +101,6 @@ def serve_model_worker(
 
         # Create shutdown event for coordinating graceful shutdown
         _shutdown_event = asyncio.Event()
-
-        # Initialize settings
-        settings = Settings()
 
         override_architecture: Optional[str] = None
         if pipeline_task == PipelineTask.AUDIO_GENERATION:
