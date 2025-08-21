@@ -222,6 +222,9 @@ def cli_serve(
     if log_prefix is not None:
         settings.log_prefix = log_prefix
 
+    if headless is not None:
+        settings.headless = headless
+
     # Configure Logging Globally
     configure_logging(settings)
 
