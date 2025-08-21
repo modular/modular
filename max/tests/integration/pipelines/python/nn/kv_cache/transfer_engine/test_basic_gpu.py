@@ -12,7 +12,7 @@ import pytest
 from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 from max.dtype import DType
-from max.nn.kv_cache import KVTransferEngine, available_port
+from max.nn.kv_cache import KVTransferEngine
 
 
 def test_constructor() -> None:
@@ -23,13 +23,11 @@ def test_constructor() -> None:
         "abc",
         tensor,
         total_num_pages=2,
-        listen_port=available_port(),
     )
     _ = KVTransferEngine(
         "abc",
         tensor.to(Accelerator()),
         total_num_pages=2,
-        listen_port=available_port(),
     )
 
     # total_num_pages is 0
@@ -38,7 +36,6 @@ def test_constructor() -> None:
             "abc",
             tensor,
             total_num_pages=0,
-            listen_port=available_port(),
         )
 
     # bytes is not divisible by total_num_pages
@@ -47,7 +44,6 @@ def test_constructor() -> None:
             "abc",
             tensor,
             total_num_pages=3,
-            listen_port=available_port(),
         )
 
 
@@ -68,13 +64,11 @@ def test_initiate_send_xfer() -> None:
         "engine_1",
         blocks_1,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
     engine_2 = KVTransferEngine(
         "engine_2",
         blocks_2,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
 
     engine_1.connect(engine_2.metadata)
@@ -134,22 +128,13 @@ def test_ensure_we_use_buffer_cache() -> None:
         ValueError,
         match="MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT must be set when using TransferEngine with GPU memory",
     ):
-        engine = KVTransferEngine(
-            "engine",
-            acc_tensor,
-            total_num_pages=1,
-            listen_port=available_port(),
-        )
+        engine = KVTransferEngine("engine", acc_tensor, total_num_pages=1)
 
     # ok
-    engine = KVTransferEngine(
-        "engine", cpu_tensor, total_num_pages=1, listen_port=available_port()
-    )
+    engine = KVTransferEngine("engine", cpu_tensor, total_num_pages=1)
     engine.cleanup()
 
     # ok
     os.environ["MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"] = "99"
-    engine = KVTransferEngine(
-        "engine", acc_tensor, total_num_pages=1, listen_port=available_port()
-    )
+    engine = KVTransferEngine("engine", acc_tensor, total_num_pages=1)
     engine.cleanup()

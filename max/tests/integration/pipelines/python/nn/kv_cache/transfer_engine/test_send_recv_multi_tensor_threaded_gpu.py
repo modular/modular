@@ -14,7 +14,6 @@ from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     XferReqData,
-    available_port,
 )
 
 total_num_pages = 10
@@ -40,7 +39,6 @@ def transfer_routine_sender(
         "engine_1",
         tensors_1,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -94,7 +92,6 @@ def transfer_routine_receiver(
         "engine_2",
         tensors_2,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
 
     receiver_md_queue.put(engine_2.metadata)

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import KVTransferEngine, available_port
+from max.nn.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(
@@ -40,7 +40,6 @@ def transfer_routine_sender(
         "engine_1",
         blocks,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
 
     # Connect with peer
@@ -94,7 +93,6 @@ def transfer_routine_receiver(
         "engine_2",
         blocks,
         total_num_pages=total_num_pages,
-        listen_port=available_port(),
     )
 
     # Connect with peer

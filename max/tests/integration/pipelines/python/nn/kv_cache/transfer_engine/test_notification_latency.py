@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 from max.driver import Accelerator, Tensor
-from max.nn.kv_cache import KVTransferEngine, available_port
+from max.nn.kv_cache import KVTransferEngine
 
 
 def test_notification_delivery_is_prompt():
@@ -47,7 +47,6 @@ def test_notification_delivery_is_prompt():
             name="latency_sender",
             tensors=[blocks],
             total_num_pages=blocks.shape[0],
-            listen_port=available_port(),
         )
 
         # Connect with receiver
@@ -85,7 +84,6 @@ def test_notification_delivery_is_prompt():
             name="latency_receiver",
             tensors=[blocks],
             total_num_pages=blocks.shape[0],
-            listen_port=available_port(),
         )
 
         # Connect with sender

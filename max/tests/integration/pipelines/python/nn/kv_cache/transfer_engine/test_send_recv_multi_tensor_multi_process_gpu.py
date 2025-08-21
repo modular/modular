@@ -13,7 +13,6 @@ from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
-    available_port,
 )
 
 
@@ -40,10 +39,7 @@ def transfer_routine_sender(
     ]
 
     engine_1 = KVTransferEngine(
-        "engine_1",
-        tensors_1,
-        total_num_pages=total_num_pages,
-        listen_port=available_port(),
+        "engine_1", tensors_1, total_num_pages=total_num_pages
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -99,10 +95,7 @@ def transfer_routine_receiver(
     ]
 
     engine_2 = KVTransferEngine(
-        "engine_2",
-        tensors_2,
-        total_num_pages=total_num_pages,
-        listen_port=available_port(),
+        "engine_2", tensors_2, total_num_pages=total_num_pages
     )
 
     receiver_md_queue.put(engine_2.metadata)

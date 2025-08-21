@@ -16,7 +16,6 @@ from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     XferReqData,
-    available_port,
 )
 
 
@@ -45,10 +44,7 @@ def test_send_recv_basic() -> None:
 
         # Create engine
         engine = KVTransferEngine(
-            "engine_1",
-            blocks,
-            total_num_pages=total_num_pages,
-            listen_port=available_port(),
+            "engine_1", blocks, total_num_pages=total_num_pages
         )
 
         # Connect with peer
@@ -97,10 +93,7 @@ def test_send_recv_basic() -> None:
 
         # Create engine
         engine = KVTransferEngine(
-            "engine_2",
-            blocks,
-            total_num_pages=total_num_pages,
-            listen_port=available_port(),
+            "engine_2", blocks, total_num_pages=total_num_pages
         )
 
         # Connect with peer

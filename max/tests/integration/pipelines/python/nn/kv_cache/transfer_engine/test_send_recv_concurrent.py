@@ -11,7 +11,7 @@ import time
 import numpy as np
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
-from max.nn.kv_cache import KVTransferEngine, XferReqData, available_port
+from max.nn.kv_cache import KVTransferEngine, XferReqData
 
 """
 This test launches 256 concurrent transfers at once.
@@ -33,10 +33,7 @@ def transfer_routine_sender(
 
     # Create engine
     engine = KVTransferEngine(
-        "engine_1",
-        [blocks],
-        total_num_pages=total_num_pages,
-        listen_port=available_port(),
+        "engine_1", [blocks], total_num_pages=total_num_pages
     )
 
     # Connect with peer
@@ -84,10 +81,7 @@ def transfer_routine_receiver(
 
     # Create engine
     engine = KVTransferEngine(
-        "engine_2",
-        [blocks],
-        total_num_pages=total_num_pages,
-        listen_port=available_port(),
+        "engine_2", [blocks], total_num_pages=total_num_pages
     )
 
     # Connect with peer
