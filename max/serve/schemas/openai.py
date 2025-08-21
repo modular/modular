@@ -3468,6 +3468,10 @@ class CreateCompletionRequest(BaseModel):
         examples=['user-1234'],
     )
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
+    target_endpoint: Optional[str] = Field(
+        None,
+        description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
+    )
 
 
 class CreateCompletionResponse(BaseModel):
@@ -4917,6 +4921,10 @@ class CreateChatCompletionRequest(BaseModel):
     )
     # Extra args
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
+    target_endpoint: Optional[str] = Field(
+        None,
+        description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
+    )
 
 
 class CreateThreadAndRunRequest(BaseModel):
