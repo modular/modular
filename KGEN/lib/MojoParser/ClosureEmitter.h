@@ -30,16 +30,6 @@ struct TopLevelTypes {
   Type delFuncFieldType;
 };
 
-struct FnOpAttributes {
-  /// Signature with index references to reference parameters
-  FnTypeGeneratorType signature;
-
-  /// the number of compiler generated arguments.
-  unsigned numberOfImplicitClosureArgs;
-
-  /// FunctionType with named references to parameters
-  FunctionType functionType;
-};
 class ClosureEmitter : public FunctionEmitter {
 public:
   ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
