@@ -25,6 +25,7 @@
 using namespace M;
 using namespace KGEN::LIT;
 using KGEN::ArgConvention;
+using KGEN::ConstraintAttr;
 using KGEN::DeclInterface;
 
 //===----------------------------------------------------------------------===//
