@@ -448,3 +448,66 @@ class TestMAXConfigInheritance:
                 result_new = args.optional_int_new - 1
                 assert result_old == 299
                 assert result_new == 399
+
+    def test_inheritance_with_cli_override_base_values(self) -> None:
+        """Test that CLI args can override base config values when child config doesn't define them."""
+        # Create base config file with values
+        base_config_data = {
+            "name": "base_config",
+            "version": "1.0",
+            "test_config": {
+                "test_field": "base_value",
+                "test_int": 100,
+                "test_bool": False,
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as base_f:
+            yaml.dump(base_config_data, base_f)
+            base_f.flush()
+            base_config_path = base_f.name
+
+            # Create child config that inherits but doesn't define the test_config section
+            child_config_data = {
+                "name": "child_config",
+                "version": "1.0",
+                "depends_on": base_config_path,
+                # No test_config section - should inherit all values from base
+            }
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml"
+            ) as child_f:
+                yaml.dump(child_config_data, child_f)
+                child_f.flush()
+                child_config_path = child_f.name
+
+                # Load config from file first to verify inheritance
+                config = TestConfig.from_config_file(child_config_path)
+                assert config.test_field == "base_value"  # Inherited from base
+                assert config.test_int == 100  # Inherited from base
+                assert config.test_bool is False  # Inherited from base
+
+                # Now test CLI arg parsing with the inherited config
+                parser = config.cli_arg_parsers()
+
+                # Override base values with CLI arguments
+                args = parser.parse_args(
+                    [
+                        "--test-field",
+                        "cli_override_value",
+                        "--test-int",
+                        "999",
+                        "--test-bool",
+                    ]
+                )
+
+                # Verify CLI args override the inherited base values
+                assert args.test_field == "cli_override_value"
+                assert args.test_int == 999
+                assert args.test_bool is True
+
+                # Test that the original config values are still intact
+                assert config.test_field == "base_value"
+                assert config.test_int == 100
+                assert config.test_bool is False
