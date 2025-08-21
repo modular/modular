@@ -14,7 +14,7 @@
 
 from testing import assert_equal
 from layout._mixed_tuple import (
-    MixedIntTuple,
+    MixedTuple,
     Idx,
     ComptimeInt,
     RuntimeInt,
@@ -27,8 +27,8 @@ fn test_nested_layouts() raises:
     print("== test_nested_layouts")
 
     # Create nested layouts
-    var inner = MixedIntTuple(Idx[2](), Idx(3))
-    var nested = MixedIntTuple(inner, Idx[4]())
+    var inner = MixedTuple(Idx[2](), Idx(3))
+    var nested = MixedTuple(inner, Idx[4]())
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
@@ -37,7 +37,7 @@ fn test_nested_layouts() raises:
 
 
 fn test_int_tuple_conversion() raises:
-    var t = MixedIntTuple(MixedIntTuple(Idx[2](), Idx(3)), Idx[4]())
+    var t = MixedTuple(MixedTuple(Idx[2](), Idx(3)), Idx[4]())
     var t2 = mixed_int_tuple_to_int_tuple(t)
     assert_equal(t2[0][0], 2)
     assert_equal(t2[0][1], 3)
@@ -46,7 +46,7 @@ fn test_int_tuple_conversion() raises:
 
 fn test_list_literal_construction() raises:
     print("== test_list_literal_construction")
-    var t: MixedIntTuple[ComptimeInt[2], RuntimeInt[DType.index]] = [
+    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.index]] = [
         Idx[2](),
         Idx(3),
     ]

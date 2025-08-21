@@ -10,23 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test for MixedIntTuple GPU memory codegen."""
+"""Test for MixedTuple GPU memory codegen."""
 
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout._mixed_tuple import MixedIntTuple, Idx, ComptimeInt, RuntimeInt
+from layout._mixed_tuple import MixedTuple, Idx, ComptimeInt, RuntimeInt
 from memory.unsafe_pointer import UnsafePointer
 from testing import assert_true
 import sys
 
 
 fn kernel(v: Int, ptr: UnsafePointer[Int32]):
-    """Kernel that uses MixedIntTuple with both compile-time and runtime indices.
+    """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:
         v: Runtime value for dynamic indexing.
         ptr: Output pointer to store results.
     """
-    var l = MixedIntTuple(Idx[1](), MixedIntTuple(Idx(v), Idx[3]()))
+    var l = MixedTuple(Idx[1](), MixedTuple(Idx(v), Idx[3]()))
     ptr[0] = Int32(l[0].value())
     ptr[1] = Int32(l[1][0].value())
 
