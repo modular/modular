@@ -95,7 +95,6 @@ def _open_zmq_socket(
     # For systems with substantial memory (>32GB total, >16GB available):
     # - Set a large 0.5GB buffer to improve throughput
     # For systems with less memory:
-    # - Use system default (-1) to avoid excessive memory consumption
     if total_mem_gb > 32 and available_mem_gb > 16:
         buf_size = int(0.5 * GIB)
     else:

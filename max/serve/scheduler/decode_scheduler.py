@@ -158,11 +158,12 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-        # TODO: Handle this dynamically.
+
         if len(self.transfer_engine.remote_connections) == 0:
             self.dispatcher_client.send(
                 MessageType.TRANSFER_ENGINE_REQUEST,
                 self.transfer_engine.metadata,
+                destination_address=data.target_endpoint,
             )
 
         self.dispatcher_client.send(
@@ -173,6 +174,7 @@ class DecodeScheduler(Scheduler):
                 transfer_engine_name=self.transfer_engine.name,
                 block_ids=dst_idx,
             ),
+            destination_address=data.target_endpoint,
         )
 
     def reserve_memory_and_send_to_prefill(self) -> None:

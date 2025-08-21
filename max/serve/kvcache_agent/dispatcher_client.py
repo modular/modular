@@ -177,11 +177,24 @@ class DispatcherClient(Generic[DispatcherMessagePayload]):
         destination_address: Optional[str] = None,
     ) -> None:
         """Send a new message to the specified destination address."""
-        if destination_address is not None and not is_valid_zmq_address(
-            destination_address
-        ):
-            logger.error(f"Invalid ZMQ address format: {destination_address}")
-            return
+        if destination_address is not None:
+            # Check that the address is a valid zmq address
+            # As this is passed directly via the user, the host:port
+            # format is the most commonly provided. The tcp:// prefix is
+            # an internal implementation detail. As such, we check and
+            # add tcp if needed here.
+            if not (
+                destination_address.startswith("tcp://")
+                or destination_address.startswith("ipc://")
+                or destination_address.startswith("inproc://")
+            ):
+                destination_address = f"tcp://{destination_address}"
+
+            if not is_valid_zmq_address(destination_address):
+                logger.error(
+                    f"Invalid ZMQ address format: {destination_address}"
+                )
+                return
 
         try:
             dispatcher_message = DispatcherMessage(
