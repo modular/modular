@@ -90,8 +90,8 @@ def LIT_FnOp : LITOp<"fn", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
     OptionalAttr<AnyAttr>:$thunkKey
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -585,7 +585,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "std::nullopt">:$immediateParents,
+    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
     // If definesClosure attribute is present,
     // then this is a compiler generated trait
