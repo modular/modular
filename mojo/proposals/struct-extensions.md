@@ -341,11 +341,14 @@ Where can it appear?
     struct or the trait.
   - Con: Against user journey 1, where user wants to break up a large struct
     into multiple files.
+- Option C: Anyone can extend any struct for any trait.
 
-(These are both the same as Rust’s orphan rule in spirit, just with different
-scopes)
+Options A and B are are both the same as Rust’s orphan rule in spirit, just
+with different scopes. Option C risks some conflicts, but maybe there's a way
+we can mitigate those.
 
-This wouldn’t apply to non-conforming extensions if we allow them (pending
+None of this would apply to non-conforming extensions if we allow them (pending
+
 decisions 2 and 3).
 
 ## Decision 2: Should we allow non-conforming extensions?
@@ -389,14 +392,11 @@ to get its extension.
 
 (Assuming we have them; see previous section)
 
-Tentative proposal: We can add as many non-conforming extensions as we want,
-wherever we want.
+Option A: We can add as many non-conforming extensions as we want, wherever we
+want. They can be in the same file, or different files. If they’re in the same
+file, they can be in any order; order shouldn’t matter.
 
-They can be in the same file, or different files.
-
-If they’re in the same file, they can be in any order; order shouldn’t matter.
-
-TBD: Should we restrict them to the same module that defined it?
+Option B: Same restrictions as conforming extensions.
 
 - Pro: It seems like the conservative option.
 - Con: It makes case #5 a little harder, the user would have to introduce a
@@ -420,7 +420,9 @@ We won’t allow:
 
 - Variables
 - Additional parameter declarations
-- Decorators, e.g. `@register_passable`. We can allowlist these case by case.
+- Decorators on the extension itself, e.g. `@register_passable`. We can
+  allowlist these case by case. (See also Decision 11 for what decorators we can
+  add on the contained methods.)
 
 ## Aside: What’s an extension’s name?
 
@@ -707,7 +709,9 @@ because they didn’t import the actual struct?
 
 Option A: Error. They must import the original struct.
 
-Option B (recommended): Automatically import the target struct.
+Option B (recommended): Automatically import the target struct. (Note: depending
+on Decision 6, it might automatically import any extensions in the target
+struct's module.)
 
 It’s unnecessary to mention the struct as well, but it’s allowed:
 
@@ -766,6 +770,15 @@ Alternatives:
 - Parameterizing the extension? `extend[T: AnyType] List[T]`
 - Specializing the struct? `extend List[Int]`, or `extend List where T == Int`?
 - Conforming to a trait? `extend List : Copyable`?
+
+## Decision 11: What decorators can be on extensions' methods?
+
+- Option A: All of them
+- Option B: Allowlist some of them, starting with `@inline`, `@no_inline`,
+   `@implicit`, `@staticmethod`.
+
+Recommended: Option A. IMO, struct extensions should be decoupled from methods'
+APIs and details.
 
 ## Trait Extensions
 
