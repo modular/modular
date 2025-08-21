@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import threading
 from typing import Any, Union
 
 import pytest
@@ -16,6 +17,7 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportType,
 )
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
+from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
@@ -35,7 +37,8 @@ async def test_dispatcher_factory_dynamic_zmq() -> None:
         )
 
         # Test creating server and client
-        server = factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_FACTORY_SERVER")
+        server = factory.create_service(process_control=server_pc)
         client = factory.create_client()
 
         assert server is not None
@@ -66,7 +69,10 @@ async def test_end_to_end_communication_with_config() -> None:
             server_config,
             transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_CFG_SERVER")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_client = server_factory.create_client()
 
         # Create client factory from config
@@ -82,7 +88,10 @@ async def test_end_to_end_communication_with_config() -> None:
             client_config,
             transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_CFG_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Set up message handling
@@ -134,6 +143,8 @@ async def test_end_to_end_communication_with_config() -> None:
         # Allow pending operations to complete before shutdown
         await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
+        server_pc.set_canceled()
+        client_pc.set_canceled()
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_client.stop()

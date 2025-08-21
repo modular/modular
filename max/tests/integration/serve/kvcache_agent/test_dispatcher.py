@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import threading
 import time
 from typing import Any, Callable, Union
 
@@ -17,6 +18,7 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportType,
 )
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
+from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
@@ -53,10 +55,16 @@ async def test_dispatcher_client_to_service_communication() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        client_dispatcher_service = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_CLIENT_SERVICE")
+        client_dispatcher_service = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
-        server_dispatcher_service = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_SERVER_SERVICE")
+        server_dispatcher_service = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
         received_requests: list[Any] = []
@@ -117,6 +125,8 @@ async def test_dispatcher_client_to_service_communication() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        client_pc.set_canceled()
+        server_pc.set_canceled()
         await asyncio.sleep(0.5)
         await client_dispatcher_service.stop()
         await server_dispatcher_service.stop()
@@ -159,10 +169,16 @@ async def test_dispatcher_request_reply_pattern() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        instance_a_dispatcher = instance_a_factory.create_service()
+        instance_a_pc = ProcessControl(threading, name="TEST_INSTANCE_A")
+        instance_a_dispatcher = instance_a_factory.create_service(
+            process_control=instance_a_pc
+        )
         instance_a_client = instance_a_factory.create_client()
 
-        instance_b_dispatcher = instance_b_factory.create_service()
+        instance_b_pc = ProcessControl(threading, name="TEST_INSTANCE_B")
+        instance_b_dispatcher = instance_b_factory.create_service(
+            process_control=instance_b_pc
+        )
         instance_b_client = instance_b_factory.create_client()
 
         # Set up reply tracking
@@ -220,6 +236,8 @@ async def test_dispatcher_request_reply_pattern() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        instance_a_pc.set_canceled()
+        instance_b_pc.set_canceled()
         await asyncio.sleep(0.5)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
@@ -247,7 +265,10 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
             server_config,
             transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_SERVER_MULTI")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
         # Multiple clients setup using factories
@@ -272,7 +293,10 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
                     dict[str, Union[str, int]]
                 ],
             )
-            client_dispatcher = client_factory.create_service()
+            client_pc = ProcessControl(threading, name=f"TEST_CLIENT_MULTI_{i}")
+            client_dispatcher = client_factory.create_service(
+                process_control=client_pc
+            )
             client_app = client_factory.create_client()
 
             clients.append(client_app)
@@ -357,6 +381,7 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        server_pc.set_canceled()
         await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         server_app.stop()
@@ -403,10 +428,16 @@ async def test_composable_handlers() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        instance_a_dispatcher = instance_a_factory.create_service()
+        instance_a_pc = ProcessControl(threading, name="TEST_COMPOSE_A")
+        instance_a_dispatcher = instance_a_factory.create_service(
+            process_control=instance_a_pc
+        )
         instance_a_client = instance_a_factory.create_client()
 
-        instance_b_dispatcher = instance_b_factory.create_service()
+        instance_b_pc = ProcessControl(threading, name="TEST_COMPOSE_B")
+        instance_b_dispatcher = instance_b_factory.create_service(
+            process_control=instance_b_pc
+        )
         instance_b_client = instance_b_factory.create_client()
 
         # Track messages with BOTH general and specific handlers
@@ -495,6 +526,8 @@ async def test_composable_handlers() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        instance_a_pc.set_canceled()
+        instance_b_pc.set_canceled()
         await asyncio.sleep(0.5)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
@@ -541,10 +574,16 @@ async def test_error_handling_and_resilience() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_RESILIENCE_SERVER")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_RESILIENCE_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Track messages
@@ -622,6 +661,8 @@ async def test_error_handling_and_resilience() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        server_pc.set_canceled()
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
@@ -664,10 +705,16 @@ async def test_high_throughput_performance() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_THROUGHPUT_SERVER")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_THROUGHPUT_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Track performance
@@ -744,6 +791,8 @@ async def test_high_throughput_performance() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        server_pc.set_canceled()
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
@@ -774,7 +823,10 @@ async def test_connection_failure_recovery() -> None:
         )
 
         # Create dispatcher service and client using factory
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_CONN_FAIL_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Start client
@@ -801,6 +853,7 @@ async def test_connection_failure_recovery() -> None:
             pytest.fail(f"Unexpected exception: {e}")
     finally:
         # Allow pending operations to complete before shutdown
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await client_dispatcher.stop()
         client_app.stop()
@@ -845,10 +898,16 @@ async def test_handler_exception_isolation() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_HANDLER_EX_SERVER")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_HANDLER_EX_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Track messages
@@ -931,6 +990,8 @@ async def test_handler_exception_isolation() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        server_pc.set_canceled()
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
@@ -973,10 +1034,16 @@ async def test_no_handler_registered() -> None:
         )
 
         # Create dispatcher services and clients using factories
-        server_dispatcher = server_factory.create_service()
+        server_pc = ProcessControl(threading, name="TEST_NO_HANDLER_SERVER")
+        server_dispatcher = server_factory.create_service(
+            process_control=server_pc
+        )
         server_app = server_factory.create_client()
 
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_NO_HANDLER_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Intentionally DO NOT register any handlers for server
@@ -1016,6 +1083,8 @@ async def test_no_handler_registered() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        server_pc.set_canceled()
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
@@ -1046,7 +1115,10 @@ async def test_invalid_destination_address() -> None:
         )
 
         # Create dispatcher service and client using factory
-        client_dispatcher = client_factory.create_service()
+        client_pc = ProcessControl(threading, name="TEST_INVALID_ADDR_CLIENT")
+        client_dispatcher = client_factory.create_service(
+            process_control=client_pc
+        )
         client_app = client_factory.create_client()
 
         # Start dispatcher and client
@@ -1082,6 +1154,7 @@ async def test_invalid_destination_address() -> None:
 
     finally:
         # Allow pending operations to complete before shutdown
+        client_pc.set_canceled()
         await asyncio.sleep(0.5)
         await client_dispatcher.stop()
         client_app.stop()
