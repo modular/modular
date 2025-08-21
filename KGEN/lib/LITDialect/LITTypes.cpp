@@ -104,7 +104,8 @@ TypeSignatureType TypeSignatureType::remapToSignature(
                        remapper.replace(paramListAttrs.getDefaultPos()),
                        remapper.replace(paramListAttrs.getDefaultKwOnly()),
                        paramListAttrs.getOrigPackConvention(),
-                       paramListAttrs.getOrigVariadicConvention());
+                       paramListAttrs.getOrigVariadicConvention(),
+                       paramListAttrs.getConstraints());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -967,7 +968,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
                        defaultKwOnlyArgs, argVariadics, origArgPackConvention,
-                       origVariadicConvention),
+                       origVariadicConvention, /*constraints=*/{}),
       numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
   signature =

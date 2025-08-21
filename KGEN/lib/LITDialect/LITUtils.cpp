@@ -259,10 +259,10 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(ctx, paramNames, paramPassingKinds,
-                                   defaultPosParams, defaultKwOnlyParams,
-                                   argsVariadic, std::move(origPackConvention),
-                                   std::move(origVariadicConvention));
+  paramListAttr = PogListAttr::get(
+      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
+      argsVariadic, std::move(origPackConvention),
+      std::move(origVariadicConvention), /*constraints=*/{});
   return success();
 }
 
@@ -423,7 +423,8 @@ LIT::parseOptionalParamSignature(AsmParser &p,
   paramListAttr =
       PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
                        defaultPosParams, defaultKwOnlyParams, argVariadics,
-                       std::nullopt, std::move(origVariadicConvention));
+                       std::nullopt, std::move(origVariadicConvention),
+                       /*constraints=*/{});
   return success();
 }
 

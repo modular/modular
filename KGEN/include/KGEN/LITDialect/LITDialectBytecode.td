@@ -111,7 +111,8 @@ def PogListAttr : DialectAttribute<(attr
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
   EnumAttr<"ArgConvention">:$origPackConvention,
-  EnumAttr<"ArgConvention">:$origVariadicConvention
+  EnumAttr<"ArgConvention">:$origVariadicConvention,
+  ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr

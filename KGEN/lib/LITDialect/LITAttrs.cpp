@@ -60,7 +60,8 @@ PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<TypedAttr> defaultPos,
                              ArrayRef<TypedAttr> defaultKwOnly) {
   return PogListAttr::get(context, pogs, defaultPos, defaultKwOnly,
-                          ArgConvention::ByRefError, ArgConvention::ReadMem);
+                          ArgConvention::ByRefError, ArgConvention::ReadMem,
+                          /*constraints=*/{});
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -77,11 +78,12 @@ PogListAttr PogListAttr::get(
     ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
     ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<VariadicKind> argVariadics,
     std::optional<ArgConvention> origPackConvention,
-    std::optional<ArgConvention> origVariadicConvention) {
+    std::optional<ArgConvention> origVariadicConvention,
+    ArrayRef<ConstraintAttr> constraints) {
   return PogListAttr::get(
       context, toPogs(names, passingKinds, argVariadics), defaultPos,
       defaultKwOnly, origPackConvention.value_or(ArgConvention::ByRefError),
-      origVariadicConvention.value_or(ArgConvention::ReadMem));
+      origVariadicConvention.value_or(ArgConvention::ReadMem), constraints);
 }
 
 LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -89,7 +91,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<TypedAttr> defaultPos,
                                   ArrayRef<TypedAttr> defaultKwOnly,
                                   ArgConvention origPackConvention,
-                                  ArgConvention origVariadicConvention) {
+                                  ArgConvention origVariadicConvention,
+                                  ArrayRef<ConstraintAttr> constraints) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
     if (!pogAttr.getName())
@@ -146,7 +149,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
   return PogListAttr::get(getContext(), pogs, getDefaultPos(),
                           getDefaultKwOnly(), getOrigPackConvention(),
-                          getOrigVariadicConvention());
+                          getOrigVariadicConvention(), getConstraints());
 }
 
 VariadicKind PogListAttr::getVariadicKind(size_t idx) const {
@@ -266,6 +269,24 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
 GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
     ParameterEvaluator &evaluator, const llvm::BitVector &boundParams,
     function_ref<InFlightDiagnostic()> emitError) const {
+  // First check that no constraints fail.
+  SmallVector<ConstraintAttr> remainingConstraints;
+  bool hasFailedConstraint = false;
+  for (ConstraintAttr constraint : getConstraints()) {
+    TypedAttr prop = evaluator.getReboundAttribute(constraint.getProposition());
+    if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+      if (intValue.getValue().isZero()) {
+        emitError() << "constraint failed: " << constraint.getErrorMsg();
+        hasFailedConstraint = true;
+        continue;
+      }
+    }
+    remainingConstraints.push_back(constraint);
+  }
+  if (hasFailedConstraint)
+    return {};
+
+  // Now update POG metadata.
   SmallVector<TypedAttr> newDefaultPosParams;
   SmallVector<TypedAttr> newDefaultKwOnlyParams;
   SmallVector<PogMetadataAttr> newPogs;
@@ -286,7 +307,8 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
   }
 
   return PogListAttr::get(getContext(), newPogs, newDefaultPosParams,
-                          newDefaultKwOnlyParams);
+                          newDefaultKwOnlyParams, getOrigPackConvention(),
+                          getOrigVariadicConvention(), remainingConstraints);
 }
 
 /// Get a new metadata attribute for a generator with the given number of
@@ -325,7 +347,7 @@ PogListAttr::prependPosParams(size_t numNewParams,
 
   return PogListAttr::get(getContext(), mergedPogs, getDefaultPos(),
                           getDefaultKwOnly(), getOrigPackConvention(),
-                          getOrigVariadicConvention());
+                          getOrigVariadicConvention(), getConstraints());
 }
 
 GeneratorMetadataAttrInterface
@@ -408,7 +430,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   auto newArgListAttrs = PogListAttr::get(
       getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(),
       argListAttrs.getOrigPackConvention(),
-      argListAttrs.getOrigVariadicConvention());
+      argListAttrs.getOrigVariadicConvention(), argListAttrs.getConstraints());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
