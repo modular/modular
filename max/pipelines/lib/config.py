@@ -66,9 +66,10 @@ class PipelineConfig(MAXConfig):
 
     max_batch_size: Optional[int] = None
     """Maximum batch size to execute with the model.
-    This is set to one, to minimize memory consumption for the base case, in which a person is
-    running a local server to test out MAX. For users launching in a server scenario, the expectation
-    is that this value should be set higher based on server capacity."""
+    When not specified (None), we determine this value dynamically. For users
+    launching in a server scenario, the expectation is that this value should be
+    set higher based on server capacity.
+    """
 
     max_ce_batch_size: int = 192
     """Maximum cache size to reserve for a single context encoding batch.
@@ -588,7 +589,7 @@ class PipelineConfig(MAXConfig):
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
-            "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
+            "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",
             "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
             "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
