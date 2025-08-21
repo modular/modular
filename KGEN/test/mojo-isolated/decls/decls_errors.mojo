@@ -101,6 +101,12 @@ struct BadInitResult:
   fn __init__(mut self) raises -> None:
     pass
 
+struct BadInitType:
+    # expected-error @below {{__init__ method must return Self type with 'out' argument}}
+    # expected-error @below {{self argument must be present in instance method}}
+    fn __init__():
+        pass
+
 # expected-error @+1 {{argument type must be specified}}
 def defaultArgumentUntyped(a=1):
     pass

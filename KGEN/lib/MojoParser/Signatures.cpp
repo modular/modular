@@ -1838,7 +1838,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
         (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
          argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
       shared.emitError(
-          argList.parsedArgs[0].loc,
+          fnDecl->getLoc(),
           "__init__ method must return Self type with 'out' argument");
       return failure();
     }
