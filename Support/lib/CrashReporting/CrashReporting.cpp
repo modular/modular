@@ -56,12 +56,6 @@ ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config *settings) {
 }
 
 static ErrorOrSuccess tryInitCrashpad(StringRef program, Config *settings) {
-  if (settings) {
-    bool enabled = settings->getValueAsBool("crash_reporting.enabled", true);
-    if (!enabled)
-      return success();
-  }
-
   // Crashpad needs a few paths and other configuration bits:
   //   - Path of the handler executable (This runs alongside the Mojo driver;
   //     in case the driver crashes, the handler inspects the driver in its
