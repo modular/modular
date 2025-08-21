@@ -61,12 +61,12 @@ def test_where_size_bool():
     )
     var values = LayoutTensor[DType.bool, values_shape](values_stack)
 
-    values[0, 0, 0] = True
-    values[0, 1, 0] = True
-    values[1, 0, 0] = False
-    values[1, 1, 0] = False
-    values[2, 0, 0] = False
-    values[2, 1, 0] = True
+    values[0, 0, 0] = Scalar[DType.bool](True)
+    values[0, 1, 0] = Scalar[DType.bool](True)
+    values[1, 0, 0] = Scalar[DType.bool](False)
+    values[1, 1, 0] = Scalar[DType.bool](False)
+    values[2, 0, 0] = Scalar[DType.bool](False)
+    values[2, 1, 0] = Scalar[DType.bool](True)
 
     alias layout_unknown = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
@@ -226,12 +226,12 @@ def test_where_bool():
     ](uninitialized=True)
     var values = LayoutTensor[DType.bool, values_shape](values_stack)
 
-    values[0, 0, 0] = True
-    values[0, 1, 0] = True
-    values[1, 0, 0] = False
-    values[1, 1, 0] = False
-    values[2, 0, 0] = False
-    values[2, 1, 0] = True
+    values[0, 0, 0] = Scalar[DType.bool](True)
+    values[0, 1, 0] = Scalar[DType.bool](True)
+    values[1, 0, 0] = Scalar[DType.bool](False)
+    values[1, 1, 0] = Scalar[DType.bool](False)
+    values[2, 0, 0] = Scalar[DType.bool](False)
+    values[2, 1, 0] = Scalar[DType.bool](True)
 
     var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
     var computed_outputs = LayoutTensor[

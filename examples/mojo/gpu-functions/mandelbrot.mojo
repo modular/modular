@@ -89,7 +89,7 @@ fn mandelbrot(
     var z = ComplexSIMD[float_dtype, 1](0, 0)
     var iters = Scalar[int_dtype](0)
 
-    var in_set_mask: Scalar[DType.bool] = True
+    var in_set_mask = Scalar[DType.bool](True)
     for _ in range(MAX_ITERATIONS):
         if not any(in_set_mask):
             break

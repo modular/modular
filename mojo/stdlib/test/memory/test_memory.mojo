@@ -680,8 +680,8 @@ def test_dtypepointer_gather():
     var default = SIMD[ptr.type.dtype, 8](-1.0)
     desired = SIMD[ptr.type.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
-    _test_masked_gather[1](Int16(2), False, -1.0, -1.0)
-    _test_masked_gather[1](Int32(2), True, -1.0, 2.0)
+    _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
+    _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
     _test_masked_gather(offset, mask, default, desired)
 
     ptr.free()
@@ -737,10 +737,16 @@ def test_dtypepointer_scatter():
     ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
 
     _test_masked_scatter[1](
-        Int16(2), 2.0, False, SIMD[ptr.type.dtype, 4](0.0, 0.0, 0.0, 0.0)
+        Int16(2),
+        2.0,
+        Scalar[DType.bool](False),
+        SIMD[ptr.type.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
-        Int32(2), 2.0, True, SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0)
+        Int32(2),
+        2.0,
+        Scalar[DType.bool](True),
+        SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
         SIMD[DType.int64, 4](1, 1, 1, 1),

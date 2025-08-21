@@ -46,7 +46,7 @@ fn mandelbrot_kernel[
     var z = ComplexSIMD[float_type, simd_width](0, 0)
     var iters = SIMD[int_type, simd_width](0)
 
-    var in_set_mask: SIMD[DType.bool, simd_width] = True
+    var in_set_mask = SIMD[DType.bool, simd_width](True)
     for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break

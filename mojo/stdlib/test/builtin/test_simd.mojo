@@ -1493,7 +1493,10 @@ def test_reduce():
             assert_equal(x8b.reduce_and[4](), x4b)
             assert_equal(x4b.reduce_and[4](), x4b)
             assert_equal(x8b.reduce_and[8](), x8b)
-            assert_equal(SIMD[DType.bool, 2](True, True).reduce_and(), True)
+            assert_equal(
+                SIMD[DType.bool, 2](True, True).reduce_and(),
+                Scalar[DType.bool](True),
+            )
 
             # reduce_or
             x8b = SIMD[DType.bool, 8](
@@ -1512,7 +1515,10 @@ def test_reduce():
             assert_equal(x8b.reduce_or[4](), x4b)
             assert_equal(x4b.reduce_or[4](), x4b)
             assert_equal(x8b.reduce_or[8](), x8b)
-            assert_equal(SIMD[DType.bool, 2](False, False).reduce_or(), False)
+            assert_equal(
+                SIMD[DType.bool, 2](False, False).reduce_or(),
+                Scalar[DType.bool](False),
+            )
 
         @parameter
         if dtype.is_integral():
@@ -2300,7 +2306,7 @@ def test_is_power_of_two():
     var expected_signed = SIMD[DType.bool, 4](False, False, False, False)
     assert_equal(signed_results, expected_signed)
 
-    assert_equal(Int64.MIN.is_power_of_two(), False)
+    assert_equal(Int64.MIN.is_power_of_two(), Scalar[DType.bool](False))
 
 
 def test_comptime():

@@ -546,7 +546,7 @@ fn isnan[
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
-        return False
+        return SIMD[DType.bool, width](False)
 
     elif dtype is DType.float8_e4m3fn:
         return (val.to_bits() & 0x7F).eq(0x7F)
@@ -866,11 +866,11 @@ fn isinf[
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
-        return False
+        return SIMD[DType.bool, width](False)
 
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 both 7C and FC are infinity.
-        return val.to_bits() & 0x7F == 0x7C
+        return (val.to_bits() & 0x7F).eq(0x7C)
 
     alias negative_infinity_test: UInt32 = 0x0004
     alias positive_infinity_test: UInt32 = 0x0200
@@ -905,7 +905,7 @@ fn isfinite[
 
     @parameter
     if not dtype.is_floating_point():
-        return True
+        return SIMD[DType.bool, width](True)
 
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False

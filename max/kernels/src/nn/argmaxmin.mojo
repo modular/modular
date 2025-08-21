@@ -115,9 +115,9 @@ fn _argn[
         ]:
             @parameter
             if is_max:
-                return a < b
+                return a.lt(b)
             else:
-                return a > b
+                return a.gt(b)
 
         # iterate over flattened axes
         var start = task_id * chunk_size

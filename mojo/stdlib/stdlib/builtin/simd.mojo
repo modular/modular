@@ -668,7 +668,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
     fn __init__[
-        *, `_`: Int = 0
+        *, `_`: NoneType = None
     ](out self: Scalar[dtype], obj: PythonObject, /) raises:
         """Initialize a SIMD value from a PythonObject.
 
@@ -725,8 +725,9 @@ struct SIMD[dtype: DType, size: Int](
         else:
             self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
+    # TODO: allow implicit construction of Scalar[DType.bool] from Bool when
+    # we have requires clauses.
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self: SIMD[DType.bool, size], value: Bool, /):
         """Initializes the SIMD vector with a bool value.
 
@@ -778,6 +779,50 @@ struct SIMD[dtype: DType, size: Int](
         self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
             value.value
         )
+
+    # TODO: Remove the dummy parameter.
+    @always_inline("nodebug")
+    fn __init__[
+        *, `_`: NoneType = None
+    ](
+        out self: SIMD[DType.bool, size],
+        *elems: Bool,
+        __list_literal__: () = (),
+    ):
+        """Constructs a SIMD vector via a variadic list of Bool elements.
+
+        The input values are assigned to the corresponding elements of the SIMD
+        vector.
+
+        Parameters:
+            _: A dummy parameter to ensure this overload has lower priority than
+                the others. Its value is ignored.
+
+        Constraints:
+            The number of input values is equal to size of the SIMD vector.
+
+        Args:
+            elems: The variadic list of elements from which the SIMD vector is
+                   constructed.
+            __list_literal__: Tell Mojo to use this method for list literals.
+        """
+
+        _simd_construction_checks[dtype, size]()
+
+        # TODO: Make this a compile-time check when possible.
+        debug_assert(
+            size == len(elems),
+            (
+                "mismatch in the number of elements in the SIMD variadic"
+                " constructor"
+            ),
+        )
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        @parameter
+        for i in range(size):
+            self[i] = Scalar[DType.bool](elems[i])
 
     @always_inline("nodebug")
     fn __init__(out self, *elems: Scalar[dtype], __list_literal__: () = ()):
@@ -1209,7 +1254,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool:
-            return self.select(False, True)._refine[dtype]()
+            return self.select(self._Mask(False), self._Mask(True))._refine[
+                dtype
+            ]()
         else:
             return self ^ -1
 
@@ -1339,7 +1386,7 @@ struct SIMD[dtype: DType, size: Int](
         # As a workaround, we roll our own implementation
         @parameter
         if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits() == rhs.to_bits()
+            return self.to_bits().eq(rhs.to_bits())
         else:
             var res = __mlir_op.`pop.cmp`[
                 pred = __mlir_attr.`#pop<cmp_pred eq>`
@@ -1362,7 +1409,7 @@ struct SIMD[dtype: DType, size: Int](
         # As a workaround, we roll our own implementation.
         @parameter
         if CompilationTarget.has_neon() and dtype is DType.bfloat16:
-            return self.to_bits() != rhs.to_bits()
+            return self.to_bits().ne(rhs.to_bits())
         else:
             var res = __mlir_op.`pop.cmp`[
                 pred = __mlir_attr.`#pop<cmp_pred ne>`

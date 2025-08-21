@@ -340,11 +340,11 @@ fn test_boolean():
     # Create a mem of size size
     var vector_stack = InlineArray[Scalar[DType.bool], size](uninitialized=True)
     var vector = NDBuffer[DType.bool, 1, _, size](vector_stack)
-    vector[0] = True
-    vector[1] = False
-    vector[2] = False
-    vector[3] = False
-    vector[4] = True
+    vector[0] = Scalar[DType.bool](True)
+    vector[1] = Scalar[DType.bool](False)
+    vector[2] = Scalar[DType.bool](False)
+    vector[3] = Scalar[DType.bool](False)
+    vector[4] = Scalar[DType.bool](True)
 
     # CHECK: False
     print(all_true(vector))
@@ -360,7 +360,7 @@ fn test_boolean():
     ###################################################
 
     for i in range(size):
-        vector[i] = True
+        vector[i] = Scalar[DType.bool](True)
 
     # CHECK: True
     print(all_true(vector))
@@ -376,7 +376,7 @@ fn test_boolean():
     ###################################################
 
     for i in range(size):
-        vector[i] = False
+        vector[i] = Scalar[DType.bool](False)
 
     # CHECK: False
     print(all_true(vector))

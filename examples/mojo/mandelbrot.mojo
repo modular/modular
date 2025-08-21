@@ -52,7 +52,7 @@ fn mandelbrot_kernel_SIMD[
     var x = SIMD[float_type, simd_width](0)
     var y = SIMD[float_type, simd_width](0)
     var iters = SIMD[int_type, simd_width](0)
-    var t: SIMD[DType.bool, simd_width] = True
+    var t = SIMD[DType.bool, simd_width](True)
 
     for _ in range(MAX_ITERS):
         if not any(t):

@@ -1078,8 +1078,8 @@ fn isclose[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, width]:
-    """Returns a boolean SIMD vector indicating which element pairs of `a` and `b`
-    are equal within a given tolerance.
+    """Returns a boolean SIMD vector indicating which element pairs of `a` and
+    `b` are equal within a given tolerance.
 
     For floating-point dtypes, the following criteria apply:
 
@@ -1116,8 +1116,8 @@ fn isclose[
     alias T = __type_of(a)
 
     var check_nan = isnan(a) & isnan(b)
-    var check_fin: SIMD[DType.bool, width]
-    var in_range: SIMD[DType.bool, width]
+    var check_fin: T._Mask
+    var in_range: T._Mask
 
     @parameter
     if symmetrical:
@@ -1126,7 +1126,7 @@ fn isclose[
     else:
         check_fin = isfinite(b)
         in_range = abs(a - b).le(T(atol) + T(rtol) * abs(b))
-    return a.eq(b) | (check_nan & equal_nan) | (check_fin & in_range)
+    return a.eq(b) | (check_nan & T._Mask(equal_nan)) | (check_fin & in_range)
 
 
 # ===----------------------------------------------------------------------=== #

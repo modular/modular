@@ -126,10 +126,10 @@ def test_pow():
 def test_isnan():
     # Check that we can run llvm intrinsics returning bool at comptime.
     alias x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
-    assert_equal(x1, False)
+    assert_equal(x1, SIMD[DType.bool, 4](False))
 
     alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral.nan))
-    assert_equal(x2, True)
+    assert_equal(x2, SIMD[DType.bool, 4](True))
 
 
 def main():

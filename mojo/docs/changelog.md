@@ -106,6 +106,14 @@ what we publish.
   - As a consequence, `SIMD.__bool__` no longer needs to be restricted to
     scalars, and instead performs an `any` reduction on the elements of vectors.
 
+- `SIMD` constructors no longer allow implicit splatting of `Bool` values. This
+  could lead to subtle bugs that cannot be caught at compile time, for example:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return v == 42  # this silently reduced to a single bool, and then splat
+  ```
+
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
   remove relative path components (`.`, `..`, etc.). Behaves the same as the
   Python equivalent function.
