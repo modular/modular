@@ -127,3 +127,77 @@ fn distribute[
             ]
         ](frag_layout),
     )
+
+
+fn tile[
+    dtype: DType,
+    shape_types: VariadicOf[MixedIntTupleLike],
+    stride_types: VariadicOf[MixedIntTupleLike],
+    coord_types: VariadicOf[MixedIntTupleLike],
+    tile_shape_types: VariadicOf[MixedIntTupleLike], //,
+](
+    data_layout_tensor: MixedLayoutTensor[
+        dtype=dtype, shape_types=shape_types, stride_types=stride_types
+    ],
+    tile_shape: MixedIntTuple[*tile_shape_types],
+    tile_coords: MixedIntTuple[*coord_types],
+) -> MixedLayoutTensor[
+    dtype=dtype,
+    shape_types=tile_shape_types,
+    stride_types=stride_types,
+]:
+    """Extract a tile (sub-tensor) from a MixedLayoutTensor at specified coordinates.
+
+    This function creates a view into a specific rectangular region of the source tensor
+    without copying data. It computes the memory offset for the tile and creates a new
+    MixedLayoutTensor with the tile dimensions while preserving the original stride pattern.
+
+    Difference from LayoutTensor.tile:
+        This simplified implementation returns a tile with the original tensor's
+        stride information rather than creating a hierarchical (blocked/tiled)
+        layout with an appropriate stride.
+
+        It is incorrect for non-divisible tile shapes (like dividing a 16x16 tensor
+        into 3x3 tiles).
+
+    Parameters:
+        dtype: Data type of the tensor elements (inferred from tensor argument).
+        shape_types: Shape types of the source tensor (inferred from tensor argument).
+        stride_types: Stride types of the source tensor (inferred from tensor argument).
+        coord_types: Types of the tile coordinates (inferred from coordinates argument).
+        tile_shape_types: Types of the tile dimensions (inferred from tile_shape argument).
+
+    Args:
+        data_layout_tensor: The source tensor to extract the tile from.
+        tile_shape: The shape that the layout should be tiled into.
+        tile_coords: The index of the tile to extract as a MixedIntTuple.
+
+    Returns:
+        A MixedLayoutTensor representing a view into the specified tile region.
+        The returned tensor has the tile_shape as its dimensions and shares memory
+        with the original tensor.
+    """
+
+    var offset: UInt = 0
+
+    @parameter
+    for i in range(MixedIntTuple[*coord_types].__len__()):
+        offset += (
+            tile_coords[i].value()
+            * tile_shape[i].value()
+            * Int(data_layout_tensor.layout.stride[i].value())
+        )
+
+    var tile_layout = MixedLayout(
+        shape=tile_shape,
+        stride=data_layout_tensor.layout.stride,
+    )
+
+    return MixedLayoutTensor[
+        dtype=dtype,
+        shape_types=tile_shape_types,
+        stride_types=stride_types,
+    ](
+        UnsafePointer(to=data_layout_tensor.ptr[offset]),
+        tile_layout,
+    )

@@ -13,19 +13,18 @@
 
 from testing import assert_equal, assert_true
 from layout._mixed_layout import MixedLayout, make_row_major
-from layout._mixed_layout_tensor import MixedLayoutTensor, distribute
+from layout._mixed_layout_tensor import MixedLayoutTensor, distribute, tile
 from layout._mixed_tuple import Idx, MixedIntTuple, ComptimeInt, RuntimeInt
 from layout.int_tuple import IntTuple
 
 
 fn main() raises:
     test_distribute()
+    test_tile()
 
 
 fn test_distribute() raises:
-    alias thread_layout = make_row_major(
-        MixedIntTuple(ComptimeInt[2](), ComptimeInt[2]())
-    )
+    alias thread_layout = make_row_major(MixedIntTuple(Idx[2](), Idx[2]()))
 
     var ptr = InlineArray[Scalar[DType.uint32], 16](fill=-1).unsafe_ptr()
 
@@ -45,10 +44,10 @@ fn test_distribute() raises:
             stride_types=data_layout_stride_types,
         ](
             shape=rebind[MixedIntTuple[*data_layout_shape_types]](
-                data_layout_shape(ComptimeInt[4](), ComptimeInt[4]())
+                data_layout_shape(Idx[4](), Idx[4]())
             ),
             stride=rebind[MixedIntTuple[*data_layout_stride_types]](
-                data_layout_stride(ComptimeInt[4](), ComptimeInt[1]())
+                data_layout_stride(Idx[4](), Idx[1]())
             ),
         ),
     )
@@ -76,5 +75,42 @@ fn test_distribute() raises:
                 counter += 1
 
     alias expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
+    for i in range(16):
+        assert_equal(ptr[i], expected[i])
+
+
+fn test_tile() raises:
+    # Create a 4x4 tensor with row-major layout
+    var data = InlineArray[Scalar[DType.uint32], 16](fill=0)
+    var ptr = data.unsafe_ptr()
+
+    var layout_tensor = MixedLayoutTensor[dtype = DType.uint32](
+        ptr=ptr, layout=make_row_major([Idx[4](), Idx[4]()])
+    )
+
+    var counter = 0
+
+    @parameter
+    for tile_i in range(2):
+
+        @parameter
+        for tile_j in range(2):
+            var current_tile = tile(
+                layout_tensor,
+                tile_shape=[Idx[2](), Idx[2]()],
+                tile_coords=[Idx(tile_i), Idx(tile_j)],
+            )
+
+            for i in range(2):
+                for j in range(2):
+                    current_tile[MixedIntTuple(Idx(i), Idx(j))] = counter
+                    counter += 1
+
+    # Expected layout after tiling:
+    # Tile (0,0): values 0,1,2,3   -> positions [0,1], [4,5]
+    # Tile (0,1): values 4,5,6,7   -> positions [2,3], [6,7]
+    # Tile (1,0): values 8,9,10,11 -> positions [8,9], [12,13]
+    # Tile (1,1): values 12,13,14,15 -> positions [10,11], [14,15]
+    alias expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])
