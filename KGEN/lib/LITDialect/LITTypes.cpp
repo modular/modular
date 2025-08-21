@@ -65,7 +65,7 @@ void LITDialect::registerTypes() {
 static ParseResult parseTypeSignature(AsmParser &p,
                                       SmallVectorImpl<Type> &paramTypes,
                                       PogListAttr &paramListAttrs) {
-  if (parseOptionalParamSignature(p, paramTypes, paramListAttrs))
+  if (parseOptionalParamSignature(p, paramTypes, paramListAttrs, {}))
     return failure();
   return success();
 }
@@ -993,17 +993,20 @@ static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr = PogListAttr::get(p.getContext());
   Type body;
-  if (LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr))
-    return failure();
+  auto parseBody = [&]() -> ParseResult {
+    // Try to parse an unwrapped FnType fist.
+    OptionalParseResult result = parseOptionalLITFuncType(p, body);
+    if (result.has_value() && failed(*result))
+      return failure();
+    // If not a FnType, then parse as any other type.
+    if (!result.has_value() && parseKGENType(p, body))
+      return failure();
+    return success();
+  };
 
-  // Try to parse an unwrapped FnType fist.
-  OptionalParseResult result = parseOptionalLITFuncType(p, body);
-  if (result.has_value() && failed(*result))
+  if (LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr,
+                                       parseBody))
     return failure();
-  // If not a FnType, then parse as any other type.
-  if (!result.has_value() && parseKGENType(p, body))
-    return failure();
-
   generator = GeneratorType::get(inputParamTypes, body, paramListAttr);
   return success();
 }
