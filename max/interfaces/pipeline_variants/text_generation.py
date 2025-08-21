@@ -172,9 +172,9 @@ class TextGenerationRequest(Request):
     target_endpoint: Optional[str] = None
     """
     Optional target endpoint identifier for routing the request to a specific
-    service or model instance. This can be used for load balancing, A/B testing,
-    or directing requests to specialized model variants. If not specified, the
-    request will be routed to the default endpoint.
+    service or model instance. This should be used in disaggregate serving 
+    scenarios, when you want to dynamically route to a specific instance.
+    If not specified, the request will be routed to the default endpoint.
     """
 
 
