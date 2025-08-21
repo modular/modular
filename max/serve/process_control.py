@@ -16,6 +16,7 @@ import ctypes
 import logging
 import math
 import multiprocessing
+import multiprocessing.process
 import multiprocessing.synchronize
 import threading
 import time
@@ -33,8 +34,7 @@ class EventCreator(Protocol):
 
     def Event(
         self,
-    ) -> Union[threading.Event, multiprocessing.synchronize.Event]:
-        pass
+    ) -> Union[threading.Event, multiprocessing.synchronize.Event]: ...
 
 
 class ProcessControl:
@@ -113,14 +113,11 @@ class ProcessControl:
         self.health_fail_ns: int = int(health_fail_s * 1e9)
 
     def beat(self) -> None:
-        self._last_beat.value = time.time_ns()
+        self._last_beat.value = time.monotonic_ns()
 
     def is_healthy(self) -> bool:
-        dt = time.time_ns() - self._last_beat.value
+        dt = time.monotonic_ns() - self._last_beat.value
         return dt < self.health_fail_ns
-
-    def is_unhealthy(self) -> bool:
-        return not self.is_healthy()
 
     def set_canceled(self) -> None:
         self.canceled_event.set()
@@ -199,10 +196,58 @@ class ProcessMonitor:
 
     async def until_unhealthy(self) -> bool:
         return await _until_true(
-            self.pc.is_unhealthy,
+            lambda: not self.pc.is_healthy(),
             self.unhealthy_poll_s,
             self.unhealthy_max_time_s,
         )
+
+    async def wait_for_startup(
+        self, timeout: Optional[float] = 10.0, shutdown_on_failure: bool = False
+    ) -> None:
+        """Wait for the process to either start or die, with an optional timeout.
+
+        Raises:
+            TimeoutError: If neither start nor death occurs within the timeout.
+            RuntimeError: If the process dies before starting.
+        """
+        startup_task = asyncio.create_task(self.until_started())
+        death_task = asyncio.create_task(self.until_dead())
+
+        try:
+            try:
+                done, pending = await asyncio.wait(
+                    [startup_task, death_task],
+                    timeout=timeout,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+                if not done:
+                    raise TimeoutError("Process startup timed out")
+
+                if not self.proc.is_alive():
+                    raise RuntimeError(
+                        f"Process died during startup with exitcode: {self.proc.exitcode}"
+                    )
+            except Exception:
+                if shutdown_on_failure:
+                    try:
+                        await self.shutdown()
+                    except Exception:
+                        logger.exception(
+                            "Error during shutdown after startup failure"
+                        )
+                raise
+        finally:
+            for task in [startup_task, death_task]:
+                if not task.done():
+                    task.cancel()
 
     async def shutdown(self) -> None:
         logger.info("Shutting down")

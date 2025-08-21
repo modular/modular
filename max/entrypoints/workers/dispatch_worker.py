@@ -23,7 +23,7 @@ from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_logging
 
-logger = logging.getLogger("max.serve")
+logger = logging.getLogger("max.entrypoints")
 
 
 async def run_dispatch_worker(
@@ -32,9 +32,9 @@ async def run_dispatch_worker(
     dispatcher_factory: DispatcherFactory,
 ) -> None:
     configure_logging(settings, silent=True)
-    logger.info(f"Starting Dispatch Worker on process {os.getpid()}")
+    logger.info(f"Starting dispatch worker on process {os.getpid()}")
 
-    dispatch_service = dispatcher_factory.create_service()
+    dispatch_service = dispatcher_factory.create_service(process_control=pc)
     await dispatch_service.start()
 
     pc.set_started()
@@ -59,8 +59,8 @@ def _dispatch_process_fn(
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        logger.info(f"Error in dispatcher worker: {e}")
         logger.exception(f"Error in dispatcher worker: {e}")
+        raise e
 
 
 @asynccontextmanager
@@ -83,31 +83,8 @@ async def start_dispatch_worker(
     process.start()
     monitor = ProcessMonitor(pc, process)
 
-    dt = asyncio.create_task(monitor.until_dead())
-    ht = asyncio.create_task(monitor.until_started())
-
-    completed_tasks, pending_tasks = await asyncio.wait(
-        [ht, dt], timeout=10, return_when=asyncio.FIRST_COMPLETED
-    )
-
-    # Cleanup Tasks
-    for t in completed_tasks:
-        await t
-
-    for t in pending_tasks:
-        t.cancel()
-
-    if not ht.done() and not dt.done():
-        raise TimeoutError("Dispatch Worker is neither dead not healthy")
-
-    if process.is_alive():
-        logger.info("Dispatcher Worker started successfully!")
-    else:
-        logger.critical(
-            f"Dispatcher Worker ended prematurely with exitcode: {process.exitcode}"
-        )
-        await monitor.shutdown()
-        raise TimeoutError("Dispatcher Worker died during startup")
+    await monitor.wait_for_startup(timeout=10, shutdown_on_failure=True)
+    logger.info("Dispatcher Worker started successfully!")
 
     try:
         yield
