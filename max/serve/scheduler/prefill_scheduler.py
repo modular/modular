@@ -113,6 +113,10 @@ class PrefillScheduler(Scheduler):
     ) -> None:
         """Handles a engine registration request from the dispatcher."""
         logger.debug(f"connecting to remote transfer_engine: {message.name}")
+        if message.name in self.transfer_engine.remote_connections:
+            logger.info(f"Transfer engine {message.name} already connected")
+            return
+
         self.transfer_engine.connect(message)
 
         self.dispatcher_client.send_reply(
