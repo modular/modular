@@ -204,6 +204,9 @@ class PrefillScheduler(Scheduler):
                 xfer_data,
             )
 
+            # Increment the number of terminated requests.
+            sch_output.num_terminated += 1
+
             self.dispatcher_client.send_reply(
                 MessageType.PREFILL_RESPONSE,
                 PrefillResponse(
