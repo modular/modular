@@ -663,8 +663,7 @@ def test_dict_comprehension():
 
 
 def test_dict_repr_wrap():
-    var tmp_dict = Dict[String, Float64]()
-    tmp_dict = {"one": 1.0, "two": 2.0}
+    var tmp_dict = {"one": 1.0, "two": 2.0}
     assert_equal(
         repr(tmp_dict),
         (
