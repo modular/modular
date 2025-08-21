@@ -156,7 +156,9 @@ class PrefixFormatter(logging.Formatter):
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
-def configure_logging(settings: Settings, color: str | None = None) -> None:
+def configure_logging(
+    settings: Settings, color: str | None = None, silent: bool = False
+) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry
 
@@ -291,12 +293,13 @@ def configure_logging(settings: Settings, color: str | None = None) -> None:
             max(logger_level, logging.INFO)
         )
 
-    logger.info(
-        "Logging initialized: Console: %s, File: %s, Telemetry: %s",
-        settings.logs_console_level,
-        settings.logs_file_level,
-        otlp_level,
-    )
+    if not silent:
+        logger.info(
+            "Logging initialized: Console: %s, File: %s, Telemetry: %s",
+            settings.logs_console_level,
+            settings.logs_file_level,
+            otlp_level,
+        )
 
 
 def configure_metrics(settings: Settings) -> None:

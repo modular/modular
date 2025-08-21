@@ -19,6 +19,7 @@ import os
 from typing import Any, Callable, TypeVar
 
 import click
+from max.entrypoints.workers import start_workers
 from max.serve.config import Settings
 from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
@@ -193,7 +194,6 @@ def cli_serve(
     """
     from max.entrypoints.cli import (
         serve_api_server_and_model_worker,
-        serve_model_worker,
     )
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
@@ -226,10 +226,9 @@ def cli_serve(
     configure_logging(settings)
 
     if headless:
-        serve_model_worker(
+        start_workers(
             settings=settings,
             pipeline_config=pipeline_config,
-            pipeline_task=PipelineTask(task),
         )
     else:
         serve_api_server_and_model_worker(

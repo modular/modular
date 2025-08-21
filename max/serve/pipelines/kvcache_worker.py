@@ -71,7 +71,7 @@ def _kvcache_agent_process_fn(
 
 
 @asynccontextmanager
-async def start_dispatch_service(
+async def start_kv_cache_service(
     settings: Settings,
     dispatcher_factory: DispatcherFactory,
 ) -> AsyncGenerator[None, None]:
