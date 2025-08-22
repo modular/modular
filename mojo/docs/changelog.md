@@ -188,6 +188,8 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - A fast matmul for SM100 is available in Mojo. Please check it out in `matmul_sm100.mojo`.
 
+- Moved `mojo/stdlib/stdlib/gpu/comm/` to `max/kernels/src/comm/`
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
