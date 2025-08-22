@@ -100,14 +100,16 @@ struct Span[
     """The mutable version of the `Span`."""
     alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
-    # Fields
-    var _data: UnsafePointer[
+    alias UnsafePointerType = UnsafePointer[
         T,
         mut=mut,
         origin=origin,
         address_space=address_space,
         alignment=alignment,
     ]
+    """The UnsafePointer type that corresponds to this `Span`."""
+    # Fields
+    var _data: Self.UnsafePointerType
     var _len: Int
 
     # ===------------------------------------------------------------------===#
