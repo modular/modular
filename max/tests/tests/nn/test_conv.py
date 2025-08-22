@@ -3,25 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Tests for Conv2D layer in max.nn, focusing on sharding functionality."""
+"""Tests for Conv2d layer in max.nn, focusing on sharding functionality."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.conv import Conv2D
+from max.nn.conv import Conv2d
 
 
 def test_conv2d_shard_replicate() -> None:
-    """Tests Conv2D.shard() with replicate strategy."""
+    """Tests Conv2d.shard() with replicate strategy."""
     with Graph(
         "test",
         input_types=[
             TensorType(DType.float32, (1, 3, 224, 224), device=DeviceRef.GPU(0))
         ],
     ):
-        conv = Conv2D(
+        conv = Conv2d(
             in_channels=3,
             out_channels=64,
             kernel_size=3,
@@ -50,7 +50,7 @@ def test_conv2d_shard_replicate() -> None:
 
 def test_conv2d_shard_no_strategy_error() -> None:
     """Tests that sharding without strategy raises error."""
-    conv = Conv2D(
+    conv = Conv2d(
         in_channels=3,
         out_channels=64,
         kernel_size=3,
@@ -64,7 +64,7 @@ def test_conv2d_shard_no_strategy_error() -> None:
 
 def test_conv2d_non_replicate_strategy_error() -> None:
     """Tests that non-replicate sharding strategies raise error."""
-    conv = Conv2D(
+    conv = Conv2d(
         in_channels=3,
         out_channels=64,
         kernel_size=3,
@@ -77,8 +77,8 @@ def test_conv2d_non_replicate_strategy_error() -> None:
 
 
 def test_conv2d_sharding_strategy_property() -> None:
-    """Tests Conv2D sharding_strategy property getter/setter."""
-    conv = Conv2D(
+    """Tests Conv2d sharding_strategy property getter/setter."""
+    conv = Conv2d(
         in_channels=3,
         out_channels=64,
         kernel_size=3,
