@@ -433,7 +433,7 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!AnyType_UnknownDestructibility_SimpleTraitA_SimpleTraitB)
+# CHECK-SAME: (!AnyType_Movable_UnknownDestructibility_SimpleTraitA_SimpleTraitB)
 @register_passable
 struct TwoThunks(SimpleTraitA, SimpleTraitB):
     # CHECK: lit.fn @"method({{.*}}TwoThunks)"

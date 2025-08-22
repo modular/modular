@@ -740,6 +740,7 @@ struct InMemStruct: pass
 @register_passable
 struct InRegStruct:
   var x: Int # ok
+  # expected-error @+1 {{cannot synthesize __moveinit__ because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
   var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
 
 struct OtherInMemStruct:
@@ -1079,6 +1080,7 @@ struct Inner:
 @fieldwise_init
 @register_passable
 struct Outer: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+    # expected-error @+1{{cannot synthesize __moveinit__ because field 'inner' has non-copyable and non-movable type 'Inner'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
