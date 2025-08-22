@@ -48,6 +48,12 @@ what we publish.
   model better.  A linear types are just types where all of the destructors are
   explicit - it has no `__del__`.
 
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
+
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
@@ -183,6 +189,13 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
   exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
+
+- Nightly `mojo` Python wheels are now available. To install everything needed
+  for Mojo development in a Python virtual environment, you can use
+
+  ```sh
+  pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
+  ```
 
 ### Kernels changes
 
