@@ -326,46 +326,31 @@ def main():
 
             @parameter
             for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-                # Testing Nvidia specific, non power of 2, MMA_N parameter
-                print(
-                    "Testing Nvidia specific, non power of 2, MMA_N parameter"
-                )
-
                 alias BK = (swizzle.bytes() // sizeof[dtype]())
-                alias block_tile_shape = Index(128, 80, BK)
                 alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
-                alias umma_shape = Index(
-                    block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-                )
-
-                test_blackwell_matmul_tma_umma_warp_specialized[
-                    dtype,
-                    dtype,
-                    DType.bfloat16,
-                    block_tile_shape,
-                    umma_shape,
-                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
-                    a_swizzle=swizzle,
-                    b_swizzle=swizzle,
-                ](
-                    ctx,
-                    dynamic(512),
-                    static[2560](),
-                    static[8192](),
-                )
-
-                print("Testing remaining cases")
 
                 @parameter
                 for mma_m_scale in range(1, 3):
 
                     @parameter
-                    for mma_n_scale in range(1, 3):
+                    for mma_n_scale in range(1, 17):
+                        # from 16*1 till 16*16 which is 256
+                        # basically, if MMA_M is 64, then BN must be multiple of 16 (mma_n_scale must be even)
+                        @parameter
+                        if mma_m_scale == 1 and mma_n_scale % 2 != 0:
+                            continue
+                        # TODO: support the increments of 8 for float 8 dtype at a later point
+                        # currently it works with increments of BN = 32
+                        if (
+                            dtype == DType.float8_e4m3fn
+                            and mma_n_scale % 4 != 0
+                        ):
+                            continue
                         alias block_tile_shape = Index(
-                            64 * mma_m_scale, 64 * mma_n_scale, BK
+                            64 * mma_m_scale, 8 * mma_n_scale, BK
                         )
                         alias umma_shape = Index(
-                            128 * mma_m_scale, 128 * mma_n_scale, MMA_K
+                            128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
