@@ -142,6 +142,32 @@ guarantees:
 - MLIR dialects (`pop`, `kgen`, `lit`)
 - Compiler runtime features (prefixed with `KGEN_CompilerRT_`)
 
+## Documentation
+
+When adding or updating public APIs, always add or revise the docstring to
+concisely describe what the API does and how users should use it, including at
+least one simple code example.
+
+### Basic docstring style
+
+- **First sentence**: Start with a present tense verb describing what the
+  function/struct does (for example, "Gets", "Converts", "Stores").
+- **Code font**: Use backticks for all API names (for example, `Int`, `append()`).
+- **End with periods**: All sentences and sentence fragments end with periods.
+- **No markdown headings**: Instead use an introductory phrase ending with a
+  colon (for example, "Examples:", "Performance tips:").
+
+### Required sections (when applicable)
+
+- `Parameters:` - Compile-time parameters
+- `Args:` - Runtime arguments
+- `Returns:` - Return value description
+- `Constraints:` - Compile-time constraints
+- `Raises:` - Error conditions
+
+For complete Mojo docstring style guidelines, see
+[`docstring-style-guide.md`](stdlib/docs/docstring-style-guide.md).
+
 ## Contribution Guidelines
 
 - Bug fixes should include reproducing tests
