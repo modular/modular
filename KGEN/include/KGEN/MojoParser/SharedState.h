@@ -178,7 +178,7 @@ public:
     size_t dataSize = sizeof(T) * elements.size();
     T *result = static_cast<T *>(
         persistentAllocator.Allocate(dataSize, llvm::Align::Of<T>()));
-    memcpy(result, elements.data(), dataSize);
+    memcpy((void *)result, elements.data(), dataSize);
     return ArrayRef<T>(result, elements.size());
   }
 
