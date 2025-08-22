@@ -407,7 +407,7 @@ class ComputeGraph:
 
     graph: graph.Graph
     #: Keeps a strong reference to tensor data that we need to compute graph values
-    sources: dict[_core.Value, Tensor]
+    sources: dict[_core.Value[Any], Tensor]
     #: Keeps weak references to intermediate unrealized tensor values, which may
     #: never need to be realized.
     unrealized: weakref.WeakSet[Tensor]

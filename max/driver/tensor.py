@@ -175,7 +175,7 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
 # TODO(MAXPLAT-206): re-enable @wraps
 # @wraps(Tensor.mmap)
 def _mmap(
-    filename: PathLike | str,
+    filename: PathLike[str] | str,
     dtype: DType,
     shape: ShapeType | int,
     mode: np._MemMapModeKind = "copyonwrite",
@@ -205,7 +205,7 @@ Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
 Tensor.mmap = _mmap  # type: ignore[method-assign]
 
 
-def load_max_tensor(path: PathLike) -> Tensor:
+def load_max_tensor(path: PathLike[str]) -> Tensor:
     """Experimental method for loading serialized MAX tensors.
 
     Max tensors can be exported by creating a graph and calling `Value.print()`

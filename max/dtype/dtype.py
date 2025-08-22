@@ -62,7 +62,7 @@ _NUMPY_TO_DTYPE = {
 }
 
 
-def _to_numpy(self: DType) -> np.dtype:
+def _to_numpy(self: DType) -> np.dtype[Any]:
     """Converts this ``DType`` to the corresponding NumPy dtype.
 
     Returns:
@@ -77,7 +77,7 @@ def _to_numpy(self: DType) -> np.dtype:
     raise ValueError(f"unsupported DType to convert to NumPy: {self}")
 
 
-def _from_numpy(dtype: np.dtype) -> DType:
+def _from_numpy(dtype: np.dtype[Any]) -> DType:
     """Converts a NumPy dtype to the corresponding DType.
 
     Args:
