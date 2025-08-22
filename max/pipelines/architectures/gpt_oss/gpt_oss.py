@@ -139,9 +139,6 @@ class GptOssTextModel(Module):
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(layers)
-        self.norm = self.norm
-        self.lm_head = self.lm_head
-        self.embed_tokens = self.embed_tokens
         self.kv_params = config.kv_params
         self.kv_collection_constructor = FetchPagedKVCacheCollection(
             config.kv_params,
