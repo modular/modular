@@ -48,22 +48,6 @@ auto create_op(nanobind::handle_t<mlir::OpBuilder> builder, Args... args) {
       std::forward<Args>(args)...);
 }
 
-template <typename T>
-class NanobindWrapper {
-  // This exists because of typeinfo madness.
-  // MLIR doesn't generate typeinfo, and _most_ of its types don't have
-  // a key function, so we can generate them ourselves.
-  // For a few types, such as mlir::RewriterBase, they _do_ have key functions,
-  // and as a result we can't use such types as inputs to our bindings.
-  //
-  // Instead, we create this wrapper for which we know we can generate typeinfo,
-  // and then we codegen usages of it.
-public:
-  T value;
-  NanobindWrapper(T &&value) : value(value) {}
-  operator T() { return value; }
-};
-
 /// Nanobind doesn't support multiple inheritance, but we want to correctly
 /// model MLIR Interface types. Conveniently, MLIR interfaces are basically
 /// Python protocols already.
@@ -89,23 +73,6 @@ namespace NB_NAMESPACE {
 namespace detail {
 
 namespace {
-template <std::size_t N>
-struct StringLiteral {
-  char data[N + 1];
-  constexpr StringLiteral(const llvm::StringRef str) {
-    for (size_t i = 0; i < N; ++i)
-      data[i] = str.data()[i];
-    data[N] = '\0';
-  }
-};
-
-/// Create a nb::const_name from `llvm::getTypeName<T>`
-template <typename T>
-constexpr auto type_name() {
-  constexpr auto name = llvm::getTypeName<T>();
-  return nb::detail::const_name(StringLiteral<name.size()>(name).data);
-}
-
 //===----------------------------------------------------------------------===//
 // is_attribute_interface
 //===----------------------------------------------------------------------===//
