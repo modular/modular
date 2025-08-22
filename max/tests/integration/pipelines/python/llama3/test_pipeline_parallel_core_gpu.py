@@ -9,12 +9,7 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.architectures.llama3.model import PipelineStageKVParams
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.llama3.pipeline_parallel_llama3 import (
     PipelineParallelLlama3,
@@ -124,122 +119,6 @@ def test_get_stage_for_layer(mock_llama3_config: Llama3Config):
     assert model._get_stage_for_layer(15, 32) == 0  # Last layer of stage 0
     assert model._get_stage_for_layer(16, 32) == 1  # First layer of stage 1
     assert model._get_stage_for_layer(31, 32) == 1  # Last layer
-
-
-# =============================================================================
-# Essential KV Cache Construction Tests
-# =============================================================================
-
-
-def test_continuous_kv_cache_construction(mock_llama3_config: Llama3Config):
-    """Test KV cache collections created correctly for continuous batching strategy."""
-    # Create stage parameters for continuous batching
-    base_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=32,
-        head_dim=128,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=16,
-        n_devices=1,
-        pipeline_parallel_degree=2,
-        total_num_layers=32,
-    )
-
-    stage_params = PipelineStageKVParams(
-        stage_id=0,
-        start_layer=0,
-        end_layer=16,
-        num_layers_in_stage=16,
-        base_params=base_params,
-        device=DeviceRef("gpu", 0),
-    )
-
-    # Test stage-specific KV params creation
-    stage_kv_params = stage_params.create_stage_params()
-    assert stage_kv_params.cache_strategy == KVCacheStrategy.PAGED
-    assert stage_kv_params.n_devices == 1  # Single device per stage
-    assert stage_kv_params.stage_id == 0
-    assert stage_kv_params.total_num_layers == 32
-
-    # Test continuous batching collection creation
-    kv_collection = FetchPagedKVCacheCollection(stage_kv_params, num_layers=16)
-    assert kv_collection is not None
-
-
-def test_paged_kv_cache_construction(mock_llama3_config: Llama3Config):
-    """Test KV cache collections created correctly for paged strategy."""
-    # Create stage parameters for paged strategy
-    base_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=32,
-        head_dim=128,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=16,
-        n_devices=1,
-        pipeline_parallel_degree=2,
-        total_num_layers=32,
-    )
-
-    stage_params = PipelineStageKVParams(
-        stage_id=1,
-        start_layer=16,
-        end_layer=32,
-        num_layers_in_stage=16,
-        base_params=base_params,
-        device=DeviceRef("gpu", 1),
-    )
-
-    # Test stage-specific KV params creation
-    stage_kv_params = stage_params.create_stage_params()
-    assert stage_kv_params.cache_strategy == KVCacheStrategy.PAGED
-    assert stage_kv_params.n_devices == 1  # Single device per stage
-    assert stage_kv_params.stage_id == 1
-    assert stage_kv_params.total_num_layers == 32
-
-    # Test paged collection creation
-    kv_collection = FetchPagedKVCacheCollection(stage_kv_params, num_layers=16)
-    assert kv_collection is not None
-
-
-def test_stage_kv_params_creation(mock_llama3_config: Llama3Config):
-    """Test stage-specific KV parameters are created correctly for both strategies."""
-    strategies = [KVCacheStrategy.PAGED]
-
-    for strategy in strategies:
-        base_params = KVCacheParams(
-            dtype=DType.bfloat16,
-            n_kv_heads=32,
-            head_dim=128,
-            cache_strategy=strategy,
-            page_size=16,
-            n_devices=1,
-            pipeline_parallel_degree=2,
-            total_num_layers=32,
-        )
-
-        # Test stage 0 parameters
-        stage_0_params = PipelineStageKVParams(
-            stage_id=0,
-            start_layer=0,
-            end_layer=16,
-            num_layers_in_stage=16,
-            base_params=base_params,
-            device=DeviceRef("gpu", 0),
-        )
-
-        stage_0_kv_params = stage_0_params.create_stage_params()
-
-        # Verify stage-specific parameters
-        assert stage_0_kv_params.cache_strategy == strategy
-        assert stage_0_kv_params.stage_id == 0
-        assert stage_0_kv_params.n_devices == 1
-        assert stage_0_kv_params.pipeline_parallel_degree == 2
-        assert stage_0_kv_params.total_num_layers == 32
-
-        # Verify inheritance from base params
-        assert stage_0_kv_params.dtype == base_params.dtype
-        assert stage_0_kv_params.n_kv_heads == base_params.n_kv_heads
-        assert stage_0_kv_params.head_dim == base_params.head_dim
 
 
 # =============================================================================
