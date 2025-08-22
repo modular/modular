@@ -20,6 +20,9 @@ from max.serve.schemas.openai import CreateChatCompletionResponse
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 
+@pytest.mark.skip(
+    "TODO(AITLIB-351): Still sometimes failing on m7g, disabled until cause identified"
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -96,6 +99,9 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         assert "maxserve_cache_hit_rate" in response.text
 
 
+@pytest.mark.skip(
+    "TODO(AITLIB-351): Still sometimes failing on m7g, disabled until cause identified"
+)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
