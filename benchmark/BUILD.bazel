@@ -9,6 +9,7 @@ modular_py_binary(
     deps = [
         ":benchmark_config",
         ":benchmark_datasets",
+        ":metrics",
         ":sample_workload_utils",
         requirement("aiohttp"),
         requirement("datasets"),
@@ -32,6 +33,14 @@ modular_py_library(
         requirement("pillow"),
         requirement("transformers"),
     ],
+)
+
+modular_py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [requirement("numpy")],
 )
 
 modular_py_library(
