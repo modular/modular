@@ -2402,11 +2402,14 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
 
 
 @always_inline
-fn _unsafe_strlen(ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
+fn _unsafe_strlen(
+    ptr: UnsafePointer[Byte, mut=False, **_], max: UInt = UInt.MAX
+) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
         ptr: The null-terminated pointer to the string.
+        max: The maximum size of the string.
 
     Returns:
         The length of the null terminated string without the null terminator.
@@ -2414,10 +2417,10 @@ fn _unsafe_strlen(ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
     Notes:
         The length does NOT include the null terminator.
     """
-    var len = 0
-    while ptr[len]:
-        len += 1
-    return len
+    var offset = UInt(0)
+    while offset < max and ptr[offset]:
+        offset += 1
+    return offset
 
 
 @always_inline
