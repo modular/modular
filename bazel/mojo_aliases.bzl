@@ -85,6 +85,11 @@ alias(
 )
 
 alias(
+    name = "comm",
+    actual = "@//{prefix}max/kernels/src/comm",
+)
+
+alias(
     name = "testdata",
     actual = "@//{prefix}max/kernels/test/testdata",
 )

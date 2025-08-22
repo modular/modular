@@ -15,7 +15,7 @@ from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.comm.allreduce import (
+from comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
