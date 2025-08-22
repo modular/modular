@@ -42,7 +42,6 @@ class KVCacheParams:
     page_size: Optional[int] = None
     n_devices: int = 1
     pipeline_parallel_degree: int = 1
-    stage_id: Optional[int] = None  # Which pipeline stage this cache serves
     total_num_layers: Optional[int] = None  # Total layers in the model
 
     # Computed fields (set in __post_init__)
@@ -104,16 +103,6 @@ class KVCacheParams:
             and self.cache_strategy == KVCacheStrategy.PAGED
         ):
             raise ValueError("Page size is required for paged cache strategy")
-
-        # Pipeline parallel specific validations
-        if self.pipeline_parallel_degree > 1:
-            if self.stage_id is not None and (
-                self.stage_id < 0
-                or self.stage_id >= self.pipeline_parallel_degree
-            ):
-                raise ValueError(
-                    f"stage_id ({self.stage_id}) must be between 0 and {self.pipeline_parallel_degree - 1}"
-                )
 
     @property
     def dtype_shorthand(self) -> str:
