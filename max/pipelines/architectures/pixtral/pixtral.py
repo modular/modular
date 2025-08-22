@@ -17,7 +17,7 @@ from max.graph import DeviceRef
 from max.nn import (
     MLP,
     AttentionWithRope,
-    Conv2D,
+    Conv2d,
     Embedding,
     Linear,
     RMSNorm,
@@ -166,7 +166,7 @@ class Pixtral(LlavaConditionalGeneration):
         This convolution splits the image into patches and then learns an embedding
         of each patch. The embedding dim is out_channels.
         """
-        patch_conv = Conv2D(
+        patch_conv = Conv2d(
             permute=True,
             kernel_size=(config.patch_size, config.patch_size),
             in_channels=config.num_channels,

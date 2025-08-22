@@ -98,7 +98,7 @@ def convert_internvl_vision_model_state_dict(
        `vision_model.` prefix).
     2. Strips the `vision_model.` prefix to match InternVLVisionModel
        expectations.
-    3. Converts Conv2D patch embedding weights to Linear format.
+    3. Converts Conv2d patch embedding weights to Linear format.
     4. Excludes language model weights.
 
     Args:
@@ -123,9 +123,9 @@ def convert_internvl_vision_model_state_dict(
 
         weight_data = weight.data()
 
-        # Convert Conv2D patch embedding weights to Linear format
+        # Convert Conv2d patch embedding weights to Linear format
         if vision_model_name == "embeddings.patch_embedding.weight":
-            # Conv2D weight shape: (out_channels, in_channels, kernel_h, kernel_w)
+            # Conv2d weight shape: (out_channels, in_channels, kernel_h, kernel_w)
             # For patch embedding: (embed_dim, 3, patch_size, patch_size)
             # Need to reshape to: (embed_dim, 3 * patch_size * patch_size)
 
