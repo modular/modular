@@ -47,7 +47,11 @@ def get_package_root() -> Path | None:
             logging.debug(f"Located Modular SDK assets at {root}")
             return root
 
-    if "BUILD_WORKSPACE_DIRECTORY" in os.environ or "BAZEL_TEST" in os.environ:
+    if (
+        "MODULAR_DERIVED_PATH" in os.environ
+        or "BUILD_WORKSPACE_DIRECTORY" in os.environ
+        or "BAZEL_TEST" in os.environ
+    ):
         # We're running in a Modular internal Bazel test, so let Bazel handle
         # the environment variables.
         return None

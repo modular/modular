@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -112,10 +113,13 @@ def subprocess_run_mojo(
     """
 
     env = _mojo_env()
+    mojo = env.get("MODULAR_MOJO_MAX_DRIVER_PATH") or shutil.which("mojo")
+    if not mojo or not os.path.exists(mojo):
+        raise RuntimeError("error: Could not find `mojo` executable")
 
     return subprocess.run(
         # Combine the `mojo` executable path with the provided argument list.
-        [env["MODULAR_MOJO_MAX_DRIVER_PATH"]] + mojo_args,
+        [mojo] + mojo_args,
         env=env,
         **kwargs,
     )
