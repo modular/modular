@@ -69,8 +69,7 @@ modular_genrule(
     done
 
     # Lint and format the files
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) fix
 
     # Fix file names
     # foo/__init__.pyi -> foo.pyi
