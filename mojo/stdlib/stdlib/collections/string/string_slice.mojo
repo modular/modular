@@ -1460,7 +1460,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # overall length in bytes.
         # For a visual explanation of how this UTF-8 codepoint counting works:
         #   https://connorgray.com/ephemera/project-log#2025-01-13
-        var continuation_count = _count_utf8_continuation_bytes(self)
+        var continuation_count = _count_utf8_continuation_bytes(self.as_bytes())
         return self.byte_length() - continuation_count
 
     fn is_codepoint_boundary(self, index: UInt) -> Bool:
