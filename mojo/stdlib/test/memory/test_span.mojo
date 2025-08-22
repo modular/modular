@@ -271,6 +271,17 @@ def test_span_repr():
     assert_equal(s.__repr__(), "[1, 2]")
 
 
+def test_count_func():
+    @parameter
+    fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+        return v.eq(2)
+
+    var data = Span(List[Byte](0, 1, 2, 1, 2, 1, 2))
+    assert_equal(3, data.count[func=is_2]())
+    assert_equal(2, data[:-1].count[func=is_2]())
+    assert_equal(1, data[:3].count[func=is_2]())
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -288,3 +299,4 @@ def main():
     test_merge()
     test_span_to_string()
     test_span_repr()
+    test_count_func()
