@@ -33,24 +33,24 @@ fn kernel[
 def test_compile_code():
     print("== test_compile_code")
 
-    # CHECK: st.release.sys.global.u32 [%rd2], %r1;
-    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd2];
+    # CHECK: st.release.sys.global.u32 [%rd1], %r1;
+    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
     print(_compile_code[kernel[DType.int32], target = A100.target()]())
 
-    # CHECK: st.release.sys.global.u16 [%rd2], %rs1;
-    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd2];
+    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
+    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
     print(_compile_code[kernel[DType.bfloat16], target = A100.target()]())
 
-    # CHECK: st.release.sys.global.u32 [%rd2], %r1;
-    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd2];
+    # CHECK: st.release.sys.global.u32 [%rd1], %r1;
+    # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
     print(
         _compile_code[
             kernel[DType.int32, memory=False], target = A100.target()
         ]()
     )
 
-    # CHECK: st.release.sys.global.u16 [%rd2], %rs1;
-    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd2];
+    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
+    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
     print(
         _compile_code[
             kernel[DType.bfloat16, memory=False], target = A100.target()
