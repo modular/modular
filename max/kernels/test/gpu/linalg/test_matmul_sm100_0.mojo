@@ -413,17 +413,17 @@ fn blackwell_matmul_tma_umma[
     )
 
 
-fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
+fn get_shapes_dict(
+    index: Int, shapes_dict: Dict[Int, Tuple[Int, Int, Int], *_, **_]
 ) -> Tuple[Int, Int, Int]:
     try:
-        return dic_bro[index]
+        return shapes_dict[index]
     except error:
         print("error")
         return (128, 128, 128)
 
 
-fn make_dic_of_shapes() -> (
+fn make_shapes_dict() -> (
     Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
 ):
     var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
@@ -450,15 +450,15 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     alias transpose_b = True
     alias BK = 64
 
-    alias dic_of_shapes = make_dic_of_shapes()
+    alias shapes_dict = make_shapes_dict()
 
     print("Benchmarking blackwell_matmul_tma_umma_kernel")
     print("============================================")
     print("M, N, K, time(ms), TFLOPS")
 
     @parameter
-    for i in range(len(dic_of_shapes)):
-        alias shape = get_dic_of_shapes(i, dic_of_shapes)
+    for i in range(len(shapes_dict)):
+        alias shape = get_shapes_dict(i, shapes_dict)
         try:
             test_blackwell_matmul_tma_umma[
                 a_type,
