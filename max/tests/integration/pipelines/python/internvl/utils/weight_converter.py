@@ -51,8 +51,8 @@ def convert_hf_to_max_weights(
                 elif "embeddings.patch_embedding." in new_key:
                     # Handle patch embedding transformations
                     if new_key.endswith(".weight") and len(v.shape) == 4:
-                        # Convert Conv2D weight to a Linear-equivalent format.
-                        # PyTorch Conv2D weight: (out_C, in_C, kH, kW)
+                        # Convert Conv2d weight to a Linear-equivalent format.
+                        # PyTorch Conv2d weight: (out_C, in_C, kH, kW)
                         # Reshape to (out_C, in_C * kH * kW)
                         out_channels, in_channels, kernel_h, kernel_w = v.shape
                         v = v.reshape(out_channels, -1)
@@ -90,7 +90,7 @@ def convert_hf_to_max_weights(
             if "patch_embedding." in new_key:
                 # Handle patch embedding transformations
                 if new_key.endswith(".weight") and len(v.shape) == 4:
-                    # Convert Conv2D weight to a Linear-equivalent format.
+                    # Convert Conv2d weight to a Linear-equivalent format.
                     out_channels, in_channels, kernel_h, kernel_w = v.shape
                     v = v.reshape(out_channels, -1)
 

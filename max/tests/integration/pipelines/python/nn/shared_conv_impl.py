@@ -14,7 +14,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import Conv1D, Conv2D, Conv3D
+from max.nn import Conv1D, Conv2d, Conv3D
 
 # On some newer CUDA architectures (e.g. Ampere / Hopper) cuDNN may internally
 ACCURACY_RTOL = 2.5e-3
@@ -239,8 +239,8 @@ def conv2d_impl(session: InferenceSession) -> None:
         device=torch_device,
     )
 
-    # Create our Conv2D layer
-    max_conv = Conv2D(
+    # Create our Conv2d layer
+    max_conv = Conv2d(
         kernel_size=kernel_size,
         in_channels=in_channels,
         out_channels=out_channels,

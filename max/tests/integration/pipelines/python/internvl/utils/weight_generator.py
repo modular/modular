@@ -159,8 +159,8 @@ class WeightGenerator:
         patch_size = self.dimensions["vision_patch_size"]
         num_patches = (image_size // patch_size) ** 2
 
-        # For HuggingFace, use Conv2D shape
-        # Conv2D: (out_channels, in_channels, kernel_h, kernel_w)
+        # For HuggingFace, use Conv2d shape
+        # Conv2d: (out_channels, in_channels, kernel_h, kernel_w)
         conv_weight = (
             torch.randn(
                 hidden_size, 3, patch_size, patch_size, dtype=torch.bfloat16
@@ -197,7 +197,7 @@ class WeightGenerator:
             torch.randn(1, 1, hidden_size) * CLS_TOKEN_STD
         ).to(torch.bfloat16)
 
-        # For HuggingFace reference, we use Conv2D weights
+        # For HuggingFace reference, we use Conv2d weights
         weights["vision_model.embeddings.patch_embedding.weight"] = (
             torch.randn(hidden_size, 3, patch_size, patch_size) * PATCH_CONV_STD
         ).to(torch.bfloat16)

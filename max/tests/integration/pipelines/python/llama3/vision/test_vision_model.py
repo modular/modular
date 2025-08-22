@@ -26,7 +26,7 @@ from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedPositionEmbedding,
 )
 from max.pipelines.architectures.llama_vision.vision_model import (
-    VisionConv2D,
+    VisionConv2d,
     VisionModel,
 )
 from test_common.distance_metrics import is_euclidean_distance_close
@@ -169,7 +169,7 @@ class WrappedVisionModel:
         )
 
         # patch_embedding filter has a shape of (1280, 3, 14, 14).
-        patch_embedding = VisionConv2D(
+        patch_embedding = VisionConv2d(
             filter=Weight(
                 name="patch_embedding",
                 dtype=dtype,
