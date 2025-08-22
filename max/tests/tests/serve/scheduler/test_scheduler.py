@@ -295,6 +295,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     request_push_socket.put((mock_request.request_id, mock_request))
     time.sleep(1)
     scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.ce_reqs) == 1
 
     batch_to_execute = (
         scheduler.batch_constructor.construct_batch().batch_inputs
@@ -310,7 +311,8 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     # Assert that the response socket is not empty.
     with pytest.raises(queue.Empty):
-        response_pull_socket.get_nowait()
+        x = response_pull_socket.get_nowait()
+        print(f"There should be no response but mysteriously got: {x}")
 
     # check req1 is put back in the request queue with the correct active_idx and active_length
     assert scheduler.batch_constructor.ce_reqs
