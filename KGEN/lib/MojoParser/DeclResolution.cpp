@@ -2187,6 +2187,10 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setConvention(TypeConvention::RegisterPassable);
+      // RP types implicitly conforms to Movable
+      if (ASTDecl *decl = shared.lookupBuiltinTrait(
+              "Movable", structDecl.getParentDecl(), decorator->getLoc()))
+        traits.push_back(decl->getSymbolRef());
       return success();
     }
     // @value
