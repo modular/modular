@@ -280,12 +280,11 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        # Get LLM weights dictionary
+        # Get LLM weights dictionary. Needed before model config generation
+        # because we need to know if word embeddings are tied or not.
         if self.adapter:
             llm_state_dict = self.adapter(
                 dict(self.weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
             )
         else:
             llm_state_dict = {

@@ -187,7 +187,7 @@ class Qwen2_5VLConfig(MAXModelConfig, Qwen2_5VLConfigBase):
         """Calculate maximum sequence length for Qwen2.5VL."""
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
+            huggingface_config, "text_config", huggingface_config
         )
         return Llama3Config.calculate_max_seq_len(
             pipeline_config=pipeline_config,
