@@ -608,9 +608,9 @@ fn store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
 
-    var c_upper_pow_2_main = SIMD[accum_type, main_repeats * fragment_size](0)
+    var c_upper_pow_2_main: SIMD[accum_type, main_repeats * fragment_size]
 
-    var c_lower_pow_2_main = SIMD[accum_type, main_repeats * fragment_size](0)
+    var c_lower_pow_2_main: SIMD[accum_type, main_repeats * fragment_size]
 
     # dummy registers in case there's no remainder. We still need to
     # satisfy power-of-2 when using SIMD.
