@@ -647,7 +647,9 @@ fn strided_load[
 ](
     addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](True),
+    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
+        fill=True
+    ),
 ) -> SIMD[dtype, simd_width]:
     """Loads values from addr according to a specific stride.
 
@@ -690,7 +692,9 @@ fn strided_store[
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[Scalar[dtype], mut=True, **_],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](True),
+    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
+        fill=True
+    ),
 ):
     """Loads values from addr according to a specific stride.
 

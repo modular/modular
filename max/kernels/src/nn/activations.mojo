@@ -45,7 +45,7 @@ fn _is_neg[
 
     @parameter
     if dtype.is_unsigned():
-        return SIMD[DType.bool, simd_width](False)
+        return SIMD[DType.bool, simd_width](fill=False)
     return val.lt(0)
 
 

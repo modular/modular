@@ -1126,7 +1126,9 @@ fn isclose[
     else:
         check_fin = isfinite(b)
         in_range = abs(a - b).le(T(atol) + T(rtol) * abs(b))
-    return a.eq(b) | (check_nan & T._Mask(equal_nan)) | (check_fin & in_range)
+    return (
+        a.eq(b) | (check_nan & T._Mask(fill=equal_nan)) | (check_fin & in_range)
+    )
 
 
 # ===----------------------------------------------------------------------=== #

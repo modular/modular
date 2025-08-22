@@ -38,7 +38,7 @@ fn bench_empty_bitset_init[size: Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_bitset_init_from[width: Int](mut b: Bencher) raises:
-    var initial = SIMD[DType.bool, width](True)
+    var initial = SIMD[DType.bool, width](fill=True)
 
     @__copy_capture(initial)
     @always_inline
@@ -69,7 +69,7 @@ fn bench_bitset_set[size: Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
-    var initial = SIMD[DType.bool, width](True)
+    var initial = SIMD[DType.bool, width](fill=True)
 
     @__copy_capture(initial)
     @always_inline
@@ -89,7 +89,7 @@ fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
-    var initial = SIMD[DType.bool, width](True)
+    var initial = SIMD[DType.bool, width](fill=True)
 
     @__copy_capture(initial)
     @always_inline
@@ -109,7 +109,7 @@ fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_bitset_test[width: Int](mut b: Bencher) raises:
-    var initial = SIMD[DType.bool, width](True)
+    var initial = SIMD[DType.bool, width](fill=True)
 
     @__copy_capture(initial)
     @always_inline

@@ -541,10 +541,10 @@ def test_bitset_difference():
 
 
 def test_bitset_simd_init():
-    var bs1 = BitSet(SIMD[DType.bool, 128](True))
+    var bs1 = BitSet(SIMD[DType.bool, 128](fill=True))
     assert_equal(len(bs1), 128, msg="BitSet count should be 128")
 
-    var bs2 = BitSet(SIMD[DType.bool, 128](False))
+    var bs2 = BitSet(SIMD[DType.bool, 128](fill=False))
     assert_equal(len(bs2), 0, msg="BitSet count should be 0")
 
     var bs3 = BitSet(SIMD[DType.bool, 4](True, False, True, False))

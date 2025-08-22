@@ -63,8 +63,8 @@ def test_splat():
         for j in range(len(widths)):
             alias w = widths[j]
             alias B = SIMD[DType.bool, w]
-            assert_equal(SIMD[D, w](-1), splat[D](B(True)))
-            assert_equal(SIMD[D, w](0), splat[D](B(False)))
+            assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
+            assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 
 
 def test_compare():

@@ -725,17 +725,30 @@ struct SIMD[dtype: DType, size: Int](
         else:
             self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
-    # TODO: allow implicit construction of Scalar[DType.bool] from Bool when
-    # we have requires clauses.
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self: SIMD[DType.bool, size], value: Bool, /):
-        """Initializes the SIMD vector with a bool value.
+        """Initializes a Scalar with a bool value.
 
-        The bool value is splatted across all elements of the SIMD vector.
+        Since this constructor does not splat, it can be implicit.
 
         Args:
-            value: The bool value.
+            value: The bool value to initialize the Scalar with.
         """
+
+        # NOTE: due to some issues with the out Self parameter not always being
+        # respected (i.e. through implicit conversion paths), it's better to do
+        # this check instead of constraining the signature, because otherwise
+        # the error would point to a type mismatch. All this should be fixed by
+        # using a requires clause when it becomes available.
+        constrained[
+            size == 1,
+            (
+                "must be a scalar; use the `fill` keyword instead for explicit"
+                " splatting"
+            ),
+        ]()
+
         # TODO(MOCO-2186): remove when the parser ensures this for constructors.
         constrained[
             _type_is_eq[__type_of(self), Self](),
@@ -745,6 +758,27 @@ struct SIMD[dtype: DType, size: Int](
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
         ](value.value)
+
+        self.value = rebind[Self._Mask._mlir_type](s)
+
+    @always_inline("nodebug")
+    fn __init__(out self: SIMD[DType.bool, size], *, fill: Bool):
+        """Initializes the SIMD vector with a bool value.
+
+        The bool value is splatted across all elements of the SIMD vector.
+
+        Args:
+            fill: The bool value to fill each element of the SIMD vector with.
+        """
+        # TODO(MOCO-2186): remove when the parser ensures this for constructors.
+        constrained[
+            _type_is_eq[__type_of(self), Self](),
+            "Target type doesn't support conversion from `Bool`",
+        ]()
+        _simd_construction_checks[dtype, size]()
+        var s = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<bool>`
+        ](fill.value)
 
         @parameter
         if size == 1:
@@ -779,50 +813,6 @@ struct SIMD[dtype: DType, size: Int](
         self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
             value.value
         )
-
-    # TODO: Remove the dummy parameter.
-    @always_inline("nodebug")
-    fn __init__[
-        *, `_`: NoneType = None
-    ](
-        out self: SIMD[DType.bool, size],
-        *elems: Bool,
-        __list_literal__: () = (),
-    ):
-        """Constructs a SIMD vector via a variadic list of Bool elements.
-
-        The input values are assigned to the corresponding elements of the SIMD
-        vector.
-
-        Parameters:
-            _: A dummy parameter to ensure this overload has lower priority than
-                the others. Its value is ignored.
-
-        Constraints:
-            The number of input values is equal to size of the SIMD vector.
-
-        Args:
-            elems: The variadic list of elements from which the SIMD vector is
-                   constructed.
-            __list_literal__: Tell Mojo to use this method for list literals.
-        """
-
-        _simd_construction_checks[dtype, size]()
-
-        # TODO: Make this a compile-time check when possible.
-        debug_assert(
-            size == len(elems),
-            (
-                "mismatch in the number of elements in the SIMD variadic"
-                " constructor"
-            ),
-        )
-
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
-        @parameter
-        for i in range(size):
-            self[i] = Scalar[DType.bool](elems[i])
 
     @always_inline("nodebug")
     fn __init__(out self, *elems: Scalar[dtype], __list_literal__: () = ()):
@@ -1254,9 +1244,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool:
-            return self.select(self._Mask(False), self._Mask(True))._refine[
-                dtype
-            ]()
+            return self.select(
+                self._Mask(fill=False), self._Mask(fill=True)
+            )._refine[dtype]()
         else:
             return self ^ -1
 

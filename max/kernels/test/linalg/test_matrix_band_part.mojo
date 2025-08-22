@@ -45,7 +45,7 @@ def matrix_band_part[
 
     num_lower_buf[0] = num_lower
     num_upper_buf[0] = num_upper
-    exclude_buf[0] = Scalar[DType.bool](exclude)
+    exclude_buf[0] = exclude
 
     @parameter
     fn input_fn[

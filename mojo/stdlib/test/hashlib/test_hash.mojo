@@ -119,16 +119,16 @@ def test_hash_simd():
         hash(Scalar[DType.bool](False)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](True)),
-        hash(SIMD[DType.bool, 2](True)),
+        hash(SIMD[DType.bool, 2](fill=True)),
+        hash(SIMD[DType.bool, 2](fill=True)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](False)),
-        hash(SIMD[DType.bool, 2](False)),
+        hash(SIMD[DType.bool, 2](fill=False)),
+        hash(SIMD[DType.bool, 2](fill=False)),
     )
     assert_not_equal(
-        hash(SIMD[DType.bool, 2](True)),
-        hash(SIMD[DType.bool, 2](False)),
+        hash(SIMD[DType.bool, 2](fill=True)),
+        hash(SIMD[DType.bool, 2](fill=False)),
     )
 
 

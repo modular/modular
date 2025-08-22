@@ -868,7 +868,9 @@ struct UnsafePointer[
         Returns:
             A vector which is stride loaded.
         """
-        return strided_load(self, Int(stride), SIMD[DType.bool, width](True))
+        return strided_load(
+            self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn strided_store[
@@ -892,7 +894,9 @@ struct UnsafePointer[
             stride: The stride between stores.
         """
         constrained[mut, _must_be_mut_err]()
-        strided_store(val, self, Int(stride), SIMD[DType.bool, width](True))
+        strided_store(
+            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn gather[
@@ -903,7 +907,7 @@ struct UnsafePointer[
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](True),
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
     ) -> SIMD[dtype, width]:
         """Gathers a SIMD vector from offsets of the current pointer.
@@ -959,7 +963,7 @@ struct UnsafePointer[
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
-        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](True),
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
     ):
         """Scatters a SIMD vector into offsets of the current pointer.
 

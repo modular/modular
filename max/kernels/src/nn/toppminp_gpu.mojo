@@ -134,9 +134,9 @@ fn topk_wrapper[
                 # the probability threshold (p_threshold). If it does, we can skip sorting
                 # since we'll just sample this token. Otherwise, we need to sort to find
                 # all tokens that sum to p_threshold probability mass.
-                skip_sort[batch_id] = Scalar[DType.bool](
-                    (total.u > p_threshold[batch_id]) and not _test_sort
-                )
+                skip_sort[batch_id] = (
+                    total.u > p_threshold[batch_id]
+                ) and not _test_sort
                 # If we're testing sort, we can't skip sort
             else:
                 # For min-p sampling, we calculate a dynamic threshold as:
@@ -146,7 +146,7 @@ fn topk_wrapper[
                 var p_threshold_val = p_threshold[batch_id] * total.u
                 # update with actual min-p threshold
                 p_threshold[batch_id] = p_threshold_val
-                skip_sort[batch_id] = Scalar[DType.bool](False)
+                skip_sort[batch_id] = False
 
             # Remove the found maximum from consideration in the next iteration
             var orig_tid = (vector_idx - block_offset) % stride

@@ -389,12 +389,6 @@ def main():
         reduce_inner_test[reduce_max](
             IndexList[2](5, 5),
             Scalar[DType.bool].MIN,
-            List[Scalar[DType.bool]](
-                Scalar[DType.bool](True),
-                Scalar[DType.bool](False),
-                Scalar[DType.bool](True),
-                Scalar[DType.bool](False),
-                Scalar[DType.bool](True),
-            ),
+            List[Scalar[DType.bool]](True, False, True, False, True),
             ctx,
         )
