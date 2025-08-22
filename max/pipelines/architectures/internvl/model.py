@@ -557,7 +557,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             return graph, vision_model.state_dict()
 
-    def _language_graph_input_types(self) -> tuple[Type, ...]:
+    def _language_graph_input_types(self) -> tuple[Type[Any], ...]:
         # Generate DeviceRef.
         device_ref = DeviceRef.from_device(self.devices[0])
 

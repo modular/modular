@@ -229,7 +229,7 @@ class Type(Generic[MlirType]):
         raise NotImplementedError
 
     @staticmethod
-    def from_mlir(t: MlirType) -> Type:
+    def from_mlir(t: MlirType) -> Type[Any]:
         """Constructs a type from an MLIR type.
 
         Args:

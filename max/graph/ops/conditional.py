@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Callable
+from typing import Any, Callable
 
 from max.mlir.dialects import mo
 
@@ -26,7 +26,7 @@ from ..value import TensorValue, TensorValueLike
 
 def cond(
     pred: TensorValueLike,
-    out_types: Iterable[Type] | None,
+    out_types: Iterable[Type[Any]] | None,
     then_fn: Callable,
     else_fn: Callable,
 ) -> list[TensorValue]:

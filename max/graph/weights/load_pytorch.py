@@ -112,14 +112,14 @@ class PytorchWeights:
         )
     """
 
-    _filepath: PathLike
+    _filepath: PathLike[str]
     _tensor_infos: dict[str, Any]
     _prefix: str
     _allocated: dict[str, DLPackArray]
 
     def __init__(
         self,
-        filepath: PathLike,
+        filepath: PathLike[str],
         tensor_infos: Optional[dict[str, Any]] = None,
         prefix: str = "",
         allocated=None,  # noqa: ANN001

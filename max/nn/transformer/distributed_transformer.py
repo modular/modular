@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from itertools import islice
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -44,7 +44,7 @@ from ..rotary_embedding import RotaryEmbedding
 from .transformer import ReturnLogits
 
 
-def take(it: Iterable[Value], n: int) -> list[Value]:
+def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
     """Return the next *n* items from *it* as a list."""
     return list(islice(it, n))
 
@@ -234,7 +234,7 @@ class DistributedTransformer(Module):
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
         if self.use_subgraphs:
-            subgraph_input_types: Sequence[Type | list[Type]] = [
+            subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],

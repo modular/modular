@@ -17,13 +17,15 @@ This function expresses a readiness fence for one or more values.
 
 from __future__ import annotations
 
+from typing import Any
+
 from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..value import Value
 
 
-def fence(*values: Value) -> list[Value]:
+def fence(*values: Value[Any]) -> list[Value[Any]]:
     """Returns the input value(s) unchanged, serving as a scheduling barrier.
 
     This operation is a pure identity on values but prevents the asynchronous

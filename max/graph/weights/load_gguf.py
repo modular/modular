@@ -120,7 +120,7 @@ class GGUFWeights(Weights):
 
     def __init__(
         self,
-        source: Union[PathLike, gguf.GGUFReader],
+        source: Union[PathLike[str], gguf.GGUFReader],
         tensors: Optional[dict[str, gguf.ReaderTensor]] = None,
         prefix: str = "",
         allocated: Optional[dict[str, DLPackArray]] = None,

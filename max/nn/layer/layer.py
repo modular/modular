@@ -202,7 +202,7 @@ class Module(Layer, ABC):
     def build_subgraph(
         self,
         name: str,
-        input_types: Sequence[Type | list[Type]],
+        input_types: Sequence[Type[Any] | list[Type[Any]]],
         weight_prefix: str = "",
     ) -> Graph:
         """Builds a subgraph for this module.
@@ -229,7 +229,7 @@ class Module(Layer, ABC):
             - Placeholder weights will require the :obj:`prefix` attribute of :obj:`ops.call` to be set.
         """
         layer_weights = list(self.raw_state_dict().values())
-        subgraph_input_types: list[Type] = []
+        subgraph_input_types: list[Type[Any]] = []
 
         def flatten(t: Any, result: list[Any]) -> None:
             if isinstance(t, (list, tuple)):
@@ -238,7 +238,7 @@ class Module(Layer, ABC):
             else:
                 result.append(t)
 
-        def take(it: Iterable[Value], n: int) -> list[Value]:
+        def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
             """Return the next *n* items from *it* as a list."""
             return list(islice(it, n))
 

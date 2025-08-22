@@ -97,7 +97,7 @@ class Value(Generic[MlirType]):
         raise NotImplementedError
 
     @classmethod
-    def from_mlir(cls, value: _Value[MlirType]) -> Value:
+    def from_mlir(cls, value: _Value[MlirType]) -> Value[Any]:
         """Creates a :obj:`Value` from an MLIR value.
 
         Args:
@@ -160,7 +160,7 @@ class Value(Generic[MlirType]):
 
 
 class _ChainValue(Value[mo.ChainType]):
-    def __init__(self, value: Value | _Value[mo.ChainType]) -> None:
+    def __init__(self, value: Value[Any] | _Value[mo.ChainType]) -> None:
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.ChainType)
             self._mlir_value = value
@@ -185,7 +185,7 @@ class _ChainValue(Value[mo.ChainType]):
 class _OpaqueValue(Value[mo.OpaqueType]):
     """Represents an opaque value within a `Graph`."""
 
-    def __init__(self, value: Value | _Value[mo.OpaqueType]) -> None:
+    def __init__(self, value: Value[Any] | _Value[mo.OpaqueType]) -> None:
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.OpaqueType)
             self._mlir_value = value
@@ -210,7 +210,7 @@ class _OpaqueValue(Value[mo.OpaqueType]):
 class BufferValue(Value[mo.BufferType]):
     """Represents a mutable semantic tensor within a `Graph`."""
 
-    def __init__(self, value: Value | _Value[mo.BufferType]) -> None:
+    def __init__(self, value: Value[Any] | _Value[mo.BufferType]) -> None:
         """Initializes a :obj:`BufferValue` from another value.
 
         Args:
@@ -1039,7 +1039,7 @@ class TensorValue(Value[mo.TensorType]):
 
 @runtime_checkable
 class HasTensorValue(Protocol):
-    def __tensorvalue__(self) -> Value: ...
+    def __tensorvalue__(self) -> Value[Any]: ...
 
 
 Numeric = Union[

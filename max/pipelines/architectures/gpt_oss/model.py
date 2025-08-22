@@ -16,9 +16,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -58,10 +59,10 @@ class GptOssInputs(ModelInputs):
     execution.
     """
 
-    tokens: np.ndarray | Tensor
+    tokens: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: np.ndarray | Tensor | list[Tensor]
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor]
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence. For distributed execution,
     this can be a list of tensors, one per device."""
@@ -71,8 +72,8 @@ class GptOssInputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: np.ndarray | Tensor,
-        input_row_offsets: np.ndarray | Tensor | list[Tensor],
+        tokens: npt.NDArray[np.integer[Any]] | Tensor,
+        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor | list[Tensor],
         return_n_logits: Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,

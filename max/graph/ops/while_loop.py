@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Callable
+from typing import Any, Callable
 
 from max import mlir
 from max._core import Value as _Value
@@ -28,9 +28,9 @@ from ..value import BufferValue, TensorValue, Value
 
 
 def while_loop(
-    initial_values: Iterable[Value] | Value,
+    initial_values: Iterable[Value[Any]] | Value[Any],
     predicate: Callable[..., TensorValue],
-    body: Callable[..., Value | Iterable[Value]],
+    body: Callable[..., Value[Any] | Iterable[Value[Any]]],
 ) -> list[TensorValue]:
     """Execute a loop until the predicate evaluates to false.
 
@@ -156,8 +156,8 @@ def while_loop(
 
         def chain_aware_wrapper():
             # Separate loop variables from the execution chain
-            loop_vars: Sequence[Value]
-            execution_chain: Value
+            loop_vars: Sequence[Value[Any]]
+            execution_chain: Value[Any]
             *loop_vars, execution_chain = (
                 Value.from_mlir(_Value._from_cmlir(arg)) for arg in block_args
             )

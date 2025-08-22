@@ -904,7 +904,7 @@ def flash_attention_ragged(
     )
     parameters["local_window_size"] = local_window_size
 
-    values: MutableSequence[Value] = [
+    values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
         kv_collection,
@@ -1099,7 +1099,7 @@ def flare_mla_prefill_ragged(
     is_init_str = ".init" if prev_output is None else ""
     op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
 
-    input_values: MutableSequence[Value] = [
+    input_values: MutableSequence[Value[Any]] = [
         input,
         k,
         v,
