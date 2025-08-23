@@ -28,7 +28,7 @@ _EXTRA_CONSTRAINTS = {
     "test_compile_nvptx.mojo": ["//:nvidia_gpu"],
     "test_cuda_target.mojo": ["//:nvidia_gpu"],
     "test_simd.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_wmma_nvptx.mojo": ["//:nvidia_gpu"],
+    "test_wmma_nvptx.mojo": ["//:a100_gpu"],  # SM80 WMMA instructions specific to A100
 }
 
 [

@@ -138,10 +138,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape=mma_shape
-    ](
+    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
+        mma_shape=mma_shape,
         cluster_shape=Index(
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -149,7 +148,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
-        mma_shape=mma_shape,
         config=matmul_config,
         cta_group=2,
     ](
@@ -168,7 +166,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         fn run_kernel(ctx: DeviceContext) raises:
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
-                mma_shape=mma_shape,
                 config=matmul_config,
                 cta_group=2,
             ](
