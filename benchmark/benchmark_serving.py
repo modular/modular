@@ -61,7 +61,7 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-# 10 minute timeout per request session
+# 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 logger = logging.getLogger("benchmark_serving")
