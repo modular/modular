@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Iterable, Sequence
+from functools import cached_property
 from typing import (
     Any,
     Generic,
@@ -412,7 +413,7 @@ class TensorValue(Value[mo.TensorType]):
         device = self.device
         return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
-    @property
+    @cached_property
     def type(self) -> TensorType:
         """Returns the type of the :obj:`TensorValue` as a :obj:`TensorType`."""
         return TensorType.from_mlir(self._mlir_value.type)
