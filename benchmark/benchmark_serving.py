@@ -1510,7 +1510,11 @@ def parse_args() -> argparse.Namespace:
 
     # Create parser using the enhanced MAXConfig functionality with required model field
     parser = benchmark_config.cli_arg_parsers(
-        description="Benchmark the online serving throughput.",
+        description=(
+            "Benchmark the online serving throughput. "
+            "Make sure that the MAX server is running and hosting a model "
+            "before running this script."
+        ),
     )
 
     # Additional arguments
