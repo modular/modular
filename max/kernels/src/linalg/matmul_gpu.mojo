@@ -19,8 +19,8 @@ from sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     simdwidthof,
+    sizeof,
 )
-from sys import sizeof
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -33,17 +33,18 @@ from gpu import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import get_gpu_target
-from gpu.host.info import A100, H100, B200
+from gpu.host.info import A100, H100, B200, MI355X
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
     from_ndbuffer_row_major,
 )
+from layout import LayoutTensor
 from layout.layout import *
+from layout.tensor_core import get_mma_shape
 from logger import Logger
 from memory import bitcast, stack_allocation
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .matmul_amd import gemm_kernel_amd
@@ -68,8 +69,6 @@ from .utils_gpu import (
     _bk_base,
     select_config,
 )
-
-from layout import LayoutTensor
 
 
 fn matmul_kernel[
@@ -645,6 +644,18 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
+                fn mma_shape_helper() -> IndexList[3]:
+                    @parameter
+                    if transpose_b and ctx.default_device_info is MI355X:
+
+                        @parameter
+                        if a_type.is_half_float():
+                            return Index(16, 16, 32)
+
+                    return get_mma_shape[a_type, DType.float32]()
+
+                @always_inline
+                @parameter
                 fn kernel_helper[
                     block_m: Int,
                     block_n: Int,
@@ -661,6 +672,7 @@ fn _matmul_gpu[
                         warp_tile_shape=Index(
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
+                        mma_shape=mma_shape_helper(),
                         num_pipeline_stages=num_pipeline_stages,
                         scheduler_hint=scheduler_hint_helper[
                             block_m, block_n

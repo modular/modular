@@ -553,7 +553,7 @@ fn gemm_kernel_amd[
     @parameter
     fn load_tiles_from_shared[k_tile_idx: Int]():
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
-        b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
+        b_tiles.load_tile_from_shared[k_tile_idx, is_a=False]()
 
     # GEMM Computation Pipeline
     # This kernel implements a pipelined approach optimized for AMD GPUs:

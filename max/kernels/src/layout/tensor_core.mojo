@@ -101,7 +101,7 @@ alias shape_16x8x16 = IndexList[3](16, 8, 16)
 alias shape_8x8x4 = IndexList[3](8, 8, 4)
 alias shape_16x8x32 = IndexList[3](16, 8, 32)
 
-# MI300x shapes
+# AMDGPU shapes
 alias shape_16x16x4 = IndexList[3](16, 16, 4)
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
 alias shape_16x16x32 = IndexList[3](16, 16, 32)
@@ -177,7 +177,7 @@ struct TensorCore[
     alias supported_half = in_type.is_half_float() and (
         shape
         == shape_16x8x16 if is_nvidia_gpu() else shape
-        in (shape_16x16x16, shape_32x32x8)
+        in (shape_16x16x16, shape_16x16x32, shape_32x32x8)
     )
     alias supported_fp8 = (
         in_type
@@ -322,7 +322,7 @@ struct TensorCore[
             constrained[
                 (reg_per_thread in (1,) and in_type is DType.float32)
                 or (
-                    reg_per_thread in (4,)
+                    reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
                 )
                 or (
@@ -494,7 +494,7 @@ struct TensorCore[
             constrained[
                 (reg_per_thread in (1,) and in_type is DType.float32)
                 or (
-                    reg_per_thread in (4,)
+                    reg_per_thread in (4, 8)
                     and (in_type in (DType.bfloat16, DType.float16))
                 )
                 or (
