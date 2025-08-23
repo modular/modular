@@ -389,14 +389,13 @@ struct PythonObject(
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(keys)):
-            var key_obj = keys[i].to_python_object()
-            var val_obj = values[i].to_python_object()
             var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
+                dict_obj_ptr, keys[i]._obj_ptr, values[i]._obj_ptr
             )
             if result != 0:
                 raise Error("internal error: PyDict_SetItem failed")
-
+        keys.steal_data().free()
+        values.steal_data().free()
         return PythonObject(from_owned=dict_obj_ptr)
 
     fn __copyinit__(out self, existing: Self):

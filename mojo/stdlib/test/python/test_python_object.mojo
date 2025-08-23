@@ -332,9 +332,12 @@ fn test_dict() raises:
         UnsafePointer(to=val),
     )
 
+    assert_false(Bool(PythonObject.__copyinit__is_trivial))
+    assert_false(Bool(PythonObject.__del__is_trivial))
+    assert_true(Bool(PythonObject.__moveinit__is_trivial))
     assert_equal(cpy._Py_REFCNT(key), 1)
     assert_equal(cpy._Py_REFCNT(val), 1)
-    _ = d
+    _ = d^
 
 
 fn test_set() raises:

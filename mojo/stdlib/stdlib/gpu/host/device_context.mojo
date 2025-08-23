@@ -737,7 +737,11 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         Returns:
             A `Span` pointing to the underlying memory of the `HostBuffer`.
         """
-        return __type_of(span)(ptr=self._host_ptr, length=len(self))
+        alias O = Origin(__origin_of(self))
+        return __type_of(span)(
+            ptr=self._host_ptr.origin_cast[mut = O.mut, origin=O](),
+            length=len(self),
+        )
 
 
 struct DeviceBuffer[dtype: DType](

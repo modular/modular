@@ -864,6 +864,8 @@ def test_indexing():
 
 
 def test_list_dtor():
+    # NOTE: we can't test trivial destructors because if the structure has a
+    # non-trivial destructor then List will run it
     var dtor_count = 0
 
     var l = List[DelCounter]()
@@ -874,18 +876,6 @@ def test_list_dtor():
 
     l^.__del__()
     assert_equal(dtor_count, 1)
-
-
-# Verify we skip calling destructors for the trivial elements
-def test_destructor_trivial_elements():
-    var dtor_count = 0
-
-    var l = List[DelCounter, hint_trivial_type=True]()
-    l.append(DelCounter(UnsafePointer(to=dtor_count)))
-
-    l^.__del__()
-
-    assert_equal(dtor_count, 0)
 
 
 def test_list_repr():
@@ -1026,7 +1016,6 @@ def main():
     test_list_contains()
     test_indexing()
     test_list_dtor()
-    test_destructor_trivial_elements()
     test_list_repr()
     test_list_fill_constructor()
     test_uninit_ctor()

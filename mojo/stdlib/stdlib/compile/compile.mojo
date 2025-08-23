@@ -113,7 +113,9 @@ struct CompiledFunctionInfo[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    alias populate = rebind[fn (OpaquePointer) capturing -> None](
+    alias populate = rebind[
+        fn (UnsafePointer[NoneType, *_, **_]) capturing -> None
+    ](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,
             target,
