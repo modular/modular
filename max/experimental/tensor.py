@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 import gc
 import sys
+import warnings
 import weakref
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from itertools import chain
 from typing import Any
@@ -212,8 +214,41 @@ class Tensor:
         return await self
 
     def _sync_realize(self) -> None:
-        if not self.real:
+        if self.real:
+            return
+
+        # If there's no running loop, just use asyncio.run
+        try:
+            # - asyncio.get_event_loop().is_running() works in most scenarios
+            # - asyncio.get_event_loop() raises in some environments
+            # - use asyncio.get_running_loop() and check if it fails instead
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop
             asyncio.run(self.realize)
+            return
+
+        # If there is a running loop, execute using a ThreadPoolExecutor
+        # - This is a common case inside a Jupyter notebook, eg.
+        #   printing a tensor.
+        # - Otherwise, this is probably accidental. The code is running
+        #   inside an async environment, but for some reason is trying
+        #   to synchronously await. Check for this case explicitly and warn.
+        def is_interactive():
+            import __main__ as main
+
+            return not hasattr(main, "__file__")
+
+        if not is_interactive():
+            warnings.warn(
+                "Use of synchronous tensor method inside another event loop. "
+                "Use `await tensor`."
+            )
+
+        # Run self.realize in another thread
+        loop = asyncio.new_event_loop()
+        with ThreadPoolExecutor() as pool:
+            pool.submit(loop.run_until_complete, self.realize)
 
     def __bool__(self) -> bool:
         return bool(self.item())
