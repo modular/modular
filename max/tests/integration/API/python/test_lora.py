@@ -12,7 +12,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
 from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.lib.max_config import LoRAConfig
+from max.pipelines.lib.lora_config import LoRAConfig
 
 
 @pytest.fixture
