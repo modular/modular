@@ -96,9 +96,7 @@ def test_take():
 
 def test_moveinit():
     var deleted = False
-    var b = OwnedPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
-    )
+    var b = OwnedPointer(ObservableDel(UnsafePointer[mut=False](to=deleted)))
     var p1 = b.unsafe_ptr()
 
     var b2 = b^
