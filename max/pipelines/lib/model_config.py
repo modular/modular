@@ -34,7 +34,8 @@ from .hf_utils import (
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from .max_config import KVCacheConfig, MAXConfig
+from .kv_cache_config import KVCacheConfig
+from .max_config import MAXConfig
 from .registry import PIPELINE_REGISTRY
 from .weight_path_parser import WeightPathParser
 

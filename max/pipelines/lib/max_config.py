@@ -17,33 +17,18 @@ from __future__ import annotations
 import argparse
 import enum
 import logging
-import os
 import types
 from abc import abstractmethod
 from collections.abc import Mapping
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import yaml
-from max.dtype import DType
-from max.engine import GPUProfilingMode
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.pipelines")
 
 T = TypeVar("T", bound="MAXConfig")
-
-# These are global to all MAXConfig classes for now, so they need to be updated
-# if we add new enums.
-STRINGLY_TYPED_ENUM_MAPPING: Mapping[str, type[enum.Enum]] = {
-    "DType": DType,
-    "GPUProfilingMode": GPUProfilingMode,
-    "KVCacheStrategy": KVCacheStrategy,
-    "PipelineTask": PipelineTask,
-}
 
 STRINGLY_TYPED_BASIC_MAPPING: Mapping[str, type] = {
     "bool": bool,
@@ -58,6 +43,30 @@ MAX_CONFIG_METADATA_FIELDS: Mapping[str, type[Any]] = {
     "version": str,
     "depends_on": str,
 }
+
+
+def _resolve_enum_type(
+    enum_name: str, config_class: type[MAXConfig]
+) -> type[enum.Enum] | None:
+    """Dynamically resolve an enum type by name.
+
+    This allows the base class to resolve enum types without importing them
+    directly, making the system more modular.
+
+    Args:
+        enum_name: The name of the enum type to resolve.
+        config_class: The config class requesting the enum resolution.
+
+    Returns:
+        The resolved enum type, or None if it cannot be resolved.
+    """
+    # Check if the class has a custom enum mapping
+    if hasattr(config_class, "_get_enum_mapping"):
+        enum_mapping = config_class._get_enum_mapping()
+        if enum_name in enum_mapping:
+            return enum_mapping[enum_name]
+
+    return None
 
 
 # TODO: I believe we have some utils like this in our entrypoint code. We should
@@ -164,14 +173,17 @@ def _get_argparse_type_and_action(
     return str, None
 
 
+# TODO: config_class is now passed in here. This function should just be a
+# class method of MAXConfig.
 def convert_max_config_value(
-    value: Any, field_type: Any, field_name: str
+    config_class: type[MAXConfig], value: Any, field_type: Any, field_name: str
 ) -> Any:
     """Convert a config value to the appropriate type.
 
     Handles enums, Optional types, Union types, lists, and basic types.
 
     Args:
+        config_class: The MAXConfig class requesting the conversion (required for enum resolution).
         value: The value from the configuration file.
         field_type: The expected type of the field.
         field_name: The name of the field (for error messages).
@@ -200,6 +212,7 @@ def convert_max_config_value(
                 return None
             # Recursively convert using the non-None type
             return convert_max_config_value(
+                config_class=config_class,
                 value=value,
                 field_type=non_none_type,
                 field_name=field_name,
@@ -210,6 +223,7 @@ def convert_max_config_value(
             for arg_type in args:
                 try:
                     return convert_max_config_value(
+                        config_class=config_class,
                         value=value,
                         field_type=arg_type,
                         field_name=field_name,
@@ -236,6 +250,7 @@ def convert_max_config_value(
             element_type = args[0]
             return [
                 convert_max_config_value(
+                    config_class=config_class,
                     value=item,
                     field_type=element_type,
                     field_name=f"{field_name}[{i}]",
@@ -248,8 +263,10 @@ def convert_max_config_value(
 
     # Handle string-typed fields.
     if isinstance(field_type, str):
-        if field_type in STRINGLY_TYPED_ENUM_MAPPING:
-            field_type = STRINGLY_TYPED_ENUM_MAPPING[field_type]
+        # Resolve enum type dynamically
+        resolved_enum_type = _resolve_enum_type(field_type, config_class)
+        if resolved_enum_type:
+            field_type = resolved_enum_type
         elif field_type in STRINGLY_TYPED_BASIC_MAPPING:
             field_type = STRINGLY_TYPED_BASIC_MAPPING[field_type]
 
@@ -264,7 +281,9 @@ def convert_max_config_value(
     # Handle enum types
     elif isinstance(field_type, type) and issubclass(field_type, enum.Enum):
         return _convert_enum_value(
-            value=value, enum_type=field_type, field_name=field_name
+            value=value,
+            enum_type=field_type,
+            field_name=field_name,
         )
     # Handle boolean conversion
     elif field_type is bool:
@@ -304,6 +323,7 @@ def convert_max_config_value(
                 )
             return [
                 convert_max_config_value(
+                    config_class=config_class,
                     value=item,
                     field_type=element_type,
                     field_name=f"{field_name}[{i}]",
@@ -586,6 +606,72 @@ class MAXConfig:
         return set()
 
     @classmethod
+    def _get_enum_mapping(cls) -> Mapping[str, type[enum.Enum]]:
+        """Get the enum mapping for this config class.
+
+        This method automatically collects enum mappings from all parent classes
+        in the inheritance hierarchy, creating a union of all enums.
+
+        Subclasses can override this method to provide their own enum mappings
+        without requiring the base class to import all possible enum types.
+
+        Returns:
+            A mapping from string names to enum types, including all enums
+            from parent classes in the inheritance hierarchy.
+        """
+        # Start with the current class's enum mapping
+        enum_mapping = {}
+
+        # Get the Method Resolution Order (MRO) to traverse the inheritance hierarchy
+        # This includes the current class and all its parent classes
+        for base_class in cls.__mro__:
+            # Skip the current class (cls) as we'll handle it separately
+            if base_class is cls:
+                continue
+
+            # Check if the base class has a _get_enum_mapping method
+            if hasattr(base_class, "_get_enum_mapping"):
+                try:
+                    # Get the enum mapping from the parent class
+                    parent_enum_mapping = base_class._get_enum_mapping()
+                    if parent_enum_mapping:
+                        # Merge the parent's enum mapping into our current mapping
+                        # Later mappings (from more derived classes) take precedence
+                        enum_mapping.update(parent_enum_mapping)
+                except Exception as e:
+                    # Log warning but continue to avoid breaking the system
+                    logger.warning(
+                        f"Failed to get enum mapping from {base_class.__name__}: {e}"
+                    )
+
+        # Now add the current class's enum mapping (this takes precedence)
+        # This allows subclasses to override parent enum mappings if needed
+        if hasattr(cls, "_get_enum_mapping_impl"):
+            try:
+                current_enum_mapping = cls._get_enum_mapping_impl()
+                if current_enum_mapping:
+                    enum_mapping.update(current_enum_mapping)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get enum mapping from {cls.__name__}: {e}"
+                )
+
+        return enum_mapping
+
+    @classmethod
+    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+        """Internal implementation method for enum mapping.
+
+        Subclasses should override this method to provide their own enum mappings.
+        The public _get_enum_mapping method will automatically collect enums from
+        all parent classes and merge them with this implementation.
+
+        Returns:
+            A mapping from string names to enum types for this specific class.
+        """
+        return {}
+
+    @classmethod
     def from_config_file(
         cls: type[T],
         config_path: str | Path,
@@ -672,6 +758,7 @@ class MAXConfig:
                 try:
                     # Handle type conversion for specific types
                     converted_value = convert_max_config_value(
+                        config_class=cls,
                         value=value,
                         field_type=field_type,
                         field_name=key,
@@ -864,6 +951,7 @@ class MAXConfig:
                         try:
                             # Use the same conversion logic as from_config_file
                             converted_value = convert_max_config_value(
+                                config_class=self._config_instance.__class__,
                                 value=parsed_value,
                                 field_type=field.type,
                                 field_name=attr_name,
@@ -880,168 +968,3 @@ class MAXConfig:
 
         # Return the wrapped parser
         return MAXConfigArgumentParser(parser, self)
-
-
-# frozen is False (for now) because of _available_cache_memory being set by
-# internal code.
-@dataclass(frozen=False)
-class KVCacheConfig(MAXConfig):
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
-    """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
-    strategy based on the default strategy for the architecture requested.
-
-    You can also force the engine to use a specific caching strategy: :obj:`continuous` | :obj:`paged`.
-    """
-
-    kv_cache_page_size: int = 128
-    """The number of tokens in a single page in the paged KVCache."""
-
-    enable_prefix_caching: bool = False
-    """Whether to enable prefix caching for the paged attention KVCache."""
-
-    enable_kvcache_swapping_to_host: bool = False
-    """Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted."""
-
-    device_memory_utilization: float = 0.9
-    """The fraction of available device memory that the process should consume.
-
-    This is used to inform the size of the KVCache workspace. The calculation is:
-
-    .. math::
-
-        kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
-    """
-
-    host_kvcache_swap_space_gb: float = 50.0
-    """The amount of host memory to use for the host KVCache in GiB.
-
-    This space is only allocated when kvcache_swapping_to_host is enabled.
-    """
-
-    _available_cache_memory: int | None = None
-    """The amount of available cache memory in bytes. This should only be set by internal code."""
-
-    _config_file_section_name: str = "kv_cache_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "cache_strategy": "Force a specific cache strategy: 'paged' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
-            "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 128.",
-            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
-            "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
-            "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
-            "host_kvcache_swap_space_gb": "The amount of host memory to use for the host KVCache in GiB. This is only used when kvcache_swapping_to_host is enabled. Default is set to 50.0.",
-        }
-
-
-@dataclass
-class SamplingConfig(MAXConfig):
-    in_dtype: DType = DType.float32
-    """The data type of the input tokens."""
-
-    out_dtype: DType = DType.float32
-    """The data type of the output logits."""
-
-    enable_structured_output: bool = False
-    """Enable structured generation/guided decoding for the server. This allows the user to pass a json
-    schema in the response_format field, which the LLM will adhere to."""
-
-    enable_variable_logits: bool = False
-    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
-    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
-    decoding purposes."""
-
-    do_penalties: bool = False
-    """Whether to apply frequency and presence penalties to the model's output."""
-
-    enable_min_tokens: bool = False
-    """Whether to enable min_tokens, which blocks the model from generating
-    stopping tokens before the min_tokens count is reached. This defaults to
-    false.
-    """
-
-    _config_file_section_name: str = "sampling_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
-            "enable_variable_logits": "Whether to enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with their associated logit_offsets. This is needed to produce additional logits for echo and speculative decoding purposes. This defaults to false.",
-            "enable_min_tokens": "Whether to enable min_tokens, which blocks the model from generating stopping tokens before the min_tokens count is reached. This defaults to false.",
-            "do_penalties": "Whether to apply frequency and presence penalties to the model's output. This defaults to false.",
-            "in_dtype": "The data type of the input tokens. This defaults to float32.",
-            "out_dtype": "The data type of the output logits. This defaults to float32.",
-        }
-
-
-@dataclass
-class ProfilingConfig(MAXConfig):
-    gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF
-    """Whether to enable GPU profiling of the model."""
-
-    _config_file_section_name: str = "profiling_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
-
-    def __post_init__(self):
-        gpu_profiling_env = os.environ.get("MODULAR_ENABLE_PROFILING", "off")
-
-        if self.gpu_profiling == GPUProfilingMode.OFF:
-            try:
-                self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
-            except ValueError:
-                valid_values = [mode.value for mode in GPUProfilingMode]
-                raise ValueError(  # noqa: B904
-                    "gpu_profiling must be one of: " + ", ".join(valid_values)
-                )
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
-        }
-
-
-@dataclass
-class LoRAConfig(MAXConfig):
-    enable_lora: bool = False
-    """Enables LoRA on the server"""
-
-    lora_paths: list[str] = field(default_factory=list)
-    """List of statically defined LoRA paths"""
-
-    max_lora_rank: int = 16
-    """Maximum rank of all possible LoRAs"""
-
-    max_num_loras: int = 100
-    """The maximum number of active LoRAs in a batch"""
-
-    lora_request_endpoint: str = field(default_factory=generate_zmq_ipc_path)
-    """The request endpoint for ZMQ communication"""
-
-    lora_response_endpoint: str = field(default_factory=generate_zmq_ipc_path)
-    """The response endpoint for ZMQ communication"""
-
-    _config_file_section_name: str = "lora_config"
-    """The section name to use when loading this config from a MAXConfig file.
-    This is used to differentiate between different config sections in a single
-    MAXConfig file."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "enable_lora": "Enables LoRA on the server",
-            "lora_paths": "List of paths to the LoRAs.",
-            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
-            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
-            "lora_request_endpoint": "The ZMQ request endpoint for IPC.",
-            "lora_response_endpoint": "The ZMQ response endpoint for IPC.",
-        }
