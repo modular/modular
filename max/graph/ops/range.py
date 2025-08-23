@@ -17,6 +17,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from ...driver import Device
 from .. import dtype_promotion
 from ..dim import Dim, DimLike
 from ..graph import Graph
@@ -32,7 +33,7 @@ def range(
     out_dim: DimLike | None = None,
     *,
     dtype: DType,
-    device: DeviceRef,
+    device: Device | DeviceRef,
 ) -> TensorValue:
     """Creates a sequence of numbers. The sequence goes from `start` with
     increments of size `step` up to (but not including) `stop`. All arguments
@@ -55,6 +56,8 @@ def range(
     Returns:
         A symbolic tensor value containing the defined range of values.
     """
+    device = DeviceRef.from_device(device)
+
     if out_dim is None:
         if not (_is_scalar(start) and _is_scalar(stop) and _is_scalar(step)):
             raise ValueError("Dynamic ranges must provide an explicit out_dim")

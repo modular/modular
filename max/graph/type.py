@@ -195,7 +195,9 @@ class DeviceRef:
         return DeviceRef(device_type=DeviceKind(attr.label), id=attr.id)
 
     @staticmethod
-    def from_device(device: Device) -> DeviceRef:
+    def from_device(device: Device | DeviceRef) -> DeviceRef:
+        if isinstance(device, DeviceRef):
+            return device
         return DeviceRef(DeviceKind(device.label), device.id)
 
 

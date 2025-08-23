@@ -22,6 +22,7 @@ from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
 
+from ...driver import Device
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
@@ -34,7 +35,7 @@ def constant(
     | np.integer[Any]
     | np.floating[Any],
     dtype: DType,
-    device: DeviceRef,
+    device: Device | DeviceRef,
 ) -> TensorValue:
     """Adds a node representing a constant operation.
 
@@ -55,6 +56,7 @@ def constant(
     Returns:
         A graph value containing the constant data as an attribute.
     """
+    device = DeviceRef.from_device(device)
     if not isinstance(value, (np.ndarray, int, float, np.integer, np.floating)):
         raise TypeError(
             "ops.constant expects inputs to numpy array, int, float,"
