@@ -67,19 +67,14 @@ fn matmul_dispatch_sm100[
         alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
         alias UmmaShape = Index(BM * 2, BN * 2, MMA_K)
 
-        alias config = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=block_tile_shape,
             mma_shape=UmmaShape,
-        ](block_tile_shape, cluster_shape=CLUSTER_DIM)
+            cluster_shape=CLUSTER_DIM,
+        )
 
         blackwell_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            mma_shape=UmmaShape,
-            config=config,
-            cta_group=2,
+            transpose_b=transpose_b, config=config, cta_group=2
         ](c, a, b, ctx)
 
         return DISPATCH_HIT
@@ -115,19 +110,14 @@ fn matmul_dispatch_sm100[
         block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
     )
 
-    alias config = MatmulConfig[
-        a_type,
-        b_type,
-        c_type,
-        transpose_b,
+    alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=block_tile_shape,
         mma_shape=umma_shape,
-    ](block_tile_shape, cluster_shape=Index(2, 1, 1))
+        cluster_shape=Index(2, 1, 1),
+    )
 
     blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        mma_shape = config.mma_shape,
-        config=config,
-        cta_group=2,
+        transpose_b=transpose_b, config=config, cta_group=2
     ](c, a, b, ctx)
 
     return DISPATCH_HIT

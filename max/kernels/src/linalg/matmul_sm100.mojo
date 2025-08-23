@@ -1256,9 +1256,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     b_type: DType,
     b_shape: DimList,
     transpose_b: Bool,
-    mma_shape: IndexList[3],
     *,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b, mma_shape],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
 ](
@@ -1276,9 +1275,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         "Only support transposed B",
     ]()
 
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
+    alias MMA_M = config.mma_shape[0]
+    alias MMA_N = config.mma_shape[1]
+    alias MMA_K = config.mma_shape[2]
 
     alias BM = MMA_M // cta_group
     alias BN = MMA_N // cta_group

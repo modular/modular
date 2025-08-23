@@ -144,10 +144,9 @@ fn test_warp_specialize_gemm_with_multicasting_splitk[
         "PARTITIONED" if partitioned_multicast else "BROADCAST",
     )
 
-    alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
-    ](
+    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
+        mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
         num_pipeline_stages=num_pipeline_stages,
         num_consumer=num_consumer,

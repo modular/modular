@@ -561,9 +561,9 @@ fn matmul_dispatch_sm90_fp8[
             b_type,
             c_type,
             transpose_b,
-            mma_shape = Index(64, WGMMA_N, 32),
         ](
             block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
+            mma_shape=Index(64, WGMMA_N, 32),
             cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
             num_pipeline_stages=NUM_PIPELINE_STAGES,
             num_consumer=NUM_CONSUMER,
@@ -588,14 +588,9 @@ fn matmul_dispatch_sm90_fp8[
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM90]() raises:
-        alias config = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            mma_shape = entry.mma_shape,
-        ](
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
+            mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -691,13 +686,10 @@ fn matmul_dispatch_sm90_fp8[
             # If the number of blocks is less than the number of SMs, it's probably better to not use any persistent kernel
             if ceildiv(m, 64) * ceildiv(static_N, BN) <= H100.sm_count:
                 alias config = MatmulConfig[
-                    a_type,
-                    b_type,
-                    c_type,
-                    transpose_b,
-                    mma_shape = Index(64, BN, 32),
+                    a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
+                    mma_shape=Index(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
@@ -718,13 +710,10 @@ fn matmul_dispatch_sm90_fp8[
                 return DISPATCH_HIT
             elif m <= 1024:
                 alias config = MatmulConfig[
-                    a_type,
-                    b_type,
-                    c_type,
-                    transpose_b,
-                    mma_shape = Index(64, BN, 32),
+                    a_type, b_type, c_type, transpose_b
                 ](
                     block_tile_shape=Index(64, BN, BK),
+                    mma_shape=Index(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
@@ -751,9 +740,9 @@ fn matmul_dispatch_sm90_fp8[
                     b_type,
                     c_type,
                     transpose_b,
-                    mma_shape = Index(64, BN, 32),
                 ](
                     block_tile_shape=Index(128, BN, BK),
+                    mma_shape=Index(64, BN, 32),
                     cluster_shape=Index(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=2,
@@ -1378,13 +1367,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
         alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
         alias H100_TUNING_CONFIG = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            mma_shape = Index(64, 256, 16),
+            a_type, b_type, c_type, transpose_b
         ](
             block_tile_shape=Index(128, 256, 64),
+            mma_shape=Index(64, 256, 16),
             cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
             num_pipeline_stages=4,
             num_consumer=2,
@@ -1434,14 +1420,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM90]() raises:
-        alias config = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            mma_shape = entry.mma_shape,
-        ](
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
+            mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -1558,14 +1539,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
         if m <= 16:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 64 // size_factor, mma_k),
-            ](
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
+                mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
@@ -1587,14 +1563,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m <= 64:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 64 // size_factor, mma_k),
-            ](
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
+                mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1617,13 +1588,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         elif m == 8192:
             alias M8192_N8192_K2048_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1647,13 +1615,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
         elif m == 4096:
             alias M4096_N8192_K2048_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1677,14 +1642,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
         if m <= 64:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 112 // size_factor, mma_k),
-            ](
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 112 // size_factor, BK),
+                mma_shape=Index(64, 112 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1707,13 +1667,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         elif m == 8192:
             alias M8192_N14336_K8192_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1737,13 +1694,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
         elif m == 4096:
             alias M4096_N14336_K8192_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1767,14 +1721,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
         if m <= 16:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 64 // size_factor, mma_k),
-            ](
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
+                mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
@@ -1796,14 +1745,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
             )
             return DISPATCH_HIT
         elif m <= 64:
-            alias config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 64 // size_factor, mma_k),
-            ](
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(64, 64 // size_factor, BK),
+                mma_shape=Index(64, 64 // size_factor, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
@@ -1826,13 +1770,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         elif m == 8192:
             alias M8192_N8192_K7168_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1860,9 +1801,9 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 b_type,
                 c_type,
                 transpose_b,
-                mma_shape = Index(64, 256 // size_factor, mma_k),
             ](
                 block_tile_shape=Index(128, 256 // size_factor, BK),
+                mma_shape=Index(64, 256 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1891,13 +1832,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
     ):
         if m <= 512:
             alias M512_N3840_K15360_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, 128 // size_factor, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, 128 // size_factor, BK),
+                mma_shape=Index(64, 128 // size_factor, mma_k),
                 cluster_shape=Index(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1931,13 +1869,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
     if a_type is DType.bfloat16 and BN != -1:
         if m <= 128:
             alias default_bf16_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, BN, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(64, BN, BK),
+                mma_shape=Index(64, BN, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=1,
@@ -1959,13 +1894,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         else:
             alias default_bf16_config = MatmulConfig[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b,
-                mma_shape = Index(64, BN, mma_k),
+                a_type, b_type, c_type, transpose_b
             ](
                 block_tile_shape=Index(128, BN, BK),
+                mma_shape=Index(64, BN, mma_k),
                 cluster_shape=Index(1, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
@@ -1991,13 +1923,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
     if a_type is DType.bfloat16:
         alias BN = 256
         alias default_bf16_config = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            mma_shape = Index(64, BN, mma_k),
+            a_type, b_type, c_type, transpose_b
         ](
             block_tile_shape=Index(128, BN, 64),
+            mma_shape=Index(64, BN, mma_k),
             num_pipeline_stages=4,
             num_consumer=2,
             pdl_level=pdl_level,

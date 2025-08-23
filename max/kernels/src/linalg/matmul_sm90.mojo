@@ -2102,8 +2102,7 @@ fn warp_specialize_gemm_with_multicasting[
     b_shape: DimList, //,
     *,
     transpose_b: Bool,
-    wgmma_shape: IndexList[3],
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -2163,7 +2162,7 @@ fn warp_specialize_gemm_with_multicasting[
     logger.info("Executing Warp Specialized Gemm with Multicasting")
     logger.info("block_tile_shape: ", config.block_tile_shape)
     logger.info("cluster_shape: ", config.cluster_shape)
-    logger.info("mma_shape: ", wgmma_shape)
+    logger.info("mma_shape: ", config.mma_shape)
 
     @parameter
     if schedule == MatmulSchedule.DS_SCHEDULER:
@@ -2303,7 +2302,7 @@ fn warp_specialize_gemm_with_multicasting[
                 __type_of(b_tma_op).layout,
                 __type_of(c).layout,
                 config.block_tile_shape,
-                wgmma_shape,
+                config.mma_shape,
                 __type_of(a_tma_op).desc_layout,
                 __type_of(b_tma_op).desc_layout,
                 __type_of(c_tma_op).desc_layout,
@@ -2348,7 +2347,7 @@ fn warp_specialize_gemm_with_multicasting[
                 __type_of(b_tma_op).layout,
                 __type_of(c).layout,
                 config.block_tile_shape,
-                wgmma_shape,
+                config.mma_shape,
                 __type_of(a_tma_op).desc_layout,
                 __type_of(b_tma_op).desc_layout,
                 __type_of(c_tma_op).desc_layout,
@@ -2394,7 +2393,7 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(b).layout,
             __type_of(c).layout,
             config.block_tile_shape,
-            wgmma_shape,
+            config.mma_shape,
             __type_of(c_tma_op).desc_layout,
             __type_of(c_tma_op).layout,
             c_smem_layout,
