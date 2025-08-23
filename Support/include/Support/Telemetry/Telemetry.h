@@ -24,7 +24,6 @@
 #include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/metrics/meter.h"
 #include "opentelemetry/metrics/meter_provider.h"
-#include "opentelemetry/sdk/metrics/metric_reader.h"
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry {
@@ -93,46 +92,12 @@ public:
     return instrumentLevel == Level::USER;
   }
 
-  // Gets the machine id attribute.
-  StringRef getMachineId() const { return machineId; }
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-  bool initUserMetricsReader(
-      std::unique_ptr<opentelemetry::sdk::metrics::MetricReader> reader);
-#endif
-
-  bool clearUserMetricsReader();
-
   Counter<uint64_t> createUInt64Counter(
       StringRef name, Level instrumentLevel,
       const llvm::StringMap<MetricAttributeValue> &attributes = {},
       StringRef description = "", StringRef unit = "") {
     return createCounter<uint64_t>(name, instrumentLevel, attributes,
                                    description, unit);
-  }
-
-  Counter<double> createDoubleCounter(
-      StringRef name, Level instrumentLevel,
-      const llvm::StringMap<MetricAttributeValue> &attributes = {},
-      StringRef description = "", StringRef unit = "") {
-    return createCounter<double>(name, instrumentLevel, attributes, description,
-                                 unit);
-  }
-
-  Gauge<int64_t>
-  createInt64Gauge(StringRef name, Level instrumentLevel,
-                   const llvm::StringMap<MetricAttributeValue> &attributes = {},
-                   StringRef description = "", StringRef unit = "") {
-    return createGauge<int64_t>(name, instrumentLevel, attributes, description,
-                                unit);
-  }
-
-  Gauge<double> createDoubleGauge(
-      StringRef name, Level instrumentLevel,
-      const llvm::StringMap<MetricAttributeValue> &attributes = {},
-      StringRef description = "", StringRef unit = "") {
-    return createGauge<double>(name, instrumentLevel, attributes, description,
-                               unit);
   }
 
   /// Create a Histogram<uint64_t>.
@@ -142,15 +107,6 @@ public:
       StringRef description = "", StringRef unit = "") {
     return createHistogram<uint64_t>(name, instrumentLevel, attributes,
                                      description, unit);
-  }
-
-  /// Create a Histogram<double>.
-  Histogram<double> createDoubleHistogram(
-      StringRef name, Level instrumentLevel,
-      const llvm::StringMap<MetricAttributeValue> &attributes = {},
-      StringRef description = "", StringRef unit = "") {
-    return createHistogram<double>(name, instrumentLevel, attributes,
-                                   description, unit);
   }
 
   /// Create a Timer. If unit is omitted, the method will implicitly set
@@ -216,29 +172,6 @@ public:
   void
   flush(std::chrono::microseconds timeout = std::chrono::microseconds::max());
 
-  /// This struct provides an RAII-style way to flush telemetry at the end of a
-  /// scope. Note that the telemetry context pointer is not managed, and the
-  /// struct cannot outlive it.
-  struct AutoFlush {
-    AutoFlush(TelemetryContext *ctx, std::chrono::microseconds timeout)
-        : context(ctx), timeout(timeout) {}
-    ~AutoFlush() { context->flush(timeout); }
-
-    TelemetryContext *context;
-    std::chrono::microseconds timeout;
-  };
-
-  /// Get an AutoFlush object from `this`. The object will flush when it goes
-  /// out of scope, blocking until the flush completes or the timeout elapses,
-  /// whichever comes first. NOTE: TelemetryContext flushes periodically
-  /// asynchronously. Flushing with scoped autoflush is not generally
-  /// recommended.
-  /// Warning: the returned struct cannot outlive this telemetry context.
-  AutoFlush autoFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) {
-    return AutoFlush(this, timeout);
-  }
-
 private:
   /// Configured telemetry level for this telemetry context.
   Level telemetryLevel;
@@ -263,42 +196,6 @@ private:
     // Same for other instruments.
     return !name.empty();
   }
-
-  template <typename T>
-  Gauge<T>
-  createGauge(StringRef name, Level instrumentLevel,
-              const llvm::StringMap<MetricAttributeValue> &attributes = {},
-              StringRef description = "", StringRef unit = "") {
-    assert(isValidInstrumentName(name) && "instrument name is invalid");
-#ifdef MODULAR_ENABLE_TELEMETRY
-    if (isUserMetric(instrumentLevel) && userMeter)
-      return createGaugeImpl<T>(userMeter, name, description, unit, attributes);
-    if (isInstrumentEnabled(instrumentLevel))
-      return createGaugeImpl<T>(meter, name, description, unit, attributes);
-    else
-      return createGaugeImpl<T>(noopMeter, name, description, unit, attributes);
-#else
-    return Gauge<T>();
-#endif
-  }
-#ifdef MODULAR_ENABLE_TELEMETRY
-  // Utility function to help make code cleaner
-  template <typename T>
-  Gauge<T>
-  createGaugeImpl(std::shared_ptr<opentelemetry::metrics::Meter> m,
-                  StringRef name, StringRef description, StringRef unit,
-                  const llvm::StringMap<MetricAttributeValue> &attributes) {
-    if constexpr (std::is_same_v<T, int64_t>) {
-      return Gauge<int64_t>(m->CreateInt64UpDownCounter(
-                                name.data(), description.data(), unit.data()),
-                            attributes);
-    } else if constexpr (std::is_same_v<T, double>) {
-      return Gauge<double>(m->CreateDoubleUpDownCounter(
-                               name.data(), description.data(), unit.data()),
-                           attributes);
-    }
-  }
-#endif
 
   template <typename T>
   Counter<T>
