@@ -361,3 +361,13 @@ def test_where():
     result = F.where(condition, x, y)
     result._sync_realize()
     assert result.real
+
+
+def test_functional_returns_tensor():
+    @F.functional
+    def returns_tensor():
+        return Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
+
+    result = returns_tensor()
+    result._sync_realize()
+    assert result.real
