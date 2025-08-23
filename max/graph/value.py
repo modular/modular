@@ -739,6 +739,192 @@ class TensorValue(Value[mo.TensorType]):
         """
         return ops.transfer_to(self, device)
 
+    def argmax(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using an argmax operation along ``axis``.
+
+        When the result is ambiguous ie. there are multiple maxima,
+        selects one index arbitrarily.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("argmax_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Argmax along axis 1 (last dimension of each row)
+                indices = x.argmax(axis=1)
+
+                print(f"Input shape: {x.shape}")       # [2, 3]
+                print(f"Argmax shape: {indices.shape}")  # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` of dtype ``DType.int64`` with the same rank as the input,
+            and the same shape except along ``axis``, which will have size 1.
+        """
+        return ops.argmax(self, axis=axis)
+
+    def max(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using a max operation along ``axis``.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("max_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Max along axis 1 (last dimension of each row)
+                m = x.max(axis=1)
+
+                print(f"Input shape: {x.shape}")  # [2, 3]
+                print(f"Max shape: {m.shape}")    # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` with the same rank as the input and the same
+            shape except along ``axis``, which will have size 1.
+        """
+        return ops.max(self, axis=axis)
+
+    def mean(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using a mean operation along ``axis``.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("mean_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Mean along axis 1 (last dimension of each row)
+                mu = x.mean(axis=1)
+
+                print(f"Input shape: {x.shape}")  # [2, 3]
+                print(f"Mean shape: {mu.shape}")  # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` with the same rank as the input and the same
+            shape except along ``axis``, which will have size 1.
+        """
+        return ops.mean(self, axis=axis)
+
+    def min(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using a min operation along ``axis``.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("min_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Min along axis 1 (last dimension of each row)
+                mn = x.min(axis=1)
+
+                print(f"Input shape: {x.shape}")  # [2, 3]
+                print(f"Min shape: {mn.shape}")   # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` with the same rank as the input and the same
+            shape except along ``axis``, which will have size 1.
+        """
+        return ops.min(self, axis=axis)
+
+    def stdev(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using a standard deviation operation along ``axis``.
+
+        The standard deviation is computed as the square root of the population
+        variance along the specified axis.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("stdev_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Standard deviation along axis 1 (last dimension of each row)
+                sd = x.stdev(axis=1)
+
+                print(f"Input shape: {x.shape}")    # [2, 3]
+                print(f"Stdev shape: {sd.shape}")  # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` with the same rank as the input and the same
+            shape except along ``axis``, which will have size 1.
+        """
+        return ops.sqrt(self.var(axis=axis))
+
+    def var(self, axis: int = -1) -> TensorValue:
+        """Reduces the tensor using a variance operation along ``axis``.
+
+        The variance is computed as the mean of squared deviations from the mean
+        (population variance, i.e., without Bessel's correction) along the specified axis.
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, TensorType, DeviceRef
+
+            # Define a 2x3 float32 input tensor for the graph
+            input_type = TensorType(DType.float32, (2, 3), device=DeviceRef.CPU())
+            with Graph("var_demo", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+
+                # Variance along axis 1 (last dimension of each row)
+                vr = x.var(axis=1)
+
+                print(f"Input shape: {x.shape}")  # [2, 3]
+                print(f"Var shape: {vr.shape}")  # [2, 1]
+
+        Args:
+            axis: The axis along which to compute the reduction. If negative,
+                indexes from the last dimension (e.g., ``-1`` is the last dimension).
+
+        Returns:
+            A :obj:`TensorValue` with the same rank as the input and the same
+            shape except along ``axis``, which will have size 1.
+        """
+        if self.dtype is DType.bool:
+            raise TypeError("Variance undefined for boolean values.")
+        return ((self - self.mean(axis=axis)) ** 2).mean(axis=axis)
+
     @property
     def T(self) -> TensorValue:
         """Returns the transposed tensor.
