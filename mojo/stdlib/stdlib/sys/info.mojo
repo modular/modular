@@ -363,7 +363,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         Returns:
             True if the host operating system is macOS and False otherwise.
         """
-        return Self._os() in ["darwin", "macosx"]
+        return Self._os() == "darwin" or Self._os() == "macosx"
 
     @staticmethod
     fn is_windows() -> Bool:
@@ -893,9 +893,7 @@ fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 
 @always_inline("nodebug")
-fn bitwidthof[
-    type: AnyTrivialRegType, target: _TargetType = _current_target()
-]() -> Int:
+fn bitwidthof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bits) of the type.
 
     Parameters:

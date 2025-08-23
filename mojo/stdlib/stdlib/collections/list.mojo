@@ -234,13 +234,26 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
            Defaults to `False`.
     """
 
+    # Aliases
+    alias _has_trivial_del = Bool(T.__del__is_trivial)
+    alias _has_trivial_copy = hint_trivial_type  # Bool(T.__copy_is_trivial)
+    alias _has_trivial_move = Bool(T.__moveinit__is_trivial)
+    alias _is_fully_trivial = (
+        Self._has_trivial_move
+        and Self._has_trivial_copy
+        and Self._has_trivial_del
+    )
+
+    alias _Span = Span[T, MutableAnyOrigin]
+    alias _AnyOriginUnsafePointerType = Self._Span.UnsafePointerType
+
     # Fields
-    var _data: UnsafePointer[T]
-    """The underlying storage for the list."""
+    var _data: Self._AnyOriginUnsafePointerType
+    """The underlying storage for the `List`."""
     var _len: Int
-    """The number of elements in the list."""
+    """The number of elements in the `List`."""
     var capacity: Int
-    """The amount of elements that can fit in the list without resizing it."""
+    """The amount of elements that can fit in the `List` without resizing it."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -248,7 +261,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     fn __init__(out self):
         """Constructs an empty list."""
-        self._data = UnsafePointer[T]()
+        self._data = Self._AnyOriginUnsafePointerType()
         self._len = 0
         self.capacity = 0
 
@@ -259,9 +272,9 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = UnsafePointer[T].alloc(capacity)
+            self._data = Self._AnyOriginUnsafePointerType.alloc(capacity)
         else:
-            self._data = UnsafePointer[T]()
+            self._data = Self._AnyOriginUnsafePointerType()
         self._len = 0
         self.capacity = capacity
 
@@ -341,7 +354,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """Destroy all elements in the list and free its memory."""
 
         @parameter
-        if not hint_trivial_type:
+        if not Self._has_trivial_del:
             for i in range(len(self)):
                 (self._data + i).destroy_pointee()
         self._data.free()
@@ -416,7 +429,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `EqualityComparable`.
+                trait `EqualityComparable`.
 
         Args:
             value: The value to find.
@@ -431,10 +444,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        for i in self:
-            if i == value:
-                return True
-        return False
+        return value in Span(self)
 
     fn __mul__(self, x: Int) -> Self:
         """Multiplies the list by x and returns a new list.
@@ -467,7 +477,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         if x <= 0 or len(self) == 0:
             self.clear()
             return
-        var orig = self.copy()
+        var orig = Span(self.copy())
         self.reserve(len(self) * x)
         for _ in range(x - 1):
             self.extend(orig)
@@ -628,10 +638,10 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn _realloc(mut self, new_capacity: Int):
-        var new_data = UnsafePointer[T].alloc(new_capacity)
+        var new_data = Self._AnyOriginUnsafePointerType.alloc(new_capacity)
 
         @parameter
-        if hint_trivial_type:
+        if Self._has_trivial_move:
             memcpy(new_data, self._data, len(self))
         else:
             for i in range(len(self)):
@@ -693,7 +703,6 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             other: List whose elements will be added in order at the end of this
                 list.
         """
-
         var other_len = len(other)
         var final_size = len(self) + other_len
         self.reserve(final_size)
@@ -702,7 +711,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         var src_ptr = other.unsafe_ptr()
 
         @parameter
-        if hint_trivial_type:
+        if Self._has_trivial_move:
             memcpy(dest_ptr, src_ptr, other_len)
         else:
             for _ in range(other_len):
@@ -714,11 +723,13 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
                 src_ptr += 1
                 dest_ptr += 1
 
-        # Update the size now since all elements have been moved into this list.
         self._len = final_size
-        # The elements of `other` are now consumed, so we mark it as empty so
-        # they don't get destroyed when it goes out of scope.
-        other._len = 0
+
+        @parameter
+        if not Self._is_fully_trivial:
+            # The elements of `other` are now consumed. We mark it as empty so
+            # they don't get destroyed when it goes out of scope.
+            other._len = 0
 
     fn extend(mut self, elements: Span[T, _]):
         """Extend this list by copying elements from a `Span`.
@@ -738,7 +749,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         self._len = new_num_elts
 
         @parameter
-        if hint_trivial_type:
+        if Self._has_trivial_copy:
             memcpy(self.unsafe_ptr() + i, elements.unsafe_ptr(), elements_len)
         else:
             for elt in elements:
@@ -808,7 +819,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, i: Int = -1, out res: T):
         """Pops a value from the list at the given index.
 
         Args:
@@ -823,12 +834,16 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         if i < 0:
             normalized_idx += self._len
 
-        var ret_val = (self._data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j).move_pointee_into(self._data + j - 1)
-        self._len -= 1
+        res = (self._data + normalized_idx).take_pointee()
 
-        return ret_val^
+        @parameter
+        if Self._has_trivial_move:
+            var ptr = self._data + normalized_idx
+            memcpy(ptr, ptr + 1, self._len - normalized_idx)
+        else:
+            for j in range(normalized_idx + 1, self._len):
+                (self._data + j).move_pointee_into(self._data + j - 1)
+        self._len -= 1
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
@@ -838,11 +853,10 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
         Notes:
             If the current capacity is greater or equal, this is a no-op.
-            Otherwise, the storage is reallocated and the date is moved.
+            Otherwise, the storage is reallocated and the data is moved.
         """
-        if self.capacity >= new_capacity:
-            return
-        self._realloc(new_capacity)
+        if self.capacity < new_capacity:
+            self._realloc(new_capacity)
 
     fn resize(mut self, new_size: Int, value: T):
         """Resizes the list to the given new size.
@@ -900,7 +914,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             )
 
         @parameter
-        if not hint_trivial_type:
+        if not Self._has_trivial_del:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
         self._len = new_size
@@ -1016,14 +1030,14 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             (self._data + i).destroy_pointee()
         self._len = 0
 
-    fn steal_data(mut self) -> UnsafePointer[T]:
+    fn steal_data(mut self) -> Self._AnyOriginUnsafePointerType:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
             The underlying data.
         """
         var ptr = self._data
-        self._data = UnsafePointer[T]()
+        self._data = Self._AnyOriginUnsafePointerType()
         self._len = 0
         self.capacity = 0
         return ptr
@@ -1228,15 +1242,6 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         # takes a ref that might mutate self
         var length = self._len
         return self.unsafe_ptr() + length
-
-    fn _cast_hint_trivial_type[
-        hint_trivial_type: Bool
-    ](deinit self) -> List[T, hint_trivial_type]:
-        var result = List[T, hint_trivial_type]()
-        result._data = self._data
-        result._len = self._len
-        result.capacity = self.capacity
-        return result^
 
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:

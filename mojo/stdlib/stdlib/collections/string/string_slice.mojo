@@ -2234,7 +2234,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=self.byte_length())
+        # HACK: this is very wrong
+        var sep = StaticString(
+            ptr=self.unsafe_ptr().origin_cast[
+                mut=False, origin=StaticConstantOrigin
+            ](),
+            length=self.byte_length(),
+        )
         var total_bytes = _TotalWritableBytes(elems, sep=sep).size
         var result = String(capacity=total_bytes)
 

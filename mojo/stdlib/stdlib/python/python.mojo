@@ -376,6 +376,7 @@ struct Python(Copyable, Defaultable):
             var val = entry.value.to_python_object()
             var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
             cpy.Py_DecRef(key)
+            cpy.Py_DecRef(val._obj_ptr)
             if errno == -1:
                 raise cpy.unsafe_get_error()
 
