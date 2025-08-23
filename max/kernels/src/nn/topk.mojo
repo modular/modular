@@ -567,12 +567,12 @@ fn _warp_reduce_topk[
 
     # Shuffle down function for TopK_2 structure
     @parameter
-    fn shuffle_down_topk2(
-        v: TopK_2[T, largest], offset: Int
+    fn shuffle_down_topk2[offset: UInt](
+        v: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:
         return TopK_2[T, largest](
-            u=warp.shuffle_down(v.u, offset),  # u is the value
-            p=Int(warp.shuffle_down(Int32(v.p), offset)),  # p is the index
+            u=warp.shuffle_down[offset](v.u),  # u is the value
+            p=Int(warp.shuffle_down[offset](Int32(v.p))),  # p is the index
         )
 
     @parameter
@@ -599,7 +599,7 @@ fn _warp_reduce_topk[
     @parameter
     for i in reversed(range(limit)):
         alias mask = 1 << i
-        res = reduce_fn(res, shuffle_down_topk2(res, mask))
+        res = reduce_fn(res, shuffle_down_topk2[mask](res))
 
     return res
 

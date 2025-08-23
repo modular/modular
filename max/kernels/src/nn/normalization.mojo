@@ -143,9 +143,9 @@ fn welford_warp_reduce[
 
     @parameter
     for mask in reversed(range(limit)):
-        var mean = warp.shuffle_down(res_mean, 1 << mask)
-        var m2 = warp.shuffle_down(res_m2, 1 << mask)
-        var count = warp.shuffle_down(res_count, 1 << mask)
+        var mean = warp.shuffle_down[1 << mask](res_mean)
+        var m2 = warp.shuffle_down[1 << mask](res_m2)
+        var count = warp.shuffle_down[1 << mask](res_count)
         welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
