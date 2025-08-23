@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import enum
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,6 +20,69 @@ from max.pipelines.lib import (
     deep_merge_max_configs,
     resolve_max_config_inheritance,
 )
+
+
+# Test enums for enum inheritance tests
+class TestEnum1(enum.Enum):
+    VALUE1 = "value1"
+    VALUE2 = "value2"
+
+
+class TestEnum2(enum.Enum):
+    VALUE3 = "value3"
+    VALUE4 = "value4"
+
+
+class TestEnum3(enum.Enum):
+    VALUE5 = "value5"
+    VALUE6 = "value6"
+
+
+@dataclass
+class BaseTestConfig(MAXConfig):
+    """Base test config with some enums."""
+
+    _config_file_section_name: str = "base_test_config"
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
+
+    @classmethod
+    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+        """Get the enum mapping for BaseTestConfig."""
+        return {
+            "TestEnum1": TestEnum1,
+            "TestEnum2": TestEnum2,
+        }
+
+
+@dataclass
+class DerivedTestConfig(BaseTestConfig):
+    """Derived test config that adds more enums."""
+
+    _config_file_section_name: str = "derived_test_config"
+
+    @classmethod
+    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+        """Get the enum mapping for DerivedTestConfig."""
+        return {
+            "TestEnum3": TestEnum3,
+        }
+
+
+@dataclass
+class OverrideTestConfig(BaseTestConfig):
+    """Test config that overrides a parent enum."""
+
+    _config_file_section_name: str = "override_test_config"
+
+    @classmethod
+    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+        """Get the enum mapping for OverrideTestConfig, overriding TestEnum1."""
+        return {
+            "TestEnum1": TestEnum3,  # Override TestEnum1 with TestEnum3
+        }
 
 
 @dataclass
@@ -511,3 +576,122 @@ class TestMAXConfigInheritance:
                 assert config.test_field == "base_value"
                 assert config.test_int == 100
                 assert config.test_bool is False
+
+    def test_base_config_enum_mapping(self) -> None:
+        """Test that base config returns its own enums."""
+        enum_mapping = BaseTestConfig._get_enum_mapping()
+
+        assert "TestEnum1" in enum_mapping
+        assert "TestEnum2" in enum_mapping
+        assert enum_mapping["TestEnum1"] is TestEnum1
+        assert enum_mapping["TestEnum2"] is TestEnum2
+        assert len(enum_mapping) == 2
+
+    def test_derived_config_enum_mapping(self) -> None:
+        """Test that derived config returns union of parent and own enums."""
+        enum_mapping = DerivedTestConfig._get_enum_mapping()
+
+        # Should have enums from parent class
+        assert "TestEnum1" in enum_mapping
+        assert "TestEnum2" in enum_mapping
+        assert enum_mapping["TestEnum1"] is TestEnum1
+        assert enum_mapping["TestEnum2"] is TestEnum2
+
+        # Should have enums from derived class
+        assert "TestEnum3" in enum_mapping
+        assert enum_mapping["TestEnum3"] is TestEnum3
+
+        # Total count should be 3
+        assert len(enum_mapping) == 3
+
+    def test_override_config_enum_mapping(self) -> None:
+        """Test that derived config can override parent enums."""
+        enum_mapping = OverrideTestConfig._get_enum_mapping()
+
+        # TestEnum1 should be overridden with TestEnum3
+        assert "TestEnum1" in enum_mapping
+        assert enum_mapping["TestEnum1"] is TestEnum3  # Overridden
+
+        # TestEnum2 should still be from parent
+        assert "TestEnum2" in enum_mapping
+        assert enum_mapping["TestEnum2"] is TestEnum2
+
+        # Total count should be 2
+        assert len(enum_mapping) == 2
+
+    def test_inheritance_chain_enum_mapping(self) -> None:
+        """Test that enums are collected through the entire inheritance chain."""
+
+        # Create a deeper inheritance chain
+        @dataclass
+        class DeepBaseConfig(MAXConfig):
+            _config_file_section_name: str = "deep_base_config"
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {}
+
+            @classmethod
+            def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+                return {"DeepEnum1": TestEnum1}
+
+        @dataclass
+        class MiddleConfig(DeepBaseConfig):
+            _config_file_section_name: str = "middle_config"
+
+            @classmethod
+            def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+                return {"MiddleEnum1": TestEnum2}
+
+        @dataclass
+        class TopConfig(MiddleConfig):
+            _config_file_section_name: str = "top_config"
+
+            @classmethod
+            def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+                return {"TopEnum1": TestEnum3}
+
+        enum_mapping = TopConfig._get_enum_mapping()
+
+        # Should have enums from all levels
+        assert "DeepEnum1" in enum_mapping
+        assert "MiddleEnum1" in enum_mapping
+        assert "TopEnum1" in enum_mapping
+
+        assert enum_mapping["DeepEnum1"] is TestEnum1
+        assert enum_mapping["MiddleEnum1"] is TestEnum2
+        assert enum_mapping["TopEnum1"] is TestEnum3
+
+        assert len(enum_mapping) == 3
+
+    def test_empty_enum_mapping(self) -> None:
+        """Test that configs with no enums work correctly."""
+
+        @dataclass
+        class EmptyConfig(MAXConfig):
+            _config_file_section_name: str = "empty_config"
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {}
+
+            @classmethod
+            def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
+                return {}
+
+        enum_mapping = EmptyConfig._get_enum_mapping()
+        assert enum_mapping == {}
+
+    def test_missing_enum_mapping_impl(self) -> None:
+        """Test that configs without _get_enum_mapping_impl work correctly."""
+
+        @dataclass
+        class NoImplConfig(MAXConfig):
+            _config_file_section_name: str = "no_impl_config"
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {}
+
+        enum_mapping = NoImplConfig._get_enum_mapping()
+        assert enum_mapping == {}

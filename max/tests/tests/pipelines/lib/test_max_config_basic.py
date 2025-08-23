@@ -221,18 +221,29 @@ class TestMAXConfigTypeConversion:
     def test_basic_type_conversion(self) -> None:
         """Test conversion of basic types."""
         # String to int.
-        assert convert_max_config_value("42", int, "test_field") == 42
+        assert (
+            convert_max_config_value(TestConfig, "42", int, "test_field") == 42
+        )
 
         # String to bool.
-        assert convert_max_config_value("true", bool, "test_field") is True
-        assert convert_max_config_value("false", bool, "test_field") is False
+        assert (
+            convert_max_config_value(TestConfig, "true", bool, "test_field")
+            is True
+        )
+        assert (
+            convert_max_config_value(TestConfig, "false", bool, "test_field")
+            is False
+        )
 
         # String to float.
-        assert convert_max_config_value("3.14", float, "test_field") == 3.14
+        assert (
+            convert_max_config_value(TestConfig, "3.14", float, "test_field")
+            == 3.14
+        )
 
     def test_none_value_handling(self) -> None:
         """Test handling of None values."""
-        result = convert_max_config_value(None, str, "test_field")
+        result = convert_max_config_value(TestConfig, None, str, "test_field")
         assert result is None
 
     def test_boolean_string_variations(self) -> None:
@@ -251,7 +262,9 @@ class TestMAXConfigTypeConversion:
             "ON",
         ]
         for value in true_values:
-            result = convert_max_config_value(value, bool, "test_field")
+            result = convert_max_config_value(
+                TestConfig, value, bool, "test_field"
+            )
             assert result is True, f"Expected True for '{value}'"
 
         # Test false values.
@@ -268,55 +281,72 @@ class TestMAXConfigTypeConversion:
             "OFF",
         ]
         for value in false_values:
-            result = convert_max_config_value(value, bool, "test_field")
+            result = convert_max_config_value(
+                TestConfig, value, bool, "test_field"
+            )
             assert result is False, f"Expected False for '{value}'"
 
     def test_boolean_numeric_values(self) -> None:
         """Test boolean conversion from numeric values."""
         # Test integer values.
-        assert convert_max_config_value(1, bool, "test_field") is True
-        assert convert_max_config_value(0, bool, "test_field") is False
-        assert convert_max_config_value(42, bool, "test_field") is True
+        assert (
+            convert_max_config_value(TestConfig, 1, bool, "test_field") is True
+        )
+        assert (
+            convert_max_config_value(TestConfig, 0, bool, "test_field") is False
+        )
+        assert (
+            convert_max_config_value(TestConfig, 42, bool, "test_field") is True
+        )
 
         # Test float values.
-        assert convert_max_config_value(1.0, bool, "test_field") is True
-        assert convert_max_config_value(0.0, bool, "test_field") is False
-        assert convert_max_config_value(3.14, bool, "test_field") is True
+        assert (
+            convert_max_config_value(TestConfig, 1.0, bool, "test_field")
+            is True
+        )
+        assert (
+            convert_max_config_value(TestConfig, 0.0, bool, "test_field")
+            is False
+        )
+        assert (
+            convert_max_config_value(TestConfig, 3.14, bool, "test_field")
+            is True
+        )
 
     def test_boolean_invalid_values(self) -> None:
         """Test boolean conversion with invalid string values."""
         invalid_values = ["maybe", "unknown", "invalid", "2"]
         for value in invalid_values:
             with pytest.raises(ValueError, match="Cannot convert .* to bool"):
-                convert_max_config_value(value, bool, "test_field")
+                convert_max_config_value(TestConfig, value, bool, "test_field")
 
     def test_enum_conversion_gpu_profiling_mode(self) -> None:
         """Test conversion to GPUProfilingMode enum."""
         # Test by name (case-insensitive).
         result = convert_max_config_value(
-            "OFF", GPUProfilingMode, "gpu_profiling"
+            TestConfig, "OFF", GPUProfilingMode, "gpu_profiling"
         )
         assert result == GPUProfilingMode.OFF
 
         result = convert_max_config_value(
-            "detailed", GPUProfilingMode, "gpu_profiling"
+            TestConfig, "detailed", GPUProfilingMode, "gpu_profiling"
         )
         assert result == GPUProfilingMode.DETAILED
 
         result = convert_max_config_value(
-            "on", GPUProfilingMode, "gpu_profiling"
+            TestConfig, "on", GPUProfilingMode, "gpu_profiling"
         )
         assert result == GPUProfilingMode.ON
 
         # Test case insensitive
         result = convert_max_config_value(
-            "detailed", GPUProfilingMode, "gpu_profiling"
+            TestConfig, "detailed", GPUProfilingMode, "gpu_profiling"
         )
         assert result == GPUProfilingMode.DETAILED
 
         # Test with existing enum value.
         result = convert_max_config_value(
-            GPUProfilingMode.ON, GPUProfilingMode, "gpu_profiling"
+            TestConfig, GPUProfilingMode.ON, GPUProfilingMode, "gpu_profiling"
         )
         assert result == GPUProfilingMode.ON
 
@@ -324,6 +354,7 @@ class TestMAXConfigTypeConversion:
         """Test conversion to KVCacheStrategy enum."""
         # Test by name.
         result = convert_max_config_value(
+            config_class=TestConfig,
             value="PAGED",
             field_type=KVCacheStrategy,
             field_name="cache_strategy",
@@ -331,6 +362,7 @@ class TestMAXConfigTypeConversion:
         assert result == KVCacheStrategy.PAGED
 
         result = convert_max_config_value(
+            config_class=TestConfig,
             value="model_default",
             field_type=KVCacheStrategy,
             field_name="cache_strategy",
@@ -340,20 +372,24 @@ class TestMAXConfigTypeConversion:
     def test_enum_conversion_dtype(self) -> None:
         """Test conversion to DType enum."""
         # Test common dtypes by string.
-        result = convert_max_config_value("float32", DType, "dtype")
+        result = convert_max_config_value(TestConfig, "float32", DType, "dtype")
         assert result == DType.float32
 
-        result = convert_max_config_value("float16", DType, "dtype")
+        result = convert_max_config_value(TestConfig, "float16", DType, "dtype")
         assert result == DType.float16
 
-        result = convert_max_config_value("int8", DType, "dtype")
+        result = convert_max_config_value(TestConfig, "int8", DType, "dtype")
         assert result == DType.int8
 
-        result = convert_max_config_value("bfloat16", DType, "dtype")
+        result = convert_max_config_value(
+            TestConfig, "bfloat16", DType, "dtype"
+        )
         assert result == DType.bfloat16
 
         # Test with existing DType value.
-        result = convert_max_config_value(DType.float32, DType, "dtype")
+        result = convert_max_config_value(
+            TestConfig, DType.float32, DType, "dtype"
+        )
         assert result == DType.float32
 
     def test_enum_conversion_invalid_values(self) -> None:
@@ -361,32 +397,35 @@ class TestMAXConfigTypeConversion:
         # Test invalid GPUProfilingMode.
         with pytest.raises(ValueError):
             convert_max_config_value(
-                "invalid_mode", GPUProfilingMode, "gpu_profiling"
+                TestConfig, "invalid_mode", GPUProfilingMode, "gpu_profiling"
             )
 
         # Test invalid KVCacheStrategy.
         with pytest.raises(ValueError):
             convert_max_config_value(
-                "invalid_strategy", KVCacheStrategy, "cache_strategy"
+                TestConfig,
+                "invalid_strategy",
+                KVCacheStrategy,
+                "cache_strategy",
             )
 
     def test_list_type_conversion(self) -> None:
         """Test conversion of list types."""
         # Test list of strings.
         result = convert_max_config_value(
-            ["path1", "path2", "path3"], list[str], "lora_paths"
+            TestConfig, ["path1", "path2", "path3"], list[str], "lora_paths"
         )
         assert result == ["path1", "path2", "path3"]
 
         # Test list of integers.
         result = convert_max_config_value(
-            ["1", "2", "3"], list[int], "int_list"
+            TestConfig, ["1", "2", "3"], list[int], "int_list"
         )
         assert result == [1, 2, 3]
 
         # Test list of booleans.
         result = convert_max_config_value(
-            ["true", "false", "1", "0"], list[bool], "bool_list"
+            TestConfig, ["true", "false", "1", "0"], list[bool], "bool_list"
         )
         assert result == [True, False, True, False]
 
@@ -394,43 +433,53 @@ class TestMAXConfigTypeConversion:
         """Test list type conversion with invalid input."""
         # Test non-list input.
         with pytest.raises(ValueError, match="Expected list"):
-            convert_max_config_value("not_a_list", list[str], "test_field")
+            convert_max_config_value(
+                TestConfig, "not_a_list", list[str], "test_field"
+            )
 
     def test_optional_type_conversion(self) -> None:
         """Test conversion of Optional types."""
         # Test Optional[int] with valid value.
-        result = convert_max_config_value("42", Optional[int], "optional_int")
+        result = convert_max_config_value(
+            TestConfig, "42", Optional[int], "optional_int"
+        )
         assert result == 42
 
         # Test Optional[int] with None.
-        result = convert_max_config_value(None, Optional[int], "optional_int")
+        result = convert_max_config_value(
+            TestConfig, None, Optional[int], "optional_int"
+        )
         assert result is None
 
         # Test Optional[bool] with valid value.
         result = convert_max_config_value(
-            "true", Optional[bool], "optional_bool"
+            TestConfig, "true", Optional[bool], "optional_bool"
         )
         assert result is True
 
         # Test Optional[bool] with None.
-        result = convert_max_config_value(None, Optional[bool], "optional_bool")
+        result = convert_max_config_value(
+            TestConfig, None, Optional[bool], "optional_bool"
+        )
         assert result is None
 
     def test_union_type_conversion(self) -> None:
         """Test conversion of Union types."""
         # Test Union[int, str] with int.
-        result = convert_max_config_value("42", Union[int, str], "union_field")
+        result = convert_max_config_value(
+            TestConfig, "42", Union[int, str], "union_field"
+        )
         assert result == 42
 
         # Test Union[int, str] with string that can't be converted to int.
         result = convert_max_config_value(
-            "hello", Union[int, str], "union_field"
+            TestConfig, "hello", Union[int, str], "union_field"
         )
         assert result == "hello"
 
         # Test Union[bool, str] with boolean string.
         result = convert_max_config_value(
-            "true", Union[bool, str], "union_field"
+            TestConfig, "true", Union[bool, str], "union_field"
         )
         assert result is True
 
@@ -438,24 +487,24 @@ class TestMAXConfigTypeConversion:
         """Test conversion of complex nested types."""
         # Test Optional[list[str]].
         result = convert_max_config_value(
-            ["item1", "item2"], Optional[list[str]], "optional_list"
+            TestConfig, ["item1", "item2"], Optional[list[str]], "optional_list"
         )
         assert result == ["item1", "item2"]
 
         # Test Optional[list[str]] with None.
         result = convert_max_config_value(
-            None, Optional[list[str]], "optional_list"
+            TestConfig, None, Optional[list[str]], "optional_list"
         )
         assert result is None
 
     def test_direct_type_instantiation_fallback(self) -> None:
         """Test fallback to direct type instantiation."""
         # Test with a simple type that should work with direct instantiation.
-        result = convert_max_config_value("3.14159", float, "pi")
+        result = convert_max_config_value(TestConfig, "3.14159", float, "pi")
         assert result == 3.14159
 
         # Test with integer.
-        result = convert_max_config_value("42", int, "answer")
+        result = convert_max_config_value(TestConfig, "42", int, "answer")
         assert result == 42
 
 
