@@ -12,9 +12,10 @@ import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.driver import Tensor as DriverTensor
 from max.dtype import DType
+from max.experimental import functional as F
 from max.experimental import random
 from max.experimental.tensor import Tensor, TensorType, driver_tensor_type
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Graph
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 
@@ -98,3 +99,8 @@ def test_tensor_from_dlpack() -> None:
     assert t.real
     assert npt.dtype == t.dtype.to_numpy()
     assert list(npt.shape) == t.shape
+
+
+def test_functional_in_graph() -> None:
+    with Graph("test_functional") as graph:
+        graph.output(F.constant(1, dtype=DType.float32, device=DeviceRef.CPU()))
