@@ -229,7 +229,7 @@ fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
 
 
 @always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
+fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
@@ -262,9 +262,9 @@ fn _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
     p: UnsafePointer[Byte, mut=False, **_],
-    eol_start: Int,
+    eol_start: UInt,
     b0: Byte,
-    char_len: Int,
+    char_len: UInt,
 ) -> Bool:
     """Returns whether the char is a newline char.
 
@@ -278,14 +278,19 @@ fn _is_newline_char_utf8[
     alias `\x1c` = UInt8(ord("\x1c"))
     alias `\x1e` = UInt8(ord("\x1e"))
 
-    # here it's actually faster to have branching due to the branch predictor
-    # "realizing" that the char_len == 1 path is often taken. Using the likely
-    # intrinsic is to make the machine code be ordered to optimize machine
-    # instruction fetching, which is an optimization for the CPU front-end.
+    # Since line-breaks are a relatively uncommon occurrence it is best to
+    # branch here because the algorithm that calls this needs low latency rather
+    # than high throughput, which is what a branchless algorithm with SIMD would
+    # provide. So we do branching and add the likely intrinsic to reorder the
+    # machine instructions optimally. Also memory reads are expensive and the
+    # "happy path" of char_len == 1 is cheaper because it has none.
     if likely(char_len == 1):
         return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
-    elif char_len == 2:
-        var b1 = p[eol_start + 1]
+    elif char_len == 4:
+        return False
+
+    var b1 = p[eol_start + 1]
+    if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
         @parameter
@@ -293,8 +298,7 @@ fn _is_newline_char_utf8[
             return is_next_line or (b0 == `\r` and b1 == `\n`)
         else:
             return is_next_line
-    elif char_len == 3:  # unicode line sep or paragraph sep: \u2028 , \u2029
-        var b1 = p[eol_start + 1]
+    else:  # unicode line sep or paragraph sep: \u2028 , \u2029
+        debug_assert(char_len == 3, "invalid UTF-8 byte length")
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
-    return False
