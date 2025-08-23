@@ -237,84 +237,6 @@ fn _has_native_f8_support() -> Bool:
 
 
 # ===----------------------------------------------------------------------=== #
-# nvtx f32x2 SIMD Utilities
-# ===----------------------------------------------------------------------=== #
-
-alias _is_nvtx_f32x2_compatible[
-    dtype: DType, size: Int
-] = _is_sm_100x_or_newer() and dtype == DType.float32 and size > 1
-
-
-@always_inline
-fn _nvtx_f32x2_add[
-    size: Int
-](a: SIMD[DType.float32, size], b: SIMD[DType.float32, size]) -> SIMD[
-    DType.float32, size
-]:
-    var result = SIMD[DType.float32, size](0.0)
-
-    @parameter
-    for i in range(0, size, 2):
-        var a_bits = bitcast[DType.uint64, 1](a.slice[2, offset=i]())
-        var b_bits = bitcast[DType.uint64, 1](b.slice[2, offset=i]())
-
-        var add_bits = inlined_assembly[
-            "add.f32x2 $0, $1, $2;", UInt64, constraints="=l,l,l"
-        ](a_bits, b_bits)
-
-        result = result.insert[offset=i](bitcast[DType.float32, 2](add_bits))
-
-    return result
-
-
-@always_inline
-fn _nvtx_f32x2_mult[
-    size: Int
-](a: SIMD[DType.float32, size], b: SIMD[DType.float32, size]) -> SIMD[
-    DType.float32, size
-]:
-    var result = SIMD[DType.float32, size](0.0)
-
-    @parameter
-    for i in range(0, size, 2):
-        var a_bits = bitcast[DType.uint64, 1](a.slice[2, offset=i]())
-        var b_bits = bitcast[DType.uint64, 1](b.slice[2, offset=i]())
-
-        var mul_bits = inlined_assembly[
-            "mul.f32x2 $0, $1, $2;", UInt64, constraints="=l,l,l"
-        ](a_bits, b_bits)
-
-        result = result.insert[offset=i](bitcast[DType.float32, 2](mul_bits))
-
-    return result
-
-
-@always_inline
-fn _nvtx_f32x2_fma[
-    size: Int
-](
-    a: SIMD[DType.float32, size],
-    b: SIMD[DType.float32, size],
-    c: SIMD[DType.float32, size],
-) -> SIMD[DType.float32, size]:
-    var result = SIMD[DType.float32, size](0.0)
-
-    @parameter
-    for i in range(0, size, 2):
-        var a_bits = bitcast[DType.uint64, 1](a.slice[2, offset=i]())
-        var b_bits = bitcast[DType.uint64, 1](b.slice[2, offset=i]())
-        var c_bits = bitcast[DType.uint64, 1](c.slice[2, offset=i]())
-
-        var fma_bits = inlined_assembly[
-            "fma.rn.f32x2 $0, $1, $2, $3;", UInt64, constraints="=l,l,l,l"
-        ](a_bits, b_bits, c_bits)
-
-        result = result.insert[offset=i](bitcast[DType.float32, 2](fma_bits))
-
-    return result
-
-
-# ===----------------------------------------------------------------------=== #
 # SIMD
 # ===----------------------------------------------------------------------=== #
 
@@ -943,17 +865,7 @@ struct SIMD[dtype: DType, size: Int](
             `self[i] + rhs[i]`.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-
-        @parameter
-        if _is_nvtx_f32x2_compatible[dtype, size]:
-            return rebind[SIMD[dtype, size]](
-                _nvtx_f32x2_add[size](
-                    rebind[SIMD[DType.float32, size]](self),
-                    rebind[SIMD[DType.float32, size]](rhs),
-                )
-            )
-        else:
-            return Self(__mlir_op.`pop.add`(self.value, rhs.value))
+        return Self(__mlir_op.`pop.add`(self.value, rhs.value))
 
     @always_inline("nodebug")
     fn __sub__(self, rhs: Self) -> Self:
@@ -987,16 +899,7 @@ struct SIMD[dtype: DType, size: Int](
                 self._refine[DType.bool]() & rhs._refine[DType.bool]()
             )._refine[dtype]()
 
-        @parameter
-        if _is_nvtx_f32x2_compatible[dtype, size]:
-            return rebind[SIMD[dtype, size]](
-                _nvtx_f32x2_mult[size](
-                    rebind[SIMD[DType.float32, size]](self),
-                    rebind[SIMD[DType.float32, size]](rhs),
-                )
-            )
-        else:
-            return Self(__mlir_op.`pop.mul`(self.value, rhs.value))
+        return Self(__mlir_op.`pop.mul`(self.value, rhs.value))
 
     @always_inline("nodebug")
     fn __truediv__(self, rhs: Self) -> Self:
@@ -2418,20 +2321,11 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
-        @parameter
-        if _is_nvtx_f32x2_compatible[dtype, size]:
-            return rebind[SIMD[dtype, size]](
-                _nvtx_f32x2_fma(
-                    rebind[SIMD[DType.float32, size]](self),
-                    rebind[SIMD[DType.float32, size]](multiplier),
-                    rebind[SIMD[DType.float32, size]](accumulator),
-                )
-            )
-        else:
-            var res = __mlir_op.`pop.fma`[
+        return Self(
+            __mlir_op.`pop.fma`[
                 fastmathFlags = __mlir_attr.`#pop<fmf contract>`
             ](self.value, multiplier.value, accumulator.value)
-            return Self(res)
+        )
 
     @always_inline("nodebug")
     fn _shuffle_variadic[
