@@ -11,7 +11,8 @@ from typing import Callable, TypeVar
 
 from typing_extensions import ParamSpec
 
-from ..graph import TensorValue, ops
+from .. import driver
+from ..graph import Graph, TensorValue, ops
 from . import tensor
 
 Args = ParamSpec("Args")
@@ -23,13 +24,31 @@ def functional(op: Op) -> Op:
     """Convert an op on symbolic tensor values to one which
     additionally supports max.Tensor inputs."""
 
+    def to_tensor(
+        result: driver.Tensor | tensor.Tensor | TensorValue,
+    ) -> tensor.Tensor:
+        if isinstance(result, tensor.Tensor):
+            return result
+        if isinstance(result, driver.Tensor):
+            return tensor.Tensor(storage=result)
+        return tensor.Tensor.from_tensor_value(result)
+
     @functools.wraps(op)
     def wrapped(*args, **kwargs):
+        # No-op for graph construction
+        try:
+            _ = Graph.current
+        except LookupError:
+            pass
+        else:
+            return op(*args, **kwargs)
+
+        # No graph, use Tensor compute graph.
         with tensor.GRAPH.graph:
             results = op(*args, **kwargs)
-        if isinstance(results, TensorValue):
-            return tensor.Tensor.from_tensor_value(results)
-        return [tensor.Tensor.from_tensor_value(result) for result in results]
+        if isinstance(results, (driver.Tensor, tensor.Tensor, TensorValue)):
+            return to_tensor(results)
+        return [to_tensor(result) for result in results]
 
     return wrapped
 
