@@ -3040,7 +3040,8 @@ ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return get(context, opcode, operandsIn, type);
 }
 
-Type inferParamOperatorResultType(POC opcode, ArrayRef<TypedAttr> operandsIn) {
+ErrorOr<Type> inferParamOperatorResultType(POC opcode,
+                                           ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   Type resultType;
@@ -3048,31 +3049,44 @@ Type inferParamOperatorResultType(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
-                             POC::TargetHasFeature, POC::TargetGetField,
-                             POC::AcceleratorArch, POC::GetSizeOf,
-                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-                             POC::GetVTableEntry, POC::VariadicPtrMap,
-                             POC::VariadicPtrRemoveMap, POC::StringAddress},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
+  return resultType;
+  if (!llvm::is_contained(
+          {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
+           POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
+           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::GetVTableEntry,
+           POC::VariadicPtrMap, POC::VariadicPtrRemoveMap, POC::StringAddress},
+          opcode) &&
+      !llvm::all_of(operandsIn.drop_front(),
+                    [&](auto op) { return op.getType() == resultType; }))
+    return Error(llvm::formatv(
+        "POC opcode {}: Operands must have same type, got [{}]", opcode,
+        llvm::join(llvm::map_range(operandsIn,
+                                   [](TypedAttr attr) {
+                                     return llvm::formatv("{}", attr);
+                                   }),
+                   ", ")));
   return resultType;
 }
 
 TypedAttr
 ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               POC opcode, ArrayRef<TypedAttr> operandsIn) {
-  if (failed(verify(emitError, opcode, operandsIn,
-                    inferParamOperatorResultType(opcode, operandsIn))))
+  auto resultTypeOr = inferParamOperatorResultType(opcode, operandsIn);
+  if (failed(resultTypeOr)) {
+    emitError() << resultTypeOr.takeError();
+    return {};
+  }
+  if (failed(verify(emitError, opcode, operandsIn, *resultTypeOr)))
     return {};
   return get(opcode, operandsIn);
 }
 
 TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "Cannot have expr with no operands");
+  auto resultTypeOr = inferParamOperatorResultType(opcode, operandsIn);
+  assert(succeeded(resultTypeOr) && "failed to infer result type");
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
-                          inferParamOperatorResultType(opcode, operandsIn));
+                          *resultTypeOr);
 }
 
 /// Return (not x) which is the same as (xor x, true).  The `operand` value
