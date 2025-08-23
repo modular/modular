@@ -6,6 +6,7 @@
 """Tests `max.Tensor` basic behaviors."""
 
 import asyncio
+import warnings
 
 import numpy as np
 import pytest
@@ -104,3 +105,14 @@ def test_tensor_from_dlpack() -> None:
 def test_functional_in_graph() -> None:
     with Graph("test_functional") as graph:
         graph.output(F.constant(1, dtype=DType.float32, device=DeviceRef.CPU()))
+
+
+def test_tensor_warns_on_sync() -> None:
+    async def coro():
+        t = Tensor.constant(1, dtype=DType.float32, device=CPU())
+        return t.item()
+
+    with warnings.catch_warnings(record=True) as warns:
+        asyncio.run(coro())
+
+    assert warns
