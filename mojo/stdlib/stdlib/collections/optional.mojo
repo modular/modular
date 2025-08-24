@@ -307,12 +307,11 @@ struct Optional[T: ExplicitlyCopyable & Movable](
         return self.__bool__()
 
     fn write_to[
-        W: Writer, U: Representable & Copyable & Movable, //
-    ](self: Optional[U], mut writer: W):
+        U: Representable & Copyable & Movable, //
+    ](self: Optional[U], mut writer: Some[Writer]):
         """Write `Optional` string representation to a `Writer`.
 
         Parameters:
-            W: A type conforming to the Writable trait.
             U: The type of the elements in the list. Must implement the
                 traits `Representable`, `Copyable` and `Movable`.
 

@@ -254,6 +254,24 @@ struct Array[length: Int, ElementType: Movable] # 🔴 Avoid
 struct Array[ElementType: Movable, length: Int] # 🟢 Preferred
 ```
 
+#### Use the `Some[]` utility instead of named type parameters when appropriate
+
+Consider using the `Some[]` utility if a named (and inferred) type parameter
+is not reused in a function signature or body.
+
+```mojo
+fn foo[Str: Stringable, //](arg: Str): ... # 🔴 Avoid
+fn foo(arg: Some[Stringable]): ...         # 🟢 Preferred
+```
+
+Avoid using the `Some[]` utility if a named type parameter is reused in a
+function signature or body.
+
+```mojo
+fn foo(arg0: Some[Stringable], arg1: __type_of(arg0)): ... # 🔴 Avoid
+fn foo[Str: Stringable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
+```
+
 ### Container lifecycle semantics
 
 #### ℹ️ Prefer explicit copy constructors; avoid allowing implicit copies

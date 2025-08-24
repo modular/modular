@@ -78,7 +78,7 @@ struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_nanoseconds(), "ns")
 
 

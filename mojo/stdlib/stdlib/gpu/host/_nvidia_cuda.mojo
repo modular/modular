@@ -205,7 +205,7 @@ struct TensorMapSwizzle(
         return String.write(self)
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self._value == 1:
             writer.write("32B swizzle")
         elif self._value == 2:

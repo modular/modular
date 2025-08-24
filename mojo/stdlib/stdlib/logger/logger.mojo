@@ -195,11 +195,8 @@ struct Level(Copyable, Movable, Stringable, Writable):
             return Self.CRITICAL
         return Self.NOTSET
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of this level to a writer.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write to.

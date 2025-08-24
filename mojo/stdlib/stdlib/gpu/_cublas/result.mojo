@@ -42,7 +42,7 @@ struct Result(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write("SUCCESS")
         if self == Self.NOT_INITIALIZED:

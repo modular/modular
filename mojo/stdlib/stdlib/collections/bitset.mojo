@@ -406,15 +406,12 @@ struct BitSet[size: UInt](
     # --------------------------------------------------------------------- #
 
     @no_inline
-    fn write_to[W: Writer, //](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the set bits to the given writer.
         Outputs the indices of the set bits in ascending order, enclosed in
         curly braces and separated by commas (e.g., "{1, 5, 42}"). Uses
         efficient bitwise operations to find set bits without iterating
         through every possible bit.
-
-        Parameters:
-            W: The type of the writer, conforming to the `Writer` trait.
 
         Args:
             writer: The writer instance to output the representation to.

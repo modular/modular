@@ -535,11 +535,8 @@ struct Scope(Copyable, EqualityComparable, Movable, Writable):
         return not (self is other)
 
     @no_inline
-    fn write_to[W: Writer](self, mut w: W):
+    fn write_to(self, mut w: Some[Writer]):
         """Writes the string representation of the scope to a writer.
-
-        Parameters:
-            W: The dtype of writer to use for output. Must implement the Writer interface.
 
         Args:
             w: The writer to write to.

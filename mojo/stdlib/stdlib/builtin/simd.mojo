@@ -2217,12 +2217,9 @@ struct SIMD[dtype: DType, size: Int](
             return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this SIMD value to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.

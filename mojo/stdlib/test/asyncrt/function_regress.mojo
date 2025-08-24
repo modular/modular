@@ -48,7 +48,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     fn value(self) -> S:
         return 2
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         constrained[
             not is_gpu(),
             "ZeroSized is not supported on GPUs",
@@ -83,7 +83,7 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     fn value(self) -> S:
         return self.val
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         constrained[
             not is_gpu(),
             "ZeroSized is not supported on GPUs",

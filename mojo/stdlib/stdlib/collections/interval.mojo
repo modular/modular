@@ -301,11 +301,8 @@ struct Interval[T: IntervalElement](
         return self.start < self.end
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes this interval to a writer in the format '(start, end)'.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write the interval to.
@@ -453,12 +450,9 @@ struct _IntervalNode[
         self._is_red = existing._is_red
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes this interval node to a writer in the format
         '(start, end): data'.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write the interval node to.
@@ -798,11 +792,8 @@ struct IntervalTree[
         """
         return String.write(self)
 
-    fn write_to[w: Writer](self, mut writer: w):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the interval tree to a writer.
-
-        Parameters:
-            w: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write the interval tree to.
