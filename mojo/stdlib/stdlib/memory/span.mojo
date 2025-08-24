@@ -364,7 +364,7 @@ struct Span[
     @no_inline
     fn write_to[
         U: Representable & Copyable & Movable, //
-    ](self: Span[U, *_], mut writer: W):
+    ](self: Span[U, *_], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
         Parameters:
