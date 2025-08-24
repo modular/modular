@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget
+from sys.info import CompilationTarget, is_64bit
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
@@ -170,6 +170,36 @@ def test_max_finite():
     assert_true(overflow_fp[DType.float32]())
     assert_true(overflow_fp[DType.float64]())
 
+    assert_equal(max_finite[DType.int8](), 127)
+    assert_equal(max_finite[DType.uint8](), 255)
+    assert_equal(max_finite[DType.int16](), 32767)
+    assert_equal(max_finite[DType.uint16](), 65535)
+    assert_equal(max_finite[DType.int32](), 2147483647)
+    assert_equal(max_finite[DType.uint32](), 4294967295)
+    assert_equal(max_finite[DType.int64](), 9223372036854775807)
+    assert_equal(max_finite[DType.uint64](), 18446744073709551615)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     max_finite[DType.int128](), 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint128](), 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.int256](),
+    #     0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint256](),
+    #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+
+    @parameter
+    if is_64bit():
+        assert_equal(max_finite[DType.index](), 9223372036854775807)
+    else:
+        assert_equal(max_finite[DType.index](), 2147483647)
+
 
 fn underflow_int[dtype: DType]() -> Bool:
     constrained[
@@ -203,6 +233,25 @@ def test_min_finite():
 
     assert_true(underflow_fp[DType.float32]())
     assert_true(underflow_fp[DType.float64]())
+
+    assert_equal(min_finite[DType.int8](), -128)
+    assert_equal(min_finite[DType.int16](), -32768)
+    assert_equal(min_finite[DType.int32](), -2147483648)
+    assert_equal(min_finite[DType.int64](), -9223372036854775808)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     min_finite[DType.int128](), -0x8000_0000_0000_0000_0000_0000_0000_0000
+    # )
+    # assert_equal(
+    #     min_finite[DType.int256](),
+    #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+    # )
+
+    @parameter
+    if is_64bit():
+        assert_equal(min_finite[DType.index](), -9223372036854775808)
+    else:
+        assert_equal(min_finite[DType.index](), -2147483648)
 
 
 def test_max_or_inf():
