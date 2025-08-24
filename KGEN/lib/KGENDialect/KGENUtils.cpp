@@ -1469,10 +1469,6 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   envAttrs.set("MODULAR_PRODUCTION", IntegerAttr::get(IndexType::get(ctx), 1));
 #endif // MODULAR_PRODUCTION
 
-#ifdef MODULAR_PARANOID
-  envAttrs.set("MODULAR_PARANOID", IntegerAttr::get(IndexType::get(ctx), 1));
-#endif // MODULAR_PARANOID
-
 #ifdef MODULAR_ENABLE_GPU_PROFILING
   envAttrs.set("MODULAR_ENABLE_GPU_PROFILING",
                IntegerAttr::get(IndexType::get(ctx), 1));

@@ -126,7 +126,6 @@ struct Trace {
     //   AlgorithmProfilerEntry for addTask via parallelization helpers
     //   InternalProfilerEntry for tracking thread spinning and sleeping.
     // Level 3:
-    //   AsyncProfilerEntry for AsyncValue allocation and premature freeing.
     //   AllWorkItemsProfilerEntry for the execution of every work/wait item.
     kAsyncRT = 1,
 

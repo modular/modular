@@ -47,9 +47,6 @@ std::unique_ptr<Runtime> RuntimeOptions::createRuntime() const {
     runtimeOptions.maxThreads = maxThreads;
     runtimeOptions.withAffinity = withAffinity;
     runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
-#if MODULAR_PARANOID
-    runtimeOptions.paranoid = paranoid;
-#endif
     break;
   }
   runtimeOptions.profileFilename = getProfileFilename();

@@ -119,8 +119,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
                   options.runtimeOptions->withAffinity,
                   std::chrono::microseconds(
                       options.runtimeOptions->threadBusyWaitTime),
-                  options.runtimeOptions->poolName,
-                  options.runtimeOptions->paranoid);
+                  options.runtimeOptions->poolName);
     ctx->emplace<Runtime>(runtimePtr, ctx.getPointer(), std::move(allocator),
                           std::move(workQueue),
                           profileFilename.empty()

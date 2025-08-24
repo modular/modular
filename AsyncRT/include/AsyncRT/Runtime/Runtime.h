@@ -144,7 +144,6 @@ struct RuntimeOptions {
   // For legacy reasons, withAffinity is true by default.
   bool withAffinity = true;
   std::string_view poolName = "🔥 Thread";
-  bool paranoid = false;
   bool leakCheckedAllocator = false;
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;

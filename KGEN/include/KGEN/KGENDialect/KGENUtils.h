@@ -90,12 +90,12 @@ bool isTypeExpr(TypedAttr attr);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like
-/// `MODULAR_PARANOID`, `BUILD_TYPE`, AsyncRT profiling level, etc.
+/// `BUILD_TYPE`, AsyncRT profiling level, etc.
 EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
 
 /// Extends the module EnvAttr with common Modular environment attribute (also
 /// known as `-D` defines) for the given module. This includes things like
-/// `MODULAR_PARANOID`, `BUILD_TYPE`, AsyncRT profiling level, etc. Note that
+/// `BUILD_TYPE`, AsyncRT profiling level, etc. Note that
 /// the existing EnvAttr module values take precedence here.
 void extendWithModularEnvAttr(ModuleOp moduleOp,
                               CompilationContext *compileCtx);

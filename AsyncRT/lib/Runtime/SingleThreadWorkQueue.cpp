@@ -46,16 +46,6 @@ public:
 
   void addTask(WorkItem &&workItem, int taskId = -1) override {
     assert(workItem);
-#if MODULAR_PARANOID
-    assert(state != kShutdown);
-    {
-      std::lock_guard<std::mutex> guard(mu);
-      if (!workItem.use && !useStack.empty()) {
-        // Propagate the current use into this work item.
-        workItem.use = useStack.back().copy();
-      }
-    }
-#endif
     workItems.enqueue(std::move(workItem));
   }
 
@@ -74,77 +64,28 @@ private:
 
   // Execute a single profiled work item.
   void doWork(WorkItem &&workItem) {
-#if MODULAR_PARANOID
-    {
-      // Propagate use
-      std::lock_guard<std::mutex> guard(mu);
-      useStack.emplace_back(std::move(workItem.use));
-    }
-#endif
-
     // Do the work.
     {
       TimeTraceScope scope(AllWorkItemsProfilerEntry::create("asyncrt.doWork"));
       workItem.task();
     }
-
-#if MODULAR_PARANOID
-    {
-      // Pop current use. It may already have been reset.
-      std::lock_guard<std::mutex> guard(mu);
-      assert(!useStack.empty());
-      useStack.pop_back();
-    }
-#endif
   }
-
-#if MODULAR_PARANOID
-  enum WorkQueueState : uint8_t {
-    kReady = 0,
-    kShuttingDown = 1,
-    kShutdown = 2
-  };
-
-  /// Tracks the state of the queue during shutdown.
-  std::atomic<WorkQueueState> state = kReady;
-#endif
 
   /// Pending work items.
   ConcurrentQueue<WorkItem> workItems;
   /// The outer runtime, if any, for the thread using this work queue.
   CompactRuntimePtr outerRuntime;
-
-#if MODULAR_PARANOID
-  /// Protects useStack
-  std::mutex mu;
-  /// Use stack.
-  SmallVector<ResourceUse> useStack;
-#endif
 };
 } // namespace
 
 void SingleThreadWorkQueue::shutdown() {
-#if MODULAR_PARANOID
-  WorkQueueState expected = kReady;
-  assert(state.compare_exchange_strong(expected, kShuttingDown));
-#endif
-
   // Complete any work that's still in-flight.
   while (auto workItem = workItems.dequeue()) {
     doWork(std::move(workItem));
   }
-
-#if MODULAR_PARANOID
-  expected = kShuttingDown;
-  assert(state.compare_exchange_strong(expected, kShutdown));
-#endif
 }
 
 void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
-#if MODULAR_PARANOID
-  assert(state == kReady);
-#endif
-
   // We are done when values_remaining drops to zero.
   std::atomic<size_t> numRemaining = values.size();
 
@@ -161,9 +102,6 @@ void SingleThreadWorkQueue::await(llvm::ArrayRef<AnyAsyncValueRef> values) {
   assert(numRemaining.load() == 0 &&
          "Some AsyncValues are not ready yet no further "
          "tasks are available to run. Are all input AsyncValues ready?");
-#if MODULAR_PARANOID
-  assert(state != kShutdown);
-#endif
 }
 
 /// Time to sleep while waiting for work in the work queue.

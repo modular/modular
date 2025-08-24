@@ -176,13 +176,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "ResourceTest",
-    size = "small",
-    srcs = ["ResourceTest.cpp"],
-    deps = ["//AsyncRT:Support"],
-)
-
-modular_cc_test(
     name = "RuntimeTest",
     size = "small",
     srcs = ["RuntimeTest.cpp"],
