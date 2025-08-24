@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import nan
-
 from gpu.host import DeviceContext
 from memory import bitcast
 
@@ -181,7 +179,7 @@ fn test_e4m3fn_initialization():
         384.0,
         416.0,
         448.0,
-        nan[DType.float8_e4m3fn](),
+        DType.nan[DType.float8_e4m3fn](),
         -0.0,
         -0.001953125,
         -0.00390625,
@@ -309,7 +307,7 @@ fn test_e4m3fn_initialization():
         -384.0,
         -416.0,
         -448.0,
-        nan[DType.float8_e4m3fn](),
+        DType.nan[DType.float8_e4m3fn](),
     )
 
     for i in range(256):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, isinf, isnan
+from math import isinf, isnan
 
 from testing import assert_equal, assert_raises, assert_true
 
@@ -60,7 +60,7 @@ def test_trailing_f():
 
 def test_large_exponents():
     """Test handling of large exponents."""
-    assert_equal(atof("1e309"), inf[DType.float64]())
+    assert_equal(atof("1e309"), DType.inf[DType.float64]())
     assert_equal(atof("1e-309"), 1e-309)
 
 

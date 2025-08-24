@@ -24,8 +24,6 @@ The module includes:
 from random import random_float64
 from sys import is_nvidia_gpu
 
-from utils.numerics import max_finite
-
 # A batch size for filler functions loop bounds.
 alias BATCH_SIZE = 2048
 
@@ -91,7 +89,7 @@ fn arange[
     tensor: LayoutTensor[mut=True, dtype, layout, **_],
     start: Scalar[tensor.dtype] = 0,
     step: Scalar[tensor.dtype] = 1,
-    end: Scalar[tensor.dtype] = max_finite[tensor.dtype](),
+    end: Scalar[tensor.dtype] = DType.max_finite[tensor.dtype](),
 ):
     """Fills a tensor with a sequence of values.
 
