@@ -33,15 +33,7 @@ namespace Detail {
 template <typename T>
 class ConcreteAsyncValue;
 
-/// Returns ptr in hex form. Only needed for profiling entries.
-std::string addrToHex(void *p);
-
 } // namespace Detail
-
-/// Profiling entry for AsyncValue allocation and frees. Useful for tracking
-/// down the root cause of "destroying a non-available AsyncValue" errors.
-using AsyncProfilerEntry =
-    M::ProfilerEntry<Trace::EnableTrace(Trace::kAsyncRT, 3), Trace::kAsyncRT>;
 
 /// This is a future of the specified value type. Arbitrary C++ types may be
 /// used here, even non-copyable types and expensive ones like "your database".
@@ -601,13 +593,6 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
                                          CompactRuntimePtr runtime) {
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
-#if MODULAR_PARANOID
-    AsyncProfilerEntry::create("AsyncValue::allocate", [ptr]() {
-      return (Twine(TypeID::get<T>().getTypeName()) + ", " +
-              Detail::addrToHex(ptr))
-          .str();
-    }).record();
-#endif
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
                                     TypeID::get<T>(), runtime);
     return ptr;

@@ -111,16 +111,6 @@ private:
       llvm::cl::location(options.withAffinity),
       llvm::cl::cat(RuntimeOptionsCategory)};
 
-#if MODULAR_PARANOID
-  /// If true, and in a MODULAR_PARANOID build, perform additional (and
-  /// very expensive!) runtime actions to make race conditions and other
-  /// undefined behaviour more likely to be observed by unit tests.
-  M::cl::MOpt<bool, true> paranoid{"paranoid",
-                                   llvm::cl::desc("Turn on paranoid mode"),
-                                   llvm::cl::location(options.paranoid),
-                                   llvm::cl::cat(RuntimeOptionsCategory)};
-#endif
-
   // Filename to hold the time profiling output (as JSON text).
   M::cl::MOpt<std::string, true> profileFilename{
       "time-profile",

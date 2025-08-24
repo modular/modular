@@ -15,7 +15,6 @@
 
 #include "AsyncRT/ForwardDecls.h"
 #include "AsyncRT/Runtime/CompactRuntimePtr.h"
-#include "AsyncRT/Support/Resource.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/Atomics.h"
@@ -80,15 +79,6 @@ struct WorkItem {
   /// this item to worker (deviceHint % numWorkers). Use kNoDevicePreference to
   /// enqueue on the global queue shared by all workers.
   int deviceHint = kNoDevicePreference;
-#if MODULAR_PARANOID
-  /// If non-null, a representation of the implied 'use' this work item has
-  /// of the resources it depends on. It is valid for the same work queue to be
-  /// shared between, say, execution of many different models. This use can
-  /// help detect when a work item has not been correctly threaded into the
-  /// AsyncValue dependencies for such execution, which can cause the work
-  /// item to 'overhang' destruction of the model's resources.
-  ResourceUse use;
-#endif
 
   WorkItem() = default;
 
@@ -106,12 +96,6 @@ struct WorkItem {
             std::enable_if_t<(std::is_void<ResultTy>()), int> = 0>
   WorkItem(FnTy f)
       : task(std::forward<FnTy>(f)), deviceHint(kNoDevicePreference) {}
-
-#if MODULAR_PARANOID
-  WorkItem(TaskFunction &&task, ResourceUse use)
-      : task(std::move(task)), deviceHint(kNoDevicePreference),
-        use(std::move(use)) {}
-#endif
 
   explicit operator bool() { return (bool)task; }
 };
@@ -230,15 +214,10 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 /// thread must be the one to call shutdown, at which point it may (again)
 /// contribute to processing outstanding work items. Otherwise shutdown
 /// may be called from any foreign thread.
-///
-/// If in a MODULAR_PARANOID build, the paranoid flag can be used to inject
-/// random delays into work items to attempt to tickle race conditions.
-std::unique_ptr<WorkQueue>
-createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, size_t numThreads,
-                          size_t maxThreads, bool mainWillDonate,
-                          bool withAffinity,
-                          std::chrono::microseconds threadBusyWaitTime,
-                          std::string_view poolName, bool paranoid);
+std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
+    CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
+    bool mainWillDonate, bool withAffinity,
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
 } // namespace M::AsyncRT
 

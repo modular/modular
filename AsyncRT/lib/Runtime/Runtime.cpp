@@ -119,7 +119,7 @@ AsyncRT::createUniqueRuntime(const RuntimeOptions &options) {
                 runtimePtr, options.numThreads, options.maxThreads,
                 options.mainWillDonate, options.withAffinity,
                 std::chrono::microseconds(options.threadBusyWaitTime),
-                options.poolName, options.paranoid);
+                options.poolName);
   return std::make_unique<Runtime>(
       runtimePtr, nullptr, std::move(allocator), std::move(workQueue),
       options.profileFilename, options.runtimeProfilingTypeMask,

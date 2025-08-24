@@ -77,9 +77,6 @@ KGEN_CompilerRT_AsyncRT_DestroyChain(AsyncRTAsyncChainRef chain) {
 /// Emplaces the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Complete(AsyncRTAsyncChainRef chain) {
-#if MODULAR_PARANOID
-  unwrap(chain).getRuntime()->getWorkQueue()->taskIsDone();
-#endif
   unwrap(chain).copy().emplace();
 }
 
@@ -142,19 +139,8 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
                                 ssize_t desiredWorkerId) {
   auto rt = Runtime::getCurrentRuntimeOrNull();
-  rt->getWorkQueue()->addTask(
-      [resume, hdl] {
-        resume(hdl);
-#if MODULAR_PARANOID
-        // Sleeping here gives any await loop the chance to exit and
-        // proceed while this task is still 'active'. This can trigger
-        // bugs since the common case is for the task to have returned
-        // all the way up to the AsyncRT run items loop before any emplace
-        // in the task body has been acted on.
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-#endif
-      },
-      static_cast<int>(desiredWorkerId));
+  rt->getWorkQueue()->addTask([resume, hdl] { resume(hdl); },
+                              static_cast<int>(desiredWorkerId));
 }
 
 /// Resume a coroutine when the current one completes.

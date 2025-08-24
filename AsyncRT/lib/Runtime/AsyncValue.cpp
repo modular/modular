@@ -14,18 +14,6 @@
 using namespace M::AsyncRT;
 
 //===----------------------------------------------------------------------===//
-// Detail
-//===----------------------------------------------------------------------===//
-
-/// Returns ptr in hex form. Only needed for profiling entries.
-std::string Detail::addrToHex(void *p) {
-  std::string str;
-  llvm::raw_string_ostream os(str);
-  os << llvm::format("%x", reinterpret_cast<intptr_t>(p));
-  return str;
-}
-
-//===----------------------------------------------------------------------===//
 // Destruction logic
 //===----------------------------------------------------------------------===//
 
@@ -39,11 +27,6 @@ Detail::SomeConcreteAsyncValue::~SomeConcreteAsyncValue() {
   } else {
     // TODO: If unconstructed this will leak the waiters list.  We should signal
     // this as an error (checking for resurrection) etc.
-#if MODULAR_PARANOID
-    AsyncProfilerEntry::create("AsyncValue::destroy unavailable", [this]() {
-      return Detail::addrToHex(this);
-    }).record();
-#endif
     llvm::report_fatal_error(
         "destroying a non-available AsyncValue isn't implemented");
   }
