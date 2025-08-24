@@ -140,7 +140,6 @@ Note that the min total time will take precedence over max iterations
 
 from time import time_function
 
-from utils.numerics import max_finite, min_finite
 from testing import assert_equal
 
 
@@ -288,7 +287,7 @@ struct Report(Copyable, Defaultable, Movable):
         """
         if len(self.runs) == 0:
             return 0
-        var min = max_finite[DType.float64]()
+        var min = DType.max_finite[DType.float64]()
         for i in range(len(self.runs)):
             if self.runs[i]._is_significant and self.runs[i].mean(unit) < min:
                 min = self.runs[i].mean(unit)
@@ -306,7 +305,7 @@ struct Report(Copyable, Defaultable, Movable):
         """
         if len(self.runs) == 0:
             return 0
-        var result = min_finite[DType.float64]()
+        var result = DType.min_finite[DType.float64]()
         for i in range(len(self.runs)):
             if (
                 self.runs[i]._is_significant
