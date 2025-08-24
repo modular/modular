@@ -930,6 +930,15 @@ fn test_comptime_materialize():
   var use_bad = bad
 
 
+# MOCO-2332 / https://github.com/modular/modular/issues/5139
+struct a_struct:
+  alias an_alias = 1
+
+fn a_fn() -> Dict[String, Int]:
+  # expected-error @below {{'a_struct' value has no attribute 'an_alias_that_does_not_exist'}}
+  return {"an_alias": a_struct.an_alias_that_does_not_exist}
+
+
 ##===----------------------------------------------------------------------===##
 # Trait member access errors
 ##===----------------------------------------------------------------------===##

@@ -342,7 +342,7 @@ public:
                                   CallOperands &&operands);
 
   /// Given an inferred type for this initializer list, return the operands that
-  /// we should use to try to construct it.  This returns failure if invalid.
+  /// we should use to try to construct it.
   CallOperands getOperandsForInferredType(ASTType type,
                                           IREmitter &emitter) const;
 
