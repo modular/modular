@@ -239,7 +239,9 @@ struct hipblasLtMatmulHeuristicResult_t(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 alias HIPBLASLT_LIBRARY_PATHS = List[Path](
+    "libhipblaslt.so",
     "libhipblaslt.so.0",
+    "/opt/rocm/lib/libhipblaslt.so",
     "/opt/rocm/lib/libhipblaslt.so.0",
 )
 
