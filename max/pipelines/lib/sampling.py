@@ -24,7 +24,7 @@ from max.nn.kernels import (
 )
 from max.nn.sampling import RejectionSampler, RejectionSamplerWithResiduals
 
-from .max_config import SamplingConfig
+from .sampling_config import SamplingConfig
 
 
 def _sampling_input_types(

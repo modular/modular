@@ -571,8 +571,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     b_shape: DimList, //,
     *,
     transpose_b: Bool,
-    wgmma_shape: IndexList[3],
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     splits: Int,
     raster_order: RasterOrder,
     use_tma_store: Bool = False,
@@ -624,7 +623,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     logger.info("Executing Split-K Warp Specialized GEMM with Multicasting")
     logger.info("block_tile_shape: ", config.block_tile_shape)
     logger.info("cluster_shape: ", config.cluster_shape)
-    logger.info("mma_shape: ", wgmma_shape)
+    logger.info("mma_shape: ", config.mma_shape)
 
     alias cluster_shape = StaticTuple[Int32, 3](
         config.cluster_shape[0],
@@ -749,7 +748,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         __type_of(b_tma_op).layout,
         __type_of(c).layout,
         config.block_tile_shape,
-        wgmma_shape,
+        config.mma_shape,
         __type_of(a_tma_op).desc_layout,
         __type_of(b_tma_op).desc_layout,
         __type_of(c_tma_op).desc_layout,

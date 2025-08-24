@@ -51,8 +51,8 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.comm.allgather import allgather
-from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
+from comm.allgather import allgather
+from comm.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (

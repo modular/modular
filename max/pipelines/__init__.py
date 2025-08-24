@@ -29,7 +29,7 @@ from .lib.config_enums import (
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline
 from .lib.hf_utils import download_weight_files
-from .lib.max_config import KVCacheConfig, ProfilingConfig, SamplingConfig
+from .lib.kv_cache_config import KVCacheConfig
 from .lib.memory_estimation import MEMORY_ESTIMATOR
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline import (
@@ -39,7 +39,9 @@ from .lib.pipeline import (
     TextGenerationPipeline,
     upper_bounded_default,
 )
+from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .lib.sampling_config import SamplingConfig
 from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (

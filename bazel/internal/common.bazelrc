@@ -132,6 +132,8 @@ build --remote_execution_priority=-1
 
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
+build:cache --experimental_remote_downloader=grpcs://modular.buildbuddy.io
+build:cache --experimental_remote_downloader_local_fallback
 build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
 
 build:remote --config=cache
@@ -144,9 +146,6 @@ build:remote --repo_env=MODULAR_REMOTE_EXEC=1
 build --internal_spawn_scheduler
 build:linux --spawn_strategy=dynamic,remote,worker,sandboxed,standalone
 build:macos --spawn_strategy=remote,worker,sandboxed,standalone
-
-# TODO: Remove when https://github.com/bazelbuild/bazel/pull/26724 is fixed
-build --strategy=UvLock=remote,sandboxed,standalone
 
 # https://github.com/bazelbuild/bazel/issues/25221
 build --strategy=TestRunner=remote,worker,sandboxed,standalone

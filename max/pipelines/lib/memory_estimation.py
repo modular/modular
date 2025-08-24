@@ -27,7 +27,7 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from .max_config import KVCacheConfig
+from .kv_cache_config import KVCacheConfig
 from .model_config import MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel
 

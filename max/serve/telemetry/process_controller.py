@@ -57,7 +57,9 @@ def _sync_commit(m: MaxMeasurement) -> None:
 
 class ProcessMetricClient(MetricClient):
     def __init__(
-        self, settings: Settings, q: multiprocessing.queues.Queue
+        self,
+        settings: Settings,
+        q: multiprocessing.queues.Queue,
     ) -> None:
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
@@ -67,6 +69,9 @@ class ProcessMetricClient(MetricClient):
         # Settings object inside of cross_process_factory.
         self.metric_detail_level = settings.metric_level
 
+        # buffer detailed metrics observations until it is safe to flush
+        self.buffer_factor = settings.detailed_metric_buffer_factor
+
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
         if level > self.metric_detail_level:
             logger.debug(
@@ -74,16 +79,19 @@ class ProcessMetricClient(MetricClient):
             )
             return
 
-        if level >= MetricLevel.DETAILED:
+        if (
+            level >= MetricLevel.DETAILED
+            and len(self.detailed_buffer) < self.buffer_factor
+        ):
             # put the measurement in a queue and return
             self.detailed_buffer.append(m)
-            if len(self.detailed_buffer) < 20:
-                return
+            return
 
         try:
-            self.queue.put_nowait([m])
+            payload = [m]
             if self.detailed_buffer:
-                self.queue.put_nowait(self.detailed_buffer)
+                payload.extend(self.detailed_buffer)
+            self.queue.put_nowait(payload)
         except queue.Full:
             # we would rather lose data than slow the server
             logger.warning(
@@ -91,12 +99,18 @@ class ProcessMetricClient(MetricClient):
             )
         finally:
             if self.detailed_buffer:
-                self.detailed_buffer.clear()
+                # NOTE: we want to create a new list here to avoid
+                # holding references to the old list. That could lead to the
+                # list being modified before it's serialized and sent over the
+                # wire by the multiprocessing queue.
+                # This is technically avoided by using extend above, but let's
+                # just do this to be extra safe.
+                self.detailed_buffer = []
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
-        settings = Settings(metric_level=self.metric_detail_level)
         return functools.partial(_reconstruct_client, settings, self.queue)
 
     def __del__(self) -> None:

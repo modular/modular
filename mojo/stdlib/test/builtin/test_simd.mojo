@@ -1583,7 +1583,7 @@ def test_reduce_bit_count():
     var bool_false = Scalar[DType.bool](False)
     assert_equal(bool_false.reduce_bit_count(), 0)
 
-    var bool_true16 = SIMD[DType.bool, 16](True)
+    var bool_true16 = SIMD[DType.bool, 16](fill=True)
     assert_equal(bool_true16.reduce_bit_count(), 16)
 
 
@@ -1963,8 +1963,8 @@ def test_comparison():
 
         @parameter
         if dtype is DType.bool:
-            var all_true = SIMD[DType.bool, 4](True)
-            var all_false = SIMD[DType.bool, 4](False)
+            var all_true = SIMD[DType.bool, 4](fill=True)
+            var all_false = SIMD[DType.bool, 4](fill=False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)
 
             assert_true(all_true == all_true)
@@ -2446,10 +2446,10 @@ def test_float_literal_init():
 
 def test_bool_init():
     # Test initialization from Bool for boolean SIMD types
-    var bool_simd = SIMD[DType.bool, 4](True)
+    var bool_simd = SIMD[DType.bool, 4](fill=True)
     assert_equal(bool_simd, SIMD[DType.bool, 4](True, True, True, True))
 
-    var bool_simd_false = SIMD[DType.bool, 4](False)
+    var bool_simd_false = SIMD[DType.bool, 4](fill=False)
     assert_equal(
         bool_simd_false, SIMD[DType.bool, 4](False, False, False, False)
     )

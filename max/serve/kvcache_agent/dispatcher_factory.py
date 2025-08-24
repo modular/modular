@@ -32,7 +32,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic
+from typing import Any, Generic, Optional
 
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.kvcache_agent.dispatcher_service import (
@@ -43,6 +43,7 @@ from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
     DynamicZmqTransport,
 )
+from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.serve")
@@ -136,7 +137,7 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
         self._transport_payload_type = transport_payload_type
 
     def create_service(
-        self,
+        self, process_control: Optional[ProcessControl] = None
     ) -> DispatcherService[DispatcherMessagePayload]:
         """
         Create a dispatcher service using the provided ZMQ context.
@@ -152,6 +153,7 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
             send_endpoint=self._service_to_client,
             recv_endpoint=self._client_to_service,
             transport=transport,
+            process_control=process_control,
         )
 
     def create_client(

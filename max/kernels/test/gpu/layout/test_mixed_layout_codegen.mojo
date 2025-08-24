@@ -14,7 +14,7 @@
 
 from gpu.host.compile import _compile_code, get_gpu_target
 from layout._mixed_layout import MixedLayout
-from layout._mixed_tuple import Idx, MixedIntTuple
+from layout._mixed_tuple import Idx, MixedTuple
 from layout.int_tuple import IntTuple
 from layout import Layout, RuntimeLayout
 from memory.unsafe_pointer import UnsafePointer
@@ -59,14 +59,14 @@ fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
     var layout = MixedLayout(
         shape=[Idx[8](), Idx(x)], stride=[Idx(x), Idx[1]()]
     )
-    ptr[0] = Int32(layout(MixedIntTuple(Idx[0](), Idx(x - 1))))
+    ptr[0] = Int32(layout(MixedTuple(Idx[0](), Idx(x - 1))))
 
 
 fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     alias layout = MixedLayout(
         shape=[Idx[8](), Idx[2]()], stride=[Idx[1](), Idx[1]()]
     )
-    ptr[0] = Int32(layout(MixedIntTuple(Idx(thread_idx.x), Idx(thread_idx.y))))
+    ptr[0] = Int32(layout(MixedTuple(Idx(thread_idx.x), Idx(thread_idx.y))))
 
 
 fn main() raises:

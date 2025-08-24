@@ -65,8 +65,8 @@ def test_where_size_bool():
     values[0, 1, 0] = True
     values[1, 0, 0] = False
     values[1, 1, 0] = False
-    values[2, 0, 0] = False
-    values[2, 1, 0] = True
+    values[2, 0, 0] = Scalar[DType.bool](False)
+    values[2, 1, 0] = Scalar[DType.bool](True)
 
     alias layout_unknown = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE

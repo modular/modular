@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from max.mlir.dialects import mo
 
 from ..graph import Graph
@@ -21,7 +23,7 @@ from ..type import _ChainType
 from ..value import Value
 
 
-def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
+def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     """Call a graph with the provided arguments and return its results.
 
     This function invokes a previously defined graph, passing in the provided

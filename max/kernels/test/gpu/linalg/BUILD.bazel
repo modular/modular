@@ -60,7 +60,7 @@ _GPU_MEMORY = {
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
     "test_matmul_custom.mojo": "4",
-    "test_matmul_sm90_bf16_multicast.mojo": "1.5",
+    "test_matmul_sm90_bf16_multicast.mojo": "2",
     "test_matmul_sm90_deepseek_scheduler.mojo": "1",
     "test_matmul_sm90_epilogue.mojo": "1",
     "test_matmul_sm90_fp8.mojo": "1",
@@ -70,6 +70,7 @@ _GPU_MEMORY = {
     "test_matmul_sm100_2.mojo": "1",
     "test_matmul_sm100_4.mojo": "1",
     "test_matmul_sm100_5.mojo": "1",
+    "test_warp_specialization_gemm_with_cluster.mojo": "2",
 }
 
 [

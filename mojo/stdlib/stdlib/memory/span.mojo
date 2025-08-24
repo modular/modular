@@ -100,14 +100,16 @@ struct Span[
     """The mutable version of the `Span`."""
     alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
-    # Fields
-    var _data: UnsafePointer[
+    alias UnsafePointerType = UnsafePointer[
         T,
         mut=mut,
         origin=origin,
         address_space=address_space,
         alignment=alignment,
     ]
+    """The UnsafePointer type that corresponds to this `Span`."""
+    # Fields
+    var _data: Self.UnsafePointerType
     var _len: Int
 
     # ===------------------------------------------------------------------===#
@@ -135,18 +137,7 @@ struct Span[
         self = rebind[__type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(
-        out self,
-        *,
-        ptr: UnsafePointer[
-            T,
-            address_space=address_space,
-            alignment=alignment,
-            mut=mut,
-            origin=origin, **_,
-        ],
-        length: UInt,
-    ):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
         """Unsafe construction from a pointer and length.
 
         Args:
@@ -616,3 +607,40 @@ struct Span[
             ptr=self._data.origin_cast[result.mut, result.origin](),
             length=self._len,
         )
+
+    fn reverse[
+        dtype: DType, O: MutableOrigin, //
+    ](self: Span[Scalar[dtype], O]):
+        """Reverse the elements of the `Span` inplace.
+
+        Parameters:
+            dtype: The DType of the scalars the `Span` stores.
+            O: The origin of the `Span`.
+        """
+
+        alias widths = (256, 128, 64, 32, 16, 8, 4, 2)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var middle = length // 2
+        var is_odd = length % 2 != 0
+        var processed = 0
+
+        @parameter
+        for i in range(len(widths)):
+            alias w = widths[i]
+
+            @parameter
+            if simdwidthof[dtype]() >= w:
+                for _ in range((middle - processed) // w):
+                    var lhs_ptr = ptr + processed
+                    var rhs_ptr = ptr + length - (processed + w)
+                    var lhs_v = lhs_ptr.load[width=w]().reversed()
+                    var rhs_v = rhs_ptr.load[width=w]().reversed()
+                    lhs_ptr.store(rhs_v)
+                    rhs_ptr.store(lhs_v)
+                    processed += w
+
+        if is_odd:
+            var value = ptr[middle + 1]
+            (ptr + middle - 1).move_pointee_into(ptr + middle + 1)
+            (ptr + middle - 1).init_pointee_move(value)

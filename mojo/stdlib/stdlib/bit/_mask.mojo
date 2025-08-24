@@ -63,40 +63,22 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> __type_of(value):
 
 
 @always_inline
-fn is_true[
-    dtype: DType, size: Int = 1
+fn splat[
+    size: Int, //, dtype: DType
 ](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:
-    """Get a bitmask of whether the value is `True`.
+    """Elementwise splat the boolean value of each element in the SIMD vector
+    into all bits of the corresponding element in a new SIMD vector.
 
     Parameters:
-        dtype: The DType.
         size: The size of the SIMD vector.
+        dtype: The DType of the output.
 
     Args:
         value: The value to check.
 
     Returns:
-        A bitmask filled with `1` if the value is `True`, filled with `0`
+        A SIMD vector where each element is filled with `1` bits if the
+        corresponding element in `value` is `True`, or filled with `0` bits
         otherwise.
     """
     return (-(value.cast[DType.int8]())).cast[dtype]()
-
-
-@always_inline
-fn is_false[
-    dtype: DType, size: Int = 1
-](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:
-    """Get a bitmask of whether the value is `False`.
-
-    Parameters:
-        dtype: The DType.
-        size: The size of the SIMD vector.
-
-    Args:
-        value: The value to check.
-
-    Returns:
-        A bitmask filled with `1` if the value is `False`, filled with `0`
-        otherwise.
-    """
-    return is_true[dtype](~value)

@@ -1044,17 +1044,6 @@ class MLP(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
-        if (
-            self.gate_proj.bias is None
-            and self.up_proj.bias is None
-            and TensorValue(x).rank == 2
-            and TensorValue(x).device is not None
-            and TensorValue(x).device != DeviceRef.CPU()
-            and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
-        ):
-            return self.down_proj(
-                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
-            )
         if self.quantization_encoding or self.float8_config:
             return self.down_proj(
                 self.activation_function(self.gate_proj(TensorValue(x)))

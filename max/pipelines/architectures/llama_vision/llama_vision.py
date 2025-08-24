@@ -347,12 +347,18 @@ class MultimodalKVCacheManager(KVCacheManager):
         return multimodal_kv_inputs
 
     @final
-    def input_symbols(self) -> Sequence[MultimodalKVCacheInputSymbols]:
+    def input_symbols(
+        self,
+        devices: Sequence[Device] | None = None,
+        num_layers: int | None = None,
+    ) -> Sequence[MultimodalKVCacheInputSymbols]:
         """Returns concatenated input symbols for text and vision KV managers.
 
         This renames symbolic dimensions to avoid conflicts between text and
         vision modalities which may have different numbers of pages/layers.
         """
+        del devices, num_layers  # Unused.
+
         # Get input symbols from both managers
         text_symbols = self.text_kv_manager.input_symbols()[0]
         vision_symbols = self.vision_kv_manager.input_symbols()[0]

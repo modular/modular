@@ -1747,10 +1747,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var haystack_str = self._from_start(start)
 
         var loc = _memmem(
-            haystack_str.unsafe_ptr(),
-            haystack_str.byte_length(),
-            substr.unsafe_ptr(),
-            substr.byte_length(),
+            haystack_str.as_bytes().get_immutable(),
+            substr.as_bytes().get_immutable(),
         )
 
         if not loc:
@@ -2401,11 +2399,14 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
 
 
 @always_inline
-fn _unsafe_strlen(ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
+fn _unsafe_strlen(
+    ptr: UnsafePointer[Byte, mut=False, **_], max: UInt = UInt.MAX
+) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
         ptr: The null-terminated pointer to the string.
+        max: The maximum size of the string.
 
     Returns:
         The length of the null terminated string without the null terminator.
@@ -2413,128 +2414,111 @@ fn _unsafe_strlen(ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
     Notes:
         The length does NOT include the null terminator.
     """
-    var len = 0
-    while ptr[len]:
-        len += 1
-    return len
+    var offset = UInt(0)
+    while offset < max and ptr[offset]:
+        offset += 1
+    return offset
 
 
 @always_inline
 fn _memchr[
     dtype: DType, //
 ](
-    source: UnsafePointer[Scalar[dtype], mut=False, **_],
-    char: Scalar[dtype],
-    len: Int,
-) -> __type_of(source):
-    if is_compile_time() or len < simdwidthof[dtype]():
-        return _memchr_simple(source, char, len)
+    source: Span[mut=False, Scalar[dtype], **_], char: Scalar[dtype]
+) -> source.UnsafePointerType:
+    if is_compile_time() or len(source) < simdwidthof[Scalar[dtype]]():
+        var ptr = source.unsafe_ptr()
+
+        for i in range(len(source)):
+            if ptr[i] == char:
+                return ptr + i
+        return {}
     else:
-        return _memchr_impl(source, char, len)
-
-
-@always_inline
-fn _memchr_simple[
-    dtype: DType, //
-](
-    source: UnsafePointer[Scalar[dtype], mut=False, **_],
-    char: Scalar[dtype],
-    len: Int,
-) -> __type_of(source):
-    for i in range(len):
-        if source[i] == char:
-            return source + i
-    return {}
+        return _memchr_impl(source, char)
 
 
 @always_inline
 fn _memchr_impl[
     dtype: DType, //
 ](
-    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    source: Span[mut=False, Scalar[dtype], **_],
     char: Scalar[dtype],
-    len: Int,
-) -> __type_of(source):
-    if not len:
-        return {}
+    out output: source.UnsafePointerType,
+):
+    var haystack = source.unsafe_ptr()
+    var length = len(source)
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
-    var vectorized_end = align_down(len, bool_mask_width)
+    var vectorized_end = align_down(length, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = source.load[width=bool_mask_width](i).eq(first_needle)
+        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
-            return source + Int(i + count_trailing_zeros(mask))
+            output = haystack + Int(i + count_trailing_zeros(mask))
+            return
 
-    for i in range(vectorized_end, len):
-        if source[i] == char:
-            return source + i
-    return {}
+    for i in range(vectorized_end, length):
+        if haystack[i] == char:
+            output = haystack + i
+            return
+
+    output = {}
 
 
 @always_inline
 fn _memmem[
-    dtype: DType, address_space: AddressSpace, //
+    dtype: DType, //
 ](
-    haystack: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
+    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    needle_span: Span[
+        mut=False,
+        Scalar[dtype],
+        address_space = haystack_span.address_space, **_,
     ],
-    haystack_len: Int,
-    needle: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
-    needle_len: Int,
-) -> __type_of(haystack):
-    if not needle_len:
-        return haystack
-    if needle_len > haystack_len:
+) -> haystack_span.UnsafePointerType:
+    if is_compile_time() or len(haystack_span) < simdwidthof[Scalar[dtype]]():
+        var haystack = haystack_span.unsafe_ptr()
+        var haystack_len = len(haystack_span)
+        var needle = needle_span.unsafe_ptr()
+        var needle_len = len(needle_span)
+
+        for i in range(haystack_len - needle_len + 1):
+            if haystack[i] != needle[0]:
+                continue
+
+            if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+                return haystack + i
+
         return {}
-    if needle_len == 1:
-        return _memchr(haystack, needle[0], haystack_len)
-
-    if is_compile_time() or haystack_len < simdwidthof[dtype]():
-        return _memmem_impl_simple(haystack, haystack_len, needle, needle_len)
     else:
-        return _memmem_impl(haystack, haystack_len, needle, needle_len)
-
-
-@always_inline
-fn _memmem_impl_simple[
-    dtype: DType, address_space: AddressSpace, //
-](
-    haystack: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
-    haystack_len: Int,
-    needle: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
-    needle_len: Int,
-) -> __type_of(haystack):
-    for i in range(haystack_len - needle_len + 1):
-        if haystack[i] != needle[0]:
-            continue
-
-        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
-
-    return {}
+        return _memmem_impl(haystack_span, needle_span)
 
 
 @always_inline
 fn _memmem_impl[
-    dtype: DType, address_space: AddressSpace, //
+    dtype: DType, //
 ](
-    haystack: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
+    haystack_span: Span[mut=False, Scalar[dtype], **_],
+    needle_span: Span[
+        mut=False,
+        Scalar[dtype],
+        address_space = haystack_span.address_space, **_,
     ],
-    haystack_len: Int,
-    needle: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
-    needle_len: Int,
-) -> __type_of(haystack):
+    out output: haystack_span.UnsafePointerType,
+):
+    var haystack = haystack_span.unsafe_ptr()
+    var haystack_len = len(haystack_span)
+    var needle = needle_span.unsafe_ptr()
+    var needle_len = len(needle_span)
+    debug_assert(needle_len > 0, "needle_len must be > 0")
+    if needle_len == 1:
+        output = _memchr(haystack_span, needle[0])
+        return
+    elif needle_len > haystack_len:
+        output = {}
+        return
+
     alias bool_mask_width = simdwidthof[DType.bool]()
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
@@ -2549,28 +2533,26 @@ fn _memmem_impl[
             i + needle_len - 1
         )
 
-        var eq_first = first_needle.eq(first_block)
-        var eq_last = last_needle.eq(last_block)
-
-        var bool_mask = eq_first & eq_last
+        var bool_mask = first_needle.eq(first_block) & last_needle.eq(
+            last_block
+        )
         var mask = pack_bits(bool_mask)
 
         while mask:
             var offset = Int(i + count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return haystack + offset
+                output = haystack + offset
+                return
             mask = mask & (mask - 1)
 
-    # remaining partial block compare using byte-by-byte
-    #
     for i in range(vectorized_end, haystack_len - needle_len + 1):
         if haystack[i] != needle[0]:
             continue
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
-
-    return {}
+            output = haystack + i
+            return
+    output = {}
 
 
 @always_inline

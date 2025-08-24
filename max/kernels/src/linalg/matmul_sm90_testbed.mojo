@@ -186,10 +186,9 @@ fn test_matmul_sm90[
         epilogue_fn
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 
-    alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
-    ](
+    alias matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
+        mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
         num_pipeline_stages=num_pipeline_stages,
         num_consumer=num_consumer,

@@ -24,7 +24,7 @@ from benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
+from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, init_vector_launch, InitializationType
 from testing import assert_almost_equal, assert_true

@@ -929,20 +929,6 @@ fn make_buffer_resource[
 
 
 @always_inline
-fn _waitcnt():
-    constrained[
-        is_amd_gpu(),
-        "The _waitcnt function is only applicable on AMDGPU hardware.",
-    ]()
-    inlined_assembly[
-        "s_waitcnt vmcnt(0)",
-        NoneType,
-        constraints="",
-        has_side_effect=True,
-    ]()
-
-
-@always_inline
 fn _raw_buffer_load_lds[
     dtype: DType
 ](
@@ -964,59 +950,6 @@ fn _raw_buffer_load_lds[
     llvm_intrinsic[
         "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
     ](rsrc, lds_ptr, size, voffset, soffset, offset, aux)
-
-
-@always_inline
-fn _buffer_load_store_lds_nowait[
-    dtype: DType
-](
-    src_resource: _buffer_resource,
-    gds_offset: Int32,
-    lds_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ],
-    lds_offset: Int32,
-):
-    """Loads four bytes from global memory and writes them to shared memory.
-
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register without waiting for the copy to finish. A call to wait_cnt_amd()
-    is necessary to ensure the copy is finished.
-
-    Parameters:
-        dtype: The dtype of the data to be loaded.
-
-    Arg:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        gds_offset: Global memory offset.
-        lds_ptr_base: LDS base address.
-        lds_offset: LDS offset.
-    """
-
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _buffer_load_store_lds_nowait  function is only applicable on"
-            " AMDGPU hardware."
-        ),
-    ]()
-
-    var lds_ptr = lds_ptr_base + lds_offset
-    var lds_ptr_sgpr = readfirstlane(SIMD[DType.int32, 1](Int(lds_ptr)))
-    inlined_assembly[
-        "s_mov_b32 m0, $0",
-        NoneType,
-        constraints="s,~{memory}",
-        has_side_effect=True,
-    ](lds_ptr_sgpr)
-
-    var global_offset_bytes = Int32(sizeof[dtype]() * gds_offset)
-    inlined_assembly[
-        "buffer_load_dword $0, $1, 0 offen lds",
-        NoneType,
-        constraints="v,s,~{memory}",
-        has_side_effect=True,
-    ](global_offset_bytes, src_resource)
 
 
 @always_inline

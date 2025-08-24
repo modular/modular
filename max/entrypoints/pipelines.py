@@ -134,11 +134,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         ),
     )
     @click.option(
-        "--model-name",
-        type=str,
-        help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
-    )
-    @click.option(
         "--sim-failure",
         type=int,
         default=0,
@@ -177,7 +172,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 )
 def cli_serve(
     profile_serve: bool,
-    model_name: str | None,
     sim_failure: int,
     port: int,
     headless: bool,
@@ -192,9 +186,7 @@ def cli_serve(
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
-    from max.entrypoints.cli import (
-        serve_api_server_and_model_worker,
-    )
+    from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
     from max.pipelines import AudioGenerationConfig, PipelineConfig
@@ -238,7 +230,6 @@ def cli_serve(
             settings=settings,
             pipeline_config=pipeline_config,
             profile=profile_serve,
-            model_name=model_name,
             failure_percentage=failure_percentage,
             port=port,
             pipeline_task=PipelineTask(task),

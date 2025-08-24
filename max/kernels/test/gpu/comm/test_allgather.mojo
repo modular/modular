@@ -14,8 +14,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.comm.allgather import allgather
-from gpu.comm.allreduce import MAX_GPUS, Signal
+from comm.allgather import allgather
+from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
 from sys import sizeof
 from testing import assert_equal, assert_true

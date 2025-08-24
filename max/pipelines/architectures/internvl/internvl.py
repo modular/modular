@@ -424,7 +424,7 @@ class InternVisionEmbeddings(Module, Shardable):
         self.dtype = config.vision_config.dtype
 
         # Calculate patch dimensions
-        # Note: in_dim matches Conv2D flattening order (C*H*W)
+        # Note: in_dim matches Conv2d flattening order (C*H*W)
         self.patch_embedding = Linear(
             in_dim=3 * self.patch_size * self.patch_size,
             out_dim=self.embed_dim,

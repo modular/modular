@@ -40,10 +40,17 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 # TODO: Remove when >0.5.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-EristohNaQ0KMUGKYQJCaBPIMVCZJKcLbnseCM5nLks=",
-    strip_prefix = "rules_mojo-e75473ac8a9d09d475afaab964913f49c83836ca",
+    integrity = "sha256-MUAxGZHiY3OOzxWEbiq6Uvd5wFlvF8Prld4nRHUMcuw=",
+    patch_strip = 1,
+    patches = [
+        # TODO: https://github.com/modular/rules_mojo/pull/44
+        # The PR changing adding this comment needs to be added atomically
+        # with the above PR, so use a patch for now and merge the PR later.
+        "//bazel/public-patches:rules_mojo_use_mojo_compiler_wheel.patch",
+    ],
+    strip_prefix = "rules_mojo-cb821a7facc0d025b7f6c76a499ba45f85511a62",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/e75473ac8a9d09d475afaab964913f49c83836ca.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/cb821a7facc0d025b7f6c76a499ba45f85511a62.tar.gz",
     ],
 )
 

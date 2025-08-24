@@ -234,7 +234,11 @@ class KVCacheManager(ABC, Generic[T]):
         ...
 
     @abstractmethod
-    def input_symbols(self) -> Sequence[KVCacheInputSymbols]:
+    def input_symbols(
+        self,
+        devices: Sequence[Device] | None = None,
+        num_layers: int | None = None,
+    ) -> Sequence[KVCacheInputSymbols]:
         """Returns the input symbols for the kv cache manager."""
         ...
 

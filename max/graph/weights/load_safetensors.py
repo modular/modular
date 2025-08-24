@@ -61,7 +61,7 @@ class SafetensorWeights(Weights):
         )
     """
 
-    _filepaths: Sequence[PathLike]
+    _filepaths: Sequence[PathLike[str]]
     _tensors: Set[str]
     _tensors_to_file_idx: Mapping[str, int]
     _allocated: dict[str, DLPackArray]
@@ -69,18 +69,18 @@ class SafetensorWeights(Weights):
     # This is a mapping of filepaths to SafeTensor handles. This is used to
     # avoid opening and mapping the same file to virtual memory multiple times,
     # which can use up all virtual memory.
-    _st_file_handles: dict[PathLike, SafeTensor]
+    _st_file_handles: dict[PathLike[str], SafeTensor]
 
     def __init__(
         self,
-        filepaths: Sequence[PathLike],
+        filepaths: Sequence[PathLike[str]],
         *,
         tensors: Optional[Set[str]] = None,
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated: Optional[dict[str, DLPackArray]] = None,
         _st_weight_map: dict[str, Tensor] | None = None,
-        _st_file_handles: dict[PathLike, SafeTensor] | None = None,
+        _st_file_handles: dict[PathLike[str], SafeTensor] | None = None,
     ) -> None:
         self._filepaths = filepaths
         if tensors is not None:
@@ -100,7 +100,7 @@ class SafetensorWeights(Weights):
         if _st_file_handles is not None:
             self._st_file_handles = _st_file_handles
         else:
-            file_handles: dict[PathLike, SafeTensor] = {}
+            file_handles: dict[PathLike[str], SafeTensor] = {}
             for filepath in self._filepaths:
                 file_handles[filepath] = safe_open(filepath)
             self._st_file_handles = file_handles

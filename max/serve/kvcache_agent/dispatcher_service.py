@@ -26,6 +26,7 @@ from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
     TransportMessage,
 )
+from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
@@ -66,11 +67,13 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         send_endpoint: str,
         recv_endpoint: str,
         transport: DispatcherTransport[DispatcherMessagePayload],
+        process_control: Optional[ProcessControl] = None,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
     ) -> None:
         """Initialize dispatcher service with local sockets and remote transport."""
         self.transport = transport
+        self._pc = process_control
 
         self.local_pull_socket = ZmqPullSocket[
             DispatcherMessage[DispatcherMessagePayload]
@@ -79,8 +82,8 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
             DispatcherMessage[DispatcherMessagePayload]
         ](zmq_endpoint=send_endpoint, serialize=serialize)
 
-        self._running = False
         self._tasks: list[asyncio.Task[object]] = []
+        self._heartbeat_task: Optional[asyncio.Task[object]] = None
 
         logger.debug(
             f"DispatcherService initialized: send={send_endpoint}, recv={recv_endpoint}"
@@ -90,12 +93,14 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         """Start the dispatcher service and begin message routing loops."""
         try:
             await self.transport.start()
-            self._running = True
-
             self._tasks = [
                 asyncio.create_task(self._local_to_transport_loop()),
                 asyncio.create_task(self._transport_to_local_loop()),
             ]
+            if self._pc is not None:
+                self._heartbeat_task = asyncio.create_task(
+                    self._heartbeat_loop()
+                )
             logger.debug("DispatcherService started")
         except Exception as e:
             logger.exception(f"Failed to start dispatcher service: {e}")
@@ -103,11 +108,13 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
 
     async def stop(self) -> None:
         """Stop the dispatcher service and clean up resources."""
-        self._running = False
-
         # Give tasks a chance to finish gracefully before cancelling
         try:
-            done, pending = await asyncio.wait(self._tasks, timeout=1.0)
+            tasks: list[asyncio.Task[object]] = list(self._tasks)
+            if self._heartbeat_task is not None:
+                tasks.append(self._heartbeat_task)
+
+            done, pending = await asyncio.wait(tasks, timeout=1.0)
 
             # If any tasks are still pending after timeout, cancel them
             if pending:
@@ -116,6 +123,7 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
                 await asyncio.gather(*pending, return_exceptions=True)
 
             self._tasks.clear()
+            self._heartbeat_task = None
         except Exception as e:
             logger.exception(f"Failed to stop dispatcher service: {e}")
             raise
@@ -152,7 +160,9 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         Processes DispatcherMessage instances from local sockets and forwards them
         via transport as TransportMessage instances.
         """
-        while self._running:
+        while True:
+            if self._pc is not None and self._pc.is_canceled():
+                break
             try:
                 msg = self.local_pull_socket.get_nowait()
                 if msg:
@@ -188,6 +198,8 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
                     await asyncio.sleep(0.001)
             except queue.Empty:
                 await asyncio.sleep(0.001)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.exception(
                     f"Failed to forward local message to transport: {e}"
@@ -201,7 +213,9 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         Receives TransportMessageEnvelope instances from transport and converts them
         to DispatcherMessage instances for local socket consumption.
         """
-        while self._running:
+        while True:
+            if self._pc is not None and self._pc.is_canceled():
+                break
             try:
                 received = await self.transport.receive_message()
                 if received:
@@ -231,8 +245,20 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
                     )
                 else:
                     await asyncio.sleep(0.001)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.exception(
                     f"Failed to forward transport message to local: {e}"
                 )
                 await asyncio.sleep(0.001)
+
+    async def _heartbeat_loop(self) -> None:
+        """Emit periodic heartbeat to the provided ProcessControl."""
+        assert self._pc is not None
+        try:
+            while not self._pc.is_canceled():
+                self._pc.beat()
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            pass

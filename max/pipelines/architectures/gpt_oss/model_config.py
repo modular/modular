@@ -305,7 +305,8 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
         layer_types = getattr(
             huggingface_config,
             "layer_types",
-            ["full_attention"] * huggingface_config.num_hidden_layers,
+            ["sliding_attention", "full_attention"]
+            * (huggingface_config.num_hidden_layers // 2),
         )
 
         # Get additional parameters from HuggingFace config

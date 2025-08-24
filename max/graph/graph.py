@@ -304,8 +304,9 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., None | Value | Iterable[Value]] | None = None,
-        input_types: Iterable[Type] = (),
+        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        | None = None,
+        input_types: Iterable[Type[Any]] = (),
         path: Optional[Path] = None,
         *args,
         custom_extensions: list[Path] = [],  # noqa: B006
@@ -406,7 +407,7 @@ class Graph:
                 self.output(*outputs)
 
     @functools.cached_property
-    def inputs(self) -> Sequence[Value]:
+    def inputs(self) -> Sequence[Value[Any]]:
         """The input values of the graph."""
         body_args = self._graph_body.arguments
         if body_args and self._has_chain_input:
@@ -424,8 +425,9 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., None | Value | Iterable[Value]] | None = None,
-        input_types: Iterable[Type] = (),
+        forward: Callable[..., None | Value[Any] | Iterable[Value[Any]]]
+        | None = None,
+        input_types: Iterable[Type[Any]] = (),
         path: Optional[Path] = None,
         custom_extensions: list[Path] = [],  # noqa: B006
     ) -> Graph:
@@ -639,7 +641,7 @@ class Graph:
 
     def _add_op_generated(
         self, op_type: type[Operation], *args, **kwargs
-    ) -> list[Value]:
+    ) -> list[Value[Any]]:
         """Wrapper for clients that only require the op results."""
         with self._context, _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
@@ -650,7 +652,7 @@ class Graph:
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
-    def _add_op(self, op, *args, **kwargs) -> list[Value]:  # noqa: ANN001
+    def _add_op(self, op, *args, **kwargs) -> list[Value[Any]]:  # noqa: ANN001
         """Wrapper for clients that only require the op results."""
         results, _ = self._add_op_get_op_with_results(op, *args, **kwargs)
         return results
@@ -661,7 +663,7 @@ class Graph:
         *args,
         _ip: Optional[mlir.InsertionPoint] = None,
         **kwargs,
-    ) -> tuple[list[Value], mlir.OpView]:
+    ) -> tuple[list[Value[Any]], mlir.OpView]:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg: Any) -> Any:
             if isinstance(arg, Value):
@@ -749,7 +751,7 @@ class Graph:
         block_fn: Callable[[], Iterable[TensorValue] | TensorValue | None],
         block_terminator_op: mlir.Operation | mlir.OpView,
         block_name: str,
-        expected_output_types: list[Type] | None,
+        expected_output_types: list[Type[Any]] | None,
     ) -> None:
         """Builds and verifies a block within the graph.
 
@@ -790,7 +792,7 @@ class Graph:
                 block_terminator_op, results + [self._current_chain]
             )
 
-    def output(self, *outputs: Value) -> None:
+    def output(self, *outputs: Value[Any]) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type
         graph_body_args = self._graph_body.arguments
@@ -844,7 +846,7 @@ class Graph:
             terminator.erase()
 
     @property
-    def output_types(self) -> list[Type]:
+    def output_types(self) -> list[Type[Any]]:
         """View of the types of the graph output terminator."""
         terminator = self._body.operations[-1]
         terminator_operands = terminator.operands

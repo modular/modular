@@ -57,40 +57,15 @@ sh_binary(
 )
 
 command(
-    name = "ruff-lint.check",
-    arguments = [
-        "check",
-        "--quiet",
-    ],
+    name = "ruff.check",
+    arguments = ["check"],
     command = ":ruff-wrapper",
     visibility = ["//visibility:public"],
 )
 
 command(
-    name = "ruff-lint.fix",
-    arguments = [
-        "check",
-        "--fix",
-    ],
-    command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
-)
-
-command(
-    name = "ruff-format.check",
-    arguments = [
-        "format",
-        "--check",
-        "--quiet",
-        "--diff",
-    ],
-    command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
-)
-
-command(
-    name = "ruff-format.fix",
-    arguments = ["format"],
+    name = "ruff.fix",
+    arguments = ["fix"],
     command = ":ruff-wrapper",
     visibility = ["//visibility:public"],
 )
@@ -143,8 +118,7 @@ multirun(
         ":check_licenses.check",
         ":markdownlint.check",
         ":mblack.check",
-        ":ruff-format.check",
-        ":ruff-lint.check",
+        ":ruff.check",
     ],
     jobs = 0,
     visibility = ["//visibility:public"],
@@ -157,8 +131,7 @@ multirun(
         ":check_licenses.fix",
         ":markdownlint.fix",
         ":mblack.fix",
-        ":ruff-format.fix",
-        ":ruff-lint.fix",
+        ":ruff.fix",
     ],
     jobs = 0,
     visibility = ["//visibility:public"],

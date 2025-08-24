@@ -97,13 +97,14 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-    mma_shape: IndexList[3] = get_mma_shape[a_type, get_accum_type[a_type]()](),
-](Stringable, Writable, Copyable, Movable):
+](Copyable, Movable, Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
 
     var warp_tile_shape: IndexList[3]
+
+    var mma_shape: IndexList[3]
 
     var num_pipeline_stages: UInt
 
@@ -142,8 +143,10 @@ struct MatmulConfig[
 
     fn __init__(
         out self,
+        *,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
+        mma_shape: IndexList[3] = get_mma_shape[a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(1, 1, 1),
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
@@ -156,6 +159,7 @@ struct MatmulConfig[
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
+        self.mma_shape = mma_shape
         self.num_pipeline_stages = num_pipeline_stages
         self.num_k_partitions = num_k_partitions
         self.k_group_size = k_group_size

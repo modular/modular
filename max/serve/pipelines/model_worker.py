@@ -34,7 +34,7 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.queues import EngineQueue
-from max.serve.telemetry.common import configure_metrics
+from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
@@ -109,6 +109,7 @@ class ModelWorker:
             metric_client_factory: Factory function to create metric client
             dispatcher_factory: Factory for creating dispatcher client instances
         """
+        configure_logging(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
@@ -266,7 +267,7 @@ async def start_model_worker(
             model_factory,
             pipeline_config,
             settings,
-            metric_client.cross_process_factory(),
+            metric_client.cross_process_factory(settings),
             dispatcher_factory,
         ),
     )

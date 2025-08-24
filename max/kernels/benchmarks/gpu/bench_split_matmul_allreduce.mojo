@@ -25,7 +25,7 @@ from internal_utils._utils import (
     static,
 )
 from utils import IndexList, StaticTuple
-from gpu.comm.allreduce import (
+from comm.allreduce import (
     MAX_GPUS,
     Signal,
 )

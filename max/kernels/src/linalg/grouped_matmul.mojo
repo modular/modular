@@ -196,10 +196,11 @@ fn default_config_sm90[
     c_type: DType,
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
-]() -> MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape]:
+]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     alias BN = wgmma_shape[1]
-    return MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape,](
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=Index(128, BN, 64),
+        mma_shape=wgmma_shape,
         cluster_shape=Index(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
@@ -218,14 +219,8 @@ fn grouped_matmul_sm90[
     transpose_b: Bool = True,
     wgmma_shape: IndexList[3] = Index(64, 256, 16),
     config: MatmulConfig[
-        a_type, b_type, c_type, transpose_b, wgmma_shape
-    ] = default_config_sm90[
-        a_type,
-        b_type,
-        c_type,
-        transpose_b,
-        wgmma_shape,
-    ](),
+        a_type, b_type, c_type, transpose_b
+    ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],

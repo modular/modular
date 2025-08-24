@@ -75,8 +75,8 @@ if TYPE_CHECKING:
 
 from .config_enums import RepoType, SupportedEncoding
 from .hf_utils import download_weight_files
+from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
-from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 logger = logging.getLogger("max.pipelines")

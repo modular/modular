@@ -291,7 +291,7 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         # Initialize the block buffers for each device.
-        self.device_tensors: list[Tensor] = []
+        self.device_tensors = []
         for device in self.devices:
             self.device_tensors.append(
                 Tensor(
@@ -449,15 +449,20 @@ class PagedKVCacheManager(KVCacheManager):
     def block_shape(
         self,
         total_num_pages: int | None = None,
+        num_layers: int | None = None,
         is_parameterized: bool = False,
     ) -> list[int | str]:
         if total_num_pages is None:
             total_num_pages = self.total_num_pages
+
+        if num_layers is None:
+            num_layers = self.num_layers
+
         return self._block_shape(
             self.params,
             total_num_pages,
             self.page_size,
-            self.num_layers,
+            num_layers,
             is_parameterized,
         )
 
@@ -610,23 +615,35 @@ class PagedKVCacheManager(KVCacheManager):
 
         return ret_list
 
-    def input_symbols(self) -> Sequence[PagedCacheInputSymbols]:
+    def input_symbols(
+        self,
+        devices: Sequence[Device] | None = None,
+        num_layers: int | None = None,
+    ) -> Sequence[PagedCacheInputSymbols]:
+        if devices is None:
+            devices = self.devices
+
+        if num_layers is None:
+            num_layers = self.num_layers
+
         return [
             PagedCacheInputSymbols(
                 kv_blocks=TensorType(
                     self.params.dtype,
-                    shape=self.block_shape(is_parameterized=True),
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                    shape=self.block_shape(
+                        num_layers=num_layers, is_parameterized=True
+                    ),
+                    device=DeviceRef(device.label, device.id),
                 ),
                 cache_lengths=TensorType(
                     DType.uint32,
                     shape=["batch_size"],
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                    device=DeviceRef(device.label, device.id),
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
                     shape=["batch_size", "max_num_pages"],
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                    device=DeviceRef(device.label, device.id),
                 ),
                 max_lengths=TensorType(
                     DType.uint32,
@@ -634,7 +651,7 @@ class PagedKVCacheManager(KVCacheManager):
                     device=DeviceRef.CPU(),
                 ),
             )
-            for i in range(len(self.devices))
+            for device in devices
         ]
 
     def release(self, request_id: RequestID) -> None:

@@ -130,6 +130,9 @@ class DecodeScheduler(Scheduler):
             paged_cache=paged_manager,
         )
         self.scheduler_logger = SchedulerLogger()
+        # None corresponds to the default destination address.
+        # TODO: delete the default destination address.
+        self.remote_endpoints: set[str | None] = set()
 
     @traced
     def handle_transfer_engine_response(
@@ -140,6 +143,14 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
+        # Send singular token to the API process
+        context = message.context
+        output = context.to_generation_output()
+        self.response_push_socket.put_nowait(
+            {message.id: SchedulerResult.create(output)}
+        )
+
+        # Add to prefill responses afterwards to avoid race condition
         self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     @traced
@@ -158,12 +169,14 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-        # TODO: Handle this dynamically.
-        if len(self.transfer_engine.remote_connections) == 0:
+
+        if data.target_endpoint not in self.remote_endpoints:
             self.dispatcher_client.send(
                 MessageType.TRANSFER_ENGINE_REQUEST,
                 self.transfer_engine.metadata,
+                destination_address=data.target_endpoint,
             )
+            self.remote_endpoints.add(data.target_endpoint)
 
         self.dispatcher_client.send(
             MessageType.PREFILL_REQUEST,
@@ -173,6 +186,7 @@ class DecodeScheduler(Scheduler):
                 transfer_engine_name=self.transfer_engine.name,
                 block_ids=dst_idx,
             ),
+            destination_address=data.target_endpoint,
         )
 
     def reserve_memory_and_send_to_prefill(self) -> None:

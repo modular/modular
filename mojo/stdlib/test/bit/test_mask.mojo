@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
-from bit._mask import is_negative, is_true
+from bit._mask import is_negative, splat
 from sys.info import bitwidthof
 
 
@@ -41,7 +41,7 @@ def test_is_negative():
                 assert_equal(S(0), is_negative(S(k)))
 
 
-def test_is_true():
+def test_splat():
     alias dtypes = (
         DType.int8,
         DType.int16,
@@ -63,8 +63,8 @@ def test_is_true():
         for j in range(len(widths)):
             alias w = widths[j]
             alias B = SIMD[DType.bool, w]
-            assert_equal(SIMD[D, w](-1), is_true[D](B(True)))
-            assert_equal(SIMD[D, w](0), is_true[D](B(False)))
+            assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
+            assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 
 
 def test_compare():
@@ -90,18 +90,18 @@ def test_compare():
             for k in values:
                 var s_k = S(k)
                 var s_k_1 = S(k - 1)
-                assert_equal(S(-1), is_true[D](s_k.eq(s_k)))
-                assert_equal(S(-1), is_true[D]((-s_k).eq(-s_k)))
-                assert_equal(S(-1), is_true[D](s_k.ne(s_k_1)))
-                assert_equal(S(-1), is_true[D]((-s_k).ne(s_k_1)))
-                assert_equal(S(-1), is_true[D](s_k.gt(s_k_1)))
-                assert_equal(S(-1), is_true[D](s_k_1.gt(-s_k)))
-                assert_equal(S(-1), is_true[D]((-s_k).ge(-s_k)))
-                assert_equal(S(-1), is_true[D]((-s_k).lt(s_k_1)))
-                assert_equal(S(-1), is_true[D]((-s_k).le(-s_k)))
+                assert_equal(S(-1), splat[D](s_k.eq(s_k)))
+                assert_equal(S(-1), splat[D]((-s_k).eq(-s_k)))
+                assert_equal(S(-1), splat[D](s_k.ne(s_k_1)))
+                assert_equal(S(-1), splat[D]((-s_k).ne(s_k_1)))
+                assert_equal(S(-1), splat[D](s_k.gt(s_k_1)))
+                assert_equal(S(-1), splat[D](s_k_1.gt(-s_k)))
+                assert_equal(S(-1), splat[D]((-s_k).ge(-s_k)))
+                assert_equal(S(-1), splat[D]((-s_k).lt(s_k_1)))
+                assert_equal(S(-1), splat[D]((-s_k).le(-s_k)))
 
 
 def main():
     test_is_negative()
-    test_is_true()
+    test_splat()
     test_compare()

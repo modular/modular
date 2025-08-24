@@ -281,10 +281,14 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "lm_head.weight" not in state_dict
-        )
+        if "tie_word_embeddings" in huggingface_config:
+            tie_word_embeddings = huggingface_config.tie_word_embeddings
+        else:
+            tie_word_embeddings = (
+                getattr(huggingface_config, "tie_word_embeddings", False)
+                or "lm_head.weight" not in state_dict
+            )
+
         embedding_multiplier = getattr(
             huggingface_config, "embedding_multiplier", 1.0
         )

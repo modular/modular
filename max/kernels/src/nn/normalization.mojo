@@ -770,6 +770,7 @@ fn _rms_norm_warp_tiling_subkernel[
     accum_type: DType, //,
     max_warps_per_block: Int,
     multiply_before_cast: Bool,
+    rows_per_warp: Int = 1,
 ](
     row: Int,
     idx: Int,
@@ -784,9 +785,17 @@ fn _rms_norm_warp_tiling_subkernel[
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
 
-    var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
-        thread_m2
-    )
+    @parameter
+    if rows_per_warp == 2:
+        # Each half warp handles reduction for one row.
+        row_m2 = warp.lane_group_sum_and_broadcast[num_lanes = WARP_SIZE // 2](
+            thread_m2
+        )
+    else:
+        row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+
     var norm_factor = isqrt((row_m2 / num_cols) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
@@ -804,6 +813,63 @@ fn _rms_norm_warp_tiling_subkernel[
             )
 
     return norm_val
+
+
+fn rms_norm_gpu_warp_tiling_128[
+    dtype: DType, //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    num_rows: Int,
+    num_cols: Int,
+):
+    alias half_warp_size = WARP_SIZE // 2
+    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias accum_type = get_accum_type[dtype]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    var vec_data = SIMD[accum_type, simd_width](0)
+    var tid = thread_idx.x
+    # Base row for this block.
+    var block_row = block_idx.x * 2
+    # 0 or 1 to identify which 16-thread group.
+    var sub_warp_id = tid // half_warp_size
+    # Each sub-warp handles different row.
+    var row = block_row + sub_warp_id
+    # Thread ID within sub-warp.
+    var local_tid = tid % half_warp_size
+    var idx = local_tid * simd_width
+    var thread_m2 = Scalar[accum_type](0)
+
+    with PDL():
+        if row < num_rows and idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+
+        var norm_val = _rms_norm_warp_tiling_subkernel[
+            max_warps_per_block, multiply_before_cast, rows_per_warp=2
+        ](
+            row,
+            idx,
+            vec_data,
+            gamma,
+            eps_accum,
+            weight_offset_accum,
+            num_cols,
+        )
+        if idx < num_cols:
+            output_fn[simd_width, align](row, idx, norm_val)
 
 
 fn rms_norm_gpu_warp_tiling[
@@ -1005,7 +1071,28 @@ fn rms_norm_gpu[
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
-        if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+        if cols <= 128 and dtype == DType.bfloat16:
+            # For this case we can do two rows per block (where block_dim = 32).
+            grid_dim = ceildiv(rows, 2)
+            ctx.enqueue_function[
+                rms_norm_gpu_warp_tiling_128[
+                    simd_width,
+                    max_warps_per_block,
+                    input_fn_2d,
+                    output_fn_2d,
+                    multiply_before_cast=multiply_before_cast,
+                ]
+            ](
+                gamma,
+                epsilon,
+                weight_offset,
+                rows,
+                cols,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             ctx.enqueue_function[
                 rms_norm_gpu_warp_tiling[
                     simd_width,

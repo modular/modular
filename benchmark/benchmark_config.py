@@ -14,11 +14,25 @@
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
 import enum
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from benchmark_datasets import DATASET_REGISTRY
-from max.pipelines.lib import MAXConfig
+
+logger = logging.getLogger("max.benchmark")
+
+# Workaround for when we don't have max.pipelines installed. This assumes that
+# we copied the max_config.py file to the current directory.
+try:
+    from max.pipelines.lib import MAXConfig
+except ImportError:
+    logger.warning(
+        "max.pipelines.lib not found, using max_config.py from current directory"
+    )
+    # Also type: ignore because we don't want mypy to trigger on this since
+    # it's intentional anyway.
+    from max_config import MAXConfig  # type: ignore
 
 
 class Backend(str, enum.Enum):

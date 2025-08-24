@@ -18,7 +18,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
-from max.nn.conv import Conv2D
+from max.nn.conv import Conv2d
 from max.nn.embedding import Embedding
 
 from ..model_config import Idefics3VisionConfig
@@ -61,9 +61,9 @@ class Idefics3VisionEmbeddings(Module):
         self.num_positions = self.num_patches
         self.dtype = dtype
 
-        # Patch embedding using Conv2D with stride=patch_size (equivalent to patch extraction)
+        # Patch embedding using Conv2d with stride=patch_size (equivalent to patch extraction)
         # TODO: use a more optimized implementation of conv2d
-        self.patch_embedding = Conv2D(
+        self.patch_embedding = Conv2d(
             in_channels=self.num_channels,
             out_channels=self.embed_dim,
             kernel_size=self.patch_size,
@@ -101,11 +101,11 @@ class Idefics3VisionEmbeddings(Module):
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]
 
-        # Convert input from NCHW to NHWC format for MAX Conv2D
+        # Convert input from NCHW to NHWC format for MAX Conv2d
         # pixel_values: [batch_size, channels, height, width] -> [batch_size, height, width, channels]
         pixel_values_nhwc = ops.permute(pixel_values, [0, 2, 3, 1])
 
-        # Apply patch embedding (Conv2D with stride=patch_size extracts patches)
+        # Apply patch embedding (Conv2d with stride=patch_size extracts patches)
         # Output will be in NHWC format: [batch_size, out_height, out_width, out_channels]
         patch_embeds_nhwc = self.patch_embedding(pixel_values_nhwc)
 

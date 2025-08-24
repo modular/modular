@@ -267,7 +267,6 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
                 context.update(new_token=next_token)
 
-                res[request_id].final_status = context.status
                 if context.status.is_done:
                     break
 

@@ -14,13 +14,13 @@
 from builtin.variadics import VariadicOf
 from sys import alignof
 from ._mixed_layout import MixedLayout
-from ._mixed_tuple import MixedIntTuple, MixedIntTupleLike, ComptimeInt, Idx
+from ._mixed_tuple import MixedTuple, MixedTupleLike, ComptimeInt, Idx
 
 
 struct MixedLayoutTensor[
     dtype: DType,
-    shape_types: VariadicOf[MixedIntTupleLike],
-    stride_types: VariadicOf[MixedIntTupleLike], //,
+    shape_types: VariadicOf[MixedTupleLike],
+    stride_types: VariadicOf[MixedTupleLike], //,
     alignment: Int = alignof[dtype](),
 ]:
     var ptr: UnsafePointer[Scalar[dtype]]
@@ -39,12 +39,12 @@ struct MixedLayoutTensor[
         self.layout = layout
 
     fn __getitem__[
-        index_type: MixedIntTupleLike
+        index_type: MixedTupleLike
     ](self, arg: index_type) -> SIMD[dtype, 1]:
         return self.ptr[self.layout(arg)]
 
     fn __setitem__[
-        index_type: MixedIntTupleLike
+        index_type: MixedTupleLike
     ](self, arg: index_type, value: SIMD[dtype, 1]):
         self.ptr[self.layout(arg)] = value
 
@@ -60,31 +60,31 @@ fn distribute[
     data_stride_1: Int, //,
     dtype: DType,
     thread_layout: MixedLayout[
-        MixedIntTuple[
+        MixedTuple[
             ComptimeInt[thread_shape_0], ComptimeInt[thread_shape_1]
         ]._get_variadic_pack(),
-        MixedIntTuple[
+        MixedTuple[
             ComptimeInt[thread_stride_0], ComptimeInt[thread_stride_1]
         ]._get_variadic_pack(),
     ],
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype,
-        shape_types = MixedIntTuple[
+        shape_types = MixedTuple[
             ComptimeInt[data_shape_0], ComptimeInt[data_shape_1]
         ]._get_variadic_pack(),
-        stride_types = MixedIntTuple[
+        stride_types = MixedTuple[
             ComptimeInt[data_stride_0], ComptimeInt[data_stride_1]
         ]._get_variadic_pack(),
     ],
     thread_id: Int,
 ) -> MixedLayoutTensor[
     dtype = data_layout_tensor.dtype,
-    shape_types = MixedIntTuple[
+    shape_types = MixedTuple[
         ComptimeInt[data_shape_0 // thread_shape_0],
         ComptimeInt[data_shape_1 // thread_shape_1],
     ]._get_variadic_pack(),
-    stride_types = MixedIntTuple[
+    stride_types = MixedTuple[
         ComptimeInt[data_stride_0 * thread_shape_0],
         ComptimeInt[data_stride_1 * thread_shape_1],
     ]._get_variadic_pack(),
@@ -103,12 +103,12 @@ fn distribute[
             data_layout_tensor.layout.stride[i].value()
         )
 
-    alias shape = MixedIntTuple(
+    alias shape = MixedTuple(
         ComptimeInt[data_shape_0 // thread_shape_0](),
         ComptimeInt[data_shape_1 // thread_shape_1](),
     )
 
-    alias stride = MixedIntTuple(
+    alias stride = MixedTuple(
         ComptimeInt[data_stride_0 * thread_shape_0](),
         ComptimeInt[data_stride_1 * thread_shape_1](),
     )
@@ -131,16 +131,16 @@ fn distribute[
 
 fn tile[
     dtype: DType,
-    shape_types: VariadicOf[MixedIntTupleLike],
-    stride_types: VariadicOf[MixedIntTupleLike],
-    coord_types: VariadicOf[MixedIntTupleLike],
-    tile_shape_types: VariadicOf[MixedIntTupleLike], //,
+    shape_types: VariadicOf[MixedTupleLike],
+    stride_types: VariadicOf[MixedTupleLike],
+    coord_types: VariadicOf[MixedTupleLike],
+    tile_shape_types: VariadicOf[MixedTupleLike], //,
 ](
     data_layout_tensor: MixedLayoutTensor[
         dtype=dtype, shape_types=shape_types, stride_types=stride_types
     ],
-    tile_shape: MixedIntTuple[*tile_shape_types],
-    tile_coords: MixedIntTuple[*coord_types],
+    tile_shape: MixedTuple[*tile_shape_types],
+    tile_coords: MixedTuple[*coord_types],
 ) -> MixedLayoutTensor[
     dtype=dtype,
     shape_types=tile_shape_types,
@@ -170,7 +170,7 @@ fn tile[
     Args:
         data_layout_tensor: The source tensor to extract the tile from.
         tile_shape: The shape that the layout should be tiled into.
-        tile_coords: The index of the tile to extract as a MixedIntTuple.
+        tile_coords: The index of the tile to extract as a MixedTuple.
 
     Returns:
         A MixedLayoutTensor representing a view into the specified tile region.
@@ -181,7 +181,7 @@ fn tile[
     var offset: UInt = 0
 
     @parameter
-    for i in range(MixedIntTuple[*coord_types].__len__()):
+    for i in range(MixedTuple[*coord_types].__len__()):
         offset += (
             tile_coords[i].value()
             * tile_shape[i].value()

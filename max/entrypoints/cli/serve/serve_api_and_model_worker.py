@@ -17,7 +17,7 @@
 import logging
 import signal
 import sys
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import uvloop
 from max.interfaces import PipelineTask
@@ -65,7 +65,6 @@ def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
     profile: bool = False,
-    model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
     port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
@@ -96,12 +95,8 @@ def serve_api_server_and_model_worker(
         override_architecture=override_architecture,
     )
 
-    # If explicit model name is not provided, set to model_path.
-    if model_name is None:
-        model_name = pipeline_config.model_config.model_path
-
     pipeline_settings = ServingTokenGeneratorSettings(
-        model_name=model_name,
+        model_name=pipeline_config.model_config.model_path,
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,

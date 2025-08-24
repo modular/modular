@@ -1,0 +1,21 @@
+diff --git a/mojo/extensions.bzl b/mojo/extensions.bzl
+index 4c77396..546e479 100644
+--- a/mojo/extensions.bzl
++++ b/mojo/extensions.bzl
+@@ -31,14 +31,14 @@ _NULL_SHAS = {
+ def _mojo_toolchain_impl(rctx):
+     base_url = rctx.attr.base_url or "https://dl.modular.com/public/nightly/python"
+     rctx.download_and_extract(
+-        url = "{}/max-{}-py3-none-{}.whl".format(
++        url = "{}/mojo_compiler-{}-py3-none-{}.whl".format(
+             base_url,
+             rctx.attr.version,
+             _PLATFORM_MAPPINGS[rctx.attr.platform],
+         ),
+         sha256 = _KNOWN_SHAS.get(rctx.attr.version, _NULL_SHAS)[rctx.attr.platform],
+         type = "zip",
+-        strip_prefix = "max-{}.data/platlib/max".format(rctx.attr.version),
++        strip_prefix = "mojo_compiler-{}.data/platlib/modular".format(rctx.attr.version),
+     )
+ 
+     rctx.template(

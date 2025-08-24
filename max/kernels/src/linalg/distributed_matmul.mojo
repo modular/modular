@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.comm.allreduce import (
-    MAX_GPUS,
-    Signal,
-    allreduce,
-    elementwise_epilogue_type,
-)
+
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from comm.allreduce import (
+    MAX_GPUS,
+    Signal,
+    elementwise_epilogue_type,
+    allreduce,
+)
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from utils import IndexList

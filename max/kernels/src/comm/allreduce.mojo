@@ -51,6 +51,7 @@ from gpu import (
     block_idx,
     grid_dim,
     thread_idx,
+    global_idx,
 )
 from gpu.grid_controls import (
     PDLLevel,

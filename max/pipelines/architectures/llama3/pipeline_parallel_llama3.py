@@ -354,6 +354,9 @@ class PipelineParallelLlama3(Transformer):
                 ops.transfer_to(input_row_offsets, stage_device)
             )
 
+        # Precompute rope freqs_cis.
+        freqs_cis = self.rope.freqs_cis
+
         # Execute pipeline stages sequentially
         current_device = self.devices[0]
         for stage_idx, (start_layer, end_layer) in enumerate(
@@ -383,6 +386,7 @@ class PipelineParallelLlama3(Transformer):
                     ),
                     h,
                     stage_kv_collection,
+                    freqs_cis,
                     stage_input_row_offsets,
                 )
 

@@ -51,9 +51,9 @@ def test_SM80_m16n8k4_F32TF32TF32F32_TN():
     var asm = _compile_code[SM80_m16n8k4_F32TF32TF32F32_TN]().asm
     assert_true("mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32" in asm)
     assert_true("{%r8, %r9, %r10, %r11}," in asm)
-    assert_true("{%r7, %r6}," in asm)
-    assert_true("{%r5}," in asm)
-    assert_true("{%r1, %r2, %r3, %r4};" in asm)
+    assert_true("{%r1, %r2}," in asm)
+    assert_true("{%r7}," in asm)
+    assert_true("{%r3, %r4, %r5, %r6};" in asm)
 
 
 fn SM80_m16n8k8_F32TF32TF32F32_TN(

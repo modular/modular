@@ -32,14 +32,14 @@ from max.graph.type import FilterLayout
 from .layer import Layer, Module, Shardable
 
 
-class Conv2D(Module, Shardable):
+class Conv2d(Module, Shardable):
     """A 2D convolution over an input signal composed of several input
     planes.
 
     Example:
         .. code-block:: python
 
-            conv = nn.Conv2D(
+            conv = nn.Conv2d(
                 kernel_size=3,
                 in_channels=64,
                 out_channels=128,
@@ -95,7 +95,7 @@ class Conv2D(Module, Shardable):
         permute: bool = False,
         name: Union[str, None] = None,
     ) -> None:
-        """Initializes the Conv2D layer with weights and optional bias.
+        """Initializes the Conv2d layer with weights and optional bias.
 
         Args:
             kernel_size: Size of the convolving kernel. Can be a single int (square kernel) or tuple (height, width).
@@ -189,11 +189,11 @@ class Conv2D(Module, Shardable):
             isinstance(self.filter, Weight)
             and self.filter.quantization_encoding is not None
         ):
-            raise ValueError("Conv2D not implemented with weight quantization.")
+            raise ValueError("Conv2d not implemented with weight quantization.")
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the Conv2D sharding strategy."""
+        """Get the Conv2d sharding strategy."""
         # Always take the sharding strategy of the conv filter.
         return self.filter.sharding_strategy
 
@@ -206,25 +206,25 @@ class Conv2D(Module, Shardable):
         """
         if not strategy.is_replicate:
             raise ValueError(
-                "only replicate is supported for Conv2D, currently"
+                "only replicate is supported for Conv2d, currently"
             )
 
         self.filter.sharding_strategy = strategy
         if self.bias:
             self.bias.sharding_strategy = strategy
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[Conv2D]:
-        """Creates sharded views of this Conv2D layer across multiple devices.
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Conv2d]:
+        """Creates sharded views of this Conv2d layer across multiple devices.
 
         Args:
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded Conv2D instances, one for each device.
+            List of sharded Conv2d instances, one for each device.
         """
         if not self.sharding_strategy:
             raise ValueError(
-                "Conv2D layer cannot be sharded because no sharding strategy was provided."
+                "Conv2d layer cannot be sharded because no sharding strategy was provided."
             )
         assert self.sharding_strategy.is_replicate
 
@@ -236,8 +236,8 @@ class Conv2D(Module, Shardable):
         for idx, (device, filter_shard) in enumerate(
             zip(devices, sharded_filters)
         ):
-            # Create new Conv2D with same configuration.
-            sharded = Conv2D(
+            # Create new Conv2d with same configuration.
+            sharded = Conv2d(
                 kernel_size=self.kernel_size,
                 in_channels=self.in_channels,
                 out_channels=self.out_channels,
@@ -313,11 +313,11 @@ class Conv2D(Module, Shardable):
 
 
 @dataclass
-class Conv2DV1(Layer):
+class Conv2dV1(Layer):
     """A 2D convolution over an input signal composed of several input
     planes.
 
-    DEPRECATED: Use :obj:`Conv2D` instead.
+    DEPRECATED: Use :obj:`Conv2d` instead.
     """
 
     filter: TensorValueLike
@@ -350,7 +350,7 @@ class Conv2DV1(Layer):
             and self.filter.quantization_encoding is not None
         ):
             raise ValueError(
-                "Conv2DV1 not implemented with weight quantization."
+                "Conv2dV1 not implemented with weight quantization."
             )
         return ops.conv2d(
             x,
@@ -388,7 +388,7 @@ class Conv1DV1(Layer):
             a tensor of shape [batch_size, new_length, out_channels]
             new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
         """
-        # TODO(GEX-327): Support Conv1D in mo rather than implementing it using Conv2DV1.
+        # TODO(GEX-327): Support Conv1D in mo rather than implementing it using Conv2dV1.
         # Reshape [batch_size, length, in_channels] to [batch_size, height=1, length, in_channels].
         x = ops.unsqueeze(x, 1)
         # Reshape  [kernel_size, in_channels, out_channels] to [height=1, kernel_size, in_channels, out_channels].
@@ -573,7 +573,7 @@ class Conv1D(Module):
         else:
             weight = ops.unsqueeze(weight, 0)
 
-        # Reshape for Conv2DV1
+        # Reshape for Conv2dV1
         x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
 
         output = ops.conv2d(
@@ -589,7 +589,7 @@ class Conv1D(Module):
             else FilterLayout.RSCF,
         )
 
-        # Reshape back from Conv2DV1
+        # Reshape back from Conv2dV1
         output = ops.squeeze(
             output, 1
         )  # [batch_size, new_length, out_channels]

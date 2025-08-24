@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -59,40 +58,6 @@ from .model_config import Llama3Config
 from .pipeline_parallel_llama3 import PipelineParallelLlama3
 
 logger = logging.getLogger("max.pipelines")
-
-
-# =============================================================================
-# Pipeline Stage KV Cache Parameters
-# =============================================================================
-
-
-@dataclass
-class PipelineStageKVParams:
-    """Parameters for a specific pipeline stage's KV cache."""
-
-    stage_id: int
-    start_layer: int
-    end_layer: int
-    num_layers_in_stage: int
-    base_params: KVCacheParams
-    device: DeviceRef
-
-    def create_stage_params(self) -> KVCacheParams:
-        """Create KVCacheParams specific to this pipeline stage."""
-        return KVCacheParams(
-            dtype=self.base_params.dtype,
-            n_kv_heads=self.base_params.n_kv_heads,
-            head_dim=self.base_params.head_dim,
-            enable_prefix_caching=self.base_params.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=self.base_params.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=self.base_params.host_kvcache_swap_space_gb,
-            cache_strategy=self.base_params.cache_strategy,
-            page_size=self.base_params.page_size,
-            n_devices=1,  # Single device per stage in pipeline parallel
-            pipeline_parallel_degree=self.base_params.pipeline_parallel_degree,
-            stage_id=self.stage_id,
-            total_num_layers=self.base_params.total_num_layers,
-        )
 
 
 class Llama3Inputs(ModelInputs):
@@ -433,6 +398,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 n_devices=n_devices_for_cache,
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
+                pipeline_parallel_degree=pp_degree,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -487,7 +453,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()
-        graph = self._build_graph(self.weights, self.adapter, session)
+        graph = self._build_graph(self.weights, self.adapter)
         after_build = time.perf_counter()
 
         logger.info(f"Building graph took {after_build - before:.6f} seconds")
@@ -556,10 +522,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return state_dict
 
     def _build_pipeline_parallel_graph(
-        self,
-        state_dict: dict[str, WeightData],
-        model_config: Llama3Config,
-        session: InferenceSession,
+        self, state_dict: dict[str, WeightData], model_config: Llama3Config
     ) -> Graph:
         """Build graph for pipeline parallel model with self-contained KV cache management.
 
@@ -588,59 +551,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
             num_layers_in_stage = end_layer - start_layer
             stage_device = self.devices[stage_idx]
 
-            # Create stage-specific KV cache parameters
-            stage_kv_params = Llama3Config.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=1,  # CRITICAL: Single device per stage
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            )
-
-            # Create stage manager internally
-            # Ensure available cache memory has been inferred
-            stage_available_cache_memory = (
-                self.kv_cache_config._available_cache_memory
-            )
-            if not stage_available_cache_memory:
-                raise ValueError("Can't infer memory consumption")
-
-            stage_kv_manager = load_kv_manager(
-                params=stage_kv_params,
-                max_batch_size=self.pipeline_config.max_batch_size,
-                max_seq_len=self.calculate_max_seq_len(
-                    self.pipeline_config,
-                    huggingface_config=self.huggingface_config,
-                ),
-                num_layers=num_layers_in_stage,
-                devices=[stage_device],
-                available_cache_memory=stage_available_cache_memory,
-                page_size=self.kv_cache_config.kv_cache_page_size,
-                session=session,
-            )
-
             # Get KV input symbols for this stage
-            stage_kv_inputs = stage_kv_manager.input_symbols()[
-                0
-            ]  # Single device per stage
+            stage_kv_inputs = self.kv_manager.input_symbols(
+                devices=[stage_device], num_layers=num_layers_in_stage
+            )[0]  # Single device per stage
             stage_kv_input_symbols.append(stage_kv_inputs)
-
-            # Create stage parameters for collection creation
-            stage_params = PipelineStageKVParams(
-                stage_id=stage_idx,
-                start_layer=start_layer,
-                end_layer=end_layer,
-                num_layers_in_stage=num_layers_in_stage,
-                base_params=stage_kv_params,
-                device=DeviceRef(stage_device.label, stage_device.id),
-            )
-
-            # Create collection constructor using regular classes with stage-specific parameters
-            stage_kv_cache_params = stage_params.create_stage_params()
 
             kv_collection_func: Any
             if model_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
                 kv_collection_func = FetchPagedKVCacheCollection(
-                    stage_kv_cache_params, num_layers=num_layers_in_stage
+                    self.kv_manager.params, num_layers=num_layers_in_stage
                 )
             else:
                 raise ValueError(
@@ -761,11 +681,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        session: Optional[InferenceSession] = None,
     ) -> Graph:
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
         model_config = Llama3Config.generate(
@@ -784,9 +700,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
             tensor_parallel_degree=self.pipeline_config.model_config.tensor_parallel_degree,
         )
 
-        # Get Graph Inputs
-        graph_inputs = self.graph_inputs()
-
         # Pipeline Parallel case - early return to avoid changing existing logic
         if model_config.pipeline_parallel_degree > 1:
             if model_config.tensor_parallel_degree != 1:
@@ -797,17 +710,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 f"Using Pipeline Parallel with {model_config.pipeline_parallel_degree} stages"
             )
 
-            # CRITICAL FIX: For PP, override the multi-device KV cache setup
-            # Create separate single-device KV cache managers for each stage
-            if session is None:
-                raise ValueError(
-                    "Session is required for pipeline parallel execution"
-                )
-            return self._build_pipeline_parallel_graph(
-                state_dict, model_config, session
-            )
+            return self._build_pipeline_parallel_graph(state_dict, model_config)
 
-        # Existing multi-GPU logic (unchanged)
+        # Tensor Parallel case
         if len(self.devices) > 1:
             dist_model: DistributedLlama3 = DistributedLlama3(model_config)
 
@@ -823,7 +728,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=graph_inputs,
+                input_types=self.graph_inputs(),
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
@@ -852,7 +757,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
 
-        # Existing single GPU logic (unchanged)
+        # Single GPU case
         else:
             single_model: Llama3 = Llama3(model_config)
 
@@ -868,7 +773,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
             self.state_dict = single_model.state_dict()
 
-            with Graph("llama3", input_types=graph_inputs) as graph:
+            with Graph("llama3", input_types=self.graph_inputs()) as graph:
                 if self._lora_manager:
                     (
                         tokens,

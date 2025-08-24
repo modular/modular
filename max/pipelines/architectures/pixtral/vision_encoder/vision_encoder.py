@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import Conv2D
+from max.nn import Conv2d
 from max.nn.layer import Module
 from max.nn.norm import RMSNorm
 
@@ -34,7 +34,7 @@ class VisionEncoder(Module):
     embeddings of patches.
     """
 
-    patch_conv: Conv2D
+    patch_conv: Conv2d
     layer_norm: RMSNorm
     patch_positional_embedding: RotaryEmbedding2D
     transformer: Transformer
@@ -45,7 +45,7 @@ class VisionEncoder(Module):
 
     def __init__(
         self,
-        patch_conv: Conv2D,
+        patch_conv: Conv2d,
         layer_norm: RMSNorm,
         patch_positional_embedding: RotaryEmbedding2D,
         transformer: Transformer,

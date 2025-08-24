@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 from max import mlir
 from max._core import graph as _graph
@@ -52,10 +53,10 @@ def _parameter_attribute(
 def custom(
     name: str,
     device: DeviceRef,
-    values: Sequence[Value],
-    out_types: Sequence[Type],
+    values: Sequence[Value[Any]],
+    out_types: Sequence[Type[Any]],
     parameters: Mapping[str, bool | int | str | DType] | None = None,
-) -> list[Value]:
+) -> list[Value[Any]]:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with the
@@ -110,10 +111,10 @@ def custom(
 def inplace_custom(
     name: str,
     device: DeviceRef,
-    values: Iterable[Value],
-    out_types: Iterable[Type] | None = None,
+    values: Iterable[Value[Any]],
+    out_types: Iterable[Type[Any]] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
-) -> list[Value]:
+) -> list[Value[Any]]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with the

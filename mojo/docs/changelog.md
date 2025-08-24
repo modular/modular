@@ -48,6 +48,12 @@ what we publish.
   model better.  A linear types are just types where all of the destructors are
   explicit - it has no `__del__`.
 
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
+
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
@@ -106,7 +112,30 @@ what we publish.
   - As a consequence, `SIMD.__bool__` no longer needs to be restricted to
     scalars, and instead performs an `any` reduction on the elements of vectors.
 
+- Non-scalar `SIMD` constructors no longer allow implicit splatting of `Bool`
+  values. This could lead to subtle bugs that cannot be caught at compile time,
+  for example:
+
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return v == 42  # this silently reduced to a single bool, and then splat
+  ```
+
+  Similarly to `InlineArray`, an explicit constructor with the `fill`
+  keyword-only argument can be used to express the same logic more safely:
+
+  ```mojo
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return SIMD[DType.bool, w](fill=(v == 42))  # highlights the splat logic
+
+  fn bar(Scalar[_]) -> Scalar[DType.bool]:
+    # still works, since implicit splatting to a scalar is never ambiguous
+    return v == 42
+  ```
+
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
+
   remove relative path components (`.`, `..`, etc.). Behaves the same as the
   Python equivalent function.
 
@@ -160,6 +189,19 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
   exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
+
+- Nightly `mojo` Python wheels are now available. To install everything needed
+  for Mojo development in a Python virtual environment, you can use
+
+  ```sh
+  pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
+  ```
+
+### Kernels changes
+
+- A fast matmul for SM100 is available in Mojo. Please check it out in `matmul_sm100.mojo`.
+
+- Moved `mojo/stdlib/stdlib/gpu/comm/` to `max/kernels/src/comm/`
 
 ### ❌ Removed
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from max.graph.weights import WeightData, Weights
 
-# Maps from Idefics3 checkpoint names to Idefics3LanguageModel weight names.
+# Maps from Qwen2.5VL checkpoint names to Qwen2.5VLLanguageModel weight names.
 QWEN2_5_VL_MODEL_MAPPING = {
     "model.": "language_model.",
     "visual.": "vision_encoder.",
@@ -26,7 +26,7 @@ QWEN2_5_VL_MODEL_MAPPING = {
 
 
 def convert_qwen2_5vl_model_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+    state_dict: dict[str, Weights],
 ) -> dict[str, WeightData]:
     """Convert Qwen2.5VL model weights.
 
@@ -52,9 +52,13 @@ def convert_qwen2_5vl_model_state_dict(
     llm_state_dict: dict[str, WeightData] = {}
 
     for checkpoint_name, weight in state_dict.items():
-        # Special case for lm_head.
+        # Special case for lm_head. Because config.tie_word_embeddings is true
+        # for some Qwen2.5VL models and false for others.
         if checkpoint_name.startswith("lm_head."):
-            llm_state_dict["language_model.lm_head.weight"] = weight.data()
+            llm_name = checkpoint_name.replace(
+                "lm_head.", "language_model.lm_head."
+            )
+            llm_state_dict[llm_name] = weight.data()
         else:
             llm_name = checkpoint_name
             for before, after in QWEN2_5_VL_MODEL_MAPPING.items():
