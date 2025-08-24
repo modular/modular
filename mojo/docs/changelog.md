@@ -208,3 +208,4 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 ### 🛠️ Fixed
 
 - Fixed <https://github.com/modular/modular/issues/5190>
+- Fixed <https://github.com/modular/modular/issues/5139> - Crash on malformed initializer.
