@@ -2335,13 +2335,10 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // into a well-known static method instead of overloading onto constructor.
   CallOperands operands;
   operands.add(getOperand(lower));
-  if (!operands.values.back().ir)
-    return {};
   operands.add(getOperand(upper));
-  if (!operands.values.back().ir)
-    return {};
   operands.add(getOperand(stride));
-  if (!operands.values.back().ir)
+  if (!operands.values[0].ir || !operands.values[1].ir ||
+      !operands.values[2].ir)
     return {};
 
   auto result = InitializerUValue::create(InitializerUValue::kSlice, this,
@@ -2541,6 +2538,8 @@ AnyValue DictLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
   auto keysListValue = emitListLiteral(this, keyElts, emitter);
   auto valuesListValue = emitListLiteral(this, valueElts, emitter);
+  if (!keysListValue || !valuesListValue)
+    return {};
 
   // Form the initializer list for the dictionary literal.
   CallOperands operands;
