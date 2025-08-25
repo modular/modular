@@ -80,7 +80,7 @@ struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
         self.st_birthtimespec = _CTimeSpec()
         self.unused = InlineArray[Int64, 3](0, 0, 0)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         # fmt: off
         writer.write(
             "{\nst_dev: ", self.st_dev,

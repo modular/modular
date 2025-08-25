@@ -102,11 +102,8 @@ struct Vendor(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes vendor information to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer to output vendor information to.
@@ -2017,15 +2014,12 @@ struct GPUInfo(Stringable, Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Writes GPU information to a writer.
 
         Outputs all GPU specifications and capabilities to the provided writer
         in a human-readable format.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: A Writer instance to output the GPU information.

@@ -60,7 +60,7 @@ trait Writer:
                 args[i].write_to(self)
 
         # Also make it Writable to allow `print` to write the inner String
-        fn write_to[W: Writer](self, mut writer: W):
+        fn write_to(self, mut writer: Some[Writer]):
             writer.write(self.s)
 
 
@@ -71,7 +71,7 @@ trait Writer:
 
         # Pass multiple args to the Writer. The Int and StaticString types
         # call `writer.write_bytes` in their own `write_to` implementations.
-        fn write_to[W: Writer](self, mut writer: W):
+        fn write_to(self, mut writer: Some[Writer]):
             writer.write("Point(", self.x, ", ", self.y, ")")
 
         # Enable conversion to a String using `String(point)`
@@ -139,7 +139,7 @@ trait Writable:
         var x: Float64
         var y: Float64
 
-        fn write_to[W: Writer](self, mut writer: W):
+        fn write_to(self, mut writer: Some[Writer]):
             var string = "Point"
             # Write a single `Span[Byte]`:
             writer.write_bytes(string.as_bytes())
@@ -148,12 +148,9 @@ trait Writable:
     ```
     """
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats the string representation of this type to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The type conforming to `Writable`.
@@ -207,7 +204,7 @@ struct _WriteBufferHeap(Writable, Writer):
         for i in range(args.__len__()):
             args[i].write_to(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write_bytes(
             Span[Byte, __origin_of(self)](ptr=self.data, length=self.pos)
         )

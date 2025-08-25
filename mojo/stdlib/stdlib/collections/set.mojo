@@ -326,12 +326,11 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return self.__str__()
 
     fn write_to[
-        W: Writer, U: KeyElement & Representable, //
-    ](self: Set[U], mut writer: W):
+        U: KeyElement & Representable, //
+    ](self: Set[U], mut writer: Some[Writer]):
         """Write Set string representation to a `Writer`.
 
         Parameters:
-            W: A type conforming to the Writer trait.
             U: The type of the List elements. Must implement the `Representable`
                 and `KeyElement` traits.
 

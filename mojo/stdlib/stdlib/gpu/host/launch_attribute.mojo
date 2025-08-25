@@ -219,11 +219,8 @@ struct LaunchAttributeID(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer interface.
 
         Args:
             writer: The writer to write to.
@@ -367,11 +364,8 @@ struct AccessProperty(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessProperty` to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer instance to write the formatted string to.
@@ -537,14 +531,11 @@ struct AccessPolicyWindow(Defaultable, Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessPolicyWindow` to a writer.
 
         This method formats all the fields of the AccessPolicyWindow into a human-readable
         string representation and writes it to the provided writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer instance to write the formatted string to.

@@ -422,11 +422,8 @@ struct ErrNo(Copyable, EqualityComparable, Movable, Stringable, Writable):
         )
         self.value = value
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the human-readable error description to a writer.
-
-        Parameters:
-            W: The type of writer to write to.
 
         Args:
             writer: The writer to write the error description to.
