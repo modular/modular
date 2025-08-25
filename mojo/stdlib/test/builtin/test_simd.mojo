@@ -67,6 +67,37 @@ def test_cast():
         )
 
 
+def test_intliteral_ctor():
+    assert_equal(
+        Scalar[DType.int128](0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF),
+        Scalar[DType.int256](0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF),
+    )
+    assert_equal(
+        Scalar[DType.uint128](0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF),
+        Scalar[DType.int128](-1).cast[DType.uint128](),
+    )
+    assert_equal(Scalar[DType.uint128](-1), Scalar[DType.int128](-1))
+    assert_equal(
+        Scalar[DType.uint128](0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF),
+        Scalar[DType.int256](0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF),
+    )
+    assert_equal(
+        Scalar[DType.int256](
+            0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+        ),
+        Scalar[DType.uint256](
+            0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+        ),
+    )
+    assert_equal(
+        Scalar[DType.uint256](
+            0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+        ),
+        Scalar[DType.int256](-1).cast[DType.uint256](),
+    )
+    assert_equal(Scalar[DType.uint256](-1), Scalar[DType.int256](-1))
+
+
 def test_list_literal_ctor():
     var s: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
     assert_equal(s[0], 1)
