@@ -1567,8 +1567,12 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   return varDecl;
 }
 
-void DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
+LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
   StructEmitter gen(*decl.getParentDecl());
+
+  if (fn.getInheritedFrom())
+    return gen.populateDefaultedTraitFunction(decl);
+
   switch (fn.getSpecialFunctionKind()) {
   default:
     // Matching by name is a bit gross, but we don't have general synthesized
@@ -1576,13 +1580,13 @@ void DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
     assert(fn.getSymName()->starts_with("copy(") &&
            "unknown synthetic function to synthesize");
     gen.populateExplicitCopy(decl);
-    return;
+    return success();
   case SpecialFunctionKind::kMoveInit:
     (void)gen.populateMoveCopy(decl, /*isMove*/ true);
-    return;
+    return success();
   case SpecialFunctionKind::kCopyInit:
     (void)gen.populateMoveCopy(decl, /*isMove*/ false);
-    return;
+    return success();
   }
 }
 

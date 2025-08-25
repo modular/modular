@@ -257,7 +257,7 @@ private:
   /// for further references.
   LogicalResult resolveSignature(FnOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(FnOp op, Lexer &lexer, ASTDecl &decl);
-  void resolveSyntheticBody(FnOp op, ASTDecl &decl);
+  LogicalResult resolveSyntheticBody(FnOp op, ASTDecl &decl);
   LogicalResult resolveSyntheticSignature(FnOp op, ASTDecl &decl);
   LogicalResult resolveSyntheticSignature(AliasDeclOp op, ASTDecl &decl);
 

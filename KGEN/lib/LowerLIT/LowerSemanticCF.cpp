@@ -873,17 +873,6 @@ struct LowerSemanticCFPass : impl::LowerSemanticCFBase<LowerSemanticCFPass> {
       if (func.isExternal())
         return;
 
-      // This is a very temporary check that will only exist as long as the
-      // full feature of default trait methods hasn't shipped. This check is
-      // placed here so that we can test parsing of defaulted trait methods
-      // with tools like kgen-translate in the short term. While still ensuring
-      // they're marked as errors for anything that might be user facing like
-      // Mojo language server or 'mojo' binary.
-      if (func.isDefaultedTraitFn()) {
-        func.emitError("unexpected function body in trait function "
-                       "declaration, use `...`");
-      }
-
       // Lower things like lit.break into hlcf.break which are terminators,
       // and diagnose unreachable code.
       LowerSemanticCF lowerer(func);

@@ -85,6 +85,11 @@ public:
   FnOp synthesizeEmptyExplicitCopy(ASTDecl &structDecl);
   void populateExplicitCopy(ASTDecl &fnDecl);
 
+  /// Populate a trait function with its default implementation. Returns
+  /// failure() if the meta-type to trait conversion fails; in this case the
+  /// provided fnDecl is marked erroneous. Otherwise returns success().
+  LogicalResult populateDefaultedTraitFunction(ASTDecl &fnDecl);
+
   /// Add a attribute initializer method for this struct with a body.
   FnOp synthesizeFieldwiseInit();
 
