@@ -77,6 +77,7 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
+from collections.string._ascii import ascii
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
@@ -1979,82 +1980,6 @@ fn chr(c: Int) -> String:
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())
-
-
-# ===----------------------------------------------------------------------=== #
-# ascii
-# ===----------------------------------------------------------------------=== #
-
-
-fn _chr_ascii(c: UInt8) -> String:
-    """Returns a string based on the given ASCII code point.
-
-    Args:
-        c: An integer that represents a code point.
-
-    Returns:
-        A string containing a single character based on the given code point.
-    """
-    var result = String(capacity=1)
-    result.append_byte(c)
-    return result
-
-
-fn _repr_ascii(c: UInt8) -> String:
-    """Returns a printable representation of the given ASCII code point.
-
-    Args:
-        c: An integer that represents a code point.
-
-    Returns:
-        A string containing a representation of the given code point.
-    """
-    comptime ord_tab = ord("\t")
-    comptime ord_new_line = ord("\n")
-    comptime ord_carriage_return = ord("\r")
-    comptime ord_back_slash = ord("\\")
-
-    if c == ord_back_slash:
-        return r"\\"
-    elif Codepoint(c).is_ascii_printable():
-        return _chr_ascii(c)
-    elif c == ord_tab:
-        return r"\t"
-    elif c == ord_new_line:
-        return r"\n"
-    elif c == ord_carriage_return:
-        return r"\r"
-    else:
-        var uc = c.cast[DType.uint8]()
-        if uc < 16:
-            return hex(uc, prefix=r"\x0")
-        else:
-            return hex(uc, prefix=r"\x")
-
-
-fn ascii(value: StringSlice) -> String:
-    """Get the ASCII representation of the object.
-
-    Args:
-        value: The object to get the ASCII representation of.
-
-    Returns:
-        A string containing the ASCII representation of the object.
-    """
-    comptime ord_squote = ord("'")
-    var result = String()
-    var use_dquote = False
-    var data = value.as_bytes()
-
-    for idx in range(len(data)):
-        var char = data[idx]
-        result += _repr_ascii(char)
-        use_dquote = use_dquote or (char == ord_squote)
-
-    if use_dquote:
-        return String('"', result, '"')
-    else:
-        return String("'", result, "'")
 
 
 # ===----------------------------------------------------------------------=== #
