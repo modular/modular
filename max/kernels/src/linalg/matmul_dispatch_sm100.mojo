@@ -110,14 +110,323 @@ fn matmul_dispatch_sm100[
         block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
     )
 
-    alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
-        mma_shape=umma_shape,
+    alias static_N = c.shape.get[1]()  # mxk
+    alias static_K = a.shape.get[1]()  # mxn
+
+    var m = c.shape.get[0]()
+
+    # 8192x8192x2048: BM=128 / BN=128 / CLUSTER=(2,1,1)
+    # 4096x8192x2048: BM=128 / BN=128 / CLUSTER=(2,1,1)
+    # 512x8192x2048: BM=64 / BN=112 / CLUSTER=(2,1,1)
+    @parameter
+    if static_N == 8192 and static_K == 2048:
+        if m == 512:
+            alias block_tile_shape = Index(64, 112, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 4096:
+            alias block_tile_shape = Index(128, 128, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 8192:
+            alias block_tile_shape = Index(128, 128, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        else:
+            # Fallback
+            alias block_tile_shape = Index(128, 64, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=Index(2, 1, 1),
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # 4096x8192x7168: BM=128 / BN=128 / CLUSTER=(2,1,1)
+    # 8192x8192x7168: BM=128 / BN=128 / CLUSTER=(4,1,1)
+    # 512x8192x7168: BM=128 / BN=112 / CLUSTER=(2,1,1)
+    @parameter
+    if static_N == 8192 and static_K == 7168:
+        if m == 512:
+            alias block_tile_shape = Index(128, 112, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 4096:
+            alias block_tile_shape = Index(128, 128, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 8192:
+            alias block_tile_shape = Index(128, 128, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(4, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        else:
+            # Fallback
+            alias block_tile_shape = Index(128, 64, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=Index(2, 1, 1),
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # 4096x14336x8192: BM=128 / BN=112 / CLUSTER=(2,1,1)
+    # 8192x14336x8192: BM=128 / BN=112 / CLUSTER=(4,1,1)
+    # 512x14336x8192: BM=128 / BN=112 / CLUSTER=(4,1,1)
+    @parameter
+    if static_N == 14336 and static_K == 8192:
+        if m == 512:
+            alias block_tile_shape = Index(128, 112, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(4, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 4096:
+            alias block_tile_shape = Index(128, 112, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 8192:
+            alias block_tile_shape = Index(128, 112, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(4, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        else:
+            # Fallback
+            alias block_tile_shape = Index(128, 64, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=Index(2, 1, 1),
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # 8192x2560x8192: BM=128 / BN=80 / CLUSTER=(2,1,1)
+    # 4096x2560x8192: BM=128 / BN=80 / CLUSTER=(2,1,1)
+    # 512x2560x8192: BM=64 / BN=80 / CLUSTER=(4,1,1)
+    @parameter
+    if static_N == 2560 and static_K == 8192:
+        if m == 512:
+            alias block_tile_shape = Index(64, 80, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(4, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 4096:
+            alias block_tile_shape = Index(128, 80, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        elif m == 8192:
+            alias block_tile_shape = Index(128, 80, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        else:
+            # Fallback
+            alias block_tile_shape = Index(128, 64, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=Index(2, 1, 1),
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # 4096x4096x4096: BM=128 / BN=128 / CLUSTER=(2,1,1)
+    @parameter
+    if static_N == 4096 and static_K == 4096:
+        if m == 4096:
+            alias block_tile_shape = Index(128, 128, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias cluster_shape = Index(2, 1, 1)
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+        else:
+            # Fallback
+            alias block_tile_shape = Index(128, 64, BK)
+            alias umma_shape = Index(
+                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+            )
+            alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=Index(2, 1, 1),
+            )
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b, config=config, cta_group=2
+            ](c, a, b, ctx)
+            return DISPATCH_HIT
+
+    # Global fallback for any unmatched cases
+    alias fallback_block_tile_shape = Index(128, 64, BK)
+    alias fallback_umma_shape = Index(
+        fallback_block_tile_shape[0] * 2,
+        fallback_block_tile_shape[1] * 2,
+        MMA_K,
+    )
+    alias fallback_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=fallback_block_tile_shape,
+        mma_shape=fallback_umma_shape,
         cluster_shape=Index(2, 1, 1),
     )
-
     blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b, config=config, cta_group=2
+        transpose_b=transpose_b, config=fallback_config, cta_group=2
     ](c, a, b, ctx)
 
     return DISPATCH_HIT

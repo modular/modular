@@ -460,7 +460,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     alias use_experimental_kernels = Bool(
-        env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+        env_get_int["USE_EXPERIMENTAL_KERNELS", 1]()
     )
 
     alias bf16_or_fp16 = (DType.bfloat16, DType.float16)

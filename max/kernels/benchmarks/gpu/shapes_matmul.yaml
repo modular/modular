@@ -1,0 +1,37 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Shape configurations for matmul benchmarking
+# These shapes are kept separate from tuning parameters for modularity
+# Use with: kbench matmul_sm100_tuning_params.yaml shapes_matmul.yaml
+
+name: matmul_sm100_tuning
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+
+# Shape parameters
+params:
+  - $M: 4096
+    N: 4096
+    K: 4096
+  - $M: [512, 4096, 8192]
+    N: 2560
+    K: 8192
+  - $M: [512, 4096, 8192]
+    N: 8192
+    K: 2048
+  - $M: [512, 4096, 8192]
+    N: 14336
+    K: 8192
+  - $M: [512, 4096, 8192]
+    N: 8192
+    K: 7168
