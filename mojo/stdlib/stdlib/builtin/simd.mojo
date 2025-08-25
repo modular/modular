@@ -2347,41 +2347,14 @@ struct SIMD[dtype: DType, size: Int](
             position `i` is `(self + other)[permutation[i]]`.
         """
 
-        @parameter
-        fn _convert_variadic_to_pop_array[
-            *mask: Int
-        ]() -> __mlir_type[`!pop.array<`, output_size.value, `, `, Int, `>`]:
-            var array: __mlir_type[
-                `!pop.array<`, output_size.value, `, `, Int, `>`
-            ]
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(array)
-            )
-
-            var ptr = UnsafePointer(to=array)
-
-            @parameter
-            for i in range(output_size):
-                alias idx = mask[i]
-                constrained[
-                    0 <= idx < 2 * size,
-                    "invalid index in the shuffle operation",
-                ]()
-                __mlir_op.`pop.store`(
-                    idx, __mlir_op.`pop.array.gep`(ptr.address, i.value)
-                )
-
-            return array
-
         constrained[
             output_size == stdlib.builtin.variadic_size(mask),
             "size of the mask must match the output SIMD size",
         ]()
-        var res = __mlir_op.`pop.simd.shuffle`[
-            mask = _convert_variadic_to_pop_array[*mask](),
-            _type = SIMD[dtype, output_size]._mlir_type,
-        ](self.value, other.value)
-        return SIMD(res)
+
+        alias tup = StaticTuple[Int, output_size](values=mask)
+
+        return self._shuffle_list[output_size, tup](other)
 
     @always_inline("nodebug")
     fn _shuffle_list[
