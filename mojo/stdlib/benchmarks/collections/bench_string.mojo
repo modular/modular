@@ -155,13 +155,14 @@ fn bench_string_join[short: Bool](mut b: Bencher) raises:
 fn bench_string_splitlines[
     length: UInt = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
-    var items = make_string[length](filename + ".txt")
+    var items = make_string[length](filename + ".txt").as_string_slice()
 
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res = items.splitlines()
-        keep(res.unsafe_ptr())
+        for _ in range(1_000_000 // length):
+            var res = items.splitlines()
+            keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
