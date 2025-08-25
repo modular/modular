@@ -386,8 +386,16 @@ fn _matmul_gpu[
         and c_type in (DType.float32, DType.bfloat16)
     )
 
+    alias amd_float8_dtypes = (
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+    ) if ctx.default_device_info is MI355X else (
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2fnuz,
+    )
+
     alias matmul_supported_format_amd = (
-        a_type in (DType.bfloat16, DType.float8_e4m3fnuz, DType.float8_e5m2fnuz)
+        (a_type is DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
         and c_type in (DType.float32, DType.bfloat16)
     )
@@ -422,7 +430,13 @@ fn _matmul_gpu[
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
-        (m > 1 or (has_amd_gpu_accelerator() and transpose_b == False))
+        (
+            m > 1
+            or (
+                has_amd_gpu_accelerator()
+                and (transpose_b == False or a_type.is_float8())
+            )
+        )
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
         and k % 32 == 0
         and k >= 128
