@@ -7,7 +7,6 @@ bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go"
 bazel_dep(name = "rules_java", version = "8.15.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
-bazel_dep(name = "aspect_rules_py", version = "1.4.0")  # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "curl", version = "8.8.0")
 bazel_dep(name = "google_benchmark", version = "1.8.5")
@@ -78,6 +77,8 @@ archive_override(
     patches = [
         # https://github.com/jvolkman/rules_pycross/pull/176
         "//bazel/public-patches:rules_pycross_watch.patch",
+        # https://github.com/jvolkman/rules_pycross/pull/181
+        "//bazel/public-patches:rules_pycross_shebang.patch",
     ],
     strip_prefix = "rules_pycross-b4707803848b06ae264247bcba15ddf3ef4008e2",
     urls = [

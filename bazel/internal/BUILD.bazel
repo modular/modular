@@ -15,6 +15,13 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "create_venv",
+    testonly = True,
+    srcs = ["create_venv.py"],
+    visibility = ["//visibility:public"],
+)
+
 alias(
     name = "uv",
     actual = select({

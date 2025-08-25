@@ -1,8 +1,8 @@
 """A helper macro for python scripts which helps setup various runtime dependencies."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_venv")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
+load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
 load(":py_repl.bzl", "py_repl")
@@ -87,16 +87,12 @@ def modular_py_binary(
         **kwargs
     )
 
-    py_venv(
+    modular_py_venv(
         name = name + ".venv",
         data = extra_data + data,
         deps = deps + extra_deps + [
             "@//bazel/internal:bazel_sitecustomize",  # py_repl adds this automatically
         ],
-        tags = tags + ["manual"],
-        package_collisions = "ignore",
-        testonly = True,
-        **kwargs
     )
 
     py_repl(
