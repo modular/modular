@@ -1191,7 +1191,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // values.
   if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
-  TypeCheckedParamList paramList(parsedParamList.params, sigDecl);
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList.params, sigDecl);
+  if (!paramListOrError.has_value())
+    return failure();
+  TypeCheckedParamList &paramList = *paramListOrError;
 
   ParsedArgumentList fnSignature;
   // Set up the known effects.
@@ -1930,7 +1934,11 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       addFullyResolvedDecl(aliasDeclOp.getOperation(), StringAttr(),
                            decl.getLoc(), decl.getParentDecl());
 
-  TypeCheckedParamList paramSignature(parsedParams.params, sigDecl);
+  std::optional<TypeCheckedParamList> paramSignatureOrError =
+      TypeCheckedParamList::create(parsedParams.params, sigDecl);
+  if (!paramSignatureOrError.has_value())
+    return failure();
+  TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
   ASTType type;
   if (p.consumeIf(Token::colon)) {
@@ -2286,7 +2294,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       decl.isErroneous())
     return failure();
 
-  TypeCheckedParamList paramSignature(parsedParams.params, sigDecl);
+  std::optional<TypeCheckedParamList> paramSignatureOrError =
+      TypeCheckedParamList::create(parsedParams.params, sigDecl);
+  if (!paramSignatureOrError.has_value())
+    return failure();
+  TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);

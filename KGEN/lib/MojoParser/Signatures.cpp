@@ -810,11 +810,18 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
   return type;
 }
 
-TypeCheckedParamList::TypeCheckedParamList(
-    ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope)
-    : declScope(declScope), shared(declScope.getShared()) {
+TypeCheckedParamList::TypeCheckedParamList(ASTDecl &declScope)
+    : declScope(declScope), shared(declScope.getShared()) {}
+
+std::optional<TypeCheckedParamList>
+TypeCheckedParamList::create(ArrayRef<ParsedArgument> parsedParams,
+                             ASTDecl &declScope) {
+  TypeCheckedParamList result(declScope);
+
   // Resolve each of the parameter declarations.
   IREmitter emitter(declScope, EC_Type);
+  bool hasErrors = false;
+
   for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -823,20 +830,25 @@ TypeCheckedParamList::TypeCheckedParamList(
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
       auto fnType = dyn_cast<FnTypeGeneratorType>(type);
       if (fnType && fnType.isUnified()) {
-        auto [wrapperOp, traitOp] = shared.getOrCreateParametricClosureWrapper(
-            declScope.getLoc(), fnType,
-            declScope.getNearestDeclOfType<FileModuleOp>(),
-            InlineLevel::Automatic);
+        auto [wrapperOp, traitOp] =
+            result.shared.getOrCreateParametricClosureWrapper(
+                declScope.getLoc(), fnType,
+                declScope.getNearestDeclOfType<FileModuleOp>(),
+                InlineLevel::Automatic);
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(traitOp.getOperation())));
       }
-      type = addImplicitTypeParams(shared, type, *this, /*append=*/false);
+      type =
+          addImplicitTypeParams(result.shared, type, result, /*append=*/false);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
+      hasErrors = true;
     }
-    if (!type)
+    if (!type) {
       type = emitter.shared.getTypeCheckErrorType();
+      hasErrors = true;
+    }
 
     // We type check variadicKind and may need to change it, so copy it.
     auto variadicKind = arg.variadicKind;
@@ -850,8 +862,8 @@ TypeCheckedParamList::TypeCheckedParamList(
         variadicKind = VariadicKind::None;
     }
 
-    if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
-                                     defaultKwOnlyParams, emitter,
+    if (failed(emitDefaultIfPossible(arg, type, result.defaultPosParams,
+                                     result.defaultKwOnlyParams, emitter,
                                      EC_DefaultParam))) {
       // Diagnose an invalid missing default argument: if we have any positional
       // defaults, then we require all the rest to have defaults until the
@@ -860,38 +872,45 @@ TypeCheckedParamList::TypeCheckedParamList(
       // If we've had any in the keyword-only section, we continue to require
       // them.  FIXME: Why? There is no ambiguity with some keyword-only
       // arguments having defaults.
-      if ((!defaultPosParams.empty() &&
+      if ((!result.defaultPosParams.empty() &&
            arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
-          !defaultKwOnlyParams.empty()) {
+          !result.defaultKwOnlyParams.empty()) {
         if (arg.kgenConvention != ArgConvention::ByRefResult &&
             arg.kgenConvention != ArgConvention::ByRefError) {
           emitOptionalAfterRequired(emitter, arg, "parameter")
               << arg.typeExpr->getRange();
+          hasErrors = true;
         }
       }
     }
 
     // TODO: Parameter decls should support conventions at some point.
-    if (arg.convention != ParsedArgument::kConventionUnspec)
+    if (arg.convention != ParsedArgument::kConventionUnspec) {
       emitter.emitError(arg.loc, "parameters must always be passed by-value");
+      hasErrors = true;
+    }
 
     // Bind the parsed type expression so references from other parameters
     // can be resolved. The parameter names in ParamDeclAttr are mangled with
     // the location so that parameter names in mojo are unique in the IR.
     auto newDecl = ParamDeclAttr::get(
         declScope.mangleUserDefinedParamName(arg.name), type);
-    paramDeclAttrs.push_back(newDecl);
-    locations.push_back(arg.loc);
+    result.paramDeclAttrs.push_back(newDecl);
+    result.locations.push_back(arg.loc);
 
     // The unmangled names are also collected to aid keyword parameter binding.
-    passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
-    names.push_back(arg.name);
-    variadicKinds.push_back(variadicKind);
+    result.passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
+    result.names.push_back(arg.name);
+    result.variadicKinds.push_back(variadicKind);
 
     ASTDecl &resolvedDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         PValue(ParamDeclRefAttr::get(newDecl)), arg.name, arg.loc, &declScope);
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
   }
+
+  if (hasErrors)
+    return std::nullopt;
+  return result;
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
