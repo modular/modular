@@ -47,7 +47,12 @@ def get_package_root() -> Path | None:
             logging.debug(f"Located Modular SDK assets at {root}")
             return root
 
-    if (
+    # If we're in a development venv we don't have the full wheel layout, but
+    # this might work depending on what files are being looked up and what the
+    # venv contains.
+    if venv_root := os.environ.get("VIRTUAL_ENV"):
+        return Path(venv_root)
+    elif (
         "MODULAR_DERIVED_PATH" in os.environ
         or "BUILD_WORKSPACE_DIRECTORY" in os.environ
         or "BAZEL_TEST" in os.environ
