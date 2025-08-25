@@ -29,6 +29,8 @@ with blazing-fast execution for the Modular Platform. That said, the north star
 is for Mojo to support the whole gamut of general-purpose programming over
 time.
 
+For more detail, see the [Mojo vision](/mojo/vision).
+
 ### Why is it called Mojo?
 
 Mojo means "a magical charm" or "magical powers." We thought this was a fitting
@@ -337,8 +339,7 @@ Clang, Swift, MLIR, etc.).
 
 If you have questions about upcoming features or have suggestions
 for the language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
-provides important information about our current priorities and links to
-our GitHub channels where you can report issues and discuss new features.
+provides important information about our current priorities.
 
 To get in touch with the Mojo team and developer community, use the resources
 on our [community page](https://www.modular.com/community).
