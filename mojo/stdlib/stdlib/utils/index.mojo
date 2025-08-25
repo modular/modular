@@ -305,20 +305,8 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        var num_elements = len(elems)
 
-        debug_assert(
-            size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
-
-        var tup = Self()
-
-        @parameter
-        for idx in range(size):
-            tup[idx] = elems[idx]
-
-        self = tup
+        self = Self(values=elems)
 
     @always_inline
     @implicit
@@ -331,12 +319,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        var res = __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[
-                `!pop.array<`, size.value, `, `, Self._int_type, `>`
-            ]
-        ](Self._int_type(elem))
-        self.data = StaticTuple(res)
+        self.data = StaticTuple[_, size](fill=Self._int_type(elem))
 
     @always_inline
     @implicit

@@ -746,22 +746,13 @@ fn _make_tuple[
     Returns:
         A tuple with the values filled in.
     """
-    var array = __mlir_op.`pop.array.repeat`[
-        _type = __mlir_type[
-            `!pop.array<`, size.value, `, `, result._int_type, `>`
-        ]
-    ](result._int_type(0))
+    var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
     @parameter
     for idx in range(size):
-        array = __mlir_op.`pop.array.replace`[
-            _type = __mlir_type[
-                `!pop.array<`, size.value, `, `, result._int_type, `>`
-            ],
-            index = idx.value,
-        ](result._int_type(values.at[idx]().get()), array)
+        tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
 
-    return __type_of(result)(StaticTuple(array))
+    return __type_of(result)(tup)
 
 
 @always_inline
@@ -779,29 +770,17 @@ fn _make_partially_static_index_list[
     Returns:
         A tuple with the values filled in.
     """
-    var array = __mlir_op.`pop.array.repeat`[
-        _type = __mlir_type[
-            `!pop.array<`, size.value, `, `, result._int_type, `>`
-        ]
-    ](result._int_type(0))
+    var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
 
     @parameter
     for idx in range(size):
 
         @parameter
         if static_list.at[idx]().is_dynamic():
-            array = __mlir_op.`pop.array.replace`[
-                _type = __mlir_type[
-                    `!pop.array<`, size.value, `, `, result._int_type, `>`
-                ],
-                index = idx.value,
-            ](result._int_type(dynamic_list[idx]), array)
+            tup = tup._replace[idx](result._int_type(dynamic_list[idx]))
         else:
-            array = __mlir_op.`pop.array.replace`[
-                _type = __mlir_type[
-                    `!pop.array<`, size.value, `, `, result._int_type, `>`
-                ],
-                index = idx.value,
-            ](result._int_type(static_list.at[idx]().get()), array)
+            tup = tup._replace[idx](
+                result._int_type(static_list.at[idx]().get())
+            )
 
-    return __type_of(result)(StaticTuple(array))
+    return __type_of(result)(tup)
