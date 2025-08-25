@@ -513,7 +513,7 @@ struct Bool(AnyRPTrivialType):
 
     @always_inline("builtin")
     fn __invert__(self) -> Bool:
-        return self  # Incorrect impl
+        return __mlir_op.`pop.xor`(self.value, __mlir_attr.true)
 
     @always_inline("builtin")
     fn __and__(self, rhs: Bool) -> Bool:

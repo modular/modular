@@ -814,7 +814,7 @@ TypeCheckedParamList::TypeCheckedParamList(ASTDecl &declScope)
     : declScope(declScope), shared(declScope.getShared()) {}
 
 std::optional<TypeCheckedParamList>
-TypeCheckedParamList::create(ArrayRef<ParsedArgument> parsedParams,
+TypeCheckedParamList::create(ParsedParamList &parsedParams,
                              ASTDecl &declScope) {
   TypeCheckedParamList result(declScope);
 
@@ -822,7 +822,7 @@ TypeCheckedParamList::create(ArrayRef<ParsedArgument> parsedParams,
   IREmitter emitter(declScope, EC_Type);
   bool hasErrors = false;
 
-  for (const ParsedArgument &arg : parsedParams) {
+  for (const ParsedArgument &arg : parsedParams.params) {
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
@@ -908,6 +908,27 @@ TypeCheckedParamList::create(ArrayRef<ParsedArgument> parsedParams,
     emitter.shared.notifyListenerOnParameterDecl(resolvedDecl, arg.loc);
   }
 
+  IREmitter constraintEmitter(declScope, EC_Requires);
+  for (const ParsedConstraint &constraint : parsedParams.constraints) {
+    RValue propI1 =
+        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
+    if (!propI1) {
+      constraintEmitter.emitError(constraint.loc,
+                                  "failed to emit constraint expression");
+      continue;
+    }
+
+    PValue propVal = propI1.getIfPValue();
+    if (!propI1) {
+      constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
+      continue;
+    }
+
+    result.constraints.push_back(ConstraintAttr::get(
+        propVal, result.shared.translateLocation(constraint.loc),
+        constraint.errorMsg));
+  }
+
   if (hasErrors)
     return std::nullopt;
   return result;
@@ -918,8 +939,38 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
       shared.getContext(),
       PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
       defaultKwOnlyParams, ArgConvention::ByRefError, ArgConvention::ReadMem,
-      /*constraints=*/{});
+      constraints);
 }
+
+//===----------------------------------------------------------------------===//
+// ParsedConstraint Implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult ParsedConstraint::parse(ParserBase &p) {
+  loc = p.getToken().getLoc();
+
+  // Parse the constraint expression
+  if (p.parseExpression(propExpr))
+    return failure();
+
+  // Check for optional error message: comma followed by string literal
+  if (p.consumeIf(Token::comma)) {
+    if (!p.getToken().is(Token::string))
+      return p.emitError(p.getToken().getLoc(),
+                         "expected string literal for error message");
+
+    std::string value =
+        Lexer::getStringLiteralValue(p.getToken().getSpelling());
+    errorMsg = StringAttr::get(p.getContext(), value);
+    p.consumeToken();
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ParsedParamList Implementation
+//===----------------------------------------------------------------------===//
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
@@ -936,6 +987,17 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
+}
+
+ParseResult ParsedParamList::parseConstraintsIfPresent(ParserBase &p) {
+  while (p.consumeIf(Token::kw_requires)) {
+    ParsedConstraint constraint;
+    if (constraint.parse(p))
+      return failure();
+
+    constraints.push_back(constraint);
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

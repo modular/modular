@@ -102,6 +102,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in raised value";
   case EC_ReturnValue:
     return " in return value";
+  case EC_Requires:
+    return " in 'requires' clause";
   case EC_MLIRMagic:
     return " in MLIR magic";
   case EC_TopLevelStmt:
