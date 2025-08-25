@@ -31,6 +31,7 @@ modular_py_binary(
         requirement("rich"),
         requirement("scipy"),
         requirement("plotly"),
+        requirement("tabulate"),
     ],
 )
 

@@ -58,25 +58,27 @@ def test_kbench():
         test_cases=[
             "-f --help",
             f"{kernel_benchmarks_root}/autotune/test.yaml -fv --dryrun",
-            f"{kernel_benchmarks_root}/autotune/test.yaml -fv -o {kernel_benchmarks_root}/autotune/tests/basic.output",
+            f"{kernel_benchmarks_root}/autotune/test.yaml -fv -o {kernel_benchmarks_root}/autotune/tests/output",
         ],
     )
 
     print(
-        os.listdir(f"{kernel_benchmarks_root}/autotune/tests"), os.listdir(".")
+        "autotune/tests:",
+        os.listdir(f"{kernel_benchmarks_root}/autotune/tests"),
+        os.listdir("."),
     )
 
     path = [
-        Path(f"{kernel_benchmarks_root}/autotune/tests/basic.txt"),
-        Path(f"{kernel_benchmarks_root}/autotune/tests/basic.pkl"),
-        Path(f"{kernel_benchmarks_root}/autotune/tests/basic.csv"),
+        Path(f"{kernel_benchmarks_root}/autotune/tests/output.txt"),
+        Path(f"{kernel_benchmarks_root}/autotune/tests/output.pkl"),
+        Path(f"{kernel_benchmarks_root}/autotune/tests/output.csv"),
         Path(f"{kernel_benchmarks_root}/autotune/tests/baseline.csv"),
     ]
 
     for p in path:
         assert p.exists()
 
-    df = pd.read_csv(f"{kernel_benchmarks_root}/autotune/tests/basic.csv")
+    df = pd.read_csv(f"{kernel_benchmarks_root}/autotune/tests/output.csv")
     baseline_df = pd.read_csv(
         f"{kernel_benchmarks_root}/autotune/tests/baseline.csv"
     )
@@ -101,13 +103,14 @@ def test_kplot():
         kplot_cli,
         test_cases=[
             "-f --help",
-            f"{kernel_benchmarks_root}/autotune/tests/basic.csv -o {kernel_benchmarks_root}/autotune/tests/img_csv",
-            f"{kernel_benchmarks_root}/autotune/tests/basic.pkl -o {kernel_benchmarks_root}/autotune/tests/img_pkl",
-            f"{kernel_benchmarks_root}/autotune/tests/basic.pkl -o {kernel_benchmarks_root}/autotune/tests/img_pkl -x pdf",
+            f"{kernel_benchmarks_root}/autotune/tests/output.csv -o {kernel_benchmarks_root}/autotune/tests/img_csv",
+            f"{kernel_benchmarks_root}/autotune/tests/output.pkl -o {kernel_benchmarks_root}/autotune/tests/img_pkl",
+            f"{kernel_benchmarks_root}/autotune/tests/output.pkl -o {kernel_benchmarks_root}/autotune/tests/img_pkl -x pdf",
         ],
     )
 
     path = [
+        Path(f"{kernel_benchmarks_root}/autotune/tests/output.csv"),
         Path(f"{kernel_benchmarks_root}/autotune/tests/img_csv_0.png"),
         Path(f"{kernel_benchmarks_root}/autotune/tests/img_pkl_0.png"),
         Path(f"{kernel_benchmarks_root}/autotune/tests/img_pkl_0.pdf"),
@@ -122,8 +125,8 @@ def test_kprofile():
         kprofile_cli,
         test_cases=[
             "--help",
-            f"{kernel_benchmarks_root}/autotune/tests/basic.pkl",
-            f"{kernel_benchmarks_root}/autotune/tests/basic.pkl -c",
+            f"{kernel_benchmarks_root}/autotune/tests/output.pkl",
+            f"{kernel_benchmarks_root}/autotune/tests/output.pkl -c",
         ],
     )
 
