@@ -151,6 +151,37 @@ struct Consistency:
 
 
 # ===-----------------------------------------------------------------------===#
+# fence
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn fence[
+    *, ordering: Consistency = Consistency.SEQUENTIAL, scope: StaticString = ""
+]():
+    """Creates an atomic fence.
+
+    Parameters:
+        ordering: The memory ordering for the fence.
+        scope: The memory synchronization scope.
+
+    Fences create synchronization between themselves and atomic operations or
+    fences in other thread without an explicit load or store to an atomic
+    variable. The fence prevents reordering of certain types of memory
+    operations around it as specified by the ordering parameter.
+    """
+
+    if is_compile_time():
+        return
+
+    __mlir_op.`pop.fence`[
+        ordering = ordering.__mlir_attr(),
+        syncscope = _get_kgen_string[scope](),
+        _type=None,
+    ]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Atomic
 # ===-----------------------------------------------------------------------===#
 

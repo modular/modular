@@ -24,7 +24,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 """
 
 from os import abort
-from os.atomic import Consistency
+from os.atomic import Consistency, fence
 from sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.param_env import env_get_bool
@@ -129,17 +129,9 @@ fn barrier():
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
-        __mlir_op.`pop.fence`[
-            _type=None,
-            syncscope = "workgroup".value,
-            ordering = Consistency.RELEASE.__mlir_attr(),
-        ]()
+        fence[ordering = Consistency.RELEASE, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        __mlir_op.`pop.fence`[
-            _type=None,
-            syncscope = "workgroup".value,
-            ordering = Consistency.ACQUIRE.__mlir_attr(),
-        ]()
+        fence[ordering = Consistency.ACQUIRE, scope="workgroup"]()
     else:
         return CompilationTarget.unsupported_target_error[operation="barrier"]()
 
