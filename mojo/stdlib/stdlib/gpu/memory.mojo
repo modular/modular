@@ -1764,39 +1764,45 @@ fn _get_multimem_ld_reduce_asm[
     available on SM90+ GPUs.
 
     Parameters:
-        dtype: Data dtype for the operation (float32, float16, or bfloat16).
-        count: Number of elements to load and reduce (2 or 4).
+        dtype: Data dtype for the operation (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
         accum_type: Data dtype used for accumulation during reduction. Defaults to
             float32 for float16/bfloat16 inputs and matches input dtype for float32.
-        output_width: Width of each output SIMD vector (default 1).
+        output_width: Number of elements packed into a single output register (e.g. bf16x2).
 
     Returns:
         A string literal containing the PTX assembly instruction.
 
     Constraints:
         - Only supported on SM90+ GPUs.
-        - Type must be float32, float16, or bfloat16.
-        - Count must be 2 or 4.
+        - Type must be a floating point type.
+        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
     """
+
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
     constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
-        dtype in (DType.float32, DType.float16, DType.bfloat16),
-        "type must be float32, float16, or bfloat16",
-    ]()
-    constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
         "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
     ]()
+    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]()
+    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
     alias op = "." + reduction.mnemonic()
     alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
@@ -1828,14 +1834,14 @@ fn multimem_ld_reduce[
     feature available on SM90+ GPUs for improved performance.
 
     Parameters:
-        dtype: Data dtype for the operation (float32, float16, or bfloat16).
-        count: Number of elements to load and reduce (2 or 4).
+        dtype: Data dtype for the operation (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
         accum_type: Data dtype used for accumulation. Defaults to a wider dtype than input
                    (e.g. float32 for float16 inputs) to maintain precision during reduction.
-        output_width: Width of each output SIMD vector (default 1).
+        output_width: Number of elements packed into a single output register (e.g. bf16x2).
 
     Args:
         addr: Pointer to global memory where data will be loaded from.
@@ -1846,10 +1852,19 @@ fn multimem_ld_reduce[
 
     Constraints:
         - Only supported on SM90+ GPUs.
-        - Count must be 2 or 4.
-        - Type must be float32, float16, or bfloat16.
+        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
+        - Type must be a floating point type.
+        - float64 requires count=1 (no .vec qualifier allowed).
     """
-    constrained[count in (2, 4), "count must be 2 or 4"]()
+    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias asm = _get_multimem_ld_reduce_asm[
         dtype,
@@ -1862,7 +1877,15 @@ fn multimem_ld_reduce[
     ]()
 
     @parameter
-    if count == 2:
+    if count == 1:
+        var r = inlined_assembly[
+            asm + " {$0}, [$1];",
+            SIMD[accum_type, output_width],
+            constraints="=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
+        return StaticTuple[SIMD[accum_type, output_width], count](r)
+    elif count == 2:
         var r = inlined_assembly[
             asm + " {$0,$1}, [$2];",
             _RegisterPackType[
@@ -1872,9 +1895,7 @@ fn multimem_ld_reduce[
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
         return StaticTuple[SIMD[accum_type, output_width], count](r[0], r[1])
-
-    @parameter
-    if count == 4:
+    elif count == 4:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3}, [$4];",
             _RegisterPackType[
@@ -1890,8 +1911,103 @@ fn multimem_ld_reduce[
         return StaticTuple[SIMD[accum_type, output_width], count](
             r[0], r[1], r[2], r[3]
         )
+    elif count == 8:
+        var r = inlined_assembly[
+            asm + " {$0,$1,$2,$3,$4,$5,$6,$7}, [$8];",
+            _RegisterPackType[
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+                SIMD[accum_type, output_width],
+            ],
+            constraints="=r,=r,=r,=r,=r,=r,=r,=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
+
+        return StaticTuple[SIMD[accum_type, output_width], count](
+            r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+        )
 
     return StaticTuple[SIMD[accum_type, output_width], count]()
+
+
+@always_inline("nodebug")
+fn multimem_ld_reduce[
+    dtype: DType,
+    *,
+    simd_width: Int,
+    reduction: ReduceOp,
+    scope: Scope,
+    consistency: Consistency,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+) -> SIMD[accum_type, simd_width]:
+    """Simplified multimem_ld_reduce that automatically calculates optimal packing.
+
+    This wrapper automatically determines the optimal output_width and count
+    parameters based on the requested simd_width and data type, using 32-bit
+    word packing for efficiency.
+
+    Parameters:
+        dtype: Data dtype for the operation (must be a floating point type).
+        simd_width: Total number of elements to process.
+        reduction: Type of reduction operation to perform.
+        scope: Memory scope for the operation.
+        consistency: Memory consistency model to use.
+        accum_type: Data dtype used for accumulation.
+    Args:
+        addr: Pointer to global memory where data will be loaded from.
+
+    Returns:
+        A SIMD vector containing simd_width elements with the reduction results.
+
+    Constraints:
+        - Only supported on SM90+ GPUs.
+        - simd_width must be 1, 2, 4, or 8.
+        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
+        - Type must be a floating point type.
+        - float64 requires count=1 (no .vec qualifier allowed).
+    """
+    alias output_width = 4 // sizeof[dtype]()
+    alias count = simd_width // output_width
+    constrained[
+        simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
+    ]()
+    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
+
+    var results = multimem_ld_reduce[
+        dtype,
+        count=count,
+        reduction=reduction,
+        scope=scope,
+        consistency=consistency,
+        accum_type=accum_type,
+        output_width=output_width,
+    ](addr)
+
+    # Pack results into a single SIMD vector
+    var result = SIMD[accum_type, simd_width]()
+
+    @parameter
+    for i in range(count):
+
+        @parameter
+        for j in range(output_width):
+            result[i * output_width + j] = results[i][j]
+    return result
 
 
 @always_inline("nodebug")
@@ -1908,17 +2024,22 @@ fn _get_multimem_st_asm[
     ]()
     constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
-        dtype in (DType.float32, DType.float16, DType.bfloat16),
-        "type must be float32, float16, or bfloat16",
-    ]()
-    constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
         "multimem.st consistency must be in {weak, relaxed, release}",
     ]()
+    alias total_bits = count * width * sizeof[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]()
+    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
     alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[width]() if width > 1 else ""
     )
@@ -1944,9 +2065,8 @@ fn multimem_st[
     multimem address using the specified memory consistency model and scope.
 
     Parameters:
-        dtype: The data type of elements to store (must be float16, bfloat16, or
-            float32).
-        count: Number of vector elements per store operation (2 or 4).
+        dtype: The data type of elements to store (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         scope: Memory scope for visibility of the store operation
             (CTA/Cluster/GPU/System).
         consistency: Memory consistency semantics (weak/relaxed/release).
@@ -1964,7 +2084,8 @@ fn multimem_st[
     - The address must be a valid multimem address.
     - Supported dtype-width combinations must total 32/64/128 bits.
     - Default memory semantics: weak consistency (when not specified).
-    - Vector stores (.v2/.v4) require matching total size constraints.
+    - Vector stores (.v2/.v4/.v8) require matching total size constraints.
+    - float64 requires count=1 (no .vec qualifier allowed).
 
     Example:
 
@@ -1985,7 +2106,15 @@ fn multimem_st[
     See Also:
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
-    constrained[count in (2, 4), "count must be 2 or 4"]()
+    alias total_bits = count * width * sizeof[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias asm = _get_multimem_st_asm[
         dtype,
@@ -1996,7 +2125,14 @@ fn multimem_st[
     ]()
 
     @parameter
-    if count == 2:
+    if count == 1:
+        inlined_assembly[
+            asm + " [$0], {$1};",
+            NoneType,
+            constraints="l,r,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType](), values[0])
+    elif count == 2:
         inlined_assembly[
             asm + " [$0], {$1,$2};",
             NoneType,
@@ -2010,6 +2146,23 @@ fn multimem_st[
             constraints="l,r,r,r,r,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType](), values[0], values[1], values[2], values[3])
+    elif count == 8:
+        inlined_assembly[
+            asm + " [$0], {$1,$2,$3,$4,$5,$6,$7,$8};",
+            NoneType,
+            constraints="l,r,r,r,r,r,r,r,r,~{memory}",
+            has_side_effect=True,
+        ](
+            addr.bitcast[NoneType](),
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+            values[4],
+            values[5],
+            values[6],
+            values[7],
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2029,8 +2182,12 @@ fn _get_type_mnemonic[dtype: DType]() -> StaticString:
         return "f16"
     elif dtype is DType.bfloat16:
         return "bf16"
-    if dtype is DType.float64:
+    elif dtype is DType.float64:
         return "f64"
+    elif dtype is DType.float8_e4m3fn:
+        return "e4m3"
+    elif dtype is DType.float8_e5m2:
+        return "e5m2"
 
     return "unknown dtype mnemonic"
 
