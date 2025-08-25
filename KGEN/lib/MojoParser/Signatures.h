@@ -18,6 +18,8 @@
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/Lexer.h"
 
+#include <optional>
+
 namespace mlir {
 class raw_indented_ostream;
 } // namespace mlir
@@ -149,15 +151,19 @@ public:
 
 /// This contains the result state from type checking a parameter signature.
 class TypeCheckedParamList {
+private:
+  /// Private constructor - use the static create method instead.
+  TypeCheckedParamList(ASTDecl &declScope);
+
 public:
   /// This is the declaration that we do name lookup against.
   ASTDecl &declScope;
   SharedState &shared;
 
   /// Type check each of the parameters from 'parsedParams' into their
-  /// decomposed representation.
-  TypeCheckedParamList(ArrayRef<ParsedArgument> parsedParams,
-                       ASTDecl &declScope);
+  /// decomposed representation. Returns nullopt if type checking fails.
+  static std::optional<TypeCheckedParamList>
+  create(ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope);
 
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr() const;
