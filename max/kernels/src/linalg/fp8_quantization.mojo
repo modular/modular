@@ -16,7 +16,6 @@ from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simdwidthof
-from sys.info import _is_sm_9x_or_newer
 from stdlib.bit import log2_floor
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
@@ -70,10 +69,6 @@ fn quantize_static_scaled_fp8[
     fn scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        constrained[
-            _is_sm_9x_or_newer(),
-            "this kernel is only supported on sm90 or newer",
-        ]()
         constrained[rank == 2, "rank should be equal to 2"]()
 
         var idx = rebind[IndexList[2]](idx_arg)
