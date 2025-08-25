@@ -157,7 +157,7 @@ struct Consistency:
 
 @always_inline("nodebug")
 fn fence[
-    *, ordering: Consistency = Consistency.SEQUENTIAL, scope: StaticString = ""
+    ordering: Consistency = Consistency.SEQUENTIAL, *, scope: StaticString = ""
 ]():
     """Creates an atomic fence.
 

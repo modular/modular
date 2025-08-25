@@ -29,4 +29,4 @@ fn clobber_memory():
 
     # This operation corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
-    fence[ordering = Consistency.ACQUIRE_RELEASE, scope="singlethread"]()
+    fence[Consistency.ACQUIRE_RELEASE, scope="singlethread"]()

@@ -129,9 +129,9 @@ fn barrier():
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
-        fence[ordering = Consistency.RELEASE, scope="workgroup"]()
+        fence[Consistency.RELEASE, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        fence[ordering = Consistency.ACQUIRE, scope="workgroup"]()
+        fence[Consistency.ACQUIRE, scope="workgroup"]()
     else:
         return CompilationTarget.unsupported_target_error[operation="barrier"]()
 
