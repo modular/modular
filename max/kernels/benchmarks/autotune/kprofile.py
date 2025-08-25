@@ -203,7 +203,7 @@ class KbenchPKL:
         valid_metric = metric in cols
         if not valid_metric:
             for c in cols:
-                if c.lower().startswith(metric):
+                if c.lower().startswith(metric.lower()):
                     metric = c
                     valid_metric = True
                     break
@@ -374,11 +374,21 @@ def diff_baseline(
         print("base-config", base_dict)
         print(LINE)
 
+    # Find the common pivots between all pkl's if none specified
     if not pivots:
-        _, non_pivot_columns = extract_pivots(
+
+        def intersection(a: list, b: list):
+            return [x for x in a if x in b]
+
+        _, pivots = extract_pivots(
             list(tune_df_base["spec"]), exclude=["name", "AUTOTUNING_MODE"]
         )
-        pivots = non_pivot_columns
+        for f in files[1:]:
+            pkl = KbenchPKL(f, metric=metric)
+            _, non_pivot_columns = extract_pivots(
+                list(pkl.tune_df["spec"]), exclude=["name", "AUTOTUNING_MODE"]
+            )
+            pivots = intersection(pivots, non_pivot_columns)
 
     shape = "/".join([f"{p}={base_dict[p]}" for p in pivots])
     for i, f in enumerate(files[1:]):
@@ -399,12 +409,8 @@ def diff_baseline(
             current_metric = tune_df.iloc[j][metric]
             # TODO: fix the following and check the accuracy issues.
             metric_ratio = round(current_metric / base_metric, prec)
-            metric_speedup = round(base_metric / current_metric, prec)
             print(
-                f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
-            )
-            print(
-                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f} / {current_metric:.{prec}f})"
+                f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (ratio current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
             )
             d = {
                 "shape": [shape],
@@ -412,7 +418,6 @@ def diff_baseline(
                 "best_tuning_metric": [round(current_metric, prec)],
                 "baseline_metric": [round(base_metric, prec)],
                 "ratio": [metric_ratio],
-                "speedup": [metric_speedup],
             }
             shape_path = shape.replace("/", "_")
             pd.DataFrame.from_dict(d).to_csv(f"{shape_path}.csv", index=False)
@@ -710,7 +715,8 @@ help_str = "Profile kbench output pickle"
     is_flag=True,
     default=False,
     help="Show the difference between best running time of multiple pkl's, "
-    "first one as baseline (preferably auto-tuning results)",
+    "first one as baseline. For example, pass current results "
+    "(first pkl as baseline) followed by auto-tuning results.",
 )
 @click.option(
     "--metric",
