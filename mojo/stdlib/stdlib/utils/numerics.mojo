@@ -702,26 +702,12 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
     """
 
     @parameter
-    if dtype is DType.int8:
-        return 127
-    elif dtype is DType.uint8:
-        return 255
-    elif dtype is DType.int16:
-        return 32767
-    elif dtype is DType.uint16:
-        return 65535
-    elif dtype is DType.int32 or (
-        dtype is DType.index and bitwidthof[DType.index]() == 32
-    ):
-        return 2147483647
-    elif dtype is DType.uint32:
-        return 4294967295
-    elif dtype is DType.int64 or (
-        dtype is DType.index and bitwidthof[DType.index]() == 64
-    ):
-        return 9223372036854775807
-    elif dtype is DType.uint64:
-        return 18446744073709551615
+    if dtype.is_unsigned():
+        return ~Scalar[dtype](0)
+    elif dtype.is_integral():
+        return Scalar[dtype](
+            ~Scalar[_unsigned_integral_type_of[dtype]()](0) >> 1
+        )
     elif dtype is DType.float8_e4m3fn:
         return 448
     elif dtype is DType.float8_e4m3fnuz:
@@ -737,9 +723,9 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
     elif dtype is DType.float64:
         return 1.79769313486231570815e308
     elif dtype is DType.bool:
-        return rebind[Scalar[dtype]](Scalar(True))
+        return Scalar(True)._refine[dtype]()
     else:
-        constrained[False, "max_finite() called on unsupported type"]()
+        constrained[False, "max_finite() called on unsupported dtype"]()
         return {}
 
 
@@ -763,26 +749,14 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
     @parameter
     if dtype.is_unsigned():
         return 0
-    elif dtype is DType.bool:
-        return Scalar(False)._refine[dtype]()
-    elif dtype is DType.int8:
-        return -128
-    elif dtype is DType.int16:
-        return -32768
-    elif dtype is DType.int32 or (
-        dtype is DType.index and bitwidthof[DType.index]() == 32
-    ):
-        return -2147483648
-    elif dtype is DType.int64 or (
-        dtype is DType.index and bitwidthof[DType.index]() == 64
-    ):
-        return -9223372036854775808
+    elif dtype.is_integral():
+        return -max_finite[dtype]() - 1
     elif dtype.is_floating_point():
         return -max_finite[dtype]()
     elif dtype is DType.bool:
-        return rebind[Scalar[dtype]](Scalar(False))
+        return Scalar(False)._refine[dtype]()
     else:
-        constrained[False, "min_finite() called on unsupported type"]()
+        constrained[False, "min_finite() called on unsupported dtype"]()
         return {}
 
 
