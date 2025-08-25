@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import Atomic
+from os.atomic import Atomic, fence
 
 from testing import assert_equal, assert_false, assert_true
 
@@ -100,8 +100,18 @@ def test_comptime_atomic():
     assert_equal(value, 3)
 
 
+def test_comptime_fence():
+    fn comptime_fn() -> Int:
+        fence()
+        return 1
+
+    alias value = comptime_fn()
+    assert_equal(value, 1)
+
+
 def main():
     test_atomic()
     test_atomic_floating_point()
     test_compare_exchange_weak()
     test_comptime_atomic()
+    test_comptime_fence()
