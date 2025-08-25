@@ -83,6 +83,13 @@ fn __wrap_and_execute_raising_main[
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
+    # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
+    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
+    # Such functionality needs to be explicitly hidden under the env var,
+    # because otherwise extra signal handler will be registered if user runs
+    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
+
     # Call into the user main function.
     try:
         main_func()
