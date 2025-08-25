@@ -67,6 +67,7 @@ enum ExprContext {
   EC_WithExitResult,       // with (result of __exit__ call)
   EC_RaiseValue,           // raise x
   EC_ReturnValue,          // return x;
+  EC_Requires,             // requires x
   EC_MLIRMagic,            // __mlir_type[x] / __mlir_attr[x]
   EC_TopLevelStmt,         // x
   EC_CollectionLiteral,    // [x, y], {x:y, q:r}, {x, y, z}

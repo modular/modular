@@ -3599,8 +3599,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
   // Type check any parameters we have.
+  ParsedParamList parsedParamList;
+  parsedParamList.params = llvm::to_vector(parsedParams);
   std::optional<TypeCheckedParamList> paramListOrError =
-      TypeCheckedParamList::create(parsedParams, dummyScope);
+      TypeCheckedParamList::create(parsedParamList, dummyScope);
   if (!paramListOrError.has_value())
     return {}; // Error already emitted.
   TypeCheckedParamList &paramList = *paramListOrError;

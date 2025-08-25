@@ -130,6 +130,18 @@ struct ParsedArgument {
   LLVM_DUMP_METHOD void dump() const;
 };
 
+struct ParsedConstraint {
+  SMLoc loc;
+  StringAttr errorMsg;
+  ExprNode *propExpr;
+
+  ParseResult parse(ParserBase &p);
+
+  /// Print the constraint for debugging.
+  void print(mlir::raw_indented_ostream &os) const;
+  LLVM_DUMP_METHOD void dump() const;
+};
+
 //===----------------------------------------------------------------------===//
 // ParsedParamList
 //===----------------------------------------------------------------------===//
@@ -141,12 +153,20 @@ public:
   /// The full ParsedArgument for each parameter.
   SmallVector<ParsedArgument> params;
 
+  /// Constraints specified with 'requires' clauses.
+  SmallVector<ParsedConstraint> constraints;
+
   /// Parse a parameter signature if present.
   ///
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
   /// param_list   ::= argument_list | "(" ")"
   /// param_result_types ::= expression ("," expression)*
   ParseResult parseParametersIfPresent(ParserBase &p, ArgListKind kind);
+
+  /// Parse constraint clauses if present.
+  ///
+  /// constraint_clauses ::= ("requires" expression ("," string_literal)?)*
+  ParseResult parseConstraintsIfPresent(ParserBase &p);
 };
 
 /// This contains the result state from type checking a parameter signature.
@@ -163,7 +183,7 @@ public:
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation. Returns nullopt if type checking fails.
   static std::optional<TypeCheckedParamList>
-  create(ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope);
+  create(ParsedParamList &parsedParams, ASTDecl &declScope);
 
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr() const;
@@ -180,6 +200,9 @@ public:
   SmallVector<TypedAttr> defaultPosParams;
   /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
+
+  /// Constraints specified with 'requires' clauses.
+  SmallVector<ConstraintAttr> constraints;
 };
 
 //===----------------------------------------------------------------------===//

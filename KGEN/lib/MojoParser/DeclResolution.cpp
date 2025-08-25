@@ -1191,11 +1191,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // values.
   if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
-  std::optional<TypeCheckedParamList> paramListOrError =
-      TypeCheckedParamList::create(parsedParamList.params, sigDecl);
-  if (!paramListOrError.has_value())
-    return failure();
-  TypeCheckedParamList &paramList = *paramListOrError;
 
   ParsedArgumentList fnSignature;
   // Set up the known effects.
@@ -1243,6 +1238,15 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(p);
+
+  // Parse the constraints if present.
+  if (failed(parsedParamList.parseConstraintsIfPresent(p)))
+    return failure();
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList, sigDecl);
+  if (!paramListOrError.has_value())
+    return failure();
+  TypeCheckedParamList &paramList = *paramListOrError;
 
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
@@ -1935,7 +1939,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                            decl.getLoc(), decl.getParentDecl());
 
   std::optional<TypeCheckedParamList> paramSignatureOrError =
-      TypeCheckedParamList::create(parsedParams.params, sigDecl);
+      TypeCheckedParamList::create(parsedParams, sigDecl);
   if (!paramSignatureOrError.has_value())
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
@@ -2295,7 +2299,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
 
   std::optional<TypeCheckedParamList> paramSignatureOrError =
-      TypeCheckedParamList::create(parsedParams.params, sigDecl);
+      TypeCheckedParamList::create(parsedParams, sigDecl);
   if (!paramSignatureOrError.has_value())
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;

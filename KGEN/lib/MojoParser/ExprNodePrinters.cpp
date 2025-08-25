@@ -503,6 +503,22 @@ void ParsedArgument::dump() const {
   print(os);
 }
 
+void ParsedConstraint::print(raw_indented_ostream &os) const {
+  os << "ParsedConstraint {\n";
+  os.indent();
+  os << "loc: " << loc.getPointer() << "\n";
+  os << "propExpr: ";
+  printNullableExpr(os, propExpr);
+  if (errorMsg)
+    os << "errorMsg: \"" << errorMsg.getValue() << "\"\n";
+  os.unindent() << "}\n";
+}
+
+void ParsedConstraint::dump() const {
+  raw_indented_ostream os(llvm::errs());
+  print(os);
+}
+
 void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os << "FunctionType {\n";
   os << "params: [\n";
