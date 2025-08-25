@@ -22,10 +22,10 @@ from sys import CompilationTarget, bitwidthof, sizeof
 from sys.intrinsics import _type_is_eq
 
 
-alias _mIsSigned = UInt8(1)
-alias _mIsInteger = UInt8(1 << 7)
-alias _mIsNotInteger = UInt8(~(1 << 7))
-alias _mIsFloat = UInt8(1 << 6)
+alias _mIsSigned = UInt8._unsafe_from_raw_intliteral(1)
+alias _mIsInteger = UInt8._unsafe_from_raw_intliteral(1 << 7)
+alias _mIsNotInteger = UInt8._unsafe_from_raw_intliteral(~(1 << 7))
+alias _mIsFloat = UInt8._unsafe_from_raw_intliteral(1 << 6)
 
 
 @register_passable("trivial")
