@@ -1260,7 +1260,7 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   if (!in || !dtype)
     return ErrorTree(getLoc(), "types must be known at this point");
 
-  if (!in.getType().getResolvedDType()->isIndex() ||
+  if (!in.getType().getResolvedDType()->isIndex() || !dtype->isInt() ||
       dtype->getIntegerWidthInBits() != 64)
     return ErrorTree(getLoc(), "not implemented");
 
