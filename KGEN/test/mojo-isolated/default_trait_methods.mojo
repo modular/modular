@@ -38,8 +38,10 @@ trait Foo:
 # CHECK-LABEL: lit.struct.decl @Bar
 struct Bar(Foo):
     # CHECK: lit.fn @"rp(default_trait_methods::Bar)Foo"{{.*}}([[SELF:%[^:]+]]: {{.*}}) -> !RP
+    # CHECK: lit.call @default_trait_methods::@Foo::@"rp($0)"{{.*}}([[SELF]])
 
     # CHECK: lit.fn @"non_rp(default_trait_methods::Bar)Foo"{{.*}}([[SELF:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
+    # CHECK: lit.call @default_trait_methods::@Foo::@"non_rp($0)"{{.*}}([[SELF]], [[RESULT]])
 
     # Make sure we preserve inline annotations on the wrapper methods
     # CHECK: lit.fn @"no_inline
@@ -74,6 +76,7 @@ struct TAA(AA1):
     alias X = Zork
 
     # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
+    # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,get_witness($0, default_trait_methods::AA1, X))"{{.*}}([[SELF]], [[X]], [[RESULT]])
 
     # CHECK: kgen.conformance{{.*}}:AA1
     # CHECK-DAG: kgen.witness "zork"

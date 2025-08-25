@@ -308,17 +308,110 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
 
   funcOp.setInlineLevel(KGEN::InlineLevel::AlwaysNoDebug);
 
-  // FIXME(Kenan): This is done just so I can break up the larger default trait
-  // method work In the future this should be at the signature resolution level
-  // and create a standard lit.endfn op here.
-  existingDecl.resolvedness = DeclResolvedness::body;
+  // When we're in the LSP we may not fully body resolve the wrapper
+  // functions. Add a EndFnOp with unresolved=True so we can still verify
+  // cleanly in passes run by the check LIT pipeline.
   OpBuilder::atBlockEnd(funcOp.getBody())
-      .create<KGEN::UnreachableOp>(funcOp.getLoc());
+      .create<EndFnOp>(funcOp.getLoc(), /*unresolved=*/true);
 
   if (structDefinesMethod)
     existingDecl.setDisabled();
 
   return funcOp;
+}
+
+/// Populates a struct's default trait method wrapper with the IR to actually
+/// call the the trait method its wrapping. Takes the stub function that was
+/// created during synthesizeDefaultTraitMethodWrapper and forwards all the
+/// arguments of the FnOp created there to the call op on the actual defaulted
+/// trait method.
+LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
+  auto fn = cast<FnOp>(fnDecl.getIfOperation());
+  ASTDecl &structDecl = *fnDecl.getParentDecl();
+  ASTType structSelfType = structDecl.getTypeDeclSelf();
+
+  IREmitter emitter(structDecl, EC_Trait);
+
+  fn.getBody()->clear();
+
+  emitter.builder = OpBuilder::atBlockBegin(fn.getBody());
+
+  auto inheritedFromAttr = fn.getInheritedFrom();
+  assert(inheritedFromAttr &&
+         "inherited_from attribute should always be present on a"
+         " default-method stub");
+
+  // Look up the trait's default implementation function
+  ASTDecl *traitDefaultMethodDecl =
+      shared.declResolver->getDeclForFuncSymbol(*inheritedFromAttr);
+  assert(traitDefaultMethodDecl &&
+         "Could not find trait default method implementation");
+
+  auto parentTraitRef = traitDefaultMethodDecl->getParentDecl()->getSymbolRef();
+
+  TraitType parentTrait = TraitType::get(parentTraitRef);
+  SyntheticNode synthNode(structDecl.getLoc());
+  CValue selfTypeCValue(structSelfType.mlirType);
+  PValue selfAsTrait = emitter.emitMetaTypeToTraitConversion(
+      {selfTypeCValue, synthNode}, parentTrait);
+
+  // emitMetaTypeToTraitConversion can fail if the struct holding the defaulted
+  // trait function wrapper didn't conform to the trait due to an unimplemented
+  // function.
+  // Simply bail early without worrying about the body of the lit.fn op we're
+  // currently working on as compilation will fail anyways.
+  if (selfAsTrait.isNull()) {
+    fnDecl.setErroneous();
+    return failure();
+  }
+
+  FnOp traitDefaultMethodOp =
+      cast<FnOp>(traitDefaultMethodDecl->getIfOperation());
+  auto fnTypeGen = traitDefaultMethodOp.getFullSignature();
+
+  auto &builder = *emitter.builder;
+
+  // Collect the bindings needed to call the trait method in this.
+  SmallVector<TypedAttr> callParamBindings;
+
+  callParamBindings.push_back(selfAsTrait.get());
+
+  auto fnParams =
+      fn.getParams().drop_back(fnTypeGen.getNumImplicitOriginDecls());
+
+  for (ParamDeclAttr param : fnParams)
+    callParamBindings.push_back(KGEN::ParamDeclRefAttr::get(param));
+
+  // create a specialized generator from the fnTypeGen
+  auto specializedGenerator = fnTypeGen.getSpecializedGenerator(
+      callParamBindings, &fnDecl.getShared().getEvaluationContext(),
+      fn.getLoc());
+
+  SymbolRefAttr calleeSym =
+      LIT::getFullyResolvedSymbolRef(traitDefaultMethodOp);
+  TypedAttr typedSymbol = KGEN::SymbolConstantAttr::get(
+      calleeSym, specializedGenerator, callParamBindings);
+
+  SmallVector<Value> operands(fn.getArguments().begin(),
+                              fn.getArguments().end());
+
+  SmallVector<TypedAttr> implicitOrigins;
+  auto argConvs = fnTypeGen.getArgConventions();
+  for (auto [val, conv] : llvm::zip(operands, argConvs))
+    if (KGEN::hasImplicitOrigin(conv))
+      implicitOrigins.push_back(cast<LIT::RefType>(val.getType()).getOrigin());
+
+  auto resultTypes = fnTypeGen.getBody().getResults();
+  auto callOp = builder.create<LIT::CallOp>(
+      fn.getLoc(), resultTypes, typedSymbol, implicitOrigins, operands);
+
+  if (resultTypes.empty())
+    emitter.emitNormalReturn(fn.getLoc());
+  else
+    emitter.emitNormalReturn(fn.getLoc(), callOp->getResult(0));
+
+  fnDecl.resolvedness = DeclResolvedness::body;
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -645,7 +738,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   }
 
   // Otherwise, memory and register passable values are both passed by-reference
-  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
+  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
   // appropriate.
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
