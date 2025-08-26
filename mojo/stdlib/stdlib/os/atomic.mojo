@@ -406,8 +406,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     ) -> Bool:
         """Atomically compares the value in ptr with that of the expected value.
         If the values are equal, then the ptr value is replaced with the
-        desired value and True is returned. Otherwise, False is returned the
-        the expected value is rewritten with the self value.
+        desired value and True is returned. Otherwise, False is returned and
+        the expected value is rewritten with the ptr value.
 
         Parameters:
             failure_ordering: The memory ordering for the failure case.
@@ -464,7 +464,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     ](self, mut expected: Scalar[dtype], desired: Scalar[dtype]) -> Bool:
         """Atomically compares the self value with that of the expected value.
         If the values are equal, then the self value is replaced with the
-        desired value and True is returned. Otherwise, False is returned the
+        desired value and True is returned. Otherwise, False is returned and
         the expected value is rewritten with the self value.
 
         Parameters:
