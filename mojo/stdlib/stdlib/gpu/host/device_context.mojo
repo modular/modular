@@ -1666,6 +1666,50 @@ struct DeviceStream(Copyable, Movable):
         )
 
 
+@register_passable("trivial")
+struct EventFlags:
+    """Provides flags for creating events.
+
+    These flags can be combined using the bitwise OR operator (`|`, `|=`).
+    """
+
+    var _flags: c_uint
+    """The flags to pass when creating an event."""
+
+    alias default = Self(0x00)
+    """Default event flags, with timing enabled."""
+    alias blocking_sync = Self(0x01)
+    """Allows `event.synchronize()` to block until the event has been recorded."""
+    alias disable_timing = Self(0x02)
+    """Removes timing overhead."""
+    alias interprocess = Self(0x04)
+    """Enable interprocess synchronization, currently unimplemented."""
+
+    fn __init__(out self, flags: c_uint):
+        """Initializes a new EventFlags.
+
+        Args:
+            flags: The flags to initialize the EventFlags with.
+        """
+        self._flags = flags
+
+    fn __ior__(mut self, other: Self):
+        """Combines the current flags with another flag in-place.
+
+        Args:
+            other: The flag to combine with the current flags.
+        """
+        self._flags |= other._flags
+
+    fn __or__(self, other: Self) -> Self:
+        """Returns the current flags combined with another flag.
+
+        Args:
+            other: The flag to combine with the current flags.
+        """
+        return Self(self._flags | other._flags)
+
+
 struct DeviceEvent(Copyable, Movable):
     """Represents a GPU event for synchronization between streams.
 
@@ -5653,10 +5697,26 @@ struct DeviceContext(Copyable, Movable):
         return DeviceStream(self)
 
     @always_inline
-    fn create_event(self) raises -> DeviceEvent:
-        """Creates a new event on this device context.
+    fn create_event[
+        *,
+        blocking_sync: Bool = False,
+        disable_timing: Bool = True,
+        interprocess: Bool = False,
+    ](self) raises -> DeviceEvent:
+        """Creates a new event for synchronization between streams.
 
-        Creates a new event that can be used for synchronization between streams.
+        Provides the best performance by default, disabling timing and blocking sync.
+        `DeviceContext.execution_time()` provides the functionality required for
+        timing kernels by passing it a closure, and is functionally equivalent to
+        recording start and end events, then calculating the elapsed time.
+
+        Parameters:
+            blocking_sync: Enable `event.synchronize()` to block until the event
+                has been recorded. Incurs overhead compared to
+                `stream.enqueue_wait_for(event)` (default: False).
+            disable_timing: Remove timing overhead (default: True).
+            interprocess: Enable interprocess synchronization, currently
+                unimplemented. (default: False).
 
         Returns:
             A DeviceEvent that can be used for synchronization.
@@ -5674,17 +5734,32 @@ struct DeviceContext(Copyable, Movable):
         var default_stream = ctx.stream()
         var new_stream = ctx.create_stream()
 
-        # Create event in default_stream
+        # Create an event
         var event = ctx.create_event()
 
         # Wait for the event in new_stream
         new_stream.enqueue_wait_for(event)
 
-        # Stream 2 can continue
+        # new_stream can continue
         default_stream.record_event(event)
+        default_stream.synchronize()
         ```
         """
         var result = _DeviceEventPtr()
+        var flags = EventFlags.default
+
+        @parameter
+        if blocking_sync:
+            flags |= EventFlags.blocking_sync
+
+        @parameter
+        if disable_timing:
+            flags |= EventFlags.disable_timing
+
+        @parameter
+        if interprocess:
+            flags |= EventFlags.interprocess
+
         # const char *AsyncRT_DeviceContext_event_create(const DeviceEvent **result, const DeviceContext *ctx, unsigned int flags)
         _checked(
             external_call[
@@ -5692,8 +5767,8 @@ struct DeviceContext(Copyable, Movable):
                 _CharPtr,
                 UnsafePointer[_DeviceEventPtr],
                 _DeviceContextPtr,
-                c_uint,
-            ](UnsafePointer(to=result), self._handle, c_uint(0))
+                EventFlags,
+            ](UnsafePointer(to=result), self._handle, flags)
         )
         return DeviceEvent(result)
 

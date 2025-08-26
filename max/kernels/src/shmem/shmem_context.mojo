@@ -59,7 +59,7 @@ from .shmem_api import (
 )
 
 
-struct SHMEMContext:
+struct SHMEMContext(Copyable, Movable):
     """Usable as a context manager to run kernels on a GPU with SHMEM support,
     on exit it will finalize SHMEM and clean up resources.
 
@@ -74,9 +74,12 @@ struct SHMEMContext:
     """
 
     var _ctx: DeviceContext
+    var _main_stream: DeviceStream
     var _priority_stream: DeviceStream
     var _begin_event: DeviceEvent
     var _end_event: DeviceEvent
+    var _multiprocessor_count: Int
+    var _cooperative: Bool
 
     fn __init__(out self, team: shmem_team_t = SHMEM_TEAM_NODE) raises:
         """Initializes a device context with SHMEM support.
@@ -97,6 +100,8 @@ struct SHMEMContext:
         shmem_init()
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
+        # Store main stream to avoid retrieving it in each collective launch.
+        self._main_stream = self._ctx.stream()
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
@@ -105,6 +110,17 @@ struct SHMEMContext:
         )
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
+
+        # Store attributes to avoid retrieving them in each collective launch.
+        self._multiprocessor_count = self._ctx.get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
+        # TODO(MSTDL-1761): add ability to query AMD cooperative launch
+        # capability with: hipLaunchAttributeCooperative and create function
+        # that works across NVIDIA/AMD.
+        self._cooperative = Bool(
+            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+        )
 
     fn __enter__(var self) -> Self:
         """Context manager entry method.
@@ -128,17 +144,6 @@ struct SHMEMContext:
         """
         shmem_finalize()
 
-    fn __moveinit__(out self, deinit other: Self):
-        """Copy constructor for DeviceContextSHMEM.
-
-        Args:
-            other: The instance to copy from.
-        """
-        self._ctx = other._ctx^
-        self._priority_stream = other._priority_stream
-        self._begin_event = other._begin_event
-        self._end_event = other._end_event
-
     fn barrier_all(self) raises:
         """Performs a barrier synchronization across all PEs.
 
@@ -148,7 +153,7 @@ struct SHMEMContext:
         Raises:
             If the barrier operation fails.
         """
-        shmem_barrier_all_on_stream(self._ctx.stream())
+        shmem_barrier_all_on_stream(self._main_stream)
 
     fn enqueue_create_buffer[
         dtype: DType
@@ -395,9 +400,6 @@ struct SHMEMContext:
         ](func_attribute=func_attribute)
         shmem_module_init(gpu_kernel)
 
-        var multiprocessor_count = self._ctx.get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
         var block_size = block_dim[0] * block_dim[1] * block_dim[2]
         var shared_mem_bytes_val = (
             shared_mem_bytes.value() if shared_mem_bytes else 0
@@ -421,13 +423,13 @@ struct SHMEMContext:
         if grid_size == 0:
             if max_blocks_sm == 0:
                 launch_failed = False
-            grid_x = max_blocks_sm * multiprocessor_count
+            grid_x = max_blocks_sm * self._multiprocessor_count
             grid_y = 1
             grid_z = 1
         elif grid_size > 0:
             if (
                 max_blocks_sm > 0
-                and grid_size <= max_blocks_sm * multiprocessor_count
+                and grid_size <= max_blocks_sm * self._multiprocessor_count
             ):
                 launch_failed = False
 
@@ -437,16 +439,10 @@ struct SHMEMContext:
             )
 
         # Mark point in main stream and wait for it to complete in priority stream
-        self._ctx.stream().record_event(self._begin_event)
+        self._main_stream.record_event(self._begin_event)
         self._priority_stream.enqueue_wait_for(self._begin_event)
 
-        # TODO(MSTDL-1761): add ability to query AMD cooperative launch
-        # capability with: hipLaunchAttributeCooperative and create function
-        # that works across NVIDIA/AMD.
-        var cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-        )
-        if cooperative:
+        if self._cooperative:
             attributes.append(
                 LaunchAttribute(id=LaunchAttributeID.COOPERATIVE, value=True)
             )
@@ -467,7 +463,7 @@ struct SHMEMContext:
         )
         # Mark point in priority stream and wait for it to complete in main stream
         self._priority_stream.record_event(self._end_event)
-        self._ctx.stream().enqueue_wait_for(self._end_event)
+        self._main_stream.enqueue_wait_for(self._end_event)
 
     @always_inline
     fn synchronize(self) raises:
@@ -480,10 +476,11 @@ struct SHMEMContext:
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         self._ctx.synchronize()
 
+    @always_inline
     fn get_device_context(self) -> DeviceContext:
-        """Returns the device context associated with this SHMEM context.
+        """Returns the device context associated with this SHMEMContext.
 
         Returns:
-            The device context associated with this SHMEM context.
+            The device context associated with this SHMEMContext.
         """
         return self._ctx
