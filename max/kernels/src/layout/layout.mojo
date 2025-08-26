@@ -364,7 +364,6 @@ struct Layout(
         self.shape = IntTuple()
         self.stride = IntTuple()
 
-    @implicit
     fn __init__(out self, shape: IntTuple):
         """Initializes a layout with the given shape and column-major strides.
 
@@ -1912,7 +1911,7 @@ fn expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
     for sz in shape:
         if sz.is_tuple():
             new_stride.append(expand_strides(sz, cumulative_stride))
-            cumulative_stride *= size(sz)
+            cumulative_stride *= size(Layout(sz))
         else:
             new_stride.append(cumulative_stride)
             cumulative_stride *= sz.value()

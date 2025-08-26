@@ -277,7 +277,6 @@ struct NDBuffer[
         self.dynamic_stride = {}
 
     @always_inline
-    @implicit
     fn __init__(
         out self,
         ptr: UnsafePointer[
@@ -308,7 +307,6 @@ struct NDBuffer[
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
-    @implicit
     fn __init__(
         out self,
         span: Span[

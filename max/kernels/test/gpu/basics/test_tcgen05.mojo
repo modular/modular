@@ -27,7 +27,7 @@ from gpu.tcgen05 import (
 from memory import stack_allocation
 from testing import assert_true
 from gpu.mma_sm100 import MMASmemDescriptor
-from layout import LayoutTensor, IntTuple
+from layout import LayoutTensor, Layout, IntTuple
 
 
 fn alloc_test_fn[cta_group: Int32]():
@@ -142,7 +142,7 @@ fn cp_test_fn():
 
     var smem_tile = LayoutTensor[
         DType.float32,
-        IntTuple(32, 32),
+        Layout(IntTuple(32, 32)),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,

@@ -130,7 +130,6 @@ struct Element[
     runtime-determined access patterns.
     """
 
-    @implicit
     fn __init__(out self, element_data: Self.element_data_type):
         """Initializes an Element with the given SIMD data.
 
@@ -198,9 +197,11 @@ struct Element[
             @parameter
             if is_contiguous_dim(flat_layout, 0):
                 alias alignment = alignof[Self.element_data_type]()
-                return ptr.load[
-                    width = Self.element_data_type.size, alignment=alignment
-                ]()
+                return Self(
+                    ptr.load[
+                        width = Self.element_data_type.size, alignment=alignment
+                    ]()
+                )
 
             @parameter
             for i in range(size):
@@ -297,9 +298,11 @@ struct Element[
                         element_data[i] = ptr[_get_offset[i](runtime_layout)]
                     return Element(element_data, runtime_layout)
 
-                return ptr.load[
-                    width = Self.element_data_type.size, alignment=alignment
-                ](0)
+                return Self(
+                    ptr.load[
+                        width = Self.element_data_type.size, alignment=alignment
+                    ](0)
+                )
 
             @parameter
             for i in range(size):

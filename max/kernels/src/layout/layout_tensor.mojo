@@ -402,7 +402,6 @@ struct LayoutTensor[
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
     @always_inline
-    @implicit
     fn __init__(
         out self,
         span: Span[
@@ -502,7 +501,6 @@ struct LayoutTensor[
         ]()
 
     @always_inline
-    @implicit
     fn __init__(
         out self,
         ptr: UnsafePointer[
@@ -608,7 +606,6 @@ struct LayoutTensor[
     ]
 
     @always_inline
-    @implicit
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [origin]device_buffer: DeviceBuffer[dtype],
@@ -659,7 +656,6 @@ struct LayoutTensor[
         self = Self.GenericLayoutTensorType(device_buffer._unsafe_ptr())
 
     @always_inline
-    @implicit
     fn __init__(
         out self: Self.GenericLayoutTensorType,
         ref [origin]host_buffer: HostBuffer[dtype],
@@ -2525,12 +2521,14 @@ struct LayoutTensor[
             String(Self.alignment),
         ]()
 
-        return stack_allocation[
-            layout.size() * element_layout.size(),
-            dtype,
-            alignment=alignment,
-            address_space=address_space,
-        ]()
+        return Self.StackTensorType(
+            stack_allocation[
+                layout.size() * element_layout.size(),
+                dtype,
+                alignment=alignment,
+                address_space=address_space,
+            ]()
+        )
 
     alias StackTensorType = LayoutTensor[
         dtype,
@@ -5677,7 +5675,6 @@ struct ThreadScope(Copyable, Movable):
     """Represents operations at the warp level, where only threads within the
     same warp participate."""
 
-    @implicit
     fn __init__(out self, value: Int):
         """Initialize a `ThreadScope` with the given integer value.
 

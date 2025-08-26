@@ -608,7 +608,9 @@ fn multistage_b2b_gemm[
             config,
             elementwise_lambda_fn,
         ]
-        var smem_use: Int = config.shared_mem_usage(size(A.layout.shape[1]))
+        var smem_use: Int = config.shared_mem_usage(
+            size(Layout(A.layout.shape[1]))
+        )
         print("smem_use =", smem_use)
         ctx.enqueue_function[b2b_fn](
             D,
@@ -634,12 +636,12 @@ fn matmul_naive(
     constrained[len(C.layout) == 2]()
     constrained[len(A.layout) == 2]()
     constrained[len(B.layout) == 2]()
-    alias M: Int = size(C.layout.shape[0])
-    alias N: Int = size(C.layout.shape[1])
-    alias K: Int = size(A.layout.shape[1])
-    constrained[M == size(A.layout.shape[0])]()
-    constrained[N == size(B.layout.shape[1])]()
-    constrained[K == size(B.layout.shape[0])]()
+    alias M: Int = size(Layout(C.layout.shape[0]))
+    alias N: Int = size(Layout(C.layout.shape[1]))
+    alias K: Int = size(Layout(A.layout.shape[1]))
+    constrained[M == size(Layout(A.layout.shape[0]))]()
+    constrained[N == size(Layout(B.layout.shape[1]))]()
+    constrained[K == size(Layout(B.layout.shape[0]))]()
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[C.dtype]()
