@@ -32,7 +32,6 @@ _EXTRA_CONSTRAINTS = {
     "test_cluster_sync.mojo": ["//:h100_gpu"],
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_debug_assert_gpu_error.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1738
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
     "test_has_amd_gpu.mojo": ["//:amd_gpu"],
     "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],

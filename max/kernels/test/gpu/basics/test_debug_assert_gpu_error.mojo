@@ -12,22 +12,31 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
+from gpu import global_idx
 
 
 # CHECK-LABEL: test_fail
 def main():
     print("== test_fail")
-    # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure
+    # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure on thread: 0 with multiple args: 2.0 True
     with DeviceContext() as ctx:
 
         fn fail_assert():
-            debug_assert(False, "forcing failure")
+            debug_assert(
+                False,
+                "forcing failure on thread: ",
+                global_idx.x,
+                " with multiple args: ",
+                Float64(2.0),
+                " ",
+                True,
+            )
             # CHECK-NOT: won't print this due to assert failure
             print("won't print this due to assert failure")
 
         ctx.enqueue_function[fail_assert](
-            grid_dim=(2, 1, 1),
-            block_dim=(2, 1, 1),
+            grid_dim=2,
+            block_dim=(2, 2),
         )
 
         ctx.synchronize()
