@@ -22,7 +22,10 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = ["test_function_error.mojo"],
+        exclude = [
+            "test_function_error.mojo",
+            "test_function_error_sync_mode.mojo",
+        ],
     )
 ]
 
@@ -31,7 +34,30 @@ mojo_filecheck_test(
     srcs = ["test_function_error.mojo"],
     expect_crash = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
+    target_compatible_with = ["//:nvidia_gpu"] + select({
+        "//:h100_gpu": ["@platforms//:incompatible"],
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_filecheck_test(
+    name = "test_function_error_sync_mode.mojo.test",
+    srcs = ["test_function_error_sync_mode.mojo"],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+    },
+    expect_crash = True,
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"] + select({
         "//:h100_gpu": ["@platforms//:incompatible"],
         "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

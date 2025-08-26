@@ -19,6 +19,7 @@ which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
 
+from compile.reflection import get_linkage_name
 from collections.optional import OptionalReg
 from math import align_up
 from os import abort
@@ -129,6 +130,16 @@ fn _checked(
 ) raises:
     if err:
         _raise_checked_impl(err, msg, location.or_else(__call_location()))
+
+
+@always_inline
+fn _checked_call[func: Some[AnyTrivialRegType]](err: _CharPtr) raises:
+    # Extract the linkage name of the function and strip off everything after
+    # the fully qualified name.
+    alias func_name = get_linkage_name[func]().split("[", 2)[0].split("(", 2)[0]
+    if err:
+        var err_msg = _string_from_owned_charptr(err)
+        raise Error(func_name, ": ", err_msg)
 
 
 @no_inline
@@ -2322,7 +2333,7 @@ struct DeviceFunction[
             var capture_args_start = dense_args_addrs.offset(num_args)
             populate(capture_args_start.bitcast[NoneType]())
 
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
                     _CharPtr,
@@ -2356,7 +2367,7 @@ struct DeviceFunction[
                 )
             )
         else:
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
                     _CharPtr,
@@ -2456,7 +2467,7 @@ struct DeviceFunction[
             # not go out of the scope before dense_args_addr is being use.
             var capture_args_start = dense_args_addrs.offset(num_args)
             populate(capture_args_start.bitcast[NoneType]())
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
                     _CharPtr,
@@ -2476,7 +2487,7 @@ struct DeviceFunction[
                 )
             )
         else:
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceStream_enqueueFunctionDirect",
                     _CharPtr,
@@ -2682,7 +2693,7 @@ struct DeviceFunction[
             )
             populate(capture_args_start.bitcast[NoneType]())
 
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
                     _CharPtr,
@@ -2716,7 +2727,7 @@ struct DeviceFunction[
                 )
             )
         else:
-            _checked(
+            _checked_call[Self.func](
                 external_call[
                     "AsyncRT_DeviceContext_enqueueFunctionDirect",
                     _CharPtr,
