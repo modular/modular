@@ -222,11 +222,6 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
 
 
 @always_inline("nodebug")
-fn _unchecked_zero[dtype: DType, size: Int]() -> SIMD[dtype, size]:
-    return SIMD[dtype, size](__mlir_attr.`0 : index`)
-
-
-@always_inline("nodebug")
 fn _has_native_bf16_support() -> Bool:
     return is_gpu()
 
@@ -453,8 +448,9 @@ struct SIMD[dtype: DType, size: Int](
 
         By default the SIMD vectors are initialized to all zeros.
         """
-        _simd_construction_checks[dtype, size]()
-        self = _unchecked_zero[dtype, size]()
+        # make sure this constructor is called at compile time
+        alias res = SIMD[dtype, size](Int())
+        self = res
 
     @always_inline("nodebug")
     fn __init__[
@@ -523,9 +519,11 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if bitwidthof[dtype]() > bitwidthof[DType.index]():
             alias dt = _unsigned_integral_type_of[DType.index]()
-            self = bitcast[dt](Scalar[DType.index](value.value)).cast[dtype]()
+            self = bitcast[dt](Scalar[DType.index](value.__int__())).cast[
+                dtype
+            ]()
         else:
-            self = Self(value.value)
+            self = Self(value.__int__())
 
     @always_inline("nodebug")
     @implicit
@@ -539,14 +537,10 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[dtype, size]()
-        self = Self(value.value)
 
-    @doc_private
-    @always_inline("nodebug")
-    fn __init__(out self, value: __mlir_type.index, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
-        ](value)
+        ](value.value)
         var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](index)
 
         @parameter
@@ -2104,7 +2098,7 @@ struct SIMD[dtype: DType, size: Int](
             dtype is DType.bfloat16 or target is DType.bfloat16
         ):
             # TODO(KERN-228): support BF16 on neon systems.
-            return _unchecked_zero[target, size]()
+            return SIMD[target, size]()
 
         @parameter
         if dtype is DType.bool:
@@ -3625,7 +3619,7 @@ fn _bfloat16_to_f32_scalar(
     @parameter
     if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.float32, 1]()
+        return SIMD[DType.float32, 1]()
 
     # For bfloat16, we can just do a memcpy to perform the cast to float32.
     @parameter
@@ -3647,7 +3641,7 @@ fn _bfloat16_to_f32[
     @parameter
     if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.float32, size]()
+        return SIMD[DType.float32, size]()
 
     @always_inline
     @parameter
@@ -3675,7 +3669,7 @@ fn _f32_to_bfloat16[
     @parameter
     if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.bfloat16, width]()
+        return SIMD[DType.bfloat16, width]()
     var f32_bits = f32.to_bits[DType.uint32]()
     var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
     var rounding_bias = 0x7FFF + lsb
