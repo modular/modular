@@ -109,7 +109,7 @@ trait AnyType:
         """
         ...
 
-    alias __del__is_trivial: __mlir_type.i1
+    alias __del__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation of `__del__` is trivial.
 
     The implementation of `__del__` is considered to be trivial if:

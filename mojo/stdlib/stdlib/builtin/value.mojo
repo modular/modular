@@ -55,7 +55,7 @@ trait Movable:
         """
         ...
 
-    alias __moveinit__is_trivial: __mlir_type.i1
+    alias __moveinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__moveinit__` is trivial.
 
@@ -110,7 +110,7 @@ trait Copyable(ExplicitlyCopyable):
         """
         ...
 
-    alias __copyinit__is_trivial: __mlir_type.i1
+    alias __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__copyinit__` is trivial.
 
