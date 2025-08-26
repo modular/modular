@@ -159,7 +159,6 @@ struct Q4sym[
         self._check_constraints()
 
     @always_inline
-    @implicit
     fn __init__(out self, data: SIMD[float_dtype, group_size]):
         """
         Construct an encoded Q4sym from data.

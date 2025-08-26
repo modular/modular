@@ -1460,7 +1460,6 @@ fn insert_index[
 struct MyInt(Movable):
     var val: Int
 
-    @implicit
     fn __init__(out self, val: Int):
         self.val = val
 
@@ -1494,7 +1493,6 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 struct MyIntReg(Copyable, Movable):
     var val: Int
 
-    @implicit
     fn __init__(out self, val: Int):
         self.val = val
 
@@ -1509,7 +1507,6 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 struct MyIntReg2(Copyable, Movable):
     var val: Int
 
-    @implicit
     fn __init__(out self, val: Int):
         self.val = val
 

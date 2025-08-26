@@ -83,7 +83,6 @@ fn _get_dylib_function[
 struct DriverVersion(Copyable, Movable, StringableRaising):
     var _value: List[String]
 
-    @implicit
     fn __init__(out self, value: List[String]):
         self._value = value
 

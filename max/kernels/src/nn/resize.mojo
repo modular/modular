@@ -29,7 +29,6 @@ struct CoordinateTransformationMode(Copyable, Movable):
     alias HalfPixel1D = CoordinateTransformationMode(3)
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -77,7 +76,6 @@ struct RoundMode(Copyable, Movable):
     alias Ceil = RoundMode(3)
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -101,7 +99,6 @@ struct Interpolator[mode: InterpolationMode](Copyable, Defaultable, Movable):
     var cubic_coeff: Float32
 
     @always_inline
-    @implicit
     fn __init__(out self, cubic_coeff: Float32):
         self.cubic_coeff = cubic_coeff
 

@@ -171,7 +171,6 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         ]()
         self.value = dim.get()
 
-    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 

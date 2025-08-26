@@ -102,7 +102,6 @@ struct Backend(Copyable, EqualityComparable, Movable, Writable):
     alias ROCBLAS = Self(3)
     alias HIPBLASLT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

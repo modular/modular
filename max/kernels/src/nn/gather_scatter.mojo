@@ -88,7 +88,6 @@ struct Axis(Indexer, Intable):
     var axis: Int
 
     @always_inline
-    @implicit
     fn __init__(out self, axis: Int):
         self.axis = axis
 
@@ -371,7 +370,7 @@ fn gather[
         prefetch_fn=prefetch_fn,
         target=target,
     ](
-        axis,
+        Axis(axis),
         input.get_shape(),
         indices.get_shape(),
         output.get_shape(),
@@ -470,7 +469,7 @@ fn gather[
         prefetch_fn=prefetch_fn,
         target=target,
     ](
-        axis,
+        Axis(axis),
         input.get_shape(),
         indices.get_shape(),
         output.get_shape(),
