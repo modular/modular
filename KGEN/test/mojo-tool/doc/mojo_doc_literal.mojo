@@ -10,7 +10,7 @@
 from gpu.host.info import GPUInfo, Vendor
 
 # CHECK: "name": "Radeon7600",
-# CHECK: "value": "GPUInfo(\"Radeon 7600\", Vendor(1), \"hip\", \"gfx1102\", 11, \"RDNA3\", 32, 32, 1024, 32768, 32768, 256, 255, 32768, 128, 1024)"
+# CHECK: "value": "GPUInfo(\"Radeon 7600\", Vendor(1), \"hip\", \"gfx1102\", 11, \"RDNA3\", 32, 32, 1024, 32768, 32768, 1024)"
 alias Radeon7600 = GPUInfo(
     name="Radeon 7600",
     vendor=Vendor.AMD_GPU,
@@ -22,10 +22,6 @@ alias Radeon7600 = GPUInfo(
     warp_size=32,
     threads_per_sm=1024,
     shared_memory_per_multiprocessor=32768,
-    register_file_size=32768,
-    register_allocation_unit_size=256,
-    max_registers_per_thread=255,
     max_registers_per_block=32768,
-    shared_memory_allocation_unit_size=128,
     max_thread_block_size=1024,
 )
