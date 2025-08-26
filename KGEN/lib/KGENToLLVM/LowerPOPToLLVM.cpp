@@ -1840,17 +1840,40 @@ struct ConvertPOPCallLLVMIntrinsic
     if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
       return failure();
 
+    [[maybe_unused]] StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+    assert(
+        !intrinsicName.starts_with("llvm.air.") &&
+        "AIR LLVM intrinsic must be processed by ConvertPOPCallToAIRIntrinsic");
+
+    // just emit regular LLVM intrinsic call.
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, types, cast<StringAttr>(op.getIntrin()),
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
+        convertFastmathFlags(op.getFastmathFlags(), rewriter));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPCallToAIRIntrinsic
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPCallToAIRIntrinsic
+    : public ConvertSymbolOpToLLVM<CallLLVMIntrinsicOp> {
+  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+
+  LogicalResult
+  matchAndRewrite(CallLLVMIntrinsicOp op, CallLLVMIntrinsicOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
+      return failure();
+
     TargetInfoAttr target = getTypeConverter()->getTarget();
     StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
-
-    // For non-air intrinsic, just emit regular LLVM intrinsic call.
-    if (!intrinsicName.starts_with("llvm.air.")) {
-      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-          op, types, cast<StringAttr>(op.getIntrin()),
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
-          convertFastmathFlags(op.getFastmathFlags(), rewriter));
-      return success();
-    }
+    assert(intrinsicName.starts_with("llvm.air.") &&
+           "non-AIR LLVM intrinsic must be processed by "
+           "ConvertPOPCallLLVMIntrinsic");
 
     // AIR intrinsics are only supported for Metal
     if (!isMetalTriple(target.getTriple()))
@@ -1860,12 +1883,11 @@ struct ConvertPOPCallLLVMIntrinsic
     // Remove "llvm." prefix to get "air.function_name"
     StringRef airFunctionName = intrinsicName.drop_front(5);
 
-    // Get the module to declare the function
     auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
     if (!moduleOp)
       return failure();
 
-    auto func = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(airFunctionName);
+    auto func = symtab.lookup<LLVM::LLVMFuncOp>(airFunctionName);
     if (!func) {
       // Create LLVM function type from the intrinsic operation
       SmallVector<Type> argTypes(adaptor.getOperands().getTypes());
@@ -1879,6 +1901,7 @@ struct ConvertPOPCallLLVMIntrinsic
       rewriter.setInsertionPointToStart(moduleOp.getBody());
       func = rewriter.create<LLVM::LLVMFuncOp>(op.getLoc(), airFunctionName,
                                                llvmFuncType);
+      symtab.insert(func);
     }
     // Replace the intrinsic call with a regular function call
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, adaptor.getOperands());
@@ -2176,6 +2199,14 @@ void LowerPOPToLLVMPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
+
+  // In contrast to GlobalPOPToLLVM, we do not want to lower AIR intrinsic
+  // here, because this could lead to data race to a symtab.
+  target.addDynamicallyLegalOp<CallLLVMIntrinsicOp>([](CallLLVMIntrinsicOp op) {
+    StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+    return intrinsicName.starts_with("llvm.air.");
+  });
+
   POPToLLVMTypeConverter typeConverter(targetInfo);
 
   // Populate patterns and run the conversion.
@@ -2668,12 +2699,20 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
 
+  // Mark all AIR intrinsics as illegal to be able to lower them. We have to
+  // lower them here as the lowering requires to update symtab and insert the
+  // function declaration that MetalAIR pass will evantually replace.
+  target.addDynamicallyLegalOp<CallLLVMIntrinsicOp>([](CallLLVMIntrinsicOp op) {
+    StringRef intrinsicName = cast<StringAttr>(op.getIntrin());
+    return !intrinsicName.starts_with("llvm.air.");
+  });
+
   // Convert external calls.
   target.addIllegalOp<GlobalAllocOp, ExternalCallOp, ExternPointerSymbolOp>();
   patterns.insert<ConvertPOPGlobalAlloc, ConvertPOPExternalCall,
                   ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
-                  ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast>(
-      typeConverter, symtab);
+                  ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast,
+                  ConvertPOPCallToAIRIntrinsic>(typeConverter, symtab);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
