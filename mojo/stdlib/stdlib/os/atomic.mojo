@@ -393,8 +393,71 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         _ = self.fetch_sub(rhs)
 
-    @always_inline
-    fn compare_exchange_weak[
+    @staticmethod
+    @always_inline("nodebug")
+    fn compare_exchange[
+        *,
+        failure_ordering: Consistency = Consistency.SEQUENTIAL,
+        success_ordering: Consistency = Consistency.SEQUENTIAL,
+    ](
+        ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
+        mut expected: Scalar[dtype],
+        desired: Scalar[dtype],
+    ) -> Bool:
+        """Atomically compares the value in ptr with that of the expected value.
+        If the values are equal, then the ptr value is replaced with the
+        desired value and True is returned. Otherwise, False is returned the
+        the expected value is rewritten with the self value.
+
+        Parameters:
+            failure_ordering: The memory ordering for the failure case.
+            success_ordering: The memory ordering for the success case.
+
+        Args:
+          ptr: The source pointer.
+          expected: The expected value.
+          desired: The desired value.
+
+        Returns:
+          True if ptr == expected and ptr was updated to desired. False otherwise.
+        """
+        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+
+        if is_compile_time():
+            if ptr[] == expected:
+                ptr[] = desired
+                return True
+            expected = ptr[]
+            return False
+
+        @parameter
+        if dtype.is_integral():
+            return _compare_exchange_integral_impl[
+                scope=scope,
+                failure_ordering=failure_ordering,
+                success_ordering=success_ordering,
+            ](ptr, UnsafePointer(to=expected), desired)
+
+        # For the floating point case, we need to bitcast the floating point
+        # values to their integral representation and perform the atomic
+        # operation on that.
+
+        alias integral_type = _integral_type_of[dtype]()
+
+        var atomic_integral_ptr = ptr.bitcast[Scalar[integral_type]]()
+        var expected_integral_ptr = UnsafePointer(to=expected).bitcast[
+            Scalar[integral_type]
+        ]()
+        var desired_integral = bitcast[integral_type](desired)
+
+        return _compare_exchange_integral_impl[
+            scope=scope,
+            failure_ordering=failure_ordering,
+            success_ordering=success_ordering,
+        ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
+
+    @always_inline("nodebug")
+    fn compare_exchange[
         *,
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
@@ -413,33 +476,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
           desired: The desired value.
 
         Returns:
-          True if self == expected and False otherwise.
+          True if self == expected and self was updated to desired. False otherwise.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
 
-        @parameter
-        if dtype.is_integral():
-            return _compare_exchange_weak_integral_impl[
-                scope=scope,
-                failure_ordering=failure_ordering,
-                success_ordering=success_ordering,
-            ](UnsafePointer(to=self.value), expected, desired)
-
-        # For the floating point case, we need to bitcast the floating point
-        # values to their integral representation and perform the atomic
-        # operation on that.
-
-        alias integral_type = _integral_type_of[dtype]()
-        var value_integral_addr = UnsafePointer(to=self.value).bitcast[
-            Scalar[integral_type]
-        ]()
-        var expected_integral = bitcast[integral_type](expected)
-        var desired_integral = bitcast[integral_type](desired)
-        return _compare_exchange_weak_integral_impl[
-            scope=scope,
+        return Self.compare_exchange[
             failure_ordering=failure_ordering,
             success_ordering=success_ordering,
-        ](value_integral_addr, expected_integral, desired_integral)
+        ](UnsafePointer(to=self.value), expected, desired)
 
     @staticmethod
     @always_inline
@@ -548,35 +591,44 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
 
 @always_inline
-fn _compare_exchange_weak_integral_impl[
+fn _compare_exchange_integral_impl[
     dtype: DType, //,
     *,
     scope: StaticString,
     failure_ordering: Consistency,
     success_ordering: Consistency,
 ](
-    value_addr: UnsafePointer[Scalar[dtype], **_],
-    mut expected: Scalar[dtype],
+    atomic_ptr: UnsafePointer[Scalar[dtype], **_],
+    expected_ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
     desired: Scalar[dtype],
 ) -> Bool:
     constrained[dtype.is_integral(), "the input type must be integral"]()
+
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = failure_ordering.__mlir_attr(),
         success_ordering = success_ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
     ](
-        value_addr.bitcast[Scalar[dtype]._mlir_type]().address,
-        expected.value,
+        atomic_ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+        expected_ptr[].value,
         desired.value,
     )
-    var ok = Bool(
+
+    var loaded_value = Scalar[dtype](
+        __mlir_op.`kgen.struct.extract`[index = __mlir_attr.`0:index`,](
+            cmpxchg_res
+        )
+    )
+
+    expected_ptr[] = loaded_value
+
+    var success = Bool(
         mlir_value=__mlir_op.`kgen.struct.extract`[
-            index = __mlir_attr.`1:index`
+            index = __mlir_attr.`1:index`,
         ](cmpxchg_res)
     )
-    if not ok:
-        expected = value_addr[]
-    return ok
+
+    return success
 
 
 @always_inline

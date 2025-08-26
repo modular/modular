@@ -16,77 +16,52 @@ from os import Atomic
 from testing import assert_equal, assert_false, assert_true
 
 
-fn test_atomic() raises:
-    var atom = Atomic[DType.index](3)
+fn test_atomic[dtype: DType]() raises:
+    alias scalar = Scalar[dtype]
+    var atom = Atomic[dtype](3)
 
-    assert_equal(atom.load(), 3)
+    assert_equal(atom.load(), scalar(3))
 
-    assert_equal(atom.value, 3)
+    assert_equal(atom.value, scalar(3))
 
-    atom += 4
-    assert_equal(atom.value, 7)
+    atom += scalar(4)
+    assert_equal(atom.value, scalar(7))
 
-    atom -= 4
-    assert_equal(atom.value, 3)
+    atom -= scalar(4)
+    assert_equal(atom.value, scalar(3))
 
-    atom.max(0)
-    assert_equal(atom.value, 3)
+    atom.max(scalar(0))
+    assert_equal(atom.value, scalar(3))
 
-    atom.max(42)
-    assert_equal(atom.value, 42)
+    atom.max(scalar(42))
+    assert_equal(atom.value, scalar(42))
 
-    atom.min(3)
-    assert_equal(atom.value, 3)
+    atom.min(scalar(3))
+    assert_equal(atom.value, scalar(3))
 
-    atom.min(0)
-    assert_equal(atom.value, 0)
-
-
-fn test_atomic_floating_point() raises:
-    var atom = Atomic(Float32(3.0))
-
-    assert_equal(atom.value, 3.0)
-
-    atom += 4
-    assert_equal(atom.value, 7.0)
-
-    atom -= 4
-    assert_equal(atom.value, 3.0)
-
-    atom.max(0)
-    assert_equal(atom.value, 3.0)
-
-    atom.max(42)
-    assert_equal(atom.value, 42.0)
-
-    atom.min(3)
-    assert_equal(atom.value, 3.0)
-
-    atom.min(0)
-    assert_equal(atom.value, 0.0)
+    atom.min(scalar(0))
+    assert_equal(atom.value, scalar(0))
 
 
-def test_compare_exchange_weak():
-    var atom = Atomic[DType.int64](3)
-    var expected = Int64(3)
-    var desired = Int64(3)
-    var ok = atom.compare_exchange_weak(expected, desired)
+def test_compare_exchange[dtype: DType]():
+    alias scalar = Scalar[dtype]
+    var atom = Atomic[dtype](3)
 
-    assert_equal(expected, 3)
-    assert_true(ok)
+    # Successful cmpxchg
+    var expected = scalar(3)
+    var success = atom.compare_exchange(expected, scalar(42))
 
-    expected = Int64(4)
-    ok = atom.compare_exchange_weak(expected, desired)
+    assert_true(success)
+    assert_equal(expected, scalar(3))
+    assert_equal(atom.load(), scalar(42))
 
-    assert_equal(expected, 3)
-    assert_false(ok)
+    # Failure cmpxchg
+    expected = scalar(3)
+    var failure = atom.compare_exchange(expected, scalar(99))
 
-    expected = Int64(4)
-    desired = Int64(6)
-    ok = atom.compare_exchange_weak(expected, desired)
-
-    assert_equal(expected, 3)
-    assert_false(ok)
+    assert_false(failure)
+    assert_equal(expected, scalar(42))
+    assert_equal(atom.load(), scalar(42))
 
 
 def test_comptime_atomic():
@@ -100,8 +75,28 @@ def test_comptime_atomic():
     assert_equal(value, 3)
 
 
+def test_comptime_compare_exchange():
+    fn comptime_fn(expected_in: Int32) -> Tuple[Bool, Int32, Int32]:
+        var expected = expected_in
+        var atom = Atomic[DType.int32](0)
+        var success = atom.compare_exchange(expected, 42)
+        return (success, expected, atom.load())
+
+    alias result_success = comptime_fn(0)
+    assert_true(result_success[0])
+    assert_equal(result_success[1], 0)
+    assert_equal(result_success[2], 42)
+
+    alias result_failure = comptime_fn(1)
+    assert_false(result_failure[0])
+    assert_equal(result_failure[1], 0)
+    assert_equal(result_failure[2], 0)
+
+
 def main():
-    test_atomic()
-    test_atomic_floating_point()
-    test_compare_exchange_weak()
+    test_atomic[DType.int32]()
+    test_atomic[DType.float64]()
+    test_compare_exchange[DType.int32]()
+    test_compare_exchange[DType.float64]()
     test_comptime_atomic()
+    test_comptime_compare_exchange()

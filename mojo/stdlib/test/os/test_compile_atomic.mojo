@@ -14,7 +14,7 @@
 from os import Atomic
 
 from compile import compile_info
-from testing import assert_true
+from testing import assert_true, assert_false
 
 
 def test_compile_atomic():
@@ -34,5 +34,20 @@ def test_compile_atomic():
     )
 
 
+def test_compile_compare_exchange():
+    fn my_cmpxchg_function(atom: Atomic[DType.int32, scope="agent"]) -> Bool:
+        var expected = Int32(0)
+        return atom.compare_exchange(expected, 42)
+
+    var asm = compile_info[my_cmpxchg_function, emission_kind="llvm"]()
+
+    assert_true(
+        'cmpxchg ptr %3, i32 %4, i32 42 syncscope("agent") seq_cst seq_cst'
+        in asm
+    )
+    assert_false("cmpxchg weak" in asm)
+
+
 def main():
     test_compile_atomic()
+    test_compile_compare_exchange()
