@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os.atomic as atomic
+from os.atomic import Consistency, fence
 
 # ===-----------------------------------------------------------------------===#
 # clobber_memory
@@ -29,8 +29,4 @@ fn clobber_memory():
 
     # This operation corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
-    __mlir_op.`pop.fence`[
-        _type=None,
-        syncscope = "singlethread".value,
-        ordering = atomic.Consistency.ACQUIRE_RELEASE.__mlir_attr(),
-    ]()
+    fence[Consistency.ACQUIRE_RELEASE, scope="singlethread"]()

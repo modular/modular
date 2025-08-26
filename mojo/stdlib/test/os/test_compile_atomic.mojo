@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import Atomic
+from os.atomic import Atomic, fence
 
 from compile import compile_info
 from testing import assert_true
@@ -34,5 +34,16 @@ def test_compile_atomic():
     )
 
 
+def test_compile_fence():
+    @parameter
+    fn my_fence_function():
+        fence[scope="agent"]()
+
+    var asm = compile_info[my_fence_function, emission_kind="llvm"]()
+
+    assert_true('fence syncscope("agent") seq_cst' in asm)
+
+
 def main():
     test_compile_atomic()
+    test_compile_fence()
