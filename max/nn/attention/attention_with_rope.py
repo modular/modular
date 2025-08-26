@@ -47,12 +47,16 @@ from ..kernels import (
     quantize_static_scaled_float8,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
-from ..kv_cache import (
-    KVCacheParams,
-    PagedKVCacheCollection,
-)
+from ..kv_cache import KVCacheParams, PagedKVCacheCollection
 from ..layer import Module
 from ..linear import Linear
+from ..no_opaque_kernels import (
+    PagedKVCacheTensorsNoOpaque,
+    flash_attention_ragged_no_opaque,
+    rope_no_opaque,
+    store_k_cache,
+    store_v_cache,
+)
 from ..rotary_embedding import RotaryEmbedding
 from .interfaces import (
     AttentionImpl,
@@ -1088,3 +1092,136 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
 
         return self.wo(attn_out)
+
+
+class AttentionWithRopeNoOpaque(Module):
+    """Implementation of attention that uses the rope frequency without opaque cache.
+
+    Assumes:
+    - no float8
+    - no stacked qkv
+    - no bias
+    - no clip_qkv
+    - no float8_config
+    """
+
+    # This class will not use the RotaryEmbedding to
+    # calculate rope, but it already includes a freqs_cis
+    # calculation, which we will borrow
+    rope: RotaryEmbedding
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        devices: Sequence[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
+        linear_cls: Callable[..., Linear] = Linear,
+        scale: float | None = None,
+    ) -> None:
+        """Initializes the attention layer.
+
+        Args:
+            rope: The rope layer to borrow the freqs_cis value from.
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            dtype: DType of the QKV and output projection weights.
+            devices: Device to place the weights and run the computation. If
+                multiple are provided, the first device is used. Use
+                `DistributedAttentionWithRope` to use all devices during
+                attention computation.
+            linear_cls: Linear class to use for the outputs dense layer.
+            scale: Value used to scale the results of the attention output.
+        """
+
+        super().__init__()
+        self.rope = rope
+        self.n_heads = num_attention_heads
+        self.kv_params = kv_params
+        self.scale = (
+            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+        )
+        self.devices = devices or [DeviceRef.CPU()]
+
+        q_weight_dim = self.kv_params.head_dim * num_attention_heads
+        kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
+
+        # To keep the weight names consistent with the transformers attention,
+        # the names are suffixed ".weight".
+        self.qkv_proj = Linear(
+            in_dim=hidden_size,
+            out_dim=q_weight_dim + 2 * kv_weight_dim,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+
+        self.o_proj = linear_cls(
+            in_dim=q_weight_dim,
+            out_dim=hidden_size,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        x: TensorValue,
+        kv_collection: PagedKVCacheTensorsNoOpaque,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        # Get attributes from input.
+        total_seq_len = x.shape[0]
+
+        # Call into QKV Matmul.
+        # TODO:
+        # - we might need to have individual Q, K, and V matmuls, that shouldn't matter
+        x_qkv = self.qkv_proj(x)
+
+        # Split QKV into Q, K, and V.
+        q_end = self.n_heads * self.kv_params.head_dim
+        k_end = q_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
+        v_end = k_end + self.kv_params.n_kv_heads * self.kv_params.head_dim
+        x_q = x_qkv[:, :q_end]
+        x_k = x_qkv[:, k_end:v_end]
+        x_v = x_qkv[:, v_end:]
+
+        freqs_cis = ops.cast(self.rope.freqs_cis, x_q.dtype)
+
+        # call rope individual on Q and K. We could theoretically fuse these into a single kernel
+        # TODO:
+        # - this should just be inside of `RotaryEmbedding`
+        # - should this be fused automatically? That class has an implementation.
+        xq_rope = rope_no_opaque(
+            x_q, input_row_offsets, kv_collection.cache_lengths, freqs_cis
+        )
+        xk_rope = rope_no_opaque(
+            x_k, input_row_offsets, kv_collection.cache_lengths, freqs_cis
+        )
+
+        # Store K and V in the cache.
+        # TODO:
+        # - we could also fuse this into a single kernel, not sure if that's useful.
+        # - the graph compiler would fuse this output store in the output of the rope kernel above.
+        store_k_cache(kv_collection, xk_rope, input_row_offsets, layer_idx)
+        store_v_cache(kv_collection, x_v, input_row_offsets, layer_idx)
+
+        # Calculate Flash Attention.
+        attn_out = flash_attention_ragged_no_opaque(
+            self.kv_params,
+            input=xq_rope,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=input_row_offsets,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
+
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+
+        return self.o_proj(attn_out)
