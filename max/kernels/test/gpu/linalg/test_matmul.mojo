@@ -320,7 +320,7 @@ def main():
                 transpose_b=True,
             ](
                 block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=(16, 128, 64),
+                warp_tile_shape=Index(16, 128, 64),
                 num_pipeline_stages=3,
             ),
         ](ctx, dynamic(100), static[128](), static[128]())

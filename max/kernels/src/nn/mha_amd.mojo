@@ -1642,7 +1642,7 @@ fn mma[
     alias tensor_core_mma = TensorCoreKGroup[
         accum_type,
         mma_input_type,
-        (MMA_M, MMA_N, MMA_K),
+        IndexList[3](MMA_M, MMA_N, MMA_K),
         k_group_size=k_group_size,
         transpose_b=transpose_b,
     ]()

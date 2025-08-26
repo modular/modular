@@ -102,16 +102,25 @@ def test_elementwise_implicit_runtime():
 def test_indices_conversion():
     var shape = IndexList[4](3, 4, 5, 6)
     assert_equal(
-        _get_start_indices_of_nth_subvolume[0](10, shape), (0, 0, 1, 4)
+        _get_start_indices_of_nth_subvolume[0](10, shape),
+        IndexList[4](0, 0, 1, 4),
     )
     assert_equal(
-        _get_start_indices_of_nth_subvolume[1](10, shape), (0, 2, 0, 0)
+        _get_start_indices_of_nth_subvolume[1](10, shape),
+        IndexList[4](0, 2, 0, 0),
     )
     assert_equal(
-        _get_start_indices_of_nth_subvolume[2](10, shape), (2, 2, 0, 0)
+        _get_start_indices_of_nth_subvolume[2](10, shape),
+        IndexList[4](2, 2, 0, 0),
     )
-    assert_equal(_get_start_indices_of_nth_subvolume[3](2, shape), (2, 0, 0, 0))
-    assert_equal(_get_start_indices_of_nth_subvolume[4](0, shape), (0, 0, 0, 0))
+    assert_equal(
+        _get_start_indices_of_nth_subvolume[3](2, shape),
+        IndexList[4](2, 0, 0, 0),
+    )
+    assert_equal(
+        _get_start_indices_of_nth_subvolume[4](0, shape),
+        IndexList[4](0, 0, 0, 0),
+    )
 
 
 def main():

@@ -131,8 +131,8 @@ fn test[
         Index(0, 0),  #  pad_d
         pad_h,
         pad_w,
-        (1, stride[0], stride[1]),
-        (1, dilation[0], dilation[1]),
+        IndexList[3](1, stride[0], stride[1]),
+        IndexList[3](1, dilation[0], dilation[1]),
         num_groups,
     )
 

@@ -87,10 +87,10 @@ def _initialize_ragged_inputs[
         ragged_start_idx = Int(input_row_offsets_host.tensor[bs])
         for s in range(unpadded_seq_len):
             padded_ptr = hidden_state_padded_host.tensor._offset(
-                (bs * max_seq_length_batch + s, 0)
+                IndexList[2](bs * max_seq_length_batch + s, 0)
             )
             ragged_ptr = hidden_state_ragged_host.tensor._offset(
-                (ragged_start_idx + s, 0)
+                IndexList[2](ragged_start_idx + s, 0)
             )
             memcpy(padded_ptr, ragged_ptr, hidden_size)
 

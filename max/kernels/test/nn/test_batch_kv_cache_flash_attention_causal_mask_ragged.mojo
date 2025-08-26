@@ -95,8 +95,10 @@ def execute_ragged_flash_attention[
     for bs in range(batch_size):
         unpadded_seq_len = valid_lengths_list[bs]
         ragged_start_idx = Int(input_row_offsets.tensor[bs])
-        padded_ptr = q_padded.tensor._offset((bs, 0, 0, 0))
-        ragged_ptr = q_ragged.tensor._offset((ragged_start_idx, 0, 0))
+        padded_ptr = q_padded.tensor._offset(IndexList[4](bs, 0, 0, 0))
+        ragged_ptr = q_ragged.tensor._offset(
+            IndexList[3](ragged_start_idx, 0, 0)
+        )
         memcpy(
             padded_ptr,
             ragged_ptr,

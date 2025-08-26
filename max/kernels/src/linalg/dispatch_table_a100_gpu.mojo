@@ -47,15 +47,15 @@ fn get_dispatch_table[
     fn insert(
         name: StaticString,
         *,
-        block_tile_shape: IndexList[3],
-        warp_tile_shape: IndexList[3],
+        block_tile_shape: (Int, Int, Int),
+        warp_tile_shape: (Int, Int, Int),
         num_pipeline_stages: Int,
         num_k_partitions: Int,
         num_warp_k_partitions: Int,
     ):
         tile_configs[name] = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            block_tile_shape=block_tile_shape,
-            warp_tile_shape=warp_tile_shape,
+            block_tile_shape=IndexList[3](block_tile_shape),
+            warp_tile_shape=IndexList[3](warp_tile_shape),
             num_pipeline_stages=num_pipeline_stages,
             num_k_partitions=num_k_partitions,
             num_warp_k_partitions=num_warp_k_partitions,

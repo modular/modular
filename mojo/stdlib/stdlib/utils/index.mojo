@@ -202,7 +202,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @doc_private
     @always_inline
-    @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Constructs a sized 1 static int tuple of given the element value.
 
@@ -242,7 +241,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    @implicit
     fn __init__(out self, elems: (Int, Int, Int)):
         """Constructs a static int tuple given a tuple of integers.
 
@@ -268,7 +266,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    @implicit
     fn __init__(out self, elems: (Int, Int, Int, Int)):
         """Constructs a static int tuple given a tuple of integers.
 
@@ -322,7 +319,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self.data = StaticTuple[_, size](fill=Self._int_type(elem))
 
     @always_inline
-    @implicit
     fn __init__(out self, values: VariadicList[Int]):
         """Creates a tuple constant using the specified values.
 

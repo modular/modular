@@ -1538,9 +1538,9 @@ def create_tma_tile[
                 1,
                 owning=False,
             ),
-            (tensor.dim(0), tensor.dim(1), tensor.dim(2)),
-            (tensor.stride(0), tensor.stride(1), tensor.stride(2)),
-            (
+            IndexList[3](tensor.dim(0), tensor.dim(1), tensor.dim(2)),
+            IndexList[3](tensor.stride(0), tensor.stride(1), tensor.stride(2)),
+            IndexList[3](
                 __desc_layout.shape[0].value(),
                 __desc_layout.shape[1].value(),
                 __desc_layout.shape[2].value(),
@@ -1646,9 +1646,9 @@ fn create_nested_tma_tile[
             1,
             owning=False,
         ),
-        (tensor.dim(0), tensor.dim(1)),
-        (tensor.stride(0), tensor.stride(1)),
-        (
+        IndexList[2](tensor.dim(0), tensor.dim(1)),
+        IndexList[2](tensor.stride(0), tensor.stride(1)),
+        IndexList[2](
             desc_layout.shape[0].value(),
             desc_layout.shape[1].value(),
         ),

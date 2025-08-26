@@ -167,7 +167,7 @@ struct NDBufferMHAOperand[
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype]]:
         var ret_ptr = self.buffer._offset(
-            (
+            IndexList[rank](
                 Int(batch_idx),
                 Int(start_tok_idx),
                 Int(head_idx),
@@ -259,7 +259,7 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer._offset(
-            (
+            IndexList[3](
                 Int(global_token_idx),
                 Int(head_idx),
                 Int(head_dim_idx),

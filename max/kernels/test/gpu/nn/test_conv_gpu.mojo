@@ -89,8 +89,8 @@ fn test_conv3d_gpu[
         pad_d,
         pad_h,
         pad_w,
-        (stride[0], stride[1], stride[2]),
-        (dilation[0], dilation[1], dilation[2]),
+        IndexList[3](stride[0], stride[1], stride[2]),
+        IndexList[3](dilation[0], dilation[1], dilation[2]),
         1,  # num_groups
     )
     # allocate device memory
