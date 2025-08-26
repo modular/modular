@@ -50,7 +50,7 @@ struct MTuple[T: Copyable & Movable](Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("(")
 
         for i in range(len(self.elts)):
