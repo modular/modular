@@ -220,8 +220,9 @@ fn bench_string_replace[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res = items.replace(old, new)
-        keep(res.unsafe_ptr())
+        for _ in range(10**6 // length):  # for stability with small lengths
+            var res = items.replace(old, new)
+            keep(res.unsafe_ptr())
 
     b.iter[call_fn]()
     keep(Bool(items))
