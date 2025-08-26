@@ -118,7 +118,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     )
 
     # Create query tensor as a view of the query buffer.
-    input_row_offsets = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    input_row_offsets = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
     for i in range(batch_size):
         input_row_offsets.tensor[i] = i * seq_len
     input_row_offsets.tensor[batch_size] = batch_size * seq_len

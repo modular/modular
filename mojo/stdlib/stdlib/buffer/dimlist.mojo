@@ -79,7 +79,6 @@ struct Dim(
         self = Dim(index(value))
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Creates a statically-known dimension.
 
@@ -331,7 +330,6 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](Int(value))
 
     @always_inline("nodebug")
-    @implicit
     fn __init__[I: Indexer & Copyable & Movable](out self, values: (I,)):
         """Creates a dimension list from the given list of values.
 
@@ -344,7 +342,6 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](Int(index(values[0])))
 
     @always_inline("nodebug")
-    @implicit
     fn __init__[
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
@@ -363,7 +360,6 @@ struct DimList(Representable, Sized, Stringable, Writable):
         )
 
     @always_inline("nodebug")
-    @implicit
     fn __init__[
         I0: Indexer & Copyable & Movable,
         I1: Indexer & Copyable & Movable,
@@ -438,15 +434,16 @@ struct DimList(Representable, Sized, Stringable, Writable):
             val2: The initial dim value.
             val3: The initial dim value.
         """
-        self = VariadicList[Dim](
-            Int(index(val0)),
-            Int(index(val1)),
-            Int(index(val2)),
-            Int(index(val3)),
+        self = Self(
+            VariadicList[Dim](
+                Int(index(val0)),
+                Int(index(val1)),
+                Int(index(val2)),
+                Int(index(val3)),
+            )
         )
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, values: VariadicList[Dim]):
         """Creates a dimension list from the given list of values.
 
@@ -456,7 +453,6 @@ struct DimList(Representable, Sized, Stringable, Writable):
         self.value = values
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, *values: Dim):
         """Creates a dimension list from the given Dim values.
 
@@ -665,10 +661,12 @@ struct DimList(Representable, Sized, Stringable, Writable):
         """
         constrained[length > 0, "length must be positive"]()
 
-        return VariadicList[Dim](
-            __mlir_op.`pop.variadic.splat`[
-                numElements = length.value, _type = Variadic[Dim]
-            ](Dim())
+        return Self(
+            VariadicList[Dim](
+                __mlir_op.`pop.variadic.splat`[
+                    numElements = length.value, _type = Variadic[Dim]
+                ](Dim())
+            )
         )
 
     fn __str__(self) -> String:

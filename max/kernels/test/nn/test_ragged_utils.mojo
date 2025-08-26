@@ -14,11 +14,12 @@
 from internal_utils import HostNDBuffer
 from nn._ragged_utils import get_batch_from_row_offsets
 from testing import assert_equal
+from buffer import DimList
 
 
 def test_get_batch_from_row_offsets():
     batch_size = 9
-    prefix_sums = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    prefix_sums = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
     prefix_sums.tensor[0] = 0
     prefix_sums.tensor[1] = 100
     prefix_sums.tensor[2] = 200

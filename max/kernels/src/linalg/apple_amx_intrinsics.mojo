@@ -19,7 +19,7 @@
 
 from sys._assembly import inlined_assembly
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from memory import (
     AddressSpace,
     memcpy,
@@ -389,9 +389,9 @@ fn fma[
 
 @always_inline
 fn dot_at_b_impl(
-    c: NDBuffer[DType.float32, 2, shape= (16, 16)],
-    a: NDBuffer[DType.float32, 2, shape= (16, 16)],
-    b: NDBuffer[DType.float32, 2, shape= (16, 16)],
+    c: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
+    a: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
+    b: NDBuffer[DType.float32, 2, shape = DimList(16, 16)],
 ):
     # Performs a 16x16x16 matrix multiply on the given matrices storing the
     # result into the C matrix. The matrix multiplication is performed as:
@@ -443,9 +443,9 @@ fn dot_at_b_impl(
 
 @always_inline
 fn dot_at_b_impl(
-    c: NDBuffer[DType.float16, 2, shape= (32, 32)],
-    a: NDBuffer[DType.float16, 2, shape= (32, 32)],
-    b: NDBuffer[DType.float16, 2, shape= (32, 32)],
+    c: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
+    a: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
+    b: NDBuffer[DType.float16, 2, shape = DimList(32, 32)],
 ):
     var a_pointer = a.data
     var b_pointer = b.data
@@ -498,7 +498,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float32,
                 2,
-                shape= (16, 16),
+                shape = DimList(16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
                 c.data.bitcast[Float32]().address_space_cast[
@@ -508,7 +508,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float32,
                 2,
-                shape= (16, 16),
+                shape = DimList(16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
                 a.data.bitcast[Float32]().address_space_cast[
@@ -518,7 +518,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float32,
                 2,
-                shape= (16, 16),
+                shape = DimList(16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
                 b.data.bitcast[Float32]().address_space_cast[
@@ -531,7 +531,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float16,
                 2,
-                shape= (32, 32),
+                shape = DimList(32, 32),
                 address_space = AddressSpace.GENERIC,
             ](
                 c.data.bitcast[Float16]().address_space_cast[
@@ -541,7 +541,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float16,
                 2,
-                shape= (32, 32),
+                shape = DimList(32, 32),
                 address_space = AddressSpace.GENERIC,
             ](
                 a.data.bitcast[Float16]().address_space_cast[
@@ -551,7 +551,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
             NDBuffer[
                 DType.float16,
                 2,
-                shape= (32, 32),
+                shape = DimList(32, 32),
                 address_space = AddressSpace.GENERIC,
             ](
                 b.data.bitcast[Float16]().address_space_cast[

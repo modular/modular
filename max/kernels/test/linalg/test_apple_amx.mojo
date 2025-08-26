@@ -39,7 +39,7 @@ fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
     buf.zero()
 
 
-def test_dot_at_b[dtype: DType, shape: Tuple[Int, Int]]():
+def test_dot_at_b[dtype: DType, shape: DimList]():
     var a_matrix = NDBuffer[
         dtype, 2, MutableAnyOrigin, shape=shape
     ].stack_allocation()
@@ -69,5 +69,5 @@ def test_dot_at_b[dtype: DType, shape: Tuple[Int, Int]]():
 
 
 def main():
-    test_dot_at_b[DType.float32, (16, 16)]()
-    test_dot_at_b[DType.float16, (32, 32)]()
+    test_dot_at_b[DType.float32, DimList(16, 16)]()
+    test_dot_at_b[DType.float16, DimList(32, 32)]()

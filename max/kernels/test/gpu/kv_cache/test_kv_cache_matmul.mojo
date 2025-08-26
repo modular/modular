@@ -129,14 +129,14 @@ def execute_fused_qkv_matmul[
 
     # initialize our KVCache
     var is_context_encoding = True
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
+    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](DimList(batch_size))
     for i in range(batch_size):
         cache_lengths_host.tensor[i] = cache_sizes[i]
         if cache_lengths_host.tensor[i] != 0:
             is_context_encoding = False
 
     var cache_lengths_dev = DeviceNDBuffer[DType.uint32, 1](
-        (batch_size,), ctx=ctx
+        DimList(batch_size), ctx=ctx
     )
     ctx.enqueue_copy(cache_lengths_dev.buffer, cache_lengths_host.tensor.data)
 

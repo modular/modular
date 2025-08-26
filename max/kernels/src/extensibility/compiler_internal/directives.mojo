@@ -45,9 +45,9 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
     if rank == 1:
         return 1
     elif rank == 2:
-        return (shape.get[1](), 1)
+        return DimList(shape.get[1](), 1)
     elif rank == 3:
-        return (shape.get[2]() * shape.get[1](), shape.get[2](), 1)
+        return DimList(shape.get[2]() * shape.get[1](), shape.get[2](), 1)
     else:
         return -1
 

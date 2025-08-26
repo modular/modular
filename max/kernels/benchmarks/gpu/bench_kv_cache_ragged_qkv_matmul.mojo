@@ -77,7 +77,7 @@ def execute_kv_cache_ragged_matmul[
     var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
     var prefix_sums_host = HostNDBuffer[DType.uint32, 1](
-        (batch_size + 1,),
+        DimList(batch_size + 1),
     )
 
     for i in range(batch_size):
@@ -144,7 +144,7 @@ def execute_kv_cache_ragged_matmul[
     var lookup_table_device = lookup_table_host.copy_to_device(ctx)
 
     # initialize our KVCache
-    var cache_lengths_host = HostNDBuffer[DType.uint32, 1]((batch_size,))
+    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](DimList(batch_size))
     for i in range(batch_size):
         cache_lengths_host.tensor[i] = 10
 

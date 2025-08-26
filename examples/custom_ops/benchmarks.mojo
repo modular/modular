@@ -145,9 +145,9 @@ def matmul():
 
     alias FLOPS = M * N * (2 * K - 1)
 
-    alias a_spec = StaticTensorSpec[dtype, rank]((M, K))
-    alias b_spec = StaticTensorSpec[dtype, rank]((K, N))
-    alias c_spec = StaticTensorSpec[dtype, rank]((M, N))
+    alias a_spec = StaticTensorSpec[dtype, rank](DimList(M, K))
+    alias b_spec = StaticTensorSpec[dtype, rank](DimList(K, N))
+    alias c_spec = StaticTensorSpec[dtype, rank](DimList(M, N))
 
     var cpu_ctx = DeviceContext(api="cpu")
 
@@ -210,12 +210,12 @@ def run_conv1d[impl: StaticString]():
     alias dtype = DType.bfloat16
 
     alias x_spec = StaticTensorSpec[dtype, 3](
-        (nBatches, nChannels, sequenceLength)
+        DimList(nBatches, nChannels, sequenceLength)
     )
-    alias w_spec = StaticTensorSpec[dtype, 2]((nChannels, kWidth))
-    alias b_spec = StaticTensorSpec[dtype, 1]((nChannels))
+    alias w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
+    alias b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
     alias xx2Dshape = StaticTensorSpec[dtype, 2](
-        (nBatches * nChannels, sequenceLength)
+        DimList(nBatches * nChannels, sequenceLength)
     )
     runOnCPU = False
 
@@ -232,7 +232,9 @@ def run_conv1d[impl: StaticString]():
 
         var x = Tensor[
             Input,
-            StaticTensorSpec[dtype, 3]((nBatches, nChannels, sequenceLength)),
+            StaticTensorSpec[dtype, 3](
+                DimList(nBatches, nChannels, sequenceLength)
+            ),
         ](cpu_ctx).rand()
         var w = Tensor[Input, w_spec](cpu_ctx).rand()
         var b = Tensor[Input, b_spec](cpu_ctx).rand()
