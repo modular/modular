@@ -32,7 +32,7 @@ from memory import bitcast
 
 
 @register_passable("trivial")
-struct Consistency:
+struct Consistency(Copyable, EqualityComparable, Movable, Representable, Stringable):
     """Represents the consistency model for atomic operations.
 
     The class provides a set of constants that represent different consistency
@@ -124,6 +124,48 @@ struct Consistency:
             True if the objects are not the same, False otherwise.
         """
         return self != other
+
+    fn __repr__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+         return self.as_string_slice()   
+
+    fn __str__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+
+        alias prefix_len = len("Consistency.")
+        return self.as_string_slice()[prefix_len:]
+
+    fn as_string_slice(self) -> StaticString:
+        """Returns a string slice representation of a `Consistency`.
+
+        Returns:
+            A string slice representation of this consistency.
+        """
+
+        if self is Self.NOT_ATOMIC:
+            return "Consistency.NOT_ATOMIC"
+        if self is Self.UNORDERED:
+            return "Consistency.UNORDERED"
+        if self is Self.MONOTONIC:
+            return "Consistency.MONOTONIC"
+        if self is Self.ACQUIRE:
+            return "Consistency.ACQUIRE"
+        if self is Self.RELEASE:
+            return "Consistency.RELEASE"
+        if self is Self.ACQUIRE_RELEASE:
+            return "Consistency.ACQUIRE_RELEASE"
+        if self is Self.SEQUENTIAL:
+            return "Consistency.SEQUENTIAL"
+
+        return "Consistency.UNKNOWN"
 
     @always_inline("nodebug")
     fn __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:

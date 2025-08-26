@@ -11,9 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import Atomic
+from os.atomic import Atomic, Consistency
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_not_equal, assert_false, assert_true
+
+
+def test_consistency_equality_comparable():
+    var ordering = Consistency.SEQUENTIAL
+
+    assert_not_equal(ordering, Consistency(42))
+    assert_not_equal(ordering, Consistency.NOT_ATOMIC)
+    assert_not_equal(ordering, Consistency.UNORDERED)
+    assert_not_equal(ordering, Consistency.MONOTONIC)
+    assert_not_equal(ordering, Consistency.ACQUIRE)
+    assert_not_equal(ordering, Consistency.RELEASE)
+    assert_not_equal(ordering, Consistency.ACQUIRE_RELEASE)
+    assert_equal(ordering, Consistency.SEQUENTIAL)
+
+
+def test_consistency_representable():
+    assert_equal(repr(Consistency(42)), "Consistency.UNKNOWN")
+    assert_equal(repr(Consistency.NOT_ATOMIC), "Consistency.NOT_ATOMIC")
+    assert_equal(repr(Consistency.UNORDERED), "Consistency.UNORDERED")
+    assert_equal(repr(Consistency.MONOTONIC), "Consistency.MONOTONIC")
+    assert_equal(repr(Consistency.ACQUIRE), "Consistency.ACQUIRE")
+    assert_equal(repr(Consistency.RELEASE), "Consistency.RELEASE")
+    assert_equal(
+        repr(Consistency.ACQUIRE_RELEASE), "Consistency.ACQUIRE_RELEASE"
+    )
+    assert_equal(repr(Consistency.SEQUENTIAL), "Consistency.SEQUENTIAL")
+
+
+def test_consistency_stringable():
+    assert_equal(String(Consistency(42)), "UNKNOWN")
+    assert_equal(String(Consistency.NOT_ATOMIC), "NOT_ATOMIC")
+    assert_equal(String(Consistency.UNORDERED), "UNORDERED")
+    assert_equal(String(Consistency.MONOTONIC), "MONOTONIC")
+    assert_equal(String(Consistency.ACQUIRE), "ACQUIRE")
+    assert_equal(String(Consistency.RELEASE), "RELEASE")
+    assert_equal(String(Consistency.ACQUIRE_RELEASE), "ACQUIRE_RELEASE")
+    assert_equal(String(Consistency.SEQUENTIAL), "SEQUENTIAL")
 
 
 fn test_atomic() raises:
@@ -101,6 +138,9 @@ def test_comptime_atomic():
 
 
 def main():
+    test_consistency_equality_comparable()
+    test_consistency_representable()
+    test_consistency_stringable()
     test_atomic()
     test_atomic_floating_point()
     test_compare_exchange_weak()
