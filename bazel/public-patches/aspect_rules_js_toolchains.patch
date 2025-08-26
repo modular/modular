@@ -1,0 +1,64 @@
+diff --git a/js/private/js_binary.bzl b/js/private/js_binary.bzl
+index d49d1e23..cc8d1923 100644
+--- a/js/private/js_binary.bzl
++++ b/js/private/js_binary.bzl
+@@ -287,7 +287,7 @@ _ATTRS = {
+         """,
+     ),
+     "node_toolchain": attr.label(
+-        doc = """The Node.js toolchain to use for this target.
++        doc = """The Node.js runtime toolchain to use for this target.
+ 
+         See https://bazel-contrib.github.io/rules_nodejs/Toolchains.html
+ 
+@@ -505,7 +505,7 @@ def _create_launcher(ctx, log_prefix_rule_set, log_prefix_rule, fixed_args = [],
+     if ctx.attr.node_toolchain:
+         nodeinfo = ctx.attr.node_toolchain[platform_common.ToolchainInfo].nodeinfo
+     else:
+-        nodeinfo = ctx.toolchains["@rules_nodejs//nodejs:toolchain_type"].nodeinfo
++        nodeinfo = ctx.toolchains["@rules_nodejs//nodejs:runtime_toolchain_type"].nodeinfo
+ 
+     if DirectoryPathInfo in ctx.attr.entry_point:
+         entry_point = ctx.attr.entry_point[DirectoryPathInfo].directory
+@@ -636,7 +636,7 @@ js_binary_lib = struct(
+     toolchains = [
+         # TODO: on Windows this toolchain is never referenced
+         "@bazel_tools//tools/sh:toolchain_type",
+-        "@rules_nodejs//nodejs:toolchain_type",
++        "@rules_nodejs//nodejs:runtime_toolchain_type",
+     ] + COPY_FILE_TO_BIN_TOOLCHAINS,
+ )
+ 
+diff --git a/js/private/js_image_layer.bzl b/js/private/js_image_layer.bzl
+index 01680574..3d019f10 100644
+--- a/js/private/js_image_layer.bzl
++++ b/js/private/js_image_layer.bzl
+@@ -408,7 +408,7 @@ else {
+         transitive = [files],
+     )
+ 
+-    nodeinfo = ctx.attr._current_node[platform_common.ToolchainInfo].nodeinfo
++    nodeinfo = ctx.attr._node_tool[platform_common.ToolchainInfo].nodeinfo
+     if hasattr(nodeinfo, "node"):
+         node_exec = nodeinfo.node
+     else:
+@@ -627,8 +627,8 @@ js_image_layer_lib = struct(
+             default = "//js/private:js_image_layer.mjs",
+             allow_single_file = True,
+         ),
+-        "_current_node": attr.label(
+-            default = "@nodejs_toolchains//:resolved_toolchain",
++        "_node_tool": attr.label(
++            default = "@rules_nodejs//nodejs:current_node_toolchain",
+             cfg = "exec",
+         ),
+         "binary": attr.label(
+@@ -687,6 +687,7 @@ js_image_layer = rule(
+     doc = _DOC,
+     toolchains = [
+         tar_lib.toolchain_type,
+-        "@rules_nodejs//nodejs:toolchain_type",
++        "@rules_nodejs//nodejs:toolchain_type",  # for executing Node in our actions
++        "@rules_nodejs//nodejs:runtime_toolchain_type",  # for bundling Node for target platform (rely on js_binary)
+     ],
+ )
