@@ -30,6 +30,8 @@ def test_function_error(ctx: DeviceContext):
         ctx.synchronize()
         res_host.free()
     except e:
+        # This error should occur at the synchronize call as the kernel launches
+        # async by default.
         # CHECK: open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:30:24
         print(e)
 

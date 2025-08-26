@@ -133,13 +133,28 @@ fn _checked(
 
 
 @always_inline
-fn _checked_call[func: Some[AnyTrivialRegType]](err: _CharPtr) raises:
+fn _checked_call[
+    func: Some[AnyTrivialRegType]
+](
+    err: _CharPtr, *, device_context: DeviceContext, location: _SourceLocation
+) raises:
     # Extract the linkage name of the function and strip off everything after
     # the fully qualified name.
     alias func_name = get_linkage_name[func]().split("[", 2)[0].split("(", 2)[0]
     if err:
         var err_msg = _string_from_owned_charptr(err)
-        raise Error(func_name, ": ", err_msg)
+        raise Error(
+            location,
+            " failed calling '",
+            func_name,
+            "' on device ",
+            device_context.api(),
+            ":",
+            device_context.id(),
+            " with error '",
+            err_msg,
+            "'",
+        )
 
 
 @no_inline
@@ -1667,6 +1682,7 @@ struct DeviceStream(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         f._call_with_pack(
             self,
@@ -1677,6 +1693,7 @@ struct DeviceStream(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
 
@@ -1932,6 +1949,9 @@ struct DeviceFunction[
     var _func_impl: CompiledFunctionInfo[func_type, func, target]
     """Compilation information for the function."""
 
+    var _context: DeviceContext
+    """The device context backing the function."""
+
     fn __copyinit__(out self, existing: Self):
         """Creates a copy of an existing DeviceFunction.
 
@@ -1950,6 +1970,7 @@ struct DeviceFunction[
         ](existing._handle)
         self._handle = existing._handle
         self._func_impl = existing._func_impl
+        self._context = existing._context
 
     fn __moveinit__(out self, deinit existing: Self):
         """Moves an existing DeviceFunction into this one.
@@ -1959,6 +1980,7 @@ struct DeviceFunction[
         """
         self._handle = existing._handle
         self._func_impl = existing._func_impl
+        self._context = existing._context
 
     fn __del__(deinit self):
         """Releases resources associated with this DeviceFunction.
@@ -1991,6 +2013,8 @@ struct DeviceFunction[
         Raises:
             Error: If compilation fails or if an unsupported function attribute is provided.
         """
+        self._context = ctx
+
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
             if (
@@ -2275,6 +2299,8 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        *,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2367,7 +2393,9 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs,
                     dense_args_sizes,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2401,7 +2429,9 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs,
                     dense_args_sizes,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -2423,6 +2453,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         alias num_args = len(VariadicList(Ts))
         var num_captures = self._func_impl.num_captures
@@ -2487,7 +2518,9 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2507,7 +2540,9 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -2527,6 +2562,7 @@ struct DeviceFunction[
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
@@ -2727,7 +2763,9 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs,
                     dense_args_sizes,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
         else:
             _checked_call[Self.func](
@@ -2761,7 +2799,9 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs,
                     dense_args_sizes,
-                )
+                ),
+                device_context=self._context,
+                location=location.or_else(__call_location()),
             )
 
         if num_captures > num_captures_static:
@@ -3006,6 +3046,7 @@ struct DeviceExternalFunction:
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Launches the device function with the specified arguments and configuration.
 
@@ -3021,6 +3062,7 @@ struct DeviceExternalFunction:
             shared_mem_bytes: Optional amount of shared memory to allocate.
             attributes: Optional list of additional launch attributes.
             constant_memory: Optional list of constant memory mappings.
+            location: Source location for the function call.
 
         Raises:
             If the function launch fails.
@@ -3963,6 +4005,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -3994,6 +4037,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4043,6 +4087,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4065,6 +4110,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -4092,6 +4138,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4143,6 +4190,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4159,6 +4207,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4176,6 +4225,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes: Amount of shared memory per thread block.
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4224,6 +4274,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4240,6 +4291,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4257,6 +4309,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes: Amount of shared memory per thread block.
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4309,6 +4362,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4325,6 +4379,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4342,6 +4397,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes: Amount of shared memory per thread block.
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4390,6 +4446,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4414,6 +4471,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -4445,6 +4503,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4497,6 +4556,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4519,6 +4579,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device.
 
@@ -4546,6 +4607,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4597,6 +4659,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4621,6 +4684,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
         overload takes in a function that's `capturing`.
@@ -4653,6 +4717,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4705,6 +4770,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4727,6 +4793,7 @@ struct DeviceContext(Copyable, Movable):
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
         func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel for execution on this device. This
         overload takes in a function that's `capturing`.
@@ -4755,6 +4822,7 @@ struct DeviceContext(Copyable, Movable):
             attributes: A `List` of launch attributes.
             constant_memory: A `List` of constant memory mappings.
             func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4806,6 +4874,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4827,6 +4896,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Enqueues a compiled function for execution on this device.
 
@@ -4847,6 +4917,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes: Amount of shared memory per thread block.
             attributes: Launch attributes.
             constant_memory: Constant memory mapping.
+            location: Source location for the function call.
 
         You can pass the function directly to `enqueue_function` without
         compiling it first:
@@ -4895,6 +4966,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4911,6 +4983,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         f._call_with_pack(
             self,
@@ -4921,6 +4994,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4937,6 +5011,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         f._call_with_pack_checked(
             self,
@@ -4947,6 +5022,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -4963,6 +5039,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         """Enqueues an external device function for asynchronous execution on the GPU.
 
@@ -4982,6 +5059,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes: Optional amount of dynamic shared memory to allocate per block.
             attributes: Optional list of launch attributes for fine-grained control.
             constant_memory: Optional list of constant memory mappings to use during execution.
+            location: Source location for the function call.
 
         Raises:
             If there's an error enqueuing the function or if the function execution fails.
@@ -5019,6 +5097,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @parameter
@@ -5035,6 +5114,7 @@ struct DeviceContext(Copyable, Movable):
         shared_mem_bytes: OptionalReg[Int] = None,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
+        location: OptionalReg[_SourceLocation] = None,
     ) raises:
         _check_dim["DeviceContext.enqueue_external_function", "grid_dim"](
             grid_dim
@@ -5052,6 +5132,7 @@ struct DeviceContext(Copyable, Movable):
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(__call_location()),
         )
 
     @always_inline
