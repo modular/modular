@@ -23,7 +23,7 @@ from gpu.cluster import (
     elect_one_sync,
 )
 from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100, B200
 from gpu.id import (
@@ -59,6 +59,7 @@ from linalg.matmul_sm90 import (
 )
 from linalg.matmul_dispatch_sm90 import _find_largest_bn_for_sm90_matmul
 from linalg.matmul_loadop_sm90 import async_load_AB
+from linalg.vendor_blas import matmul as vendor_matmul
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -1185,3 +1186,79 @@ fn grouped_matmul[
             num_active_experts,
             ctx,
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Vendor Grouped GEMM for LoRA
+# ===----------------------------------------------------------------------===#
+
+
+fn grouped_matmul_vendor[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    *,
+    transpose_b: Bool = True,
+    use_tf32: Bool = False,
+](
+    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutableAnyOrigin],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    constrained[transpose_b, "Only support transposed B in grouped matmul."]()
+    constrained[
+        a_type == b_type, "A and B must have the same dtype for vendor BLAS"
+    ]()
+    # Push the device context to ensure correct CUDA context
+    with ctx.push_context() as cur_ctx:
+        for i in range(num_active_experts):
+            var expert_id = expert_ids[i]
+
+            var token_start = a_offsets[i]
+            var token_end = a_offsets[i + 1]
+            var num_tokens = token_end - token_start
+
+            # Skip if no tokens for this expert
+            if num_tokens <= 0:
+                continue
+
+            # Handle experts with expert_id = -1 by writing zeros
+            if expert_id < 0:
+                # Create output slice and zero it out
+                var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+                    c.data + token_start * c.dim[1](), (num_tokens, c.dim[1]())
+                )
+                var buff = DeviceBuffer(
+                    ctx, c_slice.data, c_slice.num_elements(), owning=False
+                )
+                ctx.enqueue_memset(buff, 0)
+                continue
+
+            # Create views into the tensors for this expert
+            var a_slice = NDBuffer[a_type, 2, MutableAnyOrigin](
+                a.data + token_start * a.dim[1](), (num_tokens, a.dim[1]())
+            )
+            var b_slice = NDBuffer[b_type, 2, MutableAnyOrigin](
+                b.data + expert_id * b.dim[1]() * b.dim[2](),
+                (b.dim[1](), b.dim[2]()),
+            )
+            var c_slice = NDBuffer[c_type, 2, MutableAnyOrigin](
+                c.data + token_start * c.dim[1](), (num_tokens, c.dim[1]())
+            )
+
+            vendor_matmul[use_tf32](
+                ctx,
+                c_slice,
+                a_slice,
+                b_slice,
+                c_row_major=True,
+                transpose_b=transpose_b,
+            )
