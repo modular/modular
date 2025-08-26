@@ -7,22 +7,23 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import sys
 import warnings
 import weakref
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from itertools import chain
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
-from max.driver import DLPackArray
+import numpy.typing as npt
 
 from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
-from ..driver import CPU, Device
+from ..driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from ..dtype import DType
 from ..graph import (
     ShapeLike,
@@ -35,6 +36,49 @@ from ..graph.graph import _location
 from . import functional as F
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
+_DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
+_DEFAULT_DTYPE: ContextVar[DType] = ContextVar("_DEFAULT_DTYPE")
+
+
+T = TypeVar("T")
+
+
+@contextlib.contextmanager
+def contextvar_context(var: ContextVar[T], value: T):
+    token = var.set(value)
+    try:
+        yield
+    finally:
+        var.reset(token)
+
+
+def _default_dtype(device: Device) -> DType:
+    if dtype := _DEFAULT_DTYPE.get(None):
+        return dtype
+    return DType.float32 if isinstance(device, CPU) else DType.bfloat16
+
+
+def _default_device() -> Device:
+    if device := _DEFAULT_DEVICE.get(None):
+        return device
+    return Accelerator() if accelerator_count() else CPU()
+
+
+def defaults(
+    dtype: DType | None, device: Device | None
+) -> tuple[DType, Device]:
+    device = device or _default_device()
+    return (dtype or _default_dtype(device)), device
+
+
+def default_device(device: Device):
+    """Context manager for setting the default device for tensors."""
+    return contextvar_context(_DEFAULT_DEVICE, device)
+
+
+def default_dtype(dtype: DType):
+    """Context manager for setting the default dtype for tensors."""
+    return contextvar_context(_DEFAULT_DTYPE, dtype)
 
 
 def _session() -> engine.api.InferenceSession:
@@ -102,7 +146,17 @@ class Tensor:
         return Tensor(storage=driver.Tensor.from_dlpack(array))
 
     @classmethod
-    def constant(cls, value, dtype, device) -> Tensor:  # noqa: ANN001
+    def constant(
+        cls,
+        value: npt.NDArray[np.number[Any]]
+        | int
+        | float
+        | Sequence[int | float],
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+    ) -> Tensor:
+        dtype, device = defaults(dtype, device)
         if hasattr(value, "__iter__") and not isinstance(value, np.ndarray):
             value = np.array(value, dtype.to_numpy())
 
@@ -110,9 +164,16 @@ class Tensor:
 
     @classmethod
     def full(
-        cls, shape: ShapeLike, value: int | float, dtype: DType, device: Device
+        cls,
+        shape: ShapeLike,
+        value: int | float,
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
     ) -> Tensor:
-        return F.broadcast_to(cls.constant(value, dtype, device), shape)
+        return F.broadcast_to(
+            cls.constant(value, dtype=dtype, device=device), shape
+        )
 
     @classmethod
     def full_like(cls, type: TensorType, value: int | float) -> Tensor:
@@ -124,7 +185,13 @@ class Tensor:
         )
 
     @classmethod
-    def zeros(cls, shape: ShapeLike, dtype: DType, device: Device) -> Tensor:
+    def zeros(
+        cls,
+        shape: ShapeLike,
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+    ) -> Tensor:
         return cls.full(shape, value=0, dtype=dtype, device=device)
 
     @classmethod
@@ -134,7 +201,13 @@ class Tensor:
         )
 
     @classmethod
-    def ones(cls, shape: ShapeLike, dtype: DType, device: Device) -> Tensor:
+    def ones(
+        cls,
+        shape: ShapeLike,
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+    ) -> Tensor:
         return cls.full(shape, value=1, dtype=dtype, device=device)
 
     @classmethod
@@ -149,9 +222,11 @@ class Tensor:
         start: int = 0,
         stop: int | None = None,
         step: int = 1,
-        dtype: DType = DType.float32,
-        device: Device = CPU(),
-    ):
+        *,
+        dtype: DType | None = None,
+        device: Device | None = None,
+    ) -> Tensor:
+        dtype, device = defaults(dtype, device)
         if stop is None:
             start, stop = 0, start
         return F.range(
@@ -159,7 +234,7 @@ class Tensor:
             stop,
             step,
             dtype=dtype,
-            device=graph.DeviceRef.from_device(device),
+            device=device,
         )
 
     @property
