@@ -505,7 +505,43 @@ OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+template <typename FoldFn = llvm::function_ref<APSInt(APSInt, APSInt)>>
+static OpFoldResult foldIndexShiftOp(ArrayRef<Attribute> operands,
+                                     Operation *op, FoldFn fn) {
+  // For index type get its size from the target. If target is not specified,
+  // assume index has a size of 64 bits, which may be wrong if we're compiling
+  // for 32-bit target.
+  TargetInfoAttr target = lookupTargetInfo(op);
+  ssize_t intWidth = target ? target.resolveIndexBitWidth() : 64;
+  if (intWidth == 64)
+    return ::Detail::foldSIMDOpIndex<::Detail::k64BitResult>(
+        operands, KGENDType::index, [&fn](APSInt lhs, APSInt rhs) -> APSInt {
+          return APSInt(fn(lhs, rhs)).extOrTrunc(64);
+        });
+  if (intWidth == 32)
+    return ::Detail::foldSIMDOpIndex<::Detail::k32BitResult>(
+        operands, KGENDType::index, [&fn](APSInt lhs, APSInt rhs) -> APSInt {
+          // Have to extend it because index type is stored internally as 64-bit
+          // integer.
+          return APSInt(fn(lhs, rhs)).extend(64);
+        });
+  return {};
+}
+
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
+  ArrayRef<Attribute> operands = adaptor.getOperands();
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  std::optional<KGENDType> dtype =
+      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex())
+    return foldIndexShiftOp(
+        operands, *this, [](APSInt lhs, APSInt rhs) { return lhs.shl(rhs); });
   return foldSIMDOp(adaptor.getOperands(),
                     [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
                       if (rhs.uge(lhs.getBitWidth()))
@@ -515,14 +551,27 @@ OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(adaptor.getOperands(),
-                    [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
-                      if (rhs.uge(lhs.getBitWidth()))
-                        return std::nullopt;
-                      return APSInt(lhs.isSigned() ? lhs.ashr(rhs)
-                                                   : lhs.lshr(rhs),
-                                    lhs.isSigned());
-                    });
+  ArrayRef<Attribute> operands = adaptor.getOperands();
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  std::optional<KGENDType> dtype =
+      cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  if (!dtype)
+    return {};
+
+  if (dtype->isIndex())
+    return foldIndexShiftOp(
+        operands, *this, [](APSInt lhs, APSInt rhs) { return lhs.lshr(rhs); });
+
+  return foldSIMDOp(
+      operands, [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.uge(lhs.getBitWidth()))
+          return std::nullopt;
+        return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
+                      lhs.isSigned());
+      });
 }
 
 //===----------------------------------------------------------------------===//
