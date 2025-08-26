@@ -43,7 +43,7 @@ domain-specific libraries for machine learning and scientific computing.
 import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
-from math import Ceilable, CeilDivable, Floorable, Truncable
+from math import Ceilable, CeilDivable, Floorable, Truncable, ceildiv
 from math.math import _call_ptx_intrinsic
 from sys import (
     CompilationTarget,
@@ -71,6 +71,7 @@ from builtin.math import Powable
 from documentation import doc_private
 from memory import bitcast, memcpy
 from python import ConvertibleToPython, PythonObject, Python
+from os import abort
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -621,7 +622,7 @@ struct SIMD[dtype: DType, size: Int](
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()
 
-    @always_inline("nodebug")
+    @no_inline
     @implicit
     fn __init__(out self, value: IntLiteral, /):
         """Initializes the SIMD vector with an integer.
@@ -633,19 +634,68 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[dtype, size]()
-        var si128_ = __mlir_attr[
-            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
+        constrained[
+            dtype.bitwidth() <= 256,
+            "This constructor is not yet implemented",
+            "for dtypes of bitwidth > 256",
+        ]()
+
+        @parameter
+        if dtype is DType.uint256:
+            v = Scalar[dtype](0)
+
+            @parameter
+            for i in range(UInt16._unsafe_from_raw_intliteral(2)):
+                alias offset = (i * 128).cast[dtype]()
+                # this is just masking the section of bits to cast and shift
+                # v |= ((value >> i*offset) & max_uint128_value_mask) << offset
+                alias rshifted = __mlir_attr[
+                    `#pop<int_literal_bin<rshift `,
+                    value.value,
+                    `,`,
+                    offset.value,
+                    `>> : !pop.int_literal`,
+                ]
+                alias masked = __mlir_attr[
+                    `#pop<int_literal_bin<and `,
+                    rshifted,
+                    `,`,
+                    (0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF).value,
+                    `>> : !pop.int_literal`,
+                ]
+                v |= (
+                    Scalar[DType.uint128]
+                    ._unsafe_from_raw_intliteral(IntLiteral[masked]())
+                    .cast[dtype]()
+                ) << offset
+
+            @parameter
+            if size == 1:
+                self.value = rebind[Self._mlir_type](v.value)
+            else:
+                self.value = __mlir_op.`pop.simd.splat`[
+                    _type = Self._mlir_type
+                ](v.value)
+        else:
+            self = Self._unsafe_from_raw_intliteral(value)
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _unsafe_from_raw_intliteral(out self: Self, value: IntLiteral):
+        _simd_construction_checks[dtype, size]()
+        var si256_ = __mlir_attr[
+            `#pop<int_literal_convert<`, value.value, `, 0>> : si256`
         ]
-        var si128 = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<si128>`
-        ](si128_)
-        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
+        var si256 = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<si256>`
+        ](si256_)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si256)
 
         @parameter
         if size == 1:
-            self.value = rebind[Self._mlir_type](s)
+            self = Self(rebind[Self._mlir_type](s))
         else:
-            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
+            self = Self(__mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s))
 
     @always_inline("nodebug")
     @implicit
