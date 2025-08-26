@@ -967,6 +967,13 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
   return success();
 }
 
+static ParseResult parseStructParameterSpec(AsmParser &p,
+                                            ParamDeclArrayAttr &params,
+                                            TypeAttr &signature) {
+  TypeAttr canonicalTraitAttr = nullptr;
+  return parseStructParameterSpec(p, params, signature, canonicalTraitAttr);
+}
+
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<ParamDeclAttr> params,
                                      TypeAttr signature,
@@ -975,12 +982,20 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params, sig.getParamListAttrs(), evaluator);
 
-  TraitType canonicalTrait = cast<TraitType>(canonicalTraitAttr.getValue());
-  if (!canonicalTrait.getSymbols().empty()) {
-    p << '(';
-    printParamType(p, canonicalTrait);
-    p << ')';
+  if (canonicalTraitAttr) {
+    TraitType canonicalTrait = cast<TraitType>(canonicalTraitAttr.getValue());
+    if (!canonicalTrait.getSymbols().empty()) {
+      p << '(';
+      printParamType(p, canonicalTrait);
+      p << ')';
+    }
   }
+}
+static void printStructParameterSpec(AsmPrinter &p, Operation *op,
+                                     ArrayRef<ParamDeclAttr> params,
+                                     TypeAttr signature) {
+  TypeAttr canonicalTraitAttr{};
+  printStructParameterSpec(p, op, params, signature, canonicalTraitAttr);
 }
 
 bool StructDeclOp::isSynthetic() { return getSynthetic(); }
@@ -1217,6 +1232,23 @@ OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
       return insert.getOperand(0);
   }
   return {};
+}
+
+//===----------------------------------------------------------------------===//
+// ExtensionDeclOp
+//===----------------------------------------------------------------------===//
+
+DebugInfo::DIScopeAttr ExtensionDeclOp::getLocScope() {
+  return getTopLevelScope(*this);
+}
+
+void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
+                            StringAttr name) {
+  MLIRContext *ctx = builder.getContext();
+  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+        ParamDeclArrayAttr::get(ctx, {}),
+        /*targetStruct=*/{});
+  result.regions[0]->push_back(new Block());
 }
 
 //===----------------------------------------------------------------------===//

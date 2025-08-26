@@ -595,7 +595,7 @@ struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
   return 42
 
-struct ReDef: pass # expected-note {{previous definition here}}
+struct ReDef: pass # expected-note {{conflicts with this previous struct declaration}}
 struct ReDef: pass # expected-error {{invalid redefinition of 'ReDef'}}
 
 struct StructMemberRedefinition:
@@ -1053,8 +1053,8 @@ fn test(arg: HasBoolParam[True]):
 
 
 # Issue #12090
-from imported_module import DTypePointer # expected-note {{previous definition here}}
-struct DTypePointer: # expected-error {{invalid redefinition of 'DTypePointer'}}
+from imported_module import DTypePointer # expected-note {{conflicts with this previous declaration}}
+struct DTypePointer: # expected-error {{cannot define a struct here with name 'DTypePointer'}}
     pass
 
 # Issue #13321.

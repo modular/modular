@@ -553,6 +553,61 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// ExtensionDeclOp
+//===----------------------------------------------------------------------===//
+
+def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
+    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    ASTDeclInterface, NoTerminator,
+    DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
+  ]> {
+  let summary = "Extension declaration.";
+  let description = [{
+    The `lit.extension.decl` operation is a top-level operation used to declare
+    LIT extensions. Extension declarations are named with an auto-generated
+    unique symbol.
+    The body contains `lit.fn` operations that declare the methods/aliases/etc.
+    that will be usable with the struct that's being extended.
+
+    Example:
+
+    ```mlir
+    lit.extension.decl @"extension:Spaceship_0" {
+      lit.fn @foobar(%self: !lit.ref<!Spaceship, mut *"self`"> byref_result) -> i32 {
+        lit.return %foo : i32
+      }
+    }
+    ```
+  }];
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttrOf<LIT_TypeSignatureType>:$signature,
+    KGEN_ParamDeclArrayAttr:$params,
+    OptionalAttr<SymbolRefAttr>:$targetStruct
+    // TODO(MOCO-522): Support doc strings, deprecation warnings.
+  );
+
+  let regions = (region SizedRegion<1>:$fields);
+
+  let assemblyFormat = [{
+    $sym_name ``
+    custom<StructParameterSpec>($params, $signature)
+    attr-dict-with-keyword $fields
+  }];
+
+  let extraClassDeclaration = [{
+    ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
+  }];
+
+  let builders = [
+    // Create an extension with a region but no body block. The caller must create
+    // it and fill it in.
+    OpBuilder<(ins "StringAttr":$name)>,
+  ];
+}
+
+
+//===----------------------------------------------------------------------===//
 // TraitDeclOp
 //===----------------------------------------------------------------------===//
 

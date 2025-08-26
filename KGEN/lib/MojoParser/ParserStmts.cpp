@@ -16,6 +16,7 @@
 #include "KGEN/MojoParser/Lexer.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "Support/Compiler/OperationUtils.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -299,6 +300,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseDefFnStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTraitStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseExtensionStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseVarStmt(LexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
@@ -657,6 +659,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_trait:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseTraitStmt(startCursor, stmtIndent);
+  case Token::kw___extension:
+    rejectSimpleStmt(); // Not a simple_stmt.
+    return parseExtensionStmt(startCursor, stmtIndent);
   case Token::kw_class:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseClassStmt(startCursor, stmtIndent);
@@ -2936,6 +2941,71 @@ ParseResult StmtParser::parseTraitStmt(LexerCursor startCursor,
   // when it gets referenced.
   getDeclResolver().addDecl(newTrait, smLoc, nameAttr, curDeclScope,
                             startCursor, getLexer().getCursor(), curIndent);
+  return success();
+}
+
+ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
+                                           size_t curIndent) {
+  // We don't support non-top level extensions. One day this might be useful
+  // to enable the user to mimic implicit trait conformance. But this is not
+  // that day.
+  bool nestFailure = false;
+  if (isa_and_nonnull<StructDeclOp>(getParentDecl().getIfOperation())) {
+    emitTokenError("nested extension not supported here");
+    nestFailure = true;
+  } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
+    emitTokenError("nested extension in a trait not supported here");
+    nestFailure = true;
+  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+    emitTokenError("extension inside a function not supported here");
+    nestFailure = true;
+  }
+  consumeToken(Token::kw___extension);
+
+  SMLoc nameSMLoc;
+  // Unprefixed/unsuffixed name. `extension Spaceship`'s base name is Spaceship.
+  StringAttr baseNameAttr;
+  if (parseIdentifier(baseNameAttr, "expected extension name", &nameSMLoc))
+    return failure();
+
+  auto loc = translateLocation(nameSMLoc);
+
+  // Get the symbol table for the current scope to check for conflicts
+  Operation *parentSymbolTableOp = SymbolTable::getNearestSymbolTable(
+      builder.getInsertionBlock()->getParentOp());
+  SymbolTable symbolTable(parentSymbolTableOp);
+
+  // Create the extension with a unique name to avoid a name conflict with the
+  // struct and with other extensions.
+  std::string prefixedName = "extension:" + baseNameAttr.getValue().str();
+  std::string uniqueName = M::getUniqueSymbolName(prefixedName, symbolTable);
+  auto uniqueNameAttr = StringAttr::get(getContext(), uniqueName);
+
+  // Note that this is using the unique name, not the base name.
+  // Further below, we'll still add it to the parent ASTDecl with the base name.
+  // This is different than other constructs, where the ASTDecl knows them by
+  // their true name.
+  // TODO(MOCO-522): This is arcana, reference some central docs here and
+  // everywhere else this comes into play
+  auto extensionDeclOp = builder.create<ExtensionDeclOp>(loc, uniqueNameAttr);
+
+  // Skip the body of this definition: go to a token the starts a line at the
+  // same indent level (or less) as the current definition.
+  skipUntilIndentation(curIndent);
+
+  if (nestFailure) {
+    getDeclResolver().addErroneousDecl(baseNameAttr.getValue(), nameSMLoc,
+                                       curDeclScope);
+  } else {
+    // Note that we're passing in baseNameAttr, not the uniqueNameAttr. The
+    // ASTDecl knows this extensionDeclOp by its base name, not by its actual
+    // name.
+    // TODO(MOCO-522): This is arcana, reference some central docs here and
+    // everywhere else this comes into play
+    getDeclResolver().addDecl(extensionDeclOp, nameSMLoc, baseNameAttr,
+                              curDeclScope, startCursor, getLexer().getCursor(),
+                              curIndent);
+  }
   return success();
 }
 
