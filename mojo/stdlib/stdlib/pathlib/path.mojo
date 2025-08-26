@@ -393,3 +393,17 @@ struct Path(
             res.append(ls[i])
 
         return res
+
+    fn name(self) -> String:
+        """Returns the name of the path.
+
+        ```mojo
+        from pathlib import Path
+
+        Path("a/path/foo.txt").name()  # returns "foo.txt"
+        ```
+
+        Returns:
+            The name of the path.
+        """
+        return os.path.basename(self)

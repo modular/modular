@@ -67,6 +67,9 @@ what we publish.
 
 ### Standard library changes
 
+- Added `Path(..).name()` method to the `Path` type, which returns the name of
+  the file or directory.
+
 - The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
   all types that can be implicitly copied may also be copied using an explicit
   `.copy()` method call.
