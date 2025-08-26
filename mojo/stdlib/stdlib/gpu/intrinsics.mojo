@@ -931,76 +931,6 @@ fn make_buffer_resource[
     return resource_constant
 
 
-@always_inline
-fn _raw_buffer_load_lds[
-    dtype: DType
-](
-    rsrc: _buffer_resource,
-    lds_ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
-    size: Int32,
-    voffset: Int32,
-    soffset: Int32,
-    offset: Int32,
-    aux: Int32,
-):
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _raw_buffer_load_lds function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-    ](rsrc, lds_ptr, size, voffset, soffset, offset, aux)
-
-
-@always_inline
-fn buffer_load_store_lds[
-    dtype: DType
-](
-    src_resource: _buffer_resource,
-    gds_offset: Int32,
-    lds_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ],
-    lds_offset: Int32,
-):
-    """Loads four bytes from global memory and writes them to shared memory.
-
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register.
-
-    Parameters:
-        dtype: The dtype of the data to be loaded.
-
-    Args:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        gds_offset: Global memory offset.
-        lds_ptr_base: LDS base address.
-        lds_offset: LDS offset.
-    """
-    constrained[
-        is_amd_gpu(),
-        (
-            "The buffer_load_store_lds  function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
-
-    var lds_ptr = lds_ptr_base + lds_offset
-    var global_offset_bytes = Int32(sizeof[dtype]() * gds_offset)
-    _raw_buffer_load_lds(
-        src_resource,
-        lds_ptr,
-        sizeof[DType.uint32](),
-        global_offset_bytes,
-        0,
-        0,
-        0,
-    )
-
-
 @parameter
 fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
@@ -1109,6 +1039,61 @@ fn buffer_load[
     ](src_resource, vector_offset_bytes, scalar_offset_bytes, aux)
 
     return bitcast[dtype, width](load_val)
+
+
+@always_inline
+fn buffer_load_lds[
+    dtype: DType,
+    *,
+    width: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](
+    src_resource: _buffer_resource,
+    vector_offset: Int32,
+    shared_ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED
+    ],
+    *,
+    scalar_offset: Int32 = 0,
+):
+    """Loads data from global memory and stores to shared memory.
+
+    Copies from global memory to shared memory (aka LDS) bypassing storing to
+    register.
+
+    Parameters:
+        dtype: The dtype of the data to be loaded.
+        width: The SIMD vector width.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
+
+    Args:
+        src_resource: Buffer resource descriptor from make_buffer_resource.
+        vector_offset: Vector memory offset in elements (per thread).
+        shared_ptr: Shared memory address.
+        scalar_offset: Scalar memory offset in elements (shared across wave).
+    """
+    constrained[
+        is_amd_gpu(),
+        "The buffer_load_lds function is only applicable on AMDGPU hardware.",
+    ]()
+
+    alias bytes = sizeof[dtype]() * width
+    alias aux = _cache_operation_to_amd_aux[cache_policy]()
+
+    var vector_offset_bytes = vector_offset * sizeof[dtype]()
+    var scalar_offset_bytes = scalar_offset * sizeof[dtype]()
+
+    llvm_intrinsic[
+        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
+    ](
+        src_resource,
+        shared_ptr,
+        Int32(bytes),
+        vector_offset_bytes,
+        scalar_offset_bytes,
+        Int32(0),
+        aux,
+    )
 
 
 @always_inline

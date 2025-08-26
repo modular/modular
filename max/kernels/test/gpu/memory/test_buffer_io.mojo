@@ -13,13 +13,13 @@
 
 from math import align_down, ceildiv
 
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from gpu import barrier, thread_idx
+from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
+from gpu.host.info import MI355X
 from gpu.intrinsics import (
     buffer_load,
-    buffer_load_store_lds,
+    buffer_load_lds,
     buffer_store,
     make_buffer_resource,
 )
@@ -42,22 +42,24 @@ fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
         buffer_store[dtype, 1](bc, i, 2 * v)
 
 
-fn kernel_lds[dtype: DType](a: UnsafePointer[Scalar[dtype]]):
+fn kernel_lds[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
     var a_shared = stack_allocation[
         size, dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var idx = thread_idx.x
-
-    var t0 = block_idx.x * block_dim.x + thread_idx.x
+    var aligned_size = align_down(size, width)
     var bc = make_buffer_resource(a, size_clip)
-    for i in range(t0, size, block_dim.x * grid_dim.x):
+    for i in range(size):
         a_shared[i] = 0
     barrier()
 
-    for i in range(t0, size, block_dim.x * grid_dim.x):
-        buffer_load_store_lds(bc, i, a_shared, i)
-    for i in range(t0, size, block_dim.x * grid_dim.x):
+    for i in range(0, aligned_size, width):
+        buffer_load_lds[width=width](bc, i, a_shared + i)
+    for i in range(aligned_size, size):
+        buffer_load_lds[width=1](bc, i, a_shared + i)
+    barrier()
+
+    for i in range(size):
         a[i] = 2 * a_shared[i]
 
 
@@ -209,8 +211,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf.free()
 
 
-def test_buffer_lds(ctx: DeviceContext):
-    alias dtype = DType.float32
+def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
@@ -219,10 +220,8 @@ def test_buffer_lds(ctx: DeviceContext):
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    ctx.enqueue_function[kernel_lds[dtype]](
-        a_device_buf,
-        grid_dim=ceildiv(size, 256),
-        block_dim=256,
+    ctx.enqueue_function[kernel_lds[dtype, width]](
+        a_device_buf, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 
@@ -251,4 +250,9 @@ def main():
         @parameter
         for width in [1, 2, 4, 8, 16]:
             test_buffer[DType.int8, width](ctx)
-        test_buffer_lds(ctx)
+
+        test_buffer_lds[DType.float32, 1](ctx)
+
+        @parameter
+        if ctx.default_device_info is MI355X:
+            test_buffer_lds[DType.bfloat16, 8](ctx)
