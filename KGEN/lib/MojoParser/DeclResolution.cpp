@@ -3563,6 +3563,33 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
 }
 
 //===----------------------------------------------------------------------===//
+// Extension implementation
+//===----------------------------------------------------------------------===//
+
+LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
+                                             Lexer &lexer, ASTDecl &decl) {
+  ParserBase p(shared, lexer);
+
+  SMLoc identifierLoc;
+  if (p.parseToken(Token::kw___extension,
+                   "internal error: checked by stmt parser") ||
+      p.parseIdentifier("internal error: checked by extension parser",
+                        &identifierLoc))
+    return failure();
+
+  // TODO(MOCO-522): This is temporary, removed in a later PR.
+  p.skipUntilIndentation(0, /*stopOnSemicolon=*/false,
+                         [&]() -> bool { return false; });
+
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
+                                      Lexer &lexer, ASTDecl &extensionDecl) {
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // UnresolvedImport Decl implementation
 //===----------------------------------------------------------------------===//
 

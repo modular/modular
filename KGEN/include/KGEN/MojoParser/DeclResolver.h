@@ -36,6 +36,7 @@ class UnresolvedImportOp;
 class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
+class ExtensionDeclOp;
 struct ParsedArgument;
 class BaseDLValue;
 enum class PassingKind : uint32_t;
@@ -274,6 +275,9 @@ private:
   ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(ExtensionDeclOp op, Lexer &lexer,
+                                 ASTDecl &decl);
+  ParseResult resolveBody(ExtensionDeclOp op, Lexer &lexer, ASTDecl &decl);
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);

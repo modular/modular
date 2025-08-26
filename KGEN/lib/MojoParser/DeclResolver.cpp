@@ -195,6 +195,50 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
     return;
   }
 
+  // Structs and extensions can both have the same name in the same scope.
+  // TODO(MOCO-522): Reference some arcana docs on this
+  bool addingStruct = isa_and_nonnull<StructDeclOp>(decl->getIfOperation());
+  bool addingExtension =
+      isa_and_nonnull<ExtensionDeclOp>(decl->getIfOperation());
+  if (addingStruct || addingExtension) {
+    // Verify that all previous entries are also structs or extensions.  Note
+    // that we can't check the overload set is compatible with each other
+    // because the signatures aren't all resolved.
+    for (ASTDecl *previous : entries) {
+      bool previousIsStruct =
+          isa_and_nonnull<StructDeclOp>(previous->getIfOperation());
+      bool previousIsExtension =
+          isa_and_nonnull<ExtensionDeclOp>(previous->getIfOperation());
+      bool previousIsNeither = !previousIsStruct && !previousIsExtension;
+      // This checks that we're not giving e.g. a function and a struct the same
+      // name.
+      if (previousIsNeither) {
+        auto diag = emitError(decl->getLoc(), "cannot define ")
+                    << (addingStruct ? "a struct" : "an extension")
+                    << " here with name " << name;
+        diag.attachNote(previous->getLoc())
+            << "conflicts with this previous declaration";
+        decl->setErroneous();
+        previous->setErroneous();
+        return;
+      }
+      // This makes sure we're not adding two structs with the same name.
+      if (addingStruct && previousIsStruct) {
+        auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
+                    << name;
+        diag.attachNote(previous->getLoc())
+            << "conflicts with this previous struct declaration";
+        decl->setErroneous();
+        previous->setErroneous();
+        return;
+      }
+    }
+
+    // Otherwise, we're good, charge forwards.
+    entries.push_back(decl);
+    return;
+  }
+
   // Check if we are adding an identical unresolved import.
   if (auto import =
           dyn_cast_or_null<UnresolvedImportOp>(decl->getIfOperation())) {
@@ -493,36 +537,36 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // for the next stage of resolution.
     if (auto declOp = decl.getIfOperation()) {
       TypeSwitch<Operation &>(*declOp)
-          .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
-              [&](auto op) {
-                // If this is a synthetic decl, resolve it specially.
-                if (decl.getCursor().isInvalid()) {
-                  if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                    if (failed(resolveSyntheticSignature(op, decl)))
-                      decl.setErroneous();
-                    return;
-                  }
-                  if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
-                    if (failed(resolveSyntheticSignature(op, decl)))
-                      decl.setErroneous();
-                    return;
-                  }
-                }
-
-                Lexer lexer(shared.diags, decl.getCursor());
-
-                // Generate pretty stack traces if a crash happens in this
-                // scope.
-                LexerCrashReporter crashReporter(lexer, decl.getLoc(),
-                                                 "resolving decl signature");
-
-                // Resolve the signature: on a parse error, we note that the
-                // decl is malformed and should not be referenced to silence
-                // downstream errors.
-                if (failed(resolveSignature(op, lexer, decl)))
+          .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, ExtensionDeclOp,
+                AliasDeclOp>([&](auto op) {
+            // If this is a synthetic decl, resolve it specially.
+            if (decl.getCursor().isInvalid()) {
+              if constexpr (std::is_same_v<FnOp, decltype(op)>) {
+                if (failed(resolveSyntheticSignature(op, decl)))
                   decl.setErroneous();
-                decl.getCursor() = lexer.getCursor();
-              })
+                return;
+              }
+              if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
+                if (failed(resolveSyntheticSignature(op, decl)))
+                  decl.setErroneous();
+                return;
+              }
+            }
+
+            Lexer lexer(shared.diags, decl.getCursor());
+
+            // Generate pretty stack traces if a crash happens in this
+            // scope.
+            LexerCrashReporter crashReporter(lexer, decl.getLoc(),
+                                             "resolving decl signature");
+
+            // Resolve the signature: on a parse error, we note that the
+            // decl is malformed and should not be referenced to silence
+            // downstream errors.
+            if (failed(resolveSignature(op, lexer, decl)))
+              decl.setErroneous();
+            decl.getCursor() = lexer.getCursor();
+          })
           .Case<UnresolvedImportOp>([&](auto op) {
             // Resolve the signature: on a parse error, we note that the decl
             // is malformed and should not be referenced to silence downstream
@@ -610,8 +654,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // TODO(verdagon): migrate this TypeSwitch off of ASTDecl casting
     if (auto declOp = decl.getIfOperation()) {
       TypeSwitch<Operation &>(*declOp)
-          .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp, TraitDeclOp,
-                AliasDeclOp>([&](auto op) {
+          .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp,
+                ExtensionDeclOp, TraitDeclOp, AliasDeclOp>([&](auto op) {
             // If this is a synthetic decl, complete it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
