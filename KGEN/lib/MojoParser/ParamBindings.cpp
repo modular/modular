@@ -664,6 +664,35 @@ ParamBindings::verifyBindingsImpl(
     return {{}, fitness};
   }
 
+  // Check that no constraints are violated.
+  if (!paramListAttr.getConstraints().empty()) {
+    ParserParameterEvaluator constraintEvaluator(shared, newBindings);
+    SmallVector<ConstraintAttr> failedConstraints;
+    SmallVector<ConstraintAttr> unprovableConstraints;
+    for (ConstraintAttr constraint : paramListAttr.getConstraints()) {
+      TypedAttr prop =
+          constraintEvaluator.getReboundAttribute(constraint.getProposition());
+      if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+        if (intValue.getValue().isZero())
+          failedConstraints.push_back(constraint);
+      } else {
+        unprovableConstraints.push_back(constraint);
+      }
+    }
+
+    if (!failedConstraints.empty()) {
+      if (diagEmitter)
+        diagEmitter->emitConstraintViolations(failedConstraints);
+      return {{}, fitness};
+    }
+
+    if (!unprovableConstraints.empty()) {
+      if (diagEmitter)
+        diagEmitter->emitUnprovableConstraints(unprovableConstraints);
+      return {{}, fitness};
+    }
+  }
+
   return {ParameterExprArrayAttr::get(emitter.getContext(), newBindings),
           fitness};
 }
@@ -848,7 +877,28 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         emitMissing(*diag, names, kindStr + " parameter");
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
-      }};
+      },
+      /*emitConstraintViolations=*/
+      [&](ArrayRef<ConstraintAttr> constraints) {
+        diag = shared.emitError(exprLoc);
+        if (constraints.size() == 1) {
+          *diag << "violated constraint";
+          if (auto errorMsg = constraints[0].getErrorMsg())
+            *diag << ' ' << errorMsg;
+        } else {
+          *diag << "violated multiple constraints";
+        }
+        for (auto constraint : constraints)
+          diag->attachNote(constraint.getLoc()) << "constraint declared here";
+      },
+      /*emitUnprovableConstraints=*/
+      [&](ArrayRef<ConstraintAttr> constraints) {
+        diag = shared.emitError(exprLoc);
+        *diag << "unable to satisfy constraint" << plural(constraints.size());
+        for (auto constraint : constraints)
+          diag->attachNote(constraint.getLoc()) << "constraint declared here";
+      },
+  };
 
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
