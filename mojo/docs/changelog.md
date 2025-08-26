@@ -19,6 +19,14 @@ what we publish.
 
 ### ✨ Highlights
 
+### Documentation
+
+- New [Mojo vision](/mojo/vision) doc explains our motivations and design
+decisions for the Mojo language.
+
+- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
+language across multiple phases.
+
 ### Language enhancements
 
 - Methods on structs may now declare their `self` argument with a `deinit`
