@@ -20,6 +20,7 @@ from memory import Span
 ```
 """
 
+from algorithm import vectorize
 from sys import alignof
 from sys.info import simdwidthof
 
@@ -716,3 +717,37 @@ struct Span[
             var vec = ptr[processed + i]
             if where(vec):
                 (ptr + processed + i).init_pointee_move(func(vec))
+
+    fn count[
+        dtype: DType, //,
+        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype]]) -> UInt:
+        """Count the amount of times the function returns `True`.
+
+        Parameters:
+            dtype: The DType.
+            func: The function to evaluate.
+
+        Returns:
+            The amount of times the function returns `True`.
+        """
+
+        alias simdwidth = simdwidthof[DType.index]()
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var countv = SIMD[DType.index, simdwidth](0)
+        var count = Scalar[DType.index](0)
+
+        @parameter
+        fn do_count[width: Int](idx: Int):
+            var vec = func(ptr.load[width=width](idx)).cast[DType.index]()
+
+            @parameter
+            if width == 1:
+                count += rebind[__type_of(count)](vec)
+            else:
+                countv += rebind[__type_of(countv)](vec)
+
+        vectorize[do_count, simdwidth](length)
+
+        return UInt(countv.reduce_add() + count)
