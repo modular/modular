@@ -15,7 +15,15 @@ from max.driver import Tensor as DriverTensor
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
-from max.experimental.tensor import Tensor, TensorType, driver_tensor_type
+from max.experimental.tensor import (
+    Tensor,
+    TensorType,
+    _default_device,
+    _default_dtype,
+    default_device,
+    default_dtype,
+    driver_tensor_type,
+)
 from max.graph import DeviceRef, Graph
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
@@ -116,3 +124,32 @@ def test_tensor_warns_on_sync() -> None:
         asyncio.run(coro())
 
     assert warns
+
+
+def test_constant_default_dtype() -> None:
+    t = Tensor.constant(1, device=CPU())
+    assert t.dtype == _default_dtype(CPU())
+    assert t.device == CPU()
+
+    assert DType.float64 != _default_dtype(CPU())
+    with default_dtype(DType.float64):
+        t = Tensor.constant(1, device=CPU())
+    assert t.dtype == DType.float64
+
+
+def test_constant_default_device() -> None:
+    t = Tensor.constant(1)
+    assert t.device == _default_device()
+    assert t.dtype == _default_dtype(_default_device())
+
+
+@pytest.mark.skipif(
+    not accelerator_count(), reason="requires at least 2 devices"
+)
+def test_constant_default_device_context() -> None:
+    assert _default_device() != CPU()
+    with default_device(CPU()):
+        t = Tensor.constant(1)
+
+    assert t.device == CPU()
+    assert t.dtype == _default_dtype(CPU())
