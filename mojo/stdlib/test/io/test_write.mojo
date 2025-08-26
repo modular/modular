@@ -129,6 +129,34 @@ def test_write_hex():
     assert_equal(r"\xd6", String(S(ptr=ptr, length=4)))
 
 
+def test_closure_non_capturing():
+    fn write_closure(mut writer: Some[Writer]):
+        writer.write("Hello Mojo!")
+
+    def write_non_capturing[func: fn (mut writer: Some[Writer]) -> None]():
+        var writer2 = String()
+        func(writer2)
+
+        assert_equal(writer2, "Hello Mojo!")
+
+    write_non_capturing[write_closure]()
+
+
+def test_closure_capturing(mut writer: Some[Writer & Writable]):
+    fn write_closure() capturing:
+        writer.write("Hello Mojo!")
+
+    fn write_capturing[func: fn () capturing -> None]():
+        func()
+
+    write_capturing[write_closure]()
+
+    # Write result to concrete `String` type to pass to `assert_equal`
+    var result = String()
+    writer.write_to(result)
+    assert_equal(result, "Hello Mojo!")
+
+
 def main():
     test_writer_of_string()
     test_string_write_seq()
@@ -138,3 +166,8 @@ def main():
 
     test_hex_digits_to_hex_chars()
     test_write_hex()
+
+    test_closure_non_capturing()
+
+    var writer = String()
+    test_closure_capturing(writer)

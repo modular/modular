@@ -22,7 +22,7 @@ struct HeapArray(Writable):
         for i in range(self.size):
             (self.data + i).init_pointee_copy(values[i])
 
-    fn write_to[W: Writer](self, mut writer: W) -> None:
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         for i in range(self.size):
             writer.write(self.data[i])

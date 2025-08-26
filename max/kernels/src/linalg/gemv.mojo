@@ -105,7 +105,7 @@ struct GEMVAlgorithm(Copyable, Movable, Stringable, Writable):
         else:
             return String("UNKNOWN_GEMV_ALGORITHM(", self._value, ")")
 
-    fn write_to[W: Writer](self, mut writer: W) -> None:
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))
 
 

@@ -494,7 +494,7 @@ struct Dog(Copyable, Stringable, Representable, Writable):
     var age: Int
 
     # Allows the type to be written into any `Writer`
-    fn write_to[W: Writer](self, mut writer: W) -> None:
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("Dog(", self.name, ", ", self.age, ")")
 
     # Construct and return a `String` using the previous method

@@ -29,7 +29,7 @@ struct Balloons:
 struct Balloon(Writable):
     var color: String
 
-    fn write_to[W: Writer](self, mut writer: W) -> None:
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(String("a ", self.color, " balloon"))
 
     fn __del__(deinit self):
