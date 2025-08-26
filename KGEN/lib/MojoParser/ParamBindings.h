@@ -135,6 +135,10 @@ public:
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
+    /// Emit diagnostics for constraint violations.
+    std::function<void(ArrayRef<ConstraintAttr>)> emitConstraintViolations;
+    /// Emit diagnostics for unprovable constraints.
+    std::function<void(ArrayRef<ConstraintAttr>)> emitUnprovableConstraints;
   };
 
   /// Verify the full parameter bindings for the given generator. If the

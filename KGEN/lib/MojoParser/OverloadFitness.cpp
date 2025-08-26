@@ -908,6 +908,24 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
         emitMissing(diag, names, kindStr + " parameter");
       },
+      /*emitConstraintViolations=*/
+      [&](ArrayRef<ConstraintAttr> constraints) {
+        if (constraints.size() == 1) {
+          diag << "violated constraint";
+          if (auto errorMsg = constraints[0].getErrorMsg())
+            diag << ' ' << errorMsg;
+        } else {
+          diag << "violated multiple constraints";
+        }
+        for (auto constraint : constraints)
+          diag.attachNote(constraint.getLoc()) << "constraint declared here";
+      },
+      /*emitUnprovableConstraints=*/
+      [&](ArrayRef<ConstraintAttr> constraints) {
+        diag << "unable to satisfy constraint" << plural(constraints.size());
+        for (auto constraint : constraints)
+          diag.attachNote(constraint.getLoc()) << "constraint declared here";
+      },
   };
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
