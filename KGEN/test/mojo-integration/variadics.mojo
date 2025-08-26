@@ -22,7 +22,7 @@ struct TalkativeMem(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -42,7 +42,7 @@ struct TalkativeReg(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -66,7 +66,7 @@ struct TalkativeCopableReg(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
@@ -93,7 +93,7 @@ struct TalkativeCopableMovableMem(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("talkative ", self.state)
 
 
