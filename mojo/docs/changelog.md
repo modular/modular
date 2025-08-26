@@ -142,6 +142,10 @@ language across multiple phases.
     return v == 42
   ```
 
+- Several types that can be constructed from raw MLIR values now require the use
+  of an `mlir_value` keyword-only argument initializer. Affected types include:
+  `SIMD`, `UInt`.
+
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
 
   remove relative path components (`.`, `..`, etc.). Behaves the same as the

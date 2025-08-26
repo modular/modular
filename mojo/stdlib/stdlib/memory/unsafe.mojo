@@ -125,7 +125,7 @@ fn bitcast[
     var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )
-    return SIMD(res)
+    return SIMD(mlir_value=res)
 
 
 @always_inline("builtin")
@@ -209,4 +209,4 @@ fn pack_bits[
     var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )
-    return SIMD(res)
+    return SIMD(mlir_value=res)

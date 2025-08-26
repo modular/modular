@@ -459,9 +459,11 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The value as an unsigned integer of platform-specific width.
         """
-        return __mlir_attr[
-            `#pop<int_literal_convert<`, self.value, `, 1>> : index`
-        ]
+        return UInt(
+            mlir_value=__mlir_attr[
+                `#pop<int_literal_convert<`, self.value, `, 1>> : index`
+            ]
+        )
 
     @always_inline("builtin")
     fn __ceil__(self) -> Self:

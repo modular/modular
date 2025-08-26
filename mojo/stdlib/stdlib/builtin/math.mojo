@@ -149,7 +149,7 @@ fn max(x: UInt, y: UInt, /) -> UInt:
     Returns:
         Maximum of x and y.
     """
-    return __mlir_op.`index.maxu`(x.value, y.value)
+    return UInt(mlir_value=__mlir_op.`index.maxu`(x.value, y.value))
 
 
 @always_inline("nodebug")
@@ -178,7 +178,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         "the SIMD type must be numeric or boolean",
     ]()
 
-    return __type_of(x)(__mlir_op.`pop.max`(x.value, y.value))
+    return __type_of(x)(mlir_value=__mlir_op.`pop.max`(x.value, y.value))
 
 
 @always_inline
@@ -232,7 +232,7 @@ fn min(x: UInt, y: UInt, /) -> UInt:
     Returns:
         Minimum of x and y.
     """
-    return __mlir_op.`index.minu`(x.value, y.value)
+    return UInt(mlir_value=__mlir_op.`index.minu`(x.value, y.value))
 
 
 @always_inline("nodebug")
@@ -261,7 +261,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         "the SIMD type must be numeric or boolean",
     ]()
 
-    return __type_of(x)(__mlir_op.`pop.min`(x.value, y.value))
+    return __type_of(x)(mlir_value=__mlir_op.`pop.min`(x.value, y.value))
 
 
 @always_inline

@@ -263,7 +263,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             rhs.value,
         )
-        return Scalar[dtype](res)
+        return Scalar[dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
@@ -301,7 +301,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             value.value,
         )
-        return Scalar[dtype](res)
+        return Scalar[dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
@@ -407,7 +407,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             syncscope = _get_kgen_string[scope](),
             _type = Scalar[dtype]._mlir_type,
         ](value_addr.address, rhs.value)
-        return Scalar[dtype](res)
+        return Scalar[dtype](mlir_value=res)
 
     @always_inline
     fn __isub__(mut self, rhs: Scalar[dtype]):

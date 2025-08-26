@@ -58,7 +58,9 @@ def check_float64_values():
     # BFloat16 values on ARM systems.
     assert_equal(
         Float64(
-            __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
+            mlir_value=__mlir_op.`pop.cast`[
+                _type = __mlir_type[`!pop.scalar<f64>`]
+            ](
                 __mlir_attr.`#pop.simd<"33"> : !pop.scalar<bf16>`,
             )
         ),
@@ -68,7 +70,9 @@ def check_float64_values():
     assert_equal(
         String(
             Float64(
-                __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
+                mlir_value=__mlir_op.`pop.cast`[
+                    _type = __mlir_type[`!pop.scalar<f64>`]
+                ](
                     __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
                 )
             )

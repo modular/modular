@@ -519,7 +519,7 @@ struct DType(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_simd(UInt8(self._as_ui8()))
+        hasher._update_with_simd(UInt8(mlir_value=self._as_ui8()))
 
     @always_inline("nodebug")
     fn is_unsigned(self) -> Bool:
@@ -619,7 +619,7 @@ struct DType(
         if self._is_non_index_integral():
             return Int(
                 UInt8(
-                    __mlir_op.`pop.shl`(
+                    mlir_value=__mlir_op.`pop.shl`(
                         UInt8(1).value,
                         __mlir_op.`pop.sub`(
                             __mlir_op.`pop.shr`(

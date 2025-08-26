@@ -83,25 +83,24 @@ struct UInt(
 
     @doc_private
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: __mlir_type.index):
+    fn __init__(out self, *, mlir_value: __mlir_type.index):
         """Construct UInt from the given index value.
 
         Args:
-            value: The init value.
+            mlir_value: The init value.
         """
-        self.value = value
+        self.value = mlir_value
 
     @doc_private
     @always_inline("nodebug")
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
+    fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<index>`):
         """Construct UInt from the given Index value.
 
         Args:
-            value: The init value.
+            mlir_value: The init value.
         """
         self.value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.index](
-            value
+            mlir_value
         )
 
     @always_inline("builtin")
@@ -134,7 +133,7 @@ struct UInt(
         Args:
             value: The init value.
         """
-        self = value.__index__()
+        self = UInt(mlir_value=value.__index__())
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -255,7 +254,7 @@ struct UInt(
         Returns:
             `self + rhs` value.
         """
-        return __mlir_op.`index.add`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.add`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __sub__(self, rhs: UInt) -> UInt:
@@ -267,7 +266,7 @@ struct UInt(
         Returns:
             `self - rhs` value.
         """
-        return __mlir_op.`index.sub`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.sub`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __mul__(self, rhs: UInt) -> UInt:
@@ -279,7 +278,7 @@ struct UInt(
         Returns:
             `self * rhs` value.
         """
-        return __mlir_op.`index.mul`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.mul`(self.value, rhs.value))
 
     fn __truediv__(self, rhs: UInt) -> Float64:
         """Return the floating point division of `self` and `rhs`.
@@ -306,7 +305,7 @@ struct UInt(
         if rhs == 0:
             # this should raise an exception.
             return 0
-        return __mlir_op.`index.divu`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.divu`(self.value, rhs.value))
 
     @always_inline("nodebug")
     fn __mod__(self, rhs: UInt) -> UInt:
@@ -321,7 +320,7 @@ struct UInt(
         if rhs == 0:
             # this should raise an exception
             return 0
-        return __mlir_op.`index.remu`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.remu`(self.value, rhs.value))
 
     @always_inline("nodebug")
     fn __divmod__(self, rhs: UInt) -> Tuple[UInt, UInt]:
@@ -370,7 +369,7 @@ struct UInt(
         Returns:
             `self << rhs`.
         """
-        return __mlir_op.`index.shl`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.shl`(self.value, rhs.value))
 
     @always_inline("nodebug")  # TODO: should be "builtin"
     fn __rshift__(self, rhs: UInt) -> UInt:
@@ -382,7 +381,7 @@ struct UInt(
         Returns:
             `self >> rhs`.
         """
-        return __mlir_op.`index.shru`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.shru`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __and__(self, rhs: UInt) -> UInt:
@@ -394,7 +393,7 @@ struct UInt(
         Returns:
             `self & rhs`.
         """
-        return __mlir_op.`index.and`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.and`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __xor__(self, rhs: UInt) -> UInt:
@@ -406,7 +405,7 @@ struct UInt(
         Returns:
             `self ^ rhs`.
         """
-        return __mlir_op.`index.xor`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.xor`(self.value, rhs.value))
 
     @always_inline("builtin")
     fn __or__(self, rhs: UInt) -> UInt:
@@ -418,7 +417,7 @@ struct UInt(
         Returns:
             `self | rhs`.
         """
-        return __mlir_op.`index.or`(self.value, rhs.value)
+        return UInt(mlir_value=__mlir_op.`index.or`(self.value, rhs.value))
 
     # ===-------------------------------------------------------------------===#
     # In place operations.
@@ -770,7 +769,9 @@ struct UInt(
         Returns:
             The ceiling of dividing numerator by denominator.
         """
-        return __mlir_op.`index.ceildivu`(self.value, denominator.value)
+        return UInt(
+            mlir_value=__mlir_op.`index.ceildivu`(self.value, denominator.value)
+        )
 
     @always_inline("builtin")
     fn is_power_of_two(self) -> Bool:
