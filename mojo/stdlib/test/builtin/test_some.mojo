@@ -27,39 +27,46 @@ struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
         return self.x + self.y + self.foo.z + self.bar.z
 
 
-fn takes_instance_of_arg(x: Some[Intable]) -> Int:
+fn takes_some_arg(x: Some[Intable]) -> Int:
     return x.__int__()
 
 
-def test_instance_of_arg():
-    assert_equal(takes_instance_of_arg(Bar[2, foo = Foo[4]()]()), 12)
-    assert_equal(takes_instance_of_arg(Bar[foo = Foo[5](), y=6]()), 22)
-    assert_equal(
-        takes_instance_of_arg(Bar[foo = Foo[5](), bar = Foo[7]()]()), 24
-    )
+def test_some_arg():
+    assert_equal(takes_some_arg(Bar[2, foo = Foo[4]()]()), 12)
+    assert_equal(takes_some_arg(Bar[foo = Foo[5](), y=6]()), 22)
+    assert_equal(takes_some_arg(Bar[foo = Foo[5](), bar = Foo[7]()]()), 24)
 
 
-fn takes_instance_of_param[x: Some[Intable]]() -> Int:
+fn takes_some_param[x: Some[Intable]]() -> Int:
     return x.__int__()
 
 
-def test_instance_of_param():
-    assert_equal(takes_instance_of_param[Bar[2, foo = Foo[4]()]()](), 12)
-    assert_equal(takes_instance_of_param[Bar[foo = Foo[5](), y=6]()](), 22)
-    assert_equal(
-        takes_instance_of_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24
-    )
+def test_some_param():
+    assert_equal(takes_some_param[Bar[2, foo = Foo[4]()]()](), 12)
+    assert_equal(takes_some_param[Bar[foo = Foo[5](), y=6]()](), 22)
+    assert_equal(takes_some_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24)
 
 
 fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
     return x
 
 
-def test_instance_of_return():
+def test_some_return():
     assert_equal(takes_multiple_traits(Bar[2, foo = Foo[4]()]()).__int__(), 12)
 
 
+def test_closure():
+    fn some_closure(x: Some[Intable]) -> Int:
+        return x.__int__() * 2
+
+    fn takes_some_closure[func: fn (Some[Intable]) -> Int]() raises:
+        assert_equal(func(Int(4)), 8)
+
+    takes_some_closure[some_closure]()
+
+
 def main():
-    test_instance_of_arg()
-    test_instance_of_param()
-    test_instance_of_return()
+    test_some_arg()
+    test_some_param()
+    test_some_return()
+    test_closure()
