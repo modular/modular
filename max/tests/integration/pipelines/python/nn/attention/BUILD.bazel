@@ -4,7 +4,10 @@ modular_py_test(
     name = "attention_tests",
     srcs = glob(
         ["*.py"],
-        exclude = ["*_gpu.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_attention_no_opaque.py",
+        ],
     ),
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -33,6 +36,25 @@ modular_py_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_no_opaque_tests",
+    timeout = "long",
+    srcs = ["test_attention_no_opaque.py"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
