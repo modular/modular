@@ -1328,50 +1328,59 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             The string where all occurrences of `old` are replaced with `new`.
         """
-        if not old:
-            return self._interleave(new)
 
-        var occurrences = self.count(old)
-        if occurrences == -1:
-            return String(self)
-
-        var self_len = self.byte_length()
+        var s_len = self.byte_length()
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
-        var res = String(capacity=self_len + (new_len - old_len) * occurrences)
+        if old_len == 0:
+            # NOTE: this is bigger than necessary if there are multi-byte
+            # sequences but is faster as it doesn't require counting cont. bytes
+            var capacity = s_len + new_len * self.byte_length()
+            var res = String(capacity=capacity)
 
-        var current_pos = 0
+            @parameter
+            fn _replace_interleave[W: Writer](mut writer: W):
+                for s in self.codepoint_slices():
+                    writer.write(new, s)
 
-        for _ in range(occurrences):
-            var idx = self.find(old, current_pos)
+            if res._is_inline():
+                _replace_interleave(res)
+            else:
+                var buffer = _WriteBufferStack(res)
+                _replace_interleave(buffer)
+                buffer.flush()
+            return res^
 
-            debug_assert(idx >= 0, "expected to find occurrence during find")
+        # FIXME(#3792): this should use self.as_bytes().count(old) which will be
+        # faster because returning unicode offsets has overhead
+        var occurrences = self.count(old)
+        if occurrences == 0:
+            return String(self)
 
-            # Copy preceding unchanged chars
-            res += StringSlice(
-                unsafe_from_utf8=self.as_bytes()[current_pos:idx]
-            )
+        # NOTE: this is bigger than necessary if there are multi-byte
+        # sequences but is faster as it doesn't require counting cont. bytes
+        var res = String(capacity=s_len + (new_len - old_len) * occurrences)
 
-            # Insert a copy of the new replacement string
-            res += new
+        @parameter
+        fn _replace_existing[W: Writer](mut writer: W):
+            var s_offset = 0
+            while s_offset < s_len:
+                # FIXME(#3548): this should use raw bytes self.as_bytes().find(...)
+                var idx = self.find(old, s_offset)
+                if idx == -1:  # if not found copy remainder
+                    writer.write(self[s_offset:])
+                    break
+                # Copy preceding unchanged chars and insert new replacement string
+                writer.write(self[s_offset:idx], new)
+                s_offset = idx + old_len
 
-            current_pos = idx + old_len
-
-        # Copy remaining chars
-        if current_pos < self_len:
-            res += StringSlice(unsafe_from_utf8=self.as_bytes()[current_pos:])
-
-        return res^
-
-    fn _interleave(self, val: StringSlice) -> String:
-        # TODO: this may be better as:
-        # (val.byte_length() * self.count_codepoints()) + self.count_codepoints()
-        var estimated_capacity = val.byte_length() * self.byte_length()
-        var res = String(capacity=estimated_capacity)
-        for codepoint in self.codepoint_slices():
-            res += val
-            res += codepoint
+        if res._is_inline():
+            _replace_existing(res)
+        else:
+            var buffer = _WriteBufferStack(res)
+            _replace_existing(buffer)
+            buffer.flush()
         return res^
 
     fn _strip[forward: Bool](self, chars: StringSlice) -> Self:
@@ -2257,14 +2266,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """Return the number of non-overlapping occurrences of substring
         `substr` in the string.
 
-        If sub is empty, returns the number of empty strings between characters
-        which is the length of the string plus one.
-
         Args:
             substr: The substring to count.
 
         Returns:
             The number of occurrences of `substr`.
+
+        Notes:
+            If sub is empty, returns the number of empty strings between
+            characters which is the length of the string plus one.
         """
         if not substr:
             return len(self) + 1
