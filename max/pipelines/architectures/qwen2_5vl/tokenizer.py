@@ -181,7 +181,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         processed_images = {}
         if image_inputs:
             processed_images = self.img_processor(
-                images=image_inputs, return_tensors="np"
+                images=image_inputs, return_tensors="pt"
             )
 
             # Step 3: Expand <|image_pad|> placeholders using image_grid_thw and merge_size**2
@@ -257,29 +257,25 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             if "pixel_values" in processed_inputs:
                 pixel_values_raw = processed_inputs["pixel_values"]
 
-                # Handle numpy array from image processor
-                if isinstance(pixel_values_raw, np.ndarray):
-                    pixel_values = (pixel_values_raw,)
-                elif hasattr(
-                    pixel_values_raw, "numpy"
-                ):  # fallback for torch tensor
+                # Handle PyTorch tensor from image processor (return_tensors="pt")
+                if hasattr(pixel_values_raw, "numpy"):
                     pixel_values_np = pixel_values_raw.numpy()
                     pixel_values = (pixel_values_np,)
+                elif isinstance(pixel_values_raw, np.ndarray):
+                    pixel_values = (pixel_values_raw,)
                 else:
                     raise ValueError(
-                        f"pixel_values is not a numpy array but {type(pixel_values_raw)}"
+                        f"pixel_values is not a PyTorch tensor or numpy array but {type(pixel_values_raw)}"
                     )
 
             # Extract image_grid_thw if present (Qwen2.5VL specific)
             if "image_grid_thw" in processed_inputs:
                 image_grid_thw = processed_inputs["image_grid_thw"]
-                # Handle numpy array from image processor
-                if isinstance(image_grid_thw, np.ndarray):
-                    extra_model_args["image_grid_thw"] = image_grid_thw
-                elif hasattr(
-                    image_grid_thw, "numpy"
-                ):  # fallback for torch tensor
+                # Handle PyTorch tensor from image processor (return_tensors="pt")
+                if hasattr(image_grid_thw, "numpy"):
                     extra_model_args["image_grid_thw"] = image_grid_thw.numpy()
+                elif isinstance(image_grid_thw, np.ndarray):
+                    extra_model_args["image_grid_thw"] = image_grid_thw
                 else:
                     extra_model_args["image_grid_thw"] = np.array(
                         image_grid_thw
@@ -289,16 +285,14 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             if "attention_mask" in processed_inputs:
                 attention_mask = processed_inputs["attention_mask"]
                 # Handle various formats from tokenizer
-                if isinstance(attention_mask, list):
+                if hasattr(attention_mask, "numpy"):
+                    extra_model_args["attention_mask"] = attention_mask.numpy()
+                elif isinstance(attention_mask, list):
                     extra_model_args["attention_mask"] = np.array(
                         attention_mask
                     )
                 elif isinstance(attention_mask, np.ndarray):
                     extra_model_args["attention_mask"] = attention_mask
-                elif hasattr(
-                    attention_mask, "numpy"
-                ):  # fallback for torch tensor
-                    extra_model_args["attention_mask"] = attention_mask.numpy()
                 else:
                     extra_model_args["attention_mask"] = np.array(
                         attention_mask
