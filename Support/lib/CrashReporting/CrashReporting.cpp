@@ -73,32 +73,23 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Config *settings) {
     return Error(llvm::Twine("while locating crashpad handler: ") +
                  handlerPathOr.getError());
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
-  StringRef url("");
-  if (settings) {
+  std::string url("");
+  if (settings)
     url = settings->getValue("crash_reporting.url");
-  }
-  std::string defaultURL;
+  if (url.empty())
+    url = kDefaultURL.str();
+  assert(!url.empty() && "Crashpad URL must not be empty.");
+  url = llvm::Twine(url + "/" + program).str();
 
-  // If the URL is empty, construct a URL by appending to the default URL
-  // above. This is one way to communicate a high-level categorization without
-  // having to dissemble the minidump on the server-side. However, most
-  // attributes should go into the attribute map below.
-  if (url.empty()) {
-    defaultURL = std::string(kDefaultURL) + "/" + std::string(program);
-    url = defaultURL;
-  }
-
-  // Update the database if we have a URL and reporting is not enabled. In most
+  // Update the database if reporting is not enabled. In most
   // cases this will just read the existing database settings and not change.
-  if (!url.empty()) {
-    auto database =
-        crashpad::CrashReportDatabase::Initialize(base::FilePath(databasePath));
-    bool uploadsEnabled = false;
-    if (database != nullptr && database->GetSettings() != nullptr &&
-        (!database->GetSettings()->GetUploadsEnabled(&uploadsEnabled) ||
-         !uploadsEnabled))
-      database->GetSettings()->SetUploadsEnabled(true);
-  }
+  auto database =
+      crashpad::CrashReportDatabase::Initialize(base::FilePath(databasePath));
+  bool uploadsEnabled = false;
+  if (database != nullptr && database->GetSettings() != nullptr &&
+      (!database->GetSettings()->GetUploadsEnabled(&uploadsEnabled) ||
+       !uploadsEnabled))
+    database->GetSettings()->SetUploadsEnabled(true);
 
   // Setup all the annotations.
   std::map<std::string, std::string> annotations;
