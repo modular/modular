@@ -182,10 +182,16 @@ def test_get_lora_graph_inputs(
 
     # Create requests
     device = CPU()
+    input_row_offsets = np.array([0, 8, 16])
 
     # Get LoRA graph inputs
-    lora_ids, _ = lora_manager.get_lora_graph_inputs(
-        ["loaded_lora", None], device
+    lora_ids, _, _ = lora_manager.get_lora_graph_inputs(
+        [
+            MagicMock(model_name="loaded_lora"),
+            MagicMock(model_name=lora_manager.base_model_path),
+        ],
+        input_row_offsets,
+        device,
     )
 
     lora_ids_np = lora_ids.to_numpy()

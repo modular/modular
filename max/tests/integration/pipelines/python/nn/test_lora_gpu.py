@@ -444,20 +444,22 @@ def linear_lora_max_output(
         "LinearLoRA",
         input_types=[
             TensorType(DTYPE, x.shape, device=device_ref),
-            TensorType(DType.int32, ["lora_ids"], device=device_ref),
+            TensorType(DType.int32, ["lora_ids"], device=DeviceRef.CPU()),
             TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
-            TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
+            TensorType(
+                DType.uint32, ["input_row_offsets"], device=DeviceRef.CPU()
+            ),
         ],
     ) as graph:
         x_input, lora_ids_input, lora_ranks_input, input_row_offsets_input = (
             graph.inputs
         )
         max_lora.set_lora_batch_info(
-            lora_ids_input.tensor, lora_ranks_input.tensor
+            lora_ids_input.tensor,
+            lora_ranks_input.tensor,
+            input_row_offsets_input.tensor,
         )
-        output = max_lora.apply_lora(
-            x_input.tensor, input_row_offsets_input.tensor
-        ).cast(DType.float32)
+        output = max_lora.apply_lora(x_input.tensor).cast(DType.float32)
         graph.output(output)
 
     compiled = session.load(graph, weights_registry=max_lora.state_dict())
@@ -479,9 +481,9 @@ def linear_lora_max_output(
 
     return compiled.execute(
         x_tensor,
-        Tensor.from_numpy(lora_ids).to(device),
+        Tensor.from_numpy(lora_ids),
         Tensor.from_numpy(lora_ranks).to(device),
-        Tensor.from_numpy(input_row_offsets).to(device),
+        Tensor.from_numpy(input_row_offsets),
     )
 
 
@@ -647,10 +649,10 @@ def attention_lora_max_output(
                 DTYPE, [x.shape[0] * x.shape[1], hidden_size], device=device_ref
             ),
             TensorType(DType.uint32, [x.shape[0] + 1], device=device_ref),
-            TensorType(DType.int32, ["lora_ids"], device=device_ref),
+            TensorType(DType.int32, ["lora_ids"], device=DeviceRef.CPU()),
             TensorType(DType.uint32, ["lora_ranks"], device=device_ref),
             TensorType(
-                DType.uint32, ["lora_input_row_offsets"], device=device_ref
+                DType.uint32, ["lora_input_row_offsets"], device=DeviceRef.CPU()
             ),
             blocks_type,
             cache_lengths_type,
@@ -678,7 +680,9 @@ def attention_lora_max_output(
         ]:
             if hasattr(proj, "set_lora_batch_info"):
                 proj.set_lora_batch_info(
-                    lora_ids_input.tensor, lora_ranks_input.tensor
+                    lora_ids_input.tensor,
+                    lora_ranks_input.tensor,
+                    lora_input_row_offsets_input.tensor,
                 )
 
         fetch_op = FetchPagedKVCacheCollection(kv_params)
@@ -737,9 +741,9 @@ def attention_lora_max_output(
     return compiled.execute(
         x_tensor,
         Tensor.from_numpy(attention_input_row_offsets).to(device),
-        Tensor.from_numpy(lora_ids).to(device),
+        Tensor.from_numpy(lora_ids),
         Tensor.from_numpy(lora_ranks).to(device),
-        Tensor.from_numpy(lora_input_row_offsets).to(device),
+        Tensor.from_numpy(lora_input_row_offsets),
         blocks,
         cache_lengths,
         lookup_table_tensor,
