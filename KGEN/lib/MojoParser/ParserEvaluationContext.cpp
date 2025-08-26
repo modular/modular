@@ -122,9 +122,13 @@ ParserEvaluationContext::evaluateGetWitness(TypedAttr typeValue,
     return failure();
 
   assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
-  auto conformanceOp =
-      dyn_cast<ConformanceOp>(conformanceDecls.front()->getIfOperation());
-
+  // Body resolve the conformance op before we extract witness from it.
+  ASTDecl &conformDecl = *conformanceDecls.front();
+  if (failed(shared.declResolver->resolveBody(conformDecl,
+                                              conformDecl.getLoc()))) {
+    return failure();
+  }
+  auto conformanceOp = cast<ConformanceOp>(conformDecl.getIfOperation());
   ParserParameterEvaluator nestedEvaluator(
       shared, structDeclOp.getInputParams(), structType.getParamValues());
 

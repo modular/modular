@@ -73,7 +73,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     test_many_things_of_specified_trait[
         SimpleTrait,
         TraitStruct,
-        # expected-error @+1 {{cannot bind type 'DoesNotConform' to trait 'SimpleTrait'}}
+         # This will succeed, the error will be raised when resolving `DoesNotConform`.
         DoesNotConform,
     ]()
 

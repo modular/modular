@@ -766,7 +766,6 @@ struct BadDtor1:
 
   # expected-error @+1 {{only 'self' arguments in struct methods may be 'deinit'}}
   fn bad1(self, deinit x: Int): pass
-  # expected-error @+2 {{cannot bind type 'BadDtor1' to trait 'AnyType'}}
   # expected-error @+1 {{deinit arguments may not be variadic}}
   fn bad2(deinit *self): pass
 
@@ -944,12 +943,11 @@ fn non_copyable_trait[T: CFMTrait](value: T):
     var copy = value # expected-error {{'T' is not copyable because it has no '__copyinit__'}}
 
 
-fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
+fn trait_fn_infer[T: CFMTrait](x: T):
     pass
 
 fn dont_crash_pvalue_convert(x: CFMStructFail):
-    # expected-error @below {{invalid call to 'trait_fn_infer': could not deduce parameter 'T' of callee 'trait_fn_infer'}}
-    # expected-note @below {{failed to infer parameter 'T', argument type 'CFMStructFail' does not conform to trait 'CFMTrait'}}
+    # This will succeed, the error will be raised when resolving `CFMStructFail`.
     trait_fn_infer(x)
 
 trait GrandFather: # expected-note {{trait 'GrandFather' declared here}}
