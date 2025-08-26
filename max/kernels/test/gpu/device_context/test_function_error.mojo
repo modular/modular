@@ -36,4 +36,5 @@ def test_function_error(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        # CHECK: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
         test_function_error(ctx)
