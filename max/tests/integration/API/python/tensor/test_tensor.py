@@ -9,11 +9,20 @@ These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
 """
 
+from __future__ import annotations
+
+from conftest import assert_all_close
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_dtype
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
+
+
+def test_ones_defaults() -> None:
+    with default_dtype(DType.float32):
+        t = Tensor.ones([10])
+        assert_all_close(list([1] * 10), t)
 
 
 def test_abs():

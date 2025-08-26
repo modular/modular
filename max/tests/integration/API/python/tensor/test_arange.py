@@ -10,12 +10,18 @@ import pytest
 from conftest import assert_all_close
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_dtype
 
 
 def test_arange() -> None:
     t = Tensor.arange(10, dtype=DType.float32, device=CPU())
     assert_all_close(list(range(10)), t)
+
+
+def test_arange_defaults() -> None:
+    with default_dtype(DType.float32):
+        t = Tensor.arange(10)
+        assert_all_close(list(range(10)), t)
 
 
 def test_invalid() -> None:
