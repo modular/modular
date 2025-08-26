@@ -13,12 +13,13 @@
 
 from math import ceildiv
 
-from gpu import block, global_idx, warp
+from gpu import block, global_idx, warp, lane_id
 from gpu.host import DeviceContext
 from gpu.host import DeviceContext
 from gpu.globals import WARP_SIZE
 from math import ceildiv
 from testing import assert_equal
+from sys.intrinsics import lanemask_lt
 
 alias dtype = DType.uint64
 
@@ -168,6 +169,69 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     out_host.free()
 
 
+fn warp_rank_kernel[
+    dtype: DType,
+](
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
+):
+    var tid = lane_id()
+    var v = input[tid]
+    var condition = v % 4 == 1
+    var rank = warp.rank(condition)
+    if condition:
+      print("tid", tid, "rank", rank, "value", v + 100, "lanemask_lt", lanemask_lt())
+      output[rank] = v + 100
+
+def test_warp_rank(ctx: DeviceContext):
+    alias size = WARP_SIZE
+
+    # Allocate and initialize host memory
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+
+    for i in range(size):
+        in_host[i] = i
+        out_host[i] = 0
+
+    # Create device buffers and copy input data
+    var in_device = ctx.enqueue_create_buffer[dtype](size)
+    var out_device = ctx.enqueue_create_buffer[dtype](size)
+    ctx.enqueue_copy(in_device, in_host)
+    ctx.enqueue_copy(out_device, out_host)
+
+    # Launch kernel
+    ctx.enqueue_function[warp_rank_kernel[dtype=dtype]](
+        out_device.unsafe_ptr(),
+        in_device.unsafe_ptr(),
+        block_dim=WARP_SIZE,
+        grid_dim=1,
+    )
+
+    # Copy results back and verify
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_device)
+    ctx.synchronize()
+
+    var expected = List[Scalar[dtype]](length=size, fill=0)
+
+    for i in range(size // 4):
+      expected[i] = 100 + 1 + i * 4
+
+    for i in range(size):
+        assert_equal(
+            out_host[i],
+            expected[i],
+            msg=String(
+                "out_host[", i, "] = ", out_host[i], " expected = ", expected[i]
+            ),
+        )
+
+    # Cleanup
+    in_host.free()
+    out_host.free()
+
+
 def main():
     with DeviceContext() as ctx:
         test_warp_prefix_sum[exclusive=True](ctx)
@@ -175,3 +239,6 @@ def main():
 
         test_block_prefix_sum[exclusive=True](ctx)
         test_block_prefix_sum[exclusive=False](ctx)
+
+        test_warp_rank(ctx)
+        test_warp_rank(ctx)

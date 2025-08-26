@@ -25,6 +25,7 @@ This module provides warp-level operations for NVIDIA and AMD GPUs, including:
   - max: Find maximum value across warp
   - min: Find minimum value across warp
   - broadcast: Broadcast value to all lanes
+  - rank: Find the rank of the thread given a mask
 
 The module handles both NVIDIA and AMD GPU architectures through architecture-specific
 implementations of the core operations. It supports various data types including
@@ -41,7 +42,9 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
+from sys.intrinsics import ballot, mbcnt, lanemask_lt
 
+from algorithm.functional import unswitch
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
@@ -50,6 +53,7 @@ from gpu.globals import WARP_SIZE
 from memory import bitcast
 
 from .tensor_ops import tc_reduce
+from .amdgcn_dpp import *
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
@@ -415,6 +419,20 @@ fn _shuffle_down_amd[
     var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
+@always_inline
+fn _shuffle_down_amd[
+    dtype: DType, simd_width: Int, //, offset: UInt
+](val: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+]:
+    @parameter
+    if amdgcn_supports_shifts() and (dtype.bitwidth() % 32) == 0 and offset <= 4:
+        var x = val
+        for _ in range(offset):
+            x = amdgcn_shift_left(x)
+        return x
+
+    return _shuffle_down_amd(_FULL_MASK, val, offset)
 
 @always_inline
 fn shuffle_down[
@@ -461,6 +479,36 @@ fn shuffle_down[
             operation="shuffle_down",
         ]()
 
+@always_inline
+fn shuffle_down[
+    dtype: DType, simd_width: Int, //, offset: UInt
+](val: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+]:
+    """Copies values from threads with higher lane IDs in the warp.
+
+    Specialization of the to the other shuffle_down functions for a lane offset
+    that's known at compile time and uniform across all threads of a warp.
+
+    Parameters:
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
+        offset: The number of lanes to shift values down by. Must be positive.
+
+    Args:
+        val: The SIMD value to be shuffled down the warp.
+
+    Returns:
+        The SIMD value from the thread offset lanes higher in the warp.
+        Returns undefined values for threads where lane_id + offset >= WARP_SIZE
+        or where the corresponding mask bit is not set.
+    """
+
+    @parameter
+    if is_amd_gpu():
+        return _shuffle_down_amd[offset](val)
+    else:
+        return shuffle_down(val, offset)
 
 # ===-----------------------------------------------------------------------===#
 # shuffle_xor
@@ -506,6 +554,39 @@ fn _shuffle_xor_amd[
     var t2 = t1 + WARP_SIZE
     var dst_lane = t0.lt(t2).select(t0, lane)
     return _shuffle_amd_helper(dst_lane, val)
+
+
+@always_inline
+fn shuffle_xor[
+    dtype: DType, simd_width: Int, //, offset: UInt
+](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Exchanges values between threads in a warp using a butterfly pattern.
+
+    Specialization of the other shuffle_xor functions for an offset known at compile time
+    and uniform across all threads in a warp.
+
+    Parameters:
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in each SIMD vector.
+        offset: The lane offset to XOR with the current thread's lane ID to determine
+               the exchange partner. Common values are powers of 2 for butterfly patterns.
+
+    Args:
+        val: The SIMD value to be exchanged with another thread.
+
+    Returns:
+        The SIMD value from the thread at lane (current_lane XOR offset).
+    """
+    @parameter
+    if is_amd_gpu():
+        @parameter
+        if (dtype.bitwidth() % 32) == 0 and offset <= 3:
+            return amdgcn_quad_shuffle_xor[offset](val)
+
+        else:
+            return _shuffle_xor_amd(_FULL_MASK, val, offset)
+
+    return shuffle_xor(_FULL_MASK, val, offset)
 
 
 @always_inline
@@ -625,6 +706,54 @@ fn lane_group_reduce[
 
 
 @always_inline
+fn lane_group_reduce[
+    val_type: DType,
+    simd_width: Int, //,
+    # TODO: specialize for a parameter `offset: UInt` in the shuffle function
+    shuffle: fn[dtype: DType, simd_width: Int, //, offset: UInt] (
+        val: SIMD[dtype, simd_width]
+    ) -> SIMD[dtype, simd_width],
+    func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing -> SIMD[dtype, width],
+    num_lanes: Int,
+    *,
+    stride: Int = 1,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Performs a generic warp-level reduction operation using shuffle operations.
+
+    Specialization of the lane_group_reduce function that accepts a shuffle function
+    taking a compile time offset parameter.
+
+    Parameters:
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
+                offset (as a parameter) and returns the shuffled result.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
+        num_lanes: The number of lanes in a group. The reduction is done within each group. Must be a power of 2.
+        stride: The stride between lanes participating in the reduction.
+
+    Args:
+        val: The SIMD value to reduce. Each lane contributes its value.
+
+    Returns:
+        A SIMD value containing the reduction result.
+    """
+    var res = val
+
+    alias limit = log2_floor(num_lanes)
+
+    @parameter
+    for i in reversed(range(limit)):
+        alias offset = 1 << i
+        res = func(res, shuffle[offset*stride](res))
+
+    return res
+
+
+@always_inline
 fn reduce[
     val_type: DType,
     simd_width: Int, //,
@@ -671,6 +800,39 @@ fn reduce[
     return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
 
 
+@always_inline
+fn reduce[
+    val_type: DType,
+    simd_width: Int, //,
+    shuffle: fn[dtype: DType, simd_width: Int, //, offset: UInt] (
+        val: SIMD[dtype, simd_width]
+    ) -> SIMD[dtype, simd_width],
+    func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing -> SIMD[dtype, width],
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    """Performs a generic warp-wide reduction operation using shuffle operations.
+
+    Specialization of the reduce function that accpets a shuffle function taking
+    the offset as a compile time parameter.
+
+    Parameters:
+        val_type: The data type of the SIMD elements (e.g. float32, int32).
+        simd_width: The number of elements in the SIMD vector.
+        shuffle: A function that performs the warp shuffle operation. Takes a SIMD value and
+                offset and returns the shuffled result.
+        func: A binary function that combines two SIMD values during reduction. This defines
+              the reduction operation (e.g. add, max, min).
+
+    Args:
+        val: The SIMD value to reduce. Each lane contributes its value.
+
+    Returns:
+        A SIMD value containing the reduction result broadcast to all lanes in the warp.
+    """
+    return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
+
+
 # ===-----------------------------------------------------------------------===#
 # Warp Sum
 # ===-----------------------------------------------------------------------===#
@@ -707,8 +869,11 @@ fn lane_group_sum[
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
+    fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return shuffle_down[offset](val)
+
     return lane_group_reduce[
-        shuffle_down, _reduce_add, num_lanes=num_lanes, stride=stride
+        _shuffle, _reduce_add, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -743,8 +908,11 @@ fn lane_group_sum_and_broadcast[
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
+    fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return shuffle_xor[offset](val)
+
     return lane_group_reduce[
-        shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
+        _shuffle, _reduce_add, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -1001,8 +1169,11 @@ fn lane_group_max[
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
+    fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return shuffle_down[offset](val)
+
     return lane_group_reduce[
-        shuffle_down, _reduce_max, num_lanes=num_lanes, stride=stride
+        _shuffle, _reduce_max, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -1044,8 +1215,11 @@ fn lane_group_max_and_broadcast[
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
+    fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return shuffle_xor[offset](val)
+
     return lane_group_reduce[
-        shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
+        _shuffle, _reduce_max, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -1116,8 +1290,11 @@ fn lane_group_min[
     fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _min(x, y)
 
+    fn _shuffle[dtype: DType, simd_width: Int, offset: UInt](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return shuffle_down[offset](val)
+
     return lane_group_reduce[
-        shuffle_down, _reduce_min, num_lanes=num_lanes, stride=stride
+        _shuffle, _reduce_min, num_lanes=num_lanes, stride=stride
     ](val)
 
 
@@ -1201,3 +1378,49 @@ fn broadcast(val: UInt) -> UInt:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return Int(shuffle_idx(Int32(val), 0))
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Rank
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn rank(flag: Scalar[DType.bool]) -> Scalar[DType.uint32]:
+  """Computes the rank of the thread within a warp given the flag.
+
+  Equivalent to a warp-wide prefix sum where each thread can contribute either
+  zero or one to the sum.
+
+  Args:
+      flag: Whether this thread is enabled or not.
+
+  Returns:
+      The rank (index) of this thread among threads of this warp that had the
+      flag enabled.
+
+  Example:
+      To filter out odd elements and output them to a contiguous range, one
+      could use the following pattern:
+
+      ```mojo
+          from gpu.warp import rank
+
+          var condition = element % 2 == 0
+          var rank = rank(condition)
+
+          if condition:
+            output[rank] = element
+      ```
+  """
+
+  @parameter
+  if is_amd_gpu():
+    @parameter
+    if WARP_SIZE == 32:
+      return mbcnt(ballot[DType.int32](flag))
+    else:
+      return mbcnt(bitcast[DType.int32, 2](ballot[DType.int64](flag)))
+  else:
+    var b = ballot[DType.int32](flag).cast[DType.uint32]()
+    return (b & Scalar[DType.uint32](lanemask_lt())).reduce_bit_count()
