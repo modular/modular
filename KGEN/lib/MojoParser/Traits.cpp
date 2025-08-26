@@ -678,32 +678,10 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   for (SymbolRefAttr symbol : providedSymbols)
     requiredSymbols.erase(symbol);
 
-  if (requiredSymbols.empty()) {
-    // If this is a struct decl, we need to verify explicit conformances by
-    // fully resolving each conformance decl (see CALROC for more).
-    bool conforms = true;
-    if (auto structOp =
-            dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
-      SmallVector<SymbolRefAttr> fullRequiredSymbols(trait.getSymbols());
-      canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
-      for (SymbolRefAttr symbol : fullRequiredSymbols) {
-        ArrayRef<ASTDecl *> witnessTables =
-            lookupInCurrentScope(getFlattenedSymbolName(symbol));
-        if (witnessTables.empty()) {
-          // There is only one way this can happen: this conformance check
-          // occurred while parsing the body of the struct (a self-referential
-          // type-value). Treat this as a success, because eventually all
-          // conformances on this struct will be resolved & checked.
-          continue;
-        }
-        assert(witnessTables.size() == 1);
-        conforms &= succeeded(
-            shared.declResolver->resolveBody(*witnessTables.front(), getLoc()));
-      }
-    }
-    return conforms;
-  }
-  return false;
+  // Simply return true if we find the symbol for the requested trait, this does
+  // not resolve ConformanceOp and raise error immediately but delaying to when
+  // a concrete witness attribute is queried.
+  return requiredSymbols.empty();
 }
 
 /// Helper for clients that don't care about the diagnostic.

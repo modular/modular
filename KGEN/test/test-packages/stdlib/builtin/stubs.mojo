@@ -591,7 +591,7 @@ trait Copyable:
     fn __copyinit__(out self, existing: Self, /):
         pass
 
-    alias __copyinit__is_trivial: __mlir_type.i1
+    alias __copyinit__is_trivial: Bool
 
 
 @explicit_destroy
@@ -604,7 +604,7 @@ trait Movable:
     fn __moveinit__(out self, deinit existing: Self, /):
         pass
 
-    alias __moveinit__is_trivial: __mlir_type.i1
+    alias __moveinit__is_trivial: Bool
 
 
 trait ExplicitlyCopyable:
@@ -616,7 +616,7 @@ trait AnyType:
     fn __del__(deinit self, /):
         ...
 
-    alias __del__is_trivial: __mlir_type.i1
+    alias __del__is_trivial: Bool
 
 
 alias ImplicitlyDestructible = AnyType

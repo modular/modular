@@ -977,6 +977,9 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
          "unknown synthesized alias");
 
   IREmitter emitter(structDecl, EC_AliasValue);
+  // NOTE: we have to first synthesize the bit to `i1` (instead of `Bool`) to
+  // avoid signature resolving `Bool::__init__`s, the implicit conversion will
+  // be taken care of when body resolve conformanceOp.
   auto emitI1Attr = [this, &emitter](bool v) {
     SyntheticNode synthNode(structDecl.getLoc());
     return emitter
