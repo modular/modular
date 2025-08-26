@@ -156,7 +156,7 @@ fn kgen_struct_to_simd_reverse[
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
-        simd[n - i - 1] = Scalar[dtype](e)
+        simd[n - i - 1] = Scalar[dtype](mlir_value=e)
     return simd
 
 
