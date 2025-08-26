@@ -177,6 +177,32 @@ def test_stat():
     )
 
 
+# More elaborate tests in `os/path/test_basename.mojo`
+def test_name():
+    # Root directories
+    assert_equal("", Path("/").name())
+
+    # Empty strings
+    assert_equal("", Path("").name())
+
+    # Current directory (matching behavior of python, doesn't resolve `..` etc.)
+    assert_equal(".", Path(".").name())
+
+    # Parent directory
+    assert_equal("..", Path("..").name())
+
+    # Absolute paths
+    assert_equal("file", Path("/file").name())
+    assert_equal("file.txt", Path("/file.txt").name())
+    assert_equal("file", Path("/dir/file").name())
+    assert_equal("file", Path("/dir/subdir/file").name())
+
+    # Relative paths
+    assert_equal("file", Path("dir/file").name())
+    assert_equal("file", Path("dir/subdir/file").name())
+    assert_equal("file", Path("file").name())
+
+
 def main():
     test_cwd()
     test_path()
@@ -189,3 +215,4 @@ def main():
     test_expand_user()
     test_home()
     test_stat()
+    test_name()
