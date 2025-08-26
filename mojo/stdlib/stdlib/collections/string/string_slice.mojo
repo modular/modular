@@ -70,6 +70,7 @@ from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros
+from bit._mask import splat, is_negative
 from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, ConvertibleToPython, PythonObject
@@ -2002,16 +2003,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 offset += b_len
             return length != 0
 
-    fn splitlines[
-        O: ImmutableOrigin, //
-    ](self: StringSlice[O], keepends: Bool = False) -> List[StringSlice[O]]:
+    fn splitlines(self, keepends: Bool = False) -> List[Self.Immutable]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
-
-        Parameters:
-            O: The immutable origin.
 
         Args:
             keepends: If True, line breaks are kept in the resulting strings.
@@ -2024,39 +2020,66 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         alias `\r` = UInt8(ord("\r"))
         alias `\n` = UInt8(ord("\n"))
 
-        var output = List[StringSlice[O]](capacity=128)  # guessing
-        var ptr = self.unsafe_ptr()
+        var output = List[Self.Immutable](capacity=128)  # guessing
+        var ptr = self.get_immutable().unsafe_ptr()
         var length = self.byte_length()
-        var offset = 0
+        var line_start = UInt(0)
+        var prev_b0 = Byte(0)
 
-        while offset < length:
-            var eol_start = offset
-            var eol_length = 0
+        @always_inline
+        @parameter
+        fn _splitlines[keep: Bool]():
+            while line_start < length:
+                var line_end = line_start
+                var is_new_line = False
+                var b0 = Byte(0)
+                var char_len = UInt(0)
 
-            while eol_start < length:
-                var b0 = ptr[eol_start]
-                var char_len = _utf8_first_byte_sequence_length(b0)
-                debug_assert(
-                    eol_start + char_len <= length,
-                    "corrupted sequence causing unsafe memory access",
-                )
-                var isnewline = unlikely(
-                    _is_newline_char_utf8(ptr, eol_start, b0, char_len)
-                )
-                var char_end = Int(isnewline) * (eol_start + char_len)
-                var next_idx = char_end * Int(char_end < length)
-                var is_r_n = (
-                    b0 == `\r` and next_idx != 0 and ptr[next_idx] == `\n`
-                )
-                eol_length = Int(isnewline) * char_len + Int(is_r_n)
-                if isnewline:
-                    break
-                eol_start += char_len
+                while not is_new_line and line_end < length:
+                    b0 = ptr[line_end]
+                    char_len = _utf8_first_byte_sequence_length(b0)
+                    debug_assert(
+                        line_end + char_len <= length,
+                        "corrupted sequence causing unsafe memory access",
+                    )
+                    # percentage-wise a newline is uncommon compared to a normal byte
+                    is_new_line = unlikely(
+                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                    )
+                    line_end += char_len
 
-            var str_len = eol_start - offset + Int(keepends) * eol_length
-            var s = StringSlice[O](ptr=ptr + offset, length=str_len)
-            output.append(s)
-            offset = eol_start + eol_length
+                var str_len = line_end - line_start
+
+                # NOTE: when keep=True the algorithm needs to check the next
+                # character to see whether it is \r\n due to having to store the
+                # full line + the line ending.
+                # When keep=False it is much faster because the previous
+                # character is stored in a variable instead of having to deref a
+                # pointer
+                @parameter
+                if keep:
+                    var is_r = unlikely(b0 == `\r`)
+                    var may_be_r_n = is_r and likely(line_end < length)
+                    var is_r_n = UInt(
+                        unlikely(may_be_r_n and ptr[line_end] == `\n`)
+                    )
+                    line_end += is_r_n
+                    str_len += is_r_n
+                else:
+                    str_len -= UInt(splat(likely(is_new_line))) & char_len
+                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
+                    prev_b0 = b0
+                    if is_r_n:  # the line was already appended
+                        line_start = line_end
+                        continue
+                var s = Self.Immutable(ptr=ptr + line_start, length=str_len)
+                output.append(s)
+                line_start = line_end
+
+        if keepends:
+            _splitlines[keep=True]()
+        else:
+            _splitlines[keep=False]()
 
         return output^
 
@@ -2640,11 +2663,11 @@ fn _split[
         # FIXME(#3526): use str_span and sep_span
         rhs = src_str.find(sep, lhs)
         # if not found go to the end
-        rhs += -Int(rhs == -1) & (str_byte_len + 1)
+        rhs += is_negative(rhs) & (str_byte_len + 1)
 
         @parameter
         if has_maxsplit:
-            rhs += -Int(items == maxsplit) & (str_byte_len - rhs)
+            rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
         output.append(S(ptr=ptr + lhs, length=rhs - lhs))
@@ -2696,7 +2719,7 @@ fn _split[
 
         @parameter
         if has_maxsplit:
-            rhs += -Int(items == maxsplit) & (str_byte_len - rhs)
+            rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
         output.append(S(ptr=ptr + lhs, length=rhs - lhs))

@@ -82,3 +82,17 @@ fn splat[
         otherwise.
     """
     return (-(value.cast[DType.int8]())).cast[dtype]()
+
+
+@always_inline
+fn splat(value: Bool) -> Int:
+    """Get a bitmask of whether the value is `True`.
+
+    Args:
+        value: The value to check.
+
+    Returns:
+        A bitmask filled with `1` if the value is `True`, filled with `0`
+        otherwise.
+    """
+    return Int(splat[DType.index](Scalar[DType.bool](value)))
