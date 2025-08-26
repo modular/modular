@@ -32,7 +32,9 @@ from memory import bitcast
 
 
 @register_passable("trivial")
-struct Consistency(Copyable, EqualityComparable, Movable, Representable, Stringable):
+struct Consistency(
+    Copyable, EqualityComparable, Movable, Representable, Stringable
+):
     """Represents the consistency model for atomic operations.
 
     The class provides a set of constants that represent different consistency
@@ -131,7 +133,7 @@ struct Consistency(Copyable, EqualityComparable, Movable, Representable, Stringa
         Returns:
             A string representation of this consistency.
         """
-         return self.as_string_slice()   
+        return self.as_string_slice()
 
     fn __str__(self) -> String:
         """Returns a string representation of a `Consistency`.
