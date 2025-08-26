@@ -99,30 +99,6 @@ fn main() raises:
         )
         print("threads_per_sm=-1, ")
         print(
-            "threads_per_warp="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
-            + ", "
-        )
-        print("warps_per_multiprocessor=64, ")
-        print(
-            "threads_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "thread_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
             "shared_memory_per_multiprocessor="
             + String(
                 ctx.get_attribute(
@@ -141,7 +117,6 @@ fn main() raises:
             + ", "
         )
         print("register_allocation_unit_size=256, ")
-        print('allocation_granularity="warp", ')
         print("max_registers_per_thread=255, ")
         print(
             "max_registers_per_block="
@@ -150,17 +125,7 @@ fn main() raises:
             )
             + ", "
         )
-        print(
-            "max_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
         print("shared_memory_allocation_unit_size=128, ")
-        print("warp_allocation_granularity=4, ")
         print("max_thread_block_size=1024, ")
         print(")")
     elif ctx.api() == "hip":
@@ -186,21 +151,6 @@ fn main() raises:
         )
         print("threads_per_sm=-1, ")
         print(
-            "threads_per_warp="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
-            + ", "
-        )
-        print("warps_per_multiprocessor=64, ")
-        print(
-            "threads_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
             "register_file_size="
             + String(
                 ctx.get_attribute(
@@ -210,7 +160,6 @@ fn main() raises:
             + ", "
         )
         print("register_allocation_unit_size=256, ")
-        print('allocation_granularity="warp", ')
         print("max_registers_per_thread=255, ")
         print(
             "max_registers_per_block="
@@ -220,6 +169,5 @@ fn main() raises:
             + ", "
         )
         print("shared_memory_allocation_unit_size=128, ")
-        print("warp_allocation_granularity=4, ")
         print("max_thread_block_size=1024, ")
         print(")")
