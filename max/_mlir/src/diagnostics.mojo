@@ -53,7 +53,7 @@ struct Diagnostic(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.Diagnostics.mlirDiagnosticPrint(writer, self.c)
 
     fn get_severity(self) -> DiagnosticSeverity:

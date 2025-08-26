@@ -93,11 +93,8 @@ struct UMMAKind(Stringable, Writable):
         return String.write(self)
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write the UMMA kind to a writer.
-
-        Parameters:
-            W: The writer type that will receive the formatted output.
 
         Args:
             writer: The writer to write the UMMA kind to.

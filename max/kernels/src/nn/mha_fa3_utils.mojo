@@ -122,7 +122,7 @@ struct MHAPosition[
             return self.head_idx // Self.group
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.q_out_offset,

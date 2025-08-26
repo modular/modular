@@ -156,7 +156,7 @@ struct MyType(
     fn __float__(self) -> Float64:
         return self.value
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.value)
 
     fn __str__(self) -> String:

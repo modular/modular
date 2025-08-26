@@ -306,11 +306,8 @@ struct RuntimeLayout[
         return __type_of(result)(shape.cast[element_type](), stride)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write a string representation of the layout to a writer.
-
-        Parameters:
-            W: The `Writer` type.
 
         Args:
             writer: The `Writer` object to write the layout representation to.

@@ -28,7 +28,7 @@ struct Point(Stringable, Writable):
     var y: Int
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
 
     @no_inline

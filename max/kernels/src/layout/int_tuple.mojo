@@ -1236,12 +1236,9 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return self
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
-
-        Parameters:
-            W: A type that conforms to the Writer trait.
 
         Args:
             writer: The writer to output the string representation to.

@@ -215,7 +215,7 @@ struct curandRngType(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_RNG_TEST:
             return writer.write("CURAND_RNG_TEST")
         if self is Self.CURAND_RNG_PSEUDO_DEFAULT:
@@ -569,7 +569,7 @@ struct curandMethod(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_CHOOSE_BEST:
             return writer.write("CURAND_CHOOSE_BEST")
         if self is Self.CURAND_ITR:
@@ -732,7 +732,7 @@ struct curandStatus(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_STATUS_SUCCESS:
             return writer.write("CURAND_STATUS_SUCCESS")
         if self is Self.CURAND_STATUS_VERSION_MISMATCH:
@@ -802,7 +802,7 @@ struct curandDirectionVectorSet(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_DIRECTION_VECTORS_32_JOEKUO6:
             return writer.write("CURAND_DIRECTION_VECTORS_32_JOEKUO6")
         if self is Self.CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6:
@@ -1273,7 +1273,7 @@ struct curandOrdering(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_ORDERING_PSEUDO_BEST:
             return writer.write("CURAND_ORDERING_PSEUDO_BEST")
         if self is Self.CURAND_ORDERING_PSEUDO_DEFAULT:

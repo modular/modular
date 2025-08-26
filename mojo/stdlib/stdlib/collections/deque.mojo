@@ -402,14 +402,12 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
     @no_inline
     fn write_to[
         T: Representable & ExplicitlyCopyable & Movable,
-        WriterType: Writer,
-    ](self: Deque[T], mut writer: WriterType):
+    ](self: Deque[T], mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
         Parameters:
             T: The type of the Deque elements.
                 Must implement the trait `Representable`.
-            WriterType: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.

@@ -57,7 +57,7 @@ struct _OptimizationLevel(Intable, Stringable, Writable):
         return Self.level
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 
@@ -93,7 +93,7 @@ struct _DebugLevel(Copyable, Movable, Stringable, Writable):
     alias level = env_get_string["__DEBUG_LEVEL", "none"]()
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 

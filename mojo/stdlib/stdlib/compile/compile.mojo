@@ -127,11 +127,8 @@ struct CompiledFunctionInfo[
     """
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the assembly/IR to a writer.
-
-        Parameters:
-            W: Type that implements the Writer interface for writing data.
 
         Args:
             writer: Writer object to write the assembly to.

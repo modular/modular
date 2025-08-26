@@ -448,14 +448,11 @@ struct Swizzle(LayoutTrait, Movable, Stringable, Writable):
         """
         return self.size()
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write the swizzle parameters to a writer.
 
         Outputs the swizzle parameters (bits, base, shift) in a
         tuple format.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write to.

@@ -106,7 +106,7 @@ struct FlashAttentionAlgorithm(
             return self
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
             writer.write("naive-attention")
         elif self._value == 1:
@@ -331,7 +331,7 @@ struct MHAConfig(Copyable, Movable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self.algorithm == 2:
             writer.write("ampere_")
         else:

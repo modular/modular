@@ -5451,16 +5451,13 @@ struct LayoutTensor[
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Format and write the tensor's contents to a writer.
 
         This method formats the tensor's contents and writes them to the
         provided writer. For 2D tensors, it formats the output in a 2D grid. For
         tensors of other ranks, it prints all values in column-major coordinate
         order.
-
-        Parameters:
-            W: The writer type that will receive the formatted output.
 
         Args:
             writer: The writer instance to write the formatted output to.

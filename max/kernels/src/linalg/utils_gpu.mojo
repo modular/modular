@@ -224,7 +224,7 @@ struct MatmulConfig[
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
         writer.write(a_type, "_")
         writer.write(c_type, "_")

@@ -216,7 +216,7 @@ struct StreamPriorityRange(Copyable, Movable, Stringable, Writable):
         return String.write(self)
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(
             "StreamPriorityRange(least=",
             self.least,
@@ -670,14 +670,11 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         ](self._handle)
         return DeviceContext(ctx_ptr)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of this buffer to the provided writer.
 
         This method formats the buffer's contents as a string and writes it to
         the specified writer. For large buffers, a compact representation is used.
-
-        Parameters:
-            W: The writer dtype.
 
         Args:
             writer: The writer to output the formatted string to.
@@ -1332,14 +1329,11 @@ struct DeviceBuffer[dtype: DType](
         ]()
         mapped_buffer = _HostMappedBuffer[dtype](self.context(), self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of this buffer to the provided writer.
 
         This method formats the buffer's contents as a string and writes it to
         the specified writer. For large buffers, a compact representation is used.
-
-        Parameters:
-            W: The writer dtype.
 
         Args:
             writer: The writer to output the formatted string to.

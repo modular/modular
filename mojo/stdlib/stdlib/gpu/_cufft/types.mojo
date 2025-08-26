@@ -83,7 +83,7 @@ struct Status(Stringable, Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_SUCCESS:
             return writer.write("CUFFT_SUCCESS")
         if self is Self.CUFFT_INVALID_PLAN:
@@ -162,7 +162,7 @@ struct Type(Stringable, Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_R2C:
             return writer.write("CUFFT_R2C")
         if self is Self.CUFFT_C2R:
@@ -211,7 +211,7 @@ struct Compatibility(Stringable, Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_COMPATIBILITY_FFTW_PADDING:
             return writer.write("CUFFT_COMPATIBILITY_FFTW_PADDING")
         abort("invalid cufftCompatibility_t entry")
@@ -251,7 +251,7 @@ struct Property(Stringable, Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT:
             return writer.write("NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT")
         if self is Self.NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS:

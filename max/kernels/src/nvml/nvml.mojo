@@ -209,7 +209,7 @@ struct Result(Copyable, EqualityComparable, Movable, Stringable, Writable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Result.SUCCESS:
             writer.write("SUCCESS")
         elif self == Result.UNINITIALIZED:
@@ -587,7 +587,7 @@ struct Device(Writable):
         return self.__repr__()
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("Device(", self.idx, ")")
 
     @no_inline

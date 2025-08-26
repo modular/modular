@@ -252,7 +252,7 @@ struct Location(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirLocationPrint(writer, self.c)
 
 
@@ -305,7 +305,7 @@ struct Module(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_op())
 
 
@@ -590,7 +590,7 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirOperationPrint(writer, self.c)
 
 
@@ -641,7 +641,7 @@ struct Type(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirTypePrint(writer, self.c)
 
 
@@ -694,7 +694,7 @@ struct Value(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirValuePrint(writer, self.c)
 
 
@@ -726,7 +726,7 @@ struct Attribute(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirAttributePrint(writer, self.c)
 
 
@@ -796,7 +796,7 @@ struct Block(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirBlockPrint(writer, self.c)
 
 

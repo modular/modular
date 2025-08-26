@@ -323,7 +323,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(shape, ":", self.stride)
 
 

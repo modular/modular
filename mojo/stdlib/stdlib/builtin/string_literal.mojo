@@ -376,12 +376,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this string literal to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.

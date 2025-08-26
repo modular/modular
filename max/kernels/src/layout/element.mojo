@@ -625,11 +625,8 @@ struct Element[
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the element to the specified writer.
-
-        Parameters:
-            W: Type parameter representing a Writer implementation.
 
         Args:
             writer: The writer to output the element representation to.

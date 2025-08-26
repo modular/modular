@@ -809,13 +809,10 @@ struct Layout(
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the layout to the specified writer.
 
         Formats the layout as "(shape:stride)" and writes it to the provided writer.
-
-        Parameters:
-            W: Type parameter representing a Writer implementation.
 
         Args:
             writer: The writer to output the layout representation to.

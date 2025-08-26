@@ -96,7 +96,7 @@ struct TileMaskStatus(
     fn __or__(self, rhs: Self) -> Self:
         return Self(self.status | rhs.status)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.NO_MASK:
             return writer.write("not masked")
         if self is Self.PARTIAL_MASK:

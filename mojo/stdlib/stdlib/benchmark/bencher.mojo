@@ -52,11 +52,8 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             The string representation."""
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this BenchMetric to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -170,11 +167,8 @@ struct ThroughputMeasure(Copyable, Movable):
         """
         return String(self.metric)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this ThroughputMeasure to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -242,11 +236,8 @@ struct Format(Copyable, Movable, Stringable, Writable):
         """
         return String(self.value)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The writer to write the `Format` to.
@@ -986,11 +977,8 @@ struct Bench(Stringable, Writable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the benchmark results to a writer.
-
-        Parameters:
-            W: A type conforming to the Writer trait.
 
         Args:
             writer: The writer to write to.

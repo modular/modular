@@ -101,7 +101,7 @@ struct Config(Copyable, Movable, Writable):
             )
             return Self.UNDEFINED
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
             writer.write("device_to_device")
             return

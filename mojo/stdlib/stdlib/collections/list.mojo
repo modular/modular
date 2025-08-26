@@ -568,12 +568,11 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn write_to[
-        W: Writer, U: Representable & Copyable & Movable, //
-    ](self: List[U, *_], mut writer: W):
+        U: Representable & Copyable & Movable, //
+    ](self: List[U, *_], mut writer: Some[Writer]):
         """Write `my_list.__str__()` to a `Writer`.
 
         Parameters:
-            W: A type conforming to the Writable trait.
             U: The type of the List elements. Must have the trait
                 `Representable`.
 

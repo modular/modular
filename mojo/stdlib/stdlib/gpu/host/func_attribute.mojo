@@ -169,14 +169,11 @@ struct Attribute(Writable):
         """
         return not (self is other)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 
             This method converts the `Attribute` enum value to its corresponding string name
             and writes it to the provided writer object.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: A Writer object that will receive the string representation.

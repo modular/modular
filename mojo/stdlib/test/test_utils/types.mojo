@@ -145,7 +145,7 @@ struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     fn __copyinit__(out self, existing: Self):
         self.copy_count = existing.copy_count + 1
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("CopyCounter(")
         writer.write(String(self.copy_count))
         writer.write(")")
@@ -245,7 +245,7 @@ struct DelCounter(Copyable, Movable, Writable):
     fn __del__(deinit self):
         self.counter[] += 1
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("DelCounter(")
         writer.write(String(self.counter[]))
         writer.write(")")
