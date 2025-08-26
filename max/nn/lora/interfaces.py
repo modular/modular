@@ -24,6 +24,7 @@ class SupportsLoRA(Protocol):
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
+        lora_grouped_offsets: TensorValue,
     ) -> None: ...
 
     def apply_lora(self, *args, **kwargs) -> None: ...

@@ -119,13 +119,13 @@ class LinearLoRA(Linear):
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
+        lora_grouped_offsets: TensorValue,
     ) -> None:
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
+        self.lora_grouped_offsets = lora_grouped_offsets
 
-    def apply_lora(
-        self, x: TensorValue, input_row_offsets: TensorValue
-    ) -> TensorValue:
+    def apply_lora(self, x: TensorValue) -> TensorValue:
         y = self(x)
 
         if self.lora_ids is None or self.lora_ranks is None:
@@ -139,7 +139,7 @@ class LinearLoRA(Linear):
             lora_b=self.lora_B,
             lora_ids=self.lora_ids,
             lora_ranks=self.lora_ranks,
-            input_row_offsets=input_row_offsets,
+            grouped_row_offsets=self.lora_grouped_offsets,
             max_lora_seq_len=self.in_dim,
             bias=self.lora_bias,
         )

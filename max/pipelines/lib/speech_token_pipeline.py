@@ -62,7 +62,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             return {}
         tracer: Tracer = Tracer("compute_parameters")
 
-        self._maybe_sort_loras(batch)
+        batch = self._maybe_sort_loras(batch)
 
         # Flatten our batch for consistent indexing.
         context_batch = list(batch.values())

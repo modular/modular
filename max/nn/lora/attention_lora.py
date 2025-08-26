@@ -175,9 +175,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
 
-        out = cast(LinearLoRA, self.o_proj).apply_lora(
-            attn_out, input_row_offsets
-        )
+        out = cast(LinearLoRA, self.o_proj).apply_lora(attn_out)
 
         return out
 
@@ -209,6 +207,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         lora_ids = qkv_loras[0].lora_ids
         lora_ranks = qkv_loras[0].lora_ranks
+        lora_grouped_offsets = qkv_loras[0].lora_grouped_offsets
 
         if lora_ids is None or lora_ranks is None:
             raise ValueError(
@@ -231,12 +230,11 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             lora_ids=lora_ids,
             lora_ranks=lora_ranks,
             input_row_offsets=input_row_offsets,
+            lora_grouped_offsets=lora_grouped_offsets,
             kv_collection=kv_collection,
             kv_params=self.kv_params,
             layer_idx=layer_idx,
             max_lora_seq_len=self.rope.max_seq_len,
-            max_rank=qkv_loras[0].max_lora_rank,
             q_dim=self.q_weight_dim,
-            kv_dim=self.kv_weight_dim,
             bias=lora_bias,
         )

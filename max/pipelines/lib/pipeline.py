@@ -983,13 +983,14 @@ class TextGenerationPipeline(
         """
 
         batch = self._maybe_sort_loras(inputs.batch)
+
         if self.batch_info_output_fname is not None:
-            self._record_batch_info(inputs.batch.values(), inputs.num_steps)
+            self._record_batch_info(batch.values(), inputs.num_steps)
 
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
-        context_batch = list(inputs.batch.values())
+        context_batch = list(batch.values())
 
         # # Get extra compute parameters for each input.
         batch_top_n = [context.log_probabilities for context in context_batch]

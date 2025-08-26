@@ -73,7 +73,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
 )
-from linalg.grouped_matmul import grouped_matmul
+from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
@@ -159,11 +159,9 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
-    k_grouped_matmul_ragged_paged,
     k_matmul_ragged_paged,
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
-    v_grouped_matmul_ragged_paged,
     generic_kv_cache_radd_dispatch,
 )
 from nn.mha import flash_attention
@@ -8911,10 +8909,7 @@ struct Struct_lora_sgmv_ragged:
         constrained[is_gpu[target](), "SGMV only supported on GPUs"]()
         cuda_ctx = context.get_device_context()
 
-        if lora_ids.dim_size[0]() == 0:
-            return
-
-        grouped_matmul(
+        grouped_matmul_vendor(
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
@@ -8923,92 +8918,6 @@ struct Struct_lora_sgmv_ragged:
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
-        )
-
-
-# ===-----------------------------------------------------------------------===#
-# K Cache Grouped Matmul Kernel
-# ===-----------------------------------------------------------------------===#
-
-
-@compiler.register("mo.k_grouped.matmul.ragged.paged")
-struct Struct_k_grouped_matmul_ragged_paged:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
-        target: StaticString,
-    ](
-        a: InputTensor[dtype=dtype, rank=2],
-        b: InputTensor[dtype=dtype, rank=3],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        ids: InputTensor[dtype = DType.int32, rank=1],
-        max_num_tokens_per_expert: UInt32,
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
-            page_size,
-        ],
-        layer_idx: UInt32,
-        context: DeviceContextPtr,
-    ) raises:
-        constrained[is_gpu[target](), "k_grouped_matmul only supports GPUs"]()
-        k_grouped_matmul_ragged_paged[dtype, target=target,](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
-            managed_tensor_slice_to_ndbuffer(ids),
-            Int(max_num_tokens_per_expert),
-            ids.dim_size[0](),
-            kv_collection,
-            layer_idx,
-            context,
-        )
-
-
-# ===-----------------------------------------------------------------------===#
-# V Cache Grouped Matmul Kernel
-# ===-----------------------------------------------------------------------===#
-
-
-@compiler.register("mo.v_grouped.matmul.ragged.paged")
-struct Struct_v_grouped_matmul_ragged_paged:
-    @always_inline
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        num_heads: Int,
-        head_dim: Int,
-        page_size: Int, //,
-        target: StaticString,
-    ](
-        a: InputTensor[dtype=dtype, rank=2],
-        b: InputTensor[dtype=dtype, rank=3],
-        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        ids: InputTensor[dtype = DType.int32, rank=1],
-        max_num_tokens_per_expert: UInt32,
-        kv_collection: PagedKVCacheCollection[
-            dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
-            page_size,
-        ],
-        layer_idx: UInt32,
-        context: DeviceContextPtr,
-    ) raises:
-        constrained[is_gpu[target](), "v_grouped_matmul only supports GPUs"]()
-        v_grouped_matmul_ragged_paged[dtype, target=target,](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(input_row_offsets),
-            managed_tensor_slice_to_ndbuffer(ids),
-            Int(max_num_tokens_per_expert),
-            ids.dim_size[0](),
-            kv_collection,
-            layer_idx,
-            context,
         )
 
 

@@ -2398,7 +2398,7 @@ def sgmv_lora_kernel(
     lora_b: TensorValue,
     lora_ids: TensorValue,
     lora_ranks: TensorValue,
-    input_row_offsets: TensorValue,
+    grouped_row_offsets: TensorValue,
     max_lora_seq_len: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
@@ -2425,7 +2425,7 @@ def sgmv_lora_kernel(
         lora_b: The LoRA tensor for B
         lora_ids: Ids of the LoRAs used for each sequence
         lora_ranks: The ranks of the LoRAs ihn the batch
-        input_row_offsets: The sequence offsets that use LoRA
+        grouped_row_offsets: The grouped sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
     """
@@ -2434,7 +2434,7 @@ def sgmv_lora_kernel(
         lora_a,
         lora_ids,
         lora_ranks,
-        input_row_offsets,
+        grouped_row_offsets,
         max_lora_seq_len,
         bias,
     )
@@ -2444,7 +2444,7 @@ def sgmv_lora_kernel(
         lora_b,
         lora_ids,
         lora_ranks,
-        input_row_offsets,
+        grouped_row_offsets,
         max_lora_seq_len,
         bias,
     )
@@ -2459,13 +2459,12 @@ def sgmv_qkv_lora_kernel(
     lora_ids: TensorValue,
     lora_ranks: TensorValue,
     input_row_offsets: TensorValue,
+    lora_grouped_offsets: TensorValue,
     kv_collection: PagedKVCacheCollection,
     kv_params: KVCacheParams,
     layer_idx: TensorValue,
     max_lora_seq_len: int,
-    max_rank: int,
     q_dim: int,
-    kv_dim: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """
@@ -2491,6 +2490,7 @@ def sgmv_qkv_lora_kernel(
         raise ValueError("KV cache SGMV only supports Paged KV cache.")
 
     parameters: dict[str, int | str | DType | bool] = {
+        "dtype": input.dtype,
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
@@ -2502,54 +2502,31 @@ def sgmv_qkv_lora_kernel(
         lora_a,
         lora_ids,
         lora_ranks,
-        input_row_offsets,
+        lora_grouped_offsets,
         max_lora_seq_len,
         bias,
     )
 
-    q_out = sgmv_kernel(
-        v_qkv[:, :max_rank],
-        lora_b[:, :q_dim, :],
+    qkv_out = sgmv_kernel(
+        v_qkv,
+        lora_b,
         lora_ids,
         lora_ranks,
-        input_row_offsets,
+        lora_grouped_offsets,
         max_lora_seq_len,
         bias,
     )
 
-    ops.inplace_custom(
-        "mo.k_grouped.matmul.ragged.paged",
-        device=input.device,
-        values=[
-            v_qkv[:, max_rank : 2 * max_rank],
-            lora_b[:, q_dim : q_dim + kv_dim, :],
-            input_row_offsets,
-            lora_ids,
-            ops.constant(
-                max_lora_seq_len,
-                DType.uint32,
-                device=DeviceRef.CPU(),
-            ),
-            kv_collection,
-            layer_idx,
-        ],
-        parameters=parameters,
-    )
+    q_out = qkv_out[:, :q_dim]
 
     ops.inplace_custom(
-        "mo.v_grouped.matmul.ragged.paged",
+        "mo.kv_cache.ragged.paged.radd",
         device=input.device,
         values=[
-            v_qkv[:, 2 * max_rank :],
-            lora_b[:, q_dim + kv_dim :, :],
-            input_row_offsets,
-            lora_ids,
-            ops.constant(
-                max_lora_seq_len,
-                DType.uint32,
-                device=DeviceRef.CPU(),
-            ),
+            qkv_out[:, q_dim:],
             kv_collection,
+            input_row_offsets,
+            ops.constant(0, DType.uint32, DeviceRef.CPU()),
             layer_idx,
         ],
         parameters=parameters,

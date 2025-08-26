@@ -21,6 +21,7 @@ import os
 import re
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -463,8 +464,7 @@ class LoRAManager:
         """
         Maps the model name to its assigned slot id.
 
-        Active LoRAs get their assigned slot (0 to max_num_loras-2).
-        Base model or non-existent LoRAs get the last slot (max_num_loras-1).
+        Base model requests are ID == _NO_ACTIVE_LORA (-1)
         """
         if name and name in self._loras:
             slot = self._active_loras.get_slot(name)
@@ -496,7 +496,8 @@ class LoRAManager:
 
     def get_lora_graph_inputs(
         self,
-        model_names: list[str | None],
+        context_batch: Sequence[T],
+        input_row_offsets: np.ndarray,
         device: Device,
     ) -> tuple[Tensor, ...]:
         """
@@ -507,7 +508,11 @@ class LoRAManager:
             input_row_offsets: The offsets for each sequence in the batch
             device: The device
         """
-        for name in model_names:
+        ids = []
+        ranks = []
+
+        for ctx in context_batch:
+            name = getattr(ctx, "model_name", None)
             if (
                 name
                 and name != self.base_model_path
@@ -519,15 +524,36 @@ class LoRAManager:
                     f"{list(self._loras.keys())}"
                 )
 
-        ids = self._model_names_to_ids(model_names)
-        ranks = self._model_names_to_ranks(model_names)
+            ids.append(self._model_name_to_id(name))
+            ranks.append(self._model_name_to_rank(name))
 
-        lora_ids = Tensor.from_numpy(np.array(ids, dtype=np.int32)).to(device)
-        lora_ranks = Tensor.from_numpy(np.array(ranks, dtype=np.uint32)).to(
-            device
+        grouped_ids = []
+        grouped_ranks = []
+        grouped_offsets = []
+
+        prev_id = None
+
+        # group contexts that use the same LoRA
+        for i, id_ in enumerate(ids):
+            if id_ != prev_id:
+                grouped_ids.append(id_)
+                grouped_ranks.append(ranks[i])
+                grouped_offsets.append(input_row_offsets[i])
+                prev_id = id_
+
+        grouped_offsets.append(input_row_offsets[-1])
+
+        # TODO: Move to GPU when KERN-1981 is complete
+        lora_ids = Tensor.from_numpy(np.array(grouped_ids, dtype=np.int32))
+        lora_ranks = Tensor.from_numpy(
+            np.array(grouped_ranks, dtype=np.uint32)
+        ).to(device)
+        # TODO: Move to GPU when KERN-1981 is complete
+        lora_grouped_offsets = Tensor.from_numpy(
+            np.array(grouped_offsets, dtype=np.uint32)
         )
 
-        return lora_ids, lora_ranks
+        return lora_ids, lora_ranks, lora_grouped_offsets
 
     def _validate_lora_path(self, path: str) -> LoRAStatus:
         """
@@ -862,19 +888,24 @@ class LoRAManager:
         Returns:
             The graph input symbols.
         """
+        # TODO: Move to GPU when KERN-1981 is complete
         lora_ids_type = TensorType(
-            DType.int32, shape=["lora_ids"], device=device_ref
+            DType.int32, shape=["lora_ids"], device=DeviceRef.CPU()
         )
         lora_ranks_type = TensorType(
             DType.uint32, shape=["lora_ranks"], device=device_ref
         )
-
-        return [lora_ids_type, lora_ranks_type]
+        # TODO: Move to GPU when KERN-1981 is complete
+        lora_grouped_offsets_type = TensorType(
+            DType.uint32, shape=["lora_grouped_offsets"], device=DeviceRef.CPU()
+        )
+        return [lora_ids_type, lora_ranks_type, lora_grouped_offsets_type]
 
     def set_graph_info(
         self,
         lora_ids: TensorValue,
         lora_ranks: TensorValue,
+        lora_grouped_offsets: TensorValue,
     ) -> None:
         """
         Sets the lora batch info required for the forward-pass.
@@ -885,11 +916,14 @@ class LoRAManager:
         """
         for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
-                layer.set_lora_batch_info(lora_ids, lora_ranks)
+                layer.set_lora_batch_info(
+                    lora_ids, lora_ranks, lora_grouped_offsets
+                )
 
-    def sort_lora_batch(self, batch: dict[str, T]) -> dict[str, T]:
+    def sort_lora_batch(self, context_batch: dict[str, T]) -> dict[str, T]:
         """
         Sorts the LoRA batch by name and activates any new LoRAs in the batch.
+
 
         This method ensures that all LoRAs referenced in the batch are moved to
         the active cache, implementing the LRU policy by evicting least recently
@@ -900,7 +934,7 @@ class LoRAManager:
         """
         # First, activate any LoRAs referenced in the batch that aren't already active
         with self._lora_lock:
-            for context in batch.values():
+            for context in context_batch.values():
                 model_name = getattr(context, "model_name", None)
                 if (
                     model_name
@@ -909,14 +943,15 @@ class LoRAManager:
                 ):
                     self.activate_adapter(model_name)
 
-            # Then sort the batch by slot ID (active LoRAs by their slot, inactive ones to the start)
-            batch_by_model_names = {
-                req_id: batch[req_id]
-                for req_id, _ in sorted(
-                    batch.items(),
+            batch_by_model_ids = {
+                req_id: ctx
+                for req_id, ctx in sorted(
+                    context_batch.items(),
                     key=lambda item: self._model_name_to_id(
                         getattr(item[1], "model_name", None)
                     ),
+                    reverse=True,
                 )
             }
-            return batch_by_model_names
+
+            return batch_by_model_ids

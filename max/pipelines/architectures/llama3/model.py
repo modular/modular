@@ -88,6 +88,7 @@ class Llama3Inputs(ModelInputs):
         kv_cache_inputs: KVCacheInputs | None = None,
         lora_ids: Tensor | None = None,
         lora_ranks: Tensor | None = None,
+        lora_grouped_offsets: Tensor | None = None,
     ) -> None:
         """
         Args:
@@ -103,6 +104,7 @@ class Llama3Inputs(ModelInputs):
         self.return_n_logits = return_n_logits
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
+        self.lora_grouped_offsets = lora_grouped_offsets
 
 
 class LlamaModelBase(PipelineModel[TextContext]):
@@ -235,8 +237,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return tuple(all_input_types)
         else:
             if self._lora_manager:
-                lora_ids, lora_ranks = self._lora_manager.input_symbols(
-                    device_ref
+                lora_ids, lora_ranks, lora_grouped_offsets = (
+                    self._lora_manager.input_symbols(device_ref)
                 )
                 return (
                     tokens_type,
@@ -244,6 +246,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     return_n_logits_type,
                     lora_ids,
                     lora_ranks,
+                    lora_grouped_offsets,
                     *kv_inputs[0],
                 )
             else:
@@ -265,6 +268,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 model_inputs.return_n_logits,
                 model_inputs.lora_ids,  # type: ignore
                 model_inputs.lora_ranks,  # type: ignore
+                model_inputs.lora_grouped_offsets,  # type: ignore
                 *model_inputs.signal_buffers,
                 *curr_kv_cache_inputs,
             )
@@ -325,15 +329,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         # Map model names to LoRA graph inputs
         if self._lora_manager:
-            model_names: list[str | None] = [
-                ctx.model_name if ctx.model_name else None
-                for ctx in context_batch
-            ]
-            lora_ids, lora_ranks = self._lora_manager.get_lora_graph_inputs(
-                model_names, self.devices[0]
+            lora_ids, lora_ranks, lora_grouped_offsets = (
+                self._lora_manager.get_lora_graph_inputs(
+                    context_batch, input_row_offsets, self.devices[0]
+                )
             )
             inputs.lora_ids = lora_ids
             inputs.lora_ranks = lora_ranks
+            inputs.lora_grouped_offsets = lora_grouped_offsets
 
         return inputs
 
@@ -357,6 +360,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return_n_logits=prev_model_inputs.return_n_logits,
             lora_ids=prev_model_inputs.lora_ids,
             lora_ranks=prev_model_inputs.lora_ranks,
+            lora_grouped_offsets=prev_model_inputs.lora_grouped_offsets,
         )
 
     @classmethod
@@ -781,11 +785,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
                         return_n_logits,
                         lora_ids,
                         lora_ranks,
+                        lora_grouped_offsets,
                         *kv_cache_inputs,
                     ) = graph.inputs
                     self._lora_manager.set_graph_info(
                         lora_ids.tensor,
                         lora_ranks.tensor,
+                        lora_grouped_offsets.tensor,
                     )
                 else:
                     (
