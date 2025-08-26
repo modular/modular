@@ -108,24 +108,12 @@ fn main() raises:
             + ", "
         )
         print(
-            "register_file_size="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("register_allocation_unit_size=256, ")
-        print("max_registers_per_thread=255, ")
-        print(
             "max_registers_per_block="
             + String(
                 ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
             )
             + ", "
         )
-        print("shared_memory_allocation_unit_size=128, ")
         print("max_thread_block_size=1024, ")
         print(")")
     elif ctx.api() == "hip":
@@ -151,23 +139,11 @@ fn main() raises:
         )
         print("threads_per_sm=-1, ")
         print(
-            "register_file_size="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("register_allocation_unit_size=256, ")
-        print("max_registers_per_thread=255, ")
-        print(
             "max_registers_per_block="
             + String(
                 ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
             )
             + ", "
         )
-        print("shared_memory_allocation_unit_size=128, ")
         print("max_thread_block_size=1024, ")
         print(")")
