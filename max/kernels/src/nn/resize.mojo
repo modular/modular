@@ -64,7 +64,7 @@ fn coord_transform[
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord / scale
     else:
-        constrained[True, "coordinate_transformation_mode not implemented"]()
+        constrained[False, "coordinate_transformation_mode not implemented"]()
         return 0
 
 
@@ -149,7 +149,7 @@ fn resize_nearest_neighbor[
         elif round_mode == RoundMode.Ceil:
             return ceil(val)
         else:
-            constrained[True, "round_mode not implemented"]()
+            constrained[False, "round_mode not implemented"]()
             return val
 
     @__copy_capture(scales)
