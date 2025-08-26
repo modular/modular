@@ -19,7 +19,7 @@ from memory import ArcPointer
 ```
 """
 
-from os.atomic import Atomic
+from os.atomic import Atomic, Consistency, fence
 
 
 struct _ArcPointerInner[T: Movable]:
@@ -33,12 +33,30 @@ struct _ArcPointerInner[T: Movable]:
 
     fn add_ref(mut self):
         """Atomically increment the refcount."""
-        _ = self.refcount.fetch_add(1)
+
+        # `MONOTONIC` is ok here since since we know the original reference
+        # this ArcPointer is copied from prevents an erroneous deletion from
+        # a different ArcPointer in another thread.
+        #
+        # This is further explained in the [boost documentation]
+        # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
+        _ = self.refcount.fetch_add[ordering = Consistency.MONOTONIC](1)
 
     fn drop_ref(mut self) -> Bool:
         """Atomically decrement the refcount and return true if the result
         hits zero."""
-        return self.refcount.fetch_sub(1) == 1
+
+        # `RELEASE` is needed to ensure that all data access happens before
+        # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
+        # don't need the guarantees of `ACQUIRE` if the recount is not yet zero.
+        if self.refcount.fetch_sub[ordering = Consistency.RELEASE](1) != 1:
+            return False
+
+        # However, if the refcount is zero, this `ACQUIRE` fence synchronizes with the
+        # `fetch_sub[RELEASE]` above, ensuring that use of data happens before the fence,
+        # and before the deletion of the data.
+        fence[ordering = Consistency.ACQUIRE]()
+        return True
 
 
 @register_passable
