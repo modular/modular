@@ -26,34 +26,56 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.int16])
 def test_clamp(session: InferenceSession, dtype: DType) -> None:
+    """Test clamp with all parameter combinations: both, min only, max only, none"""
     input_type = TensorType(dtype, [10, 10], device=device_ref)
 
     with Graph(f"clamp_{dtype}", input_types=[input_type]) as graph:
-        out = nn.clamp(graph.inputs[0].tensor, min=10, max=20)
-        graph.output(out.cast(DType.float32))
+        x = graph.inputs[0].tensor
+
+        both_bounds = nn.clamp(x, min=10, max=20).cast(DType.float32)
+        no_bounds = nn.clamp(x).cast(DType.float32)
+        min_only = nn.clamp(x, min=10).cast(DType.float32)
+        max_only = nn.clamp(x, max=50).cast(DType.float32)
+
+        graph.output(both_bounds, no_bounds, min_only, max_only)
 
     model = session.load(graph)
 
     torch_dtype = torch.float32 if dtype == DType.float32 else torch.int16
     input_data = torch.arange(end=100, dtype=torch_dtype).reshape((10, 10))
 
-    max_result = model(
-        Tensor.from_dlpack(input_data).to(model.input_devices[0])
-    )[0]
-    assert isinstance(max_result, Tensor)
-    max_result_np = max_result.to_numpy()
+    results = model(Tensor.from_dlpack(input_data).to(model.input_devices[0]))
 
-    torch_result = (
+    # Expected results from PyTorch
+    both_bounds_expected = (
         torch.clamp(input_data, min=10, max=20)
         .to(dtype=torch.float32)
         .cpu()
         .numpy()
     )
+    no_bounds_expected = input_data.to(dtype=torch.float32).cpu().numpy()
+    min_only_expected = (
+        torch.clamp(input_data, min=10).to(dtype=torch.float32).cpu().numpy()
+    )
+    max_only_expected = (
+        torch.clamp(input_data, max=50).to(dtype=torch.float32).cpu().numpy()
+    )
+
+    assert len(results) == 4
+    tensor_results = []
+    for i, result in enumerate(results):
+        assert isinstance(result, Tensor), f"Result {i} is not a Tensor"
+        tensor_results.append(result)
 
     np.testing.assert_allclose(
-        max_result_np,
-        torch_result,
-        rtol=1e-6,
-        atol=1e-6,
-        verbose=True,
+        tensor_results[0].to_numpy(), both_bounds_expected, rtol=1e-6, atol=1e-6
+    )
+    np.testing.assert_allclose(
+        tensor_results[1].to_numpy(), no_bounds_expected, rtol=1e-6, atol=1e-6
+    )
+    np.testing.assert_allclose(
+        tensor_results[2].to_numpy(), min_only_expected, rtol=1e-6, atol=1e-6
+    )
+    np.testing.assert_allclose(
+        tensor_results[3].to_numpy(), max_only_expected, rtol=1e-6, atol=1e-6
     )
