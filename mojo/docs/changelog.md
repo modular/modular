@@ -131,6 +131,21 @@ language across multiple phases.
 
 ### Standard library changes
 
+- Added `Path(...).parts()` method to the `Path` type, for example instead of
+  writing:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.path.split(DIR_SEPARATOR)
+  ```
+
+  you can now write:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.parts()
+  ```
+
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 

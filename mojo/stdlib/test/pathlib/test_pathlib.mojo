@@ -203,6 +203,25 @@ def test_name():
     assert_equal("file", Path("file").name())
 
 
+def test_parts():
+    var path_to_file = Path("/path/to/file")
+    assert_equal(path_to_file.parts(), path_to_file.path.split("/"))
+
+    var rel_path = Path("path/to/file")
+    assert_equal(rel_path.parts(), rel_path.path.split("/"))
+
+    var path_no_slash = Path("path")
+    assert_equal(path_no_slash.parts(), path_no_slash.path.split("/"))
+
+    var path_with_tail_slash = Path("path/")
+    assert_equal(
+        path_with_tail_slash.parts(), path_with_tail_slash.path.split("/")
+    )
+
+    var root_path = Path("/")
+    assert_equal(root_path.parts(), root_path.path.split("/"))
+
+
 def main():
     test_cwd()
     test_path()
@@ -216,3 +235,4 @@ def main():
     test_home()
     test_stat()
     test_name()
+    test_parts()
