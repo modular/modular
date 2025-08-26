@@ -177,7 +177,7 @@ fn create_non_tracked_tensor_async[
         buffer.data,
         bytecount_with_dtype(buffer.dynamic_shape, dtype),
         tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data.array),
+        UnsafePointer(to=buffer.dynamic_shape.data),
         dtype,
         async_ptr,
     )
@@ -242,7 +242,7 @@ fn create_tensor_async[
         buffer.data,
         bytecount_with_dtype(buffer.dynamic_shape, dtype),
         tensor_rank,
-        UnsafePointer(to=buffer.dynamic_shape.data.array),
+        UnsafePointer(to=buffer.dynamic_shape.data),
         dtype,
         async_to_borrow,
         borrowee_type,
@@ -377,7 +377,7 @@ fn unpack_tensor[
         "KGEN_CompilerRT_GetShapeAndDataFromTensor",
         OpaquePointer,
     ](
-        UnsafePointer(to=shapes.data.array),
+        UnsafePointer(to=shapes.data),
         tensor_async_ptr,
     )
 
@@ -958,7 +958,7 @@ fn mgp_debug_tensor_print[
         label_ptr,
         label_len,
         dtype,
-        UnsafePointer(to=shape.data.array),
+        UnsafePointer(to=shape.data),
         spec_rank,
         buffer.data,
         len(buffer),
@@ -971,92 +971,92 @@ fn mgp_debug_tensor_print[
 
 
 @register_internal("float8_e5m2")
-fn DTypeFloat8E5M2TypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2.value
 
 
 @register_internal("float8_e5m2fnuz")
-fn DTypeFloat8E5M2FnuzTypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e5m2fnuz.value
 
 
 @register_internal("float8_e3m4")
-fn DTypeFloat8E3M4TypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e3m4.value
 
 
 @register_internal("float8_e4m3fn")
-fn DTypeFloat8E4M3FnTypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e4m3fn.value
 
 
 @register_internal("float8_e4m3fnuz")
-fn DTypeFloat8E4M3FnuzTypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float8_e4m3fnuz.value
 
 
 @register_internal("bfloat16")
-fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
+fn DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.bfloat16.value
 
 
 @register_internal("float16")
-fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float16.value
 
 
 @register_internal("float32")
-fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float32.value
 
 
 @register_internal("float64")
-fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
+fn DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.float64.value
 
 
 @register_internal("int8")
-fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
+fn DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int8.value
 
 
 @register_internal("int16")
-fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
+fn DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int16.value
 
 
 @register_internal("int32")
-fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
+fn DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int32.value
 
 
 @register_internal("uint32")
-fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
+fn DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint32.value
 
 
 @register_internal("uint64")
-fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
+fn DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint64.value
 
 
 @register_internal("int64")
-fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
+fn DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.int64.value
 
 
 @register_internal("uint8")
-fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
+fn DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint8.value
 
 
 @register_internal("uint16")
-fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
+fn DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.uint16.value
 
 
 @register_internal("bool")
-fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
+fn DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
     return DType.bool.value
 
 

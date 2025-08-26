@@ -79,61 +79,88 @@ struct DType(
     ```
     """
 
-    alias type = __mlir_type.`!kgen.dtype`
-    var value: Self.type
+    alias _mlir_type = __mlir_type.`!kgen.dtype`
+
+    var value: Self._mlir_type
     """The underlying storage for the DType value."""
 
     alias invalid = DType(
-        __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
     )
     """Represents an invalid or unknown data type."""
 
-    alias bool = DType(__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`)
+    alias bool = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
+    )
     """Represents a boolean data type."""
 
-    alias index = DType(__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`)
+    alias index = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
+    )
     """Represents an integral type whose bitwidth is the maximum integral value
     on the system."""
 
-    alias _uint1 = DType(__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`)
-    alias _uint2 = DType(__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`)
-    alias _uint4 = DType(__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`)
+    alias _uint1 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`
+    )
+    alias _uint2 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui2> : !kgen.dtype`
+    )
+    alias _uint4 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui4> : !kgen.dtype`
+    )
 
-    alias uint8 = DType(__mlir_attr.`#kgen.dtype.constant<ui8> : !kgen.dtype`)
+    alias uint8 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui8> : !kgen.dtype`
+    )
     """Represents an unsigned integer type whose bitwidth is 8."""
-    alias int8 = DType(__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`)
+    alias int8 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si8> : !kgen.dtype`
+    )
     """Represents a signed integer type whose bitwidth is 8."""
-    alias uint16 = DType(__mlir_attr.`#kgen.dtype.constant<ui16> : !kgen.dtype`)
+    alias uint16 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui16> : !kgen.dtype`
+    )
     """Represents an unsigned integer type whose bitwidth is 16."""
-    alias int16 = DType(__mlir_attr.`#kgen.dtype.constant<si16> : !kgen.dtype`)
+    alias int16 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si16> : !kgen.dtype`
+    )
     """Represents a signed integer type whose bitwidth is 16."""
-    alias uint32 = DType(__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`)
+    alias uint32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
+    )
     """Represents an unsigned integer type whose bitwidth is 32."""
-    alias int32 = DType(__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`)
+    alias int32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
+    )
     """Represents a signed integer type whose bitwidth is 32."""
-    alias uint64 = DType(__mlir_attr.`#kgen.dtype.constant<ui64> : !kgen.dtype`)
+    alias uint64 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui64> : !kgen.dtype`
+    )
     """Represents an unsigned integer type whose bitwidth is 64."""
-    alias int64 = DType(__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`)
+    alias int64 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si64> : !kgen.dtype`
+    )
     """Represents a signed integer type whose bitwidth is 64."""
     alias uint128 = DType(
-        __mlir_attr.`#kgen.dtype.constant<ui128> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui128> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 128."""
     alias int128 = DType(
-        __mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si128> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 128."""
     alias uint256 = DType(
-        __mlir_attr.`#kgen.dtype.constant<ui256> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui256> : !kgen.dtype`
     )
     """Represents an unsigned integer type whose bitwidth is 256."""
     alias int256 = DType(
-        __mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si256> : !kgen.dtype`
     )
     """Represents a signed integer type whose bitwidth is 256."""
 
     alias float8_e3m4 = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
     """Represents an 8-bit `e3m4` floating point format, encoded as
     `s.eee.mmmm`:
@@ -151,7 +178,7 @@ struct DType(
     # https://onnx.ai/onnx/technical/float8.html
 
     alias float8_e4m3fn = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
     """Represents the 8-bit `E4M3` floating point format defined in the
     [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
@@ -172,7 +199,7 @@ struct DType(
     - -0: 1.0000.000
     """
     alias float8_e4m3fnuz = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
     )
     """Represents an 8-bit `e4m3fnuz` floating point format
     ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeee.mmm`:
@@ -186,7 +213,7 @@ struct DType(
     - uz: unsigned zero (no -0 encoding)
     """
     alias float8_e5m2 = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
     """Represents the 8-bit `E5M2` floating point format defined in the
     [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
@@ -201,7 +228,7 @@ struct DType(
     - -0: 1.00000.00
     """
     alias float8_e5m2fnuz = DType(
-        __mlir_attr.`#kgen.dtype.constant<f8e5m2fnuz> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e5m2fnuz> : !kgen.dtype`
     )
     """Represents an 8-bit `e5m2fnuz` floating point format
     ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeeee.mm`:
@@ -216,26 +243,32 @@ struct DType(
     """
 
     alias bfloat16 = DType(
-        __mlir_attr.`#kgen.dtype.constant<bf16> : !kgen.dtype`
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<bf16> : !kgen.dtype`
     )
     """Represents a brain floating point value whose bitwidth is 16."""
-    alias float16 = DType(__mlir_attr.`#kgen.dtype.constant<f16> : !kgen.dtype`)
+    alias float16 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f16> : !kgen.dtype`
+    )
     """Represents an IEEE754-2008 `binary16` floating point value."""
 
-    alias float32 = DType(__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`)
+    alias float32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+    )
     """Represents an IEEE754-2008 `binary32` floating point value."""
 
-    alias float64 = DType(__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`)
+    alias float64 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
+    )
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
     @always_inline("builtin")
-    fn __init__(out self, value: Self.type):
+    fn __init__(out self, *, mlir_value: Self._mlir_type):
         """Construct a DType from MLIR dtype.
 
         Args:
-            value: The MLIR dtype.
+            mlir_value: The MLIR dtype.
         """
-        self.value = value
+        self.value = mlir_value
 
     @staticmethod
     fn _from_str(str: StringSlice) -> DType:
@@ -405,7 +438,7 @@ struct DType(
         var res = __mlir_op.`pop.dtype.from_ui8`(
             __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
         )
-        return DType(res)
+        return DType(mlir_value=res)
 
     @doc_private
     @always_inline("nodebug")
@@ -421,7 +454,7 @@ struct DType(
             __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
             __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
         )
-        return Bool(res)
+        return Bool(mlir_value=res)
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
@@ -460,7 +493,7 @@ struct DType(
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
             self._as_ui8(), rhs._as_ui8()
         )
-        return Bool(res)
+        return Bool(mlir_value=res)
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: DType) -> Bool:
@@ -475,7 +508,7 @@ struct DType(
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             self._as_ui8(), rhs._as_ui8()
         )
-        return Bool(res)
+        return Bool(mlir_value=res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.

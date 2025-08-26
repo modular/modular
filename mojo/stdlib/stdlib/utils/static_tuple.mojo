@@ -47,10 +47,11 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         size: The size of the tuple.
     """
 
-    alias type = __mlir_type[
+    alias _mlir_type = __mlir_type[
         `!pop.array<`, size.value, `, `, Self.element_type, `>`
     ]
-    var array: Self.type
+
+    var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
     @always_inline
@@ -60,13 +61,13 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    fn __init__(out self, array: Self.type):
+    fn __init__(out self, *, mlir_value: Self._mlir_type):
         """Constructs from an array type.
 
         Args:
-            array: Underlying MLIR array type.
+            mlir_value: Underlying MLIR array type.
         """
-        self.array = array
+        self._mlir_value = mlir_value
 
     @always_inline
     fn __init__(out self, *, fill: Self.element_type):
@@ -76,7 +77,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
             fill: The value to fill the tuple with.
         """
         _static_tuple_construction_checks[size]()
-        self.array = __mlir_op.`pop.array.repeat`[
+        self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type = __mlir_type[
                 `!pop.array<`, size.value, `, `, Self.element_type, `>`
             ]
@@ -135,7 +136,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index.value,
-        ](self.array)
+        ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
@@ -185,7 +186,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     @always_inline("nodebug")
     fn _unsafe_ref(ref self, idx: Int) -> ref [self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self.array).address, idx.value
+            UnsafePointer(to=self._mlir_value).address, idx.value
         )
         return UnsafePointer(ptr)[]
 
@@ -209,6 +210,6 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
                 `!pop.array<`, size.value, `, `, Self.element_type, `>`
             ],
             index = idx.value,
-        ](val, self.array)
+        ](val, self._mlir_value)
 
-        return Self(array)
+        return Self(mlir_value=array)

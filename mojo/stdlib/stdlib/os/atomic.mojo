@@ -570,9 +570,9 @@ fn _compare_exchange_weak_integral_impl[
         desired.value,
     )
     var ok = Bool(
-        __mlir_op.`kgen.struct.extract`[index = __mlir_attr.`1:index`](
-            cmpxchg_res
-        )
+        mlir_value=__mlir_op.`kgen.struct.extract`[
+            index = __mlir_attr.`1:index`
+        ](cmpxchg_res)
     )
     if not ok:
         expected = value_addr[]

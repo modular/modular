@@ -1772,7 +1772,8 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            return Bool(self._refine[size=1]().cast[DType.bool]().value)
+            var res = self._refine[size=1]().cast[DType.bool]()
+            return Bool(mlir_value=res.value)
         else:
             return Bool(self.reduce_or())
 
@@ -2384,7 +2385,7 @@ struct SIMD[dtype: DType, size: Int](
             ]()
 
         var res = __mlir_op.`pop.simd.shuffle`[
-            mask = mask.array,
+            mask = mask._mlir_value,
             _type = SIMD[dtype, output_size]._mlir_type,
         ](self.value, other.value)
         return SIMD(res)

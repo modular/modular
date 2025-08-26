@@ -32,8 +32,9 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         ElementType: The type of the element to store.
     """
 
-    alias type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
-    var _array: Self.type
+    alias _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
+
+    var _array: Self._mlir_type
 
     @always_inline
     fn __init__(out self):

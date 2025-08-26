@@ -150,14 +150,14 @@ struct Bool(
 
     @doc_private
     @always_inline("nodebug")
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<bool>`):
+    fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 
         Args:
-            value: The initial value.
+            mlir_value: The initial value.
         """
         self.value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i1](
-            value
+            mlir_value
         )
 
     @always_inline("nodebug")
