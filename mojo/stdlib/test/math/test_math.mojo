@@ -31,6 +31,7 @@ from math import (
     lcm,
     log,
     log2,
+    next_multiple_of,
     sin,
     sqrt,
     trunc,
@@ -525,6 +526,23 @@ def test_ceildiv():
     assert_equal(ceildiv(UInt32(5), UInt32(2)), ceildiv(5, 2))
 
 
+def test_next_multiple_of():
+    for i in range(8):
+        assert_equal(next_multiple_of[1](i), i)
+
+    alias multiples = (2, 3, 4, 5, 8, 16, 17, 18, 19, 32, 64, 65, 99, 100, 128)
+
+    @parameter
+    for i in range(len(multiples)):
+        for j in range(8):
+            # zero is a multiple of everything
+            assert_equal(next_multiple_of[multiples[i]](0), 0)
+            for k in range(j * multiples[i] + 1, (j + 1) * multiples[i] + 1):
+                assert_equal(
+                    next_multiple_of[multiples[i]](k), (j + 1) * multiples[i]
+                )
+
+
 def test_align_down():
     assert_equal(align_down(1, 7), 0)
     assert_equal(align_down(548, -7), 553)
@@ -641,3 +659,4 @@ def main():
     test_align_up()
     test_clamp()
     test_atanh()
+    test_next_multiple_of()
