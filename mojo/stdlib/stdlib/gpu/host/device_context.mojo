@@ -845,7 +845,8 @@ struct DeviceBuffer[dtype: DType](
                     ctx._handle,
                     size,
                     elem_size,
-                )
+                ),
+                location=__call_location(),
             )
         elif mode == _DeviceBufferMode._ASYNC:
             # const char *AsyncRT_DeviceContext_createBuffer_async(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
@@ -864,7 +865,8 @@ struct DeviceBuffer[dtype: DType](
                     ctx._handle,
                     size,
                     elem_size,
-                )
+                ),
+                location=__call_location(),
             )
         else:
             raise Error(
@@ -1054,7 +1056,8 @@ struct DeviceBuffer[dtype: DType](
                 offset,
                 size,
                 elem_size,
-            )
+            ),
+            location=__call_location(),
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
@@ -5872,7 +5875,8 @@ struct DeviceContext(Copyable, Movable):
                 _DeviceContextPtr,
             ](
                 self._handle,
-            )
+            ),
+            location=__call_location(),
         )
 
     fn enqueue_wait_for(self, other: DeviceContext) raises:
@@ -5956,7 +5960,8 @@ struct DeviceContext(Copyable, Movable):
             ](
                 UnsafePointer(to=value),
                 self._handle,
-            )
+            ),
+            location=__call_location(),
         )
         return Int(value)
 
@@ -5997,7 +6002,8 @@ struct DeviceContext(Copyable, Movable):
                 UnsafePointer(to=value),
                 self._handle,
                 Int(attr._value),
-            )
+            ),
+            location=__call_location(),
         )
         return Int(value)
 
@@ -6030,7 +6036,8 @@ struct DeviceContext(Copyable, Movable):
                     _DeviceContextPtr,
                 ](
                     self._handle,
-                )
+                ),
+                location=__call_location(),
             )
             return True
         except:
@@ -6093,7 +6100,8 @@ struct DeviceContext(Copyable, Movable):
                 _CharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
-            ](UnsafePointer(to=compute_capability), self._handle)
+            ](UnsafePointer(to=compute_capability), self._handle),
+            location=__call_location(),
         )
         return Int(compute_capability)
 
@@ -6166,7 +6174,8 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 UnsafePointer(to=free),
                 UnsafePointer(to=total),
-            )
+            ),
+            location=__call_location(),
         )
 
         return (free, total)
@@ -6219,7 +6228,8 @@ struct DeviceContext(Copyable, Movable):
                 UnsafePointer(to=result),
                 self._handle,
                 peer._handle,
-            )
+            ),
+            location=__call_location(),
         )
         return result
 
@@ -6277,9 +6287,11 @@ struct DeviceContext(Copyable, Movable):
             ](
                 self._handle,
                 peer._handle,
-            )
+            ),
+            location=__call_location(),
         )
 
+    @always_inline
     fn supports_multicast(self) raises -> Bool:
         """Returns True if this device supports multicast memory mappings.
 
@@ -6300,7 +6312,8 @@ struct DeviceContext(Copyable, Movable):
             ](
                 UnsafePointer(to=result),
                 self._handle,
-            )
+            ),
+            location=__call_location(),
         )
         return result
 
