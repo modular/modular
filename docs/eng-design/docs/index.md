@@ -1,13 +1,20 @@
 # Contents
 
-- [AMD Print Lessons Learned](amd-printf-lessons-learned)
+- [AMD Print Lessons Learned](amd-printf-lessons-learned.md)
 
     This document describes the technical challenges and solutions
     involved in implementing print statement debugging for AMD GPU
     kernels in Mojo by porting OpenCL hostcall functionality to avoid
     dependencies on AMD's device-libs and additional LLVM copies.
 
-- [GenAI and Paged Attention](genai-paged-attention)
+- [FP8 Support in Mojo](fp8-support-in-mojo.md)
+
+    This document describes the implementation of FP8 floating point
+    support in the Mojo programming language, including plumbing the
+    new data types through the stack and developing math approximations
+    optimized for the reduced precision format.
+
+- [GenAI and Paged Attention](genai-paged-attention.md)
 
     This document explains PagedAttention, a memory management
     technique for LLM inference that fragments KV cache into reusable
@@ -15,7 +22,7 @@
     prompts, resulting in improved memory efficiency and faster
     time-to-first-token performance.
 
-- [Matrix Multiplication to Flash Attention](matmul-to-flash-attention)
+- [Matrix Multiplication to Flash Attention](matmul-to-flash-attention.md)
 
     This document explains how Flash Attention can be understood as an extension
     of fast matrix multiplication techniques for Ampere hardware, using
@@ -23,7 +30,7 @@
     achieve memory-efficient attention processing without materializing large
     intermediate matrices.
 
-- [Multi-Head Flash Attention](multi-head-flash-attention)
+- [Multi-Head Flash Attention](multi-head-flash-attention.md)
 
     This document describes the implementation of multi-head attention using
     Flash Attention algorithms, progressing from the basic self-attention
@@ -31,7 +38,7 @@
     Flash Attention 3's specialized optimizations for Hopper architecture with
     asynchronous operations and warp-group specialization.
 
-- [U/WGMMA Flash Decoding](uwgmma-flash-decoding)
+- [U/WGMMA Flash Decoding](uwgmma-flash-decoding.md)
 
     This document explores "U/WGMMA Flash Decoding," proposing to transpose matrix
     operations in Flash Attention 3 to better utilize GPU hardware by operating
@@ -39,20 +46,20 @@
     while analyzing the trade-offs between improved throughput and increased
     memory/synchronization costs.
 
-- [Multi-Head Latent Attention](multi-head-latent-attention)
+- [Multi-Head Latent Attention](multi-head-latent-attention.md)
 
     This design document presents an optimized Multi-head Latent
     Attention (MLA) implementation that reduces KV cache memory usage
     to just 576 values per token by storing compressed latent
     representations instead of full K and V tensors.
 
-- [PyTorch Layers to MAX Mapping Guide](pytorch-to-max-mapping-guide)
+- [PyTorch Layers to MAX Mapping Guide](pytorch-to-max-mapping-guide.md)
 
     This guide provides mappings between common PyTorch layers used in
     HuggingFace `transformers` and their equivalent MAX graph operations and
     layer abstractions.
 
-- [Token sampling](token-sampling)
+- [Token sampling](token-sampling.md)
 
     This design document provides a comprehensive overview of token
     sampling techniques in LLM inference, covering algorithms like
