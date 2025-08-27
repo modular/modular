@@ -1735,354 +1735,44 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
-    fn __getitem__(self, arg0: Int) -> Self.element_type:
+    fn __getitem__[*Tys: Indexer](self, *args: *Tys) -> Self.element_type:
         """Retrieves a single element from the tensor at the specified indices.
 
         This method provides array-like indexing for the tensor. The number of
         indices provided must match the rank of the tensor, otherwise an error
         will occur at runtime.
 
+        Parameters:
+            Tys: The type of the indices. Must implement the `Indexer` trait,
+                and match the rank of the tensor.
+
         Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
+            args: The indices specifying the element's position in the tensor.
 
         Returns:
             The element at the specified position with the tensor's data type.
         """
+        alias arg_count = args.__len__()
+
+        constrained[
+            Self.rank == arg_count or Self.num_strides == arg_count,
+            "Indexed with "
+            + String(arg_count)
+            + " dims, but Self.rank, Self.num_strides = "
+            + String(Self.rank)
+            + ", "
+            + String(self.num_strides),
+        ]()
+
+        var index_list = Self.idx_list_t[arg_count](fill=0)
 
         @parameter
-        if Self.rank == 1 or Self.num_strides == 1:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset[rank=1](
-                strides, Self.idx_list_t[1](arg0)
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 1 or Self.num_strides == 1,
-                "Indexed with 1 dim, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
+        for arg_idx in range(arg_count):
+            index_list[arg_idx] = Int(index(args[arg_idx]))
 
-    @always_inline("nodebug")
-    fn __getitem__(self, arg0: Int, arg1: Int) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 2 or Self.num_strides == 2:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset[rank=2](
-                strides, Self.idx_list_t[2](arg0, arg1)
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 2 or Self.num_strides == 2,
-                "Indexed with 2 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(self, arg0: Int, arg1: Int, arg2: Int) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 3 or Self.num_strides == 3:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides, Self.idx_list_t[3](arg0, arg1, arg2)
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 3 or Self.num_strides == 3,
-                "Indexed with 3 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(
-        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int
-    ) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-            arg3: The index specifying the element's position in the fourth
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 4 or Self.num_strides == 4:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides, Self.idx_list_t[4](arg0, arg1, arg2, arg3)
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 4 or Self.num_strides == 4,
-                "Indexed with 4 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(
-        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int, arg4: Int
-    ) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-            arg3: The index specifying the element's position in the fourth
-                dimension.
-            arg4: The index specifying the element's position in the fifth
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 5 or Self.num_strides == 5:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides, Self.idx_list_t[5](arg0, arg1, arg2, arg3, arg4)
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 5 or Self.num_strides == 5,
-                "Indexed with 5 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(
-        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int, arg4: Int, arg5: Int
-    ) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-            arg3: The index specifying the element's position in the fourth
-                dimension.
-            arg4: The index specifying the element's position in the fifth
-                dimension.
-            arg5: The index specifying the element's position in the sixth
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 6 or Self.num_strides == 6:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides, Self.idx_list_t[6](arg0, arg1, arg2, arg3, arg4, arg5)
-            )
-
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 6 or Self.num_strides == 6,
-                "Indexed with 6 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(
-        self,
-        arg0: Int,
-        arg1: Int,
-        arg2: Int,
-        arg3: Int,
-        arg4: Int,
-        arg5: Int,
-        arg6: Int,
-    ) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-            arg3: The index specifying the element's position in the fourth
-                dimension.
-            arg4: The index specifying the element's position in the fifth
-                dimension.
-            arg5: The index specifying the element's position in the sixth
-                dimension.
-            arg6: The index specifying the element's position in the seventh
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 7 or Self.num_strides == 7:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides,
-                Self.idx_list_t[7](arg0, arg1, arg2, arg3, arg4, arg5, arg6),
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 7 or Self.num_strides == 7,
-                "Indexed with 7 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
-
-    @always_inline("nodebug")
-    fn __getitem__(
-        self,
-        arg0: Int,
-        arg1: Int,
-        arg2: Int,
-        arg3: Int,
-        arg4: Int,
-        arg5: Int,
-        arg6: Int,
-        arg7: Int,
-    ) -> Self.element_type:
-        """Retrieves a single element from the tensor at the specified indices.
-
-        This method provides array-like indexing for the tensor. The number of
-        indices provided must match the rank of the tensor, otherwise an error
-        will occur at runtime.
-
-        Args:
-            arg0: The index specifying the element's position in the first
-                dimension.
-            arg1: The index specifying the element's position in the second
-                dimension.
-            arg2: The index specifying the element's position in the third
-                dimension.
-            arg3: The index specifying the element's position in the fourth
-                dimension.
-            arg4: The index specifying the element's position in the fifth
-                dimension.
-            arg5: The index specifying the element's position in the sixth
-                dimension.
-            arg6: The index specifying the element's position in the seventh
-                dimension.
-            arg7: The index specifying the element's position in the eighth
-                dimension.
-
-        Returns:
-            The element at the specified position with the tensor's data type.
-        """
-
-        @parameter
-        if Self.rank == 8 or Self.num_strides == 8:
-            var strides = self.runtime_layout.stride.value
-            var offset = Self._get_offset(
-                strides,
-                Self.idx_list_t[8](
-                    arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7
-                ),
-            )
-            return self._load_offset(offset)
-        else:
-            constrained[
-                Self.rank == 8 or Self.num_strides == 8,
-                "Indexed with 8 dims, but Self.rank, Self.num_strides = "
-                + String(Self.rank)
-                + ", "
-                + String(self.num_strides),
-            ]()
-            return 0
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset[rank=arg_count](strides, index_list)
+        return self._load_offset(offset)
 
     @always_inline("nodebug")
     fn __getitem__(self, crd: RuntimeTuple) -> Self.element_type:
@@ -2103,13 +1793,17 @@ struct LayoutTensor[
         return self._load_offset(offset)
 
     @always_inline("nodebug")
-    fn __setitem__(self, d0: Int, val: Self.element_type):
-        """Sets a single element in a rank-1 tensor at the specified index.
+    fn __setitem__[*Tys: Indexer](self, *args: *Tys, val: Self.element_type):
+        """Sets a single element in a tensor at the specified indices.
 
-        This method provides array-like element assignment for rank-1 tensors.
+        This method provides array-like element assignment for tensors.
+
+        Parameters:
+            Tys: The type of the indices. Must implement the `Indexer` trait,
+                and match the rank of the tensor.
 
         Args:
-            d0: The index along the first dimension.
+            args: The indices specifying the element's position in the tensor.
             val: The value to write to the tensor at the specified position.
 
         Notes:
@@ -2118,143 +1812,26 @@ struct LayoutTensor[
             will result in undefined behavior.
         """
 
-        var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(strides, Self.idx_list_t[1](d0))
+        alias arg_count = args.__len__()
 
-        Element[index_type=linear_idx_type](
-            val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
+        constrained[
+            Self.rank == arg_count or Self.num_strides == arg_count,
+            "Indexed with "
+            + String(arg_count)
+            + " dims, but Self.rank, Self.num_strides = "
+            + String(Self.rank)
+            + ", "
+            + String(self.num_strides),
+        ]()
 
-    @always_inline("nodebug")
-    fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
-        """Sets a single element in a rank-2 tensor at the specified indices.
+        var index_list = Self.idx_list_t[arg_count](fill=0)
 
-        This method provides array-like element assignment for rank-2 tensors.
-
-        Args:
-            d0: The index along the first dimension.
-            d1: The index along the second dimension.
-            val: The value to write to the tensor at the specified position.
-
-        Performance:
-
-        - Direct memory access with minimal overhead.
-        - Memory access pattern follows the tensor's stride configuration.
-
-        Notes:
-
-        - No bounds checking is performed. Accessing out-of-bounds indices
-            will result in undefined behavior.
-        """
+        @parameter
+        for arg_idx in range(arg_count):
+            index_list[arg_idx] = Int(index(args[arg_idx]))
 
         var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(strides, Self.idx_list_t[2](d0, d1))
-
-        Element[index_type=linear_idx_type](
-            val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
-
-    @always_inline("nodebug")
-    fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
-        """Sets a single element in a rank-3 tensor at the specified indices.
-
-        This method provides array-like element assignment for rank-3 tensors.
-
-        Args:
-            d0: The index along the first dimension.
-            d1: The index along the second dimension.
-            d2: The index along the third dimension.
-            val: The value to write to the tensor at the specified position.
-
-        Performance:
-
-        - Direct memory access with minimal overhead.
-        - Memory access pattern follows the tensor's stride configuration.
-
-        Notes:
-
-        - No bounds checking is performed. Accessing out-of-bounds indices
-            will result in undefined behavior.
-        """
-
-        var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(strides, Self.idx_list_t[3](d0, d1, d2))
-
-        Element[index_type=linear_idx_type](
-            val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
-
-    @always_inline("nodebug")
-    fn __setitem__(
-        self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
-    ):
-        """Sets a single element in a rank-4 tensor at the specified indices.
-
-        This method provides array-like element assignment for rank-4 tensors.
-
-        Args:
-            d0: The index along the first dimension.
-            d1: The index along the second dimension.
-            d2: The index along the third dimension.
-            d3: The index along the fourth dimension.
-            val: The value to write to the tensor at the specified position.
-
-        Performance:
-
-        - Direct memory access with minimal overhead.
-        - Memory access pattern follows the tensor's stride configuration.
-
-        Notes:
-
-        - No bounds checking is performed. Accessing out-of-bounds indices
-            will result in undefined behavior.
-        """
-
-        var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(
-            strides, Self.idx_list_t[4](d0, d1, d2, d3)
-        )
-
-        Element[index_type=linear_idx_type](
-            val, self.runtime_element_layout
-        ).store(self.ptr.offset(offset))
-
-    fn __setitem__(
-        self,
-        d0: Int,
-        d1: Int,
-        d2: Int,
-        d3: Int,
-        d4: Int,
-        val: Self.element_type,
-    ):
-        """Sets a single element in a rank-5 tensor at the specified indices.
-
-        This method provides array-like element assignment for rank-5 tensors.
-
-        Args:
-            d0: The index along the first dimension.
-            d1: The index along the second dimension.
-            d2: The index along the third dimension.
-            d3: The index along the fourth dimension.
-            d4: The index along the fifth dimension.
-            val: The value to write to the tensor at the specified position.
-
-        Performance:
-
-        - Direct memory access with minimal overhead.
-        - Memory access pattern follows the tensor's stride configuration.
-
-        Notes:
-
-        - No bounds checking is performed. Accessing out-of-bounds indices
-            will result in undefined behavior.
-        """
-
-        var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(
-            strides, Self.idx_list_t[5](d0, d1, d2, d3, d4)
-        )
+        var offset = Self._get_offset(strides, index_list)
 
         Element[index_type=linear_idx_type](
             val, self.runtime_element_layout

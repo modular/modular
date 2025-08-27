@@ -307,16 +307,16 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    fn __init__(out self, elem: Int):
+    fn __init__(out self, fill: Int):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
-            elem: The elem to splat into the tuple.
+            fill: The elem to splat into the tuple.
         """
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        self.data = StaticTuple[_, size](fill=Self._int_type(elem))
+        self.data = StaticTuple[_, size](fill=Self._int_type(fill))
 
     @always_inline
     fn __init__(out self, values: VariadicList[Int]):
