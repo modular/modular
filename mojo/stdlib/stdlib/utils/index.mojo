@@ -331,11 +331,12 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        self.data = __mlir_op.`pop.array.repeat`[
+        var res = __mlir_op.`pop.array.repeat`[
             _type = __mlir_type[
                 `!pop.array<`, size.value, `, `, Self._int_type, `>`
             ]
         ](Self._int_type(elem))
+        self.data = StaticTuple(res)
 
     @always_inline
     @implicit

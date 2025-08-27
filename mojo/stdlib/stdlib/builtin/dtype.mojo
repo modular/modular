@@ -229,7 +229,6 @@ struct DType(
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Self.type):
         """Construct a DType from MLIR dtype.
 
@@ -403,9 +402,10 @@ struct DType(
     @staticmethod
     @always_inline("nodebug")
     fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
-        return __mlir_op.`pop.dtype.from_ui8`(
+        var res = __mlir_op.`pop.dtype.from_ui8`(
             __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
         )
+        return DType(res)
 
     @doc_private
     @always_inline("nodebug")
@@ -417,10 +417,11 @@ struct DType(
     @doc_private
     @always_inline("nodebug")
     fn _match(self, mask: UInt8) -> Bool:
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
             __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
@@ -456,9 +457,10 @@ struct DType(
         Returns:
             True if the DTypes are the same and False otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: DType) -> Bool:
@@ -470,9 +472,10 @@ struct DType(
         Returns:
             False if the DTypes are the same and True otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
             self._as_ui8(), rhs._as_ui8()
         )
+        return Bool(res)
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.

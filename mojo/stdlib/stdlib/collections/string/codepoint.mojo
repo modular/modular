@@ -303,7 +303,7 @@ struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
         """
         return Int(self._scalar_value)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
 

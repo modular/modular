@@ -163,7 +163,7 @@ struct SharedMemBarrier(Copyable, Movable):
     space to be accessible by all threads in a block.
     """
 
-    @always_inline
+    @always_inline("nodebug")
     fn init(ref [AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 

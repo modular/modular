@@ -26,7 +26,7 @@ from typing import Callable, Optional
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.common import configure_metrics
 from max.serve.telemetry.metrics import (
     MaxMeasurement,
     MetricClient,
@@ -175,7 +175,6 @@ def init_and_process(
     commit_fn: TelemetryFn,
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
-    configure_logging(settings)
     configure_metrics(settings)
 
     if (

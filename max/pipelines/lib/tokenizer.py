@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
@@ -82,11 +83,14 @@ class IdentityPipelineTokenizer(
 
 
 class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, np.ndarray, TextGenerationRequest],
+    PipelineTokenizer[
+        TokenGeneratorContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ],
 ):
     def __init__(
-        self,
-        delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
     ) -> None:
         assert isinstance(
             delegate, (PreTrainedTokenizer, PreTrainedTokenizerFast)
@@ -112,13 +116,11 @@ class PreTrainedPipelineTokenizer(
 
     async def encode(
         self, prompt: str, add_special_tokens: bool = False
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         return np.array(self.delegate.encode(prompt))
 
     async def decode(
-        self,
-        encoded: np.ndarray,
-        **kwargs,
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         return self.delegate.decode(encoded, **kwargs)
 
@@ -145,7 +147,9 @@ async def run_with_default_executor(
 
 
 class TextTokenizer(
-    PipelineTokenizer[TextContext, np.ndarray, TextGenerationRequest]
+    PipelineTokenizer[
+        TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -290,10 +294,10 @@ class TextTokenizer(
 
     async def encode(
         self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
-        encoded_prompt: np.ndarray
+        encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
@@ -317,7 +321,9 @@ class TextTokenizer(
 
         return encoded_prompt
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         # Sometimes, encoded comes in as an int so, make it np array
         if isinstance(encoded, int):
@@ -340,7 +346,7 @@ class TextTokenizer(
         messages: Optional[list[TextGenerationRequestMessage]],
         tools: Optional[list[TextGenerationRequestTool]] = None,
         chat_template_options: Optional[dict[str, Any]] = None,
-    ) -> tuple[Union[str, list[int]], np.ndarray]:
+    ) -> tuple[Union[str, list[int]], npt.NDArray[np.integer[Any]]]:
         if prompt and messages:
             raise ValueError("both prompt and messages cannot be provided.")
 
@@ -422,6 +428,7 @@ class TextTokenizer(
             json_schema=json_schema,
             sampling_params=request.sampling_params,
             model_name=request.model_name,
+            target_endpoint=request.target_endpoint,
         )
         return context
 
@@ -442,7 +449,7 @@ class TextTokenizer(
         return dummy_token_id, len(dummy_token_decoded)
 
     def _decode_with_llama_whitespace_fix(
-        self, encoded: np.ndarray, **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         if encoded.shape == ():
             # The np.insert below will replace the token instead of prepend it
@@ -468,7 +475,11 @@ class TextTokenizer(
 
 
 class TextAndVisionTokenizer(
-    PipelineTokenizer[TextAndVisionContext, np.ndarray, TextGenerationRequest],
+    PipelineTokenizer[
+        TextAndVisionContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ],
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -549,10 +560,10 @@ class TextAndVisionTokenizer(
 
     async def encode(
         self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
-        encoded_prompt: np.ndarray
+        encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
@@ -575,7 +586,9 @@ class TextAndVisionTokenizer(
 
         return encoded_prompt
 
-    async def decode(self, encoded: np.ndarray, **kwargs) -> str:
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         return self.delegate.decode(encoded, **kwargs)
 

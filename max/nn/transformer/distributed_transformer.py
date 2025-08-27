@@ -213,10 +213,6 @@ class DistributedTransformer(Module):
             # are in a single group.
             subgraph_layer_groups = [[i for i in range(len(layers))]]
         self.subgraph_layer_groups = subgraph_layer_groups
-        if self.return_logits == ReturnLogits.VARIABLE:
-            raise ValueError(
-                "DistributedTransformer does not support variable logits."
-            )
 
     def __call__(
         self,
@@ -351,7 +347,7 @@ class DistributedTransformer(Module):
             )
             offsets = ops.range(
                 0,
-                last_indices.shape[0] + return_n_logits[0],
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 dtype=DType.int64,

@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Utilities for serving the model worker without the API server."""
-
 import asyncio
 import logging
 import signal
@@ -30,7 +28,7 @@ from max.pipelines import (
 )
 from max.serve.config import Settings
 from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
-from max.serve.pipelines.kvcache_worker import start_dispatch_service
+from max.serve.pipelines.kvcache_worker import start_kv_cache_service
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.scheduler import PrefillRequest, PrefillResponse
@@ -40,6 +38,8 @@ logger = logging.getLogger("max.entrypoints")
 
 # Global shutdown event for coordinating graceful shutdown
 _shutdown_event: Optional[asyncio.Event] = None
+
+from .dispatch_worker import start_dispatch_worker
 
 
 def sigterm_handler(sig: int, frame: Optional[FrameType]) -> None:
@@ -78,53 +78,31 @@ def sigint_handler(sig: int, frame: Optional[FrameType]) -> None:
         raise KeyboardInterrupt("SIGINT received")
 
 
-def serve_model_worker(
+def start_workers(
+    settings: Settings,
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
-    """Run headless serving with only dispatcher and model worker.
-
-    This function starts the dispatcher service and model worker without
-    the API server, suitable for scenarios where you want to run the
-    inference backend independently.
-
-    Args:
-        pipeline_config: Configuration for the pipeline
-        pipeline_task: The task type for the pipeline
-    """
-
     global _shutdown_event
 
-    async def run_headless():
+    async def run_workers():
         global _shutdown_event
 
         # Create shutdown event for coordinating graceful shutdown
         _shutdown_event = asyncio.Event()
 
-        # Initialize settings
-        settings = Settings()
+        logger.info("Starting MAX Workers...")
 
-        override_architecture: Optional[str] = None
-        if pipeline_task == PipelineTask.AUDIO_GENERATION:
-            assert isinstance(pipeline_config, AudioGenerationConfig)
-            override_architecture = pipeline_config.audio_decoder
-
-        logger.info(
-            f"Starting headless server using {pipeline_config.model_config.model_path}"
-        )
-
-        # Load tokenizer and pipeline from PIPELINE_REGISTRY.
+        # Load the Tokenizer and Pipeline Factory
         tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_task,
-            override_architecture=override_architecture,
         )
 
         try:
             async with AsyncExitStack() as exit_stack:
-                # Start dispatcher service if needed
+                # Start Dispatch service if needed
                 if pipeline_config.pipeline_role.uses_dispatch_service:
-                    # create dispatcher factory
                     dispatcher_factory = DispatcherFactory[
                         Union[
                             PrefillRequest,
@@ -142,22 +120,20 @@ def serve_model_worker(
                         ],
                     )
 
-                    logger.info("Starting Dispatch Service...")
                     await exit_stack.enter_async_context(
-                        start_dispatch_service(settings, dispatcher_factory)
+                        start_dispatch_worker(settings, dispatcher_factory)
                     )
-                    logger.info("Dispatch service started.")
                 else:
                     dispatcher_factory = None
 
-                # start telemetry worker and configure Metrics to use it
+                # Start telemetry worker and Configure Metrics to use it
                 metric_client = await exit_stack.enter_async_context(
                     start_telemetry_consumer(settings)
                 )
 
                 METRICS.configure(client=metric_client)
 
-                # start model worker
+                # Start Model Worker
                 engine_queue = await exit_stack.enter_async_context(
                     start_model_worker(
                         pipeline_factory,
@@ -180,20 +156,22 @@ def serve_model_worker(
                 logger.info("Shutdown signal received, cleaning up...")
 
         except KeyboardInterrupt:
-            logger.info("Headless server shutting down gracefully")
+            logger.info("MAX Workers shutting down gracefully.")
         except Exception as e:
-            logger.exception("Error occurred in headless server: %s", e)
+            logger.exception(f"Error occurred starting MAX Workers: {e}")
         finally:
-            # Clean up the global shutdown event
             _shutdown_event = None
+
+        logger.info("MAX Workers Started!")
 
     # Set up signal handlers
     signal.signal(signal.SIGTERM, sigterm_handler)
     signal.signal(signal.SIGINT, sigint_handler)
 
     try:
-        uvloop.run(run_headless())
+        uvloop.run(run_workers())
     except KeyboardInterrupt:
-        logger.debug(
-            "KeyboardInterrupt caught at headless server level, exiting gracefully"
-        )
+        logger.debug("KeyboardInterrupt caught within MAX, exiting gracefully.")
+
+
+__all__ = ["start_workers"]

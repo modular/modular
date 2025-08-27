@@ -19,6 +19,9 @@ import os
 from typing import Any, Callable, TypeVar
 
 import click
+from max.entrypoints.workers import start_workers
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
 
 logger = logging.getLogger("max.entrypoints")
@@ -114,22 +117,10 @@ def main() -> None:
 
 def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_logging, configure_metrics
+    from max.serve.telemetry.common import configure_metrics
 
     settings = Settings()
-    configure_logging(settings, color)
     configure_metrics(settings)
-
-
-def _configure_env_vars(device_context_buffer_cache_size: float | None) -> None:
-    if device_context_buffer_cache_size is not None:
-        env_var_name = "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT"
-        if env_var_name in os.environ:
-            logger.warning(
-                f"Both {env_var_name} env var and pipeline config are set. Ignoring env var."
-            )
-
-        os.environ[env_var_name] = str(device_context_buffer_cache_size)
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
@@ -161,6 +152,11 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         default=False,
         help="Run only the dispatcher service and model worker without the API server.",
     )
+    @click.option(
+        "--log-prefix",
+        type=str,
+        help="Optional prefix to add to all log messages for this server instance.",
+    )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
@@ -185,6 +181,7 @@ def cli_serve(
     sim_failure: int,
     port: int,
     headless: bool,
+    log_prefix: str | None,
     task: str,
     task_arg: tuple[str, ...],
     **config_kwargs: Any,
@@ -197,7 +194,6 @@ def cli_serve(
     """
     from max.entrypoints.cli import (
         serve_api_server_and_model_worker,
-        serve_model_worker,
     )
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
@@ -213,21 +209,33 @@ def cli_serve(
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
 
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
 
+    # Initialize Settings
+    settings = Settings()
+
+    if port is not None:
+        settings.port = port
+
+    if log_prefix is not None:
+        settings.log_prefix = log_prefix
+
+    if headless is not None:
+        settings.headless = headless
+
+    # Configure Logging Globally
+    configure_logging(settings)
+
     if headless:
-        serve_model_worker(
+        start_workers(
+            settings=settings,
             pipeline_config=pipeline_config,
-            pipeline_task=PipelineTask(task),
         )
     else:
         serve_api_server_and_model_worker(
+            settings=settings,
             pipeline_config=pipeline_config,
             profile=profile_serve,
             model_name=model_name,
@@ -282,10 +290,6 @@ def cli_pipeline(
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     generate_text_for_pipeline(
         pipeline_config,
         prompt=prompt,
@@ -319,10 +323,6 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
@@ -332,10 +332,6 @@ def cli_warm_cache(**config_kwargs) -> None:
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
     pipeline_config = PipelineConfig(**config_kwargs)
-    _configure_env_vars(
-        pipeline_config.experimental_device_context_buffer_cache_size
-    )
-
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
 

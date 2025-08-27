@@ -17,13 +17,17 @@ This module provides NumPy equivalents of PyTorch functions used in the Qwen2.5V
 vision transformer, specifically for rotary positional embeddings and window indexing.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 
 def rot_pos_emb_numpy(
-    grid_thw: np.ndarray,
-    spatial_merge_size: int,
-) -> tuple[np.ndarray, int]:
+    grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
+) -> tuple[npt.NDArray[np.floating[Any]], int]:
     """NumPy implementation of rot_pos_emb function.
 
     Args:
@@ -76,11 +80,11 @@ def rot_pos_emb_numpy(
 
 
 def get_window_index_numpy(
-    grid_thw: np.ndarray,
+    grid_thw: npt.NDArray[np.integer[Any]],
     window_size: int,
     spatial_merge_size: int,
     patch_size: int,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
     """NumPy implementation of get_window_index function.
 
     Args:
@@ -169,8 +173,8 @@ def get_window_index_numpy(
 
 
 def get_cu_window_seqlens_numpy(
-    cu_window_seqlens: np.ndarray,
-) -> np.ndarray:
+    cu_window_seqlens: npt.NDArray[np.integer[Any]],
+) -> npt.NDArray[np.integer[Any]]:
     """NumPy implementation to get cumulative window sequence lengths.
 
     Removes duplicate consecutive values from the cumulative window sequence lengths.
@@ -195,8 +199,8 @@ def get_cu_window_seqlens_numpy(
 
 
 def get_cu_seqlens_numpy(
-    grid_thw: np.ndarray,
-) -> np.ndarray:
+    grid_thw: npt.NDArray[np.integer[Any]],
+) -> npt.NDArray[np.integer[Any]]:
     """NumPy implementation to compute cumulative sequence lengths.
 
     Computes cumulative sequence lengths for each image/video based on their

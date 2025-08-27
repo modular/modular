@@ -200,7 +200,7 @@ struct TensorMapSwizzle(
     fn bytes(self) -> Int:
         return Int((2**self._value) * 16)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 

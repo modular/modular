@@ -52,6 +52,7 @@ class RopeType(str, Enum):
     normal = "normal"
     neox = "neox"
     longrope = "longrope"
+    yarn = "yarn"
 
 
 class PipelineRole(str, Enum):

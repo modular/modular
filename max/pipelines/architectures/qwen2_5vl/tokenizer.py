@@ -17,9 +17,10 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Union
+from typing import Any, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.interfaces import TextGenerationRequest
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     process_vision_info,
@@ -138,7 +139,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         extra_model_args = {}
 
         # Process vision inputs for Qwen2.5VL
-        pixel_values: tuple[np.ndarray, ...] = tuple()
+        pixel_values: tuple[npt.NDArray[Any], ...] = tuple()
         if image_inputs is not None:
             if "pixel_values" in processed_inputs:
                 pixel_values_raw = processed_inputs["pixel_values"]

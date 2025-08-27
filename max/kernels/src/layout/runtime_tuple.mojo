@@ -113,7 +113,6 @@ struct RuntimeTuple[
                 self.value[i] = UNKNOWN_VALUE
 
     @always_inline
-    @implicit
     fn __init__(out self, *values: Int):
         """Initialize a `RuntimeTuple` with the provided values.
 
@@ -602,12 +601,14 @@ fn crd2idx[
             for i in range(last_elem_idx):
                 var divisor, quotient = divmod(Int(int_crd), product(shape[i]))
                 result += crd2idx[crd_t, out_type=out_type](
-                    quotient, shape[i], stride[i]
+                    RuntimeTuple[crd_t, **_](quotient), shape[i], stride[i]
                 )
                 int_crd = divisor
             # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
             return result + crd2idx[crd_t, out_type=out_type](
-                Int(int_crd), shape[last_elem_idx], stride[last_elem_idx]
+                RuntimeTuple[crd_t, **_](Int(int_crd)),
+                shape[last_elem_idx],
+                stride[last_elem_idx],
             )
         else:  # "int" "int" "int"
             return int_crd * Int(stride)
@@ -634,9 +635,11 @@ fn signum(a: Int) -> Int:
 
 fn shape_div[
     a_t: IntTuple, b_t: IntTuple
-](a: RuntimeTuple[a_t, **_], b: RuntimeTuple[b_t, **_]) -> RuntimeTuple[
-    shape_div_int_tuple(a_t, b_t)
-]:
+](
+    a: RuntimeTuple[a_t, **_],
+    b: RuntimeTuple[b_t, **_],
+    out result: RuntimeTuple[shape_div_int_tuple(a_t, b_t)],
+):
     """Performs specialized shape division between `RuntimeTuple`s.
 
     This function implements a special division operation specifically designed for
@@ -695,10 +698,14 @@ fn shape_div[
 
                 # FIXME: this used to be simpler
                 # vb = Int(to_int(shape_div(vb, product(a[i]))))
-                vb = Int(
-                    shape_div(
-                        vb,
-                        RuntimeTuple[IntTuple(UNKNOWN_VALUE)](product(a[i])),
+                vb = __type_of(vb)(
+                    Int(
+                        shape_div(
+                            vb,
+                            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
+                                product(a[i])
+                            ),
+                        )
                     )
                 )
             return res
@@ -714,4 +721,6 @@ fn shape_div[
             if not (va % vb == 0 or vb % va == 0):
                 abort(String("Incompatible shape values: ", va, " ", vb))
 
-            return va // vb if va % vb == 0 else signum(va * vb)
+            return __type_of(result)(
+                va // vb if va % vb == 0 else signum(va * vb)
+            )

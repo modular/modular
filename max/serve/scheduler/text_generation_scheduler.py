@@ -40,7 +40,7 @@ from .text_batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 from .utils import (
-    log_metrics,
+    SchedulerLogger,
     maybe_restore_chunked_request,
     release_cancelled_requests,
     release_terminated_requests,
@@ -90,6 +90,7 @@ class TokenGenerationScheduler(Scheduler):
             pipeline=pipeline,
             paged_cache=paged_manager,
         )
+        self.scheduler_logger = SchedulerLogger()
 
     def _retrieve_pending_requests(self) -> None:
         self.batch_constructor.ce_reqs |= dict(self.request_q.drain_nowait())
@@ -118,7 +119,7 @@ class TokenGenerationScheduler(Scheduler):
         batch_execution_time_s = t1 - t0
 
         # Log batch metrics
-        log_metrics(
+        self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             sch_output=batch_to_execute,
             paged_cache=self.batch_constructor.paged_cache,
@@ -126,7 +127,6 @@ class TokenGenerationScheduler(Scheduler):
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            log_level=logging.INFO,
         )
 
         # handle cancelled requests
@@ -164,7 +164,9 @@ class TokenGenerationScheduler(Scheduler):
 
         # execute the batch
         responses = self.pipeline.execute(
-            TextGenerationInputs(batch_to_execute, sch_output.num_steps)
+            TextGenerationInputs(
+                batches=[batch_to_execute], num_steps=sch_output.num_steps
+            )
         )
 
         # If there is a chunked request, we put it back into the request queue

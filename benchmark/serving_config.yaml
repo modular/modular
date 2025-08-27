@@ -32,8 +32,11 @@ benchmark_config:
   port: 8000
   endpoint: "/v1/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
 
+  # Dataset configuration (serving-specific)
+  dataset_name: "sharegpt"  # has to be set to a valid dataset name for serving benchmarks
+
   # Request configuration (serving-specific)
-  max_concurrency: 32  # Maximum concurrent requests (optimized for serving benchmarks)
+  max_concurrency: null  # Maximum concurrent requests (optimized for serving benchmarks)
   lora: null  # Optional LoRA name
 
   # Workload configuration (serving-specific)
@@ -43,12 +46,15 @@ benchmark_config:
 
   # Output control (serving-specific extensions)
   output_lengths: null  # Path to YAML file with output lengths or int
+  max_output_len: null  # Maximum output length per request
+  temperature: 0.0  # Temperature for sampling
+  top_p: 1.0  # Top-p for sampling
 
   # Traffic control (serving-specific)
-  request_rate: 16.0  # Requests per second (finite rate for realistic benchmarking)
+  request_rate: inf  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
-  ttft_skip_requests: 10  # Skip first N requests for TTFT measurements
-  chat_warmup_delay_ms: 100.0  # Delay between starting chat sessions
+  ttft_skip_requests: 0  # Skip first N requests for TTFT measurements
+  chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
 
   # Dataset-specific parameters (serving workloads)
   sonnet_input_len: 550
@@ -70,3 +76,9 @@ benchmark_config:
 
   # Result saving (serving-specific extensions)
   server_args: ""  # Server arguments string
+
+  # Result saving (serving-specific extensions)
+  result_dir: null # Directory to save results
+  result_filename: null  # Custom filename (auto-generated if null)
+  metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
+  

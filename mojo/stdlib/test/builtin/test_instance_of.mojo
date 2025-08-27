@@ -27,7 +27,7 @@ struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
         return self.x + self.y + self.foo.z + self.bar.z
 
 
-fn takes_instance_of_arg(x: InstanceOf[Intable]) -> Int:
+fn takes_instance_of_arg(x: Some[Intable]) -> Int:
     return x.__int__()
 
 
@@ -39,7 +39,7 @@ def test_instance_of_arg():
     )
 
 
-fn takes_instance_of_param[x: InstanceOf[Intable]]() -> Int:
+fn takes_instance_of_param[x: Some[Intable]]() -> Int:
     return x.__int__()
 
 
@@ -51,7 +51,7 @@ def test_instance_of_param():
     )
 
 
-fn takes_multiple_traits(x: InstanceOf[Intable & Copyable]) -> __type_of(x):
+fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
     return x
 
 

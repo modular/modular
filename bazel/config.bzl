@@ -10,4 +10,4 @@ TOP_LEVEL_TAG = "top-level"
 ALLOW_UNUSED_TAG = "maybe-unused"
 
 # Default GPU memory for scheduling remote exec tests
-DEFAULT_GPU_MEMORY = "1.6"
+DEFAULT_GPU_MEMORY = "0.8"

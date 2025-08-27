@@ -178,7 +178,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         "the SIMD type must be numeric or boolean",
     ]()
 
-    return __mlir_op.`pop.max`(x.value, y.value)
+    return __type_of(x)(__mlir_op.`pop.max`(x.value, y.value))
 
 
 @always_inline
@@ -261,7 +261,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
         "the SIMD type must be numeric or boolean",
     ]()
 
-    return __mlir_op.`pop.min`(x.value, y.value)
+    return __type_of(x)(__mlir_op.`pop.min`(x.value, y.value))
 
 
 @always_inline

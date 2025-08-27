@@ -79,8 +79,8 @@ what we publish.
     of implicit `Copyable`:
     `KeyElement`
 
-- A new `InstanceOf` utility is introduced to reduce the syntactic load of
-  declaring function arguments of a type that implements a given trait or trait
+- A new `Some` utility is introduced to reduce the syntactic load of declaring
+  function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing
 
   ```mojo
@@ -91,7 +91,7 @@ what we publish.
   one can now write:
 
   ```mojo
-  fn foo(x: InstanceOf[Intable]) -> Int:
+  fn foo(x: Some[Intable]) -> Int:
       return x.__int__()
   ```
 
@@ -148,6 +148,14 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   instead. A new `qualified_builtins` flag also allows users to control the
   verbosity for the most common (but not all) builtin types.
 
+- Add `repr` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`, `Set`.
+  [PR #5189](https://github.com/modular/modular/pull/5189) by rd4com.
+
+- `InlineArray` now automatically detects whether its element types are
+  trivially destructible to not invoke the destructors in its `__del__`
+  function.  This improves performance for trivially destructible types
+  (such as `Int` and friends).
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
@@ -156,3 +164,5 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- Fixed <https://github.com/modular/modular/issues/5190>

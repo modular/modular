@@ -301,7 +301,6 @@ struct Int(
 
     @doc_private
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct Int from the given Index value.
 

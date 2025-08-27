@@ -200,29 +200,28 @@ struct Format(Copyable, Movable, Stringable, Writable):
     file.
     """
 
-    alias csv = StaticString("csv")
+    alias csv = Format(StaticString("csv"))
     """Comma separated values with no alignment."""
-    alias tabular = StaticString("tabular")
+    alias tabular = Format(StaticString("tabular"))
     """Comma separated values with dynamically aligned columns."""
-    alias table = StaticString("table")
+    alias table = Format(StaticString("table"))
     """Table format with dynamically aligned columns."""
 
     var value: StaticString
     """The format to print results."""
 
-    @implicit
     fn __init__(out self, value: StringSlice):
         """Constructs a Format object from a string.
 
         Args:
             value: The format to print results.
         """
-        if value == Format.csv:
-            self.value = Format.csv
-        elif value == Format.tabular:
-            self.value = Format.tabular
-        elif value == Format.table:
-            self.value = Format.table
+        if value == Format.csv.value:
+            self.value = Format.csv.value
+        elif value == Format.tabular.value:
+            self.value = Format.tabular.value
+        elif value == Format.table.value:
+            self.value = Format.table.value
         else:
             self.value = ""
             var valid_formats = String(
@@ -404,7 +403,6 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = input_id
 
-    @implicit
     fn __init__(out self, func_name: String):
         """Constructs a Benchmark Id object from input function name.
 
@@ -415,7 +413,6 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = None
 
-    @implicit
     fn __init__(out self, func_name: StringLiteral):
         """Constructs a Benchmark Id object from input function name.
 
@@ -1227,7 +1224,6 @@ struct Bencher:
     var elapsed: Int
     """ The total time elapsed when running the target function."""
 
-    @implicit
     fn __init__(out self, num_iters: Int):
         """Constructs a Bencher object to run and time a function.
 

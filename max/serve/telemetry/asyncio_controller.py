@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -19,7 +21,7 @@ import sys
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
-from typing import Callable, NoReturn, Optional
+from typing import Callable, NoReturn
 
 from max.serve.config import MetricLevel
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
@@ -76,7 +78,7 @@ class AsyncioTelemetryController:
 
     def __init__(self, maxsize: int = 0) -> None:
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task[object] | None = None
 
     def start(self) -> None:
         if self.task is not None:

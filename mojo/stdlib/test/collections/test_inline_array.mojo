@@ -223,7 +223,7 @@ def test_inline_array_runs_destructors():
     var destructor_counter = List[Int]()
     var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
     alias capacity = 32
-    var inline_list = InlineArray[DelRecorder, 4, run_destructors=True](
+    var inline_list = InlineArray[DelRecorder, 4](
         DelRecorder(0, pointer_to_destructor_counter),
         DelRecorder(10, pointer_to_destructor_counter),
         DelRecorder(20, pointer_to_destructor_counter),
@@ -302,7 +302,7 @@ def test_move():
     var destructor_counter = List[Int]()
     var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
     var del_recorder = DelRecorder(0, pointer_to_destructor_counter)
-    var arr3 = InlineArray[DelRecorder, 1, run_destructors=True](del_recorder)
+    var arr3 = InlineArray[DelRecorder, 1](del_recorder)
 
     assert_equal(len(pointer_to_destructor_counter[]), 0)
 

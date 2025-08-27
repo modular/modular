@@ -292,23 +292,29 @@ class Module(Layer, ABC):
             weight_alignment: If specified, overrides the alignment for each
                 weight in the `Module`. If left as `None`, each value in
                 state_dict must be aligned by the default dtype alignment.
-            strict: If True, raises an error if any keys in `state_dict` were
-                not used by the `Module`.
+            strict: If True, raises an error if any weights required by the
+                `Module` are missing from `state_dict`, or if any keys in
+                `state_dict` were not used by the `Module`. If False, both
+                missing and unexpected keys are tolerated and reported only
+                via return values/logging by callers.
 
         Raises:
-            ValueError: If any weight in the model is not present in the state dict.
-            ValueError: If `strict` is True and `state_dict` contains keys
-                not used by the `Module`.
+            ValueError: If `strict` is True and any required weight is missing
+                from `state_dict`, or if `state_dict` contains keys not used by
+                the `Module`.
         """
         loaded_keys = set()
+        missing_keys = set()
+
         for name, layer in recursive_named_layers(self):
             weight_prefix = f"{name}." if name else ""
             for weight_name, weight in layer.layer_weights.items():
-                # Skip the shared weights, since their values are loaded with
-                # the original layers.
+                # Skip shared weights, as they are loaded with the original layers.
                 if weight_name in layer._shared_weights:
                     continue
+
                 full_weight_name = f"{weight_prefix}{weight_name}"
+
                 if (data := state_dict.get(full_weight_name)) is not None:
                     loaded_keys.add(full_weight_name)
                     if isinstance(data, WeightData):
@@ -320,8 +326,10 @@ class Module(Layer, ABC):
                         ).data
                     else:
                         _validate_weight_value(weight, data, full_weight_name)
+
                     if weight_alignment:
                         weight.align = weight_alignment
+
                     _check_alignment(
                         data,
                         weight.align or weight.dtype.align,
@@ -330,25 +338,39 @@ class Module(Layer, ABC):
                     self._weight_values[full_weight_name] = data
                     weight.name = full_weight_name
                 else:
-                    msg = f"Could not find weight '{full_weight_name}'. "
-                    if possible_match := difflib.get_close_matches(
-                        full_weight_name, state_dict.keys(), n=1
-                    ):
-                        msg += f" Did you mean '{possible_match[0]}'?"
-                    raise ValueError(msg)
+                    # If a key is missing, just add it to the set for later.
+                    missing_keys.add(full_weight_name)
 
-        if strict:
-            unused_keys = state_dict.keys() - loaded_keys
-            if len(unused_keys) > 0:
-                unused_keys_str = ", ".join(sorted(unused_keys))
-                msg = (
-                    f"load_state_dict() received an unexpected key(s) in state_dict. "
-                    f"If you want to load a model with a state_dict that may "
-                    f"contain unused keys, set strict=False. "
-                    f"The unused keys are:\n {unused_keys_str}"
-                    f"The loaded keys that are not unused are:\n {loaded_keys - state_dict.keys()}"
+        # After the loop, check for all errors at once if in strict mode.
+        unused_keys = state_dict.keys() - loaded_keys
+
+        if strict and (missing_keys or unused_keys):
+            parts = []
+            if missing_keys:
+                sorted_missing = sorted(list(missing_keys))
+                parts.append(
+                    f"Missing required weights: {', '.join(sorted_missing)}"
                 )
-                raise ValueError(msg)
+
+                # Add a helpful "Did you mean?" suggestion for the first missing key.
+                first_missing_key = sorted_missing[0]
+                if possible_match := difflib.get_close_matches(
+                    first_missing_key, state_dict.keys(), n=1
+                ):
+                    parts.append(
+                        f"For '{first_missing_key}', did you mean '{possible_match[0]}'?"
+                    )
+
+            if unused_keys:
+                parts.append(
+                    f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
+                )
+
+            msg = (
+                "load_state_dict() strict=True validation failed. "
+                + "; ".join(parts)
+            )
+            raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True

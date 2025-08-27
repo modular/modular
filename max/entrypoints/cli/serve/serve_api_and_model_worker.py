@@ -62,6 +62,7 @@ def sigint_handler(sig: int, frame: Any) -> None:
 
 
 def serve_api_server_and_model_worker(
+    settings: Settings,
     pipeline_config: PipelineConfig,
     profile: bool = False,
     model_name: Union[str, None] = None,
@@ -70,12 +71,6 @@ def serve_api_server_and_model_worker(
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _server_instance
-
-    # Initialize settings
-    settings = Settings()
-
-    if port is not None:
-        settings.port = port
 
     override_architecture: Optional[str] = None
     # TODO: This is a workaround to support embeddings generation until the

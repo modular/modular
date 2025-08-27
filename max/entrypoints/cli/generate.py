@@ -69,7 +69,7 @@ async def stream_text_to_console(
         generate_again = True
         while generate_again:
             responses = pipeline.execute(
-                TextGenerationInputs(pipeline_request, num_steps=num_steps)
+                TextGenerationInputs([pipeline_request], num_steps=num_steps)
             )
 
             for request_idx, response in responses.items():  # noqa: B007

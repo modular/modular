@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import enum
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from .causal_attention_mask import causal_attention_mask
 
@@ -29,11 +31,11 @@ class PaddingDirection(enum.Enum):
 
 
 def collate_batch(
-    batch: list[np.ndarray],
+    batch: list[npt.NDArray[np.integer[Any]]],
     direction: PaddingDirection = PaddingDirection.RIGHT,
     pad_value: int = 0,
     batch_size: int | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
     """Generates a single batch tensor from a batch of inputs.
 
     These input tensors may have different lengths. The `pad_value` will be used
@@ -62,7 +64,7 @@ def collate_batch(
     max_len = max((len(a) for a in batch), default=0)
     pad_to = max_len
 
-    def pad(a: np.ndarray) -> np.ndarray:
+    def pad(a: npt.NDArray[np.integer[Any]]) -> npt.NDArray[np.integer[Any]]:
         npad = pad_to - len(a)
         if npad == 0:
             return a
@@ -85,8 +87,12 @@ def collate_batch(
 
 def batch_padded_tokens_and_mask(
     start_pos: list[int],
-    tokens: list[np.ndarray],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    tokens: list[npt.NDArray[np.integer[Any]]],
+) -> tuple[
+    npt.NDArray[np.integer[Any]],
+    npt.NDArray[np.integer[Any]],
+    npt.NDArray[np.float32],
+]:
     """Batches input tokens and computes a batched attention mask.
 
     Args:

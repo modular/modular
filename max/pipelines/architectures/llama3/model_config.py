@@ -24,7 +24,6 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
     DistributedGemmConfig,
-    Float8Config,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
@@ -32,6 +31,7 @@ from max.nn import (
     ReturnLogits,
     RotaryEmbedding,
 )
+from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     MAXModelConfigBase,
     PipelineConfig,
     RopeType,
-    parse_float8_config,
     upper_bounded_default,
 )
 from transformers import AutoConfig
@@ -264,7 +263,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model_config.device_specs[:n_devices]
         ]
 
         # Parse the float8 config from compressed-tensors or FBGEMM.

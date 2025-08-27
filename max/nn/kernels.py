@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from max.dtype import DType
@@ -31,6 +31,10 @@ from max.graph import (
 )
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.nn.float8_config import (
+    Float8InputScaleSpec,
+    Float8WeightScaleSpec,
+)
 
 from .attention.mask_config import (
     AttentionMaskVariant,
@@ -38,11 +42,7 @@ from .attention.mask_config import (
     MHAMaskVariant,
     PositionalEncodingVariant,
 )
-from .kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheCollection,
-)
+from .kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheCollection
 
 _MHA_MASK_CONFIG_DICT = {
     MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
@@ -815,6 +815,7 @@ def flash_attention_ragged(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    sink_weights: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -827,6 +828,17 @@ def flash_attention_ragged(
     Note that this is self attention and the KV sequence length is
     assumed to be equal to the Q sequence length.
     For KV sequence length != Q sequence length, use `cross_attention_ragged`.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape [total_seq_len, hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each batch in the input tensor with shape [batch_size + 1].
+        kv_collection: PagedKVCacheCollection object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have dtype uint32.
+        mask_variant: MHAMaskVariant specifying the type of attention mask to use.
+        scale: float value used to scale the attention scores.
+        local_window_size: int specifying the size of the local attention window, default is -1 for no local window.
+        sink_weights: Optional tensor of shape [num_heads] containing learnable sink weights for each attention head.
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -855,6 +867,20 @@ def flash_attention_ragged(
         msg = f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
+    if sink_weights is not None:
+        if sink_weights.rank != 1:
+            msg = (
+                f"expected sink_weights to have rank 1, got {sink_weights.rank}"
+            )
+            raise ValueError(msg)
+        num_attention_heads = input.shape[1]
+        if sink_weights.shape[0] != num_attention_heads:
+            msg = (
+                f"expected sink_weights to have shape [{num_attention_heads}], "
+                f"got {sink_weights.shape}"
+            )
+            raise ValueError(msg)
+
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
@@ -865,7 +891,12 @@ def flash_attention_ragged(
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+
+    # Select kernel based on whether sink_weights is provided
     op_name = f"mo.mha.ragged.{cache_strategy_str}"
+
+    if sink_weights is not None:
+        op_name += ".sink_weights"
 
     parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
     parameters["score_mod_str"] = (
@@ -873,17 +904,21 @@ def flash_attention_ragged(
     )
     parameters["local_window_size"] = local_window_size
 
+    values: MutableSequence[Value] = [
+        input,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        # NOTE: The scale argument to flash attention is constrained to float32.
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    if sink_weights is not None:
+        values.append(sink_weights)
+
     return ops.inplace_custom(
         op_name,
         device=input.device,
-        values=[
-            input,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
@@ -1492,11 +1527,11 @@ def rms_norm_key_cache(
     kv_params: KVCacheParams,
     kv_collection: PagedKVCacheCollection,
     gamma: TensorValue,
-    epsilon: float | np.floating,
+    epsilon: float | np.floating[Any],
     layer_idx: TensorValue,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
-    weight_offset: float | np.floating,
+    weight_offset: float | np.floating[Any],
     rms_norm_cols: Optional[int] = None,
     multiply_before_cast: bool = True,
     per_head_norm: bool = True,
@@ -1734,6 +1769,8 @@ def quantize_static_scaled_float8(
 
 def quantize_dynamic_scaled_float8(
     input: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
     scale_ub: float = 1200.0,
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
@@ -1768,11 +1805,17 @@ def quantize_dynamic_scaled_float8(
         else input.shape[1]
     )
 
-    # pad the a_scales to 16B. This is required by NVIDIA SM90+ TMA instructions
-    padding_size = 16 // scales_type.size_in_bytes
-    scales_dim1_padded = (
-        (input.shape[0] + padding_size - 1) // padding_size
-    ) * padding_size
+    a_scales_dim1 = input.shape[0]
+    if input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            msg = "both input and weight must be blockwise scaled for blockwise scaling"
+            raise ValueError(msg)
+
+        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[0] + padding_size - 1) // padding_size
+        ) * padding_size
 
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
@@ -1789,7 +1832,7 @@ def quantize_dynamic_scaled_float8(
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[input.shape[1] // group_size, Dim(scales_dim1_padded)],
+                shape=[input.shape[1] // group_size, a_scales_dim1],
                 device=input.device,
             ),
         ],
@@ -1806,6 +1849,8 @@ def dynamic_scaled_matmul(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
+    input_scale_spec: Float8InputScaleSpec,
+    weight_scale_spec: Float8WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
     """
@@ -1830,12 +1875,39 @@ def dynamic_scaled_matmul(
         msg = "The second dimension of b must match the second dimension of a"
         raise ValueError(msg)
 
-    if a_scales.shape[0] != 1:
-        msg = "only per-token scaling is supported for a"
-        raise ValueError(msg)
+    if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
+        if not (
+            a_scales.shape[0]
+            == a_scales.shape[1]
+            == b_scales.shape[0]
+            == b_scales.shape[1]
+            == 1
+        ):
+            msg = "scaler tensors must be of shape [1, 1] for tensor scaling"
+            raise ValueError(msg)
 
-    if b_scales.shape[1] != 1:
-        msg = "only channel-wise scaling is supported for b"
+    elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
+        if a_scales.shape[0] != 1:
+            msg = "only per-token scaling is supported for a"
+            raise ValueError(msg)
+
+        if b_scales.shape[1] != 1:
+            msg = "only channel-wise scaling is supported for b"
+            raise ValueError(msg)
+
+    elif input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            msg = "both input and weight must be blockwise scaled for blockwise scaling"
+            raise ValueError(msg)
+
+        # a_scale is of shape [ceildiv(K // BLOCK_SIZE), M-padded]
+        # b_scale is of shape [ceildiv(N // BLOCK_SIZE), ceildiv(K // BLOCK_SIZE)]
+        if a_scales.shape[0] != b_scales.shape[1]:
+            msg = "both a_scales and b_scales must have the same shape on the K dimension"
+            raise ValueError(msg)
+
+    else:
+        msg = "unsupported FP8 scaling granularity"
         raise ValueError(msg)
 
     if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
@@ -1854,6 +1926,10 @@ def dynamic_scaled_matmul(
                 dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
             )
         ],
+        parameters={
+            "input_scale_granularity": str(input_scale_spec.granularity),
+            "weight_scale_granularity": str(weight_scale_spec.granularity),
+        },
     )[0].tensor
 
     return result

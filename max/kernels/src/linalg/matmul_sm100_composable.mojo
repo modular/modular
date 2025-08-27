@@ -48,7 +48,6 @@ from linalg.mmaop_sm100 import MmaOpSM100_SS
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from pathlib import Path
 
 # Additional imports for testing
 from internal_utils import (
@@ -372,7 +371,7 @@ struct PipelineArgs[
         self.num_iters = num_iters
 
 
-struct pipeline[
+struct Pipeline[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -590,7 +589,7 @@ fn matmul_sm100[
         block_tile_shape,
         c.origin,
     ]
-    alias pipeline_t = pipeline[
+    alias pipeline_t = Pipeline[
         a_type,
         b_type,
         c_type,
@@ -609,7 +608,7 @@ fn matmul_sm100[
     )
 
     alias kernel = matmul_kernel[pipeline_t]
-    ctx.enqueue_function[kernel, dump_asm = Path("./matmul_sm100.ptx")](
+    ctx.enqueue_function[kernel](
         args,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),

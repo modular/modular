@@ -96,6 +96,10 @@ keyword at the beginning of an argument declaration:
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
 
+* `deinit`: A special convention used in the destructor and consuming-move
+  lifecycle methods. A `deinit` argument is initialized at the beginning of the
+  function, and uninitialized when the function returns.
+
 For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
@@ -119,7 +123,7 @@ convention. By default, all arguments are `read`.
 In the following sections, we'll explain each of these argument conventions in
 more detail.
 
-## Borrowed arguments (`read`)
+## Immutable arguments (`read`)
 
 The `read` convention is the default for all arguments. The callee receives an
 immutable reference to the argument value.

@@ -173,7 +173,6 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Scalar[dtype]):
         """Constructs a new atomic value.
 
@@ -224,7 +223,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr[] += rhs
             return res
 
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
@@ -233,6 +232,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             rhs.value,
         )
+        return Scalar[dtype](res)
 
     @staticmethod
     @always_inline
@@ -262,7 +262,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr[] = value
             return res
 
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
             _type = Scalar[dtype]._mlir_type,
@@ -270,6 +270,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             value.value,
         )
+        return Scalar[dtype](res)
 
     @staticmethod
     @always_inline
@@ -369,12 +370,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return res
 
         var value_addr = UnsafePointer(to=self.value.value)
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
             _type = Scalar[dtype]._mlir_type,
         ](value_addr.address, rhs.value)
+        return Scalar[dtype](res)
 
     @always_inline
     fn __isub__(mut self, rhs: Scalar[dtype]):

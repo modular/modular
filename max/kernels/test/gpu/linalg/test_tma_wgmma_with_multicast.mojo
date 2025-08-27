@@ -29,6 +29,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
+    warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
@@ -237,9 +238,11 @@ fn multicast_tma_wgmma_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
         wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()

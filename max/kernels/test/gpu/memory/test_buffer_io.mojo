@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from math import align_down, ceildiv
 
 from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
@@ -34,14 +34,13 @@ alias size_clip = size - 5
 
 
 fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
-    var t0 = block_idx.x * block_dim.x + thread_idx.x
-    var size2 = size // width
+    var aligned_size = align_down(size, width)
     var bc = make_buffer_resource(a, size_clip)
-    for i in range(t0, size2, block_dim.x * grid_dim.x):
-        var v = buffer_load[dtype, width](bc, width * i)
-        buffer_store[dtype, width](bc, width * i, 2 * v)
-    for i in range(width * size2, size, block_dim.x * grid_dim.x):
-        var v = buffer_load[dtype, 1](bc, i)
+    for i in range(0, aligned_size, width):
+        var v = buffer_load[dtype, width](bc, i)
+        buffer_store[dtype, width](bc, 0, 2 * v, scalar_offset=i)
+    for i in range(aligned_size, size):
+        var v = buffer_load[dtype, 1](bc, 0, scalar_offset=i)
         buffer_store[dtype, 1](bc, i, 2 * v)
 
 
@@ -205,10 +204,8 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    ctx.enqueue_function[kernel[dtype, width], dump_asm=False](
-        a_device_buf,
-        grid_dim=(1, 1),
-        block_dim=(64),
+    ctx.enqueue_function[kernel[dtype, width]](
+        a_device_buf, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(a_host_buf, a_device_buf)
 

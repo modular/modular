@@ -16,7 +16,9 @@ from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from collections import Optional
 from nn.flash_attention import flash_attention, flash_attention_split_kv
+from nn.mha_mask import NullMask
 from testing import assert_equal
 
 from utils import IndexList
@@ -120,6 +122,117 @@ def reference_attention_bshd[
 
                 for n in range(kv_seq_len):
                     score_2d[Index(m, n)] = score_2d[Index(m, n)] / sum_val
+
+            # Compute: `output = score @ V`
+            for m in range(seq_len):
+                for n in range(depth_dim):
+                    var accum = Scalar[dtype](0)
+                    for k in range(kv_seq_len):
+                        accum = score_2d[Index(m, k)].fma(
+                            v_4d[Index(b, k, kv_h, n)], accum
+                        )
+                    output_4d[Index(b, m, h, n)] = accum
+
+    score_ptr.free()
+
+
+def reference_attention_bshd_with_sinks[
+    dtype: DType, rank: Int
+](
+    q_nd: NDBuffer[dtype, rank],
+    k_nd: NDBuffer[dtype, rank],
+    v_nd: NDBuffer[dtype, rank],
+    mask_nd: NDBuffer[dtype, rank],
+    sink_weights_nd: NDBuffer[dtype, 1],
+    output_nd: NDBuffer[mut=True, dtype, rank],
+    scale: Float32,
+):
+    """Reference implementation of attention with sink weights."""
+
+    fn reshape_4d(buf: NDBuffer[dtype, rank]) -> NDBuffer[dtype, 4, buf.origin]:
+        var shape = buf.get_shape()
+        var num_heads = shape[rank - 2] if rank == 4 else 1
+        var shape_4d = Index(shape[0], shape[1], num_heads, shape[rank - 1])
+        return NDBuffer[dtype, 4](buf.data, shape_4d)
+
+    fn reshape_mask_4d(
+        buf: NDBuffer[dtype, rank]
+    ) -> NDBuffer[dtype, 4, buf.origin]:
+        var shape = buf.get_shape()
+        var num_heads = shape[1] if rank == 4 else 1
+        var shape_4d = Index(
+            shape[0], num_heads, shape[rank - 2], shape[rank - 1]
+        )
+        return NDBuffer[dtype, 4](buf.data, shape_4d)
+
+    var q_4d = reshape_4d(q_nd)
+    var k_4d = reshape_4d(k_nd)
+    var v_4d = reshape_4d(v_nd)
+    var mask_4d = reshape_mask_4d(mask_nd)
+    var output_4d = reshape_4d(output_nd)
+
+    var batch_count = q_4d.dim(0)
+    var seq_len = q_4d.dim(1)
+    var num_heads = q_4d.dim(2)
+    var depth_dim = q_4d.dim(3)
+    var kv_seq_len = v_4d.dim(1)
+    var kv_num_heads = v_4d.dim(2)
+    # Note: sink_weights has one weight per head, not per token
+    _ = min(sink_weights_nd.dim(0), num_heads)
+
+    assert_equal(num_heads % kv_num_heads, 0)
+
+    var kv_group_count = num_heads // kv_num_heads
+
+    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_2d = NDBuffer[dtype, 2](score_ptr, Index(seq_len, kv_seq_len))
+
+    for b in range(batch_count):
+        for h in range(num_heads):
+            var kv_h = h // kv_group_count
+
+            # Compute: `score = Q @ K`
+            for m in range(seq_len):
+                for n in range(kv_seq_len):
+                    var accum = Scalar[dtype](0)
+                    for k in range(depth_dim):
+                        accum = q_4d[Index(b, m, h, k)].fma(
+                            k_4d[Index(b, n, kv_h, k)], accum
+                        )
+                    score_2d[Index(m, n)] = accum
+
+            # Apply scaling and masking to the score buffer
+            for m in range(seq_len):
+                for n in range(kv_seq_len):
+                    var score = score_2d[Index(m, n)] * scale.cast[dtype]()
+                    score += mask_4d[Index(b, h, m, n)]
+                    score_2d[Index(m, n)] = score
+
+            # Compute softmax with sink tokens (following PyTorch reference)
+            for m in range(seq_len):
+                # Find max among attention logits
+                var logits_max = Scalar[dtype].MIN
+                for n in range(kv_seq_len):
+                    logits_max = max(logits_max, score_2d[Index(m, n)])
+
+                # Get sink logit for this head and compute joint max
+                var sink_logit = sink_weights_nd[h]
+                var joint_max = max(logits_max, sink_logit)
+
+                # Compute normalized scores including sink in denominator
+                var attention_sum = Scalar[dtype](0)
+                for n in range(kv_seq_len):
+                    var exp_val = exp(score_2d[Index(m, n)] - joint_max)
+                    score_2d[Index(m, n)] = exp_val
+                    attention_sum += exp_val
+
+                # Add sink contribution to normalizer
+                var sink_contribution = exp(sink_logit - joint_max)
+                var normalizer = attention_sum + sink_contribution
+
+                # Normalize only the attention scores (sink doesn't contribute to output)
+                for n in range(kv_seq_len):
+                    score_2d[Index(m, n)] = score_2d[Index(m, n)] / normalizer
 
             # Compute: `output = score @ V`
             for m in range(seq_len):
@@ -577,6 +690,170 @@ def test_flash_attention_split_kv[dtype: DType]():
     )
 
 
+def test_flash_attention_with_sinks[dtype: DType]():
+    """Test flash attention with and without sink weights."""
+    print("Testing flash attention with sink weights...")
+
+    # Simple test configuration
+    var batch_size = 1
+    var seq_len = 4
+    var kv_seq_len = 8
+    var num_heads = 2
+    var depth_dim = 16
+    var scale = Float32(0.125)
+
+    seed(42)
+
+    # Create test tensors in BSHD format
+    var q_shape = Index(batch_size, seq_len, num_heads, depth_dim)
+    var kv_shape = Index(batch_size, kv_seq_len, num_heads, depth_dim)
+    var mask_shape = Index(batch_size, num_heads, seq_len, kv_seq_len)
+
+    var q = build_ndbuffer[dtype](q_shape)
+    var k = build_ndbuffer[dtype](kv_shape)
+    var v = build_ndbuffer[dtype](kv_shape)
+    var mask = build_ndbuffer[dtype](mask_shape)
+
+    # Create sink weights (one per head)
+    var sink_weights_shape = Index(num_heads)
+    var sink_weights = build_ndbuffer[dtype](sink_weights_shape)
+
+    # Fill sink weights with known values
+    for i in range(num_heads):
+        sink_weights[i] = Scalar[dtype](
+            0.5 * (i + 1)
+        )  # 0.5, 1.0 for heads 0, 1
+
+    # Test 1: Regular attention without sinks
+    var output_no_sinks = build_ndbuffer[dtype](q_shape)
+    var ref_output_no_sinks = build_ndbuffer[dtype](q_shape)
+
+    # Compute reference without sinks
+    reference_attention_bshd(q, k, v, mask, ref_output_no_sinks, scale)
+
+    # Test flash attention without sinks
+    @parameter
+    @always_inline
+    fn input_k_fn[
+        simd_width: Int, _rank: Int
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
+
+    @parameter
+    @always_inline
+    fn input_v_fn[
+        simd_width: Int, _rank: Int
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
+
+    @parameter
+    @always_inline
+    fn mask_fn[
+        simd_width: Int, _rank: Int
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+        return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
+
+    # Call without sink weights
+    flash_attention[input_k_fn, input_v_fn, mask_fn](
+        q,
+        k.get_shape(),
+        v.get_shape(),
+        mask.get_shape(),
+        output_no_sinks,
+        scale,
+    )
+
+    # Verify no-sinks result
+    var mismatches_no_sinks = 0
+    for i in range(output_no_sinks.num_elements()):
+        if not isclose(
+            output_no_sinks.data[i],
+            ref_output_no_sinks.data[i],
+            atol=1e-5,
+            rtol=1e-4,
+        ):
+            if mismatches_no_sinks < 3:
+                print(
+                    "No-sinks mismatch at",
+                    i,
+                    ":",
+                    output_no_sinks.data[i],
+                    "vs",
+                    ref_output_no_sinks.data[i],
+                )
+            mismatches_no_sinks += 1
+
+    if mismatches_no_sinks == 0:
+        print("✓ Flash attention without sinks passed")
+    else:
+        print(
+            "✗ Flash attention without sinks failed with",
+            mismatches_no_sinks,
+            "mismatches",
+        )
+
+    # Test 2: Attention with sinks
+    var output_with_sinks = build_ndbuffer[dtype](q_shape)
+    var ref_output_with_sinks = build_ndbuffer[dtype](q_shape)
+
+    # Compute reference with sinks
+    reference_attention_bshd_with_sinks(
+        q, k, v, mask, sink_weights, ref_output_with_sinks, scale
+    )
+
+    # Call with sink weights (pass the data pointer wrapped in Optional)
+    flash_attention[input_k_fn, input_v_fn, mask_fn](
+        q,
+        k.get_shape(),
+        v.get_shape(),
+        mask.get_shape(),
+        output_with_sinks,
+        scale,
+        sink_weights=sink_weights,
+    )
+
+    # Verify sinks result
+    var mismatches_with_sinks = 0
+    for i in range(output_with_sinks.num_elements()):
+        if not isclose(
+            output_with_sinks.data[i],
+            ref_output_with_sinks.data[i],
+            atol=1e-5,
+            rtol=1e-4,
+        ):
+            if mismatches_with_sinks < 3:
+                print(
+                    "With-sinks mismatch at",
+                    i,
+                    ":",
+                    output_with_sinks.data[i],
+                    "vs",
+                    ref_output_with_sinks.data[i],
+                )
+            mismatches_with_sinks += 1
+
+    if mismatches_with_sinks == 0:
+        print("✓ Flash attention with sinks passed")
+    else:
+        print(
+            "✗ Flash attention with sinks failed with",
+            mismatches_with_sinks,
+            "mismatches",
+        )
+
+    # Free memory
+    q.data.free()
+    k.data.free()
+    v.data.free()
+    mask.data.free()
+    sink_weights.data.free()
+    output_no_sinks.data.free()
+    ref_output_no_sinks.data.free()
+    output_with_sinks.data.free()
+    ref_output_with_sinks.data.free()
+
+
 def main():
     test_flash_attention[DType.float32]()
     test_flash_attention_split_kv[DType.float32]()
+    test_flash_attention_with_sinks[DType.float32]()
