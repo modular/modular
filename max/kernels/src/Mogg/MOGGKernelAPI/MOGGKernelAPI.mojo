@@ -4086,19 +4086,29 @@ struct RandomNormal:
 @compiler.register("mo.static.random.normal")
 struct StaticRandomNormal:
     @staticmethod
-    fn execute(
-        output: OutputTensor,
-        mean: Scalar,
-        variance: Scalar,
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype],
+        mean: Scalar[dtype],
+        variance: Scalar[dtype],
         seed_value: Scalar,
-    ):
-        seed(Int(seed_value))
-        var num_elements = output.size()
-        randn(
-            output._ptr,
-            num_elements,
-            mean.cast[DType.float64](),
-            variance.cast[DType.float64](),
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _width: Int,
+            _rank: Int,
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        random_normal[output_fn, target=target](
+            output.shape(), mean, variance, UInt64(seed_value), ctx
         )
 
 
