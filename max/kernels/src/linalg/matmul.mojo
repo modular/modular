@@ -651,8 +651,8 @@ fn _matmul_cpu_impl[
                     True, MutableAnyOrigin
                 ](),
                 b,
-                sub_matmul_config.shape,
-                sub_matmul_config.offset,
+                GemmShape(sub_matmul_config.shape),
+                GemmShape(sub_matmul_config.offset),
             )
 
         # i8mm partition needs to be optimized as a function of m, n and k

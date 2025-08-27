@@ -894,7 +894,6 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     to efficiently access shared memory with the appropriate layout and access patterns.
     """
 
-    @implicit
     fn __init__(out self, val: Int64):
         """Initialize descriptor with raw 64-bit value.
 
@@ -909,7 +908,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: Int64) -> Int64:
+    fn _insert_bit[start_bit: Int](self, val: Int64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -921,7 +920,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return self.desc | (val << start_bit)
+        return Self(self.desc | (val << start_bit))
 
     @staticmethod
     fn create[
@@ -967,21 +966,21 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         var start_address = (base_ptr & 0x3FFFF) >> 4
 
         # Start from LSB in case updated higher bits gets overwritten.
-        var desc = Int64(0)
+        var desc = Self(0)
         # bits [48 .. 32]
         # bits  0:14 address in share memory
-        desc = Self._insert_bit[0](desc, start_address)
+        desc = desc._insert_bit[0](start_address)
         # bits 14:16 unused
         # bits 16:30 leading dim byte offset
-        desc = Self._insert_bit[16](desc, lead_dim)
+        desc = desc._insert_bit[16](lead_dim)
         # bits 30:32 unused
         # bits 32:46 stride dim byte offset
-        desc = Self._insert_bit[32](desc, stride_dim)
+        desc = desc._insert_bit[32](stride_dim)
         # bits 49:52 offset
-        desc = Self._insert_bit[49](desc, offset)
+        desc = desc._insert_bit[49](offset)
         # bits 53:62 unused
         # bits 62:64 swizzle type
-        desc = Self._insert_bit[62](desc, swizzle)
+        desc = desc._insert_bit[62](swizzle)
 
         return desc
 
@@ -1004,7 +1003,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
         Returns:
             New descriptor with updated base address.
         """
-        return self.desc + ((offset & 0x3FFFF) >> 4)
+        return Self(self.desc + ((offset & 0x3FFFF) >> 4))
 
 
 @always_inline

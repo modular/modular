@@ -35,6 +35,7 @@ from .matmul import _submatmul_sequential_sync
 from .matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
+    GemmShape,
     get_kernel_config,
     get_kernel_type,
     get_matmul_num_tasks,
@@ -598,8 +599,8 @@ fn _batched_matmul_cpu[
                 c_view,
                 a_packed if use_i8mm else a_view,
                 b_view,
-                sub_matmul_config.shape,
-                sub_matmul_config.offset,
+                GemmShape(sub_matmul_config.shape),
+                GemmShape(sub_matmul_config.offset),
             )
             a_packed_ptr.free()
             _ = batch_coords

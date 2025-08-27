@@ -499,7 +499,6 @@ struct UMMAInsDescriptor[
     - Bits 30-31: Maximum shift while attempting B matrix (2 bits)
     """
 
-    @implicit
     fn __init__(out self, value: UInt32):
         """Initialize descriptor with raw 32-bit value.
 
@@ -702,7 +701,7 @@ struct UMMAInsDescriptor[
 
         @parameter
         if mma_kind == UMMAKind.KIND_TF32:
-            return (
+            return Self(
                 desc
                 | Self._create_tf32_desc[d_type, a_type, b_type]()
                 | transpose_bit
@@ -710,7 +709,7 @@ struct UMMAInsDescriptor[
 
         @parameter
         if mma_kind == UMMAKind.KIND_F16:
-            return (
+            return Self(
                 desc
                 | Self._create_f16_desc[d_type, a_type, b_type]()
                 | transpose_bit
@@ -718,7 +717,7 @@ struct UMMAInsDescriptor[
 
         @parameter
         if mma_kind == UMMAKind.KIND_F8F6F4:
-            return (
+            return Self(
                 desc
                 | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
                 | transpose_bit
@@ -765,7 +764,6 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
     var desc: UInt64
     """The 64-bit descriptor encodes shared memory operand information."""
 
-    @implicit
     @always_inline
     fn __init__(out self, val: UInt64):
         """Initialize descriptor with raw 64-bit value.
@@ -781,7 +779,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: UInt64) -> UInt64:
+    fn _insert_bit[start_bit: Int](self, val: UInt64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -793,7 +791,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return self.desc | (val << start_bit)
+        return Self(self.desc | (val << start_bit))
 
     @staticmethod
     @always_inline
@@ -848,22 +846,22 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         var lbo = UInt64((leading_byte_offset & 0x3FFF) >> 4)
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
-        var desc = UInt64(0)
+        var desc = Self(0)
         # bits  0-13 address in share memory
-        desc = Self._insert_bit[0](desc, start_address)
+        desc = desc._insert_bit[0](start_address)
         # bits 14-16 unused
         # bits 16-29 leading dim byte offset
-        desc = Self._insert_bit[16](desc, lbo)
+        desc = desc._insert_bit[16](lbo)
         # bits 30-32 unused
         # bits 32-45 stride dim byte offset
-        desc = Self._insert_bit[32](desc, sbo)
+        desc = desc._insert_bit[32](sbo)
         # bits 46-48 001
-        desc = Self._insert_bit[46](desc, 1)
+        desc = desc._insert_bit[46](1)
         # bits 49-51 matrix base offset, not supported
         # bits 52    LBO mode, only matters for 48B K tile and not supported
         # bits 53-60 fixed, 0
         # bits 61-63 swizzle type
-        desc = Self._insert_bit[61](desc, UInt64(swizzle))
+        desc = desc._insert_bit[61](UInt64(swizzle))
 
         return desc
 
@@ -886,7 +884,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             New descriptor with updated base address.
         """
-        return self.desc + ((offset & 0x3FFFF) >> 4)
+        return Self(self.desc + ((offset & 0x3FFFF) >> 4))
 
 
 # ===----------------------------------------------------------------------=== #

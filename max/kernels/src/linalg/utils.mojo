@@ -160,7 +160,6 @@ struct GemmShape(Copyable, Movable):
             self.K = value
             return
 
-    @implicit
     fn __init__(out self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
@@ -186,7 +185,7 @@ struct GemmShape(Copyable, Movable):
         Args:
             rhs: Another gemm shape record to add with.
         """
-        return self.as_index() + rhs.as_index()
+        return GemmShape(self.as_index() + rhs.as_index())
 
     fn __sub__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise subtraction of two gemm shape records.
@@ -194,7 +193,7 @@ struct GemmShape(Copyable, Movable):
         Args:
             rhs: Another gemm shape record to subtract with.
         """
-        return self.as_index() - rhs.as_index()
+        return GemmShape(self.as_index() - rhs.as_index())
 
 
 # Helper heuristic function to decide on tile size

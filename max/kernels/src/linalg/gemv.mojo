@@ -567,12 +567,16 @@ fn gemv_gpu_dispatch[
                         DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
                     )
                     var launch_attributes = List[LaunchAttribute](
-                        AccessPolicyWindow(
-                            base_ptr=a.data,
-                            count=min(a.size(), max_access_policy_window_size),
-                            hit_ratio=1,
-                            hit_prop=AccessProperty.PERSISTING,
-                            miss_prop=AccessProperty.STREAMING,
+                        LaunchAttribute(
+                            AccessPolicyWindow(
+                                base_ptr=a.data,
+                                count=min(
+                                    a.size(), max_access_policy_window_size
+                                ),
+                                hit_ratio=1,
+                                hit_prop=AccessProperty.PERSISTING,
+                                miss_prop=AccessProperty.STREAMING,
+                            )
                         ),
                     )
                     alias kernel = gemv_kernel_vector[

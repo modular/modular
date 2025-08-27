@@ -14,7 +14,7 @@
 from sys.ffi import external_call, c_int, c_size_t
 from sys import is_nvidia_gpu, CompilationTarget
 from collections.optional import OptionalReg
-from gpu.host.launch_attribute import LaunchAttributeID
+from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
 from gpu.host import (
     DeviceContext,
     ConstantMemoryMapping,
@@ -444,7 +444,10 @@ struct SHMEMContext(Copyable, Movable):
 
         if self._cooperative:
             attributes.append(
-                LaunchAttribute(id=LaunchAttributeID.COOPERATIVE, value=True)
+                LaunchAttribute(
+                    id=LaunchAttributeID.COOPERATIVE,
+                    value=LaunchAttributeValue(True),
+                )
             )
         else:
             print(
