@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import sizeof, argv
 
 from gpu import block_dim
 from gpu.host import DeviceContext
@@ -28,7 +28,14 @@ from utils.numerics import get_accum_type
 from testing import assert_almost_equal
 
 
-fn blackwell_matmul_tma_umma_kernel[
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark":
+            return True
+    return False
+
+
+fn kernel_0[
     M: Int,
     N: Int,
     K: Int,
@@ -54,7 +61,7 @@ fn blackwell_matmul_tma_umma_kernel[
         c[row, col] = acc.cast[DType.bfloat16]()
 
 
-def test_blackwell_matmul_tma_umma[
+def test_kernel_0[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -95,7 +102,7 @@ def test_blackwell_matmul_tma_umma[
             for n in range(N):
                 b_vendor_tensor[k, n] = b_tensor[k, n]
 
-    alias kernel = blackwell_matmul_tma_umma_kernel[
+    alias kernel = kernel_0[
         M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
     ]
     # Use 1D thread block for memory coalescing
@@ -173,22 +180,23 @@ def test_blackwell_matmul_tma_umma[
 
 def main():
     with DeviceContext() as ctx:
+        if is_benchmark():
+            test_kernel_0[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                transpose_b=True,
+                prob_shape = IndexList[3](4096, 4096, 4096),
+                benchmark=True,
+            ](ctx)
+            return
+
         # Test with transpose_b=True
         print("Testing with transpose_b=True")
-        test_blackwell_matmul_tma_umma[
+        test_kernel_0[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
             transpose_b=True,
             prob_shape = IndexList[3](4096, 4096, 4096),
-        ](ctx)
-
-        print("\nBenchmarking with transpose_b=True")
-        test_blackwell_matmul_tma_umma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            transpose_b=True,
-            prob_shape = IndexList[3](4096, 4096, 4096),
-            benchmark=True,
         ](ctx)
