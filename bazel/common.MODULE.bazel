@@ -300,10 +300,10 @@ mojo.gpu_toolchains(
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
         "rx6900xt": "amdgpu:gfx1030",
-        "m1": "metal:10",
-        "m2": "metal:20",
-        "m3": "metal:30",
-        "m4": "metal:40",
+        "m1": "metal:1",
+        "m2": "metal:2",
+        "m3": "metal:3",
+        "m4": "metal:4",
     },
 )
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
