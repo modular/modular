@@ -29,6 +29,58 @@ language across multiple phases.
 
 ### Language enhancements
 
+- Mojo now has support for default trait methods, allowing traits to provide
+  reusable behavior without requiring every conforming struct to re-implement it.
+  Default methods are automatically inherited by conforming structs unless
+  explicitly overridden. For example:
+
+  ```mojo
+  # Any struct conforming to EqualityComparable now only needs to define one of
+  # __ne__ ~or~ __eq__ and will get a definition of the other with no
+  # additional code!
+
+  # For instance:
+  trait EqualityComparable:
+      fn __eq__(self, other: Self) -> Bool:
+          ...
+
+      fn __ne__(self, other: Self) -> Bool:
+          return not self.__eq__(other)
+
+  @value
+  struct Point(EqualityComparable):
+      var x: Int
+      var y: Int
+
+      fn __eq__(self, other: Self) -> Bool:
+          # Since __eq__ is implemented we now get __ne__ defined for free!
+          return self.x == other.x and self.y == other.y
+
+      # Defaulted methods can also be overriden if we want different behavior.
+      # fn __ne__(self, other: Self) -> Bool:
+      #     return self.x != other.x or self.y != other.y
+  ```
+
+  Currently a trait method is considered to be non-defaulted if the first thing in
+  it's body is either a '...' or a 'pass' i.e.
+
+  ```mojo
+
+  trait Foo:
+    # Either of the following are non-defaulted
+    # fn foo(self):
+    #   ...
+    #
+    # fn foo(self):
+    #   pass
+
+    # While this is not:
+    fn foo(self):
+      print("Foo.foo")
+  ```
+
+  Note that in the future only '...' will mark a trait method as not defaulted.
+
 - Methods on structs may now declare their `self` argument with a `deinit`
   argument convention.  This argument convention is used for methods like
   `__del__` and `__moveinit__` to indicate that they tear down the corresponding
