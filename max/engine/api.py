@@ -20,7 +20,7 @@ from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import CPU, Device, DLPackArray, Tensor
+from max.driver import Device, DLPackArray, Tensor
 from max.profiler import traced
 from mojo.paths import (
     _build_mojo_source_package,
@@ -251,7 +251,7 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession()
+        session = engine.InferenceSession(devices=...)
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
     """
@@ -262,8 +262,8 @@ class InferenceSession:
 
     def __init__(
         self,
+        devices: Iterable[Device],
         num_threads: int | None = None,
-        devices: Iterable[Device] | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ) -> None:
@@ -283,19 +283,14 @@ class InferenceSession:
         if num_threads:
             config["num_threads"] = num_threads
 
-        final_devices: list[Device]
-        if devices is None:
-            # Default case when `devices` argument is not provided.
-            final_devices = [CPU()]
-        else:
-            # Process the provided iterable `devices`.
-            final_devices = []
-            seen_devices: set[Device] = set()
-            for device in devices:
-                if device not in seen_devices:
-                    final_devices.append(device)
-                    seen_devices.add(device)
-            # If the user provided an empty iterable, final_devices remains empty.
+        # Process the provided iterable `devices`.
+        final_devices: list[Device] = []
+        seen_devices: set[Device] = set()
+        for device in devices:
+            if device not in seen_devices:
+                final_devices.append(device)
+                seen_devices.add(device)
+        # If the user provided an empty iterable, final_devices remains empty.
 
         # Assign the ordered, unique list to the config.
         config["devices"] = final_devices
