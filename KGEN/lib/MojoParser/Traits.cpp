@@ -205,7 +205,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
         auto fnOp = cast<FnOp>(decl->getIfOperation());
 
         // Skip any decls currently pointing to the parent trait method
-        if (decl->isDisabled())
+        if (fnOp.getDisabled())
           continue;
 
         auto existingSignature = fnOp.getFullSignature();

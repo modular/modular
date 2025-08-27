@@ -49,7 +49,11 @@ using namespace M::KGEN::LIT;
 /// where a struct provides an implementation for a default trait method) so we
 /// can easily filter these decls out of overload resolution. Symbol DCE later
 /// in the compiler handles actualy deleting these extra methods.
-static bool isDisabledFunction(ASTDecl *decl) { return decl->isDisabled(); }
+static bool isDisabledFunction(ASTDecl *decl) {
+  if (auto fnOp = dyn_cast<FnOp>(decl->getIfOperation()))
+    return fnOp.getDisabled();
+  return false;
+}
 
 //===----------------------------------------------------------------------===//
 // CallSyntax
