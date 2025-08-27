@@ -15,7 +15,7 @@ name: Documentation issue
 description: Report a problem with the docs
 title: "[Docs]"
 labels:
-  - "documentation,modular-repo"
+  - "documentation,Needs Triage"
 body:
   - type: markdown
     attributes:
