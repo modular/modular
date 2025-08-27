@@ -7,6 +7,11 @@
 # RUN: %mojo %s | FileCheck %s
 
 
+trait Barable:
+    fn bar(self):
+        ...
+
+
 trait Foo:
     fn rp_return_params[T: Int](self) -> Int:
         pass
@@ -88,7 +93,7 @@ trait FooActual(Absable, Foo, Intable):
 
 
 @fieldwise_init
-struct Bar(FooActual):
+struct Bar(Barable, FooActual):
     var x: Int
     alias P: Int = 10
 
@@ -97,6 +102,9 @@ struct Bar(FooActual):
 
     fn __abs__(self) -> Self:
         return Self(abs(self.x))
+
+    fn bar(self):
+        print("In Bar implementation, called bar()")
 
     fn rp_return_multi_params[T: Int, T2: Int](self, x: Int) -> Int:
         print("In Bar.rp_return_multi_params")
@@ -135,6 +143,42 @@ struct AAStruct(AATrait1, AATrait2):
     fn zork(self, x: Self.X) -> Self.X:
         print("In Foo.zork")
         return x
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct ParamRP[x: Int, y: Int]:
+    var z: Int
+
+
+trait ParamTraitWithParameterizedInputs:
+    @staticmethod
+    fn process_parameterized[T: Barable](item: T) -> Int:
+        item.bar()
+        return 42
+
+    fn return_parameterized[x: Int, y: Int](self) -> ParamRP[x, y]:
+        return ParamRP[x, y](x + y)
+
+
+@fieldwise_init
+struct ParamTestStruct(ParamTraitWithParameterizedInputs):
+    pass
+
+
+@fieldwise_init
+struct Bag[x: Int]:
+    var v: Int
+
+
+trait NonRPParamDefaultTrait:
+    fn sum_bag[x: Int](self, bag: Bag[x]) -> Int:
+        return bag.v + x
+
+
+@fieldwise_init
+struct NonRPStruct(NonRPParamDefaultTrait):
+    pass
 
 
 def main():
@@ -209,3 +253,23 @@ def main():
     # CHECK: In Foo.zork
     # CHECK-NEXT: 10
     print(a.zork(10))
+
+    # Test parameterized default trait methods
+    var param_test = ParamTestStruct()
+
+    # Test default trait method that takes parameterized type as input
+    var bar_for_param = Bar(5)
+    # CHECK: In Bar implementation, called bar()
+    # CHECK-NEXT: 42
+    print(ParamTestStruct.process_parameterized(bar_for_param))
+
+    # Test default trait method that returns parameterized register passable trivial type
+    # CHECK: 15
+    var result = param_test.return_parameterized[10, 5]()
+    print(result.z)
+
+    # Test default trait method that takes non-register-passable parameterized type
+    var default_struct = NonRPStruct()
+    var bag = Bag[22](3)
+    # CHECK: 25
+    print(default_struct.sum_bag[22](bag))
