@@ -805,6 +805,127 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope,
   return LookupResult::getFailure({});
 }
 
+/// Perform a name lookup that collects ALL matching declarations instead of
+/// stopping at the first non-import match.
+auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
+                                         ASTDecl &scope, bool resolve)
+    -> LookupAllResult {
+
+  auto nameAttr = StringAttr::get(getContext(), name);
+
+  // Collect all matching declarations from all scopes.
+  std::vector<ASTDecl *> allDecls;
+  std::vector<ASTDecl *> skippedDecls;
+
+  // Lambda to expand any wildcard imports that might match the desired name.
+  auto expandWildcardImports = [&](ASTDecl &searchScope) {
+    // If the lookup failed, try to resolve any wildcard imports in the scope.
+    // We don't know if these imports will actually provide the decl we are
+    // looking for, so we have to try until we find one that does.
+    if (searchScope.unresolvedWildcardImports) {
+      // Note no i++ here because we sometimes remove in the iteration.
+      for (size_t i = 0; i < searchScope.unresolvedWildcardImports->size();) {
+        auto it = searchScope.unresolvedWildcardImports->begin() + i;
+        auto [moduleName, locAndIsFullImport] = *it;
+        auto [importLoc, isFullImport] = locAndIsFullImport;
+
+        // Don't try wildcard imports if we wouldn't import this name anyways.
+        if (!isFullImport && name.starts_with("_")) {
+          ++i; // Skip this import, leave it intact.
+          continue;
+        }
+
+        searchScope.unresolvedWildcardImports->erase(it);
+        // Resolve the import. If it fails, proceed anyway.
+        (void)declResolver->importWildCardDeclsFromModule(
+            searchScope, moduleName, isFullImport, importLoc);
+        // Don't increment i here; after erase, the next element is now at i.
+      }
+    }
+  };
+
+  auto collectFromAllScopes = [&]() -> LookupAllResult {
+    ASTDecl *curSearchScope = &scope;
+    do {
+      expandWildcardImports(*curSearchScope);
+      ArrayRef<ASTDecl *> e = curSearchScope->lookupInCurrentScope(nameAttr);
+      if (!e.empty()) {
+        if (curSearchScope &&
+            isa_and_nonnull<StructDeclOp>(curSearchScope->getIfOperation()) &&
+            !(*e.front()).getIfIRValue().getIfPValue()) {
+          // Skip struct bodies when searching up parent scopes, unless the
+          // value is a parameter. But still collect them for potential use.
+          for (ASTDecl *decl : e) {
+            skippedDecls.push_back(decl);
+          }
+          continue;
+        }
+        // Add all declarations from this scope to our collection.
+        for (ASTDecl *decl : e)
+          allDecls.push_back(decl);
+      }
+    } while ((curSearchScope = curSearchScope->parentDecl));
+
+    // If we found declarations, return success.
+    if (!allDecls.empty())
+      return LookupAllResult::getSuccess(std::move(allDecls));
+
+    // If we found skipped declarations but no regular ones, return them as
+    // failure.
+    if (!skippedDecls.empty())
+      return LookupAllResult::getFailure(std::move(skippedDecls));
+
+    return LookupAllResult::getFailure({});
+  };
+
+  LookupAllResult entry = collectFromAllScopes();
+
+  // If nothing was found, return a failure.
+  if (entry.isFailure() || entry.isErroneous())
+    return entry;
+
+  // If the lookup succeeded, make sure the signature for the referenced decls
+  // are understood. Make a copy of the entries to avoid dangling references if
+  // we end up invalidating the decl map.
+  SmallVector<ASTDecl *> resultDecls(entry.getIfSuccess());
+
+  bool hasUnresolvedImport = false;
+  for (ASTDecl *decl : resultDecls) {
+    if (isa_and_nonnull<UnresolvedImportOp>(decl->getIfOperation())) {
+      DeclResolvedness resolvedness = decl->resolvedness;
+      if (resolvedness < DeclResolvedness::signature) {
+        hasUnresolvedImport = true;
+        if (failed(declResolver->resolve(*decl, DeclResolvedness::signature,
+                                         loc))) {
+          // If the decl was erroneous somehow, then don't form a reference to
+          // it, the error has already been diagnosed.
+          return LookupAllResult::getErroneous();
+        }
+      }
+    }
+
+    if (resolve) {
+      if (failed(
+              declResolver->resolve(*decl, DeclResolvedness::signature, loc))) {
+        // If the decl was erroneous somehow, then don't form a reference to it,
+        // the error has already been diagnosed.
+        return LookupAllResult::getErroneous();
+      }
+    }
+  }
+
+  // If we resolved an import, we need to do the lookup again because the
+  // import resolution may have changed the scope contents.
+  if (hasUnresolvedImport) {
+    entry = collectFromAllScopes();
+    if (entry.isSuccess() && hasUnresolvedImport)
+      return lookupAllDeclsWithName(name, loc, scope, resolve);
+  }
+
+  // Return the collected declarations.
+  return entry;
+}
+
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string> resolveModulePath(SharedState &shared,
