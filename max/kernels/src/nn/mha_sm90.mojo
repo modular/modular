@@ -26,6 +26,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
+from gpu.globals import WARPGROUP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
@@ -81,6 +82,7 @@ from nn.mha_fa3_utils import (
     produce,
     q_out_tma,
     valid_length_managed_tensor_slice_to_ndbuffer,
+    output_reg_to_smem,
 )
 from nn.softmax import (
     _online_softmax_correction,
@@ -677,17 +679,17 @@ fn _mha_sm90[
     alias depth = config.depth
     # num_consumer_threads ignores the producers
     # actual number of threads is num_consumer_threads + 128
-    alias num_consumer = num_consumer_threads // 128
+    alias num_consumer = num_consumer_threads // WARPGROUP_SIZE
     alias pipeline_stages = Int(config.num_pipeline_stages)
     var tid: UInt32 = thread_idx.x
-    var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
+    var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
 
     constrained[
         num_warps_m == (num_consumer_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var warp_id: UInt32 = warp.broadcast((tid - 128) // WARP_SIZE)
+    var warp_id: UInt32 = warp.broadcast((tid - WARPGROUP_SIZE) // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
     # Coordinates of the current warp.
@@ -1257,22 +1259,32 @@ fn _mha_sm90[
             ]()
             # Reuse a_smem for c tile in smem
             alias q_tile_size: UInt32 = q_smem_size // 2
-            accum_smem_tile = LayoutTensor[
-                output_type,
-                Layout.row_major(BM, depth),
-                address_space = AddressSpace.SHARED,
-            ]((q_smem + q_idx * q_tile_size).bitcast[Scalar[output_type]]())
-            accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
-                Int(warp_y), Int(warp_x)
-            )
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()
-            copy_local_to_shared[
-                thread_layout=mma_thread_layout, swizzle=swizzle
+            accum_smem_tile = output_reg_to_smem[
+                BM,
+                BN,
+                WM,
+                depth,
+                kv_type,
+                output_type,
+                accum_type,
+                o_reg_tile_layout,
+                o_frag_size,
+                num_consumer_threads,
+                simd_size,
+                swizzle,
+                num_m_mmas,
+                num_consumer,
+                mma_thread_layout,
             ](
-                accum_smem_warp_tile.vectorize[1, 2](),
-                output_reg_tile.vectorize[1, 2]().transpose(),
+                tid,
+                local_warp_group_idx,
+                warp_x,
+                warp_y,
+                q_smem + q_idx * q_tile_size,
+                output_reg_tile,
             )
             # Guard writing to shared memory.
             named_barrier[num_consumer_threads]()
