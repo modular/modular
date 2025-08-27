@@ -499,7 +499,12 @@ class ExportKindAttr(max._core.Attribute):
 class GeneratorAttr(max._core.Attribute):
     """
     This is a generator constant attribute that represents a generator whose
-    body is a parameter expression.
+    body is a parameter expression. The GeneratorAttr natively encodes the input
+    parameter types and metadata, and computes the overall type on demand. This
+    encoding ensures that the type and the value of the body are always at the
+    same level of nesting. If we instead stored a GeneratorType in this
+    attribute, the body of the GeneratorType would be at a deeper level of
+    nesting than the body of the GeneratorAttr, leading to inconsistencies.
 
     Example:
 
@@ -514,12 +519,24 @@ class GeneratorAttr(max._core.Attribute):
     ) -> None: ...
     @overload
     def __init__(
-        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
+        self,
+        input_param_types: Sequence[max._core.Type],
+        body: max._core.dialects.builtin.TypedAttr,
+        metadata: GeneratorMetadataAttrInterface = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        body: max._core.dialects.builtin.TypedAttr,
+        input_param_types: Sequence[max._core.Type],
+        metadata: GeneratorMetadataAttrInterface,
     ) -> None: ...
     @property
     def body(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def type(self) -> GeneratorType: ...
+    def input_param_types(self) -> Sequence[max._core.Type]: ...
+    @property
+    def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
 class GetLinkageNameAttr(max._core.Attribute):
     """
