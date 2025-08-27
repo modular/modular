@@ -35,6 +35,7 @@ struct Operand;
 class FileModuleOp;
 class FnOp;
 class LookupResult;
+class LookupAllResult;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
@@ -226,6 +227,12 @@ public:
   /// Perform a name lookup for a member in the specified type.
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
                                     ASTType scope, bool searchParentScopes);
+
+  /// Perform a name lookup that collects ALL matching declarations instead of
+  /// stopping at the first non-import match. This is useful for finding both
+  /// the original struct and all extensions with the same name.
+  LookupAllResult lookupAllDeclsWithName(StringRef name, llvm::SMLoc loc,
+                                         ASTDecl &scope, bool resolve);
 
   /// Given a parameter expression call to a function marked
   /// @always_inline("builtin"), scan the function to form an inlined parameter
@@ -641,6 +648,54 @@ public:
     return {kFailure, decls};
   }
   static LookupResult getErroneous() { return {kErroneous, {}}; }
+
+  /// Return decls only if lookup was a success, because failures can
+  /// also store decls for diagnostic purposes.
+  ArrayRef<ASTDecl *> getIfSuccess() const {
+    if (isSuccess())
+      return decls;
+    else
+      return {};
+  }
+  /// Return decls from a failed lookup, for diagnostic purposes.
+  ArrayRef<ASTDecl *> getIfFailure() const {
+    if (isFailure())
+      return decls;
+    else
+      return {};
+  }
+  bool isSuccess() const { return kind == kSuccess; }
+  bool isFailure() const { return kind == kFailure; }
+  bool isErroneous() const { return kind == kErroneous; }
+};
+
+/// This is the result of lookupAllDeclsWithName that collects all matching
+/// declarations instead of stopping at the first non-import match.
+class LookupAllResult {
+  enum Kind {
+    kSuccess,   //<- Lookup succeeded and result is non-empty.
+    kFailure,   //<- Lookup failed to find something of this name.
+    kErroneous, //<- Lookup found an error, but it is already diagnosed.
+  } kind;
+
+  /// This contains all matching declarations found during lookup.
+  /// Unlike LookupResult, this owns the storage to allow collecting
+  /// declarations from multiple scopes.
+  std::vector<ASTDecl *> decls;
+  LookupAllResult(Kind kind, std::vector<ASTDecl *> decls)
+      : kind(kind), decls(std::move(decls)) {}
+
+public:
+  static LookupAllResult getSuccess(std::vector<ASTDecl *> decls) {
+    assert(!decls.empty() && "cannot form successful lookup without decls");
+    return {kSuccess, std::move(decls)};
+  }
+  /// Failure means that lookup failed, but they can still have decls
+  /// attached for diagnostic purposes.
+  static LookupAllResult getFailure(std::vector<ASTDecl *> decls) {
+    return {kFailure, std::move(decls)};
+  }
+  static LookupAllResult getErroneous() { return {kErroneous, {}}; }
 
   /// Return decls only if lookup was a success, because failures can
   /// also store decls for diagnostic purposes.
