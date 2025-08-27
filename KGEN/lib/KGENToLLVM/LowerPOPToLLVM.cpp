@@ -635,12 +635,26 @@ private:
 
   Value getClampedFloatValue(ConversionPatternRewriter &rewriter, Location loc,
                              Value value, APFloat::Semantics floatSemantics,
-                             Type outType) const {
+                             size_t size, Type outType) const {
     APFloat m = APFloat::getLargest(APFloat::EnumToSemantics(floatSemantics));
-    Value max = rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getF32FloatAttr(m.convertToFloat()));
-    Value min = rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getF32FloatAttr(-m.convertToFloat()));
+    Value max, min;
+    if (size == 1) {
+      max = rewriter.create<LLVM::ConstantOp>(
+          loc, rewriter.getF32FloatAttr(m.convertToFloat()));
+      min = rewriter.create<LLVM::ConstantOp>(
+          loc, rewriter.getF32FloatAttr(-m.convertToFloat()));
+
+    } else {
+      VectorType vecType = VectorType::get(size, rewriter.getF32Type());
+      SmallVector<APFloat> maxValues{size, APFloat(m.convertToFloat())};
+      SmallVector<APFloat> minValues{size, APFloat(-m.convertToFloat())};
+      auto maxAttrs =
+          cast<TypedAttr>(FloatArrayElementsAttr::get(vecType, maxValues));
+      auto minAttrs =
+          cast<TypedAttr>(FloatArrayElementsAttr::get(vecType, minValues));
+      max = rewriter.create<LLVM::ConstantOp>(loc, maxAttrs);
+      min = rewriter.create<LLVM::ConstantOp>(loc, minAttrs);
+    }
 
     Value clamped =
         rewriter.create<LLVM::MaxNumOp>(loc, value, min, LLVM_FASTMATH_FLAGS);
@@ -676,38 +690,102 @@ private:
     const uint64_t size = *simd.getResolvedSize();
 
     Type f8Type = outType;
-    Value clamped =
-        getClampedFloatValue(rewriter, loc, value, toFloatSemantics, f8Type);
+    Type i32Type = rewriter.getIntegerType(32);
+    Type ui8Type = rewriter.getIntegerType(8);
+    Type ui16Type = rewriter.getIntegerType(16);
+    Type f32Type = rewriter.getF32Type();
 
+    Value clamped = getClampedFloatValue(rewriter, loc, value, toFloatSemantics,
+                                         size, f8Type);
     Value isNaN = getIsNaN(rewriter, loc, value, fromFloatSemantics, size);
-
     Value sel = rewriter.create<LLVM::SelectOp>(loc, isNaN, value, clamped,
                                                 LLVM_FASTMATH_FLAGS);
 
-    SmallVector<Value> operands{
-        sel, sel,
-        rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
-                                          rewriter.getI32IntegerAttr(0)),
-        rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
-                                          rewriter.getBoolAttr(false))};
+    StringRef intrinsicStr = [&]() -> StringRef {
+      if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
+          toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN)
+        return "llvm.amdgcn.cvt.pk.fp8.f32";
 
-    Type i32Type = rewriter.getIntegerType(32);
-    Type ui8Type = rewriter.getIntegerType(8);
-
-    StringAttr intrinsicStr = [&]() -> StringAttr {
-      if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ)
-        return rewriter.getStringAttr("llvm.amdgcn.cvt.pk.fp8.f32");
-      else if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ)
-        return rewriter.getStringAttr("llvm.amdgcn.cvt.pk.bf8.f32");
+      if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ ||
+          toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2)
+        return "llvm.amdgcn.cvt.pk.bf8.f32";
 
       llvm_unreachable("conversion format not supported on AMDGPU");
     }();
 
-    Value result =
-        rewriter
-            .create<LLVM::CallIntrinsicOp>(loc, i32Type, intrinsicStr, operands)
-            .getResult(0);
-    result = rewriter.create<LLVM::TruncOp>(loc, ui8Type, result);
+    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+
+    Value result;
+
+    if (size == 1) {
+      SmallVector<Value> operands{
+          sel, sel,
+          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
+                                            rewriter.getI32IntegerAttr(0)),
+          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                            rewriter.getBoolAttr(false))};
+
+      result =
+          rewriter
+              .create<LLVM::CallIntrinsicOp>(
+                  loc, i32Type, rewriter.getStringAttr(intrinsicStr), operands)
+              .getResult(0);
+      result = rewriter.create<LLVM::TruncOp>(loc, ui8Type, result);
+    } else if (size == 2) {
+      SmallVector<Value> operands{
+          extractElement(rewriter, loc, f32Type, sel, 0),
+          extractElement(rewriter, loc, f32Type, sel, 1),
+          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
+                                            rewriter.getI32IntegerAttr(0)),
+          rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                            rewriter.getBoolAttr(false))};
+
+      result =
+          rewriter
+              .create<LLVM::CallIntrinsicOp>(
+                  loc, i32Type, rewriter.getStringAttr(intrinsicStr), operands)
+              .getResult(0);
+
+      result = rewriter.create<LLVM::TruncOp>(loc, ui16Type, result);
+      result = rewriter.create<LLVM::BitcastOp>(loc, f8Type, result);
+    } else {
+      result = rewriter.create<LLVM::UndefOp>(
+          op.getLoc(), VectorType::get(size / 4, rewriter.getIntegerType(32)));
+
+      for (uint64_t i = 0; i < size; i += 4) {
+        SmallVector<Value> operands{
+            extractElement(rewriter, loc, f32Type, sel, i),
+            extractElement(rewriter, loc, f32Type, sel, i + 1),
+            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
+                                              rewriter.getI32IntegerAttr(0)),
+            rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                              rewriter.getBoolAttr(false))};
+
+        Value loWord = rewriter
+                           .create<LLVM::CallIntrinsicOp>(
+                               loc, i32Type,
+                               rewriter.getStringAttr(intrinsicStr), operands)
+                           .getResult(0);
+
+        operands[0] = extractElement(rewriter, loc, f32Type, sel, i + 2);
+        operands[1] = extractElement(rewriter, loc, f32Type, sel, i + 3);
+        operands[2] = loWord;
+        operands[3] = rewriter.create<LLVM::ConstantOp>(
+            loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
+
+        Value hiLoWord = rewriter
+                             .create<LLVM::CallIntrinsicOp>(
+                                 loc, i32Type,
+                                 rewriter.getStringAttr(intrinsicStr), operands)
+                             .getResult(0);
+
+        result = rewriter.create<LLVM::InsertElementOp>(
+            loc, result, hiLoWord,
+            createConstant<uint32_t>(rewriter, loc, i / 4));
+      }
+
+      result = rewriter.create<LLVM::BitcastOp>(loc, f8Type, result);
+    }
     return result;
   }
 
