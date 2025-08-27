@@ -803,14 +803,23 @@ void printColonTypeSymbolConstant(AsmPrinter &p, SymbolConstantAttr value) {
 // GeneratorAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseGeneratorAttrBody(AsmParser &p, TypedAttr &body,
-                                          GeneratorType type) {
-  return parseParamValue(p, body, type.getBody());
+// Custom assembly format implementation for GeneratorAttr
+::mlir::Attribute GeneratorAttr::parse(::mlir::AsmParser &odsParser,
+                                       ::mlir::Type odsType) {
+  TypedAttr body;
+  GeneratorType genType = ::cast<GeneratorType>(odsType);
+  if (odsParser.parseLess() ||
+      parseParamValue(odsParser, body, genType.getBody()) ||
+      odsParser.parseGreater())
+    return {};
+  return GeneratorAttr::get(genType.getInputParamTypes(), body,
+                            genType.getMetadata());
 }
 
-static void printGeneratorAttrBody(AsmPrinter &p, TypedAttr body,
-                                   GeneratorType type) {
-  printParamValue(p, body, type.getBody());
+void GeneratorAttr::print(::mlir::AsmPrinter &odsPrinter) const {
+  odsPrinter << '<';
+  printParamValue(odsPrinter, getBody(), getBody().getType());
+  odsPrinter << '>';
 }
 
 /// A generator value needs to be instantiated.
@@ -819,10 +828,6 @@ bool GeneratorAttr::isConstant() const { return false; }
 bool GeneratorAttr::isLessThan(Attribute rhs) const {
   return ParameterAttr::compare(getBody(),
                                 ::cast<GeneratorAttr>(rhs).getBody());
-}
-
-ArrayRef<Type> GeneratorAttr::getInputParamTypes() const {
-  return getType().getInputParamTypes();
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
@@ -842,18 +847,20 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
     return {};
   PartiallySpecializedInputParams &specialization = *specializationOpt;
 
-  // Specialize the type first and check for typing errors.
-  GeneratorType specializedType =
-      getType().getSpecializedGenerator(specialization, emitErrorFn);
-
-  if (!specializedType)
-    return {};
-
-  // Now specialize the body.
   TypedAttr newBody =
       cast<TypedAttr>(specialization.evaluator.getReboundAttribute(getBody()));
 
-  return GeneratorAttr::get(newBody, specializedType);
+  // Create specialized metadata if needed
+  GeneratorMetadataAttrInterface genMetadata = getMetadata();
+  if (genMetadata) {
+    genMetadata = genMetadata.getSpecializedMetadata(
+        specialization.evaluator, specialization.boundParams, emitErrorFn);
+    if (!genMetadata)
+      return {};
+  }
+
+  return GeneratorAttr::get(newBody.getContext(), newBody,
+                            specialization.unboundParamTypes, genMetadata);
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(

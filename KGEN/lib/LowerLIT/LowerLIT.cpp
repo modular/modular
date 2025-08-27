@@ -702,9 +702,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-static GeneratorType
-removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                      GeneratorType signature) {
+template <typename GenKind>
+static GenKind removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
+                                     GenKind signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -745,6 +745,22 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
   return signature;
 }
 
+template <typename GenKind>
+std::pair<GenKind, WalkResult>
+replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
+                         mlir::AttrTypeReplacer &replacer, GenKind gen) {
+  // Remove uses of any singleton attributes.
+  SmallVector<Type> paramTypes;
+  for (auto ty : gen.getInputParamTypes())
+    paramTypes.push_back(replacer.replace(ty));
+
+  // Remove metadata & remove singleton input param decls.
+  auto newBody = cast<decltype(gen.getBody())>(replacer.replace(gen.getBody()));
+  gen = GenKind::get(paramTypes, newBody);
+  gen = removeSingletonParams(singletonTypeHelper, gen);
+  return std::make_pair(gen, WalkResult::skip());
+}
+
 static void lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
@@ -781,6 +797,10 @@ static void lowerAttributesAndTypes(
     gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
     gen = removeSingletonParams(singletonTypeHelper, gen);
     return std::make_pair(gen, WalkResult::skip());
+  });
+
+  replacer.addReplacement([&](GeneratorAttr gen) {
+    return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
   });
 
   auto *debugInfoDialect =
