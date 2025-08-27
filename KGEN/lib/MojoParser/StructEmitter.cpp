@@ -352,7 +352,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
       .create<EndFnOp>(funcOp.getLoc(), /*unresolved=*/true);
 
   if (structDefinesMethod)
-    existingDecl.setDisabled();
+    funcOp.setDisabled(true);
 
   return funcOp;
 }

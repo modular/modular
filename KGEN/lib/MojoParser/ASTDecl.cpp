@@ -26,7 +26,6 @@ ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
   hasReferenceError = false;
   hasBodyDecorators = false;
   loadedFromBytecode = false;
-  disabled = false;
 }
 
 DocStringAttr ASTDecl::getDocString() const {

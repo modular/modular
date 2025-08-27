@@ -64,6 +64,7 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$external,
     UnitAttr:$selfDeinit, // First argument is 'deinit self'.
     UnitAttr:$defaultedTraitFn, // Present for trait methods with non-empty bodies.
+    UnitAttr:$disabled, // Function should be skipped for overload resolution.
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,

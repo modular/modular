@@ -3432,7 +3432,7 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   if (markDisabled) {
     // We set this property and use it during overload resolution to skip
     // declarations like this.
-    childTraitFnDecl.setDisabled();
+    clonedFunc.setDisabled(true);
 
     // Append parent trait name to the function name
     auto parentTraitName = parentTraitDeclOp.getSymNameAttr();
