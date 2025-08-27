@@ -21,14 +21,14 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..type import DeviceRef, Type, _ChainType
-from ..value import TensorValue, TensorValueLike
+from ..value import TensorValue, TensorValueLike, Value
 
 
 def cond(
     pred: TensorValueLike,
     out_types: Iterable[Type[Any]] | None,
-    then_fn: Callable,
-    else_fn: Callable,
+    then_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
+    else_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
 ) -> list[TensorValue]:
     """Conditionally execute one of two branches based on a boolean predicate.
 

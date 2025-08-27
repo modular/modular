@@ -289,7 +289,7 @@ class Graph:
     _mlir_op: mlir.Operation | mlir.OpView
     _graph_body: mlir.Block
     _module: mlir.Module
-    _context_state: list
+    _context_state: list[contextlib.AbstractContextManager[Graph]]
     _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
     _current_chain: _ChainValue
@@ -537,11 +537,11 @@ class Graph:
         self._context_state.append(state := self._enter())
         return state.__enter__()
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc) -> None:
         self._context_state.pop().__exit__(*exc)
 
     @contextlib.contextmanager
-    def _enter(self):
+    def _enter(self) -> Generator[Graph]:
         token = CURRENT_GRAPH.set(self)
         try:
             with self._context:
@@ -748,7 +748,7 @@ class Graph:
     def _build_block(
         self,
         block: mlir.Block,
-        block_fn: Callable[[], Iterable[TensorValue] | TensorValue | None],
+        block_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
         block_terminator_op: mlir.Operation | mlir.OpView,
         block_name: str,
         expected_output_types: list[Type[Any]] | None,
