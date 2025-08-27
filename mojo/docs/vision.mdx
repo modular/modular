@@ -70,31 +70,31 @@ briefly evaluate the pros and cons of each:
 
 1. **Extend an existing language like C++, Rust, Julia, Swift**:
 
-- **Pro**: You get an existing implementation and community.
+    - **Pro**: You get an existing implementation and community.
 
-- **Con**: None of these languages support the hardware features we need—they
-  were designed for CPUs. They are also all 10+ years old, don't
-  provide the modern meta-programming features we need, and weren't designed to
-  support hardware features required for AI (such as float6).
+    - **Con**: None of these languages support the hardware features we need—they
+      were designed for CPUs. They are also all 10+ years old, don't
+      provide the modern meta-programming features we need, and weren't designed to
+      support hardware features required for AI (such as float6).
 
 2. **Create an embedded DSL for a language like Python or C++**:
 
-- **Pro**: This is comparatively easy to implement.
+    - **Pro**: This is comparatively easy to implement.
 
-- **Con**: The tooling, UX, and predictability of these systems are very
-  problematic and they are limited by the base language syntax. This is
-  particularly problematic if you're trying to introduce fundamental new
-  concepts because you can't change the grammar of Python or C++.
-  [More about eDSLs](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls)
+    - **Con**: The tooling, UX, and predictability of these systems are very
+      problematic and they are limited by the base language syntax. This is
+      particularly problematic if you're trying to introduce fundamental new
+      concepts because you can't change the grammar of Python or C++.
+      [More about eDSLs](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls)
 
 3. **Build an entirely new programming language from scratch**:
 
-- **Pro**: You get full control to create the best quality result.
+    - **Pro**: You get full control to create the best quality result.
 
-- **Con**: This is extremely expensive and difficult to do. There are many
-  ways to get this wrong and you must have a strong set of principles to
-  guide development. For comparison, CUDA is a C++ extension and
-  runtime—nothing as ambitious as a new programming language.
+    - **Con**: This is extremely expensive and difficult to do. There are many
+      ways to get this wrong and you must have a strong set of principles to
+      guide development. For comparison, CUDA is a C++ extension and
+      runtime—nothing as ambitious as a new programming language.
 
 We ruled out the first two options because they're insufficient for achieving
 the full scope of our vision. Failure to understand the constraints of each
