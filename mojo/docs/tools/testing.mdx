@@ -36,8 +36,8 @@ def test_inc_one():
 ```
 
 In this file, the `inc()` function is the test *target*. The functions whose
-names begin with `test_` are the tests. Usually the target should be in a
-separate source file from its tests, but you can define them in the same file
+names begin with `test_` are the tests. Usually you should define the target in
+a separate source file from its tests, but you can define them in the same file
 for this simple example.
 
 A test function *fails* if it raises an error when executed, otherwise it
@@ -144,7 +144,7 @@ Unhandled exception caught during execution
 Error: At Expression [2] wrapper:14:16: AssertionError: paradoxes are not allowed
 ```
 
-For comparing floating point values you should use `assert_almost_equal()`,
+For comparing floating-point values, you should use `assert_almost_equal()`,
 which allows you to specify either an absolute or relative tolerance.
 
 ```mojo
@@ -233,7 +233,7 @@ using `fn` must include the `raises` declaration.
 Generally, you should use the assertion utilities from the Mojo standard library
 [`testing`](/mojo/stdlib/testing/testing/) module to implement your tests.
 You can include multiple related assertions in the same test function. However,
-if an assertion raises an error during execution then the test function returns
+if an assertion raises an error during execution, then the test function returns
 immediately, skipping any subsequent assertions.
 
 You must define your Mojo unit tests in Mojo source files named with a `test`
@@ -286,6 +286,14 @@ the following:
 - A single absolute or relative file path, to run all tests in that file.
 - A single absolute or relative directory path, to recurse through that
   directory hierarchy and run all tests found.
+
+:::note
+
+When recursing through directories, `mojo test` automatically ignores any
+directories whose names begin with a dot (such as `.git`, `.vscode`, or
+`.pytest_cache`).
+
+:::
 
 If needed, you can optionally use the `-I` option one or more times to append
 additional paths to the list of directories searched to import Mojo modules and
@@ -386,8 +394,8 @@ The output shows the hierarchy of directories, test files, and individual tests
 
 ### Producing JSON formatted output
 
-By default `mojo test` produces concise, human-readable output. Alternatively
-you can produce JSON formatted output more suitable for input to other tools by
+By default, `mojo test` produces concise, human-readable output. Alternatively,
+you can produce JSON-formatted output more suitable for input to other tools by
 including the `--diagnostic-format json` option.
 
 For example, you can run the tests in the `test_quickstart.mojo` file shown
@@ -431,8 +439,8 @@ output shown):
 }
 ```
 
-You can also produce JSON output for test collection as well. Consider the
-[example testing
+You can also produce JSON output for test collection. Consider the [example
+testing
 project](https://github.com/modular/modular/tree/main/examples/mojo/testing)
 directory structure shown in the [Running tests](#running-tests) section. The
 following command collects a list in JSON format of all of the tests defined in
