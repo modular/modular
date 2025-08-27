@@ -873,7 +873,12 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
   let summary = "generator constant attribute";
   let description = [{
     This is a generator constant attribute that represents a generator whose
-    body is a parameter expression.
+    body is a parameter expression. The GeneratorAttr natively encodes the input
+    parameter types and metadata, and computes the overall type on demand. This
+    encoding ensures that the type and the value of the body are always at the
+    same level of nesting. If we instead stored a GeneratorType in this
+    attribute, the body of the GeneratorType would be at a deeper level of
+    nesting than the body of the GeneratorAttr, leading to inconsistencies.
 
     Example:
 
@@ -883,17 +888,31 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
   }];
 
   let parameters = (ins "TypedAttr":$body,
-                        AttributeSelfTypeParameter<"", "GeneratorType">:$type);
+                        ArrayRefParameter<"Type">:$inputParamTypes,
+                        "GeneratorMetadataAttrInterface":$metadata);
 
   let builders = [
+    AttrBuilderWithInferredContext<
+        (ins "ArrayRef<Type>":$inputParamTypes,
+             "TypedAttr":$body,
+             CArg<"GeneratorMetadataAttrInterface", "nullptr">:$metadata), [{
+      return get(body.getContext(), body, inputParamTypes, metadata);
+    }]>,
     AttrBuilderWithInferredContext<(ins "TypedAttr":$body,
                                         "GeneratorType":$type), [{
-      return get(type.getContext(), body, type);
+      return get(body.getContext(), body, type.getInputParamTypes(),
+        type.getMetadata());
     }]>
   ];
-  let assemblyFormat = "`<` custom<GeneratorAttrBody>($body, ref($type)) `>`";
+  let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
+    /// Get the type of this GeneratorAttr (computed on demand).
+    Type getType() const {
+      return GeneratorType::get(
+        getInputParamTypes(), getBody().getType(), getMetadata());
+    }
+
     /// Get this GeneratorAttr with some parameters bound.
     GeneratorAttr getSpecializedGenerator(
       ArrayRef<TypedAttr> paramBindings,

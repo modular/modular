@@ -248,7 +248,7 @@ lit.struct.decl @EmptyStruct {}
 lit.fn @removeGenMetadata() {
   // CHECK-NEXT: <index, index>index = <#kgen.gen<add(*(0,0), *(0,1))>>
   kgen.param.declare test: !lit.generator<<"a": index, "b": index> index> = <#kgen.gen<add(*(0,0), *(0,1))>>
-  // CHECK-NEXT: <index>struct<(struct<() memoryOnly>, index)> = <#kgen.gen<{ { }, *(0,1) }>>
+  // CHECK-NEXT: <index>struct<(struct<() memoryOnly>, index)> = <#kgen.gen<{ { }, *(0,0) }>>
   kgen.param.declare test2: !lit.generator<<"x": !lit.struct<@EmptyStruct>, "y": index = 5> !kgen.struct<(!lit.struct<@EmptyStruct>, index)>> = <#kgen.gen<#kgen.struct<*(0,0), *(0,1)>>>
   kgen.return
 }
