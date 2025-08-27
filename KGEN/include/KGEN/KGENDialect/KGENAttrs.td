@@ -925,11 +925,11 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
     /// Returns true if the signature has no input params.
     bool isFullyBound() { return getInputParamTypes().empty(); };
 
-    /// Returns the body while asserting that the generator is fully bound.
-    TypedAttr getInstantiatedBody() {
-      assert(isFullyBound() && "cannot instantiate parameterized body");
-      return getBody();
-    }
+    /// Returns the instantiated body value while asserting that the generator
+    /// is fully bound. Index references inside the body are decremented to
+    /// account for the fact that the body is now lifted outside one level of
+    /// generator scope. See STCHDDDOS for more. This is STCHDDDOS-A.
+    TypedAttr getInstantiatedValue();
   }];
 }
 

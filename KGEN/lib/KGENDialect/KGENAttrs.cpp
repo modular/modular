@@ -871,6 +871,13 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
       [&]() -> InFlightDiagnostic { return emitError(location); });
 }
 
+TypedAttr GeneratorAttr::getInstantiatedValue() {
+  assert(isFullyBound() && "cannot instantiate parameterized body");
+  IndexDepthAdjuster adjuster(-1);
+  TypedAttr body = adjuster.replace(getBody());
+  return body;
+}
+
 //===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
@@ -1187,12 +1194,11 @@ ParamOperatorAttr::getFromBytecode(POC opcode, ArrayRef<TypedAttr> operands,
   return Base::get(type.getContext(), opcode, operands, type);
 }
 
-/// The 'apply' operator is the only way to call a signature value inside a
-/// parameter expression. Therefore, it is the only place where an index
-/// parameter reference can cross upwards across a signature. We need to
-/// decrement any index references in the result type of the signature because
-/// we are pulling it out of the signature. See STCHDDDOS for more. This is
-/// STCHDDDOS-A.
+/// The 'apply' operator is able to call a generator value inside a parameter
+/// expression. Therefore, it is one place where an index parameter reference
+/// can cross upwards across a signature. We need to decrement any index
+/// references in the result type of the signature because we are pulling it out
+/// of the signature. See STCHDDDOS for more. This is STCHDDDOS-B.
 static Type upbindApplyResult(Type resultType) {
   IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
   return adjuster.replace(resultType);

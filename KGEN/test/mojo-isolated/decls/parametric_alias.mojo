@@ -149,3 +149,27 @@ fn nested_generators():
 
     # CHECK-NEXT: lit.alias.decl *"mySix{{.*}}": !Int = <{6}>
     alias mySix = myRenamedCurriedIntAdd[2][4]
+
+##===----------------------------------------------------------------------===##
+# advanced usage in traits
+##===----------------------------------------------------------------------===##
+trait TraitWithParamAlias:
+    alias MyReturnType[m: Bool]: AnyType
+
+    fn getReturn[m: Bool](self) -> Self.MyReturnType[m]:
+        ...
+
+
+@fieldwise_init
+struct MyElemType[m: Bool]:
+    pass
+
+
+struct MyConformingStruct(TraitWithParamAlias):
+    # The return type is a parametric type that references `m`. This tests that
+    # such a parametric type can be instantiated by the trait method `getReturn`
+    # to obtain the expected `getReturn` type from this struct.
+    alias MyReturnType[m: Bool]: AnyType = MyElemType[m]
+
+    fn getReturn[m: Bool](self) -> Self.MyReturnType[m]:
+        return MyElemType[m]()

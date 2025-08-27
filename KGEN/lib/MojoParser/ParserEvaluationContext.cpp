@@ -68,7 +68,7 @@ ParserEvaluationContext::evaluateBindParams(TypedAttr generator,
     GeneratorAttr specializedGenerator =
         genAttr.getSpecializedGenerator(paramValues, this);
     return specializedGenerator.isFullyBound()
-               ? specializedGenerator.getInstantiatedBody()
+               ? specializedGenerator.getInstantiatedValue()
                : cast<TypedAttr>(specializedGenerator);
   }
 
