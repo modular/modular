@@ -52,7 +52,7 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
 
 # // -----
 
-# Tests that we correctly call get_vtable_entry when looking up a trait's alias,
+# Tests that we correctly call get_witness when looking up a trait's alias,
 # even when we're looking up an alias that originally came from a grandparent.
 # (See also MOCO-1992)
 
@@ -79,7 +79,7 @@ trait TraitWithSameTypeAlias(TraitWithTypeAlias):
 
 # CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
 fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
-    # CHECK-NEXT: !TraitWithAlias = <#kgen.get_witness<:!TraitWithSameTypeAlias T, "associated_aliases::TraitWithSameTypeAlias", "T">>
+    # CHECK-NEXT: !TraitWithAlias = <#kgen.get_witness<:!TraitWithSameTypeAlias T, "associated_aliases::TraitWithTypeAlias", "T">>
     alias MyT: TraitWithAlias = T.T
 
 
@@ -987,3 +987,33 @@ trait C(B):
 # fn testSomething():
 #     # And maybe add a test for sporkify[TraitWithStaticMethodUsingAlias]()
 #     sporkify[StructWithStaticMethod]()
+
+# // -----
+
+# Tests that we can correctly access associated aliases via an instance of a
+# parametric type whose trait is known.
+
+@fieldwise_init
+@register_passable("trivial")
+struct ZInt:
+    pass
+
+trait MyTrait:
+    alias BIT_WIDTH: ZInt
+
+trait MyTrait2:
+    pass
+
+@fieldwise_init
+struct MyStruct(MyTrait, MyTrait2):
+    alias BIT_WIDTH = ZInt()
+
+# CHECK-LABEL: lit.fn @"bitwidth_from_instance
+fn bitwidth_from_instance[T: MyTrait, Inst: T]() -> ZInt:
+    # CHECK-NEXT: #kgen.get_witness<:!MyTrait T, "{{.*}}::MyTrait", "BIT_WIDTH">
+    return Inst.BIT_WIDTH
+
+# CHECK-LABEL: lit.fn @"bitwidth_from_composition_instance
+fn bitwidth_from_composition_instance[T: MyTrait & MyTrait2, Inst: T]() -> ZInt:
+    # CHECK-NEXT: #kgen.get_witness<:!MyTrait !kgen.param<:!MyTrait_MyTrait2 T>, "associated_aliases::MyTrait", "BIT_WIDTH">
+    return Inst.BIT_WIDTH
