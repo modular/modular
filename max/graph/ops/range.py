@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ...driver import Device
 from .. import dtype_promotion
@@ -88,10 +88,11 @@ def range(
     if not start.device == stop.device == step.device == DeviceRef.CPU():
         raise ValueError("Range input values must be on CPU")
 
-    return Graph.current._add_op(
-        rmo.mo_range,
+    return Graph.current._add_op_generated(
+        rmo.MoRangeOp,
         TensorType(dtype, shape=[out_dim], device=device).to_mlir(),
         start,
         stop,
         step,
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor

@@ -114,6 +114,10 @@ class Value(Generic[MlirType]):
             return BufferValue.from_mlir(cast(_Value[mo.BufferType], value))
         raise TypeError(f"Invalid mlir value {value=}")
 
+    def to_mlir(self) -> _Value[MlirType]:
+        """Converts the :obj:`Value` to an MLIR value."""
+        return self._mlir_value
+
     def __repr__(self) -> str:
         """Returns a string representation of the :obj:`Value`."""
         return str(self._mlir_value.type)

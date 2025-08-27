@@ -648,7 +648,7 @@ class Graph:
             op = builder.create(op_type, location)(
                 *_to_mlir(args), **_to_mlir(kwargs)
             )
-            assert op.verify()
+            op.verify()
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
