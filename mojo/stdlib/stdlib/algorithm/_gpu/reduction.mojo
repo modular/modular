@@ -137,7 +137,7 @@ fn block_reduce[
 
     var last_accum = StaticTuple[SIMD[dtype, simd_width], num_reductions]()
 
-    if thread_idx.x < (block_dim.x // WARP_SIZE):
+    if thread_idx.x < (block_dim.x // UInt(WARP_SIZE)):
 
         @parameter
         for i in range(num_reductions):
@@ -237,7 +237,7 @@ fn row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row: UInt = (tid + offset_in_row) * simd_width
+        var idx_in_padded_row: UInt = UInt((tid + offset_in_row) * simd_width)
 
         if idx_in_padded_row >= UInt(rounded_row_size):
             break

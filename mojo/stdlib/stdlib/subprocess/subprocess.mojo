@@ -77,7 +77,7 @@ struct _POpenHandle:
 
             var span = Span[Byte, MutableAnyOrigin](
                 ptr=line.bitcast[Byte](),
-                length=read,
+                length=UInt(read),
             )
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.

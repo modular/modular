@@ -577,7 +577,7 @@ struct LinkedList[
 
             current = current[].next
 
-        return count
+        return UInt(count)
 
     fn __contains__[
         ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //

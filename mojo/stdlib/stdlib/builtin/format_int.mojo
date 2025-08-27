@@ -399,7 +399,7 @@ fn _try_write_int[
 
     # SAFETY:
     #   Create a slice to only those bytes in `buf` that have been initialized.
-    var str_slice = StringSlice[__origin_of(buf)](ptr=buf_ptr, length=len)
+    var str_slice = StringSlice[__origin_of(buf)](ptr=buf_ptr, length=UInt(len))
 
     writer.write(str_slice)
 

@@ -217,7 +217,9 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
     )
-    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    return UInt(
+        Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    )
 
 
 fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):

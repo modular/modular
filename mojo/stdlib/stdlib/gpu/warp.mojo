@@ -53,7 +53,7 @@ from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
-alias _FULL_MASK = 2**WARP_SIZE - 1
+alias _FULL_MASK = UInt(2**WARP_SIZE - 1)
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -930,7 +930,7 @@ fn prefix_sum[
     for i in range(log2_floor(WARP_SIZE)):
         alias offset = 1 << i
         var n = shuffle_up(res, offset)
-        if lane_id() >= offset:
+        if lane_id() >= UInt(offset):
             res += n
 
     @parameter
@@ -1200,4 +1200,4 @@ fn broadcast(val: UInt) -> UInt:
     Returns:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
-    return Int(shuffle_idx(Int32(val), 0))
+    return UInt(Int(shuffle_idx(Int32(val), 0)))

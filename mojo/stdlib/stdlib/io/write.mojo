@@ -26,7 +26,7 @@ from sys.param_env import env_get_int
 
 alias HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
-alias STACK_BUFFER_BYTES = env_get_int["STACK_BUFFER_BYTES", 4096]()
+alias STACK_BUFFER_BYTES: UInt = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -206,7 +206,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write_bytes(
-            Span[Byte, __origin_of(self)](ptr=self.data, length=self.pos)
+            Span[Byte, __origin_of(self)](ptr=self.data, length=UInt(self.pos))
         )
 
     fn nul_terminate(mut self):
@@ -249,7 +249,7 @@ struct _WriteBufferStack[
 
     fn flush(mut self):
         self.writer[].write_bytes(
-            Span(ptr=self.data.unsafe_ptr(), length=self.pos)
+            Span(ptr=self.data.unsafe_ptr(), length=UInt(self.pos))
         )
         self.pos = 0
 

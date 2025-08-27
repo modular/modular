@@ -158,17 +158,17 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
+    alias INLINE_CAPACITY: UInt = UInt(Int.BITWIDTH // 8 * 3 - 1)
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
+    alias FLAG_HAS_NUL_TERMINATOR: UInt = UInt(1) << UInt(UInt.BITWIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED = UInt(1) << (UInt.BITWIDTH - 2)
+    alias FLAG_IS_REF_COUNTED: UInt = UInt(1) << UInt(UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
+    alias FLAG_IS_INLINE: UInt = UInt(1) << UInt(UInt.BITWIDTH - 1)
     # gives us 5 bits for the length.
     alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
@@ -204,7 +204,7 @@ struct String(
                 __get_mvalue_as_litref(self)
             )
         else:
-            self._capacity_or_data = (capacity + 7) >> 3
+            self._capacity_or_data = UInt(capacity + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
             self._set_ref_counted()
@@ -247,7 +247,7 @@ struct String(
             bytes: The bytes to copy.
         """
         var length = len(bytes)
-        self = Self(unsafe_uninit_length=length)
+        self = Self(unsafe_uninit_length=UInt(length))
         memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
     fn __init__[T: Stringable](out self, value: T):
@@ -490,7 +490,7 @@ struct String(
         if total_bytes.size <= Self.INLINE_CAPACITY:
             _write(self)
         else:
-            self.reserve(total_bytes.size)
+            self.reserve(UInt(total_bytes.size))
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -599,7 +599,7 @@ struct String(
         if self._is_inline():
             return Self.INLINE_CAPACITY
         if not self._is_ref_counted():
-            return self._len_or_data
+            return UInt(self._len_or_data)
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
@@ -728,7 +728,10 @@ struct String(
         var r = range(start, end, step)
         if step == 1:
             return String(
-                StringSlice(ptr=self.unsafe_ptr() + start, length=len(r))
+                StringSlice(
+                    ptr=self.unsafe_ptr() + start,
+                    length=UInt(len(r)),
+                )
             )
 
         var result = String(capacity=len(r))
@@ -849,7 +852,7 @@ struct String(
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
-        var result = String(unsafe_uninit_length=lhs_len + rhs_len)
+        var result = String(unsafe_uninit_length=UInt(lhs_len + rhs_len))
         var result_ptr = result.unsafe_ptr_mut()
         memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
@@ -874,7 +877,7 @@ struct String(
         """
         self._clear_nul_terminator()
         var len = self.byte_length()
-        self.reserve(len + 1)
+        self.reserve(UInt(len) + 1)
         self.unsafe_ptr_mut()[len] = byte
         self.set_byte_length(Int(len + 1))
 
@@ -896,7 +899,7 @@ struct String(
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         memcpy(
-            self.unsafe_ptr_mut(new_len) + old_len,
+            self.unsafe_ptr_mut(UInt(new_len)) + old_len,
             other.unsafe_ptr(),
             other_len,
         )
@@ -1043,7 +1046,7 @@ struct String(
             writer: The object to write to.
         """
         writer.write_bytes(
-            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+            Span(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
         )
 
     fn join[*Ts: Writable](self, *elems: *Ts) -> String:
@@ -1059,7 +1062,7 @@ struct String(
             The joined string.
         """
         var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
+            StringSlice(ptr=self.unsafe_ptr(), length=UInt(self.byte_length()))
         )
         return String(elems, sep=sep)
 
@@ -1214,7 +1217,7 @@ struct String(
         """
         # Add a nul terminator, making the string mutable if not already
         if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
+            var ptr = self.unsafe_ptr_mut(capacity=UInt(len(self)) + 1)
             var len = self.byte_length()
             ptr[len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
@@ -1230,7 +1233,7 @@ struct String(
         """
 
         return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
         )
 
     fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
@@ -1242,7 +1245,7 @@ struct String(
             A contiguous slice pointing to the bytes owned by this string.
         """
         return Span[Byte, __origin_of(self)](
-            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
+            ptr=self.unsafe_ptr_mut(), length=UInt(self.byte_length())
         )
 
     fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
@@ -1282,7 +1285,7 @@ struct String(
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
-            ) | (new_len << Self.INLINE_LENGTH_START)
+            ) | UInt(new_len << Self.INLINE_LENGTH_START)
         else:
             self._len_or_data = new_len
 
@@ -1806,7 +1809,7 @@ struct String(
         var old_len = self.byte_length()
         if length > old_len:
             memset(
-                self.unsafe_ptr_mut(length) + old_len,
+                self.unsafe_ptr_mut(UInt(length)) + old_len,
                 fill_byte,
                 length - old_len,
             )
@@ -1825,7 +1828,7 @@ struct String(
         """
         self._clear_nul_terminator()
         if UInt(unsafe_uninit_length) > self.capacity():
-            self.reserve(unsafe_uninit_length)
+            self.reserve(UInt(unsafe_uninit_length))
         self.set_byte_length(unsafe_uninit_length)
 
     fn reserve(mut self, new_capacity: UInt):

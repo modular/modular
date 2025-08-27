@@ -105,7 +105,7 @@ fn warp_id() -> UInt:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     @parameter
     if is_nvidia_gpu():
@@ -149,7 +149,7 @@ fn sm_id() -> UInt:
         )
     else:
         return CompilationTarget.unsupported_target_error[
-            Int,
+            UInt,
             operation="sm_id",
             note="sm_id() is only supported when targeting NVIDIA GPUs.",
         ]()

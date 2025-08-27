@@ -1005,7 +1005,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         while length > 1:
             var half = length >> 1
             length -= half
-            cursor += Int(b[cursor + half - 1] < needle) * half
+            cursor += UInt(Int(b[cursor + half - 1] < needle) * half)
 
         return Optional(cursor) if b[cursor] == needle else None
 
@@ -1062,7 +1062,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
 
         var normalized_idx = normalize_index["List", assert_always=False](
-            idx, len(self)
+            idx, UInt(len(self))
         )
         return (self._data + normalized_idx)[]
 

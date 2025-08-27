@@ -51,7 +51,7 @@ alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 @always_inline
 fn _word_index(idx: UInt) -> UInt:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
-    return Int(idx >> _WORD_BITS_LOG2)
+    return UInt(idx >> _WORD_BITS_LOG2)
 
 
 @always_inline
@@ -72,7 +72,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
         max_size: The maximum size of the BitSet.
     """
     debug_assert(
-        idx < max_size,
+        idx < UInt(max_size),
         "BitSet index out of bounds when ",
         operation_name,
         " bit: ",
@@ -107,7 +107,7 @@ struct BitSet[size: UInt](
     lookup speed are critical.
     """
 
-    alias _words_size: Int = Int(max(1, ceildiv(size, _WORD_BITS)))
+    alias _words_size: Int = Int(max(1, ceildiv(size, UInt(_WORD_BITS))))
     var _words: InlineArray[UInt64, Self._words_size]  # Payload storage.
 
     # --------------------------------------------------------------------- #

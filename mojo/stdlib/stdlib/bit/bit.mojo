@@ -376,7 +376,7 @@ fn log2_floor(val: UInt) -> UInt:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    return bitwidthof[UInt]() - count_leading_zeros(val) - 1
+    return UInt(bitwidthof[UInt]() - count_leading_zeros(val) - 1)
 
 
 @always_inline
@@ -487,8 +487,8 @@ fn next_power_of_two(val: UInt) -> UInt:
     """
     return select(
         val == 0,
-        1,
-        1 << (bitwidthof[UInt]() - count_leading_zeros(Int(val - 1))),
+        UInt(1),
+        UInt(1 << (bitwidthof[UInt]() - count_leading_zeros(Int(val - 1)))),
     )
 
 

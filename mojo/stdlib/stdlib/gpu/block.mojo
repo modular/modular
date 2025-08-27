@@ -127,7 +127,7 @@ fn _block_reduce[
         var block_val = initial_val
         # Load values from the shared memory (ith lane will have ith warp's
         # value).
-        if lid < n_warps:
+        if lid < UInt(n_warps):
             block_val = shared_mem.load[width=width](lid)
 
         # Reduce across the first warp
@@ -370,7 +370,7 @@ fn prefix_sum[
 
     # Step 2: Store last value from each warp to shared memory
     var wid = warp_id()
-    if lane_id() == WARP_SIZE - 1:
+    if lane_id() == UInt(WARP_SIZE - 1):
         var inclusive_warp_sum: Scalar[dtype] = thread_result
 
         @parameter
@@ -390,7 +390,7 @@ fn prefix_sum[
         var previous_warps_prefix = warp_prefix_sum[exclusive=False](
             warp_mem[lid]
         )
-        if lid < n_warps:
+        if lid < UInt(n_warps):
             warp_mem[lid] = previous_warps_prefix
     barrier()
 

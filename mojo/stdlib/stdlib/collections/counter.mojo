@@ -533,7 +533,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             "KeyError" if the Counter is empty.
         """
         var item_ref = self._data.popitem()
-        return CountTuple[V](item_ref.key, item_ref.value)
+        return CountTuple[V](item_ref.key, UInt(item_ref.value))
 
     # Special methods for counter
 
@@ -546,7 +546,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var total = 0
         for count in self.values():
             total += count
-        return total
+        return UInt(total)
 
     fn most_common(self, n: UInt) -> List[CountTuple[V]]:
         """Return a list of the `n` most common elements and their counts from
@@ -560,7 +560,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         var items: List[CountTuple[V]] = List[CountTuple[V]]()
         for item in self._data.items():
-            var t = CountTuple[V](item.key, item.value)
+            var t = CountTuple[V](item.key, UInt(item.value))
             items.append(t)
 
         @parameter

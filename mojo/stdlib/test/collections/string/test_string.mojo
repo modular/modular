@@ -1523,7 +1523,7 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
+    alias expected_capacity = (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._is_inline(), False)
 

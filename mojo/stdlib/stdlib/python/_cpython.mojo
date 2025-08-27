@@ -2372,7 +2372,7 @@ struct CPython(Defaultable, Movable):
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
         return StringSlice[MutableAnyOrigin](
-            ptr=ptr.bitcast[Byte](), length=length
+            ptr=ptr.bitcast[Byte](), length=UInt(length)
         )
 
     # ===-------------------------------------------------------------------===#

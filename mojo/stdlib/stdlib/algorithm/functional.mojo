@@ -1383,7 +1383,9 @@ fn elementwise[
 
         @parameter
         if is_gpu[target]():
-            _elementwise_impl_gpu[func, simd_width=simd_width](shape, context[])
+            _elementwise_impl_gpu[func, simd_width = UInt(simd_width)](
+                shape, context[]
+            )
         else:
             _elementwise_impl_cpu[
                 func, simd_width, use_blocking_impl=use_blocking_impl
@@ -1408,7 +1410,7 @@ fn _elementwise_impl[
             func, simd_width, use_blocking_impl=use_blocking_impl
         ](shape)
     else:
-        _elementwise_impl_gpu[func, simd_width](
+        _elementwise_impl_gpu[func, UInt(simd_width)](
             shape,
             context,
         )
@@ -1617,8 +1619,8 @@ fn _elementwise_impl_gpu[
     alias registers_per_thread = 255
     alias num_waves = 32
     alias registers_per_block = hw_info.max_registers_per_block
-    alias sm_count: UInt = hw_info.sm_count
-    alias threads_per_sm: UInt = hw_info.threads_per_sm
+    alias sm_count: UInt = UInt(hw_info.sm_count)
+    alias threads_per_sm: UInt = UInt(hw_info.threads_per_sm)
 
     constrained[
         sm_count > 0 and threads_per_sm > 0,
@@ -1626,7 +1628,7 @@ fn _elementwise_impl_gpu[
     ]()
 
     # split between packed and tail regions of input
-    var length: UInt = shape.flattened_length()
+    var length: UInt = UInt(shape.flattened_length())
     var num_packed_elems = length // simd_width
     var unpacked_tail_length = length % simd_width
     var packed_region_length = length - unpacked_tail_length
@@ -1639,7 +1641,7 @@ fn _elementwise_impl_gpu[
     )
 
     var num_blocks = clamp(
-        ceildiv(num_packed_elems, block_size),
+        ceildiv(num_packed_elems, UInt(block_size)),
         1,
         sm_count * threads_per_sm // block_size * num_waves,
     )
@@ -1680,7 +1682,7 @@ fn _elementwise_impl_gpu[
                     for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
-                                idx * simd_width + off,
+                                UInt(idx * simd_width + off),
                                 shape,
                             ).canonicalize()
                         )
@@ -1707,7 +1709,7 @@ fn _elementwise_impl_gpu[
     if shape[rank - 1] % simd_width == 0:
         ctx.enqueue_function[
             _elementwise_gpu_kernel[
-                block_size=block_size, handle_uneven_simd=False
+                block_size = UInt(block_size), handle_uneven_simd=False
             ]
         ](
             grid_dim=Int(num_blocks),
@@ -1717,7 +1719,7 @@ fn _elementwise_impl_gpu[
     else:
         ctx.enqueue_function[
             _elementwise_gpu_kernel[
-                block_size=block_size, handle_uneven_simd=True
+                block_size = UInt(block_size), handle_uneven_simd=True
             ]
         ](
             grid_dim=Int(num_blocks),
@@ -2020,7 +2022,7 @@ fn _stencil_impl_gpu[
         var channel = bid_z % shape[3]
 
         # Early exit if outside bounds
-        if x >= shape[2] or y >= shape[1]:
+        if x >= UInt(shape[2]) or y >= UInt(shape[1]):
             return
 
         # Create output point indices with computed batch and channel

@@ -69,9 +69,11 @@ struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
     fn as_nanoseconds(self) -> UInt:
         @parameter
         if CompilationTarget.is_linux():
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec
+            return UInt(self.tv_sec * _NSEC_PER_SEC + self.tv_subsec)
         else:
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
+            return UInt(
+                self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
+            )
 
     @no_inline
     fn __str__(self) -> String:
@@ -102,7 +104,7 @@ struct _FILETIME(Copyable, Defaultable, Movable):
             + self.dw_low_date_time.cast[DType.uint64]()
             - windows_to_unix_epoch_offset_ns
         )
-        return Int(interval_count * 100)
+        return UInt(Int(interval_count * 100))
 
 
 @always_inline
@@ -122,8 +124,8 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
-        return Int(
-            external_call["clock_gettime_nsec_np", Int64](Int32(clockid))
+        return UInt(
+            Int(external_call["clock_gettime_nsec_np", Int64](Int32(clockid)))
         )
 
 
@@ -131,7 +133,7 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
     alias asm = _gpu_clock_inst()
-    return Int(llvm_intrinsic[asm, Int64]())
+    return UInt(Int(llvm_intrinsic[asm, Int64]()))
 
 
 fn _gpu_clock_inst() -> StaticString:
@@ -281,7 +283,7 @@ fn _time_function_windows[
 
     # Note: Windows performance counter resolution is in µs.
     var elapsed_time_in_ns = (elapsed_ticks * 1_000_000_000) // ticks_per_sec
-    return Int(elapsed_time_in_ns)
+    return UInt(Int(elapsed_time_in_ns))
 
 
 @always_inline

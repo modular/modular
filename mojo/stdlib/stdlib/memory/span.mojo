@@ -205,7 +205,7 @@ struct Span[
             An element reference.
         """
         var normalized_idx = normalize_index["Span", assert_always=False](
-            idx, len(self)
+            idx, UInt(len(self))
         )
         return self._data[normalized_idx]
 
@@ -231,7 +231,7 @@ struct Span[
         debug_assert(step == 1, "Slice step must be 1")
 
         return Self(
-            ptr=(self._data + start), length=len(range(start, end, step))
+            ptr=(self._data + start), length=UInt(len(range(start, end, step)))
         )
 
     @always_inline
@@ -563,7 +563,7 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
-        var length = len(self)
+        var length = UInt(len(self))
         if a > length or b > length:
             raise Error(
                 "index out of bounds (length: ",
@@ -606,7 +606,7 @@ struct Span[
         """
         return __type_of(result)(
             ptr=self._data.origin_cast[result.mut, result.origin](),
-            length=self._len,
+            length=UInt(self._len),
         )
 
     fn reverse[

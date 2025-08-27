@@ -100,7 +100,7 @@ struct FileDescriptor(Writer):
             )
             if read < 0:
                 raise Error("Failed to read bytes.")
-            return read
+            return UInt(read)
         else:
             constrained[
                 False,

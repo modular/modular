@@ -301,7 +301,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     string._ptr_or_data = byte_ptr
     string._len_or_data = _unsafe_strlen(byte_ptr)
     # capacity >> 3 can only be lower, so will realloc safely if required
-    string._capacity_or_data = capacity >> 3
+    string._capacity_or_data = UInt(capacity >> 3)
     string._set_ref_counted()
 
     return string
@@ -730,7 +730,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=2 * len(bytes))
+                buf.reserve(new_capacity=UInt(2 * len(bytes)))
             buf.write_bytes(bytes[i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])

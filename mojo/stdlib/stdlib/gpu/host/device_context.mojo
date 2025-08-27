@@ -287,8 +287,8 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
                 UnsafePointer(to=cpp_handle),
                 UnsafePointer(to=host_ptr),
                 ctx._handle,
-                size,
-                elem_size,
+                UInt(size),
+                UInt(elem_size),
             )
         )
 
@@ -335,8 +335,8 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             UnsafePointer(to=cpp_handle),
             ctx._handle,
             host_ptr,
-            size,
-            elem_size,
+            UInt(size),
+            UInt(elem_size),
             owning,
         )
 
@@ -466,9 +466,9 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
                 UnsafePointer(to=new_handle),
                 UnsafePointer(to=new_host_ptr),
                 self._handle,
-                offset,
-                size,
-                elem_size,
+                UInt(offset),
+                UInt(size),
+                UInt(elem_size),
             )
         )
         return HostBuffer[view_type](new_handle, new_host_ptr)
@@ -760,7 +760,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
         Returns:
             A `Span` pointing to the underlying memory of the `HostBuffer`.
         """
-        return __type_of(span)(ptr=self._host_ptr, length=len(self))
+        return __type_of(span)(ptr=self._host_ptr, length=UInt(len(self)))
 
 
 struct DeviceBuffer[dtype: DType](
@@ -855,8 +855,8 @@ struct DeviceBuffer[dtype: DType](
                     UnsafePointer(to=cpp_handle),
                     UnsafePointer(to=device_ptr),
                     ctx._handle,
-                    size,
-                    elem_size,
+                    UInt(size),
+                    UInt(elem_size),
                 ),
                 location=__call_location(),
             )
@@ -875,8 +875,8 @@ struct DeviceBuffer[dtype: DType](
                     UnsafePointer(to=cpp_handle),
                     UnsafePointer(to=device_ptr),
                     ctx._handle,
-                    size,
-                    elem_size,
+                    UInt(size),
+                    UInt(elem_size),
                 ),
                 location=__call_location(),
             )
@@ -932,8 +932,8 @@ struct DeviceBuffer[dtype: DType](
             UnsafePointer(to=cpp_handle),
             ctx._handle,
             ptr,
-            size,
-            elem_size,
+            UInt(size),
+            UInt(elem_size),
             owning,
         )
 
@@ -1065,9 +1065,9 @@ struct DeviceBuffer[dtype: DType](
                 UnsafePointer(to=new_handle),
                 UnsafePointer(to=new_device_ptr),
                 self._handle,
-                offset,
-                size,
-                elem_size,
+                UInt(offset),
+                UInt(size),
+                UInt(elem_size),
             ),
             location=__call_location(),
         )
@@ -2055,7 +2055,7 @@ struct DeviceFunction[
                 self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
-                len(self._func_impl.asm),
+                UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
@@ -2080,9 +2080,9 @@ struct DeviceFunction[
             ](
                 self._handle,
                 mapping.name.unsafe_ptr(),
-                len(mapping.name),
+                UInt(len(mapping.name)),
                 mapping.ptr,
-                mapping.byte_count,
+                UInt(mapping.byte_count),
             )
         )
 
@@ -2323,7 +2323,7 @@ struct DeviceFunction[
 
         @parameter
         fn _populate_arg_sizes[i: Int]():
-            dense_args_sizes[i] = sizeof[Ts[i]]()
+            dense_args_sizes[i] = UInt(sizeof[Ts[i]]())
 
         @parameter
         for i in range(num_args):
@@ -2867,7 +2867,7 @@ struct DeviceFunction[
                 UnsafePointer(to=result),
                 self._handle,
                 block_size,
-                dynamic_shared_mem_size,
+                UInt(dynamic_shared_mem_size),
             )
         )
         return Int(result)
@@ -2986,7 +2986,7 @@ struct DeviceExternalFunction:
                 module_name.unsafe_ptr(),
                 function_name.unsafe_ptr(),
                 asm.unsafe_ptr(),
-                len(asm),
+                UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
                 Int(OptimizationLevel),
@@ -3020,9 +3020,9 @@ struct DeviceExternalFunction:
             ](
                 self._handle,
                 mapping.name.unsafe_ptr(),
-                len(mapping.name),
+                UInt(len(mapping.name)),
                 mapping.ptr,
-                mapping.byte_count,
+                UInt(mapping.byte_count),
             )
         )
 
@@ -5729,7 +5729,7 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                sizeof[dtype](),
+                UInt(sizeof[dtype]()),
             )
         )
 
@@ -5776,7 +5776,7 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                sizeof[dtype](),
+                UInt(sizeof[dtype]()),
             )
         )
 
@@ -6542,10 +6542,10 @@ struct DeviceMulticastBuffer[dtype: DType]:
                 _SizeT,
             ](
                 UnsafePointer(to=handle),
-                ctxs_len,
+                UInt(ctxs_len),
                 ctxs,
-                size,
-                elem_size,
+                UInt(size),
+                UInt(elem_size),
             )
         )
 
