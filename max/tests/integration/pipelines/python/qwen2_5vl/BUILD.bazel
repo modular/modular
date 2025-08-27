@@ -12,7 +12,7 @@ modular_py_test(
     srcs = ["test_image_processor.py"],
     tags = [
         "manual",
-        "no-sandbox",
+        "requires-network",
     ],
     deps = [
         "//SDK/lib/API/python/max/pipelines/architectures",
@@ -43,7 +43,7 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-sandbox",
+        "requires-network",
     ],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
