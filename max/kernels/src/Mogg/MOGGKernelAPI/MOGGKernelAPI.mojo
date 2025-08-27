@@ -179,6 +179,7 @@ from nn.normalization import (
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.rand_normal import random_normal
 from nn.rand_uniform import random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
@@ -4040,23 +4041,30 @@ struct RepeatInterleave:
 @compiler.register("mo.random.normal")
 struct RandomNormal:
     @staticmethod
-    fn execute(
-        output: OutputTensor,
+    fn execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype],
         shape: InputTensor[rank=1],
-        mean: Scalar,
-        variance: Scalar,
+        mean: Scalar[dtype],
+        variance: Scalar[dtype],
         seed_value: Scalar,
-    ):
-        seed(Int(seed_value))
-        var num_elements = 1
-        # TODO: Add __len__ support in InputTensor.
-        for i in range(shape.dim_size[0]()):
-            num_elements *= Int(shape[i])
-        randn(
-            output._ptr,
-            num_elements,
-            mean.cast[DType.float64](),
-            variance.cast[DType.float64](),
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn output_fn[
+            _width: Int,
+            _rank: Int,
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        random_normal[output_fn, target=target](
+            output.shape(), mean, variance, UInt64(seed_value), ctx
         )
 
     @staticmethod

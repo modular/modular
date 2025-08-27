@@ -154,8 +154,8 @@ def test_uniform__inverted_range(
 
 
 @given(like=tensor_types(dtypes=supported_dtypes, device=DeviceRef.GPU()))
-def test_gaussian__host_only(like: TensorType) -> None:
+def test_gaussian__gpu_support(like: TensorType) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
         ops.random.set_seed(graph.inputs[0].tensor)
-        with pytest.raises(Exception):
-            result = ops.random.gaussian(like)
+        result = ops.random.gaussian(like)
+    assert result.type == like
