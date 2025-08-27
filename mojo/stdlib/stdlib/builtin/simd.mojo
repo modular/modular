@@ -63,7 +63,7 @@ from sys._assembly import inlined_assembly
 from sys.info import (
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
-    _is_amd_cdna,
+    _is_amd_mi300x,
     _cdna_4_or_newer,
 )
 
@@ -3418,7 +3418,7 @@ fn _convert_f32_to_float8[
     target: DType,
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
-    if _is_sm_9x_or_newer() and target in (
+    if (_is_sm_9x_or_newer() or _cdna_4_or_newer()) and target in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3427,14 +3427,9 @@ fn _convert_f32_to_float8[
             val.value
         )
         return SIMD(mlir_value=res)
-    elif (
-        _is_amd_cdna()
-        and target
-        in (
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2fnuz,
-        )
-        and size == 1
+    elif _is_amd_mi300x() and target in (
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2fnuz,
     ):
         var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
             val.value

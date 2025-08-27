@@ -617,12 +617,18 @@ fn _cdna_version() -> Int:
 
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
-    return _cdna_version() >= 3
+    @parameter
+    if is_amd_gpu():
+        return _cdna_version() >= 3
+    return False
 
 
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
-    return _cdna_version() >= 4
+    @parameter
+    if is_amd_gpu():
+        return _cdna_version() >= 4
+    return False
 
 
 @always_inline("nodebug")
