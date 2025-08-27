@@ -633,8 +633,103 @@ private:
                                  toFloatSemantics);
   }
 
-  /// Convert a `pop.cast` into optimized sequence of asm instructions that are
-  /// known to be more efficient for a target than general LLVM's conversion.
+  Value getClampedFloatValue(ConversionPatternRewriter &rewriter, Location loc,
+                             Value value, APFloat::Semantics floatSemantics,
+                             Type outType) const {
+    APFloat m = APFloat::getLargest(APFloat::EnumToSemantics(floatSemantics));
+    Value max = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getF32FloatAttr(m.convertToFloat()));
+    Value min = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getF32FloatAttr(-m.convertToFloat()));
+
+    Value clamped =
+        rewriter.create<LLVM::MaxNumOp>(loc, value, min, LLVM_FASTMATH_FLAGS);
+    clamped =
+        rewriter.create<LLVM::MinNumOp>(loc, clamped, max, LLVM_FASTMATH_FLAGS);
+    return clamped;
+  }
+
+  Value getIsNaN(ConversionPatternRewriter &rewriter, Location loc, Value value,
+                 APFloat::Semantics floatSemantics, size_t size) const {
+    // Using FCmp with predicate of FCMP_UNO to check nan
+    // FCMP_UNO 	True if unordered: isnan(X) | isnan(Y)
+    // https://llvm.org/doxygen/classllvm_1_1CmpInst.html#a2be3583dac92a031fa1458d4d992c78b
+    Type type = convertType(SIMDType::get(rewriter.getContext(), size,
+                                          KGENDType(DType(DType::ui1))));
+    Value result = rewriter.create<LLVM::FCmpOp>(
+        loc, type, mlir::LLVM::FCmpPredicate::uno, value, value);
+    return result;
+  }
+
+  /// Helper function to convert scalar of F32 to F8 (F8E4M3FNUZ or F8E5M2FNUZ)
+  /// on AMDGPU without replacing the operation
+  Value
+  convertF32ToF8OnAMDGPUHelper(ConversionPatternRewriter &rewriter, CastOp op,
+                               Value value, Type outType,
+                               APFloat::Semantics fromFloatSemantics,
+                               APFloat::Semantics toFloatSemantics) const {
+    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+           "fast lowering of f32 to f8 is only supported on AMDGPU");
+
+    Location loc = op.getLoc();
+    auto simd = cast<SIMDType>(op.getInput().getType());
+    const uint64_t size = *simd.getResolvedSize();
+
+    Type f8Type = outType;
+    Value clamped =
+        getClampedFloatValue(rewriter, loc, value, toFloatSemantics, f8Type);
+
+    Value isNaN = getIsNaN(rewriter, loc, value, fromFloatSemantics, size);
+
+    Value sel = rewriter.create<LLVM::SelectOp>(loc, isNaN, value, clamped,
+                                                LLVM_FASTMATH_FLAGS);
+
+    SmallVector<Value> operands{
+        sel, sel,
+        rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(),
+                                          rewriter.getI32IntegerAttr(0)),
+        rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                          rewriter.getBoolAttr(false))};
+
+    Type i32Type = rewriter.getIntegerType(32);
+    Type ui8Type = rewriter.getIntegerType(8);
+
+    StringAttr intrinsicStr = [&]() -> StringAttr {
+      if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ)
+        return rewriter.getStringAttr("llvm.amdgcn.cvt.pk.fp8.f32");
+      else if (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ)
+        return rewriter.getStringAttr("llvm.amdgcn.cvt.pk.bf8.f32");
+
+      llvm_unreachable("conversion format not supported on AMDGPU");
+    }();
+
+    Value result =
+        rewriter
+            .create<LLVM::CallIntrinsicOp>(loc, i32Type, intrinsicStr, operands)
+            .getResult(0);
+    result = rewriter.create<LLVM::TruncOp>(loc, ui8Type, result);
+    return result;
+  }
+
+  LogicalResult
+  convertF32ToF8OnAMDGPU(ConversionPatternRewriter &rewriter, CastOp op,
+                         Value value, APFloat::Semantics fromFloatSemantics,
+                         APFloat::Semantics toFloatSemantics) const {
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+      return failure();
+
+    Value converted =
+        convertF32ToF8OnAMDGPUHelper(rewriter, op, value, types.front(),
+                                     fromFloatSemantics, toFloatSemantics);
+
+    rewriter.replaceOp(op, converted);
+    return success();
+  }
+
+  /// Convert a `pop.cast` into optimized sequence of asm instructions that
+  /// are known to be more efficient for a target than general LLVM's
+  /// conversion.
   LogicalResult convertToTargetSpecificCast(ConversionPatternRewriter &rewriter,
                                             CastOp cast, Value value) const {
     TargetInfoAttr target = getTypeConverter()->getTarget();
@@ -674,12 +769,33 @@ private:
       // what stdlib does for now. Might be better to use approach similar to
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
-      if (simd && isNVPTX_HopperAndAbove(target)) {
-        return convertF32ToF8OnNVPTX(rewriter, cast, value, fromFloatSemantics,
-                                     toFloatSemantics);
+      if (simd) {
+        if (isNVPTX_HopperAndAbove(target)) {
+          return convertF32ToF8OnNVPTX(rewriter, cast, value,
+                                       fromFloatSemantics, toFloatSemantics);
+        }
+
+        if (target.getTriple().isAMDGPU()) {
+          return convertF32ToF8OnAMDGPU(rewriter, cast, value,
+                                        fromFloatSemantics, toFloatSemantics);
+        }
       }
       return failure();
     }
+
+    // Convert F32 to F8 (either e4m3fnuz or e5m2fnuz)
+    if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
+        (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
+         toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ)) {
+      if (simd) {
+        if (target.getTriple().isAMDGPU()) {
+          return convertF32ToF8OnAMDGPU(rewriter, cast, value,
+                                        fromFloatSemantics, toFloatSemantics);
+        }
+      }
+      return failure();
+    }
+
     // Convert F8 (either e4m3fn or e5m2) to F16
     if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
