@@ -181,7 +181,7 @@ def _mmap(
     mode: np._MemMapModeKind = "copyonwrite",
     offset: int = 0,
 ) -> Tensor:
-    arr: np.memmap = np.memmap(
+    arr: np.memmap[Any, Any] = np.memmap(
         filename,
         dtype.to_numpy(),
         mode,

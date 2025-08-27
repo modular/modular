@@ -93,19 +93,6 @@ Bounds:
     PipelineInputs: All types must inherit from PipelineInputs base class
 """
 
-PipelineOutputsType = TypeVar("PipelineOutputsType", bound=PipelineOutputsDict)
-"""
-Type variable for pipeline outputs dictionary types.
-
-This TypeVar is bound to PipelineOutputsDict, ensuring that any type used with this
-variable must be compatible with a dictionary mapping RequestID to PipelineOutput
-instances. Used for generic typing in pipeline operations to maintain type safety
-for collections of pipeline outputs.
-
-Bounds:
-    PipelineOutputsDict: All types must be compatible with dict[RequestID, PipelineOutputType]
-"""
-
 
 class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
     """
