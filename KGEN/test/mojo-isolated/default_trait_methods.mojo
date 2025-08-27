@@ -80,3 +80,47 @@ struct TAA(AA1):
 
     # CHECK: kgen.conformance{{.*}}:AA1
     # CHECK-DAG: kgen.witness "zork"
+
+
+# Test parameterized types in default trait methods
+@fieldwise_init
+@register_passable("trivial")
+struct ParamRPType[x: Int, y: Int]:
+    var value: Int
+
+
+trait Barable:
+    fn bar(self):
+        ...
+
+
+trait ParamInputTrait:
+    @staticmethod
+    fn process_parameterized[T: Barable](item: T) -> Int:
+        item.bar()
+        return 100
+
+    fn return_parameterized[x: Int, y: Int](self) -> ParamRPType[x, y]:
+        return ParamRPType[x, y](x * y)
+
+
+# CHECK-LABEL: lit.struct.decl @ParamTestStruct
+struct ParamTestStruct(ParamInputTrait):
+    # Check that we generate proper wrapper for parameterized input method
+    # CHECK: lit.fn @"process_parameterized
+    # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
+
+    # Check that we generate proper wrapper for parameterized return type
+    # CHECK: lit.fn @"return_parameterized
+    # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
+
+    # CHECK: kgen.conformance{{.*}}:ParamInputTrait
+    # CHECK-DAG: kgen.witness "process_parameterized"
+    # CHECK-DAG: kgen.witness "return_parameterized"
+    pass
+
+
+@fieldwise_init
+struct BarableStruct(Barable):
+    fn bar(self):
+        pass
