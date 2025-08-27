@@ -112,7 +112,7 @@ def main():
             frexp_fn,
             log,
             log2,
-            # log10,
+            log10,
             log1p,
             # logb,
             # cbrt,
