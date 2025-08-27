@@ -251,6 +251,36 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
       !pop.simd<2, bf16>,
       !pop.simd<2, bf16>
   }
+
+  // CHECK-LABEL: scalar_cast_f32_f8
+  kgen.func @scalar_cast_f32_f8(%f32: !pop.scalar<f32>) -> (!pop.scalar<f8e4m3fnuz>, !pop.scalar<f8e5m2fnuz>) {
+    // CHECK-DAG: %[[MAXE5M2FNUZ:.+]] = llvm.mlir.constant(-5.734400e+04 : f32) : f32
+    // CHECK-DAG: %[[MINE5M2FNUZ:.+]] = llvm.mlir.constant(5.734400e+04 : f32) : f32
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[MINE4M3FNUZ:.+]] = llvm.mlir.constant(-2.400000e+02 : f32) : f32
+    // CHECK-DAG: %[[MAXE4M3FNUZ:.+]] = llvm.mlir.constant(2.400000e+02 : f32) : f32
+
+    // CHECK-DAG: %[[ARG0_CLAMPED0:.+]] = llvm.intr.maxnum(%arg0, %[[MINE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
+    // CHECK-DAG: %[[ARG0_CLAMPED1:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED0]], %[[MAXE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
+    // CHECK-DAG: %[[ISNAN0:.+]] = llvm.fcmp "uno" %arg0, %arg0 : f32
+    // CHECK-DAG: %[[SEL0:.+]] = llvm.select %[[ISNAN0]], %arg0, %[[ARG0_CLAMPED1]] {fastmathFlags = #llvm.fastmath<contract>} : i1, f32
+    // CHECK-DAG: %[[F8_0:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.fp8.f32"(%[[SEL0]], %[[SEL0]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[F8_1:.+]] = llvm.trunc %[[F8_0]] : i32 to i8
+
+    // CHECK-DAG: %[[ARG0_CLAMPED2:.+]] = llvm.intr.maxnum(%arg0, %[[MAXE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
+    // CHECK-DAG: %[[ARG0_CLAMPED3:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED2]], %[[MINE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
+    // CHECK-DAG: %[[ISNAN1:.+]] = llvm.fcmp "uno" %arg0, %arg0 : f32
+    // CHECK-DAG: %[[SEL1:.+]] = llvm.select %[[ISNAN1]], %arg0, %[[ARG0_CLAMPED3]] {fastmathFlags = #llvm.fastmath<contract>} : i1, f32
+    // CHECK-DAG: %[[F8_2:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.bf8.f32"(%[[SEL1]], %[[SEL1]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[F8_3:.+]] = llvm.trunc %[[F8_2]] : i32 to i8
+
+    %0 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f8e4m3fnuz>
+    %1 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f8e5m2fnuz>
+    kgen.return %0, %1 :
+      !pop.scalar<f8e4m3fnuz>,
+      !pop.scalar<f8e5m2fnuz>
+  }
 }
 
 // -----
