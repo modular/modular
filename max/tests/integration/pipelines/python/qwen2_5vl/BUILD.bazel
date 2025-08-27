@@ -8,6 +8,19 @@ load(
 )
 
 modular_py_test(
+    name = "test_image_processor",
+    srcs = ["test_image_processor.py"],
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "qwen2_5vl",
     size = "enormous",
     srcs = glob(
