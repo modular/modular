@@ -123,7 +123,7 @@ struct RuntimeOptions {
   // cannot do any memory allocations.
 
   // let tensor0 = Tensor[Dtype.int64](TensorShape(1,1000))
-  // let session = InferenceSession()
+  // let session = InferenceSession(devices=...)
   // let tensor1 = Tensor[Dtype.int64](TensorShape(1,1000))
   // res = model.execute(tensor0, tensor1)
   // tensor0.free() // idiomatic. not actual api
