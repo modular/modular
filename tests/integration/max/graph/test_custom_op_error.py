@@ -15,6 +15,7 @@
 from pathlib import Path
 
 import pytest
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -23,7 +24,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
     """Check that we don't dump IR on failure to elaborate."""
     with pytest.raises(ValueError) as excinfo:
-        InferenceSession().load(
+        InferenceSession(devices=[CPU()]).load(
             Graph(
                 "elab_error",
                 forward=lambda: ops.custom(

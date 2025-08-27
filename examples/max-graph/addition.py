@@ -15,7 +15,7 @@
 
 import numpy as np
 from max import engine
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -34,7 +34,7 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         print("final graph:", graph)
 
     # 2. Create an inference session
-    session = engine.InferenceSession()
+    session = engine.InferenceSession([CPU()])
     model = session.load(graph)
 
     for tensor in model.input_metadata:

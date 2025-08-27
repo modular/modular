@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import pytest
 import torch
+from max.driver import CPU
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -38,7 +39,7 @@ def test_load_rejects_non_contiguous_weights() -> None:
         ],
     )
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
 
     # Create a non-contiguous weight tensor for the registry
     weight_tensor = torch.randn(4, 4).t()  # transpose makes it non-contiguous
@@ -60,7 +61,7 @@ def test_execute_rejects_non_contiguous_input() -> None:
     )
 
     # Create the model (without any weights)
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     model = session.load(graph)
 
     # Create a non-contiguous input tensor
