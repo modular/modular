@@ -22,7 +22,8 @@ from algorithm import map
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
-from sys import is_nvidia_gpu, simdwidthof
+from sys import simdwidthof
+import sys
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -194,7 +195,7 @@ fn vectorize[
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if is_nvidia_gpu() else 1,
+    unroll_factor: Int = size if sys.is_gpu() else 1,
 ]():
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
