@@ -60,7 +60,13 @@ from sys import (
     sizeof,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from sys.info import (
+    _is_sm_9x_or_newer,
+    _is_sm_100x_or_newer,
+    _is_amd_cdna,
+    _cdna_4_or_newer,
+)
+
 from sys.intrinsics import _type_is_eq
 
 from bit import bit_width, byte_swap, pop_count
@@ -3417,6 +3423,19 @@ fn _convert_f32_to_float8[
         DType.float8_e5m2,
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
+        var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            val.value
+        )
+        return SIMD(mlir_value=res)
+    elif (
+        _is_amd_cdna()
+        and target
+        in (
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2fnuz,
+        )
+        and size == 1
+    ):
         var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
             val.value
         )
