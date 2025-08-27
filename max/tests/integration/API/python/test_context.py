@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+import re
 from typing import Union
 
 import numpy as np
@@ -597,3 +598,19 @@ def test_vision_context_reset() -> None:
     assert context.start_idx == 0
     assert context.active_length == 6
     assert context.needs_vision_encoding is True
+
+
+def test_text_context_repr(capsys: pytest.CaptureFixture) -> None:
+    context = TextContext(
+        tokens=np.array([0, 1, 2, 3, 4]),
+        max_length=5,
+    )
+    print(context)
+    outerr = capsys.readouterr()
+    assert (
+        re.match(
+            r"TextContext\(request_id=.*\, start_idx=0\, active_idx=5\, end_idx=5\)",
+            outerr.out,
+        )
+        is not None
+    )
