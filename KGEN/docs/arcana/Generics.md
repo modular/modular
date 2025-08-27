@@ -214,7 +214,16 @@ When comparing these two, we'll need to either:
 
 Only then can you compare the two types to see if they're equal.
 
-Per `upbindApplyResult`'s comment (search STCHDDDOS-A), that's the only place
-that an index parameter reference can cross upwards across a signature, but
-**take that with a grain of salt** because there are some places where we might
-be violating that (see STCHDDDOS-B).
+One key place to watch out for is when instantiating a parameterized value. For
+example (STCHDDDOS-A), given a generator value `<index> *(0,0) + 1` (Given an
+index typed value, return one plus that value), we can bind an index reference
+from the outer scope such as `bind_params(<index> *(0,0) + 1, *(0,1))`. Folding
+this `bind_params` operator gets us a new generator value that has zero input
+parameters `<> *(1,1) + 1`. It's important to note that this is still a
+generator value. An explicit "instantiation" step is required to unwrap the
+generator, and this unwrap step will require decrementing all index references
+in the generator body as it is now under one fewer level of generator scopes. A
+similar situation exists with the `apply` operator when the callee is an
+instantiated parametric function (STCHDDDOS-B). The resulting function type
+needs to have its index references decremented (also referred to us
+"up-binding").

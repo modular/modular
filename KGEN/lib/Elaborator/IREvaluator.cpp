@@ -393,7 +393,7 @@ IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
     // If the user expected an instantiated value, return the instantiated body.
     // If this was a real mismatch, the replacer will catch it.
     if (specializedGenerator.getType() != bindParams.getType())
-      return specializedGenerator.getInstantiatedBody();
+      return specializedGenerator.getInstantiatedValue();
     return cast<TypedAttr>(specializedGenerator);
   }
 
