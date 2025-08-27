@@ -1691,18 +1691,12 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
     return failure();
   }
 
-  // Find xcrun path
-  auto xcrunPath = llvm::sys::findProgramByName("xcrun");
-  if (!xcrunPath) {
-    std::move(output).setToError(
-        AsyncRT::getMLIRDiagnostic(Error("xcrun not found in PATH"), loc));
-    cleanupFiles({airTempFile, metallibTempFile});
-    return failure();
-  }
+  // xcrun path must always be the same on MacOS.
+  const char *xcrunPath = "/usr/bin/xcrun";
 
   // Convert AIR bitcode to metallib using xcrun metallib
   std::vector<llvm::StringRef> metallibArgs = {
-      *xcrunPath,  "-sdk", "macosx",        "metallib",
+      xcrunPath,   "-sdk", "macosx",        "metallib",
       airTempFile, "-o",   metallibTempFile};
 
   std::string errorMsg;
