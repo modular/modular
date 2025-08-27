@@ -41,6 +41,7 @@ _CPU_TESTS = glob(
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "@mojo//:comm",
             "@mojo//:internal_utils",
             "@mojo//:layout",
             "@mojo//:nn",
@@ -67,6 +68,7 @@ _CPU_TESTS = glob(
         enable_assertions = False,
         target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "@mojo//:comm",
             "@mojo//:internal_utils",
             "@mojo//:layout",
             "@mojo//:nn",
@@ -83,6 +85,7 @@ _CPU_TESTS = glob(
         enable_assertions = False,
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "@mojo//:comm",
             "@mojo//:internal_utils",
             "@mojo//:layout",
             "@mojo//:nn",

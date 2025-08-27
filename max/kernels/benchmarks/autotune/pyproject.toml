@@ -30,6 +30,7 @@ dependencies = [
     "numpy",
     "plotly",
     "pyyaml",
+    "tabulate",
 ]
 
 
