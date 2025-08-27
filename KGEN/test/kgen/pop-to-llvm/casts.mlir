@@ -267,6 +267,7 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     // CHECK-DAG: %[[SEL0:.+]] = llvm.select %[[ISNAN0]], %arg0, %[[ARG0_CLAMPED1]] {fastmathFlags = #llvm.fastmath<contract>} : i1, f32
     // CHECK-DAG: %[[F8_0:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.fp8.f32"(%[[SEL0]], %[[SEL0]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
     // CHECK-DAG: %[[F8_1:.+]] = llvm.trunc %[[F8_0]] : i32 to i8
+    %0 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f8e4m3fnuz>
 
     // CHECK-DAG: %[[ARG0_CLAMPED2:.+]] = llvm.intr.maxnum(%arg0, %[[MAXE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
     // CHECK-DAG: %[[ARG0_CLAMPED3:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED2]], %[[MINE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32, f32) -> f32
@@ -274,12 +275,95 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     // CHECK-DAG: %[[SEL1:.+]] = llvm.select %[[ISNAN1]], %arg0, %[[ARG0_CLAMPED3]] {fastmathFlags = #llvm.fastmath<contract>} : i1, f32
     // CHECK-DAG: %[[F8_2:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.bf8.f32"(%[[SEL1]], %[[SEL1]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
     // CHECK-DAG: %[[F8_3:.+]] = llvm.trunc %[[F8_2]] : i32 to i8
-
-    %0 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f8e4m3fnuz>
     %1 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<f8e5m2fnuz>
+
     kgen.return %0, %1 :
       !pop.scalar<f8e4m3fnuz>,
       !pop.scalar<f8e5m2fnuz>
+  }
+
+  // CHECK-LABEL: simd2_cast_f32_f8
+  kgen.func @simd2_cast_f32_f8(%f32: !pop.simd<2, f32>) -> (!pop.simd<2, f8e4m3fnuz>, !pop.simd<2, f8e5m2fnuz>) {
+    // CHECK-DAG: %[[MINE5M2FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<-5.734400e+04, -5.734400e+04> : vector<2xf32>) : vector<2xf32>
+    // CHECK-DAG: %[[MAXE5M2FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<5.734400e+04, 5.734400e+04> : vector<2xf32>) : vector<2xf32>
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[MINE4M3FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<-2.400000e+02, -2.400000e+02> : vector<2xf32>) : vector<2xf32>
+    // CHECK-DAG: %[[MAXE4M3FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<2.400000e+02, 2.400000e+02> : vector<2xf32>) : vector<2xf32>
+
+    // CHECK-DAG: %[[ARG0_CLAMPED0:.+]] = llvm.intr.maxnum(%arg0, %[[MINE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<2xf32>, vector<2xf32>) -> vector<2xf32>
+    // CHECK-DAG: %[[ARG0_CLAMPED1:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED0]], %[[MAXE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<2xf32>, vector<2xf32>) -> vector<2xf32>
+    // CHECK-DAG: %[[ISNAN0:.+]] = llvm.fcmp "uno" %arg0, %arg0 : vector<2xf32>
+    // CHECK-DAG: %[[SEL0:.+]] = llvm.select %[[ISNAN0]], %arg0, %[[ARG0_CLAMPED1]] {fastmathFlags = #llvm.fastmath<contract>} : vector<2xi1>, vector<2xf32>
+    // CHECK-DAG: %[[FP32_0:.+]] = llvm.extractelement %[[SEL0]][%[[ZERO]] : i32] : vector<2xf32>
+    // CHECK-DAG: %[[FP32_1:.+]] = llvm.extractelement %[[SEL0]][%[[ONE]] : i32] : vector<2xf32>
+    // CHECK-DAG: %[[FP8_2_0:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.fp8.f32"(%[[FP32_0]], %[[FP32_1]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP8_2_1:.+]] = llvm.trunc %[[FP8_2_0]] : i32 to i16
+    // CHECK-DAG: %[[FP8_2_2:.+]] = llvm.bitcast %[[FP8_2_1]] : i16 to vector<2xi8>
+    %0 = pop.cast %f32 : !pop.simd<2, f32> to !pop.simd<2, f8e4m3fnuz>
+
+    // CHECK-DAG: %[[ARG0_CLAMPED2:.+]] = llvm.intr.maxnum(%arg0, %[[MINE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<2xf32>, vector<2xf32>) -> vector<2xf32>
+    // CHECK-DAG: %[[ARG0_CLAMPED3:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED2]], %[[MAXE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<2xf32>, vector<2xf32>) -> vector<2xf32>
+    // CHECK-DAG: %[[ISNAN1:.+]] = llvm.fcmp "uno" %arg0, %arg0 : vector<2xf32>
+    // CHECK-DAG: %[[SEL1:.+]] = llvm.select %[[ISNAN1]], %arg0, %[[ARG0_CLAMPED3]] {fastmathFlags = #llvm.fastmath<contract>} : vector<2xi1>, vector<2xf32>
+    // CHECK-DAG: %[[FP32_2:.+]] = llvm.extractelement %[[SEL1]][%[[ZERO]] : i32] : vector<2xf32>
+    // CHECK-DAG: %[[FP32_3:.+]] = llvm.extractelement %[[SEL1]][%[[ONE]] : i32] : vector<2xf32>
+    // CHECK-DAG: %[[FP8_2_3:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.bf8.f32"(%[[FP32_2]], %[[FP32_3]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP8_2_4:.+]] = llvm.trunc %[[FP8_2_3]] : i32 to i16
+    // CHECK-DAG: %[[FP8_2_5:.+]] = llvm.bitcast %[[FP8_2_4]] : i16 to vector<2xi8>
+    %1 = pop.cast %f32 : !pop.simd<2, f32> to !pop.simd<2, f8e5m2fnuz>
+
+    kgen.return %0, %1 :
+      !pop.simd<2, f8e4m3fnuz>,
+      !pop.simd<2, f8e5m2fnuz>
+  }
+
+  // CHECK-LABEL: simd4_cast_f32_f8
+  kgen.func @simd4_cast_f32_f8(%f32: !pop.simd<4, f32>) -> (!pop.simd<4, f8e4m3fnuz>, !pop.simd<4, f8e5m2fnuz>) {
+    // CHECK-DAG: %[[MINE5M2FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<-5.734400e+04, -5.734400e+04, -5.734400e+04, -5.734400e+04> : vector<4xf32>) : vector<4xf32>
+    // CHECK-DAG: %[[MAXE5M2FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<5.734400e+04, 5.734400e+04, 5.734400e+04, 5.734400e+04> : vector<4xf32>) : vector<4xf32>
+    // CHECK-DAG: %[[TRUE:.+]] = llvm.mlir.constant(true) : i1
+    // CHECK-DAG: %[[TWO:.+]] = llvm.mlir.constant(2 : i32) : i32
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[OUT:.+]] = llvm.mlir.undef : vector<1xi32>
+    // CHECK-DAG: %[[THREE:.+]] = llvm.mlir.constant(3 : i32) : i32
+    // CHECK-DAG: %[[MINE4M3FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<-2.400000e+02, -2.400000e+02, -2.400000e+02, -2.400000e+02> : vector<4xf32>) : vector<4xf32>
+    // CHECK-DAG: %[[MAXE4M3FNUZ:.+]] = llvm.mlir.constant(#M.dense_array<2.400000e+02, 2.400000e+02, 2.400000e+02, 2.400000e+02> : vector<4xf32>) : vector<4xf32>
+
+    // CHECK-DAG: %[[ARG0_CLAMPED0:.+]] = llvm.intr.maxnum(%arg0, %[[MINE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<4xf32>, vector<4xf32>) -> vector<4xf32>
+    // CHECK-DAG: %[[ARG0_CLAMPED1:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED0]], %[[MAXE4M3FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<4xf32>, vector<4xf32>) -> vector<4xf32>
+    // CHECK-DAG: %[[ISNAN0:.+]] = llvm.fcmp "uno" %arg0, %arg0 : vector<4xf32>
+    // CHECK-DAG: %[[SEL0:.+]] = llvm.select %[[ISNAN0]], %arg0, %[[ARG0_CLAMPED1]] {fastmathFlags = #llvm.fastmath<contract>} : vector<4xi1>, vector<4xf32>
+    // CHECK-DAG: %[[FP32_0:.+]] = llvm.extractelement %[[SEL0]][%[[ZERO]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[FP32_1:.+]] = llvm.extractelement %[[SEL0]][%[[ONE]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[WORD0:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.fp8.f32"(%[[FP32_0]], %[[FP32_1]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP32_2:.+]] = llvm.extractelement %[[SEL0]][%[[TWO]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[FP32_3:.+]] = llvm.extractelement %[[SEL0]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[WORD1:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.fp8.f32"(%[[FP32_2]], %[[FP32_3]], %[[WORD0]], %[[TRUE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP8_4_0:.+]] = llvm.insertelement %[[WORD1]], %[[OUT]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG: %[[FP8_4_1:.+]] = llvm.bitcast %[[FP8_4_0]] : vector<1xi32> to vector<4xi8>
+    %0 = pop.cast %f32 : !pop.simd<4, f32> to !pop.simd<4, f8e4m3fnuz>
+
+    // CHECK-DAG: %[[ARG0_CLAMPED2:.+]] = llvm.intr.maxnum(%arg0, %[[MINE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<4xf32>, vector<4xf32>) -> vector<4xf32>
+    // CHECK-DAG: %[[ARG0_CLAMPED3:.+]] = llvm.intr.minnum(%[[ARG0_CLAMPED2]], %[[MAXE5M2FNUZ]]) {fastmathFlags = #llvm.fastmath<contract>} : (vector<4xf32>, vector<4xf32>) -> vector<4xf32>
+    // CHECK-DAG: %[[ISNAN1:.+]] = llvm.fcmp "uno" %arg0, %arg0 : vector<4xf32>
+    // CHECK-DAG: %[[SEL1:.+]] = llvm.select %[[ISNAN1]], %arg0, %[[ARG0_CLAMPED3]] {fastmathFlags = #llvm.fastmath<contract>} : vector<4xi1>, vector<4xf32>
+    // CHECK-DAG: %[[FP32_4:.+]] = llvm.extractelement %[[SEL1]][%[[ZERO]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[FP32_5:.+]] = llvm.extractelement %[[SEL1]][%[[ONE]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[WORD2:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.bf8.f32"(%[[FP32_4]], %[[FP32_5]], %[[ZERO]], %[[FALSE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP32_6:.+]] = llvm.extractelement %[[SEL1]][%[[TWO]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[FP32_7:.+]] = llvm.extractelement %[[SEL1]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG: %[[WORD3:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.bf8.f32"(%[[FP32_6]], %[[FP32_7]], %[[WORD2]], %[[TRUE]]) : (f32, f32, i32, i1) -> i32
+    // CHECK-DAG: %[[FP8_4_2:.+]] = llvm.insertelement %[[WORD3]], %[[OUT]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG: %[[FP8_4_3:.+]] = llvm.bitcast %[[FP8_4_2]] : vector<1xi32> to vector<4xi8>
+    %1 = pop.cast %f32 : !pop.simd<4, f32> to !pop.simd<4, f8e5m2fnuz>
+
+    kgen.return %0, %1 :
+      !pop.simd<4, f8e4m3fnuz>,
+      !pop.simd<4, f8e5m2fnuz>
   }
 }
 
