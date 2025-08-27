@@ -63,18 +63,28 @@ ParserEvaluationContext::evaluateBindParams(TypedAttr generator,
   if (!genAttr)
     return failure();
 
-  // If the params aren't fully bound, no point in simplifying yet.
-  if (paramValues.size() != genAttr.getInputParamTypes().size())
-    return failure();
+  // If the params are fully bound, just return the specialized generator.
+  if (paramValues.size() == genAttr.getInputParamTypes().size()) {
+    GeneratorAttr specializedGenerator =
+        genAttr.getSpecializedGenerator(paramValues, this);
+    return specializedGenerator.isFullyBound()
+               ? specializedGenerator.getInstantiatedBody()
+               : cast<TypedAttr>(specializedGenerator);
+  }
 
-  if (llvm::any_of(paramValues, [](TypedAttr paramValue) {
-        return isa<UnboundAttr>(paramValue);
-      }))
-    return failure();
+  // Otherwise, fill in with unbound params to perform partial specialization.
+  SmallVector<TypedAttr> partialParamValues;
+  partialParamValues.reserve(genAttr.getInputParamTypes().size());
+  for (auto [idx, type] : llvm::enumerate(genAttr.getInputParamTypes())) {
+    if (idx < paramValues.size())
+      partialParamValues.push_back(paramValues[idx]);
+    else
+      partialParamValues.push_back(UnboundAttr::get(type));
+  }
 
   GeneratorAttr specializedGenerator =
-      genAttr.getSpecializedGenerator(paramValues, this);
-  return specializedGenerator.getInstantiatedBody();
+      genAttr.getSpecializedGenerator(partialParamValues, this);
+  return cast<TypedAttr>(specializedGenerator);
 }
 
 //===----------------------------------------------------------------------===//

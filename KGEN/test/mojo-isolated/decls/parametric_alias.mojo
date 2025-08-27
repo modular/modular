@@ -64,6 +64,10 @@ struct MyStruct[a: Int, b: Int](MyTrait):
 # usages
 ##===----------------------------------------------------------------------===##
 
+# CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": type, "T": !kgen.param<*(0,0)>>!kgen.param<*(0,0)>> = <#kgen.gen<*(0,1)>>
+alias __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
+# CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": type>!lit.generator<<"T": !kgen.param<*(1,0)>>!kgen.param<*(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
+alias Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
 
 # CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{value = mul(#lit.struct.extract<:!Int *(0,0), "value">, 2)}>>
 alias myDouble[x: Int] = myDependentDefaultAdd[x]
@@ -81,9 +85,9 @@ fn implicit_conversions():
     expect_two_ints[myIntAdd]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(
     expect_two_ints[myDefaultAdd]()
-    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> bind_params(
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<
     expect_two_ints[myIntFMA[z=2]]()
-    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(:!lit.generator<<"y": !Int, "z": !Int>!Int> bind_params(
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(:!lit.generator<<"y": !Int, "z": !Int>!Int> #kgen.gen<
     expect_two_ints[myIntFMA[x=2]]()
 
 
@@ -121,9 +125,9 @@ fn test_type_inference():
 
 # CHECK-LABEL: fn @"partial_binding()"
 fn partial_binding():
-    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <bind_params(:!lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> #kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">), #lit.struct.extract<:!Int *(0,2), "value">)}>, ?, ?, {3})>
+    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">), 3)}>>
     alias myIntMulPlus3 = myIntFMA[z=3]
-    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <bind_params(:!lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> #kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">), #lit.struct.extract<:!Int *(0,2), "value">)}>, ?, {2}, {3})>
+    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, 2), 3)}>>
     alias myIntMul2Plus3 = myIntMulPlus3[y=2]
     # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
     alias myEleven = myIntMul2Plus3[x=4]
@@ -131,13 +135,13 @@ fn partial_binding():
 
 # CHECK-LABEL: fn @"nested_generators()"
 fn nested_generators():
-    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<bind_params(:!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>, *(0,0), ?)>
+    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(1,0), "value">)}>>>
     alias myCurriedIntAdd[x: Int] = myIntAdd[x]
 
-    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<bind_params(:!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>, *(0,0), ?)>
+    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(1,0), "value">)}>>>
     alias myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]
 
-    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <bind_params(:!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>, {2}, ?)>
+    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, 2)}>>
     alias myAdd2 = myRenamedCurriedIntAdd[2]
 
     # CHECK-NEXT: lit.alias.decl *"myFive{{.*}}": !Int = <{5}>
