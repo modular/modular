@@ -17,6 +17,7 @@ namespace M::KGEN {
 
 // Metal specific address spaces
 enum MetalAddressSpace : unsigned {
+  None = 0,
   Device = 1,
   Constant = 2,
   ThreadGroup = 3,
