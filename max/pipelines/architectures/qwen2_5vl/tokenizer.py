@@ -33,7 +33,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from PIL import Image
-from transformers import AutoImageProcessor, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -59,12 +59,195 @@ def _rgba_to_rgb(
     return converted
 
 
+def qwen2_5vl_image_preprocessing(
+    image: Image.Image,
+    *,
+    patch_size: int = 14,
+    temporal_patch_size: int = 2,
+    merge_size: int = 2,
+) -> tuple[npt.NDArray[np.float32], tuple[int, int, int]]:
+    """Preprocess image for Qwen2.5VL vision model.
+
+    This function assumes the image has already been processed by fetch_image
+    and is correctly sized. It only handles normalization and patch extraction.
+
+    Args:
+        image: PIL Image to preprocess (already resized by fetch_image)
+        patch_size: Patch size for vision transformer (default 14)
+        temporal_patch_size: Temporal patch size (default 2)
+        merge_size: Spatial merge size (default 2)
+
+    Returns:
+        Tuple of (pixel_values, image_grid_thw) where:
+        - pixel_values: Flattened patch values as numpy array
+        - image_grid_thw: Grid dimensions (temporal, height, width)
+    """
+    # Convert to RGB if needed
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+
+    # Image is already correctly sized by fetch_image, no need to resize
+    # Get actual dimensions
+    width, height = image.size
+
+    # Convert to numpy array and rescale to [0, 1]
+    img_array = np.array(image, dtype=np.float32) / 255.0
+
+    # Apply Standard ImageNet normalization (best match from testing)
+    mean = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
+    std = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
+    img_array = (img_array - mean) / std
+
+    # Calculate grid dimensions based on actual image dimensions
+    height_patches = height // patch_size
+    width_patches = width // patch_size
+
+    # Convert to numpy array
+    patches = np.array([img_array])  # Shape: (n_images, height, width, 3)
+
+    # Transpose to channel-first format
+    patches = patches.transpose(
+        0, 3, 1, 2
+    )  # Shape: (n_images, 3, height, width)
+
+    # Calculate dimensions
+    channel = patches.shape[1]
+    grid_h, grid_w = height_patches, width_patches
+
+    # Handle temporal dimension
+    if patches.shape[0] % temporal_patch_size != 0:
+        repeats = np.repeat(
+            patches[-1][np.newaxis],
+            temporal_patch_size - (patches.shape[0] % temporal_patch_size),
+            axis=0,
+        )
+        patches = np.concatenate([patches, repeats], axis=0)
+
+    # For images, grid_t should be 1 (single temporal group)
+    grid_t = 1
+
+    # Check if spatial merging is possible
+    if grid_h % merge_size != 0 or grid_w % merge_size != 0:
+        raise ValueError(
+            "Spatial merging is not possible because grid_h % merge_size != 0 or grid_w % merge_size != 0"
+        )
+    else:
+        # Now reshape with spatial merging
+        patches = patches.reshape(
+            grid_t,  # Temporal groups (1 for images)
+            temporal_patch_size,  # Patches per temporal group (2)
+            channel,  # RGB channels (3)
+            grid_h // merge_size,  # Spatial groups in height (49)
+            merge_size,  # Patches per spatial group (2)
+            patch_size,  # Patch height (14)
+            grid_w // merge_size,  # Spatial groups in width (73)
+            merge_size,  # Patches per spatial group (2)
+            patch_size,  # Patch width (14)
+        )
+
+        # Transpose following transformers library logic
+        # This reorders dimensions to get the correct patch ordering
+        patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
+
+        # Flatten patches
+        # This preserves the patch ordering from the transpose
+        flatten_patches = patches.reshape(
+            grid_t * grid_h * grid_w,
+            channel * temporal_patch_size * patch_size * patch_size,
+        )
+
+    # Create grid dimensions (temporal, height, width)
+    image_grid_thw = (grid_t, grid_h, grid_w)
+
+    return flatten_patches, image_grid_thw
+
+
+class Qwen2_5VLImageProcessor:
+    """Custom image processor for Qwen2.5VL that handles image processing without PyTorch dependencies.
+
+    This processor mimics the interface of AutoImageProcessor but uses pure NumPy/PIL
+    for image preprocessing.
+    """
+
+    def __init__(
+        self,
+        patch_size: int = 14,
+        temporal_patch_size: int = 2,
+        merge_size: int = 2,
+    ):
+        """Initialize the custom image processor.
+
+        Args:
+            patch_size: Patch size for vision transformer
+            temporal_patch_size: Temporal patch size
+            merge_size: Spatial merge size (used for calculating image tokens)
+        """
+        self.patch_size = patch_size
+        self.temporal_patch_size = temporal_patch_size
+        self.merge_size = merge_size
+
+    def __call__(
+        self,
+        images: list[Image.Image] | Image.Image,
+        return_tensors: str = "np",
+        **kwargs,
+    ) -> dict[str, npt.NDArray]:
+        """Process images for Qwen2.5VL.
+
+        Args:
+            images: Single image or list of images to process
+            return_tensors: Ignored (always returns numpy arrays)
+            **kwargs: Additional arguments (ignored)
+
+        Returns:
+            Dictionary containing processed image data with keys:
+            - pixel_values: Normalized pixel values as numpy array of shape (num_patches, patch_features)
+            - image_grid_thw: Grid dimensions as numpy array of shape (num_images, 3) where each row is (temporal, height, width)
+        """
+        # Handle single image vs list of images
+        if isinstance(images, Image.Image):
+            images = [images]
+
+        # Process each image
+        pixel_values_list: list[npt.NDArray[np.float32]] = []
+        image_grid_thw_list: list[tuple[int, int, int]] = []
+
+        for image in images:
+            pixel_values, image_grid_thw_tuple = qwen2_5vl_image_preprocessing(
+                image,
+                patch_size=self.patch_size,
+                temporal_patch_size=self.temporal_patch_size,
+                merge_size=self.merge_size,
+            )
+            pixel_values_list.append(pixel_values)
+            image_grid_thw_list.append(image_grid_thw_tuple)
+
+        # Stack results
+        pixel_values = np.vstack(pixel_values_list)
+        image_grid_thw_array: npt.NDArray[np.int32] = np.array(
+            image_grid_thw_list, dtype=np.int32
+        )
+
+        return {
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw_array,
+        }
+
+    def preprocess(
+        self,
+        images: list[Image.Image] | Image.Image,
+        return_tensors: str = "np",
+        **kwargs,
+    ) -> dict[str, npt.NDArray]:
+        """Alias for __call__ to match transformers interface."""
+        return self.__call__(images, return_tensors=return_tensors, **kwargs)
+
+
 class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
     """Qwen2.5VL-specific tokenizer that handles vision and text processing.
 
-    This tokenizer uses separate AutoTokenizer and AutoImageProcessor
-    to handle multimodal inputs for the Qwen2.5VL model, avoiding
-    torchvision dependencies that come with AutoProcessor.
+    This tokenizer uses separate AutoTokenizer and custom image processor
+    to handle multimodal inputs for the Qwen2.5VL model.
     """
 
     def __init__(
@@ -78,7 +261,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ):
-        """Initialize the tokenizer with separate image processor instead of AutoProcessor."""
+        """Initialize the tokenizer with custom image processor instead of AutoProcessor."""
         self.model_path = model_path
         self.max_new_tokens = max_new_tokens
 
@@ -98,11 +281,24 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             self.delegate.encode, add_special_tokens=False
         )
 
-        # Skip loading AutoProcessor and create AutoImageProcessor instead
-        self.img_processor = AutoImageProcessor.from_pretrained(
+        # Load config to get image processing parameters
+        config = AutoConfig.from_pretrained(
             model_path,
             revision=revision,
             trust_remote_code=trust_remote_code,
+        )
+
+        # Extract vision config parameters
+        vision_config = config.vision_config
+        patch_size = getattr(vision_config, "patch_size", 14)
+        temporal_patch_size = getattr(vision_config, "temporal_patch_size", 2)
+        spatial_merge_size = getattr(vision_config, "spatial_merge_size", 2)
+
+        # Create custom image processor instead of AutoImageProcessor
+        self.img_processor = Qwen2_5VLImageProcessor(
+            patch_size=patch_size,
+            temporal_patch_size=temporal_patch_size,
+            merge_size=spatial_merge_size,
         )
 
         # Initialize EOS token IDs
@@ -177,7 +373,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             # prompt is already processed tokens, convert back to text for processing
             text = self.delegate.decode(prompt, skip_special_tokens=True)
 
-        # Step 2: Process images with image processor (if any)
+        # Step 2: Process images with custom image processor (if any)
         processed_images = {}
         if image_inputs:
             processed_images = self.img_processor(
@@ -257,11 +453,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             if "pixel_values" in processed_inputs:
                 pixel_values_raw = processed_inputs["pixel_values"]
 
-                # Handle PyTorch tensor from image processor (return_tensors="pt")
-                if hasattr(pixel_values_raw, "numpy"):
-                    pixel_values_np = pixel_values_raw.numpy()
-                    pixel_values = (pixel_values_np,)
-                elif isinstance(pixel_values_raw, np.ndarray):
+                # Handle numpy array from custom image processor
+                if isinstance(pixel_values_raw, np.ndarray):
                     pixel_values = (pixel_values_raw,)
                 else:
                     raise ValueError(
@@ -271,10 +464,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             # Extract image_grid_thw if present (Qwen2.5VL specific)
             if "image_grid_thw" in processed_inputs:
                 image_grid_thw = processed_inputs["image_grid_thw"]
-                # Handle PyTorch tensor from image processor (return_tensors="pt")
-                if hasattr(image_grid_thw, "numpy"):
-                    extra_model_args["image_grid_thw"] = image_grid_thw.numpy()
-                elif isinstance(image_grid_thw, np.ndarray):
+                # Handle numpy array from custom image processor
+                if isinstance(image_grid_thw, np.ndarray):
                     extra_model_args["image_grid_thw"] = image_grid_thw
                 else:
                     extra_model_args["image_grid_thw"] = np.array(
