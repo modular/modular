@@ -1357,23 +1357,42 @@ fn matmul_dispatch_sm90_bf16_fp32[
     b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises -> Int:
+    alias size_factor = 2 if a_type is DType.float32 else 1
+    alias mma_k = 16 // size_factor
+    alias BK = 64 // size_factor
+
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
         # CLUSTER_DIM_X = 2^m for m in range[0-3]
         alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+        alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
 
         # GRID_DIM_X = 2^n for n in range[0-7]
         alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
         alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
+        alias NUM_PIPELINE_STAGES = env_get_int["TUNE_NUM_PIPELINE_STAGES", 4]()
+        alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
+        alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
+
+        alias SCHEDULE_TYPE = MatmulSchedule(
+            env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+        )
+
         alias H100_TUNING_CONFIG = MatmulConfig[
-            a_type, b_type, c_type, transpose_b
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
         ](
-            block_tile_shape=Index(128, 256, 64),
-            mma_shape=Index(64, 256, 16),
-            cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
-            num_pipeline_stages=4,
-            num_consumer=2,
+            block_tile_shape=Index(
+                BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
+            ),
+            mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
+            cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+            num_pipeline_stages=NUM_PIPELINE_STAGES,
+            num_consumer=NUM_CONSUMER,
             partitioned_multicast=False,
             pdl_level=pdl_level,
         )
@@ -1383,7 +1402,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             config=H100_TUNING_CONFIG,
             grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
-            schedule = MatmulSchedule.TILE2D,
+            schedule=SCHEDULE_TYPE,
         ](
             rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
             rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -1398,9 +1417,6 @@ fn matmul_dispatch_sm90_bf16_fp32[
         DType.bfloat16,
         DType.float32,
     )
-    alias size_factor = 2 if a_type is DType.float32 else 1
-    alias mma_k = 16 // size_factor
-    alias BK = 64 // size_factor
 
     var m = c.dim[0]()
 
