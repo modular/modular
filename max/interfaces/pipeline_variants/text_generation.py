@@ -28,7 +28,7 @@ class TextGenerationRequestFunction(TypedDict):
     description: str | None
     """A human-readable description of the function's purpose."""
 
-    parameters: dict
+    parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
 
 
@@ -52,7 +52,7 @@ class TextGenerationResponseFormat(TypedDict):
     type: str
     """The type of response format, e.g., "json_object"."""
 
-    json_schema: dict
+    json_schema: dict[str, Any]
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
 

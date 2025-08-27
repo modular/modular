@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Universal interfaces between all aspects of the MAX Inference Stack."""
 
-from typing import Callable, Union
+from typing import Any, Callable, Union
 
 from .context import (
     BaseContext,
@@ -48,7 +48,8 @@ from .utils import (
 )
 
 PipelinesFactory = Callable[
-    [], Union[EmbeddingsGenerator, AudioGenerator, Pipeline]
+    # TODO(GENAI-245): Use of Any here is not safe.
+    [], Union[EmbeddingsGenerator[Any], AudioGenerator[Any], Pipeline[Any, Any]]
 ]
 
 __all__ = [
