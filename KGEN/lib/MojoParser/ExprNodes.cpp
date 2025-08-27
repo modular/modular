@@ -1776,6 +1776,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Parameters form a meta-value.
   if (auto aliasDeclOpParam =
           dyn_cast_or_null<AliasDeclOp>(memberDecl.getIfOperation())) {
+    // Case: Accessing an alias of a statically-known struct type.
     if (isa_and_nonnull<StructDeclOp>(typeDecl->getIfOperation())) {
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
@@ -1793,20 +1794,28 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           << spelling << "' in non-parameter " << baseRVType << getRange();
       return {};
     }
+
+    // If the base has a parametric type, use the trait type instead.
+    if (auto paramType = dyn_cast<ParamType>(baseRVType))
+      basePValue = PValue(paramType.getParam());
+
     // Make a get_witness call to extract the value out of the trait
     // value's conformance table.
     // See
     // https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
     // for why and where else we do this.
     auto vtableEntryName = StringAttr::get(emitter.getContext(), spelling);
-    auto traitSymRef = memberDecl.getParentDecl()->getSymbolRef();
+    // The trait reference is the "inheritedFrom" symbol (if it was inherited),
+    // or the parent trait of the alias decl if it was self-declared.
+    SymbolRefAttr traitSymRef = aliasDeclOpParam.getInheritedFrom().value_or(
+        memberDecl.getParentDecl()->getSymbolRef());
     auto traitName = StringAttr::get(emitter.getContext(),
                                      getFlattenedSymbolName(traitSymRef));
     // If the base is a trait composition type, upcast the composition into the
     // trait that defined the alias so that types match.
     if (typeDecl != memberDecl.getParentDecl()) {
       basePValue = emitter.emitMetaTypeToTraitConversion(
-          {baseVal, base},
+          {basePValue, base},
           cast<TraitDeclOp>(memberDecl.getParentDecl()->getIfOperation())
               .bindReference());
     }
