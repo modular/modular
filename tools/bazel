@@ -64,6 +64,7 @@ allowed_vars=(
   "USER"
 
   # Buildbuddy reporting
+  "BB_DISABLE_SIDECAR"
   "GITHUB_ACTOR"
   "GITHUB_HEAD_REF"
   "GITHUB_REF"
