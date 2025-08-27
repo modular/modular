@@ -796,25 +796,21 @@ def test_session_device_initialization() -> None:
     """Verify InferenceSession device list initialization behavior."""
     cpu = CPU()
 
-    # Case 1: Default (no devices specified).
-    session1 = InferenceSession()
-    assert set(session1.devices) == {cpu}, "Default devices should be just CPU"
-
-    # Case 2: Only CPU specified.
-    session2 = InferenceSession(devices=[cpu])
-    assert set(session2.devices) == {cpu}, (
+    # Case: Only CPU specified.
+    session1 = InferenceSession(devices=[cpu])
+    assert set(session1.devices) == {cpu}, (
         "Devices with only CPU should result in just CPU"
     )
 
-    # Case 3: Duplicate CPU specified.
-    session3 = InferenceSession(devices=[cpu, cpu])
-    assert set(session3.devices) == {cpu}, (
+    # Case: Duplicate CPU specified.
+    session2 = InferenceSession(devices=[cpu, cpu])
+    assert set(session2.devices) == {cpu}, (
         "Devices with duplicate CPU should result in just CPU"
     )
 
-    # Case 4: Empty list specified.
-    session4 = InferenceSession(devices=[])
-    assert not set(session4.devices), (
+    # Case: Empty list specified.
+    session3 = InferenceSession(devices=[])
+    assert not set(session3.devices), (
         "Devices with empty list should give the empty set"
     )
 
@@ -822,21 +818,21 @@ def test_session_device_initialization() -> None:
         return
 
     gpu = Accelerator()
-    # Case 5: Only GPU specified.
-    session5 = InferenceSession(devices=[gpu])
-    assert set(session5.devices) == {gpu}, (
+    # Case: Only GPU specified.
+    session4 = InferenceSession(devices=[gpu])
+    assert set(session4.devices) == {gpu}, (
         "Devices with only GPU should result in GPU"
     )
 
-    # Case 6: GPU and CPU specified.
-    session6 = InferenceSession(devices=[gpu, cpu])
-    assert set(session6.devices) == {gpu, cpu}, (
+    # Case: GPU and CPU specified.
+    session5 = InferenceSession(devices=[gpu, cpu])
+    assert set(session5.devices) == {gpu, cpu}, (
         "Devices with GPU and CPU should be unique"
     )
 
-    # Case 7: Duplicate GPU specified.
-    session7 = InferenceSession(devices=[gpu, gpu])
-    assert set(session7.devices) == {gpu}, (
+    # Case: Duplicate GPU specified.
+    session6 = InferenceSession(devices=[gpu, gpu])
+    assert set(session6.devices) == {gpu}, (
         "Devices with duplicate GPU should be unique"
     )
 

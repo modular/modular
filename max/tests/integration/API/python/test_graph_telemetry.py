@@ -8,6 +8,7 @@ import os
 import tempfile
 
 import numpy as np
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -20,7 +21,7 @@ def test_graph_telemetry() -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     with Graph("add", input_types=(input_type, input_type)) as graph:
         graph.output(ops.add(graph.inputs[0], graph.inputs[1]))
         compiled = session.load(graph)

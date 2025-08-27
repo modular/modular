@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from max.driver import CPU
 from max.engine import InferenceSession
 
 
@@ -16,7 +17,7 @@ def test_api_source(mo_model_path: Path) -> None:
     with tempfile.NamedTemporaryFile(delete=True) as temp_file:
         filepath = temp_file.name
     os.environ["MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH"] = filepath
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     model = session.load(mo_model_path)
     _ = model.execute(np.ones(5, dtype=np.float32))
     expected_line = "max.engine.api.language: python"

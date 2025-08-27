@@ -589,7 +589,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         max_seq_len=1,
         num_layers=1,
         devices=[CPU()],
-        session=InferenceSession(),
+        session=InferenceSession(devices=[CPU()]),
         page_size=128,
         cache_memory=1024 * 1024 * 1024,
     )

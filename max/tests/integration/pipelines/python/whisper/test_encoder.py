@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 from datasets import load_dataset
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -104,7 +104,7 @@ def test_whisper_encoder(
     )
     graph_api_model.load_state_dict(state_dict)
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     with Graph(
         name="encoder",
         input_types=(

@@ -102,7 +102,7 @@ def test_print_kv_cache(dtype: DType) -> None:
         max_seq_len=1,
         num_layers=1,
         devices=[CPU()],
-        session=InferenceSession(),
+        session=InferenceSession(devices=[CPU()]),
         cache_memory=1024 * 1024 * 1024,
         page_size=128,
     )
@@ -121,4 +121,4 @@ def test_print_kv_cache(dtype: DType) -> None:
     )
 
     # Compile and init the print KV cache model.
-    InferenceSession().load(graph)
+    InferenceSession(devices=[CPU()]).load(graph)

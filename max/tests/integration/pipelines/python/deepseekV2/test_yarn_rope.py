@@ -6,6 +6,7 @@
 
 import torch
 from max._core.engine import PrintStyle
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
@@ -85,7 +86,7 @@ def generate_max_outputs(
         mscale=config.rope_scaling["mscale"],
         mscale_all_dim=config.rope_scaling["mscale_all_dim"],
     )
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
     graph = Graph(
         "YarnRope",

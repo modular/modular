@@ -46,7 +46,7 @@ async def test_kv_collection_constructor(
     if cache_strategy == KVCacheStrategy.PAGED:
         kv_manager_kwargs["page_size"] = 128
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
 
     # let's set an arbitrary 500 Mb allocation
     available_cache_memory = 500 * 2**20

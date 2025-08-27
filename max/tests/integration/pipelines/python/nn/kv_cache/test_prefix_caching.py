@@ -66,7 +66,7 @@ def create_paged_manager(
         page_size=page_size,
     )
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
 
     cache_memory = (
         2

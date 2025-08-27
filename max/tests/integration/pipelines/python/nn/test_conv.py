@@ -6,7 +6,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Weight
@@ -153,7 +153,7 @@ def test_conv3dv1(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CPU()])
     graph = Graph(
         "conv3d",
         Conv3DV1(

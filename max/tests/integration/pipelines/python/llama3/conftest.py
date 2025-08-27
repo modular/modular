@@ -11,6 +11,7 @@ from pathlib import Path
 import hf_repo_lock
 import pytest
 from hypothesis import settings
+from max.driver import CPU
 from max.engine import InferenceSession
 from max.pipelines.lib import generate_local_model_path
 
@@ -52,7 +53,7 @@ def testdata_directory() -> Path:
 
 @pytest.fixture(scope="session")
 def session() -> InferenceSession:
-    return InferenceSession()
+    return InferenceSession(devices=[CPU()])
 
 
 @pytest.fixture(scope="session")

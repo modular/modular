@@ -109,14 +109,9 @@ def create_lora_buffers(
 
 def setup_session_and_device(is_gpu: bool):
     """Setup inference session and device."""
-    session = (
-        InferenceSession(devices=[Accelerator(0)])
-        if is_gpu
-        else InferenceSession()
-    )
-    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     device = Accelerator(0) if is_gpu else CPU()
-    return session, device_ref, device
+    session = InferenceSession(devices=[device])
+    return session, DeviceRef.from_device(device), device
 
 
 @dataclasses.dataclass
