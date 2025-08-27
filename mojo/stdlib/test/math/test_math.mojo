@@ -31,6 +31,7 @@ from math import (
     lcm,
     log,
     log2,
+    log1p,
     sin,
     sqrt,
     trunc,
@@ -416,6 +417,42 @@ def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
     )
 
 
+def _test_log1p_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log1p(Scalar[dtype](123.45))
+    assert_almost_equal(
+        res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
+    )
+
+    var res1 = log1p(Scalar[dtype](0.1))
+    assert_almost_equal(
+        res1.cast[DType.float32](), 0.0953102, atol=atol, rtol=rtol
+    )
+
+    var res2 = log1p(SIMD[dtype, 4](1, 2, 4, 5))
+    assert_almost_equal(
+        res2.cast[DType.float32](),
+        SIMD[DType.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
+        atol=atol,
+        rtol=rtol,
+    )
+
+    var res3 = log1p(SIMD[dtype, 4](0.00001, 0.000002, 0.000004, 0.00005))
+    assert_almost_equal(
+        res3.cast[DType.float32](),
+        SIMD[DType.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
+        atol=atol,
+        rtol=rtol,
+    )
+
+    var res4 = log1p(SIMD[dtype, 4](0.707107, 0.807107, 0.9, 1))
+    assert_almost_equal(
+        res4.cast[DType.float32](),
+        SIMD[DType.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
+        atol=atol,
+        rtol=rtol,
+    )
+
+
 def test_frexp():
     _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
@@ -444,6 +481,17 @@ def test_log2():
     @parameter
     if not CompilationTarget.has_neon():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+
+
+def test_log1p():
+    _test_log1p_impl[DType.float64](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
+
+    # TODO(KERN-228): support BF16 on neon systems.
+    @parameter
+    if not CompilationTarget.has_neon():
+        _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_gcd():
@@ -633,6 +681,7 @@ def main():
     test_frexp()
     test_log()
     test_log2()
+    test_log1p()
     test_gcd()
     test_lcm()
     test_ulp()

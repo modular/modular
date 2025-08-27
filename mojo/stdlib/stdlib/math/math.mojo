@@ -1852,8 +1852,54 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
+fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> __type_of(x):
+    # This uses the approximation from cephes to compute log1p via the approximation
+    # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
+    # in the domain 1/sqrt(2) <= x < sqrt(2)
+
+    alias P = [
+        2.0039553499201281259648e1,
+        5.7112963590585538103336e1,
+        6.0949667980987787057556e1,
+        2.9911919328553073277375e1,
+        6.5787325942061044846969e0,
+        4.9854102823193375972212e-1,
+        4.5270000862445199635215e-5,
+    ]
+    alias Q = [
+        6.0118660497603843919306e1,
+        2.1642788614495947685003e2,
+        3.0909872225312059774938e2,
+        2.2176239823732856465394e2,
+        8.3047565967967209469434e1,
+        1.5062909083469192043167e1,
+    ]
+
+    # Sqrt(1/2)
+    alias sqrt2_div_2 = 0.70710678118654752440
+    # Sqrt(2)
+    alias sqrt2 = 1.41421356237309504880
+
+    var z = 1 + x
+    var log1x = log(z)
+
+    var in_domain_mask = z.lt(sqrt2_div_2) | z.gt(sqrt2)
+    if all(in_domain_mask):
+        return log1x
+
+    z = x * x
+    z = -0.5 * z + x * (
+        z * polynomial_evaluate[P](x) / polynomial_evaluate[Q](x)
+    )
+
+    return in_domain_mask.select(log1x, x + z)
+
+
 fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `log1p` of the inputs.
+
+    The `log1p(x)` is equivalent to `log(1+x)`.
 
     Constraints:
         The input must be a floating-point type.
@@ -1868,7 +1914,12 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `log1p` of the input.
     """
-    return _call_libm["log1p"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    return _log1p_f64(x.cast[DType.float64]()).cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #

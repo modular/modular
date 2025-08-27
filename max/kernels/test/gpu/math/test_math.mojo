@@ -113,7 +113,7 @@ def main():
             log,
             log2,
             # log10,
-            # log1p,
+            log1p,
             # logb,
             # cbrt,
             # hypot_fn,
