@@ -45,11 +45,7 @@ from max.support.math import ceildiv
 
 from ..cache_params import KVCacheParams
 from ..context import KVCacheAwareContext
-from ..manager import (
-    KVCacheInputSymbols,
-    KVCacheManager,
-    RaggedKVCacheInputs,
-)
+from ..manager import KVCacheInputSymbols, KVCacheManager, RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
 from .block_manager import BlockManager, SwappingStrategy

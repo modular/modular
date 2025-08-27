@@ -380,6 +380,7 @@ class TextBatchConstructor:
             < self.scheduler_config.target_tokens_per_batch_ce
         ):
             req_id, ctx = self.ce_reqs.popitem(last=False)
+
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:

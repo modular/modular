@@ -503,6 +503,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
 
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"request_id={self.request_id}, "
+            f"start_idx={self._start_idx}, "
+            f"active_idx={self._active_idx}, "
+            f"end_idx={self._end_idx}"
+            ")"
+        )
+
 
 class TextAndVisionContext(
     TextContext, tag=True, kw_only=True, omit_defaults=True

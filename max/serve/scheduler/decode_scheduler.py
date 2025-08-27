@@ -145,6 +145,12 @@ class DecodeScheduler(Scheduler):
         """Handles a prefill response from the dispatcher."""
         # Send singular token to the API process
         context = message.context
+        assert not context.needs_ce, (
+            f"Invalid Context: Expected needs_ce to be False. Found: {context}"
+        )
+        assert context.start_idx > 0, (
+            f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
+        )
         output = context.to_generation_output()
         self.response_push_socket.put_nowait(
             {message.id: SchedulerResult.create(output)}
@@ -178,6 +184,12 @@ class DecodeScheduler(Scheduler):
             )
             self.remote_endpoints.add(data.target_endpoint)
 
+        assert data.needs_ce, (
+            f"Invalid Context: Expected needs_ce to be True. Found: {data}"
+        )
+        assert data.start_idx == 0, (
+            f"Invalid Context: Expected start_idx to be 0. Found: {data}"
+        )
         self.dispatcher_client.send(
             MessageType.PREFILL_REQUEST,
             PrefillRequest(

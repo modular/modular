@@ -130,7 +130,14 @@ class PrefillScheduler(Scheduler):
     ) -> None:
         """Handles a prefill request from the dispatcher."""
         logger.debug("received request from decode node.")
-        self.batch_constructor.ce_reqs[message.id] = message.context
+        context = message.context
+        assert context.needs_ce, (
+            f"Expected needs_ce to be True. Invalid context: {context}"
+        )
+        assert context.start_idx == 0, (
+            f"Expected start_idx to be 0. Invalid context: {context}"
+        )
+        self.batch_constructor.ce_reqs[message.id] = context
         self.request_id_to_reply_context[message.id] = (
             reply_context,
             message.transfer_engine_name,
@@ -211,6 +218,12 @@ class PrefillScheduler(Scheduler):
             # Increment the number of terminated requests.
             sch_output.num_terminated += 1
 
+            assert not context.needs_ce, (
+                f"Invalid Context: Expected needs_ce to be False. Found: {context}"
+            )
+            assert context.start_idx > 0, (
+                f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
+            )
             self.dispatcher_client.send_reply(
                 MessageType.PREFILL_RESPONSE,
                 PrefillResponse(
