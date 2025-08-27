@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+from max.driver import CPU
 from max.engine import InferenceSession
 
 
 @pytest.fixture(scope="session")
 def session() -> InferenceSession:
-    return InferenceSession()
+    return InferenceSession(devices=[CPU()])

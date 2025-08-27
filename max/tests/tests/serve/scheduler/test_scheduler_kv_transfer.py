@@ -99,7 +99,7 @@ def decode_paged_manager():
         max_seq_len=512,
         num_layers=1,
         devices=[CPU()],
-        session=InferenceSession(),
+        session=InferenceSession(devices=[CPU()]),
         available_cache_memory=500 * 2**24,
         page_size=128,
     )
@@ -232,7 +232,7 @@ def prefill_paged_manager():
         max_seq_len=512,
         num_layers=1,
         devices=[CPU()],
-        session=InferenceSession(),
+        session=InferenceSession(devices=[CPU()]),
         available_cache_memory=500 * 2**24,
         page_size=128,
     )
