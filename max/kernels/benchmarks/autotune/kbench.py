@@ -1061,7 +1061,7 @@ class Scheduler:
 
                     valid_specs.append(df)
                     valid = True
-            elif b.exec_output.return_code == os.EX_OK:
+            if not valid and b.exec_output.return_code == os.EX_OK:
                 df = pd.DataFrame().from_dict(
                     {
                         "mesh_idx": [b.idx],
