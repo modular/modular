@@ -65,7 +65,7 @@ def _default_device() -> Device:
 
 
 def defaults(
-    dtype: DType | None, device: Device | None
+    dtype: DType | None = None, device: Device | None = None
 ) -> tuple[DType, Device]:
     device = device or _default_device()
     return (dtype or _default_dtype(device)), device
@@ -347,6 +347,11 @@ class Tensor:
         assert self._storage is not None
         return self._storage.__dlpack_device__()
 
+    def __rich_repr__(self):
+        yield "shape", self.shape
+        yield "dtype", self.dtype
+        yield "device", self.device
+
     def __repr__(self):
         # Janky repr for bootstrapping, we can do much better.
         return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
@@ -362,6 +367,9 @@ class Tensor:
         for dim in self.shape:
             elts *= int(dim)
         return elts
+
+    def to(self, device: Device) -> Tensor:
+        return F.transfer_to(self, device)
 
     def argmax(self) -> Tensor:
         return F.argmax(self)
