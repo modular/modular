@@ -185,6 +185,17 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
+- Added `os.atomic.fence` for creating atomic memory fences. ([#5216](https://github.com/modular/modular/pull/5216) by [@nate](https://github.com/NathanSWard))
+
+  ```mojo
+    from os.atomic import Atomic, Consistency, fence
+
+    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
+      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
+        fence[Consistency.ACQUIRE]()
+        # ...
+  ```
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
