@@ -8,6 +8,10 @@ The following source files are standalone Mojo applications with code included
 in the Mojo Manual:
 
 - `handle_error.mojo`: An example of Mojo's `try-except` structure
+- `stacktrace_error.mojo`: A file used in the documentation to show how to
+  enable stack trace generation
+- `stacktrace_error_capture.mojo`: An example of capturing a stack trace when
+  handling an error
 - `context_mgr.mojo`: An unconditional Mojo context manager
 - `conditional_context_mgr.mojo`: A conditional Mojo context manager with
   special handling for errors

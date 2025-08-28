@@ -1,6 +1,32 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary", "mojo_test")
 
 mojo_binary(
+    name = "stacktrace_error",
+    srcs = [
+        "stacktrace_error.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_binary(
+    name = "stacktrace_error_capture",
+    srcs = [
+        "stacktrace_error_capture.mojo",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)
+
+modular_run_binary_test(
+    name = "stacktrace_error_capture_test",
+    size = "small",
+    binary = "stacktrace_error_capture",
+)
+
+mojo_binary(
     name = "handle_error",
     srcs = [
         "handle_error.mojo",

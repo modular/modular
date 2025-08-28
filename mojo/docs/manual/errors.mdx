@@ -37,15 +37,173 @@ conditions is the error message that you provide.
 
 :::
 
-An error interrupts the execution flow of your program. If you provide
-an error handler (as described in [Handle an error](#handle-an-error)) in the
-current function, execution resumes with that handler. If the error isn't
-handled in the current function, it propagates to the calling function and so
-on. If an error isn't caught by any error handler, your program terminates with
-a non-zero exit code and prints the error message. For example:
+An error interrupts the execution flow of your program. If you provide an error
+handler (as described in [Handle an error](#handle-an-error)) in the current
+function, execution resumes with that handler. If the error isn't handled in the
+current function, it propagates to the calling function and so on. If an error
+isn't caught by any error handler, your program terminates with a non-zero exit
+code and prints a stack trace, if enabled, followed by the error message. For
+example:
 
 ```output
+stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
 Unhandled exception caught during execution: integer overflow
+```
+
+## Enable stack trace generation for errors
+
+By default, Mojo generates a stack trace when your program hits a segmentation
+fault. If you don't want this behavior, you can disable it by setting the
+`MOJO_ENABLE_STACK_TRACE_ON_CRASH` environment variable to `0` or `false`
+(case-insensitive).
+
+However, Mojo *doesn't* generate a stack trace when your program raises an
+error—we skip this to avoid the additional run-time overhead. If you want stack
+traces for raised errors, you can enable them by setting the
+`MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable to any value other than
+`0` or `false` (case-insensitive).
+
+Keep in mind that when you compile your program with [`mojo
+build`](/mojo/cli/build/), the compiler optimizes and strips symbols by default,
+so often your stack trace won't be very useful.
+
+Let's look at this program:
+
+```mojo title="stacktrace_error.mojo"
+def func2() -> None:
+    raise Error("Intentional error")
+
+
+def func1() -> None:
+    func2()
+
+
+def main():
+    func1()
+```
+
+If you compile the program with the default settings and run it with the
+environment variable set, you'll see a stack trace without symbols:
+
+```sh
+mojo build stacktrace_error.mojo
+```
+```sh
+MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 stacktrace_error
+```
+
+```output
+#0 0x0000000104ef8ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
+#1 0x0000000104e379e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
+#2 0x000000010478868c main (/Users/ken/tmp/stack/stacktrace_error+0x10000068c)
+
+Unhandled exception caught during execution: Intentional error
+```
+
+To generate a more useful stack trace, you need to compile the program with
+`--debug-level full` (or `-g`) to include debug symbols:
+
+```sh
+mojo build --debug-level full stacktrace_error.mojo
+```
+```sh
+MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
+```
+
+```output
+#0 0x0000000102bf4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
+#1 0x0000000102b339e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
+#2 0x000000010266468c stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#3 0x000000010266468c stacktrace_error::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error.mojo:14:16
+#4 0x000000010266468c stacktrace_error::func1() /Users/ken/tmp/stack/stacktrace_error.mojo:18:10
+#5 0x000000010266468c stacktrace_error::main() /Users/ken/tmp/stack/stacktrace_error.mojo:22:10
+#6 0x000000010266468c stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
+#7 0x000000010266468c main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+
+Unhandled exception caught during execution: Intentional error
+```
+
+:::note
+
+At this time, running your program directly with [`mojo run`](/mojo/cli/run) or
+`mojo` doesn't include debug symbols in the stack trace even with `--debug-level
+full`. For example:
+
+```sh
+MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 mojo --debug-level full stacktrace_error.mojo
+```
+
+```output
+#0 0x000000013a9c4ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
+#1 0x000000013a9039e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
+#2 0x000000032002807c
+#3 0x000000010488a0f4 M::KGEN::ExecutionEngine::runProgram(llvm::StringRef, llvm::StringRef, llvm::function_ref<M::ErrorOrSuccess (void*)>) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x10039e0f4)
+#4 0x0000000104512000 executeMain(M::KGEN::ExecutionEngine&, M::AsyncRT::Runtime&, llvm::ArrayRef<char const*>) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x100026000)
+#5 0x00000001045118e8 run(M::State const&) (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x1000258e8)
+#6 0x000000010451a240 main (/Users/ken/tmp/stack/.pixi/envs/default/bin/mojo+0x10002e240)
+#7 0x0000000186d7ab98
+
+Unhandled exception caught during execution: Intentional error
+mojo: error: execution exited with a non-zero result: 1
+```
+
+:::
+
+As described in [Handle an error](#handle-an-error), you can bind the `Error`
+instance to a variable in the `except` clause. If you do, you can invoke its
+[`get_stack_trace()`](/mojo/stdlib/builtin/error/Error#get_stack_trace) method
+to get a [`StackTrace`](/mojo/stdlib/builtin/error/StackTrace) instance.
+`StackTrace` implements the [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
+trait, so you can construct a `String` with `String(stack_trace)` if you want to
+extract the stack trace as a `String` for further processing. For example:
+
+```mojo
+def func2() -> None:
+    raise Error("Intentional error")
+
+
+def func1() -> None:
+    func2()
+
+
+def main():
+    try:
+        func1()
+    except e:
+        print(e)
+        print("-" * 20)
+        print(String(e.get_stack_trace()))
+```
+
+When you compile this program with symbols and run it with stack trace
+generation enabled, you'll see the following output:
+
+```sh
+mojo build --debug-level full stacktrace_error_capture.mojo
+```
+```sh
+MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
+```
+
+```output
+Intentional error
+--------------------
+#0 0x0000000102d24ecc llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xccecc)
+#1 0x0000000102c639e4 KGEN_CompilerRT_GetStackTrace (/Users/ken/tmp/stack/.pixi/envs/default/lib/libKGENCompilerRTShared.dylib+0xb9e4)
+#2 0x00000001026d4694 stdlib::builtin::error::Error::__init__[__mlir_type.!kgen.string](::StringLiteral[$0])_REMOVED_ARG open-source/max/mojo/stdlib/stdlib/builtin/error.mojo:159:38
+#3 0x00000001026d4694 stacktrace_error_capture::func2()_REMOVED_ARG /Users/ken/tmp/stack/stacktrace_error_capture.mojo:14:16
+#4 0x00000001026d4694 stacktrace_error_capture::func1() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:18:10
+#5 0x00000001026d4694 stacktrace_error_capture::main() /Users/ken/tmp/stack/stacktrace_error_capture.mojo:23:14
+#6 0x00000001026d4694 stdlib::builtin::_startup::__wrap_and_execute_raising_main[fn() raises -> None](::SIMD[::DType(int32), ::Int(1)],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>),main_func="stacktrace_error_capture::main()" open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:88:18
+#7 0x00000001026d4694 main open-source/max/mojo/stdlib/stdlib/builtin/_startup.mojo:103:4
+```
+
+Without enabling stack trace generation, the output is:
+
+```output
+Intentional error
+--------------------
+stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
 ```
 
 ## Declare a raising function
