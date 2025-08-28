@@ -7,6 +7,8 @@ in the environment, in order to test things outside of bazel
 load("@rules_python//python:py_info.bzl", "PyInfo")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel/internal:config.bzl", "env_for_available_tools")  # buildifier: disable=bzl-visibility
+load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")  # buildifier: disable=bzl-visibility
+load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
 
 def _py_repl_impl(ctx):
     toolchain = ctx.toolchains["@bazel_tools//tools/python:toolchain_type"]
@@ -103,20 +105,67 @@ Create a bazel runnable target that launches a python repl with the given deps
 
 def py_repl(
         name,
+        data = [],
         deps = [],
-        tags = [],
+        env = {},
         toolchains = [],
+        direct = True,
         **kwargs):
+    """Create a target that drops you into a python repl with the given deps.
+
+    Args:
+        name: The name of the target
+        data: Runtime deps of the target
+        deps: Python deps of the target
+        env: Any environment variables that should be set in the repl
+        toolchains: See upstream py_binary docs
+        direct: True if this is called from a BUILD file
+        **kwargs: Extra arguments passed through to py_binary
+    """
     extra_toolchains = []
+    extra_data = []
+    extra_env = {}
+
     if "//bazel/internal:lib_toolchain" not in toolchains and "@//bazel/internal:lib_toolchain" not in toolchains:
         extra_toolchains.append("@//bazel/internal:lib_toolchain")
 
+    if direct:
+        transitive_mojo_deps = name + ".mojo_deps"
+        collect_transitive_mojoinfo(
+            name = transitive_mojo_deps,
+            deps_to_scan = deps,
+            testonly = True,
+            tags = [ALLOW_UNUSED_TAG],
+        )
+
+        env_name = name + ".mojo_test_env"
+        extra_toolchains.append(env_name)
+        extra_data.append(env_name)
+        extra_env |= {
+            "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
+            "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
+            "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
+            "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
+            "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
+            "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+        }
+        mojo_test_environment(
+            name = env_name,
+            data = [transitive_mojo_deps],
+            short_path = True,
+            testonly = True,
+            tags = [ALLOW_UNUSED_TAG],
+        )
+
     _py_repl(
         name = name,
+        data = extra_data + data,
         deps = deps + [
             "@//bazel/internal:bazel_sitecustomize",
         ],
         toolchains = toolchains + extra_toolchains,
-        tags = tags + [ALLOW_UNUSED_TAG],
+        env = extra_env | env,
+        testonly = True,
+        tags = ["manual", ALLOW_UNUSED_TAG],
         **kwargs
     )

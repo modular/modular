@@ -99,11 +99,10 @@ def modular_py_binary(
         name = name + ".debug",
         data = extra_data + data,
         deps = deps + extra_deps,
+        direct = False,
         env = env_for_available_tools(location_specifier = "execpath") | extra_env | env,
         args = [native.package_name() + "/" + (main or srcs[0])],
         srcs = srcs,
         toolchains = extra_toolchains + toolchains,
-        tags = tags + ["manual"],
-        testonly = True,
         **kwargs
     )
