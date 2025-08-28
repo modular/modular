@@ -185,7 +185,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
-- Added `os.atomic.fence` for creating atomic memory fences. ([#5216](https://github.com/modular/modular/pull/5216) by [@nate](https://github.com/NathanSWard))
+- Added `os.atomic.fence` for creating atomic memory fences.
+  ([#5216](https://github.com/modular/modular/pull/5216) by
+  [@nate](https://github.com/NathanSWard))
 
   ```mojo
     from os.atomic import Atomic, Consistency, fence
