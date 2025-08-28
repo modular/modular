@@ -18,28 +18,9 @@ multiplications, significantly optimizing division performance.
 """
 
 from sys import bitwidthof
-
+from bit import log2_ceil
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
-
-
-@always_inline
-fn _ceillog2_and_is_pow2(x: Scalar) -> (Int32, Bool):
-    """Computes ceil(log_2(x)) and whether x is a power of 2.
-
-    Args:
-        x: The value to compute the ceil(log_2(x)) and whether x is a power of 2 for.
-
-    Returns:
-        A tuple containing the ceil(log_2(x)) and whether x is a power of 2.
-    """
-
-    @parameter
-    for i in range(bitwidthof[x.dtype]()):
-        alias power_of_2 = __type_of(x)(1) << i
-        if power_of_2 >= x:
-            return (i, power_of_2 == x)
-    return (bitwidthof[x.dtype](), False)
 
 
 @register_passable("trivial")
@@ -78,20 +59,20 @@ struct FastDiv[dtype: DType]:
         ]()
         self._div = divisor
 
-        cl, self._is_pow2 = _ceillog2_and_is_pow2(UInt32(divisor))
-        self._log2_shift = cl
+        self._is_pow2 = divisor.is_power_of_two()
+        self._log2_shift = log2_ceil(Int32(divisor))
 
         # Only compute magic number parameters if not power of 2
         if not self._is_pow2:
             self._mprime = (
                 (
                     (UInt64(1) << bitwidthof[dtype]())
-                    * ((1 << cl.cast[DType.uint64]()) - divisor)
+                    * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
                     / divisor
                 )
             ).cast[Self.uint_type]() + 1
-            self._sh1 = min(cl, 1)
-            self._sh2 = max(cl - 1, 0)
+            self._sh1 = min(self._log2_shift, 1)
+            self._sh2 = max(self._log2_shift - 1, 0)
         else:
             self._mprime = 0
             self._sh1 = 0
