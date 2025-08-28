@@ -1826,7 +1826,7 @@ fn multimem_ld_reduce[
     output_width: Int = 1,
 ](
     addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
-) -> StaticTuple[SIMD[accum_type, output_width], count]:
+) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
     This function loads multiple values from global memory and performs a reduction
@@ -1880,59 +1880,59 @@ fn multimem_ld_reduce[
     if count == 1:
         var r = inlined_assembly[
             asm + " {$0}, [$1];",
-            SIMD[accum_type, output_width],
+            SIMD[dtype, output_width],
             constraints="=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
-        return StaticTuple[SIMD[accum_type, output_width], count](r)
+        return StaticTuple[SIMD[dtype, output_width], count](r)
     elif count == 2:
         var r = inlined_assembly[
             asm + " {$0,$1}, [$2];",
             _RegisterPackType[
-                SIMD[accum_type, output_width], SIMD[accum_type, output_width]
+                SIMD[dtype, output_width], SIMD[dtype, output_width]
             ],
             constraints="=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
-        return StaticTuple[SIMD[accum_type, output_width], count](r[0], r[1])
+        return StaticTuple[SIMD[dtype, output_width], count](r[0], r[1])
     elif count == 4:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3}, [$4];",
             _RegisterPackType[
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
             ],
             constraints="=r,=r,=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
 
-        return StaticTuple[SIMD[accum_type, output_width], count](
+        return StaticTuple[SIMD[dtype, output_width], count](
             r[0], r[1], r[2], r[3]
         )
     elif count == 8:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3,$4,$5,$6,$7}, [$8];",
             _RegisterPackType[
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
             ],
             constraints="=r,=r,=r,=r,=r,=r,=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
 
-        return StaticTuple[SIMD[accum_type, output_width], count](
+        return StaticTuple[SIMD[dtype, output_width], count](
             r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
         )
 
-    return StaticTuple[SIMD[accum_type, output_width], count]()
+    return StaticTuple[SIMD[dtype, output_width], count]()
 
 
 @always_inline("nodebug")
@@ -1946,7 +1946,7 @@ fn multimem_ld_reduce[
     accum_type: DType = get_accum_type[dtype](),
 ](
     addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
-) -> SIMD[accum_type, simd_width]:
+) -> SIMD[dtype, simd_width]:
     """Simplified multimem_ld_reduce that automatically calculates optimal packing.
 
     This wrapper automatically determines the optimal output_width and count
@@ -1999,7 +1999,7 @@ fn multimem_ld_reduce[
     ](addr)
 
     # Pack results into a single SIMD vector
-    var result = SIMD[accum_type, simd_width]()
+    var result = SIMD[dtype, simd_width]()
 
     @parameter
     for i in range(count):

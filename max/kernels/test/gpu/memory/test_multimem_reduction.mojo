@@ -46,7 +46,7 @@ fn multimem_reduction_kernel[
         reduction = ReduceOp.ADD,
         scope = Scope.GPU,
         consistency = Consistency.RELAXED,
-        accum_type=dtype,
+        accum_type = DType.float32,
     ](element_addr)
 
     # Store the reduced results for simd_width elements
@@ -94,7 +94,15 @@ fn test_multicast_reduction[
         with dev_buf.map_to_host() as host_buf:
             for j in range(test_size):
                 # Each GPU writes different values to index j
-                host_buf[j] = Scalar[dtype](gpu_id * 100 + j)
+                # Use small values within bfloat16's precision range (max ~127)
+                if gpu_id == 0:
+                    host_buf[j] = Scalar[dtype](j % 64)  # 0 to 63
+                elif gpu_id == 1:
+                    host_buf[j] = Scalar[dtype](63 - (j % 64))  # 63 to 0
+                elif gpu_id == 2:
+                    host_buf[j] = Scalar[dtype](j % 64)  # 0 to 63
+                else:  # gpu_id == 3
+                    host_buf[j] = Scalar[dtype](63 - (j % 64))  # 63 to 0
 
     # Initialize result buffer to zeros
     with result_buffer.map_to_host() as host_buf:
@@ -133,12 +141,15 @@ fn test_multicast_reduction[
             var actual = host_buf[i]
 
             # Calculate expected result for ADD operation at index i
-            # Sum: (0*100 + i) + (1*100 + i) + ... + ((ngpus-1)*100 + i)
-            # = i*ngpus + 100*(0 + 1 + ... + (ngpus-1))
-            # = i*ngpus + 100*(ngpus*(ngpus-1)/2)
-            var expected = Scalar[dtype](
-                i * ngpus + 100 * (ngpus * (ngpus - 1) // 2)
-            )
+            var expected: Scalar[dtype]
+            if ngpus == 2:
+                # For 2 GPUs: GPU 0: i%64, GPU 1: 63-(i%64)
+                # Total: (i%64) + (63-(i%64)) = 63
+                expected = Scalar[dtype](63)
+            else:  # ngpus == 4
+                # For 4 GPUs: GPU 0: i%64, GPU 1: 63-(i%64), GPU 2: i%64, GPU 3: 63-(i%64)
+                # Total: (i%64) + (63-(i%64)) + (i%64) + (63-(i%64)) = 2*(i%64) + 2*(63-(i%64)) = 126
+                expected = Scalar[dtype](126)
 
             if abs(actual - expected) > 1e-5:
                 if errors < 10:  # Only print first 10 errors
@@ -185,8 +196,10 @@ def main():
 
             if test_gpus == 2:
                 test_multicast_reduction[DType.float32, 2](contexts)
+                test_multicast_reduction[DType.bfloat16, 2](contexts)
             else:
                 test_multicast_reduction[DType.float32, 4](contexts)
+                test_multicast_reduction[DType.bfloat16, 4](contexts)
 
             print("\n=== All Tests Completed Successfully! ===")
 
