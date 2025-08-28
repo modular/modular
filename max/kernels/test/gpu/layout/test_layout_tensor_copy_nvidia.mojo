@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import simdwidthof
+from sys import simd_width_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -165,7 +165,7 @@ fn swizzle_copy[
     a: LayoutTensor[dtype, layout, MutableAnyOrigin],
     b: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
-    alias simd_size = simdwidthof[dtype]()
+    alias simd_size = simd_width_of[dtype]()
 
     # Double buffer in shared memory.
     var a_smem_tile = (

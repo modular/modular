@@ -13,7 +13,7 @@
 
 from sys import has_nvidia_gpu_accelerator, CompilationTarget
 from sys.ffi import external_call
-from sys import sizeof
+from sys import size_of
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
 
@@ -76,7 +76,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 self._ctx_ptr,
                 dst_ptr,
                 self._data,
-                self._size * sizeof[dtype](),
+                self._size * size_of[dtype](),
             )
         )
 
@@ -102,7 +102,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 self._ctx_ptr,
                 dst.unsafe_ptr(),
                 self._data,
-                self._size * sizeof[dtype](),
+                self._size * size_of[dtype](),
             )
         )
 
@@ -128,7 +128,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 self._ctx_ptr,
                 self._data,
                 src_ptr,
-                self._size * sizeof[dtype](),
+                self._size * size_of[dtype](),
             )
         )
 
@@ -154,6 +154,6 @@ struct SHMEMBuffer[dtype: DType](Sized):
                 self._ctx_ptr,
                 self._data,
                 src.unsafe_ptr(),
-                self._size * sizeof[dtype](),
+                self._size * size_of[dtype](),
             )
         )

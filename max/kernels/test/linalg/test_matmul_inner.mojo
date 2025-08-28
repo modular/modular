@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import alignof
+from sys import align_of
 from sys.info import CompilationTarget
 
 from buffer import NDBuffer
@@ -153,7 +153,7 @@ fn test_micro_kernel[
     var np = align_up(n, config.kernel_cols)
     var kh = align_up(k, factor)
 
-    alias alignment = alignof[SIMD[c_type, config.simd_size]]()
+    alias alignment = align_of[SIMD[c_type, config.simd_size]]()
 
     var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
     var b_packed_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(

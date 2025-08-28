@@ -21,7 +21,7 @@ from layout.tensor_core_async import tile_to_descriptor
 
 from utils.index import Index, IndexList, product
 
-from sys import sizeof
+from sys import size_of
 
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -62,8 +62,8 @@ fn _create_mma_desc[
     # The canonical layout is expected to have at least 2 dimensions
     alias stride01 = canonical_layout[0].stride[1].value()
     alias stride11 = canonical_layout[1].stride[1].value()
-    alias SBO = stride01 * sizeof[type]()
-    alias LBO = stride11 * sizeof[type]()
+    alias SBO = stride01 * size_of[type]()
+    alias LBO = stride11 * size_of[type]()
 
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory
@@ -172,8 +172,8 @@ struct MmaOpSM100_SS[
 
         @parameter
         for k in range(0, block_tile_shape[2], mma_shape[2]):
-            alias a_offset = a.layout(IntTuple(0, k)) * sizeof[a_type]()
-            alias b_offset = b.layout(IntTuple(0, k)) * sizeof[b_type]()
+            alias a_offset = a.layout(IntTuple(0, k)) * size_of[a_type]()
+            alias b_offset = b.layout(IntTuple(0, k)) * size_of[b_type]()
 
             var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
 

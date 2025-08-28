@@ -14,7 +14,12 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from collections.optional import OptionalReg
-from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
+from sys import (
+    align_of,
+    bit_width_of,
+    has_nvidia_gpu_accelerator,
+    simd_width_of,
+)
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
@@ -174,7 +179,7 @@ fn test[
         _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_dtype, width]](),
+        alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var update_val: SIMD[_dtype, width] = val
 
@@ -223,7 +228,7 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
@@ -268,7 +273,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if bitwidthof[dtype]() <= 16:
+            if bit_width_of[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue

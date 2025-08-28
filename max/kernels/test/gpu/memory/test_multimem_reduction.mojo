@@ -15,7 +15,7 @@ import gpu
 from gpu.host import DeviceContext, DeviceMulticastBuffer
 from gpu.memory import multimem_ld_reduce, ReduceOp, Scope, Consistency
 from memory.pointer import _GPUAddressSpace
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 from testing import assert_true
 
 
@@ -31,7 +31,7 @@ fn multimem_reduction_kernel[
     size: Int,
 ):
     """Kernel that uses multimem_ld_reduce wrapper for cross-GPU reduction."""
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     var tid = gpu.thread_idx.x + gpu.block_idx.x * gpu.block_dim.x
     if simd_width * tid >= size:

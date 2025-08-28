@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 from sys._assembly import inlined_assembly
 
 
@@ -79,8 +79,8 @@ fn keep[dtype: DType, simd_width: Int](val: SIMD[dtype, simd_width]):
 
     @parameter
     if (
-        sizeof[dtype]()
-        <= sizeof[UnsafePointer[SIMD[dtype, simd_width]]._mlir_type]()
+        size_of[dtype]()
+        <= size_of[UnsafePointer[SIMD[dtype, simd_width]]._mlir_type]()
     ):
         inlined_assembly[
             "",

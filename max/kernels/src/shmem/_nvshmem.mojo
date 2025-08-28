@@ -17,7 +17,7 @@ from pathlib import Path
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUstream, CUmodule
 from ._mpi import MPIComm, MPI_Init, MPI_Comm_rank, get_mpi_comm_world
-from sys import sizeof
+from sys import size_of
 from sys.ffi import (
     _find_dylib,
     _Global,
@@ -140,9 +140,9 @@ struct NVSHMEMXInitAttr:
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm]):
         constrained[
-            sizeof[Self]() == 144, "NVSHMEMXInitAttr must be 144 bytes"
+            size_of[Self]() == 144, "NVSHMEMXInitAttr must be 144 bytes"
         ]()
-        self.version = (1 << 16) + sizeof[NVSHMEMXInitAttr]()
+        self.version = (1 << 16) + size_of[NVSHMEMXInitAttr]()
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
 
@@ -154,9 +154,9 @@ struct NVSHMEMXInitArgs:
 
     fn __init__(out self):
         constrained[
-            sizeof[Self]() == 128, "NVSHMEMXInitArgs must be 128 bytes"
+            size_of[Self]() == 128, "NVSHMEMXInitArgs must be 128 bytes"
         ]()
-        self.version = (1 << 16) + sizeof[NVSHMEMXInitArgs]()
+        self.version = (1 << 16) + size_of[NVSHMEMXInitArgs]()
         self.uid_args = NVSHMEMXUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
 
@@ -169,9 +169,9 @@ struct NVSHMEMXUniqueIDArgs:
 
     fn __init__(out self):
         constrained[
-            sizeof[Self]() == 24, "NVSHMEMXUniqueIDArgs must be 24 bytes"
+            size_of[Self]() == 24, "NVSHMEMXUniqueIDArgs must be 24 bytes"
         ]()
-        self.version = (1 << 16) + sizeof[NVSHMEMXUniqueIDArgs]()
+        self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
         self.id = UnsafePointer[NVSHMEMXUniqueID]()
         self.myrank = 0
         self.nranks = 0
@@ -183,9 +183,9 @@ struct NVSHMEMXUniqueID:
 
     fn __init__(out self):
         constrained[
-            sizeof[Self]() == 128, "nvshmemx_uniqueid_t must be 128 bytes"
+            size_of[Self]() == 128, "nvshmemx_uniqueid_t must be 128 bytes"
         ]()
-        self.version = (1 << 16) + sizeof[NVSHMEMXUniqueID]()
+        self.version = (1 << 16) + size_of[NVSHMEMXUniqueID]()
         self.internal = InlineArray[Byte, 124](fill=0)
 
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import sizeof, env_get_bool, env_get_int
+from sys import size_of, env_get_bool, env_get_int
 
 from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
@@ -76,8 +76,8 @@ fn matmul_dispatch_sm90[
     # 4B and 8B alignments are supported for BF16/FP32 by using
     # cp.async.ca.
     alias K = a.shape.get[1]()
-    alias K_multiple_of_16B = K * sizeof[a_type]() % 16 == 0
-    alias K_multiple_of_4B = K * sizeof[a_type]() % 4 == 0
+    alias K_multiple_of_16B = K * size_of[a_type]() % 16 == 0
+    alias K_multiple_of_4B = K * size_of[a_type]() % 4 == 0
     alias K_align_supported = (K_multiple_of_16B and is_AB_fp8) or (
         K_multiple_of_4B and (is_AB_bf16 or is_AB_fp32)
     )

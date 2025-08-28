@@ -43,7 +43,7 @@ from .MOGGIntList import IntList
 
 
 fn bytecount_with_dtype(shape: IndexList, dtype: DType) -> Int:
-    return shape.flattened_length() * dtype.sizeof()
+    return shape.flattened_length() * dtype.size_of()
 
 
 @register_passable("trivial")

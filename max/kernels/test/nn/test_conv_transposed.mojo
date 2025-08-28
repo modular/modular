@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm.functional import vectorize
 from layout import (
@@ -41,7 +41,7 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simdwidthof[DType.float32]()
+alias simd_size: Int = simd_width_of[DType.float32]()
 alias dtype = DType.float32
 
 

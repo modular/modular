@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof, argv
+from sys import size_of, argv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -275,7 +275,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("============================================")
             print("dtype, M, N, K, time(ms), TFLOPS")
 
-            alias BK = (swizzle.bytes() // sizeof[dtype]())
+            alias BK = (swizzle.bytes() // size_of[dtype]())
             alias block_tile_shape = Index(128, 128, BK)
             alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
             alias umma_shape = Index(
@@ -323,7 +323,7 @@ def main():
 
             @parameter
             for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-                alias BK = (swizzle.bytes() // sizeof[dtype]())
+                alias BK = (swizzle.bytes() // size_of[dtype]())
                 alias MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
 
                 @parameter

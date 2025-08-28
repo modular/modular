@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceil, ceildiv
-from sys.info import sizeof
+from sys.info import size_of
 
 from layout import LayoutTensor, Layout
 from memory import bitcast, memcpy
@@ -285,7 +285,7 @@ struct Q4sym[
                 The shape of the output should be the same as the input
                 except along the inner dimension where if the original inner
                 dimension was `d`, the corresponding output dimension should be:
-                    ceil(`d` / group_size) * sizeof(self).
+                    ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
         constrained[
@@ -296,7 +296,7 @@ struct Q4sym[
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = sizeof[Q4sym[group_size, float_dtype]]()
+        var size_of_block = size_of[Q4sym[group_size, float_dtype]]()
         debug_assert(
             input_shape[input_tensor.rank - 1] % group_size == 0,
             "Only support fully divisible dimensions right now.",
@@ -458,7 +458,7 @@ fn q4_k_dequantize_impl(
     # 2 elements per byte.
     alias group_nbytes = group_nelems // 2
     alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = sizeof[block_Q4_K]()
+    alias block_nbytes = size_of[block_Q4_K]()
 
     var num_blocks = input_tensor.size() // block_nbytes
     var input_q4_k_ptr = input_tensor.ptr.bitcast[block_Q4_K]()
@@ -540,7 +540,7 @@ fn q6_k_dequantize_impl(
 ):
     alias group_nelems = block_Q6_K.group_size
     alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = sizeof[block_Q6_K]()
+    alias block_nbytes = size_of[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
     var input_q6_k_ptr = input_tensor.ptr.bitcast[block_Q6_K]()

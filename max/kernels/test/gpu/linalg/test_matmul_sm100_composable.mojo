@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 from math import ceildiv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer

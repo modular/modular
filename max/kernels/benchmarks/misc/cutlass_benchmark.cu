@@ -78,9 +78,9 @@ void TestCutlassGemmInter(int M, int N, int K, float alpha, float beta) {
   int ldc = N;
 
   float *h_a, *h_b, *h_c;
-  h_a = (float *)malloc(M * K * sizeof(float));
-  h_b = (float *)malloc(K * N * sizeof(float));
-  h_c = (float *)malloc(M * N * sizeof(float));
+  h_a = (float *)malloc(M * K * size_of(float));
+  h_b = (float *)malloc(K * N * size_of(float));
+  h_c = (float *)malloc(M * N * size_of(float));
 
   for (int i = 0; i < (M * K); i++) {
     h_a[i] = (float)i;
@@ -93,13 +93,13 @@ void TestCutlassGemmInter(int M, int N, int K, float alpha, float beta) {
   }
 
   float *A, *B, *C_cutlass;
-  cudaMalloc((void **)&A, M * K * sizeof(float));
-  cudaMalloc((void **)&B, K * N * sizeof(float));
-  cudaMalloc((void **)&C_cutlass, M * N * sizeof(float));
+  cudaMalloc((void **)&A, M * K * size_of(float));
+  cudaMalloc((void **)&B, K * N * size_of(float));
+  cudaMalloc((void **)&C_cutlass, M * N * size_of(float));
 
-  cudaMemcpy(A, h_a, M * K * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(B, h_b, K * N * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(C_cutlass, h_c, M * N * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(A, h_a, M * K * size_of(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(B, h_b, K * N * size_of(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(C_cutlass, h_c, M * N * size_of(float), cudaMemcpyHostToDevice);
   CutlassSgemmNN<TShape, WShape>(M, N, K, alpha, A, lda, B, ldb, beta,
                                  C_cutlass, ldc);
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -24,7 +24,7 @@ from utils.index import Index
 
 
 fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
         dtype, 2, MutableAnyOrigin, DimList(2, 8)
@@ -97,7 +97,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
         dtype, 2, MutableAnyOrigin, DimList(3, 3)
     ].stack_allocation()
@@ -153,7 +153,7 @@ fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
         dtype, 3, MutableAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()

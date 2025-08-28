@@ -14,11 +14,11 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import (
-    alignof,
+    align_of,
     has_amd_gpu_accelerator,
     is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 
 import gpu.warp as warp
@@ -71,7 +71,7 @@ from .utils_gpu import MatmulConfig, block_swizzle
 fn distance[
     type: DType, //
 ](arg0: UnsafePointer[Scalar[type]], arg1: UnsafePointer[Scalar[type]]) -> Int:
-    return (Int(arg0) - Int(arg1)) // sizeof[arg1.type]()
+    return (Int(arg0) - Int(arg1)) // size_of[arg1.type]()
 
 
 @always_inline
@@ -150,7 +150,7 @@ fn warp_split_k_reduction[
     var smem = external_memory[
         Scalar[c_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[c_type, c_frag_size]](),
+        alignment = align_of[SIMD[c_type, c_frag_size]](),
     ]()
 
     warp_split_k_reduction[
@@ -187,7 +187,7 @@ fn multistage_mma[
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_masked: Bool = False,
-    next_op_b_iter_alignment: Int = alignof[b_type](),
+    next_op_b_iter_alignment: Int = align_of[b_type](),
     next_op_b_layout_int_type: DType = DType.int64,
     next_op_b_linear_idx_type: DType = DType.int64,
     k_group_size: UInt = 1,
@@ -223,7 +223,7 @@ fn multistage_mma[
         masked=next_op_b_iter_masked,
     ](),
 ):
-    alias simd_size = simdwidthof[a_type]()
+    alias simd_size = simd_width_of[a_type]()
 
     # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
     # in the parameters. This ensures that `tid` represents the relative thread position
@@ -722,7 +722,7 @@ fn multistage_gemm_kernel[
         ),
         "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma",
     ]()
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     var M: UInt = c.dim[0]()
     var N: UInt = b.dim[0 if transpose_b else 1]()
@@ -771,7 +771,7 @@ fn multistage_gemm_kernel[
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[a_type, simd_size]](),
+        alignment = align_of[SIMD[a_type, simd_size]](),
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
     var a_smem_iter = LayoutTensorIter[
@@ -923,13 +923,13 @@ fn multistage_gemm_kernel[
                 dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
-            alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
+            alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
-                    alignment = alignof[SIMD[c_type, src_simd_width_y]](),
+                    alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
                 @parameter
@@ -1014,7 +1014,7 @@ fn multistage_gemm_kernel[
 
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
                         (Int(m), Int(n)),

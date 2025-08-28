@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 import gpu.block as block
 from algorithm.functional import elementwise
@@ -112,7 +112,7 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    alias simd_width = simdwidthof[DType.int32]()
+    alias simd_width = simd_width_of[DType.int32]()
     alias PADDING_TOKEN = -1
 
     var tid = thread_idx.x

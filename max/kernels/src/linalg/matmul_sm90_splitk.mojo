@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 from logger import Logger
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -142,25 +142,25 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     constrained[a_type == b_type, "A and B must have the same type"]()
     constrained[(K % BK) == 0, "K must be divisible by BK"]()
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 
@@ -189,9 +189,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
     alias c_smem_size = c_smem_layout.size()
 
-    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
-    alias c_smem_bytes = c_smem_size * sizeof[c_type]()
+    alias a_smem_bytes = a_smem_size * size_of[a_type]()
+    alias b_smem_bytes = b_smem_size * size_of[b_type]()
+    alias c_smem_bytes = c_smem_size * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -680,10 +680,10 @@ fn warp_specialize_gemm_with_multicasting_splitk[
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + (sizeof[Int64]() * 2)
-    ) + c_smem_layout.size() * sizeof[c_type]()
+        BM * BK * size_of[a_type]()
+        + BN * BK * size_of[b_type]()
+        + (size_of[Int64]() * 2)
+    ) + c_smem_layout.size() * size_of[c_type]()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,

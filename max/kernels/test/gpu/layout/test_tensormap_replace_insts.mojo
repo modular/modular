@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -55,7 +55,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 ):
     alias M = cta_tile_layout.shape[0].value()
     alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -192,7 +192,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 ):
     alias M = cta_tile_layout.shape[0].value()
     alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -347,7 +347,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
 ):
     alias tile_M = cta_tile_layout.shape[0].value()
     alias tile_N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,

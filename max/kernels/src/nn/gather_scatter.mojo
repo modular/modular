@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 from sys.info import CompilationTarget, _current_target
 from sys.intrinsics import PrefetchOptions
 
@@ -162,7 +162,7 @@ fn gather_reduce[
             indices.dim[0]()
             * indices.dim[1]()
             * input.dim[1]()
-            * sizeof[dtype](),
+            * size_of[dtype](),
             MIN_TASK_COPY_SIZE,
         ),
         num_threads,
@@ -320,7 +320,7 @@ fn gather[
             var indices_ptr = indices._offset(indices_coords)
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
-            ) // sizeof[indices_type]()
+            ) // size_of[indices_type]()
             # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
@@ -419,7 +419,7 @@ fn gather[
             var indices_ptr = indices._offset(indices_coords)
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
-            ) // sizeof[indices_type]()
+            ) // size_of[indices_type]()
             # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
@@ -705,7 +705,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simdwidthof[dtype](),
+                simd_width = simd_width_of[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -817,7 +817,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simdwidthof[dtype, target=compile_target](),
+                simd_width = simd_width_of[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -1625,7 +1625,7 @@ fn _gather_nd_impl[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
+    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous

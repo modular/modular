@@ -13,7 +13,7 @@
 
 from math import align_up, ceildiv
 from random import rand
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 from sys.param_env import env_get_int, env_get_string
 
 from benchmark import *
@@ -38,11 +38,11 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     # Alignment in terms of number of elmements.
     alias alignment = 64
-    alias input_align = alignment // sizeof[input_type]()
-    alias filter_align = alignment // sizeof[filter_type]()
-    alias output_align = alignment // sizeof[output_type]()
+    alias input_align = alignment // size_of[input_type]()
+    alias filter_align = alignment // size_of[filter_type]()
+    alias output_align = alignment // size_of[output_type]()
 
-    alias simd_size = simdwidthof[filter_type]()
+    alias simd_size = simd_width_of[filter_type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -86,8 +86,8 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     alias MB = 1024 * 1024
     alias L3_cache = env_get_int["L3SIZE", 24]() * MB
     var size_per_copy = (
-        input_alloc_size * sizeof[input_type]()
-        + filter_alloc_size * sizeof[filter_type]()
+        input_alloc_size * size_of[input_type]()
+        + filter_alloc_size * size_of[filter_type]()
     )
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 

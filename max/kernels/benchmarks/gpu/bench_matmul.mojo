@@ -17,7 +17,7 @@ from sys import (
     env_get_dtype,
     env_get_int,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
 )
 
 import linalg.vendor_blas
@@ -117,11 +117,15 @@ fn bench_matmul[
     var stride_c = align_up(get_size(shape_c_dim), simd_size)
 
     alias k128 = 512 * 1024 * 1024
-    var cache_a = align_up(k128, stride_a * sizeof[dtype]()) // sizeof[dtype]()
-    var cache_b = align_up(k128, stride_b * sizeof[dtype]()) // sizeof[dtype]()
+    var cache_a = (
+        align_up(k128, stride_a * size_of[dtype]()) // size_of[dtype]()
+    )
+    var cache_b = (
+        align_up(k128, stride_b * size_of[dtype]()) // size_of[dtype]()
+    )
     var cache_c = (
-        align_up(k128, stride_c * sizeof[DType.bfloat16]())
-        // sizeof[DType.bfloat16]()
+        align_up(k128, stride_c * size_of[DType.bfloat16]())
+        // size_of[DType.bfloat16]()
     )
 
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)

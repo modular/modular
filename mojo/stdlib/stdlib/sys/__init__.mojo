@@ -19,8 +19,8 @@ from .debug import breakpointhook
 from .ffi import DEFAULT_RTLD, RTLD, DLHandle, external_call
 from .info import (
     CompilationTarget,
-    alignof,
-    bitwidthof,
+    align_of,
+    bit_width_of,
     has_accelerator,
     has_amd_gpu_accelerator,
     has_apple_gpu_accelerator,
@@ -34,10 +34,10 @@ from .info import (
     num_logical_cores,
     num_performance_cores,
     num_physical_cores,
-    simdbitwidth,
-    simdbytewidth,
-    simdwidthof,
-    sizeof,
+    simd_bit_width,
+    simd_byte_width,
+    simd_width_of,
+    size_of,
 )
 from .intrinsics import (
     PrefetchCache,

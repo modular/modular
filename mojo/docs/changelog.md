@@ -229,6 +229,25 @@ language across multiple phases.
   alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
   ```
 
+- Deprecated the following functions with `flatcase` names in `sys.info`:
+  - `simdbitwidth`
+  - `simdbytewidth`
+  - `sizeof`
+  - `alignof`
+  - `bitwidthof`
+  - `bitwidthof`
+  - `simdwidthof`
+  - `simdwidthof`
+  in favor of `snake_case` counterparts, respectively:
+  - `simd_bit_width`
+  - `simd_byte_width`
+  - `size_of`
+  - `align_of`
+  - `bit_width_of`
+  - `bit_width_of`
+  - `simd_width_of`
+  - `simd_width_of`
+
 - Added support for AMD RX 6900 XT consumer-grade GPU.
 
 - Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
@@ -254,7 +273,7 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - The `SIMD.from_bits` factory method is now a constructor, use
   `SIMD(from_bits=...)` instead.
-  
+
 - Added `os.atomic.fence` for creating atomic memory fences.
   ([#5216](https://github.com/modular/modular/pull/5216) by
   [@nate](https://github.com/NathanSWard))

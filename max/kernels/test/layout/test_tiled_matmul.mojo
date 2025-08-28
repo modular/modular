@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm import sync_parallelize, vectorize
 from layout import *
@@ -80,7 +80,7 @@ struct MMA_Vec(TiledOp):
         alias N = dst.shape[1]()
         alias K = lhs.shape[1]()
 
-        alias width = simdwidthof[dst.dtype]() * 2
+        alias width = simd_width_of[dst.dtype]() * 2
 
         for m in range(M):
             for n in range(N):

@@ -21,13 +21,13 @@ from math import floor
 
 from sys import (
     CompilationTarget,
-    bitwidthof,
+    bit_width_of,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
     is_compile_time,
 )
 from sys._assembly import inlined_assembly
@@ -189,7 +189,7 @@ fn sqrt(x: Int) -> Int:
     var r2 = 0
 
     @parameter
-    for p in reversed(range(bitwidthof[Int]() // 2)):
+    for p in reversed(range(bit_width_of[Int]() // 2)):
         var dr2 = (r << (p + 1)) + (1 << (p + p))
         if r2 <= x - dr2:
             r2 += dr2
@@ -492,7 +492,7 @@ fn _ldexp_impl[
         Vector containing elementwise result of ldexp on x and exp.
     """
 
-    alias hardware_width = simdwidthof[dtype]()
+    alias hardware_width = simd_width_of[dtype]()
 
     @parameter
     if (
@@ -827,7 +827,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         alias ln2 = 0.69314718055966295651160180568695068359375
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return log(x.cast[DType.float32]()).cast[dtype]()
         elif dtype is DType.float32:
             return (
@@ -866,7 +866,7 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         if is_nvidia_gpu():
 
             @parameter
-            if sizeof[dtype]() < sizeof[DType.float32]():
+            if size_of[dtype]() < size_of[DType.float32]():
                 return log2(x.cast[DType.float32]()).cast[dtype]()
             elif dtype is DType.float32:
                 return _call_ptx_intrinsic[
@@ -1196,7 +1196,7 @@ fn iota[
     fn fill[width: Int](i: Int):
         buff.store(i, iota[dtype, width](offset + i))
 
-    vectorize[fill, simdwidthof[dtype]()](len)
+    vectorize[fill, simd_width_of[dtype]()](len)
 
 
 fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
@@ -1517,10 +1517,10 @@ fn cos[
     """
 
     @parameter
-    if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return cos(x.cast[DType.float32]()).cast[dtype]()
 
         return _call_ptx_intrinsic[
@@ -1559,10 +1559,10 @@ fn sin[
     """
 
     @parameter
-    if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return sin(x.cast[DType.float32]()).cast[dtype]()
 
         return _call_ptx_intrinsic[
@@ -1718,7 +1718,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     ]()
 
     @parameter
-    if bitwidthof[dtype]() <= 16:
+    if bit_width_of[dtype]() <= 16:
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
@@ -1830,7 +1830,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         alias log10_2 = 0.301029995663981195213738894724493027
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return log10(x.cast[DType.float32]()).cast[dtype]()
         elif dtype is DType.float32:
             return (

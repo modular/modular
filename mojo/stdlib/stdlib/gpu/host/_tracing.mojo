@@ -17,7 +17,7 @@ from sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
 )
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
@@ -240,7 +240,7 @@ struct EventAttributes:
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=sizeof[_C_EventAttributes](),
+            size=size_of[_C_EventAttributes](),
             category=category,
             color_type=Color.FORMAT,
             color=Int(resolved_color),

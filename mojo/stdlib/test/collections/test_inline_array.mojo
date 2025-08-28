@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import sizeof
+from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import CopyCounter, DelRecorder, MoveCounter
@@ -250,16 +250,16 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_sizeof_array[current_type: Copyable & Movable, capacity: Int]():
-    """Testing if `sizeof` the array equals capacity * `sizeof` current_type.
+def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+    """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = sizeof[current_type]()
+    alias size_of_current_type = size_of[current_type]()
     assert_equal(
-        sizeof[InlineArray[current_type, capacity]](),
+        size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
 
@@ -326,5 +326,5 @@ def main():
     test_array_contains()
     test_inline_array_runs_destructors()
     test_unsafe_ptr()
-    test_sizeof_array[Int, capacity=32]()
+    test_size_of_array[Int, capacity=32]()
     test_move()

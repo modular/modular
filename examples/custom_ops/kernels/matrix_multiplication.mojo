@@ -38,7 +38,7 @@ from runtime.asyncrt import DeviceContextPtr
 from sys.info import (
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
-    simdwidthof,
+    simd_width_of,
 )
 from tensor_internal import (
     InputTensor,
@@ -564,7 +564,7 @@ fn block_tiled_vectorized_matrix_multiplication[
     of rows in B.
     """
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var partition_col = thread_idx.x % (BN // TN)
     var partition_row = thread_idx.x // (BN // TN)
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -22,7 +22,7 @@ from nn.softmax import logsoftmax, softmax_2_pass
 fn test_logsoftmax() raises:
     print("== test_logsoftmax")
     alias type = DType.float32
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simd_width_of[type]()
 
     fn logsoftmax_test_nd[rank: Int, shape: DimList]() raises:
         var in_stack = InlineArray[Scalar[type], Int(shape.product())](
@@ -72,7 +72,7 @@ fn test_logsoftmax() raises:
 fn test_softmax_2pass():
     print("== test_softmax_2pass")
     alias type = DType.float32
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simd_width_of[type]()
     alias sz = 5
 
     var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)

@@ -13,7 +13,7 @@
 
 from math import align_down
 from sys import prefetch
-from sys.info import CompilationTarget, alignof
+from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load
@@ -145,7 +145,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     .load()
                 )
 
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
                 var b_val = b_ptr.offset(idx1 * simd_size).load[

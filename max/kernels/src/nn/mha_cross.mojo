@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
 from buffer import NDBuffer
@@ -96,12 +96,12 @@ fn _bmm0_bs[
 
     # Set total KV length: KV written previous to and during this forward.
     if x < num_keys and y < cur_query_len:
-        var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+        var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
         @parameter
         fn accum_fn[width: Int](offset: Int):
-            alias alignment = alignof[SIMD[p_type, width]]()
+            alias alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset
             ).cast[k_type]()
@@ -114,7 +114,7 @@ fn _bmm0_bs[
             else:
                 accum_vec += rebind[__type_of(accum_vec)](qk_val)
 
-        vectorize[accum_fn, simdwidthof[p_type]()](depth)
+        vectorize[accum_fn, simd_width_of[p_type]()](depth)
         accum += accum_vec.reduce_add()
 
     var score_row = y

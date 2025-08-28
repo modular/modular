@@ -14,9 +14,9 @@ from collections import OptionalReg
 from math import ceildiv
 from sys import (
     CompilationTarget,
-    alignof,
-    simdwidthof,
-    sizeof,
+    align_of,
+    simd_width_of,
+    size_of,
 )
 from sys.intrinsics import llvm_intrinsic
 
@@ -80,7 +80,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     alias _size = block_m * block_n
-    alias _simd_width = simdwidthof[DType.uint8]()
+    alias _simd_width = simd_width_of[DType.uint8]()
     alias _tuple_width = 4
     alias _packed_stride = block_n * Self._tuple_width
     alias _tile_n = Self._packed_stride // Self._simd_width
@@ -290,8 +290,8 @@ fn _quantize_a_Q8_K[
         @always_inline
         fn process_rows[tile_m: Int](m: Int):
             constrained[
-                sizeof[_block_Q8_K_packed[group_size]]() * tile_m
-                == sizeof[_block_Q8_K_packed[group_size, tile_m]](),
+                size_of[_block_Q8_K_packed[group_size]]() * tile_m
+                == size_of[_block_Q8_K_packed[group_size, tile_m]](),
                 "tiled block size should be multiple of the single block size",
             ]()
 
@@ -414,8 +414,8 @@ fn _pack_block_Q4_K[
     alias group_count = _block_Q4_K.group_count
 
     constrained[
-        sizeof[_block_Q4_K]() * block_n
-        == sizeof[_block_Q4_K_packed[block_n]](),
+        size_of[_block_Q4_K]() * block_n
+        == size_of[_block_Q4_K_packed[block_n]](),
         "packed block size should be multiple of the unpacked block size",
     ]()
 
@@ -507,7 +507,7 @@ fn _pack_block_Q4_K[
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
             elif CompilationTarget.has_neon():
-                alias split_width = simdwidthof[DType.int32]()
+                alias split_width = simd_width_of[DType.int32]()
                 var n_idx_hi = n // split_width
                 var n_idx_lo = n % split_width
                 var reorder_idx = (
@@ -539,8 +539,8 @@ fn _pack_block_Q6_K[
     alias group_count = _block_Q6_K.group_count
 
     constrained[
-        sizeof[_block_Q6_K]() * block_n
-        == sizeof[_block_Q6_K_packed[block_n]](),
+        size_of[_block_Q6_K]() * block_n
+        == size_of[_block_Q6_K_packed[block_n]](),
         "packed block size should be multiple of the unpacked block size",
     ]()
 
@@ -581,9 +581,9 @@ def matmul_Q4_K_pack_b[
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()
-    var k_blocks = K // sizeof[_block_Q4_K]()
+    var k_blocks = K // size_of[_block_Q4_K]()
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
     alias block_n = simd_width * 2
 
     var src_ptr = b.data.bitcast[_block_Q4_K]()
@@ -611,9 +611,9 @@ def matmul_Q6_K_pack_b[
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()
-    var k_blocks = K // sizeof[_block_Q6_K]()
+    var k_blocks = K // size_of[_block_Q6_K]()
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
     alias block_n = simd_width * 2
 
     var src_ptr = b.data.bitcast[_block_Q6_K]()
@@ -1146,7 +1146,7 @@ fn _matmul_Q4_K_columns[
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
 
-    alias alignment = alignof[SIMD[DType.float32, simd_width]]()
+    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
     alias block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
@@ -1390,7 +1390,7 @@ fn _matmul_Q6_K_columns[
     alias group_size = _block_Q6_K.group_size
     alias group_count = _block_Q6_K.group_count
 
-    alias alignment = alignof[SIMD[DType.float32, simd_width]]()
+    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
     alias block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
@@ -1479,7 +1479,7 @@ fn _matmul_Qb_K[
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[DType.float32, 2],
 ):
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
 
     var M = a.dim[0]()
     var N = b.dim[0]()

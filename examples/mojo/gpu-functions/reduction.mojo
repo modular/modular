@@ -24,7 +24,7 @@ from math import ceildiv
 from memory import stack_allocation
 from os.atomic import Atomic
 from random import randint
-from sys import has_accelerator, sizeof
+from sys import has_accelerator, size_of
 from testing import assert_equal
 
 from gpu import thread_idx, block_idx, block_dim, grid_dim, warp, barrier
@@ -153,7 +153,7 @@ def main():
         ](
             BenchId("sum_kernel_benchmark", "gpu"),
             (out_ptr, a_ptr),
-            ThroughputMeasure(BenchMetric.bytes, SIZE * sizeof[dtype]()),
+            ThroughputMeasure(BenchMetric.bytes, SIZE * size_of[dtype]()),
         )
         # Pretty print in table format
         print(bench)

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm import elementwise
 from benchmark import Bench, BenchConfig, Bencher, BenchId
@@ -43,7 +43,7 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
             vector[idx[0]] = 42
 
         elementwise[func, 1](Index(n))
-        elementwise[func=func, simd_width = simdwidthof[DType.index]()](
+        elementwise[func=func, simd_width = simd_width_of[DType.index]()](
             Index(n)
         )
 

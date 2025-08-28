@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
@@ -118,8 +118,8 @@ fn multicast_tma_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -299,18 +299,18 @@ def test_multicast_tma_wgmma[
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 

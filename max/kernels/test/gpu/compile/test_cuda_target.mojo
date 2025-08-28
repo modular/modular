@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import erf
-from sys.info import is_nvidia_gpu, simdwidthof
+from sys.info import is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
 from algorithm.functional import elementwise
@@ -122,7 +122,7 @@ fn erf_elementwise(
     buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext
 ) raises:
     # Each thread will process 4 * simd_width elements.
-    alias granularity = 4 * simdwidthof[DType.float32]()
+    alias granularity = 4 * simd_width_of[DType.float32]()
     var tid = granularity * global_idx.x
 
     @always_inline
@@ -136,9 +136,9 @@ fn erf_elementwise(
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simd_width = simdwidthof[DType.float32](), target="gpu"](
-        granularity, ctx
-    )
+    elementwise[
+        func, simd_width = simd_width_of[DType.float32](), target="gpu"
+    ](granularity, ctx)
 
 
 def _verify_erf_elementwise(asm: StringSlice):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext
@@ -29,7 +29,9 @@ fn test_elementwise_print[
 ](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
-    alias simd_width = simdwidthof[c_type, target = get_gpu_target["sm_80"]()]()
+    alias simd_width = simd_width_of[
+        c_type, target = get_gpu_target["sm_80"]()
+    ]()
 
     @always_inline
     @__copy_capture(c01, N)

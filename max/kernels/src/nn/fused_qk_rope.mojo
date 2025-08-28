@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import gcd
-from sys.info import _current_target, simdwidthof
+from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
@@ -218,7 +218,7 @@ fn fused_qk_rope[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
+    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
@@ -398,7 +398,7 @@ fn fused_qk_rope_ragged[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
+    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, rope_dim)
 
     @parameter

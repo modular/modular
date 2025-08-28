@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from pathlib import Path
-from sys import sizeof
+from sys import size_of
 
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
@@ -192,7 +192,7 @@ fn _print_svg_impl[
                 writer.write(
                     " b=",
                     (
-                        (idx * sizeof[tensor_base.dtype]())
+                        (idx * size_of[tensor_base.dtype]())
                         // memory_bank.value()[0]
                     )
                     % memory_bank.value()[1],
@@ -257,7 +257,7 @@ fn _print_svg_impl[
                         for e_j in range(tensor.element_layout[1].size()):
                             var offset = (
                                 Int(tensor.ptr) - Int(tensor_base.ptr)
-                            ) // sizeof[Scalar[tensor.dtype]]()
+                            ) // size_of[Scalar[tensor.dtype]]()
                             var element_offset = tensor.element_layout(
                                 [e_i, e_j]
                             )
@@ -282,7 +282,7 @@ fn _print_svg_impl[
                 for j in range(tensor.layout[1].size()):
                     var offset = (
                         Int(tensor.ptr) - Int(tensor_base.ptr)
-                    ) // sizeof[Scalar[tensor.dtype]]()
+                    ) // size_of[Scalar[tensor.dtype]]()
                     var idx = tensor.layout([i, j]) + offset
                     var orig_pos = map[idx]
                     var x = (

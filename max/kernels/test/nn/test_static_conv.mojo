@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -46,7 +46,7 @@ fn test[
     alias WO = (W + pad_w[0] + pad_w[1] - dilation[0] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
     alias type = DType.float32
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simd_width_of[type]()
     alias num_groups = 1
 
     var conv_shape = ConvShape[2](

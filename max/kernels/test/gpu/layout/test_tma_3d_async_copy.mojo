@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -71,7 +71,7 @@ fn test_tma_3d_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    alias expected_bytes = cta_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
 
     mbar = stack_allocation[
         1,

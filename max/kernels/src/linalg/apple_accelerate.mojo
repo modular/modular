@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import fma
 from os import abort
-from sys import CompilationTarget, simdwidthof
+from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
@@ -274,7 +274,7 @@ fn apple_gemv[
     if b_packed == False and transpose_b == True:
         K = b.dim(1)
 
-    alias simd_width = simdwidthof[c.type]()
+    alias simd_width = simd_width_of[c.type]()
 
     @always_inline
     @__copy_capture(c, a, b, K)
@@ -380,7 +380,7 @@ fn apple_matmul[
             var m = c.dim[0]()
             var n = c.dim[1]()
             alias epilogue = elementwise_lambda_fn.value()
-            alias simd_size = simdwidthof[c.type]()
+            alias simd_size = simd_width_of[c.type]()
 
             @always_inline
             @parameter

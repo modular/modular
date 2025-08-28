@@ -19,7 +19,7 @@ from linalg import vendor_blas
 from utils import Index, IndexList
 from internal_utils._utils import ValOrDim, dynamic, static
 from algorithm.functional import elementwise
-from sys import simdwidthof
+from sys import simd_width_of
 from testing import assert_almost_equal
 from gpu.host import get_gpu_target
 from sys import has_nvidia_gpu_accelerator
@@ -199,7 +199,7 @@ fn test[
 
     ctx.synchronize()
 
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device_ref, B, M, N)

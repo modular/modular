@@ -14,7 +14,7 @@
 # Meant to be run on an AVX512 system
 
 from math import align_up
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 import benchmark
 from buffer import NDBuffer
@@ -24,8 +24,8 @@ alias MR = 6
 alias NR = 64
 
 alias dtype = DType.float32
-alias simd_size = simdwidthof[dtype]()
-alias alignment = alignof[SIMD[dtype, simd_size]]()
+alias simd_size = simd_width_of[dtype]()
+alias alignment = align_of[SIMD[dtype, simd_size]]()
 
 
 fn gemm_naive[

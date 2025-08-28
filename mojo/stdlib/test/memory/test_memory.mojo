@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 
 from memory import (
     AddressSpace,
@@ -134,7 +134,7 @@ def test_memcmp_non_multiple_of_int32():
     var triple1 = SixByteStruct(0, 0, 0)
     var triple2 = SixByteStruct(0, 0, 1)
 
-    constrained[sizeof[SixByteStruct]() == 6]()
+    constrained[size_of[SixByteStruct]() == 6]()
 
     var ptr1 = UnsafePointer(to=triple1)
     var ptr2 = UnsafePointer(to=triple2)
@@ -159,7 +159,7 @@ def test_memcmp_overflow():
 
 
 def test_memcmp_simd():
-    var length = simdwidthof[DType.int8]() + 10
+    var length = simd_width_of[DType.int8]() + 10
 
     var p1 = UnsafePointer[Int8].alloc(length)
     var p2 = UnsafePointer[Int8].alloc(length)
@@ -258,16 +258,16 @@ def test_memcmp_extensive():
     test_memcmp_extensive[DType.int8](3)
 
     test_memcmp_extensive[DType.index](3)
-    test_memcmp_extensive[DType.index](simdwidthof[Int]())
-    test_memcmp_extensive[DType.index](4 * simdwidthof[DType.index]())
-    test_memcmp_extensive[DType.index](4 * simdwidthof[DType.index]() + 1)
-    test_memcmp_extensive[DType.index](4 * simdwidthof[DType.index]() - 1)
+    test_memcmp_extensive[DType.index](simd_width_of[Int]())
+    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]())
+    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]() + 1)
+    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]() - 1)
 
     test_memcmp_extensive[DType.float32](3)
-    test_memcmp_extensive[DType.float32](simdwidthof[DType.float32]())
-    test_memcmp_extensive[DType.float32](4 * simdwidthof[DType.float32]())
-    test_memcmp_extensive[DType.float32](4 * simdwidthof[DType.float32]() + 1)
-    test_memcmp_extensive[DType.float32](4 * simdwidthof[DType.float32]() - 1)
+    test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
+    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]())
+    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]() + 1)
+    test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]() - 1)
 
     test_memcmp_extensive[DType.float32, "nan"](3)
     test_memcmp_extensive[DType.float32, "nan"](99)
@@ -280,7 +280,7 @@ def test_memcmp_extensive():
 
 def test_memcmp_simd_boundary():
     """Test edge cases in SIMD memcmp implementation that could expose bugs."""
-    alias simd_width = simdwidthof[DType.int8]()
+    alias simd_width = simd_width_of[DType.int8]()
 
     # Test 1: Difference exactly at SIMD boundary
     alias size = simd_width + 1
@@ -312,7 +312,7 @@ def test_memcmp_simd_boundary():
 
 def test_memcmp_simd_overlap():
     """Test overlapping region handling in SIMD memcmp."""
-    alias simd_width = simdwidthof[DType.int8]()
+    alias simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that trigger overlapping tail reads
     var test_sizes = List[Int](
@@ -344,7 +344,7 @@ def test_memcmp_simd_overlap():
 
 def test_memcmp_simd_index_finding():
     """Test index finding logic in SIMD memcmp."""
-    var simd_width = simdwidthof[DType.int8]()
+    var simd_width = simd_width_of[DType.int8]()
 
     # Test difference at each possible SIMD lane position
     for lane in range(simd_width):
@@ -450,7 +450,7 @@ def test_memcmp_simd_alignment():
 
 def test_memcmp_simd_width_edge_cases():
     """Test edge cases around different SIMD widths."""
-    var simd_width = simdwidthof[DType.int8]()
+    var simd_width = simd_width_of[DType.int8]()
 
     # Test sizes that might cause issues with SIMD width calculations
     var critical_sizes = List[Int](
@@ -498,7 +498,7 @@ def test_memcmp_simd_width_edge_cases():
 
 def test_memcmp_simd_zero_bytes():
     """Test handling of zero bytes in SIMD memcmp."""
-    alias size = simdwidthof[DType.int8]() * 2
+    alias size = simd_width_of[DType.int8]() * 2
     var ptr1 = UnsafePointer[Int8].alloc(size)
     var ptr2 = UnsafePointer[Int8].alloc(size)
 

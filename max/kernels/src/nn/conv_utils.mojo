@@ -15,8 +15,8 @@ from math import align_down, ceildiv, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 
 from buffer import NDBuffer
@@ -510,20 +510,20 @@ fn get_conv_tile_size[dtype: DType]() -> Int:
     # See MatmulUtils for context on tile size for debug built and macos.
     @parameter
     if is_debug_build():
-        return 4 * KB // sizeof[dtype]()
+        return 4 * KB // size_of[dtype]()
 
     @parameter
     if CompilationTarget.is_macos():
-        return 64 * KB // sizeof[dtype]()
+        return 64 * KB // size_of[dtype]()
 
     @parameter
     if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         #  Graviton 2 and Skylake server
         # have a 1 MiB L2 cache
-        return 576 * KB // sizeof[dtype]()
+        return 576 * KB // size_of[dtype]()
 
     # AMD Rome has a 512 KiB L2 cache.
-    return 288 * KB // sizeof[dtype]()
+    return 288 * KB // size_of[dtype]()
 
 
 @always_inline
@@ -535,7 +535,7 @@ fn get_conv_tile_shape[
     by default fully covered. The heuristic tried to block in C as much as
     possible. If C is small, it would start to block F.
     """
-    alias simd_size = simdwidthof[dtype]()
+    alias simd_size = simd_width_of[dtype]()
 
     # Number of elements in tile.
     var tile_size = get_conv_tile_size[dtype]()

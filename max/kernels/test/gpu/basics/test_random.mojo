@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -29,7 +29,7 @@ def run_elementwise[
 ](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var out_host = NDBuffer[
         dtype, 1, MutableAnyOrigin, DimList(length)

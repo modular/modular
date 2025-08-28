@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof
+from sys import align_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -175,7 +175,9 @@ fn cpasync_wgmma_kernel[
             alias v_idx = v_to_idx(local_idx)
             alias c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            c_gmem_ptr.offset(c_idx).store[alignment = alignof[T]()](casted_vec)
+            c_gmem_ptr.offset(c_idx).store[alignment = align_of[T]()](
+                casted_vec
+            )
 
 
 def test_cpasync_wgmma[

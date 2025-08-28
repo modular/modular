@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -21,7 +21,7 @@ from testing import assert_equal
 from utils.index import Index
 
 alias type = DType.float32
-alias simd_size: Int = simdwidthof[DType.float32]()
+alias simd_size: Int = simd_width_of[DType.float32]()
 alias simd_cols: Int = 4
 alias kernel_cols: Int = simd_cols * simd_size
 alias width = 2 * kernel_cols

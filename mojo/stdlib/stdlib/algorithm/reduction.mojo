@@ -20,7 +20,7 @@ from algorithm import map_reduce
 """
 
 from math import align_down, ceildiv
-from sys.info import simdwidthof, sizeof, alignof
+from sys.info import simd_width_of, size_of, align_of
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -198,13 +198,13 @@ fn map_reduce[
     var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width](init)
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
         var val_simd = input_gen_fn[dtype, unrolled_simd_width](i)
-        output_fn[dtype, unrolled_simd_width, alignof[dtype]()](i, val_simd)
+        output_fn[dtype, unrolled_simd_width, align_of[dtype]()](i, val_simd)
         acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
 
     var acc_simd = SIMD[acc_type, simd_width](init)
     for i in range(unrolled_vector_end, vector_end, simd_width):
         var val_simd = input_gen_fn[dtype, simd_width](i)
-        output_fn[dtype, simd_width, alignof[dtype]()](i, val_simd)
+        output_fn[dtype, simd_width, align_of[dtype]()](i, val_simd)
         acc_simd = reduce_vec_to_vec_fn(acc_simd, val_simd)
 
     var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
@@ -213,7 +213,7 @@ fn map_reduce[
     acc = reduce_vec_to_vec_fn(acc, reduce_vec_to_scalar_fn(acc_simd))
     for i in range(vector_end, length):
         var val = input_gen_fn[dtype, 1](i)
-        output_fn[dtype, 1, alignof[dtype]()](i, val)
+        output_fn[dtype, 1, align_of[dtype]()](i, val)
         acc = reduce_vec_to_vec_fn(acc, val)
     return acc[0]
 
@@ -300,7 +300,7 @@ fn reduce_boolean[
     Returns:
         The computed reduction value.
     """
-    alias simd_width = simdwidthof[src.type]()
+    alias simd_width = simd_width_of[src.type]()
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
@@ -337,7 +337,7 @@ fn _reduce_3D[
 ](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
-    alias simd_width = simdwidthof[dst.type]()
+    alias simd_width = simd_width_of[dst.type]()
 
     var h = src.dim[0]()
     var w = src.dim[1]()
@@ -379,7 +379,7 @@ fn _reduce_3D[
         constrained[unroll_factor > 0, "unroll_factor must be > 0"]()
         return unroll_factor
 
-    alias unroll_factor = get_unroll_factor[simd_width, sizeof[dst.type]()]()
+    alias unroll_factor = get_unroll_factor[simd_width, size_of[dst.type]()]()
     alias usimd_width = unroll_factor * simd_width
     for i in range(h):
 
@@ -832,7 +832,7 @@ fn _reduce_along_inner_dimension[
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     alias unroll_factor = 8
-    alias simd_width = simdwidthof[init_type]()
+    alias simd_width = simd_width_of[init_type]()
     alias unrolled_simd_width = simd_width * unroll_factor
 
     var unrolled_simd_compatible_size = align_down(
@@ -1010,7 +1010,7 @@ fn _reduce_along_outer_dimension[
 
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     var total_size: Int = shape.flattened_length()
     if total_size == 0:
@@ -1696,7 +1696,7 @@ fn mean[
         src: The input buffer.
         dst: The output buffer.
     """
-    alias simd_width = simdwidthof[dst.dtype]()
+    alias simd_width = simd_width_of[dst.dtype]()
     sum[reduce_axis](src, dst)
 
     var n = src.dim[reduce_axis]()
@@ -2123,7 +2123,7 @@ fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     debug_assert(len(src) != 0, "Input must not be empty")
     debug_assert(len(dst) != 0, "Output must not be empty")
 
-    alias simd_width = simdwidthof[dst.type]()
+    alias simd_width = simd_width_of[dst.type]()
 
     # For length less than simd_width do serial cumulative sum.
     # Similarly, for the case when simd_width == 2 serial should be faster.

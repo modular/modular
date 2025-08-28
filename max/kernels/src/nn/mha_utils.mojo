@@ -16,14 +16,14 @@ from collections import OptionalReg
 from math import align_up, ceildiv
 from sys import (
     CompilationTarget,
-    alignof,
+    align_of,
     env_get_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from sys.info import _accelerator_arch
 
@@ -231,11 +231,11 @@ struct MHAConfig(Copyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.type.sizeof() * num_smem_elements
+        num_smem_bytes = self.type.size_of() * num_smem_elements
         if sm_90_fa3:
-            alias i64_size = sizeof[DType.int64]()
+            alias i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
-                4 * i64_size + 2 * sizeof[DType.uint32]() if persistent
+                4 * i64_size + 2 * size_of[DType.uint32]() if persistent
                 != 0 else 0
             )
         return num_smem_bytes
@@ -397,7 +397,7 @@ fn _copy_frag_to_smem_nvidia[
     swizzle to avoid bank conflict.
     """
 
-    alias simd_width = simdwidthof[p_smem_tile.dtype]()
+    alias simd_width = simd_width_of[p_smem_tile.dtype]()
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
@@ -448,7 +448,7 @@ fn _copy_frag_to_smem_nvidia[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)
                 )[]
-                alias align = alignof[
+                alias align = align_of[
                     SIMD[p_smem_iter.dtype, frag_simd_width]
                 ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)

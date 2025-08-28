@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import thread_idx, block_idx, block_dim, barrier
 from gpu.host import DeviceContext
@@ -78,7 +78,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32], n: UInt):
                 clusterlaunchcontrol_try_cancel(result, mbar.bitcast[Int64]())
 
             # Matches `ptx::mbarrier_arrive_expect_tx`.
-            _ = mbar[0].expect_bytes_relaxed(2 * sizeof[UInt64]())
+            _ = mbar[0].expect_bytes_relaxed(2 * size_of[UInt64]())
 
         if tidx < n:
             data[tidx] *= Float32(alpha)
@@ -161,7 +161,7 @@ fn pipeline_test_kernel[
             empty_mbar[write_idx].wait(pipeline_state_write.phase())
             var pred: UInt32 = 1 if lane_id() < UInt(CLUSTER_SIZE) else 0
             full_mbar[write_idx].arrive_and_expect_bytes(
-                2 * sizeof[UInt64](), lane_id(), pred
+                2 * size_of[UInt64](), lane_id(), pred
             )
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():

@@ -22,7 +22,7 @@ from collections.string.string import (
 from collections.interval import IntervalElement
 from hashlib.hasher import Hasher
 from math import CeilDivable, Ceilable, Floorable, Truncable
-from sys import bitwidthof
+from sys import bit_width_of
 from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
@@ -267,7 +267,7 @@ struct Int(
         """
         return Self.get_type_name()
 
-    alias BITWIDTH = Int(bitwidthof[DType.index]())
+    alias BITWIDTH = Int(bit_width_of[DType.index]())
     """The bit width of the integer type."""
 
     alias MAX = Int(Scalar[DType.index].MAX)

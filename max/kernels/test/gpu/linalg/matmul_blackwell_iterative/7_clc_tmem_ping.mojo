@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof, argv
+from sys import size_of, argv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -198,8 +198,8 @@ fn load_AB[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -395,7 +395,7 @@ fn multi_stage_store_C[
 
     # stmatrix related
     alias stsmx4N_bytes = 32
-    alias stsmx4N = stsmx4N_bytes // sizeof[c_type]()  # 16
+    alias stsmx4N = stsmx4N_bytes // size_of[c_type]()  # 16
     alias stsmx4_size_per_lane = (16 * stsmx4N) // WARP_SIZE  # 8
     alias swizzle = make_swizzle[c_type, TensorMapSwizzle.SWIZZLE_64B]()
 
@@ -450,9 +450,9 @@ fn multi_stage_store_C[
         var dst_2 = c_smem_warp_tile.tile[16, stageN](1, 0)
 
         # Number of elements in one row per stsmx4 tile, a row is 32B, so 16 elements in a stmatrix row
-        alias stsmx4_row_size = 32 // sizeof[dst_1.dtype]()
+        alias stsmx4_row_size = 32 // size_of[dst_1.dtype]()
         # Number of elements owned by each lane, each lane has 16B, so 8 elements per lane
-        alias stsmx4_lane_size = 16 // sizeof[dst_1.dtype]()
+        alias stsmx4_lane_size = 16 // size_of[dst_1.dtype]()
         alias stride0 = dst_1.layout.stride[0].value()
         # 32 elements across the output tile
         alias shape0 = dst_1.layout.shape[1].value()
@@ -474,9 +474,9 @@ fn multi_stage_store_C[
 
         # Pack the lower frag to shared memory
         # Number of elements in one row per stsmx4 tile, a row is 32B.
-        alias stsmx4_row_size_2 = 32 // sizeof[dst_2.dtype]()
+        alias stsmx4_row_size_2 = 32 // size_of[dst_2.dtype]()
         # Number of elements owned by each lane, each lane has 16B
-        alias stsmx4_lane_size_2 = 16 // sizeof[dst_2.dtype]()
+        alias stsmx4_lane_size_2 = 16 // size_of[dst_2.dtype]()
         alias stride0_2 = dst_2.layout.stride[0].value()
         alias shape0_2 = dst_2.layout.shape[1].value()
 
@@ -1326,8 +1326,8 @@ fn blackwell_matmul_tma_pair_mma[
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    alias a_smem_bytes_per_stage = BM * BK * sizeof[a_type]()
-    alias b_smem_bytes_per_stage = BN * BK * sizeof[b_type]()
+    alias a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
+    alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
     # A and B per pipeline stage
     alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
     # Support double-buffer for output stages.
@@ -1335,11 +1335,11 @@ fn blackwell_matmul_tma_pair_mma[
 
     alias c_smem_bytes = output_tile_shape[0] * output_tile_shape[
         1
-    ] * num_output_stages * sizeof[c_type]()
+    ] * num_output_stages * size_of[c_type]()
 
-    alias MBAR_BYTES = sizeof[Int64]()  # 8 bytes per barrier
-    alias CLC_RESPONSE_BYTES = sizeof[Int128]()  # 16 bytes per response
-    alias TMEM_ADDR_BYTES = sizeof[
+    alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
+    alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
+    alias TMEM_ADDR_BYTES = size_of[
         Int32
     ]()  # 4 bytes or 32 bits for tensor memory address
     # the 'N' dimension of tensor memory is 512

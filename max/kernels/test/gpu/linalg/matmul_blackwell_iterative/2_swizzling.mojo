@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof, argv
+from sys import size_of, argv
 from math import ceildiv
 
 from buffer.buffer import NDBuffer
@@ -163,9 +163,11 @@ fn kernel_2[
     alias b_size = b_smem_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -185,8 +187,8 @@ fn kernel_2[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
 
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (
@@ -224,12 +226,12 @@ fn kernel_2[
     alias b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
     ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
+    alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
+    alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
     alias b_stride01 = b_canonical_layout[0].stride[1].value()
     alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[b_type]()
 
     adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
@@ -256,8 +258,8 @@ fn kernel_2[
                 alias k = 64 * j
                 alias a_offset = a_smem_layout(IntTuple(0, k))
                 alias b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * sizeof[a_type]()) % 128) == 0]()
-                constrained[((b_offset * sizeof[b_type]()) % 128) == 0]()
+                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
+                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -289,8 +291,8 @@ fn kernel_2[
                 num_k_mmas
             ):  # BK by MMA_K chunks for the mma acc required this time, since you can only do MMA_K at a time (16 elements)
                 alias idx = IntTuple(0, MMA_K * j)
-                alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
+                alias a_offset = a_smem_layout(idx) * size_of[a_type]()
+                alias b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                 # use c_scale=0 for the first mma only on the first iteration to initialize
                 var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
@@ -411,7 +413,7 @@ fn blackwell_matmul_tma_umma[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 
     alias block_dim = 128
 

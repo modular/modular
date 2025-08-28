@@ -726,7 +726,7 @@ fn is_32bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 32 bit, False otherwise.
     """
-    return sizeof[DType.index, target]() == sizeof[DType.int32, target]()
+    return size_of[DType.index, target]() == size_of[DType.int32, target]()
 
 
 @always_inline("nodebug")
@@ -739,11 +739,11 @@ fn is_64bit[target: _TargetType = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 64 bit, False otherwise.
     """
-    return sizeof[DType.index, target]() == sizeof[DType.int64, target]()
+    return size_of[DType.index, target]() == size_of[DType.int64, target]()
 
 
 @always_inline("nodebug")
-fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
+fn simd_bit_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bits) of the specified target.
 
     Parameters:
@@ -762,8 +762,14 @@ fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
     )
 
 
+@deprecated("Use `sys.simd_bit_width()` instead.")
 @always_inline("nodebug")
-fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
+fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
+    return simd_bit_width[target]()
+
+
+@always_inline("nodebug")
+fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
 
     Parameters:
@@ -773,11 +779,17 @@ fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
         The vector size (in bytes) of the host system.
     """
     alias CHAR_BIT = 8
-    return simdbitwidth[target]() // CHAR_BIT
+    return simd_bit_width[target]() // CHAR_BIT
+
+
+@deprecated("Use `sys.simd_byte_width()` instead.")
+@always_inline("nodebug")
+fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
+    return simd_byte_width[target]()
 
 
 @always_inline("nodebug")
-fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -789,14 +801,14 @@ fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
 
     Example:
     ```mojo
-    from sys.info import sizeof
+    from sys.info import size_of
     def main():
         print(
-            sizeof[UInt8]() == 1,
-            sizeof[UInt16]() == 2,
-            sizeof[Int32]() == 4,
-            sizeof[Float64]() == 8,
-            sizeof[
+            size_of[UInt8]() == 1,
+            size_of[UInt16]() == 2,
+            size_of[Int32]() == 4,
+            size_of[Float64]() == 8,
+            size_of[
                 SIMD[DType.uint8, 4]
             ]() == 4,
         )
@@ -821,8 +833,14 @@ fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
+@deprecated("Use `sys.size_of()` instead.")
 @always_inline("nodebug")
-fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+    return size_of[type, target]()
+
+
+@always_inline("nodebug")
+fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
@@ -845,8 +863,14 @@ fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
+@deprecated("Use `sys.size_of()` instead.")
 @always_inline("nodebug")
-fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return size_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:
@@ -874,8 +898,14 @@ fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
+@deprecated("Use `sys.align_of()` instead.")
 @always_inline("nodebug")
-fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+    return align_of[type, target]()
+
+
+@always_inline("nodebug")
+fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
@@ -898,8 +928,14 @@ fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
+@deprecated("Use `sys.align_of()` instead.")
 @always_inline("nodebug")
-fn bitwidthof[
+fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return align_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn bit_width_of[
     type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
@@ -912,11 +948,19 @@ fn bitwidthof[
         The size of the type in bits.
     """
     alias CHAR_BIT = 8
-    return CHAR_BIT * sizeof[type, target=target]()
+    return CHAR_BIT * size_of[type, target=target]()
+
+
+@deprecated("Use `sys.bit_width_of()` instead.")
+@always_inline("nodebug")
+fn bitwidthof[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
+]() -> Int:
+    return bit_width_of[type, target]()
 
 
 @always_inline("nodebug")
-fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
@@ -926,13 +970,19 @@ fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The size of the dtype in bits.
     """
-    return bitwidthof[
+    return bit_width_of[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`], target=target
     ]()
 
 
+@deprecated("Use `sys.bit_width_of()` instead.")
 @always_inline("nodebug")
-fn simdwidthof[
+fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return bit_width_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn simd_width_of[
     type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
@@ -944,11 +994,21 @@ fn simdwidthof[
     Returns:
         The vector size of the type on the host system.
     """
-    return simdbitwidth[target]() // bitwidthof[type, target]()
+    return simd_bit_width[target]() // bit_width_of[type, target]()
+
+
+@deprecated("Use `sys.simd_width_of()` instead.")
+@always_inline("nodebug")
+fn simdwidthof[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
+]() -> Int:
+    return simd_width_of[type, target]()
 
 
 @always_inline("nodebug")
-fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+fn simd_width_of[
+    dtype: DType, target: _TargetType = _current_target()
+]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:
@@ -958,7 +1018,15 @@ fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The vector size of the dtype on the host system.
     """
-    return simdwidthof[__mlir_type[`!pop.scalar<`, dtype.value, `>`], target]()
+    return simd_width_of[
+        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target
+    ]()
+
+
+@deprecated("Use `sys.simd_width_of()` instead.")
+@always_inline("nodebug")
+fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return simd_width_of[dtype, target]()
 
 
 @always_inline("nodebug")

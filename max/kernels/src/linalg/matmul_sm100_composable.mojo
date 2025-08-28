@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 from math import ceildiv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
@@ -436,10 +436,10 @@ struct Pipeline[
         alias b_size = b_smem_layout.size()
 
         constrained[
-            ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+            ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
         ]()
         constrained[
-            ((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"
+            ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
         ]()
         var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
@@ -455,8 +455,8 @@ struct Pipeline[
 
         alias accum_type = get_accum_type[a_type]()
 
-        alias a_expected_bytes = a_size * sizeof[a_type]()
-        alias b_expected_bytes = b_size * sizeof[b_type]()
+        alias a_expected_bytes = a_size * size_of[a_type]()
+        alias b_expected_bytes = b_size * size_of[b_type]()
         alias expected_bytes = a_expected_bytes + b_expected_bytes
 
         tma_mbar = (
@@ -566,7 +566,7 @@ fn matmul_sm100[
     alias K = a_shape.get[1]()
     alias num_iters: UInt = K // BK
 
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 
     alias accum_type = get_accum_type[a_type]()
 

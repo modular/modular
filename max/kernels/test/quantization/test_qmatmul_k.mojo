@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose
 from random import rand, random_float64
-from sys import sizeof
+from sys import size_of
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
@@ -133,7 +133,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q4_0]()
+            N * k_groups * size_of[_block_Q4_0]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
@@ -144,7 +144,7 @@ struct qgemm_Q4_0(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q4_0]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q4_0]())
         )
 
     @staticmethod
@@ -226,7 +226,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q4_K]()
+            N * k_groups * size_of[_block_Q4_K]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
 
@@ -239,7 +239,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q4_K]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q4_K]())
         )
 
     @staticmethod
@@ -358,7 +358,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q6_K]()
+            N * k_groups * size_of[_block_Q6_K]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
 
@@ -371,7 +371,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q6_K]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q6_K]())
         )
 
     @staticmethod

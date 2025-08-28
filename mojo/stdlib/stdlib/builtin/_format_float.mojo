@@ -24,7 +24,7 @@
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray
-from sys.info import sizeof
+from sys.info import size_of
 
 from memory import bitcast
 
@@ -61,8 +61,8 @@ struct _MulResult[CarrierDType: DType]:
 @register_passable("trivial")
 struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias CarrierType = Scalar[Self.CarrierDType]
-    alias total_bits = sizeof[dtype]() * 8
-    alias carrier_bits = sizeof[Self.CarrierDType]() * 8
+    alias total_bits = size_of[dtype]() * 8
+    alias carrier_bits = size_of[Self.CarrierDType]() * 8
     alias sig_bits = FPUtils[dtype].mantissa_width()
     alias exp_bits = FPUtils[dtype].exponent_width()
     alias neg_exp_bias = -FPUtils[dtype].exponent_bias()
@@ -392,7 +392,7 @@ fn _compute_endpoint[
 
 
 fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
-    alias total_bits = sizeof[dtype]() * 8
+    alias total_bits = size_of[dtype]() * 8
     var output = String()
 
     @parameter

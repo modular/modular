@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
@@ -27,7 +27,7 @@ alias type = DType.float32
 
 def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     alias length = 256
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[type, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)

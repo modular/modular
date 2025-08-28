@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -41,7 +41,7 @@ fn tma_swizzle_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,

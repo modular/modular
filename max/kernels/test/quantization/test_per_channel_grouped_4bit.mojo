@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys.info import alignof, sizeof
+from sys.info import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -92,42 +92,42 @@ fn test_fake_quant_error[l2_tolerance: Float32]() raises:
 fn test_alignment_and_size():
     # Tests the total size and alignment of structs is as expected
     print("-------test_alignment_and_size-------")
-    print("StructType, Sizeof, Alignment")
+    print("StructType, size_of, Alignment")
     print(
         "Q5sym[32, DType.float32]",
-        sizeof[Q4sym[32, DType.float32]](),
-        alignof[Q4sym[32, DType.float32]](),
+        size_of[Q4sym[32, DType.float32]](),
+        align_of[Q4sym[32, DType.float32]](),
     )
     print(
         "Q5sym[16, DType.float32]",
-        sizeof[Q4sym[16, DType.float32]](),
-        alignof[Q4sym[16, DType.float32]](),
+        size_of[Q4sym[16, DType.float32]](),
+        align_of[Q4sym[16, DType.float32]](),
     )
     print(
         "Q5sym[8, DType.float32]",
-        sizeof[Q4sym[8, DType.float32]](),
-        alignof[Q4sym[8, DType.float32]](),
+        size_of[Q4sym[8, DType.float32]](),
+        align_of[Q4sym[8, DType.float32]](),
     )
     # Calculation for group size 8:
     # - 2 bytes for fp16 scale
     # - 8 // 2 = 4 bytes for the low bits
     # 2 + 4 = 6
     # Bits per weight: (8 * 6) / 8 = 6bpw
-    constrained[sizeof[Q4sym[8]]() == 6]()
+    constrained[size_of[Q4sym[8]]() == 6]()
 
     # Calculation for group size 16:
     # - 2 bytes for fp16 scale
     # - 16 // 2 = 8 bytes for the low bits
     # 2 + 8 = 10
     # Bits per weight: (8 * 10) / 16 = 5bpw
-    constrained[sizeof[Q4sym[16]]() == 10]()
+    constrained[size_of[Q4sym[16]]() == 10]()
 
     # Calculation for group size 32:
     # - 2 bytes for fp16 scale
     # - 32 // 2 = 16 bytes for the low bits
     # 2 + 16 = 18
     # Bits per weight: (8 * 18) / 32 = 4.5bpw
-    constrained[sizeof[Q4sym[32]]() == 18]()
+    constrained[size_of[Q4sym[32]]() == 18]()
     print("-------end test_alignment_and_size-------")
     print()
 
@@ -156,7 +156,7 @@ fn _read_write_to_tensors[
     # Tensor to store the packed data
     constrained[num_elements % group_size == 0]()
     alias num_blocks = ceildiv(num_elements, group_size)
-    alias block_size = sizeof[Q4sym[group_size]]()
+    alias block_size = size_of[Q4sym[group_size]]()
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
         uninitialized=True
     )
@@ -247,5 +247,5 @@ fn main() raises:
 
     test_read_write_to_tensors[rtol=0.1, atol=1.0]()
 
-    # Tests via compile-time constraints on sizeof(Q4Sym)
+    # Tests via compile-time constraints on size_of(Q4Sym)
     test_alignment_and_size()

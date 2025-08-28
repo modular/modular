@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import num_physical_cores, simdwidthof
+from sys.info import num_physical_cores, simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -36,7 +36,7 @@ from utils.index import Index, IndexList
 alias input_type = DType.uint8
 alias filter_type = DType.int8
 alias output_type = DType.int32
-alias simd_size: Int = simdwidthof[output_type]()
+alias simd_size: Int = simd_width_of[output_type]()
 
 
 # CHECK-LABEL: test_direct_conv

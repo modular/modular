@@ -16,7 +16,7 @@ tensorcore 5th generation (tcgen05) instructions."""
 
 from os import abort
 
-from sys import _RegisterPackType, sizeof
+from sys import _RegisterPackType, size_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
@@ -178,7 +178,7 @@ fn tcgen05_ld[
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
-        and sizeof[dtype]() == 4,
+        and size_of[dtype]() == 4,
         String(
             (
                 "Only support 4B data type and width must be equal to (num * n"
@@ -332,7 +332,7 @@ fn tcgen05_st[
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
-        and sizeof[dtype]() == 4,
+        and size_of[dtype]() == 4,
         (
             "Only support 4B data type and width must be equal to (num * n"
             " * m) // (32 * 32)."

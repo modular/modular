@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import thread_idx
 from gpu.host import DeviceContext
@@ -153,7 +153,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
 
     alias kernel = copy_with_src_size
-    alias src_size = 3 * sizeof[DType.float32]()
+    alias src_size = 3 * size_of[DType.float32]()
 
     ctx.enqueue_function[kernel](
         a_device,
@@ -202,7 +202,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     alias kernel = copy_with_non_zero_fill[2 * size]
 
-    alias src_size = 3 * sizeof[DType.bfloat16]()
+    alias src_size = 3 * size_of[DType.bfloat16]()
 
     ctx.enqueue_function[kernel](
         a_device,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
@@ -47,7 +47,7 @@ fn tma_swizzle_multicast_load_kernel[
 ):
     alias cluster_tileM = cluster_tile_layout.shape[0].value()
     alias cluster_tileN = cluster_tile_layout.shape[1].value()
-    alias expected_bytes = cluster_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = cluster_tile_layout.size() * size_of[dtype]()
 
     alias subcluster_tileM = subcluster_tile_layout.shape[0].value()
     alias subcluster_tileN = subcluster_tile_layout.shape[1].value()

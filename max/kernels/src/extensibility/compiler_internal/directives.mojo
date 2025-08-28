@@ -15,7 +15,7 @@ from collections import OptionalReg
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
-from sys import alignof
+from sys import align_of
 
 from utils import IndexList
 
@@ -120,7 +120,7 @@ struct StaticTensorSpec[
         )
         self.shape = shape
         self.strides = _row_major_strides[rank](shape)
-        self.alignment = alignof[dtype]()
+        self.alignment = align_of[dtype]()
         self.address_space = AddressSpace.GENERIC
         self.exclusive = False
         self.in_lambda = None

@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from sys import sizeof
+from sys import size_of
 
 
 # ===----------------------------------------------------------------------=== #
@@ -105,7 +105,7 @@ struct Coroutine[type: AnyType, origins: OriginSet]:
             The coroutine context.
         """
         constrained[
-            sizeof[_CoroutineContext]() == sizeof[ctx_type](),
+            size_of[_CoroutineContext]() == size_of[ctx_type](),
             "context size must be 16 bytes",
         ]()
         return __mlir_op.`co.get_callback_ptr`[
@@ -189,7 +189,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
             The coroutine context.
         """
         constrained[
-            sizeof[_CoroutineContext]() == sizeof[ctx_type](),
+            size_of[_CoroutineContext]() == size_of[ctx_type](),
             "context size must be 16 bytes",
         ]()
         return __mlir_op.`co.get_callback_ptr`[

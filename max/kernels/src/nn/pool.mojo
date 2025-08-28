@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import stencil, stencil_gpu
 from gpu.host import DeviceContext
@@ -215,7 +215,7 @@ fn max_pool_cpu[
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -621,7 +621,7 @@ fn avg_pool_cpu[
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     var output_height = output.dim[1]()
     var output_width = output.dim[2]()

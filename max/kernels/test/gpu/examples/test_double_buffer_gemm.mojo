@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isclose
-from sys import argv, simdwidthof
+from sys import argv, simd_width_of
 from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
 from buffer import NDBuffer
@@ -65,7 +65,7 @@ fn sgemm_double_buffer[
 ):
     alias _uint = Scalar[itype]
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     var M = c.shape[0]()
     var N = c.shape[1]()

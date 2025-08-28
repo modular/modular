@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import erf, exp, tanh
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import elementwise
 from buffer import NDBuffer
@@ -40,7 +40,9 @@ def test_elementwise_1d():
         var val = exp(erf(tanh(elem + 1)))
         vector.store[width=simd_width](idx[0], val)
 
-    elementwise[func, simdwidthof[DType.float32]()](IndexList[1](num_elements))
+    elementwise[func, simd_width_of[DType.float32]()](
+        IndexList[1](num_elements)
+    )
 
     assert_almost_equal(vector[0], 2.051446)
 

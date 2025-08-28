@@ -13,7 +13,7 @@
 
 from math import align_up
 from sys import prefetch
-from sys.info import alignof
+from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from utils.index import Index, IndexList
@@ -204,7 +204,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
             @parameter
             for idx1 in range(kernel_cols // simd_size):
-                alias alignment = alignof[SIMD[c_local.type, simd_size]]()
+                alias alignment = align_of[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment

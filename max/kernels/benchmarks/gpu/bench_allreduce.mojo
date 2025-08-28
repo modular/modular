@@ -13,7 +13,7 @@
 
 from collections import InlineArray
 from math import floor
-from sys import env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int, size_of
 
 from benchmark import (
     Bench,
@@ -76,7 +76,7 @@ fn bench_reduce[
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
-    var length = num_bytes // sizeof[dtype]()
+    var length = num_bytes // size_of[dtype]()
 
     # Initialize buffers for each GPU
     @parameter
@@ -103,7 +103,7 @@ fn bench_reduce[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                size_of[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
@@ -220,7 +220,7 @@ def main():
     alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
 
     assert_true(DeviceContext.number_of_devices() >= num_gpus)
-    assert_true(num_bytes % sizeof[dtype]() == 0)
+    assert_true(num_bytes % size_of[dtype]() == 0)
 
     # Create GPU context.
     var ctx = List[DeviceContext]()

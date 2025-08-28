@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
@@ -56,7 +56,7 @@ fn matmul[
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
-        alias simd_size = simdwidthof[c.type, target = get_gpu_target()]()
+        alias simd_size = simd_width_of[c.type, target = get_gpu_target()]()
 
         @parameter
         @__copy_capture(c)
@@ -66,7 +66,7 @@ fn matmul[
             var c_coord = Index(idx[0], idx[1])
             var c_val = c.load[
                 width=simd_width,
-                alignment = alignof[SIMD[c.type, simd_width]](),
+                alignment = align_of[SIMD[c.type, simd_width]](),
             ](c_coord)
             epilogue[c.type, simd_width](c_coord, c_val)
 

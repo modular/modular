@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv, exp
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 from sys.info import CompilationTarget
 
 from algorithm import sync_parallelize, tile, vectorize
@@ -549,7 +549,7 @@ struct _FlashAttention[
     kv_cache_length_fn: fn (batch: Int) capturing -> Int,
     padded_output_shape: DimList,
     *,
-    simd_width: Int = simdwidthof[dtype](),
+    simd_width: Int = simd_width_of[dtype](),
 ]:
     alias _matmul = _Matmul[dtype, simd_width]
     alias _config = _FlashAttentionConfig[
@@ -693,12 +693,12 @@ struct _FlashAttention[
             var qk_block_ptr = stack_allocation[
                 Self._config.block_m * Self._config.qk_block_n,
                 dtype,
-                alignment = alignof[SIMD[dtype, simd_width]](),
+                alignment = align_of[SIMD[dtype, simd_width]](),
             ]()
             var o_block_ptr = stack_allocation[
                 Self._config.block_m * Self._config.o_block_n,
                 dtype,
-                alignment = alignof[SIMD[dtype, simd_width]](),
+                alignment = align_of[SIMD[dtype, simd_width]](),
             ]()
             var max_vals = NDBuffer[
                 dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
@@ -709,7 +709,7 @@ struct _FlashAttention[
 
             var packed_ptr = UnsafePointer[
                 Scalar[dtype],
-                alignment = alignof[SIMD[dtype, simd_width]](),
+                alignment = align_of[SIMD[dtype, simd_width]](),
             ]()
             if max_seq_len != 1:
                 packed_ptr = packed_ptr.alloc(packed_size)

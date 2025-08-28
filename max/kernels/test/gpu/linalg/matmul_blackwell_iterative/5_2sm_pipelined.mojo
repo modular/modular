@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof, argv
+from sys import size_of, argv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -182,8 +182,8 @@ fn load_AB[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -933,10 +933,10 @@ fn blackwell_matmul_tma_pair_mma[
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias total_smem_size_available = 233472
     alias smem_available_after_c = total_smem_size_available - (
-        BM * MMA_N * sizeof[c_type]()
+        BM * MMA_N * size_of[c_type]()
     )
-    alias smem_per_stage_no_c = (BM * BK * sizeof[a_type]()) + (
-        BN * BK * sizeof[b_type]()
+    alias smem_per_stage_no_c = (BM * BK * size_of[a_type]()) + (
+        BN * BK * size_of[b_type]()
     ) + (32)
     alias max_pipeline_stages = smem_available_after_c // smem_per_stage_no_c
 
@@ -948,9 +948,9 @@ fn blackwell_matmul_tma_pair_mma[
     # This is why we pad 32 bytes * num_pipeline_stages to the smem size
 
     alias smem_size = (
-        (BM * BK * sizeof[a_type]()) * max_pipeline_stages
-        + (BN * BK * sizeof[b_type]()) * max_pipeline_stages
-        + (BM * MMA_N * sizeof[c_type]())
+        (BM * BK * size_of[a_type]()) * max_pipeline_stages
+        + (BN * BK * size_of[b_type]()) * max_pipeline_stages
+        + (BM * MMA_N * size_of[c_type]())
     ) + (32) * max_pipeline_stages
 
     alias kernel = blackwell_tma_pair_umma_kernel[

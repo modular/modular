@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import simdwidthof
+from sys import simd_width_of
 from sys.info import _current_target
 
 from algorithm import elementwise, sync_parallelize
@@ -349,7 +349,7 @@ fn _index_tensor_impl[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
+    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -554,7 +554,7 @@ fn advanced_indexing_getitem[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[input_type, target=compile_target]()
+    alias target_simd_width = simd_width_of[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
     ](read_strides=in_tensor_strides, write_strides=out_tensor.get_strides())
@@ -779,7 +779,7 @@ fn advanced_indexing_setitem_inplace[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[input_type, target=compile_target]()
+    alias target_simd_width = simd_width_of[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
     ](

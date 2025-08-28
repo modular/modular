@@ -48,16 +48,16 @@ from math.math import _call_ptx_intrinsic
 from sys import (
     CompilationTarget,
     _RegisterPackType,
-    alignof,
-    bitwidthof,
+    align_of,
+    bit_width_of,
     is_amd_gpu,
     is_big_endian,
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from sys._assembly import inlined_assembly
 from sys.info import (
@@ -523,7 +523,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
 
         @parameter
-        if bitwidthof[dtype]() > bitwidthof[DType.index]():
+        if bit_width_of[dtype]() > bit_width_of[DType.index]():
             alias dt = _unsigned_integral_type_of[DType.index]()
             self = bitcast[dt](Scalar[DType.index](value.__int__())).cast[
                 dtype
@@ -1103,7 +1103,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(bitwidthof[dtype]())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(mlir_value=__mlir_op.`pop.shl`(self.value, rhs.value))
@@ -1124,7 +1124,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(bitwidthof[dtype]())),
+            all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
         return Self(mlir_value=__mlir_op.`pop.shr`(self.value, rhs.value))
@@ -1775,8 +1775,8 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[size == 1, "expected a scalar type"]()
 
-        alias int_width = bitwidthof[Int]()
-        alias type_width = bitwidthof[dtype]()
+        alias int_width = bit_width_of[Int]()
+        alias type_width = bit_width_of[dtype]()
 
         @parameter
         if dtype.is_unsigned() and int_width > type_width:
@@ -2171,7 +2171,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        dtype: DType = _uint_type_of_width[bitwidthof[dtype]()]()
+        dtype: DType = _uint_type_of_width[bit_width_of[dtype]()]()
     ](self) -> SIMD[dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
@@ -2205,7 +2205,7 @@ struct SIMD[dtype: DType, size: Int](
     fn from_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](bytes: InlineArray[Byte, sizeof[Self]()]) -> SIMD[dtype, size]:
+    ](bytes: InlineArray[Byte, size_of[Self]()]) -> SIMD[dtype, size]:
         """Converts a byte array to a vector.
 
         Args:
@@ -2229,7 +2229,7 @@ struct SIMD[dtype: DType, size: Int](
     fn as_bytes[
         *,
         big_endian: Bool = is_big_endian(),
-    ](self) -> InlineArray[Byte, sizeof[Self]()]:
+    ](self) -> InlineArray[Byte, size_of[Self]()]:
         """Convert the vector to a byte array.
 
         Parameters:
@@ -2245,8 +2245,8 @@ struct SIMD[dtype: DType, size: Int](
             value = byte_swap(value)
 
         var ptr = UnsafePointer(to=value)
-        var array = InlineArray[Byte, sizeof[Self]()](uninitialized=True)
-        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), sizeof[Self]())
+        var array = InlineArray[Byte, size_of[Self]()](uninitialized=True)
+        memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), size_of[Self]())
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
@@ -2552,7 +2552,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if output_width == 1:
             return self[offset]
-        elif offset % simdwidthof[dtype]():
+        elif offset % simd_width_of[dtype]():
             return slice_body()
 
         if is_compile_time():
@@ -2598,7 +2598,7 @@ struct SIMD[dtype: DType, size: Int](
         # by dividing the problem into the offset, offset+val, val+input_width
         # where val is a value to align the offset to the simdwidth.
         @parameter
-        if offset % simdwidthof[dtype]():
+        if offset % simd_width_of[dtype]():
             var res = self
 
             @parameter
@@ -3471,7 +3471,7 @@ fn _convert_f32_to_float8_scalar[
 
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    alias FP32_NUM_BITS = bitwidthof[dtype]()
+    alias FP32_NUM_BITS = bit_width_of[dtype]()
     alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
     alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
@@ -3820,7 +3820,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         return x
 
     alias integral_type = FPUtils[x.dtype].integral_type
-    alias bitwidth = bitwidthof[x.dtype]()
+    alias bitwidth = bit_width_of[x.dtype]()
     alias exponent_width = FPUtils[x.dtype].exponent_width()
     alias mantissa_width = FPUtils[x.dtype].mantissa_width()
     alias mask = FPUtils[x.dtype].exponent_mask()

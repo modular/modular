@@ -25,13 +25,13 @@ from math import align_up
 from os import abort
 from pathlib import Path
 from sys import (
-    bitwidthof,
+    bit_width_of,
     env_get_bool,
     env_get_string,
     external_call,
     is_defined,
     is_gpu,
-    sizeof,
+    size_of,
 )
 from sys.compile import DebugLevel, OptimizationLevel
 from sys.ffi import c_char, c_int, c_uint
@@ -269,7 +269,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[dtype]()
+        alias elem_size = size_of[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         var host_ptr = Self._HostPtr()
 
@@ -317,7 +317,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[dtype]()
+        alias elem_size = size_of[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
@@ -420,7 +420,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             external_call[
                 "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
             ](self._handle)
-            // sizeof[dtype]()
+            // size_of[dtype]()
         )
 
     fn create_sub_buffer[
@@ -446,7 +446,7 @@ struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[view_type]()
+        alias elem_size = size_of[view_type]()
         var new_handle = _DeviceBufferPtr()
         var new_host_ptr = UnsafePointer[Scalar[view_type]]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
@@ -836,7 +836,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[dtype]()
+        alias elem_size = size_of[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         var device_ptr = Self._DevicePtr()
 
@@ -914,7 +914,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[dtype]()
+        alias elem_size = size_of[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
@@ -1018,7 +1018,7 @@ struct DeviceBuffer[dtype: DType](
             external_call[
                 "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
             ](self._handle)
-            // sizeof[dtype]()
+            // size_of[dtype]()
         )
 
     @always_inline
@@ -1045,7 +1045,7 @@ struct DeviceBuffer[dtype: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[view_type]()
+        alias elem_size = size_of[view_type]()
         var new_handle = _DeviceBufferPtr()
         var new_device_ptr = UnsafePointer[Scalar[view_type]]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
@@ -2323,7 +2323,7 @@ struct DeviceFunction[
 
         @parameter
         fn _populate_arg_sizes[i: Int]():
-            dense_args_sizes[i] = UInt(sizeof[Ts[i]]())
+            dense_args_sizes[i] = UInt(size_of[Ts[i]]())
 
         @parameter
         for i in range(num_args):
@@ -2626,7 +2626,7 @@ struct DeviceFunction[
                         ")",
                     ]()
                 var aligned_type_size = align_up(
-                    sizeof[actual_arg_type.device_type](), 8
+                    size_of[actual_arg_type.device_type](), 8
                 )
                 if aligned_type_size != 0:
                     num_translated_args += 1
@@ -2650,7 +2650,7 @@ struct DeviceFunction[
             for i in range(num_passed_args):
                 alias actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
-                    sizeof[actual_arg_type.device_type](), 8
+                    size_of[actual_arg_type.device_type](), 8
                 )
             return tmp_args_size
 
@@ -5699,7 +5699,7 @@ struct DeviceContext(Copyable, Movable):
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bitwidthof[dtype]()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5729,7 +5729,7 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                UInt(sizeof[dtype]()),
+                UInt(size_of[dtype]()),
             )
         )
 
@@ -5746,7 +5746,7 @@ struct DeviceContext(Copyable, Movable):
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bitwidthof[dtype]()
+        alias bitwidth = bit_width_of[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5776,7 +5776,7 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                UInt(sizeof[dtype]()),
+                UInt(size_of[dtype]()),
             )
         )
 
@@ -6522,7 +6522,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
         var contexts: List[DeviceContext],
         size: Int,
     ) raises:
-        alias elem_size = sizeof[dtype]()
+        alias elem_size = size_of[dtype]()
         var handle = _DeviceMulticastBufferPtr()
 
         var ctxs_len = len(contexts)

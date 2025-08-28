@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.variadics import VariadicOf
-from sys import alignof
+from sys import align_of
 from ._mixed_layout import MixedLayout
 from ._mixed_tuple import MixedTuple, MixedTupleLike, ComptimeInt, Idx
 
@@ -21,7 +21,7 @@ struct MixedLayoutTensor[
     dtype: DType,
     shape_types: VariadicOf[MixedTupleLike],
     stride_types: VariadicOf[MixedTupleLike], //,
-    alignment: Int = alignof[dtype](),
+    alignment: Int = align_of[dtype](),
 ]:
     var ptr: UnsafePointer[Scalar[dtype]]
 

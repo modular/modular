@@ -16,13 +16,13 @@ from math import ceildiv, recip
 from math.constants import log2e
 from sys import (
     CompilationTarget,
-    alignof,
+    align_of,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 
 import gpu.warp as warp
@@ -560,23 +560,23 @@ fn flash_attention_dispatch[
             alias accum_type = get_accum_type[q.dtype]()
             alias num_pipeline_stages = 4
             # smem for q
-            var shared_mem_bytes = BM * depth * sizeof[q.dtype]()
+            var shared_mem_bytes = BM * depth * size_of[q.dtype]()
 
             # separate KV smem if we have enough smem
             @parameter
             if not is_shared_kv:
-                shared_mem_bytes += 2 * BN * depth * sizeof[k_t.dtype]()
+                shared_mem_bytes += 2 * BN * depth * size_of[k_t.dtype]()
             else:
                 shared_mem_bytes += (
-                    num_pipeline_stages * BN * BK * sizeof[k_t.dtype]()
+                    num_pipeline_stages * BN * BK * size_of[k_t.dtype]()
                 )
 
             alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
             # smem for p and warp_scratch
             shared_mem_bytes += (
-                BM * BN * sizeof[k_t.dtype]()
-                + 2 * num_warps * BM * sizeof[accum_type]()
+                BM * BN * size_of[k_t.dtype]()
+                + 2 * num_warps * BM * size_of[accum_type]()
             )
             alias num_blocks_y = num_heads // group
 
@@ -1246,7 +1246,7 @@ fn mha_single_batch[
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
@@ -1275,7 +1275,7 @@ fn mha_single_batch[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -1360,7 +1360,7 @@ fn mha_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
+    alias p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -1381,7 +1381,9 @@ fn mha_single_batch[
     )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
@@ -1950,7 +1952,7 @@ fn mha_single_batch_pipelined[
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
@@ -1979,7 +1981,7 @@ fn mha_single_batch_pipelined[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -2055,7 +2057,7 @@ fn mha_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
+    alias p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -2076,7 +2078,9 @@ fn mha_single_batch_pipelined[
     )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
@@ -2931,7 +2935,7 @@ fn mha_decoding_single_batch[
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -2964,7 +2968,7 @@ fn mha_decoding_single_batch[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -3018,7 +3022,7 @@ fn mha_decoding_single_batch[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
+    alias p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -3045,7 +3049,7 @@ fn mha_decoding_single_batch[
     )
 
     # Rowwise max and sum for online softmax
-    alias row_align = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_align = align_of[SIMD[accum_type, simd_width_of[accum_type]()]]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
 
@@ -3501,8 +3505,8 @@ fn mha_decoding_single_batch[
     @parameter
     if decoding_warp_split_k:
         accum_smem_warp_ptr += (
-            (num_warps_n * (num_warps_n - 1)) * WM * WN * sizeof[accum_type]()
-        ) // sizeof[output_type]()
+            (num_warps_n * (num_warps_n - 1)) * WM * WN * size_of[accum_type]()
+        ) // size_of[output_type]()
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(WM, WN),
@@ -3604,7 +3608,7 @@ fn mha_decoding_single_batch_pipelined[
     alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -3635,7 +3639,7 @@ fn mha_decoding_single_batch_pipelined[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -3681,7 +3685,7 @@ fn mha_decoding_single_batch_pipelined[
     alias frag_size = get_fragment_size[mma_shape]()
     alias p_frag_size = frag_size[2]
     alias p_frag_simdwidth = p_frag_size // 2
-    alias p_frag_align = alignof[SIMD[accum_type, p_frag_size]]()
+    alias p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
     var p_reg_tile = LayoutTensor[
         accum_type,
@@ -3706,7 +3710,7 @@ fn mha_decoding_single_batch_pipelined[
     var q_head_idx = kv_head_idx * group + thread_idx.x // 4
 
     # Rowwise max and sum for online softmax
-    alias row_align = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_align = align_of[SIMD[accum_type, simd_width_of[accum_type]()]]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_align]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_align]()
 
@@ -4348,11 +4352,11 @@ fn _bmm0_bs[
         #       REL: KERN-1343.
         @parameter
         if is_amd_gpu():
-            var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+            var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
 
             @parameter
             fn accum_fn[width: Int](offset: Int):
-                alias alignment = alignof[SIMD[p_type, width]]()
+                alias alignment = align_of[SIMD[p_type, width]]()
                 var q_val = q.load[width=width, alignment=alignment](
                     y * num_heads * depth + offset
                 ).cast[k_type]()
@@ -4365,7 +4369,7 @@ fn _bmm0_bs[
                 else:
                     accum_vec += rebind[__type_of(accum_vec)](qk_val)
 
-            vectorize[accum_fn, simdwidthof[p_type]()](depth)
+            vectorize[accum_fn, simd_width_of[p_type]()](depth)
             accum += accum_vec.reduce_add()
         else:
             for d in range(depth):
@@ -4596,7 +4600,7 @@ fn _naive_attention_with_transpose[
     B, S, K, H, D stand for batch size, sequence length, number of keys,
     number of heads, and depth per head, respectively.
     """
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simd_width_of[type]()
 
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
@@ -4683,7 +4687,7 @@ fn _naive_attention[
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
     """
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simd_width_of[type]()
 
     var batch_size = q.dim[0]()
     var num_heads = q.dim[1]()

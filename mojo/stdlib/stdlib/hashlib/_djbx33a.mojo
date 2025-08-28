@@ -14,7 +14,7 @@
 which was the initial hash function implementation in Mojo standard library.
 """
 
-from sys import bitwidthof, simdwidthof, sizeof
+from sys import bit_width_of, simd_width_of, size_of
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer, bitcast, memcpy, memset_zero
@@ -34,7 +34,7 @@ fn _djbx33a_hash_update[
 # Based on the hash function used by ankerl::unordered_dense::hash
 # https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#ankerl__unordered_dense__hash
 fn _ankerl_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
-    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
+    alias int_type = _uint_type_of_width[bit_width_of[dtype]()]()
     alias init = Int64(-7046029254386353131).cast[int_type]()
     return SIMD[dtype, size](bitcast[dtype, 1](init))
 
@@ -43,7 +43,7 @@ fn _ankerl_hash_update[
     dtype: DType, size: Int
 ](data: SIMD[dtype, size], next: SIMD[dtype, size]) -> SIMD[dtype, size]:
     # compute the hash as though the type is uint
-    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
+    alias int_type = _uint_type_of_width[bit_width_of[dtype]()]()
     var data_int = bitcast[int_type, size](data)
     var next_int = bitcast[int_type, size](next)
     var result = (data_int * next_int) ^ next_int
@@ -83,7 +83,7 @@ fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
     var hash_data = _ankerl_init[dtype, size]()
     hash_data = _ankerl_hash_update(hash_data, data)
 
-    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
+    alias int_type = _uint_type_of_width[bit_width_of[dtype]()]()
     var final_data = bitcast[int_type, 1](hash_data[0]).cast[DType.uint64]()
 
     @parameter
@@ -152,8 +152,8 @@ fn hash(
         hash collision statistical properties for common data structures.
     """
     alias dtype = DType.uint64
-    alias type_width = sizeof[dtype]()
-    alias simd_width = simdwidthof[dtype]()
+    alias type_width = size_of[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     # stride is the byte length of the whole SIMD vector
     alias stride = type_width * simd_width
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof, argv
+from sys import argv
 
 from gpu import block_dim
 from gpu.host import DeviceContext
@@ -23,7 +23,6 @@ from layout._utils import ManagedLayoutTensor
 from linalg import vendor_blas
 
 from utils.index import IndexList
-from utils.numerics import get_accum_type
 
 from testing import assert_almost_equal
 

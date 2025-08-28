@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 from sys.info import CompilationTarget
 
 from bit import count_leading_zeros
@@ -2051,9 +2051,9 @@ def test_float_conversion():
 
 def test_from_bytes_as_bytes():
     # Test scalar types with specific byte patterns
-    alias TwoBytes = InlineArray[Byte, sizeof[Int16]()]
-    alias TwoUBytes = InlineArray[Byte, sizeof[UInt16]()]
-    alias FourBytes = InlineArray[Byte, sizeof[Int32]()]
+    alias TwoBytes = InlineArray[Byte, size_of[Int16]()]
+    alias TwoUBytes = InlineArray[Byte, size_of[UInt16]()]
+    alias FourBytes = InlineArray[Byte, size_of[Int32]()]
 
     assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
     assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)

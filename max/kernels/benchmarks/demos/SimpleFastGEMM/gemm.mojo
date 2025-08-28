@@ -14,7 +14,7 @@
 # Meant to be run on an AVX512 system
 
 from math import align_up
-from sys import alignof, prefetch, simdwidthof
+from sys import align_of, prefetch, simd_width_of
 from sys.intrinsics import PrefetchOptions
 
 import benchmark
@@ -27,8 +27,8 @@ from linalg.utils import (
 from utils.index import Index
 
 alias dtype = DType.float32
-alias simd_size = simdwidthof[dtype]()
-alias alignment = alignof[SIMD[dtype, simd_size]]()
+alias simd_size = simd_width_of[dtype]()
+alias alignment = align_of[SIMD[dtype, simd_size]]()
 
 alias kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
 alias MR = kernel_shape.simd_rows

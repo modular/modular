@@ -13,7 +13,7 @@
 
 
 from math import ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import elementwise
 from bit import next_power_of_two
@@ -51,9 +51,9 @@ fn _argsort_cpu[
     ](offset: IndexList[rank]):
         indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
-    elementwise[fill_indices_iota, simdwidthof[indices.dtype](), target="cpu"](
-        indices.size()
-    )
+    elementwise[
+        fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
+    ](indices.size())
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
@@ -214,7 +214,7 @@ fn _argsort_gpu[
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width = simdwidthof[
+            simd_width = simd_width_of[
                 indices.dtype, target = get_gpu_target()
             ](),
             target="gpu",
@@ -297,7 +297,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simdwidthof[indices.dtype, target = get_gpu_target()](),
+        simd_width = simd_width_of[indices.dtype, target = get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
+from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 from collections import OptionalReg
 from math import ceildiv
 
@@ -106,7 +106,7 @@ fn multistage_mma_q[
     transpose_b_next: Bool = False,
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
-    next_op_b_iter_alignment: Int = alignof[b_type](),
+    next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
@@ -128,8 +128,8 @@ fn multistage_mma_q[
     *,
     num_b_rows: OptionalReg[Int] = None,
 ):
-    alias simd_size = simdwidthof[a_type]()
-    alias simd_b_size = simdwidthof[b_type]()
+    alias simd_size = simd_width_of[a_type]()
+    alias simd_b_size = simd_width_of[b_type]()
     alias num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
@@ -478,7 +478,7 @@ fn multistage_qgemm_kernel[
         is_nvidia_gpu(),
         "Quantized gemm only supports NVIDIA hardwares for now.",
     ]()
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     alias repack_tile = Index(64, 16)
     alias group_bytes = group_size // 2 + 2
@@ -538,7 +538,7 @@ fn multistage_qgemm_kernel[
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[a_type, simd_size]](),
+        alignment = align_of[SIMD[a_type, simd_size]](),
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
 
@@ -711,13 +711,13 @@ fn multistage_qgemm_kernel[
                 dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
-            alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
+            alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
             if UInt(m) < M and UInt(n) < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
-                    alignment = alignof[SIMD[c_type, src_simd_width_y]](),
+                    alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
                 @parameter
@@ -803,7 +803,7 @@ fn multistage_qgemm_kernel[
 
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
                 if UInt(m) < M and UInt(n) < N:
                     epilogue[alignment=alignment](
                         (m, n),
@@ -951,7 +951,7 @@ fn repack_Q4_0_for_sm8x[
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
 ):
     alias group_size = 32
-    alias group_bytes = sizeof[DType.float16]() + (group_size // 2)
+    alias group_bytes = size_of[DType.float16]() + (group_size // 2)
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias WARP_SIZE = 32
@@ -1009,7 +1009,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -1143,7 +1143,7 @@ fn repack_GPTQ_for_sm8x[
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
-    alias group_bytes = sizeof[DType.float16]() + weights_bytes_per_group
+    alias group_bytes = size_of[DType.float16]() + weights_bytes_per_group
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias BN = 128
@@ -1211,7 +1211,7 @@ fn repack_GPTQ_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,
@@ -1228,7 +1228,7 @@ fn repack_GPTQ_for_sm8x[
         block_idx[0], block_idx[1]
     )
     var raw_weights_gmem_iter = raw_weights_gmem_tile.tiled_iterator[
-        BN, 2 * weights_bytes_per_group // sizeof[DType.uint32](), axis=1
+        BN, 2 * weights_bytes_per_group // size_of[DType.uint32](), axis=1
     ](0, 0)
     var raw_scales_gmem_tile = raw_scales.tile[BN, BK_groups](
         block_idx[0], block_idx[1]
@@ -1377,13 +1377,13 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     alias pack_factor = 8
 
     # fmt: off
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[config.a_type]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[DType.uint32]() // pack_factor
-    var c_usage = block_mnk[0] * block_mnk[1] * sizeof[DType.float32]()
+    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
+    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
+    var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
     var num_scales_stages = ceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
-    ) * num_scales_stages * sizeof[config.a_type]()
-    var slice_k_reduction: UInt = block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * sizeof[DType.float32]()
+    ) * num_scales_stages * size_of[config.a_type]()
+    var slice_k_reduction: UInt = block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]()
     # fmt: on
 
     var smem_usage: UInt = num_warp_k_partitions * (

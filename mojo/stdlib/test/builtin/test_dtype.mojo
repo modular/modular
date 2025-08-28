@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from testing import assert_equal, assert_false, assert_true
 
@@ -96,12 +96,12 @@ fn test_key_element() raises:
     assert_false(DType.float32 in s)
 
 
-fn test_sizeof() raises:
+fn test_size_of() raises:
     @parameter
     for dt in non_index_integral_dtypes:
-        assert_equal(dt.sizeof(), sizeof[dt]())
-    assert_equal(DType.index.sizeof(), sizeof[DType.index]())
-    assert_equal(DType.float32.sizeof(), sizeof[DType.float32]())
+        assert_equal(dt.size_of(), size_of[dt]())
+    assert_equal(DType.index.size_of(), size_of[DType.index]())
+    assert_equal(DType.float32.size_of(), size_of[DType.float32]())
 
 
 def test_from_str():
@@ -140,6 +140,6 @@ def main():
     test_representable()
     test_is_xxx()
     test_key_element()
-    test_sizeof()
+    test_size_of()
     test_from_str()
     test_get_dtype()

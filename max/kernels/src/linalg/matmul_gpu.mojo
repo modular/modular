@@ -13,13 +13,13 @@
 from collections import OptionalReg
 from math import align_down, ceildiv
 from sys import (
-    alignof,
+    align_of,
     env_get_bool,
     env_get_int,
     has_accelerator,
     has_amd_gpu_accelerator,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
@@ -293,7 +293,7 @@ fn _matmul_sm100[
         logger.warning("Vendor BLAS failed")
 
         @parameter
-        if not a_type.is_float8() and K * sizeof[a_type]() >= 8 * 16:
+        if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
             alias config = kernels.ampere_256x64_4
             multistage_gemm[
@@ -1028,7 +1028,7 @@ fn split_k_reduce[
     work_space: NDBuffer[work_space_type, 3, _, work_space_shape],
     ctx: DeviceContext,
 ) raises:
-    alias simd_width = simdwidthof[c_type, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[c_type, target = get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -1046,7 +1046,7 @@ fn split_k_reduce[
                 Index(k, c_coord[0], c_coord[1])
             )
 
-        alias align = alignof[SIMD[c_type, simd_width]]()
+        alias align = align_of[SIMD[c_type, simd_width]]()
 
         @parameter
         if elementwise_lambda_fn:

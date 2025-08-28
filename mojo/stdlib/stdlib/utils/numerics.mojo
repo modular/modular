@@ -19,7 +19,7 @@ from utils.numerics import FPUtils
 ```
 """
 
-from sys import CompilationTarget, bitwidthof, llvm_intrinsic
+from sys import CompilationTarget, bit_width_of, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 

@@ -13,7 +13,7 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -26,7 +26,7 @@ from utils.index import Index
 alias type = DType.float32
 alias micro_kernel_height = 2
 alias micro_kernel_width = 2
-alias simd_size = simdwidthof[type]()
+alias simd_size = simd_width_of[type]()
 alias micro_kernel_f_size = micro_kernel_width * simd_size
 
 alias N = 1

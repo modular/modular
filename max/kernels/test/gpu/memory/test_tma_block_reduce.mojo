@@ -31,7 +31,7 @@ import gpu.warp as warp
 from math import ceildiv
 from memory import stack_allocation
 from random import rand
-from sys.info import sizeof, simdwidthof
+from sys.info import size_of, simd_width_of
 from testing import assert_almost_equal
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -134,7 +134,7 @@ fn tma_reduction_kernel[
 
     if thread_idx.x == 0:
         # Add expected_bytes requirement to barrier.
-        var expected_bytes = cols * sizeof[dtype]()
+        var expected_bytes = cols * size_of[dtype]()
         mbarrier_arrive_expect_tx_shared(mbar, expected_bytes)
         cp_async_bulk_tensor_shared_cluster_global(
             shmem,
@@ -165,7 +165,7 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,):
     var n = rows * cols
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     alias accum_type = get_accum_type[dtype]()
 
@@ -201,7 +201,7 @@ def test_tma_block_reduce[
                 (1, cols),
             )
             # Calculate shared memory size needed per row.
-            var shared_mem_bytes = cols * sizeof[dtype]()
+            var shared_mem_bytes = cols * size_of[dtype]()
             ctx.enqueue_function[
                 tma_reduction_kernel[dtype, accum_type, simd_width]
             ](

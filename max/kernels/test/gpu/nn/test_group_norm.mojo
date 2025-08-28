@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import isqrt
-from sys import simdwidthof
+from sys import simd_width_of
 
 from buffer import NDBuffer
 from gpu.host import DeviceContext
@@ -134,7 +134,7 @@ fn run_group_norm_gpu[
 
 def main():
     with DeviceContext() as ctx:
-        alias default_simd = simdwidthof[
+        alias default_simd = simd_width_of[
             DType.float32, target = get_gpu_target()
         ]()
 

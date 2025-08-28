@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, sizeof
+from sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -486,7 +486,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[dst.element_type]()
+        alias alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -499,7 +499,7 @@ fn _copy_nd_buffer_to_layout_tensor[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * sizeof[dtype]()
+                alias element_size_bytes = vec_size * size_of[dtype]()
                 var src_ptr = src.data.address_space_cast[
                     _GPUAddressSpace.GLOBAL
                 ]()
@@ -539,7 +539,7 @@ fn _copy_nd_buffer_to_layout_tensor[
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * sizeof[dtype]()
+                    alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
                         _GPUAddressSpace.GLOBAL
                     ]()
@@ -554,11 +554,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -638,7 +638,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[dst.element_type]()
+        alias alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -651,7 +651,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * sizeof[dtype]()
+                alias element_size_bytes = vec_size * size_of[dtype]()
                 var src_ptr = src.data.address_space_cast[
                     _GPUAddressSpace.GLOBAL
                 ]()
@@ -691,7 +691,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * sizeof[dtype]()
+                    alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
                         _GPUAddressSpace.GLOBAL
                     ]()
@@ -706,11 +706,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -780,7 +780,7 @@ fn _copy_layout_tensor_to_nd_buffer[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[src.element_type]()
+        alias alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -820,10 +820,10 @@ fn _copy_layout_tensor_to_nd_buffer[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
+                    alignment = align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
@@ -887,7 +887,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[src.element_type]()
+        alias alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -927,10 +927,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
+                    alignment = align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 

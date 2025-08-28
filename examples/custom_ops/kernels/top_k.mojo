@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import alignof, sizeof
+from sys import align_of, size_of
 
 from algorithm import parallelize_over_rows
 from bit import log2_floor
@@ -85,7 +85,7 @@ struct TopK:
             var top_k_sram = external_memory[
                 TopKElement[dtype],
                 address_space = AddressSpace.SHARED,
-                alignment = alignof[TopKElement[dtype]](),
+                alignment = align_of[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
@@ -132,7 +132,7 @@ struct TopK:
                 in_vals,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=K,  # One thread per K
-                shared_mem_bytes=K * sizeof[TopKElement[dtype]](),
+                shared_mem_bytes=K * size_of[TopKElement[dtype]](),
             )
         else:
 

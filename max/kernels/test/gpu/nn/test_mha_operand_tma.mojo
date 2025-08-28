@@ -41,7 +41,7 @@ from nn.mha_operand import (
 from random import random_ui64, seed
 from testing import assert_equal
 from utils import IndexList
-from sys import sizeof
+from sys import size_of
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
@@ -107,7 +107,7 @@ fn mha_operand_tma_copy_kernel[
     for kv_tile_start_row in range(0, num_keys, tile_m):
         if thread_idx.x == 0:
             src_row = src_operand.row_idx(batch_idx, kv_tile_start_row)
-            mbar[0].expect_bytes(tile_m * head_size * sizeof[kv_t.dtype]())
+            mbar[0].expect_bytes(tile_m * head_size * size_of[kv_t.dtype]())
 
             # Initiate TMA load
             src_tma_tile.async_copy(

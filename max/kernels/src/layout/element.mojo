@@ -26,7 +26,7 @@ These components enable efficient tensor operations by ensuring memory accesses
 follow optimal patterns defined by the layout system.
 """
 
-from sys import alignof
+from sys import align_of
 
 from layout.layout import coalesce, is_contiguous_dim
 
@@ -196,7 +196,7 @@ struct Element[
 
             @parameter
             if is_contiguous_dim(flat_layout, 0):
-                alias alignment = alignof[Self.element_data_type]()
+                alias alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
                         width = Self.element_data_type.size, alignment=alignment
@@ -213,7 +213,7 @@ struct Element[
             alias size = Int(flat_layout.shape[0])
             alias elements = Int(flat_layout.shape[1])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -227,7 +227,7 @@ struct Element[
             alias size = Int(flat_layout.shape[1])
             alias elements = Int(flat_layout.shape[0])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -288,7 +288,7 @@ struct Element[
 
             @parameter
             if layout.stride[0] == 1:
-                alias alignment = alignof[Self.element_data_type]()
+                alias alignment = align_of[Self.element_data_type]()
                 if runtime_layout.dim(0) < size:
 
                     @parameter
@@ -317,7 +317,7 @@ struct Element[
             alias size = Int(layout.shape[0])
             alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]
+            alias alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(0) < size:
                 alias dim_0 = Int(layout.shape[0])
@@ -351,7 +351,7 @@ struct Element[
             alias size = Int(layout.shape[1])
             alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]
+            alias alignment = align_of[vec_type]
             var element_data = Self.element_data_type()
             if runtime_layout.dim(1) < size:
                 alias dim_0 = Int(layout.shape[0])
@@ -429,7 +429,7 @@ struct Element[
 
             @parameter
             if layout.stride[0] == 1:
-                alias alignment = alignof[Self.element_data_type]()
+                alias alignment = align_of[Self.element_data_type]()
                 ptr.store[alignment=alignment](self.element_data)
                 return
 
@@ -443,7 +443,7 @@ struct Element[
             alias size = Int(layout.shape[0])
             alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -457,7 +457,7 @@ struct Element[
             alias size = Int(layout.shape[1])
             alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
 
             @parameter
             for i in range(elements):
@@ -519,7 +519,7 @@ struct Element[
                         ] = self.element_data[i]
                     return
 
-                alias alignment = alignof[Self.element_data_type]()
+                alias alignment = align_of[Self.element_data_type]()
                 ptr.store(self.element_data)
                 return
 
@@ -535,7 +535,7 @@ struct Element[
             alias size = Int(layout.shape[0])
             alias elements = Int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
                 alias dim_0 = Int(layout.shape[0])
                 alias dim_1 = Int(layout.shape[1])
@@ -569,7 +569,7 @@ struct Element[
             alias size = Int(layout.shape[1])
             alias elements = Int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
-            alias alignment = alignof[vec_type]()
+            alias alignment = align_of[vec_type]()
             if self.runtime_layout.dim(1) < size:
                 alias dim_0 = Int(layout.shape[0])
                 alias dim_1 = Int(layout.shape[1])

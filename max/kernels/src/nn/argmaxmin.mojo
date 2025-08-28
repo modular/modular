@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from math import align_down, ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
@@ -41,7 +41,7 @@ fn _argn[
         output: The output tensor.
     """
     alias rank = input.rank
-    alias simd_width = simdwidthof[input.dtype]()
+    alias simd_width = simd_width_of[input.dtype]()
 
     var canonical_axis = axis
     if canonical_axis < 0:
