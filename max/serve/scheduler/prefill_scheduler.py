@@ -134,9 +134,9 @@ class PrefillScheduler(Scheduler):
         assert context.needs_ce, (
             f"Expected needs_ce to be True. Invalid context: {context}"
         )
-        assert context.start_idx == 0, (
-            f"Expected start_idx to be 0. Invalid context: {context}"
-        )
+        # It is possible for the context to have a non-zero start_idx due to
+        # decode using prefix caching.
+        context.reset()
         self.batch_constructor.ce_reqs[message.id] = context
         self.request_id_to_reply_context[message.id] = (
             reply_context,
@@ -182,7 +182,7 @@ class PrefillScheduler(Scheduler):
 
         # Send completed requests to decode queue.
         for req_id, context in batch.items():
-            reply_context, transfer_engine_name, block_ids = (
+            reply_context, transfer_engine_name, dst_idxs = (
                 self.request_id_to_reply_context.pop(req_id)
             )
 
@@ -197,23 +197,28 @@ class PrefillScheduler(Scheduler):
             ]
 
             # Retrieve source block ids.
-            src_idx = self.paged_cache.block_manager.get_req_blocks(
+            src_idxs = self.paged_cache.block_manager.get_req_blocks(
                 context.request_id,
             )
+            assert len(src_idxs) == len(dst_idxs)
 
             # Bump this back, so the token is returned.
             context._completion_start_idx -= 1
 
+            # Transfer only the blocks that are not already on decode node.
+            num_already_cached_blocks = dst_idxs.count(-1)
+            src_idxs = src_idxs[num_already_cached_blocks:]
+            dst_idxs = dst_idxs[num_already_cached_blocks:]
+            assert dst_idxs.count(-1) == 0
+
+            # Initiate the KV transfer
             logger.debug("initiating transfer from prefill worker.")
             xfer_data = self.transfer_engine.initiate_send_xfer(
                 remote_metadata,
-                src_idx,
-                block_ids,
+                src_idxs,
+                dst_idxs,
             )
-            self.active_transfers[req_id] = (
-                context,
-                xfer_data,
-            )
+            self.active_transfers[req_id] = (context, xfer_data)
 
             # Increment the number of terminated requests.
             sch_output.num_terminated += 1

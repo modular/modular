@@ -164,7 +164,7 @@ class DecodeScheduler(Scheduler):
         self,
         request_id: RequestID,
         data: Union[TextContext, TextAndVisionContext],
-        dst_idx: list[int],
+        dst_idxs: list[int],
     ) -> None:
         """Pushes a request to the prefill socket.
 
@@ -187,16 +187,19 @@ class DecodeScheduler(Scheduler):
         assert data.needs_ce, (
             f"Invalid Context: Expected needs_ce to be True. Found: {data}"
         )
-        assert data.start_idx == 0, (
-            f"Invalid Context: Expected start_idx to be 0. Found: {data}"
-        )
+
+        # Set dst_idx to -1 to denote pages which the decode already has due to
+        # prefix caching.
+        for i in range(data.start_idx // self.paged_manager.page_size):
+            dst_idxs[i] = -1
+
         self.dispatcher_client.send(
             MessageType.PREFILL_REQUEST,
             PrefillRequest(
                 id=request_id,
                 context=data,
                 transfer_engine_name=self.transfer_engine.name,
-                block_ids=dst_idx,
+                block_ids=dst_idxs,
             ),
             destination_address=data.target_endpoint,
         )
