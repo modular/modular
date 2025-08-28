@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys import sizeof
+from sys import size_of
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
@@ -77,7 +77,7 @@ fn _mojo_block_hasher[
 
     # Performing hashing
     var prev_hash = parent_hash
-    var num_bytes = block_size * sizeof[dtype]()
+    var num_bytes = block_size * size_of[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
