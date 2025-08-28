@@ -16,6 +16,7 @@ from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simdwidthof
+from memory import bitcast
 from stdlib.bit import log2_floor
 from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
@@ -741,3 +742,59 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     else:
         var c_ptr = c.ptr + a_start_row * N
         c_ptr[m_local * N + n] = accum.cast[c_type]()
+
+
+########################################################
+# FP8 E4M3FN to E4M3FNUZ Conversion for AMD GPUs
+########################################################
+
+
+@always_inline
+fn convert_e4m3fn_to_e4m3fnuz(
+    input_buffer: NDBuffer[DType.float8_e4m3fn, 2, *_],
+    output_buffer: NDBuffer[mut=True, DType.float8_e4m3fnuz, 2, *_],
+    context: DeviceContext,
+) raises:
+    """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.
+
+    This conversion handles the key differences between E4M3FN and E4M3FNUZ:
+    1. The bit pattern 10000000 (-128) represents zero in E4M3FN but NaN in E4M3FNUZ
+
+    Args:
+        input_buffer: Input tensor in E4M3FN format.
+        output_buffer: Output tensor to store E4M3FNUZ format.
+        context: Device context for kernel execution.
+    """
+    constrained[
+        input_buffer.shape == output_buffer.shape,
+        "Input and output shapes must match",
+    ]()
+
+    @always_inline
+    @parameter
+    @__copy_capture(input_buffer, output_buffer)
+    fn convert_kernel[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
+        constrained[rank == 2, "rank should be equal to 2"]()
+
+        var idx = rebind[IndexList[2]](idx_arg)
+
+        var input_vec_e4m3fn = input_buffer.load[width=width](idx)
+        var input_vec_int8 = bitcast[DType.int8](input_vec_e4m3fn)
+
+        alias ROCM_FP8_NAN_AS_INT = -128
+
+        input_vec_int8 = input_vec_int8.eq(ROCM_FP8_NAN_AS_INT).select(
+            0, input_vec_int8
+        )
+        var output_vec = bitcast[DType.float8_e4m3fnuz](input_vec_int8)
+        output_buffer.store(idx, output_vec)
+
+    alias target_simd_width = simdwidthof[
+        DType.float8_e4m3fn, target = get_gpu_target()
+    ]()
+
+    _elementwise_impl_gpu[func=convert_kernel, simd_width=target_simd_width](
+        IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context
+    )

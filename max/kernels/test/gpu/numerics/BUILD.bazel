@@ -33,6 +33,17 @@ mojo_filecheck_test(
 )
 
 mojo_filecheck_test(
+    name = "test_e4m3fn_to_e4m3fnuz_conversion.mojo.test",
+    srcs = ["test_e4m3fn_to_e4m3fnuz_conversion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
+    ],
+)
+
+mojo_filecheck_test(
     name = "test_ue8m0_conversion.mojo.test",
     srcs = ["test_ue8m0_conversion.mojo"],
     tags = ["gpu"],

@@ -72,6 +72,7 @@ from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
+    convert_e4m3fn_to_e4m3fnuz,
 )
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.matmul import matmul
@@ -845,6 +846,30 @@ struct Abs(ElementwiseUnaryOp):
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return abs(x)
+
+
+@compiler.register("mo.convert_e4m3fn_to_e4m3fnuz")
+struct ConvertE4M3FNToE4M3FNUZ:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype = DType.float8_e4m3fnuz, rank=2],
+        input: InputTensor[dtype = DType.float8_e4m3fn, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        convert_e4m3fn_to_e4m3fnuz(
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(output),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    fn shape(
+        input: InputTensor[dtype = DType.float8_e4m3fn, rank=2],
+    ) -> IndexList[2]:
+        return IndexList[2](input.dim_size[0](), input.dim_size[1]())
 
 
 @compiler.register("mo.squeeze_shape")
