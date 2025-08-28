@@ -182,7 +182,7 @@ struct RuntimeTuple[
     @always_inline
     fn __getitem__[
         i: Int
-    ](self) -> RuntimeTuple[S[i], element_type=element_type]:
+    ](self, out res: RuntimeTuple[S[i], element_type=element_type]):
         """Retrieves the element at the specified index in the tuple.
 
         This method provides array-like indexing for RuntimeTuple, allowing access
@@ -195,13 +195,12 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing the element or sub-tuple at the specified index.
         """
-        var res = RuntimeTuple[S[i], element_type=element_type]()
         alias offset = Self.offset_until[i]()
+        res = {}
 
         @parameter
         for i in range(res.scalar_length):
             res.value[i] = self.value[i + offset]
-        return res
 
     @always_inline
     fn __setitem__[i: Int](mut self, val: Scalar[element_type]):
@@ -255,7 +254,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing all elements from both tuples in sequence.
         """
-        var out = __type_of(result)()
+        result = {}
 
         alias S_flat = flatten(S)
 
@@ -264,7 +263,7 @@ struct RuntimeTuple[
 
             @parameter
             if S_flat[i] == UNKNOWN_VALUE:
-                out.value[i] = self.value[i]
+                result.value[i] = self.value[i]
 
         alias R_flat = flatten(R)
 
@@ -273,9 +272,7 @@ struct RuntimeTuple[
 
             @parameter
             if R_flat[i] == UNKNOWN_VALUE:
-                out.value[Self.scalar_length + i] = rhs.value[i]
-
-        return out
+                result.value[Self.scalar_length + i] = rhs.value[i]
 
     @always_inline
     fn flatten(
@@ -290,7 +287,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` containing all elements in a flat (non-nested) structure.
         """
-        return __type_of(result)(self.value)
+        return {self.value}
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the RuntimeTuple to a Writer object.
@@ -350,7 +347,7 @@ struct RuntimeTuple[
         Returns:
             A new `RuntimeTuple` with elements cast to the specified type.
         """
-        return __type_of(result)(self.value.cast[dtype]())
+        return {self.value.cast[dtype]()}
 
     @always_inline
     fn __int__(self) -> Int:
@@ -463,7 +460,7 @@ fn idx2crd[
     idx: RuntimeTuple[idx_t, **_],
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
-    out result: RuntimeTuple[
+    out res: RuntimeTuple[
         idx2crd_int_tuple(idx_t, shape_t, stride_t),
         element_type = shape.element_type,
     ],
@@ -490,11 +487,10 @@ fn idx2crd[
         The index must be a scalar value (not a tuple).
     """
 
-    var res = __type_of(result)()
+    res = {}
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):
         res.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
-    return res
 
 
 # take shape as return type
@@ -695,16 +691,8 @@ fn shape_div[
 
                 # FIXME: this used to be simpler
                 # vb = Int(to_int(shape_div(vb, product(a[i]))))
-                vb = __type_of(vb)(
-                    Int(
-                        shape_div(
-                            vb,
-                            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
-                                product(a[i])
-                            ),
-                        )
-                    )
-                )
+                var t = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](product(a[i]))
+                vb = {Int(shape_div(vb, t))}
             return res
     else:
 
@@ -718,6 +706,4 @@ fn shape_div[
             if not (va % vb == 0 or vb % va == 0):
                 abort(String("Incompatible shape values: ", va, " ", vb))
 
-            return __type_of(result)(
-                va // vb if va % vb == 0 else signum(va * vb)
-            )
+            return {va // vb if va % vb == 0 else signum(va * vb)}

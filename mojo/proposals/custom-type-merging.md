@@ -145,8 +145,8 @@ struct Pointer[type, origin]:  # slightly simplified from pointer.mojo
    # TODO: '_' doesn't work right in parameter lists currently, so the unbound
    # params of Pointer need to be explicitly declared.
    fn __merge_with__[other_type: __type_of(Pointer[type, _])]
-      (self, out result: Pointer[type, __origin_of(self.origin, other_type.origin)):
-        return __type_of(result)(self._value)
+      (self) -> Pointer[type, __origin_of(self.origin, other_type.origin)]:
+        return {self._value}
 ```
 
 Ok, that is a mouthful, but the same as before. The similar approach can be
@@ -157,8 +157,8 @@ This would also solve the numeric issue it would look like:
 ```mojo
 struct SIMD[type: DType, size: Int](
     fn __merge_with__[other_type: __type_of(SIMD[_, size])]
-      (self, out result: SIMD[type.merged_with(other_type.type), size]):
-        return __type_of(result)(self) # Use explicit conversion ctor
+      (self) -> SIMD[type.merged_with(other_type.type), size]:
+        return {self} # Use explicit conversion ctor
 
 struct DType:
    ...

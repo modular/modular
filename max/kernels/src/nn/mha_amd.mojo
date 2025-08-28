@@ -1053,7 +1053,7 @@ struct SharedMemoryManager[
         ],
     ):
         constrained[token_gen, "this function is only used for token_gen"]()
-        return __type_of(result)(self.k_v_smem, BN * depth)
+        return {self.k_v_smem, BN * depth}
 
     @always_inline
     fn get_v_iter(
@@ -1067,7 +1067,7 @@ struct SharedMemoryManager[
         ],
     ):
         constrained[token_gen, "this function is only used for token_gen"]()
-        return __type_of(result)(self.k_v_smem, BN * depth)
+        return {self.k_v_smem, BN * depth}
 
     @always_inline
     fn get_p_iter(
@@ -1080,10 +1080,7 @@ struct SharedMemoryManager[
             circular=True,
         ],
     ):
-        return __type_of(result)(
-            self.p_smem,
-            BM * BN,
-        )
+        return {self.p_smem, BM * BN}
 
     @always_inline
     fn get_warp_scratch_tensor(
@@ -1102,7 +1099,8 @@ struct SharedMemoryManager[
             "warp_scratch_tile is too large",
         ]()
         var ptr = self.k_v_smem.bitcast[Scalar[Self.accum_type]]()
-        return __type_of(result)(ptr if token_gen else __type_of(ptr)())
+        # FIXME(#5239): replace with a nicer {}
+        return {ptr if token_gen else __type_of(ptr)()}
 
 
 struct GlobalMemoryManager[
@@ -1173,10 +1171,7 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return __type_of(result)(
-            ptr + Int(self.q_offset),
-            self.q_runtime_layout,
-        )
+        return {ptr + Int(self.q_offset), self.q_runtime_layout}
 
     @always_inline
     fn get_output_tensor[
@@ -1221,10 +1216,7 @@ struct GlobalMemoryManager[
             ),
         )
 
-        return __type_of(result)(
-            ptr,
-            kv_runtime_layout,
-        )
+        return {ptr, kv_runtime_layout}
 
 
 @always_inline

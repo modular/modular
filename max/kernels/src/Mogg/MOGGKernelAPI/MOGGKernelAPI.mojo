@@ -1760,9 +1760,7 @@ struct StaticBroadcastTo:
         ],
     ):
         var x_runtime_strides = Self.build_view[out_rank](x)
-        return __type_of(result)(
-            x.unsafe_ptr(), output_shape, x_runtime_strides
-        )
+        return {x.unsafe_ptr(), output_shape, x_runtime_strides}
 
     @staticmethod
     fn execute[
@@ -1829,11 +1827,11 @@ struct StaticReshape:
             shape,
         )
 
-        return __type_of(result)(
+        return {
             view_buffer.data,
             view_buffer.get_shape(),
             view_buffer.get_strides(),
-        )
+        }
 
     @staticmethod
     fn execute[
@@ -1900,7 +1898,7 @@ struct Transpose:
             new_shape[i] = input.dim_size(dim)
             new_stride[i] = input.stride_length(dim)
 
-        return __type_of(result)(new_shape, new_stride)
+        return {new_shape, new_stride}
 
     @staticmethod
     fn get_view_strides[
@@ -1939,7 +1937,7 @@ struct Transpose:
         ],
     ):
         shape, strides = Self.transpose_in_place(input, permutations)
-        return __type_of(result)(input.unsafe_ptr(), shape, strides)
+        return {input.unsafe_ptr(), shape, strides}
 
     @staticmethod
     fn execute[
@@ -2042,11 +2040,11 @@ struct Slice:
             managed_tensor_slice_to_ndbuffer(steps),
         )
 
-        return __type_of(result)(
+        return {
             view_buffer.data,
             view_buffer.get_shape(),
             view_buffer.get_strides(),
-        )
+        }
 
     @staticmethod
     fn execute[
@@ -2185,11 +2183,11 @@ struct SliceDim:
             Int(steps),
         )
 
-        return __type_of(result)(
+        return {
             view_buffer.data,
             view_buffer.get_shape(),
             view_buffer.get_strides(),
-        )
+        }
 
     @staticmethod
     fn execute[
