@@ -86,5 +86,9 @@ mojo_binary(
 modular_run_binary_test(
     name = "vector_addition_metal_test",
     binary = "vector_addition_metal",
-    tags = ["apple_gpu"],
+    tags = [
+        "apple_gpu",
+        # This uses MacOS 15 and M2+ specific features
+        "skip-external-ci-macos-15",
+    ],
 )
