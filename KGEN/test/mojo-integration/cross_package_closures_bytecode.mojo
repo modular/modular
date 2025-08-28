@@ -1,0 +1,27 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: mojo package %S/inputs/closure -o %T/closure.mojopkg
+# RUN: mojo -I %T %s 4 | FileCheck %s
+# RUN: kgen-opt %T/closure.mojopkg | FileCheck %s -check-prefix=CHECK-PACK
+
+# CHECK-PACK-NOT: lit.trait.decl @"fn(x: Int) -> Int"
+# CHECK-PACK-NOT: definesClosure
+
+from closure import printIt
+from sys import argv
+
+
+fn aThing(y: Int):
+    fn myclosure(x: Int) unified {var} -> Int:
+        return y + x
+
+    printIt[__type_of(myclosure)](myclosure, y)
+
+
+def main():
+    # CHECK: 8
+    var x = atol(argv()[1])
+    aThing(x)
