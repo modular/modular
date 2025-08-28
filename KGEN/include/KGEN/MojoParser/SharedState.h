@@ -29,6 +29,7 @@ class FuncTypeGeneratorType;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
+class ClosureEmitter;
 class DeclResolver;
 class ExprNode;
 struct Operand;
@@ -107,6 +108,7 @@ public:
   const CompilationOptions &options;
 
   std::unique_ptr<DeclResolver> declResolver;
+  std::unique_ptr<ClosureEmitter> closureEmitter;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
   ParserListener *parserListener;
 
@@ -118,6 +120,7 @@ public:
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
   DeclResolver &getDeclResolver() const { return *declResolver; }
+  ClosureEmitter &getClosureEmitter() const { return *closureEmitter; }
 
   bool shouldExportKgenModule() const;
 

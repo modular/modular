@@ -74,43 +74,47 @@ static void updateLocationScope(Location nestedLocation,
   }
 }
 
-ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
-    : FunctionEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
-      node(moduleDecl.getLoc()),
-      fileModuleOp(cast<FileModuleOp>(moduleDecl.getIfOperation())),
+ClosureEmitter::ClosureEmitter(SharedState &shared)
+    : FunctionEmitter(shared), ctx(shared.getContext()),
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
       dtorFieldAttr(StringAttr::get(ctx, "dtor")),
       copyFieldAttr(StringAttr::get(ctx, "_copy")),
       callFieldAttr(StringAttr::get(ctx, "call")),
       callMethodAttr(StringAttr::get(ctx, "closureCallMethod")),
-      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))) {
-  auto getClosureParent = [&](StringRef traitName,
-                              StringRef fnName) -> ClosureParent {
-    auto traitDeclParent =
-        shared.lookupBuiltinTrait(traitName, &moduleDecl, moduleDecl.getLoc());
-    if (traitDeclParent->resolvedness < DeclResolvedness::body)
-      assert(succeeded(shared.declResolver->resolveBody(
-                 *traitDeclParent, traitDeclParent->getLoc())) &&
-             "builtins should not fail body resolution.");
+      opaquePtrType(PointerType::get(KGEN::NoneType::get(ctx))),
+      moveParent("Movable", "__moveinit__"), anyParent("AnyType", "__del__") {}
 
-    for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
-      for (auto decl : decls) {
-        assert(
-            succeeded(
-                shared.declResolver->resolveSignature(*decl, decl->getLoc())) &&
-            "builtin trait nested decls should not fail signature resolution");
-      }
+TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
+  if (trait)
+    return trait;
+  SharedState &shared = moduleDecl.getShared();
+  auto traitDeclParent =
+      shared.lookupBuiltinTrait(traitName, &moduleDecl, moduleDecl.getLoc());
+  if (traitDeclParent->resolvedness < DeclResolvedness::body) {
+    bool outcome = succeeded(shared.declResolver->resolveBody(
+        *traitDeclParent, traitDeclParent->getLoc()));
+    assert(outcome && "builtins should not fail body resolution.");
+  }
+
+  for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
+    for (auto decl : decls) {
+      assert(succeeded(shared.declResolver->resolveSignature(*decl,
+                                                             decl->getLoc())) &&
+             "builtin trait nested decls should not fail signature resolution");
     }
+  }
+  trait = dyn_cast_or_null<TraitDeclOp>(traitDeclParent->getIfOperation());
+  definingFn = getFnOpNamed(trait, traitFnName);
+  assert(definingFn && "missing function in builtin trait");
+  return trait;
+}
 
-    TraitDeclOp traitParent =
-        dyn_cast_or_null<TraitDeclOp>(traitDeclParent->getIfOperation());
-    FnOp fnOp = getFnOpNamed(traitParent, fnName);
-    assert(fnOp && "missing function in builtin trait");
-    return {traitParent, fnOp};
-  };
-  moveParent = getClosureParent("Movable", "__moveinit__");
-  anyParent = getClosureParent("AnyType", "__del__");
+FnOp ClosureEmitter::ClosureParent::getDefiningOp(ASTDecl &moduleDecl) {
+  if (definingFn)
+    return definingFn;
+  getTrait(moduleDecl);
+  return definingFn;
 }
 
 static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
@@ -369,7 +373,7 @@ struct ParamIndexRefReplacer
 } // namespace
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
-    StringAttr name, ArrayRef<StringRef> parentNames,
+    ASTDecl &moduleDecl, StringAttr name, ArrayRef<StringRef> parentNames,
     SMLoc nestedFunctionOrTypeLocation,
     llvm::function_ref<
         void(ASTDecl &traitDecl,
@@ -485,20 +489,22 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
   }
 }
 
-StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
+StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
+                                                 StringRef baseName,
                                                  ASTDecl &traitDecl,
                                                  SMLoc smLocation) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
+
   auto parentTraitForSourceName = [&](StringRef name) {
     if (name == "__call__")
       return trait;
     if (name == "__moveinit__")
-      return moveParent.trait;
+      return moveParent.getTrait(moduleDecl);
     assert(name == "__del__" &&
            "closures only have three methods: call, move, del.");
-    return anyParent.trait;
+    return anyParent.getTrait(moduleDecl);
   };
 
   auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
@@ -673,8 +679,10 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
     b.create<WitnessOp>(StringAttr::get(ctx, name), symbolConstant);
   };
   addWitnessEntry(trait, getFnOpNamed(trait, "__call__"));
-  addWitnessEntry(moveParent.trait, moveParent.definingFn);
-  addWitnessEntry(anyParent.trait, anyParent.definingFn);
+  addWitnessEntry(moveParent.getTrait(moduleDecl),
+                  moveParent.getDefiningOp(moduleDecl));
+  addWitnessEntry(anyParent.getTrait(moduleDecl),
+                  anyParent.getDefiningOp(moduleDecl));
 
   assert(moveParentStrAttr && "closures are expected to conform to move");
   auto initName = StringAttr::get(ctx, "__init__");
@@ -738,7 +746,8 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
 
 std::pair<StructDeclOp, TraitDeclOp>
 ClosureEmitter::createParametricClosureWrapperStructDecl(
-    StringAttr name, FnTypeGeneratorType dependentSignatureType,
+    ASTDecl &moduleDecl, StringAttr name,
+    FnTypeGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel) {
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
@@ -772,17 +781,18 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
     builder.create<UnreachableOp>();
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
-  auto [closureTrait, traitDecl] =
-      createTraitOp(name, parents, nestedFunctionOrTypeLocation, populate);
+  auto [closureTrait, traitDecl] = createTraitOp(
+      moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
 
   // Now create a wrapper struct that conforms to the trait we created.
-  return {createStructWrapper(name.getValue(), *traitDecl,
+  return {createStructWrapper(moduleDecl, name.getValue(), *traitDecl,
                               nestedFunctionOrTypeLocation),
           closureTrait};
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
-    StringAttr name, FnTypeGeneratorType dependentSignatureType,
+    ASTDecl &moduleDecl, StringAttr name,
+    FnTypeGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation) {
   SmallVector<Type> fieldTypes{opaquePtrType};
 
@@ -954,8 +964,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 }
 
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
-    ArrayRef<Capture> captures, ArrayRef<ParamDeclRefAttr> paramCaptures,
-    ASTDecl &nestedFnDecl, FnTypeGeneratorType wrapperSig) {
+    ASTDecl &moduleDecl, ArrayRef<Capture> captures,
+    ArrayRef<ParamDeclRefAttr> paramCaptures, ASTDecl &nestedFnDecl,
+    FnTypeGeneratorType wrapperSig) {
+  FileModuleOp fileModuleOp = cast<FileModuleOp>(moduleDecl.getIfOperation());
   auto implName =
       StringAttr::get(ctx, "`_CI_" + fileModuleOp.getSymName() + "_escaping" +
                                Twine(moduleDecl.getNextUniqueID()));
@@ -1281,7 +1293,8 @@ static FnOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands) {
   return {};
 }
 
-FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
+FnOp ClosureEmitter::createWrapperInitWithImpl(ASTDecl &moduleDecl,
+                                               StructDeclOp closureWrapper,
                                                StructDeclOp closureImpl,
                                                SMLoc loc) {
   // The __init__ will take self and the impl. We first build the types. Add the
@@ -1356,6 +1369,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
   // Move the contents of the injected impl into the heap memory.
   IREmitter emitter(moduleDecl, builder);
+  SyntheticNode node(moduleDecl.getLoc());
   emitter.emitStoreToLValue({MRValue(source), &node}, MLValue(targetRef),
                             EC_Assignment);
 
@@ -1396,6 +1410,7 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                          paramPassingKinds);
   auto argListAttrs =
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly});
+  auto fileModuleOp = cast<FileModuleOp>(moduleDecl.getIfOperation());
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   auto [topLevelCopyInit, copyInitDecl] = synthesizeFunction(
@@ -1570,7 +1585,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   return init;
 }
 
-TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
+TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
+                                                    SMLoc smLoc, FnOp parent,
                                                     ClosureType closureType,
                                                     TraitDeclOp trait) {
   // create kgen.struct.generator
@@ -1590,7 +1606,10 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
   closureParams.push_back(ParamDeclAttr::get("CAPTURES", paramClosureType));
   ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
   ImplicitLocOpBuilder builder(location, ctx);
-  builder.setInsertionPoint(fileModuleOp);
+  builder.setInsertionPointToStart(
+      &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
+           .getBodyRegion()
+           .front());
   TraitType traitType = TraitType::get(getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(trait.getOperation())));
   auto structGen = builder.create<StructGeneratorOp>(symName, parameters,
@@ -1642,8 +1661,10 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
     builder.create<WitnessOp>(fnOp.getSourceNameAttr(), symbol);
   };
   addWitnessTable(trait, getFnOpNamed(trait, "__call__"));
-  addWitnessTable(moveParent.trait, moveParent.definingFn);
-  addWitnessTable(anyParent.trait, anyParent.definingFn);
+  addWitnessTable(moveParent.getTrait(moduleDecl),
+                  moveParent.getDefiningOp(moduleDecl));
+  addWitnessTable(anyParent.getTrait(moduleDecl),
+                  anyParent.getDefiningOp(moduleDecl));
 
   // create a SymbolRefAttr from the StructGeneratorOp
   SymbolRefAttr structGenSymbolRef = getFullyResolvedSymbolRef(
@@ -1657,7 +1678,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
   return typeParamAttr;
 }
 
-Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
+Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     ArrayRef<Capture> captures,
                                     StructDeclOp wrapper, TraitDeclOp trait,
                                     Location location) {
@@ -1765,7 +1786,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
   StringAttr originAttr =
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue());
   TypedAttr witnessTable = addWitnessTablesToClosure(
-      nestedFnDecl.getLoc(), parent, closureType, trait);
+      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, trait);
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));

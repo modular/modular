@@ -32,12 +32,12 @@ struct TopLevelTypes {
 
 class ClosureEmitter : public FunctionEmitter {
 public:
-  ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
+  ClosureEmitter(SharedState &shared);
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.
   StructDeclOp
-  createClosureWrapperStructDecl(StringAttr name,
+  createClosureWrapperStructDecl(ASTDecl &moduleDecl, StringAttr name,
                                  FnTypeGeneratorType signatureType,
                                  SMLoc nestedFunctionOrTypeLocation);
 
@@ -45,22 +45,24 @@ public:
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
   std::pair<StructDeclOp, TraitDeclOp> createParametricClosureWrapperStructDecl(
-      StringAttr name, FnTypeGeneratorType signatureType,
+      ASTDecl &moduleDecl, StringAttr name, FnTypeGeneratorType signatureType,
       SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel);
 
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
-      ArrayRef<Capture> captures, ArrayRef<ParamDeclRefAttr> paramCaptures,
-      ASTDecl &nestedfnDecl, FnTypeGeneratorType wrapperSigGen);
+      ASTDecl &moduleDecl, ArrayRef<Capture> captures,
+      ArrayRef<ParamDeclRefAttr> paramCaptures, ASTDecl &nestedfnDecl,
+      FnTypeGeneratorType wrapperSigGen);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
   /// instance.
-  FnOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
+  FnOp createWrapperInitWithImpl(ASTDecl &moduleDecl,
+                                 StructDeclOp closureWrapper,
                                  StructDeclOp closureImpl, SMLoc location);
-  Value emitClosureOp(ASTDecl &nestedFnDecl, ArrayRef<Capture> captures,
-                      StructDeclOp wrapper, TraitDeclOp trait,
-                      Location location);
+  Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
+                      ArrayRef<Capture> captures, StructDeclOp wrapper,
+                      TraitDeclOp trait, Location location);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -71,13 +73,6 @@ public:
 
 private:
   MLIRContext *ctx;
-  /// The decl of the surrounding module where code should be synthesized.
-  ASTDecl &moduleDecl;
-  /// A synthetic node to carry location information for emitting IR.
-  SyntheticNode node;
-
-  /// The surrounding file module operation.
-  FileModuleOp fileModuleOp;
 
   // Cached attributes and types.
   StringAttr selfName, otherName, ptrToImplName, dtorFieldAttr;
@@ -96,8 +91,8 @@ private:
   /// that inherits from the parent and contains the methods added to the
   /// function list populated by the populate method.
   std::pair<TraitDeclOp, ASTDecl *>
-  createTraitOp(StringAttr name, ArrayRef<StringRef> parents,
-                SMLoc nestedFunctionOrTypeLocation,
+  createTraitOp(ASTDecl &moduleDecl, StringAttr name,
+                ArrayRef<StringRef> parents, SMLoc nestedFunctionOrTypeLocation,
                 llvm::function_ref<void(
                     ASTDecl &traitDecl,
                     DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
@@ -117,13 +112,21 @@ private:
   /// closures "T" is an abstract type (ClosureType). Wrapping the closure
   /// instance in a struct renders it eligible to be handled properly by our
   /// check-lifetimes pass.
-  StructDeclOp createStructWrapper(StringRef baseName, ASTDecl &traitDecl,
-                                   SMLoc location);
+  StructDeclOp createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
+                                   ASTDecl &traitDecl, SMLoc location);
   /// Generate a witness table for a closure op.
-  TypedAttr addWitnessTablesToClosure(SMLoc smLoc, FnOp parent,
-                                      ClosureType closureType,
+  TypedAttr addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+                                      FnOp parent, ClosureType closureType,
                                       TraitDeclOp trait);
   struct ClosureParent {
+    ClosureParent(StringRef name, StringRef fnName)
+        : traitName(name), traitFnName(fnName) {}
+    TraitDeclOp getTrait(ASTDecl &moduleDecl);
+    FnOp getDefiningOp(ASTDecl &moduleDecl);
+
+  private:
+    StringRef traitName;
+    StringRef traitFnName;
     /// The parent definition
     TraitDeclOp trait;
     /// all closure parents have a single defining function.
