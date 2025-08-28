@@ -13,5 +13,6 @@
 """Module implementation using eager tensors."""
 
 from .module import Module, module_dataclass
+from .sequential import Sequential
 
-__all__ = ["Module", "module_dataclass"]
+__all__ = ["Module", "Sequential", "module_dataclass"]
