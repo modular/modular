@@ -805,6 +805,130 @@ private:
     return success();
   }
 
+  Value
+  convertF8ToF32OnAMDGPUHelper(ConversionPatternRewriter &rewriter, CastOp op,
+                               Value value, Type outType,
+                               APFloat::Semantics fromFloatSemantics,
+                               APFloat::Semantics toFloatSemantics) const {
+    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+           "fast lowering of f32 to f8 is only supported on AMDGPU");
+
+    Location loc = op.getLoc();
+    auto simd = cast<SIMDType>(op.getInput().getType());
+    const uint64_t size = *simd.getResolvedSize();
+
+    Type i32Type = rewriter.getIntegerType(32);
+    Type ui8Type = rewriter.getIntegerType(8);
+    Type f32Type = rewriter.getF32Type();
+
+    StringRef intrinsicStr = [&]() -> StringRef {
+      if (fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
+          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN) {
+        if (size == 1)
+          return "llvm.amdgcn.cvt.f32.fp8";
+
+        return "llvm.amdgcn.cvt.pk.f32.fp8";
+      }
+
+      if (fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ ||
+          fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) {
+        if (size == 1)
+          return "llvm.amdgcn.cvt.f32.bf8";
+
+        return "llvm.amdgcn.cvt.pk.f32.bf8";
+      }
+
+      llvm_unreachable("conversion format not supported on AMDGPU");
+    }();
+
+    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+    VectorType v2f32Type = VectorType::get(2, rewriter.getF32Type());
+    Value input = rewriter.create<LLVM::UndefOp>(op.getLoc(),
+                                                 VectorType::get(4, ui8Type));
+
+    if (size == 1) {
+      Value src = rewriter.create<LLVM::InsertElementOp>(
+          loc, input, value, createConstant<uint32_t>(rewriter, loc, 0));
+      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+      SmallVector<Value> operands{src,
+                                  createConstant<uint32_t>(rewriter, loc, 0)};
+
+      return rewriter
+          .create<LLVM::CallIntrinsicOp>(
+              loc, f32Type, rewriter.getStringAttr(intrinsicStr), operands)
+          .getResult(0);
+    }
+
+    if (size == 2) {
+      Value src = rewriter.create<LLVM::InsertElementOp>(
+          loc, input, extractElement(rewriter, loc, ui8Type, value, 0),
+          createConstant<uint32_t>(rewriter, loc, 0));
+
+      src = rewriter.create<LLVM::InsertElementOp>(
+          loc, src, extractElement(rewriter, loc, ui8Type, value, 1),
+          createConstant<uint32_t>(rewriter, loc, 1));
+
+      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+      SmallVector<Value> operands{
+          src, rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                                 rewriter.getBoolAttr(false))};
+      return rewriter
+          .create<LLVM::CallIntrinsicOp>(
+              loc, v2f32Type, rewriter.getStringAttr(intrinsicStr), operands)
+          .getResult(0);
+    }
+
+    // SIMD size >= 4
+    Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), outType);
+    for (uint64_t i = 0; i < size; i += 4) {
+      Value src = input;
+      for (uint64_t j = 0; j < 4; j++) {
+        src = rewriter.create<LLVM::InsertElementOp>(
+            loc, src, extractElement(rewriter, loc, ui8Type, value, i + j),
+            createConstant<uint32_t>(rewriter, loc, j));
+      }
+      src = rewriter.create<LLVM::BitcastOp>(loc, i32Type, src);
+
+      SmallVector<Value> operands{
+          src, rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI1Type(),
+                                                 rewriter.getBoolAttr(false))};
+      Value res0 = rewriter
+                       .create<LLVM::CallIntrinsicOp>(
+                           loc, v2f32Type, rewriter.getStringAttr(intrinsicStr),
+                           operands)
+                       .getResult(0);
+
+      operands[1] = rewriter.create<LLVM::ConstantOp>(
+          loc, rewriter.getI1Type(), rewriter.getBoolAttr(true));
+      Value res1 = rewriter
+                       .create<LLVM::CallIntrinsicOp>(
+                           loc, v2f32Type, rewriter.getStringAttr(intrinsicStr),
+                           operands)
+                       .getResult(0);
+
+      for (uint64_t j = 0; j < 4; j++) {
+        Value res = j < 2 ? res0 : res1;
+        result = rewriter.create<LLVM::InsertElementOp>(
+            loc, result, extractElement(rewriter, loc, f32Type, res, j % 2),
+            createConstant<uint32_t>(rewriter, loc, i + j));
+      }
+    }
+    return result;
+  }
+
+  LogicalResult
+  convertF8ToF32OnAMDGPU(ConversionPatternRewriter &rewriter, CastOp op,
+                         Value value, APFloat::Semantics fromFloatSemantics,
+                         APFloat::Semantics toFloatSemantics) const {
+
+    Value converted = convertF8ToF32OnAMDGPUHelper(
+        rewriter, op, value, convertType(op.getType()), fromFloatSemantics,
+        toFloatSemantics);
+
+    rewriter.replaceOp(op, converted);
+    return success();
+  }
+
   /// Convert a `pop.cast` into optimized sequence of asm instructions that
   /// are known to be more efficient for a target than general LLVM's
   /// conversion.
@@ -865,11 +989,9 @@ private:
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
          toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ)) {
-      if (simd) {
-        if (target.getTriple().isAMDGPU()) {
-          return convertF32ToF8OnAMDGPU(rewriter, cast, value,
-                                        fromFloatSemantics, toFloatSemantics);
-        }
+      if (simd && target.getTriple().isAMDGPU()) {
+        return convertF32ToF8OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
+                                      toFloatSemantics);
       }
       return failure();
     }
@@ -897,10 +1019,31 @@ private:
       // what stdlib does for now. Might be better to use approach similar to
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
-      if (simd && isNVPTX_HopperAndAbove(target)) {
-        return convertF8ToF32OnNVPTX(rewriter, cast, value, fromFloatSemantics,
-                                     toFloatSemantics);
+      if (simd) {
+        if (isNVPTX_HopperAndAbove(target)) {
+          return convertF8ToF32OnNVPTX(rewriter, cast, value,
+                                       fromFloatSemantics, toFloatSemantics);
+        }
+
+        if (target.getTriple().isAMDGPU()) {
+          // Convert F8 (either e4m3fn or e5m2) to F32 on amd mi355x and newer.
+          return convertF8ToF32OnAMDGPU(rewriter, cast, value,
+                                        fromFloatSemantics, toFloatSemantics);
+        }
       }
+      return failure();
+    }
+
+    // Convert F8 (either e4m3fnuz or e5m2fnuz) to F32 on amd mi300x.
+    if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FNUZ ||
+         fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2FNUZ) &&
+        toFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle) {
+
+      if (simd && target.getTriple().isAMDGPU()) {
+        return convertF8ToF32OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
+                                      toFloatSemantics);
+      }
+
       return failure();
     }
 
