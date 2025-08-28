@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from sys import llvm_intrinsic, sizeof
+from sys import llvm_intrinsic, size_of
 
 
 fn memcpy(
@@ -13,7 +13,7 @@ fn memcpy(
     src: UnsafePointer[Int],
     count: Int,
 ):
-    var byte_count = count * sizeof[Int]()
+    var byte_count = count * size_of[Int]()
 
     if __mlir_op.`kgen.is_compile_time`[_type = __mlir_type.i1]():
         llvm_intrinsic["llvm.memcpy", NoneType](
