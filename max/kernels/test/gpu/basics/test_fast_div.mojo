@@ -22,6 +22,32 @@ from testing import *
 from utils.index import Index, IndexList
 
 
+def test_fast_div():
+    var divisor = 7
+    var fast_div = FastDiv[DType.uint32](divisor)
+
+    for i in range(1000):
+        assert_equal(
+            i / fast_div,
+            i // divisor,
+            msg=String("mismatch for ", i, "/", divisor),
+        )
+
+
+def test_fast_div_print():
+    var fast_div = FastDiv[DType.uint32](33)
+    assert_equal(
+        """div: 33
+mprime: 4034666248
+sh1: 1
+sh2: 5
+is_pow2: False
+log2_shift: 6
+""",
+        String(fast_div),
+    )
+
+
 def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
@@ -75,5 +101,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
 
 def main():
+    test_fast_div()
+    test_fast_div_print()
     with DeviceContext() as ctx:
         run_elementwise[DType.uint32](ctx)

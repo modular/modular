@@ -24,7 +24,7 @@ from gpu.intrinsics import mulhi
 
 
 @register_passable("trivial")
-struct FastDiv[dtype: DType]:
+struct FastDiv[dtype: DType](Stringable, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -143,3 +143,26 @@ struct FastDiv[dtype: DType]:
         """
         var q = other / self
         return q, (other - (q * self._div))
+
+    @no_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        """Writes the FastDiv parameters to a writer.
+
+        Args:
+            writer: The writer to which the parameters are written.
+        """
+        writer.write("div: ", self._div, "\n")
+        writer.write("mprime: ", self._mprime, "\n")
+        writer.write("sh1: ", self._sh1, "\n")
+        writer.write("sh2: ", self._sh2, "\n")
+        writer.write("is_pow2: ", self._is_pow2, "\n")
+        writer.write("log2_shift: ", self._log2_shift, "\n")
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Get the object as a string.
+
+        Returns:
+            A string representation.
+        """
+        return String.write(self)
