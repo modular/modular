@@ -68,20 +68,15 @@ struct _POpenHandle:
 
         while True:
             var read = external_call["getline", Int](
-                Pointer(to=line),
-                Pointer(to=len),
-                self._handle,
+                Pointer(to=line), Pointer(to=len), self._handle
             )
             if read == -1:
                 break
 
-            var span = Span[Byte, MutableAnyOrigin](
-                ptr=line.bitcast[Byte](),
-                length=read,
-            )
-
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
-            res += StringSlice.from_utf8(span)
+            res += StringSlice(
+                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
+            )
 
         if line:
             libc.free(line.bitcast[NoneType]())

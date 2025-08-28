@@ -185,6 +185,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
+- `StringSlice.from_utf8` factory method is now a constructor, use
+  `StringSlice(from_utf8=...)` instead.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
