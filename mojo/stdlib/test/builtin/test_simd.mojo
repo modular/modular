@@ -124,20 +124,20 @@ def test_init_from_index():
 
 
 def test_from_bits():
-    assert_true(Scalar[DType.bool].from_bits(UInt8(0x01)))
-    assert_false(Scalar[DType.bool].from_bits(UInt8(0x00)))
+    assert_true(Scalar[DType.bool](from_bits=UInt8(0x01)))
+    assert_false(Scalar[DType.bool](from_bits=UInt8(0x00)))
 
-    assert_equal(Int64.from_bits(UInt64(0xFFFFFFFFFFFFFFFF)), -1)
-    assert_equal(UInt128.from_bits(Int128(-1)), -1)
+    assert_equal(Int64(from_bits=UInt64(0xFFFFFFFFFFFFFFFF)), -1)
+    assert_equal(UInt128(from_bits=Int128(-1)), -1)
 
-    assert_equal(Float32.from_bits(UInt32(0x3F800000)), 1.0)
-    assert_equal(Float32.from_bits(UInt32(0xBF800000)), -1.0)
+    assert_equal(Float32(from_bits=UInt32(0x3F800000)), 1.0)
+    assert_equal(Float32(from_bits=UInt32(0xBF800000)), -1.0)
 
     # Test from_bits with different integer types
     var uint32_bits = SIMD[DType.uint32, 4](
         0x3F800000, 0x40000000, 0x40400000, 0x40800000
     )
-    var float32_from_bits = SIMD[DType.float32, 4].from_bits(uint32_bits)
+    var float32_from_bits = SIMD[DType.float32, 4](from_bits=uint32_bits)
 
     # These bit patterns represent 1.0, 2.0, 3.0, 4.0 in IEEE 754 float32
     assert_almost_equal(
@@ -157,7 +157,7 @@ def test_from_bits():
     var uint64_bits = SIMD[DType.uint64, 2](
         0x3FF0000000000000, 0x4000000000000000
     )
-    var float64_from_bits = SIMD[DType.float64, 2].from_bits(uint64_bits)
+    var float64_from_bits = SIMD[DType.float64, 2](from_bits=uint64_bits)
 
     assert_almost_equal(
         float64_from_bits[0], SIMD[DType.float64, 1](1.0), atol=1e-15
@@ -168,7 +168,7 @@ def test_from_bits():
 
     # Test with int32 -> int32 (identity)
     var int32_bits = SIMD[DType.int32, 4](42, -42, 100, -100)
-    var int32_from_bits = SIMD[DType.int32, 4].from_bits(int32_bits)
+    var int32_from_bits = SIMD[DType.int32, 4](from_bits=int32_bits)
     assert_equal(int32_from_bits, int32_bits)
 
 
@@ -187,7 +187,7 @@ def test_to_bits():
     var bits = float32_vals.to_bits()
 
     # Convert back and check
-    var reconstructed = SIMD[DType.float32, 4].from_bits(bits)
+    var reconstructed = SIMD[DType.float32, 4](from_bits=bits)
     assert_equal(reconstructed, float32_vals)
 
     # Test with different target bit width
@@ -195,7 +195,7 @@ def test_to_bits():
     var uint16_bits = int16_vals.to_bits[DType.uint16]()
 
     # Should preserve bit patterns
-    var reconstructed_int16 = SIMD[DType.int16, 4].from_bits(uint16_bits)
+    var reconstructed_int16 = SIMD[DType.int16, 4](from_bits=uint16_bits)
     assert_equal(reconstructed_int16, int16_vals)
 
 
@@ -221,7 +221,7 @@ def test_from_to_bits_roundtrip():
     for dt in dtypes:
         alias S = Scalar[dt]
         for n in range(-5, 5):
-            var res = S.from_bits(S(n).to_bits())
+            var res = S(from_bits=S(n).to_bits())
             assert_equal(res, S(n))
 
     fn floating_point_dtypes() -> List[DType]:
@@ -239,7 +239,7 @@ def test_from_to_bits_roundtrip():
         alias S = Scalar[dt]
         for i in range(-10, 10):
             var v = 1 / S(i)
-            var res = S.from_bits(S(v).to_bits())
+            var res = S(from_bits=S(v).to_bits())
             assert_equal(res, S(v))
 
 
