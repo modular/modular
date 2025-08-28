@@ -25,14 +25,16 @@ alias EVENT_COPY = 0b1000  # 8
 alias EVENT_MOVE = 0b10000  # 16
 
 
-struct ConditionalTriviality[T: Movable & Copyable](Copyable, Movable):
-    var events: UnsafePointer[List[Int]]
+struct ConditionalTriviality[O: MutableOrigin, //, T: Movable & Copyable](
+    Copyable, Movable
+):
+    var events: Pointer[List[Int], O]
 
-    fn add_event(self, event: Int):
+    fn add_event(mut self, event: Int):
         self.events[].append(event)
 
-    fn __init__(out self, mut events: List[Int]):
-        self.events = UnsafePointer(to=events)
+    fn __init__(out self, ref [O]events: List[Int]):
+        self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 
     fn __del__(deinit self):
