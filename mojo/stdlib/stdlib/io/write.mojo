@@ -17,7 +17,7 @@ from io.io import _printf
 from sys.info import is_gpu
 from memory import memcpy, bitcast
 from os import abort
-from sys import alignof
+from sys import align_of
 from memory import Span, memcpy
 from sys.param_env import env_get_int
 
@@ -171,7 +171,7 @@ struct _WriteBufferHeap(Writable, Writer):
     var pos: Int
 
     fn __init__(out self):
-        alias alignment: Int = alignof[Byte]() if is_gpu() else 1
+        alias alignment: Int = align_of[Byte]() if is_gpu() else 1
         self.data = __mlir_op.`pop.stack_allocation`[
             count = HEAP_BUFFER_BYTES.value,
             _type = UnsafePointer[Byte]._mlir_type,
@@ -342,7 +342,7 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     assert_equal("d6", S(ptr=ptr, length=2))
     ```
     """
-    alias size = decimal.dtype.sizeof()
+    alias size = decimal.dtype.size_of()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))

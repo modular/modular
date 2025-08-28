@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from base64._b64encode import _sub_with_saturation
-from sys import simdwidthof
+from sys import simd_width_of
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
@@ -136,7 +136,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
 
     ptr = span.unsafe_ptr()
     length = len(span)
-    alias simd_size = sys.simdbytewidth()
+    alias simd_size = sys.simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
 
@@ -214,7 +214,7 @@ fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
         alias s = sizes[i]
 
         @parameter
-        if simdwidthof[DType.uint8]() >= s:
+        if simd_width_of[DType.uint8]() >= s:
             var rest = num_bytes - processed
             for _ in range(rest // s):
                 var vec = (ptr + processed).load[width=s]()

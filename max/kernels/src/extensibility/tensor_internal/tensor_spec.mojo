@@ -18,7 +18,7 @@ from max.tensor import RuntimeTensorSpec
 ```
 """
 
-from sys import sizeof
+from sys import size_of
 
 
 from utils import IndexList, product
@@ -39,4 +39,4 @@ struct RuntimeTensorSpec[dtype: DType, rank: Int](Copyable, Movable):
         Returns:
           The total byte count.
         """
-        return product(self.shape) * sizeof[dtype]()
+        return product(self.shape) * size_of[dtype]()

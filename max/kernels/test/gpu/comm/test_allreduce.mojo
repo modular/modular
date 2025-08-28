@@ -13,7 +13,7 @@
 
 import time
 from math import floor
-from sys import sizeof
+from sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -73,7 +73,7 @@ fn allreduce_test[
     var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
-    var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * length
+    var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
 
     # Initialize buffers for each GPU
     @parameter
@@ -95,7 +95,7 @@ fn allreduce_test[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                size_of[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
@@ -215,7 +215,7 @@ fn _get_test_str[dtype: DType](ngpus: Int, length: Int) -> String:
         "-",
         ngpus,
         "-",
-        _human_memory(sizeof[dtype]() * length),
+        _human_memory(size_of[dtype]() * length),
     )
 
 

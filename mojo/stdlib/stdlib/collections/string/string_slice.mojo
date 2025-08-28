@@ -65,7 +65,7 @@ from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib.hasher import Hasher
 from math import align_down
 from os import PathLike, abort
-from sys import is_compile_time, simdwidthof
+from sys import is_compile_time, simd_width_of
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
@@ -2429,7 +2429,7 @@ fn _memchr[
 ](
     source: Span[mut=False, Scalar[dtype], **_], char: Scalar[dtype]
 ) -> source.UnsafePointerType:
-    if is_compile_time() or len(source) < simdwidthof[Scalar[dtype]]():
+    if is_compile_time() or len(source) < simd_width_of[Scalar[dtype]]():
         var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
@@ -2450,7 +2450,7 @@ fn _memchr_impl[
 ):
     var haystack = source.unsafe_ptr()
     var length = len(source)
-    alias bool_mask_width = simdwidthof[DType.bool]()
+    alias bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
     var vectorized_end = align_down(length, bool_mask_width)
 
@@ -2480,7 +2480,7 @@ fn _memmem[
         address_space = haystack_span.address_space, **_,
     ],
 ) -> haystack_span.UnsafePointerType:
-    if is_compile_time() or len(haystack_span) < simdwidthof[Scalar[dtype]]():
+    if is_compile_time() or len(haystack_span) < simd_width_of[Scalar[dtype]]():
         var haystack = haystack_span.unsafe_ptr()
         var haystack_len = len(haystack_span)
         var needle = needle_span.unsafe_ptr()
@@ -2522,7 +2522,7 @@ fn _memmem_impl[
         output = {}
         return
 
-    alias bool_mask_width = simdwidthof[DType.bool]()
+    alias bool_mask_width = simd_width_of[DType.bool]()
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )

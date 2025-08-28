@@ -13,7 +13,7 @@
 
 from os import abort
 from random import randn
-from sys import env_get_int, sizeof
+from sys import env_get_int, size_of
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -100,7 +100,7 @@ fn bench_concat[
         # TODO: Pick relevant benchmetric.
         ThroughputMeasure(
             BenchMetric.elements,
-            out_shape.flattened_length() * sizeof[type]() * 2,
+            out_shape.flattened_length() * size_of[type]() * 2,
         ),
     )
 

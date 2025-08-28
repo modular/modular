@@ -13,7 +13,7 @@
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
-from sys.info import alignof, simdwidthof
+from sys.info import align_of, simd_width_of
 
 from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
@@ -412,7 +412,7 @@ fn _small_matmul[
     b: NDBuffer[_, 2, _, _],
     c: NDBuffer[mut=True, _, 2, _, _],
 ):
-    alias simd_width = simdwidthof[c.type]()
+    alias simd_width = simd_width_of[c.type]()
 
     var M = a.dim[0]()
     var N = b.dim[0]() if transpose_b else b.dim[1]()
@@ -586,7 +586,7 @@ fn _matmul_cpu_impl[
 
         alias use_i8mm = kernel_id == InnerKernelID.I8MM
         alias simd_size = config.simd_size
-        alias alignment = alignof[SIMD[c.type, simd_size]]()
+        alias alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr = UnsafePointer[

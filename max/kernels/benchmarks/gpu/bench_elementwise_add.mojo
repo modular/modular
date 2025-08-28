@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import randn
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -70,12 +70,12 @@ fn bench_add[
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * sizeof[type]() * 3),
+        ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3),
     )
 
     ctx.enqueue_copy(output_ptr_host, output_ptr)
 
-    alias nelts = simdwidthof[type]()
+    alias nelts = simd_width_of[type]()
     for i in range(0, size, nelts):
         if not (
             output_ptr_host.load[width=nelts](i).eq(

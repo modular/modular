@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
+from sys import align_of, simd_width_of, size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -332,7 +332,7 @@ fn warp_specialized_gemm_output[
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
     alias num_consumer_threads = num_consumer * WARPGROUP_SIZE
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
 
@@ -348,7 +348,7 @@ fn warp_specialized_gemm_output[
     var warp_id = warp_group_thread_idx // WARP_SIZE
 
     alias N = c_layout.shape[1].value()
-    alias is_N_multiple_of_16B = N * sizeof[c_type]() % 16 == 0
+    alias is_N_multiple_of_16B = N * size_of[c_type]() % 16 == 0
     alias WG_BM = c_smem_tile.layout.shape[0].value()
     alias WG_BN = c_smem_tile.layout.shape[1].value()
     alias TMA_BN = c_tma_op.layout.shape[1].value() if use_tma_store else WG_BN
@@ -361,7 +361,7 @@ fn warp_specialized_gemm_output[
             and num_consumer <= 2 \
             and BN == wgmma_shape[1] \
             and BM == WG_BM \
-            and N * sizeof[c_type]() % 16 == 0
+            and N * size_of[c_type]() % 16 == 0
     # fmt: on
 
     @parameter
@@ -376,7 +376,7 @@ fn warp_specialized_gemm_output[
             linear_idx_type = DType.int32,
         ]()
         alias st_matrix_swizzle = make_ldmatrix_swizzle[
-            c_type, TMA_BN, log2_floor(16 // sizeof[c_type]())
+            c_type, TMA_BN, log2_floor(16 // size_of[c_type]())
         ]()
 
         alias N = c_layout.shape[1].value()
@@ -512,7 +512,7 @@ fn warp_specialized_gemm_output[
                     alias dst_n_offset = dst_idx % N
                     var m = UInt32(coords[0] + dst_m_offset)
                     var n = UInt32(coords[1] + dst_n_offset)
-                    alias alignment = alignof[SIMD[c_type, simd_size]]()
+                    alias alignment = align_of[SIMD[c_type, simd_size]]()
 
                     if m < M_bound and n < N_bound:
                         var reg_val = compute_lambda[alignment=alignment](
@@ -560,7 +560,7 @@ fn warp_specialized_gemm_output[
                     var m = UInt32(coords[0] + dst_m_offset)
                     var n = UInt32(coords[1] + dst_n_offset)
 
-                    alias alignment = alignof[SIMD[c_type, simd_size]]()
+                    alias alignment = align_of[SIMD[c_type, simd_size]]()
 
                     if m < M_bound and n < N_bound:
                         epilogue[alignment=alignment](
@@ -698,7 +698,7 @@ fn warp_specialized_gemm_output[
                         var m = Int(coords[0] + dst_m_offset)
                         var n = Int(coords[1] + dst_n_offset)
 
-                        alias alignment = alignof[SIMD[c_type, 2]]()
+                        alias alignment = align_of[SIMD[c_type, 2]]()
                         if m < Int(M) and n < N:
 
                             @parameter
@@ -821,7 +821,7 @@ fn warp_specialized_gemm_output[
                                     )
 
                                     epilogue[
-                                        alignment = alignof[Scalar[c_type]]()
+                                        alignment = align_of[Scalar[c_type]]()
                                     ](
                                         Index(frag_coords[0], frag_coords[1]),
                                         c_reg_tile[
@@ -921,22 +921,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 
@@ -988,11 +988,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias a_smem_size = a_smem_layout.size() * pipeline_stages
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
 
-    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
+    alias a_smem_bytes = a_smem_size * size_of[a_type]()
+    alias b_smem_bytes = b_smem_size * size_of[b_type]()
 
     alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * sizeof[c_type]()
+    alias c_smem_bytes = c_smem_size * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -1248,7 +1248,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     var scheduler = TileScheduler[
         Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
@@ -1256,18 +1256,18 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 
@@ -1299,9 +1299,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
     alias c_smem_size = c_smem_layout.size()
 
-    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
-    alias c_smem_bytes = c_smem_size * sizeof[c_type]()
+    alias a_smem_bytes = a_smem_size * size_of[a_type]()
+    alias b_smem_bytes = b_smem_size * size_of[b_type]()
+    alias c_smem_bytes = c_smem_size * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -1588,8 +1588,8 @@ fn hopper_matmul_tma_wgmma_kernel[
         accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
     ]()
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     mbar = stack_allocation[
@@ -1757,9 +1757,9 @@ fn _get_c_smem_layout[
     alias pipeline_smem_size = Int(
         num_pipeline_stages
         * (
-            BM * BK * sizeof[a_type]()
-            + BN * BK * sizeof[b_type]()
-            + (sizeof[Int64]() * 2)
+            BM * BK * size_of[a_type]()
+            + BN * BK * size_of[b_type]()
+            + (size_of[Int64]() * 2)
         )
     )
 
@@ -1767,17 +1767,17 @@ fn _get_c_smem_layout[
     # We want the shared memory N to be at least 16 when using `stmatrix`
     # (c_type = bf16) because it would make TMA and masked copy from shared
     # memory to global memory easier.
-    alias MIN_WG_BN = 16 if sizeof[c_type]() == 2 else BN // 4
+    alias MIN_WG_BN = 16 if size_of[c_type]() == 2 else BN // 4
 
     @parameter
     if available_smem_size > (
-        pipeline_smem_size + (WG_BM * MIN_WG_BN * sizeof[c_type]())
+        pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
     ):
 
         fn _get_max_wg_bn() capturing -> Int:
             var WG_BN = MAX_WG_BN
             while (
-                available_c_smem_size < WG_BM * WG_BN * sizeof[c_type]()
+                available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
                 or BN % WG_BN != 0
             ) and WG_BN > MIN_WG_BN:
                 WG_BN //= 2
@@ -1792,8 +1792,10 @@ fn _get_c_smem_layout[
             " output tile!"
             + " available_smem_size: "
             + String(available_smem_size)
-            + " pipeline_smem_size + WG_BM * MIN_WG_BN * sizeof[c_type](): "
-            + String(pipeline_smem_size + WG_BM * MIN_WG_BN * sizeof[c_type]()),
+            + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+            + String(
+                pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]()
+            ),
         ]()
         return Layout.row_major(0, 0)
 
@@ -1852,22 +1854,22 @@ fn cpasync_wgmma_kernel[
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 
@@ -1908,11 +1910,11 @@ fn cpasync_wgmma_kernel[
     alias a_smem_size = a_smem_layout.size() * pipeline_stages
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
 
-    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
+    alias a_smem_bytes = a_smem_size * size_of[a_type]()
+    alias b_smem_bytes = b_smem_size * size_of[b_type]()
 
     alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * sizeof[c_type]()
+    alias c_smem_bytes = c_smem_size * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -1946,7 +1948,7 @@ fn cpasync_wgmma_kernel[
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
 
-    alias k_align = find_K_alignment_upto_16B(K * sizeof[a_type]())
+    alias k_align = find_K_alignment_upto_16B(K * size_of[a_type]())
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
@@ -1993,7 +1995,7 @@ fn cpasync_wgmma_kernel[
 
         async_load_AB[
             swizzle_mode=a_swizzle,
-            cp_size = k_align // sizeof[a_type](),
+            cp_size = k_align // size_of[a_type](),
             num_k_iters=num_k_iters,
             block_tile_shape=block_tile_shape,
         ](
@@ -2152,7 +2154,7 @@ fn warp_specialize_gemm_with_multicasting[
         "Only support 1 consumer for BM=64",
     ]()
 
-    alias k_align = find_K_alignment_upto_16B(K_static * sizeof[a_type]())
+    alias k_align = find_K_alignment_upto_16B(K_static * size_of[a_type]())
     constrained[
         k_align in (4, 8, 16), "H100 matmul K dim must be multiple of 4B"
     ]()
@@ -2254,10 +2256,10 @@ fn warp_specialize_gemm_with_multicasting[
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + (sizeof[Int64]() * 2)
-    ) + c_smem_layout.size() * sizeof[c_type]()
+        BM * BK * size_of[a_type]()
+        + BN * BK * size_of[b_type]()
+        + (size_of[Int64]() * 2)
+    ) + c_smem_layout.size() * size_of[c_type]()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,
@@ -2267,7 +2269,7 @@ fn warp_specialize_gemm_with_multicasting[
     # TMA requires stride (K) multiple of 16B. If not satisfied,
     # we need to use cp.async.ca for 4B and 8B access, and ld for
     # 2B or smaller access.
-    # Note that K * sizeof[a_type]() decides the 2nd row's alignment
+    # Note that K * size_of[a_type]() decides the 2nd row's alignment
     # and Nvidia requries access alignmend by access size.
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
     @parameter

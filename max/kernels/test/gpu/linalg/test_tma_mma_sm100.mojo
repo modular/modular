@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 from utils.numerics import min_finite, max_finite
 from gpu import WARP_SIZE, barrier
 from gpu import lane_id as get_lane_id
@@ -123,9 +123,11 @@ fn tma_umma_kernel_ss[
     alias b_size = b_smem_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -143,8 +145,8 @@ fn tma_umma_kernel_ss[
     alias c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = SIMD[accum_type, c_frag_size]()
 
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (
@@ -184,12 +186,12 @@ fn tma_umma_kernel_ss[
     alias b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
     ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
+    alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
+    alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
     alias b_stride01 = b_canonical_layout[0].stride[1].value()
     alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[b_type]()
 
     adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
@@ -231,8 +233,8 @@ fn tma_umma_kernel_ss[
                 @parameter
                 for j in range(1, num_k_mmas):
                     alias idx = IntTuple(0, MMA_K * j)
-                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
+                    alias a_offset = a_smem_layout(idx) * size_of[a_type]()
+                    alias b_offset = b_smem_layout(idx) * size_of[b_type]()
                     mma[c_scale=1](
                         adesc + a_offset, bdesc + b_offset, tmem_addr, idesc
                     )
@@ -241,8 +243,8 @@ fn tma_umma_kernel_ss[
                 @parameter
                 for j in range(num_k_mmas):
                     alias idx = IntTuple(0, MMA_K * j)
-                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
+                    alias a_offset = a_smem_layout(idx) * size_of[a_type]()
+                    alias b_offset = b_smem_layout(idx) * size_of[b_type]()
                     mma[c_scale=1](
                         adesc + a_offset, bdesc + b_offset, tmem_addr, idesc
                     )
@@ -379,7 +381,9 @@ fn tma_umma_kernel_ts[
 
     alias accum_type = get_accum_type[a_type]()
 
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (
         (b_smem + b_size)
@@ -390,7 +394,7 @@ fn tma_umma_kernel_ts[
     alias c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = SIMD[accum_type, c_frag_size]()
 
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = b_expected_bytes
 
     tma_mbar = (
@@ -432,8 +436,8 @@ fn tma_umma_kernel_ts[
     ]()
     alias b_stride01 = b_canonical_layout[0].stride[1].value()
     alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[b_type]()
 
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
@@ -452,7 +456,7 @@ fn tma_umma_kernel_ts[
     if num_threads > 128:
         warp_id = 2 * (warp_id % 4) + warp_id // 4
 
-    alias a_frag_size = BM * BK * sizeof[a_type]() // 4 // num_threads
+    alias a_frag_size = BM * BK * size_of[a_type]() // 4 // num_threads
     var a_frag = SIMD[DType.uint32, a_frag_size]()
 
     for i in range(num_iters):
@@ -481,7 +485,7 @@ fn tma_umma_kernel_ts[
         tcgen05_st[
             datapaths=16,
             bits=256,
-            repeat = BK * sizeof[a_type]() // 4 // 8,
+            repeat = BK * size_of[a_type]() // 4 // 8,
             pack=False,
         ](a_tmem, a_frag)
 
@@ -508,14 +512,14 @@ fn tma_umma_kernel_ts[
         tma_phase ^= 1
 
         if elect_one_thread:
-            alias atmem_kstride = mma_shape[2] // 2  # * sizeof[a_type]()
+            alias atmem_kstride = mma_shape[2] // 2  # * size_of[a_type]()
             if i == 0:
                 mma[c_scale=0](a_tmem, bdesc, c_tmem, idesc)
 
                 @parameter
                 for j in range(1, BK // mma_shape[2]):
                     alias b_idx = IntTuple(MMA_N * 0, MMA_K * j)
-                    alias b_offset = b_smem_layout(b_idx) * sizeof[b_type]()
+                    alias b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
                         a_tmem + j * atmem_kstride,
                         bdesc + b_offset,
@@ -527,7 +531,7 @@ fn tma_umma_kernel_ts[
                 @parameter
                 for j in range(BK // mma_shape[2]):
                     alias b_idx = IntTuple(MMA_N * 0, MMA_K * j)
-                    alias b_offset = b_smem_layout(b_idx) * sizeof[b_type]()
+                    alias b_offset = b_smem_layout(b_idx) * size_of[b_type]()
                     mma[c_scale=1](
                         a_tmem + j * atmem_kstride,
                         bdesc + b_offset,
@@ -690,7 +694,7 @@ def test_tma_umma[
 
     @parameter
     if a_smem:
-        alias smem_use = (BM + BN) * sizeof[a_type]() * BK + 24
+        alias smem_use = (BM + BN) * size_of[a_type]() * BK + 24
         alias kernel = tma_umma_kernel_ss[
             a_type,
             b_type,
@@ -722,7 +726,7 @@ def test_tma_umma[
         )
 
     else:
-        alias smem_use = BN * sizeof[b_type]() * BK + 24
+        alias smem_use = BN * size_of[b_type]() * BK + 24
         alias kernel = tma_umma_kernel_ts[
             a_type,
             b_type,
@@ -813,7 +817,7 @@ def main():
 
                 @parameter
                 for BK_scale in range(0, 2):
-                    alias BK = (swizzle.bytes() // sizeof[dtype]()) * (
+                    alias BK = (swizzle.bytes() // size_of[dtype]()) * (
                         1 + BK_scale
                     )
 

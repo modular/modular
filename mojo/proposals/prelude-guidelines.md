@@ -85,7 +85,7 @@ That being said, some affirmative reasons *not* to include an item in the
 prelude include:
 
 - **Too low-level**
-  - *Examples:* `bitcast`, `simdwidthof`, `external_call`
+  - *Examples:* `bitcast`, `simd_width_of`, `external_call`
 - **Language machinery**
   - *Examples:*
     - `VariadicListMem`, `VariadicPack`

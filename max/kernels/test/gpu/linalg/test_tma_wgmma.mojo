@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu import warp_id as get_warp_id
@@ -54,7 +54,7 @@ fn _load_a_reg_tile[
 ](
     out ret: LayoutTensor[
         dtype,
-        _compute_reg_tile_layout(layout, 16 // sizeof[dtype]()),
+        _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
@@ -81,7 +81,7 @@ fn _load_a_reg_tile[
     alias num_wgmma_k = ceildiv(cols, WGMMA_K)
     constrained[num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()]()
 
-    alias simd_size = 4 // sizeof[dtype]()
+    alias simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()
 
     @parameter
@@ -174,8 +174,8 @@ fn tma_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     mbar = stack_allocation[

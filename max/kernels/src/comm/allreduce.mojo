@@ -39,7 +39,7 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
+from sys import align_of, simd_width_of, size_of
 from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
@@ -221,7 +221,7 @@ fn _naive_reduce_kernel_with_lambda[
     """Naive reduction kernel with elementwise lambda support."""
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
@@ -303,7 +303,7 @@ fn _allreduce_naive[
     This implementation copies all data to each GPU and performs local reduction.
     Used as fallback when P2P access is not available.
     """
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
     var device_buffers = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -362,7 +362,7 @@ fn _allreduce_naive[
                 rank,
                 my_rank=device_idx,
                 width=simd_width,
-                alignment = alignof[SIMD[dtype, simd_width]](),
+                alignment = align_of[SIMD[dtype, simd_width]](),
                 outputs_lambda=outputs_lambda,
             ]
         ](
@@ -429,12 +429,12 @@ fn _multi_gpu_barrier[
         internal_counter_ptr[] = val
 
         # Get the number of flags in self_counter to skip over it
-        alias peer_counter_offset = sizeof[
+        alias peer_counter_offset = size_of[
             StaticTuple[
                 StaticTuple[Scalar[_flag_t], MAX_GPUS],
                 MAX_NUM_BLOCKS_UPPER_BOUND,
             ]
-        ]() // sizeof[_flag_t]()
+        ]() // size_of[_flag_t]()
 
         # this line should compute &rank_sigs[my_gpu]->peer_counter[val % 2][bid][my_rank]
         var peer_counter_ptr = (
@@ -511,14 +511,14 @@ fn _allreduce_2stage_kernel[
         src_ptrs: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: the Signal pointers have trailing buffers for
-            communication, which must be at least `ngpus * sizeof(payload)`.
-            | -- sizeof(Signal) -- | ------ a few MB ----- |
+            communication, which must be at least `ngpus * size_of(payload)`.
+            | -- size_of(Signal) -- | ------ a few MB ----- |
         num_elements: Number of elements to reduce.
         max_num_blocks: Maximum number of thread blocks to launch.
     """
     alias accum_type = get_accum_type[dtype]()
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
-    alias alignment = alignof[SIMD[dtype, simd_width]]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    alias alignment = align_of[SIMD[dtype, simd_width]]()
 
     # --- Thread Indexing and Vector Setup ---
     var global_tid = global_idx.x
@@ -686,8 +686,8 @@ fn _allreduce_1stage_kernel[
     Synchronizes using _multi_gpu_barrier before and after reduction.
     """
     alias accum_type = get_accum_type[dtype]()
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
-    alias alignment = alignof[SIMD[dtype, simd_width]]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    alias alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
@@ -781,7 +781,7 @@ fn _allreduce_p2p[
 
     Launches P2P reduction kernel on each GPU to perform direct reduction.
     """
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
     if num_elements % simd_width != 0:
         raise Error(

@@ -14,7 +14,7 @@
 from collections.dict import DictEntry
 from hashlib import Hasher
 from random.random import random_si64, seed
-from sys import sizeof
+from sys import size_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
@@ -116,20 +116,20 @@ fn bench_dict_contains[size: Int](mut b: Bencher) raises:
 
 fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
     # the allocated memory by entries:
-    var entry_size = sizeof[Optional[DictEntry[Int, Int, H]]]()
+    var entry_size = size_of[Optional[DictEntry[Int, Int, H]]]()
     var amnt_bytes = items._entries.capacity * entry_size
-    amnt_bytes += sizeof[Dict[Int, Int]]()
+    amnt_bytes += size_of[Dict[Int, Int]]()
 
     # the allocated memory by index table:
     var reserved = items._reserved()
     if reserved <= 128:
-        amnt_bytes += sizeof[Int8]() * reserved
+        amnt_bytes += size_of[Int8]() * reserved
     elif reserved <= 2**16 - 2:
-        amnt_bytes += sizeof[Int16]() * reserved
+        amnt_bytes += size_of[Int16]() * reserved
     elif reserved <= 2**32 - 2:
-        amnt_bytes += sizeof[Int32]() * reserved
+        amnt_bytes += size_of[Int32]() * reserved
     else:
-        amnt_bytes += sizeof[Int64]() * reserved
+        amnt_bytes += size_of[Int64]() * reserved
 
     return amnt_bytes
 

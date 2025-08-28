@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from logger import Logger
 from collections import OptionalReg
-from sys import sizeof, alignof
+from sys import size_of, align_of
 from math import ceildiv, gcd
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -213,13 +213,14 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     alias a_scales_size = a_scales_smem_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
     constrained[
-        ((b_size * sizeof[b_type]()) % 128) == 0, "preserve alignment"
+        ((b_size * size_of[b_type]()) % 128) == 0, "preserve alignment"
     ]()
     constrained[
-        ((a_scales_size * sizeof[accum_type]()) % 16) == 0, "preserve alignment"
+        ((a_scales_size * size_of[accum_type]()) % 16) == 0,
+        "preserve alignment",
     ]()
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
@@ -235,9 +236,9 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         .static_alignment_cast[alignment=16]()
     )
 
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
-    alias a_scales_expected_bytes = a_scales_size * sizeof[accum_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
+    alias a_scales_expected_bytes = a_scales_size * size_of[accum_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
     tma_mbar = (
@@ -471,7 +472,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias alignment = alignof[SIMD[c_type, 2]]()
+                            alias alignment = align_of[SIMD[c_type, 2]]()
                             alias epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
                                 (Int(a_start_row + m), Int(n)), c_mn
@@ -598,8 +599,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
 
     alias smem_use = (
-        BM * sizeof[a_type]() + BN * sizeof[b_type]()
-    ) * BK + 24 + sizeof[accum_type]() * BM
+        BM * size_of[a_type]() + BN * size_of[b_type]()
+    ) * BK + 24 + size_of[accum_type]() * BM
 
     alias block_dim = 128
 

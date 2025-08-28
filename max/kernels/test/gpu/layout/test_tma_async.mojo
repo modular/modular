@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -44,7 +44,7 @@ fn test_tma_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -88,7 +88,7 @@ fn test_tma_multiple_loads_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     alias N = layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)
@@ -490,7 +490,7 @@ fn test_tma_loads_two_buffers_kernel[
 ):
     alias tileM = a_tile_layout.shape[0].value()
     alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
     alias N = a_layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)
@@ -645,7 +645,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 ):
     alias tileM = a_tile_layout.shape[0].value()
     alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
     alias N = a_layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)

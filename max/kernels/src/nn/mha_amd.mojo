@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import alignof, simdwidthof, sizeof
+from sys import align_of, simd_width_of, size_of
 from sys.intrinsics import readfirstlane
 from buffer import NDBuffer
 
@@ -79,7 +79,7 @@ fn copy_local_to_dram2[
     )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
+    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var descriptor = get_amd_buffer_descriptor(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
     alias num_stores_per_thread = dst_fragments.layout.size()
@@ -166,7 +166,7 @@ struct KBuffer[
     alias MMA_K = mma_shape[2]
     alias num_mmas = ceildiv(WN, Self.MMA_N)
     alias num_k_tiles = ceildiv(BK, Self.MMA_K * k_group_size)
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     alias num_repeats = BK // Self.simd_width
 
@@ -352,7 +352,7 @@ struct KBuffer[
 
 @always_inline
 fn pad[dtype: DType, depth: Int, size: Int]() -> Int:
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     alias padding = 0 if depth == 64 else size // simd_width
     return size + padding
 
@@ -371,7 +371,7 @@ struct VBuffer[
     depth: Int,
     num_threads: Int,
 ]:
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     alias num_repeats = BK // Self.simd_width
 
     # V Buffer shared memory layout
@@ -682,7 +682,7 @@ struct QRegisterBuffer[
     depth: Int,
     thread_layout: Layout,
 ]:
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     alias MMA_M = mma_shape[0]
     alias MMA_K = mma_shape[2]
     alias num_mmas = ceildiv(WM, Self.MMA_M)
@@ -997,10 +997,10 @@ struct SharedMemoryManager[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
     # k_v_smem is used for k, v, and scratch
-    alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
+    alias alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     alias accum_type = get_accum_type[dtype]()
     alias p_smem_size = BM * BN if token_gen else 0
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     # depth // simd_width is the padding
     alias k_v_smem_size = pad[dtype, depth, depth]() * BK
 
@@ -1097,7 +1097,7 @@ struct SharedMemoryManager[
     ):
         constrained[
             result.layout.size()
-            * (sizeof[Self.accum_type]() // sizeof[dtype]())
+            * (size_of[Self.accum_type]() // size_of[dtype]())
             <= Self.k_v_smem_size,
             "warp_scratch_tile is too large",
         ]()
@@ -1258,7 +1258,7 @@ fn mha_single_batch_amd[
     alias num_heads = config.num_heads
     alias BK = config.block_k()
     constrained[BN == depth, "BN must be equal to depth"]()
-    alias simd_width = simdwidthof[q_type]()
+    alias simd_width = simd_width_of[q_type]()
 
     alias mma_shape = IndexList[3](32, 32, 8)
 
@@ -1617,7 +1617,7 @@ fn mma[
     alias BK = config.block_k()
     # a can be either bfloat16 or float32 but b is always the same type as mma_input_type
     alias mma_input_type = b_iter.dtype
-    alias simd_width = simdwidthof[mma_input_type]()
+    alias simd_width = simd_width_of[mma_input_type]()
     alias accum_type = get_accum_type[mma_input_type]()
     alias WM = config.warp_m()
     alias WN = config.warp_n()
@@ -1788,7 +1788,7 @@ fn mha_decoding_single_batch_amd[
     alias kv_num_heads = num_heads // group
     alias BK = config.block_k()
     constrained[BN == depth, "BN must be equal to depth"]()
-    alias simd_width = simdwidthof[q_type]()
+    alias simd_width = simd_width_of[q_type]()
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]

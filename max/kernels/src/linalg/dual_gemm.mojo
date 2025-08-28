@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp
 from os import abort
-from sys import alignof, is_defined, simdwidthof
+from sys import align_of, is_defined, simd_width_of
 
 import gpu.warp as warp
 from buffer import NDBuffer
@@ -131,7 +131,7 @@ fn multistage_dual_mma[
         b0_iter_arg.address_space == b1_iter_arg.address_space,
         "b0 and b1 should have the same address space",
     ]()
-    alias simd_size = simdwidthof[a_type]()
+    alias simd_size = simd_width_of[a_type]()
 
     var tid: UInt32 = thread_idx.x
     var warp_id = warp.broadcast(tid // WARP_SIZE)
@@ -470,7 +470,7 @@ fn multistage_dual_gemm_kernel[
         "Pipeline gemm only supports tf32, BF16 mma, or fp16",
     ]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     var M: UInt = c.dim[0]()
     var N: UInt = b0.dim[0 if transpose_b else 1]()
@@ -512,7 +512,7 @@ fn multistage_dual_gemm_kernel[
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[a_type, simd_size]](),
+        alignment = align_of[SIMD[a_type, simd_size]](),
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
     var a_smem_iter = LayoutTensorIter[
@@ -705,7 +705,7 @@ fn multistage_dual_gemm_kernel[
 
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
                         (Int(m), Int(n)),
@@ -748,12 +748,12 @@ fn multistage_dual_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                alias alignment = alignof[SIMD[c_type, 2]]()
+                alias alignment = align_of[SIMD[c_type, 2]]()
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
                 if m < M and n < N:
                     var vec = c_reg_frag.ptr.offset(src_idx).load[
-                        width=2, alignment = alignof[SIMD[c_type, 2]]()
+                        width=2, alignment = align_of[SIMD[c_type, 2]]()
                     ]()
                     epilogue[alignment=alignment]((Int(m), Int(n)), vec)
 
@@ -942,7 +942,7 @@ fn dual_gemm[
     #       isn't precisely that. Thus, autotuning is reasonable.
     #       In particular, we will still want to coalesce loads from
     #       `B0` and `B1`, which means we want
-    #       BN*sizeof[b_type]() >= 128
+    #       BN*size_of[b_type]() >= 128
     #       although all existing configs from `_matmul_gpu` currently
     #       satisfy that.
     var shape = GemmShape.get[transpose_b=transpose_b](c, a, b0)
@@ -1200,8 +1200,8 @@ fn dual_gemv_kernel[
     var tile_b0 = tile_w
     var tile_b1 = tile_w.offset(tile_n_per_B * simd_width)
 
-    alias align_act = alignof[SIMD[a_type, Int(simd_width)]]()
-    alias align_weight = alignof[SIMD[b_type, Int(simd_width)]]()
+    alias align_act = align_of[SIMD[a_type, Int(simd_width)]]()
+    alias align_weight = align_of[SIMD[b_type, Int(simd_width)]]()
 
     memset_zero[count = Int(tile_m * tile_n)](acc)
 
@@ -1315,7 +1315,7 @@ fn dual_gemv[
     var M = c.dim(0)
     var N = c.dim(1)
 
-    alias simd_width = simdwidthof[a_type]()
+    alias simd_width = simd_width_of[a_type]()
     alias tile_m = 1
     alias tile_n = 2
     alias num_threads = 128

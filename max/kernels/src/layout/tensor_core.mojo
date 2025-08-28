@@ -50,8 +50,8 @@ from math import align_down
 from sys import (
     has_nvidia_gpu_accelerator,
     is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 
 from gpu import WARP_SIZE, lane_id, thread_idx
@@ -814,7 +814,7 @@ struct TensorCore[
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         alias frag_type = fragments.element_type
-        alias simd_size = simdwidthof[warp_tile.dtype]()
+        alias simd_size = simd_width_of[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
         alias M = shape[0]
         alias K = shape[2]
@@ -841,7 +841,7 @@ struct TensorCore[
         mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         alias frag_type = fragments.element_type
-        alias simd_size = simdwidthof[warp_tile.dtype]()
+        alias simd_size = simd_width_of[warp_tile.dtype]()
         alias num_frags = fragments.shape[0]()
 
         var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
@@ -917,7 +917,7 @@ struct TensorCore[
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
         alias frag_type = fragments.element_type
-        alias simd_size = simdwidthof[in_type]()
+        alias simd_size = simd_width_of[in_type]()
         alias num_frags = fragments.shape[0]()
         alias N = shape[1]
         alias K = shape[2]
@@ -954,7 +954,7 @@ struct TensorCore[
         warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
         alias frag_type = fragments.element_type
-        alias simd_size = simdwidthof[in_type]()
+        alias simd_size = simd_width_of[in_type]()
         alias num_frags = fragments.shape[0]()
         alias WN = warp_tile.shape[1]()
         alias swizzle = make_ldmatrix_swizzle[
@@ -1139,7 +1139,7 @@ struct TensorCore[
         constrained[self.supported_half]()
 
         alias frag_type = fragments.element_type
-        alias simd_size = simdwidthof[in_type]()
+        alias simd_size = simd_width_of[in_type]()
         alias num_frags = fragments.shape[0]()
         alias pack_factor = 8
         alias repack_tile = Index(64, 16)
@@ -1255,14 +1255,14 @@ fn _load_matrix_frag[
     offset: Int,
     out res: SIMD[
         mma_tile.dtype,
-        num_matrices * __register_width // sizeof[mma_tile.dtype](),
+        num_matrices * __register_width // size_of[mma_tile.dtype](),
     ],
 ):
     constrained[
         mma_tile.address_space == AddressSpace.SHARED,
         "mma_tile must be shared memory",
     ]()
-    alias simd_size = simdwidthof[mma_tile.dtype]()
+    alias simd_size = simd_width_of[mma_tile.dtype]()
 
     # mma_tile is tiled from the row major shared memory buffer. Retrieve the
     # buffer's stride for computing the swizzle.

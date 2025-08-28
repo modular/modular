@@ -496,14 +496,14 @@ To choose the optimum vector size, you need to know the vector operations
 supported for your current GPU for the data type you're working with. (For
 example, if you're working with 32-bit values and the GPU supports 128-bit copy
 operations, you can use a vector width of 4.) You can use the
-[`simdwidthof()`](/mojo/stdlib/sys/info/simdwidthof/) method to find the
+[`simd_width_of()`](/mojo/stdlib/sys/info/simd_width_of/) method to find the
 appropriate vector width:
 
 ```mojo
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 from gpu.host.compile import get_gpu_target
 
-alias simd_width = simdwidthof[DType.float32, get_gpu_target()]
+alias simd_width = simd_width_of[DType.float32, get_gpu_target()]
 ```
 
 The [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
@@ -599,7 +599,7 @@ fn copy_from_async_example():
     alias block_size = 16
     alias num_blocks = in_size // block_size # number of block in one dimension
     alias input_layout = Layout.row_major(in_size, in_size)
-    alias simd_width_gpu = simdwidthof[dtype, get_gpu_target()]()
+    alias simd_width_gpu = simd_width_of[dtype, get_gpu_target()]()
 
     fn kernel(tensor: LayoutTensor[dtype, input_layout, MutableAnyOrigin]):
         # extract a tile from the input tensor.

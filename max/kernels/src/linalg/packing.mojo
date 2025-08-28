@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 from sys.info import CompilationTarget
 from sys.intrinsics import PrefetchOptions
 
@@ -235,7 +235,7 @@ struct PackMatrixRows[
             2,
             MutableAnyOrigin,
             DimList(simd_size, simd_size),
-        ].stack_allocation[alignment = alignof[SIMD[dtype, simd_size]]()]()
+        ].stack_allocation[alignment = align_of[SIMD[dtype, simd_size]]()]()
 
         var valid_tile_simd_dim = Index(
             min(
@@ -925,7 +925,7 @@ struct BTileGenerator[
             b_tile_stack_ptr = stack_allocation[
                 get_pack_data_size[b_type](),
                 b_type,
-                alignof[SIMD[b_type, simdwidthof[b_type]()]](),
+                align_of[SIMD[b_type, simd_width_of[b_type]()]](),
             ]()
 
         return BTileGenerator[

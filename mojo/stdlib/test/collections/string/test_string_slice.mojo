@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string.string_slice import get_static_string
-from sys.info import sizeof
+from sys.info import size_of
 
 from testing import assert_equal, assert_false, assert_true
 
@@ -54,7 +54,7 @@ fn test_string_slice_layout() raises:
     # `llvm::StringRef`
 
     # StringSlice should be two words in size.
-    assert_equal(sizeof[StringSlice[MutableAnyOrigin]](), 2 * sizeof[Int]())
+    assert_equal(size_of[StringSlice[MutableAnyOrigin]](), 2 * size_of[Int]())
 
     var str_slice = StringSlice("")
 
@@ -65,7 +65,7 @@ fn test_string_slice_layout() raises:
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
     # 2nd field should at 1-word offset from base ptr
-    assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
+    assert_equal(second_word_ptr - base_ptr, size_of[Int]())
 
 
 def test_constructors():

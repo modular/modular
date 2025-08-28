@@ -16,7 +16,7 @@ from gpu.id import thread_idx, global_idx, block_dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
 from testing import assert_equal, assert_almost_equal
-from sys import alignof
+from sys import align_of
 
 
 fn test_external_shared_mem(ctx: DeviceContext) raises:
@@ -91,7 +91,7 @@ fn shared_memory_kernel(
     var shared_data = external_memory[
         Float32,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[Float32](),
+        alignment = align_of[Float32](),
     ]()
 
     # Load data into shared memory

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, exp, exp2, log
-from sys import alignof, is_amd_gpu, is_nvidia_gpu, simdwidthof
+from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import gpu.warp as warp
 from algorithm import sync_parallelize, vectorize
@@ -1011,7 +1011,7 @@ fn _online_softmax_kernel[
     alias frag_num_rows = 2 if is_nvidia_gpu() else (
         1 if fragment_transpose else 4
     )
-    alias row_alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
+    alias row_alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     var rowmax = stack_allocation[
         num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()

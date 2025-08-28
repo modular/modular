@@ -14,7 +14,7 @@
 import math
 from collections.string import StaticString
 from random import rand
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
@@ -81,7 +81,7 @@ fn tile[tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int](end_x: Int, end_y: Int):
 fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     # simdwidth of = amount of `dtype` elements that fit into a single SIMD register
     # 2x multiplier will use multiple SIMD registers in parallel where possible
-    alias nelts = simdwidthof[dtype]() * 2
+    alias nelts = simd_width_of[dtype]() * 2
     alias tile_m = 8  # M must be a multiple of this
     alias tile_n = 64  # N must be a multiple of this
     alias tile_k = 4  # K must be a multiple of this
@@ -126,7 +126,7 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = simdwidthof[dtype]() * 2
+    alias vec_size = simd_width_of[dtype]() * 2
 
     alias tile_m = 2
     alias tile_n = 64
@@ -183,7 +183,7 @@ fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 fn alloc_aligned_tile[
     M: Int, N: Int, dtype: DType
 ]() -> UnsafePointer[Scalar[dtype]]:
-    alias alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
+    alias alignment = align_of[SIMD[dtype, simd_width_of[dtype]()]]()
     alias cache_width = ((N + alignment - 1) // alignment) * alignment
     return UnsafePointer[Scalar[dtype], alignment=alignment].alloc(
         M * cache_width
@@ -195,7 +195,7 @@ fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = simdwidthof[dtype]() * 2
+    alias vec_size = simd_width_of[dtype]() * 2
 
     alias tile_m = 8
     alias tile_n = 64
@@ -257,7 +257,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
-    alias vec_size = 4 * simdwidthof[dtype]()
+    alias vec_size = 4 * simd_width_of[dtype]()
 
     alias tile_m = 16
     alias tile_n = 16

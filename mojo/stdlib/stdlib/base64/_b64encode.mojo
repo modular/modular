@@ -196,7 +196,7 @@ fn load_incomplete_simd[
 
 @no_inline
 fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
-    alias simd_width = sys.simdbytewidth()
+    alias simd_width = sys.simd_byte_width()
     alias input_simd_width = simd_width * 3 // 4
     alias equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 

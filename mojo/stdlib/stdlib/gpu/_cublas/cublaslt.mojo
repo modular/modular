@@ -1566,8 +1566,8 @@ fn cublasLtMatmulAlgoCapGetAttribute(
     E.g. to get list of supported Tile IDs:
         Tile tiles[TILE_END];
         size_t num_tiles, size_written;
-        if (cublasLtMatmulAlgoCapGetAttribute(algo, TILE_IDS, tiles, sizeof(tiles), size_written) ==
-    CUBLAS_STATUS_SUCCESS) { num_tiles = size_written / sizeof(tiles[0]);
+        if (cublasLtMatmulAlgoCapGetAttribute(algo, TILE_IDS, tiles, size_of(tiles), size_written) ==
+    CUBLAS_STATUS_SUCCESS) { num_tiles = size_written / size_of(tiles[0]);
         }
 
     algo         The algo descriptor

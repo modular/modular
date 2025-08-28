@@ -14,7 +14,7 @@
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from math.polynomial import polynomial_evaluate
-from sys import external_call, llvm_intrinsic, simdwidthof, sizeof
+from sys import external_call, llvm_intrinsic, simd_width_of, size_of
 from sys.arg import argv
 
 from algorithm.functional import vectorize
@@ -42,7 +42,7 @@ fn apply[
     fn _func[width: Int](idx: Int):
         output.store(idx, func(input.load[width=width](idx)))
 
-    vectorize[_func, simdwidthof[dtype]()](len(input))
+    vectorize[_func, simd_width_of[dtype]()](len(input))
 
 
 def bench_unary[
@@ -90,7 +90,7 @@ def bench_unary[
         BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * sizeof[dtype]()),
+        ThroughputMeasure(BenchMetric.elements, size * size_of[dtype]()),
     )
 
     input_ptr.free()

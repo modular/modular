@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from math import ceil
-from sys import bitwidthof
+from sys import bit_width_of
 
 from bit import count_leading_zeros
 from memory import Span
@@ -156,7 +156,7 @@ fn _heap_sort[
 fn _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
     var log2 = Int(
-        (bitwidthof[DType.index]() - 1) ^ count_leading_zeros(size | 1)
+        (bit_width_of[DType.index]() - 1) ^ count_leading_zeros(size | 1)
     )
     # The number 1.3 was chosen by experimenting the max stack size for random
     # input. This also depends on insertion_sort_threshold

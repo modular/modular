@@ -16,7 +16,7 @@ from math import ceildiv
 from sys import (
     env_get_int,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
 )
 from sys.ffi import external_call
 
@@ -296,12 +296,12 @@ fn _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
 ](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
     # fmt: off
-    var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
-    var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
+    var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
+    var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[b_type]()
     # reduction within thread blocks is done with fp32
-    var slice_k_reduction = block_mnk[0] * block_mnk[1] * (slice_k // 2) * sizeof[DType.float32]()
+    var slice_k_reduction = block_mnk[0] * block_mnk[1] * (slice_k // 2) * size_of[DType.float32]()
     var c_usage = block_mnk[0] * block_mnk[1] * \
-                  sizeof[c_type]() if c_type.is_half_float() else 0
+                  size_of[c_type]() if c_type.is_half_float() else 0
     # fmt: on
     return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 

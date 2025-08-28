@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from testing import assert_equal
 
 
 def main():
-    assert_equal(sizeof[DType.int8](), 1)
-    assert_equal(sizeof[DType.int16](), 2)
-    assert_equal(sizeof[DType.int32](), 4)
-    assert_equal(sizeof[DType.int64](), 8)
-    assert_equal(sizeof[DType.float32](), 4)
-    assert_equal(sizeof[DType.float64](), 8)
-    assert_equal(sizeof[DType.bool](), 1)
-    assert_equal(sizeof[DType.index](), 8)
-    assert_equal(sizeof[DType.float8_e4m3fn](), 1)
-    assert_equal(sizeof[DType.float8_e5m2fnuz](), 1)
-    assert_equal(sizeof[DType.float8_e4m3fnuz](), 1)
-    assert_equal(sizeof[DType.bfloat16](), 2)
-    assert_equal(sizeof[DType.float16](), 2)
-    assert_equal(sizeof[DType.invalid](), 0)
+    assert_equal(size_of[DType.int8](), 1)
+    assert_equal(size_of[DType.int16](), 2)
+    assert_equal(size_of[DType.int32](), 4)
+    assert_equal(size_of[DType.int64](), 8)
+    assert_equal(size_of[DType.float32](), 4)
+    assert_equal(size_of[DType.float64](), 8)
+    assert_equal(size_of[DType.bool](), 1)
+    assert_equal(size_of[DType.index](), 8)
+    assert_equal(size_of[DType.float8_e4m3fn](), 1)
+    assert_equal(size_of[DType.float8_e5m2fnuz](), 1)
+    assert_equal(size_of[DType.float8_e4m3fnuz](), 1)
+    assert_equal(size_of[DType.bfloat16](), 2)
+    assert_equal(size_of[DType.float16](), 2)
+    assert_equal(size_of[DType.invalid](), 0)

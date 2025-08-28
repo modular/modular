@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import align_down, ceildiv
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 from nn.conv import (
     check_cudnn_error,
     _get_cudnn_meta,
@@ -482,7 +482,7 @@ struct ConvTransposedPacked[
         ],
         conv_shape: ConvShape[input_layout.rank() - 2],
     ) raises:
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_layout.rank() - 2,
             output_layout.shape[output_layout.rank() - 2],  # WO
@@ -559,7 +559,7 @@ struct ConvTransposedPacked[
     @always_inline
     fn _zero_output(self, n: Int, g: Int):
         """Zero the output buffer."""
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         var f_offset = (
             g * self.conv_shape.f_per_group() + self.partition.f_offset
@@ -636,7 +636,7 @@ struct ConvTransposedPacked[
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
@@ -702,7 +702,7 @@ struct ConvTransposedPacked[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Current group index.
@@ -816,7 +816,7 @@ struct ConvTransposedPacked[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         for h in range(
             self.partition.ho_or_howo_offset,
@@ -896,7 +896,7 @@ struct ConvTransposedPacked[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         for d in range(self.conv_shape.d()):
             var do = d * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
@@ -964,7 +964,7 @@ struct ConvTransposedPacked[
 
     @always_inline
     fn apply_epilogue(self, n: Int, g: Int):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         var f_offset = (
             g * self.conv_shape.f_per_group() + self.partition.f_offset
@@ -1265,7 +1265,7 @@ fn pack_filter_shape(
         The output shape.
     """
 
-    alias simd_size = simdwidthof[filter.dtype]()
+    alias simd_size = simd_width_of[filter.dtype]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -1300,7 +1300,7 @@ fn pack_filter(
 ):
     """This packs the filter form RSFC to FRSCf."""
 
-    alias simd_size = simdwidthof[filter.dtype]()
+    alias simd_size = simd_width_of[filter.dtype]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -1518,7 +1518,7 @@ fn conv_transposed_cpu[
         fn elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
-            alias simd_size = simdwidthof[output_type]()
+            alias simd_size = simd_width_of[output_type]()
 
             @always_inline
             @parameter
@@ -1613,7 +1613,7 @@ fn conv_transposed_gpu[
         fn epilogue_wrapper[
             _width: Int, _rank: Int, alignment: Int = 1
         ](coords: IndexList[_rank]):
-            alias align = alignof[SIMD[output_type, _width]]()
+            alias align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.runtime_layout(
                 RuntimeTuple[fill_like(output_tmp.layout.shape, UNKNOWN_VALUE)](
                     coords
@@ -1622,9 +1622,9 @@ fn conv_transposed_gpu[
             vec = output_tmp.ptr.load[width=_width, alignment=align](idx)
             epilogue(coords, vec)
 
-        elementwise[epilogue_wrapper, simdwidthof[output_type](), target="gpu"](
-            output.runtime_layout.shape.value, ctx
-        )
+        elementwise[
+            epilogue_wrapper, simd_width_of[output_type](), target="gpu"
+        ](output.runtime_layout.shape.value, ctx)
 
         _ = output_tmp_data^
 

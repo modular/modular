@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import num_physical_cores, simdwidthof
+from sys import num_physical_cores, simd_width_of
 
 import benchmark
 from algorithm import parallelize, vectorize
@@ -20,7 +20,7 @@ from complex import ComplexSIMD
 
 alias float_type = DType.float32
 alias int_type = DType.int32
-alias simd_width = 2 * simdwidthof[float_type]()
+alias simd_width = 2 * simd_width_of[float_type]()
 alias unit = benchmark.Unit.ms
 
 alias cols = 960

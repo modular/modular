@@ -13,7 +13,7 @@
 
 # TODO: Later PR: Partitioning of Tensor Memory for multiple consumers (is this even needed since only one core? potentially to pipeline the write out of tmem)
 
-from sys import sizeof
+from sys import size_of
 from hashlib import default_comp_time_hasher
 from math import ceildiv
 
@@ -157,11 +157,13 @@ fn tma_umma_warp_specialized_gemm_kernel[
     alias c_size = c_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
     constrained[
-        ((c_size * sizeof[c_type]()) % 128) == 0, "preserve alignment"
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
+    constrained[
+        ((c_size * size_of[c_type]()) % 128) == 0, "preserve alignment"
     ]()
     var a_smem = LayoutTensorIter[
         a_type,  # dtype (first positional)
@@ -210,8 +212,8 @@ fn tma_umma_warp_specialized_gemm_kernel[
     var empty_barrier_base = full_barrier_base + num_pipeline_stages
 
     var math_barrier_base = empty_barrier_base + num_pipeline_stages
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias num_output_warps = 4
@@ -255,12 +257,12 @@ fn tma_umma_warp_specialized_gemm_kernel[
     alias b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
     ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * sizeof[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * sizeof[a_type]()
+    alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
+    alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
     alias b_stride01 = b_canonical_layout[0].stride[1].value()
     alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[b_type]()
 
     adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem[].ptr)
     bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem[].ptr)
@@ -329,8 +331,8 @@ fn tma_umma_warp_specialized_gemm_kernel[
                     @parameter
                     for j in range(num_k_mmas):
                         alias idx = IntTuple(0, MMA_K * j)
-                        alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                        alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
+                        alias a_offset = a_smem_layout(idx) * size_of[a_type]()
+                        alias b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                         # use c_scale=0 for the first mma only on the first iteration to initialize
                         var c_scale_value: UInt32 = 0 if (
@@ -502,17 +504,17 @@ fn blackwell_matmul_tma_umma[
     #   • 3 SharedMemBarriers per pipeline stage (TMA, MMA, full)
     #   • 3 descriptors (24 B) kept from the original formula
 
-    alias bytes_per_stage_buffers = (BM * BK * sizeof[a_type]()) + (
-        BN * BK * sizeof[b_type]()
+    alias bytes_per_stage_buffers = (BM * BK * size_of[a_type]()) + (
+        BN * BK * size_of[b_type]()
     )
     alias a_b_buffers_bytes = bytes_per_stage_buffers * num_pipeline_stages
-    alias c_buffer_bytes = BM * BN * sizeof[c_type]()
+    alias c_buffer_bytes = BM * BN * size_of[c_type]()
 
-    alias ptr_tmem_bytes = 2 * sizeof[
+    alias ptr_tmem_bytes = 2 * size_of[
         UInt32
     ]()  # ptr_tmem_addr takes two UInt32 words (lane | col | align)
     alias barriers_per_stage = 2
-    alias barrier_bytes = sizeof[SharedMemBarrier]() * (
+    alias barrier_bytes = size_of[SharedMemBarrier]() * (
         barriers_per_stage * num_pipeline_stages + 1
     )  # +1 for barrier between consumer and epilogue
 

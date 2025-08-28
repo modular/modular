@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
@@ -43,7 +43,7 @@ fn test_tma_mcast_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     var block_rank = block_rank_in_cluster()
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -175,7 +175,7 @@ fn test_tma_sliced_multicast_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     var block_rank = block_rank_in_cluster()
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N

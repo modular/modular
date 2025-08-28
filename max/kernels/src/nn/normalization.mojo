@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, isqrt
-from sys.info import alignof, simdwidthof, sizeof
+from sys.info import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
 from algorithm import map_reduce, mean, variance, vectorize
@@ -263,7 +263,7 @@ fn layer_norm_gpu_warp_tiling[
     beta: NDBuffer[dtype, 1, MutableAnyOrigin],
     epsilon: Scalar[dtype],
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var num_cols = shape[1]
@@ -330,7 +330,7 @@ fn layer_norm_gpu_block[
     beta: NDBuffer[dtype, 1, MutableAnyOrigin],
     epsilon: Scalar[dtype],
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var num_cols: UInt = shape[1]
@@ -462,7 +462,7 @@ fn layer_norm_gpu[
         indices[rank - 1] = col
         output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -557,7 +557,7 @@ fn layer_norm_cpu[
         beta: The beta value to use in the layernorm calculation.
         epsilon: The eps value to use in the layernorm calculation.
     """
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     for row in range(num_rows):
 
@@ -780,7 +780,7 @@ fn _rms_norm_warp_tiling_subkernel[
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
 
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
@@ -834,7 +834,7 @@ fn rms_norm_gpu_warp_tiling_128[
     num_cols: Int,
 ):
     alias half_warp_size = WARP_SIZE // 2
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var eps_accum = epsilon.cast[accum_type]()
@@ -888,7 +888,7 @@ fn rms_norm_gpu_warp_tiling[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var eps_accum = epsilon.cast[accum_type]()
@@ -937,7 +937,7 @@ fn _rms_norm_gpu_block_subkernel[
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
@@ -1057,7 +1057,7 @@ fn rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -1164,7 +1164,7 @@ fn rms_norm_cpu[
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
 ):
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     var num_rows = out_shape[0]
     var num_cols = out_shape[1]
@@ -1363,7 +1363,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var eps_accum1 = epsilon1.cast[accum_type]()
@@ -1442,7 +1442,7 @@ fn rms_norm_fused_residual_add_gpu_block[
     var shared_mem = external_memory[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[dtype, simd_width]](),
+        alignment = align_of[SIMD[dtype, simd_width]](),
         name="intermediate_shared_memory",
     ]()
     with PDL():
@@ -1565,7 +1565,7 @@ fn rms_norm_fused_residual_add_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -1603,7 +1603,7 @@ fn rms_norm_fused_residual_add_gpu[
             )
         else:
             var shared_mem_size = (
-                ceildiv(cols, simd_width) * simd_width * sizeof[dtype]()
+                ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
             )
 
             ctx.enqueue_function[
@@ -1634,7 +1634,7 @@ fn rms_norm_fused_residual_add_gpu[
             )
 
     else:
-        var shared_mem_size = Int(cols * sizeof[dtype]())
+        var shared_mem_size = Int(cols * size_of[dtype]())
 
         ctx.enqueue_function[
             rms_norm_fused_residual_add_gpu_block[
@@ -1994,7 +1994,7 @@ fn group_norm_gpu_warp_tiling[
     channels_per_group: Int,
     spatial: Int,
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
@@ -2067,7 +2067,7 @@ fn group_norm_gpu_block[
     channels_per_group: Int,
     spatial: Int,
 ):
-    alias align = alignof[SIMD[dtype, simd_width]]()
+    alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
     var tid = thread_idx.x
@@ -2196,7 +2196,7 @@ fn group_norm_gpu[
 
         return input_fn[simd_width, rank](indices)
 
-    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     if num_cols < simd_width:
         raise Error(
             "group_norm_gpu requires num_cols >= simd_width; got num_cols="

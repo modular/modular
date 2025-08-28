@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -107,7 +107,7 @@ struct AMD_MMA[
     BK: Int,
     WK: Int,
 ]:
-    alias type_alignment = alignof[SIMD[in_type, Self.simd_width]]()
+    alias type_alignment = align_of[SIMD[in_type, Self.simd_width]]()
     alias tensor_core_mma = TensorCoreKGroup[
         out_type,
         in_type,
@@ -396,7 +396,7 @@ fn gemm_kernel_amd[
     alias MMA_K = config.mma_shape[2]
 
     # SIMD and vectorization parameters
-    alias simd_width = simdwidthof[a_type]()
+    alias simd_width = simd_width_of[a_type]()
 
     # Warp organization
     alias num_warps_m = UInt(BM // WM)
@@ -643,7 +643,7 @@ fn gemm_kernel_amd[
             Int(BM * BN * (num_warps_k // 2)),
             accum_type,
             address_space = AddressSpace.SHARED,
-            alignment = alignof[SIMD[accum_type, 4]](),
+            alignment = align_of[SIMD[accum_type, 4]](),
         ]()
 
         warp_split_k_reduction[
@@ -706,12 +706,12 @@ fn gemm_kernel_amd[
                     c_reg_fragment.ptr.offset(src_idx)
                     .load[
                         width=4,
-                        alignment = alignof[SIMD[c_type, 4]](),
+                        alignment = align_of[SIMD[c_type, 4]](),
                     ]()
                     .cast[c_type]()
                 )
 
-                alias alignment = alignof[SIMD[c_type, 4]]()
+                alias alignment = align_of[SIMD[c_type, 4]]()
 
                 @parameter
                 if elementwise_lambda_fn:
@@ -722,7 +722,7 @@ fn gemm_kernel_amd[
                     ]()
                     alias epilogue_fn = elementwise_lambda_fn.value()
 
-                    epilogue_fn[alignment = alignof[SIMD[c_type, 4]]()](
+                    epilogue_fn[alignment = align_of[SIMD[c_type, 4]]()](
                         (Int(m), Int(n)), result_vec
                     )
                 else:

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from buffer.dimlist import DimList
 from gpu import barrier, thread_idx
@@ -148,7 +148,7 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
 fn cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int
 ](src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):
-    alias size_per_copy = 16 // sizeof[DType.float32]()
+    alias size_per_copy = 16 // size_of[DType.float32]()
     alias size_per_stage = size_per_copy * 128
 
     warpgroup_idx = thread_idx.x // 128
@@ -232,7 +232,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
 ](ctx: DeviceContext):
-    alias size_per_stage = 128 * (16 // sizeof[DType.float32]())
+    alias size_per_stage = 128 * (16 // size_of[DType.float32]())
     alias size = num_stages * size_per_stage
     alias shape1d = DimList(size)
 

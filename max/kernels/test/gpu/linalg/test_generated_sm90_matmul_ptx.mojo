@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import sizeof
+from sys import size_of
 from testing import assert_true
 from gpu.globals import WARPGROUP_SIZE
 from gpu.host.compile import _compile_code
@@ -178,10 +178,10 @@ fn compile_sm90_matmul_ptx[
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + (sizeof[Int64]() * 2)
-    ) + c_smem_layout.size() * sizeof[c_type]()
+        BM * BK * size_of[a_type]()
+        + BN * BK * size_of[b_type]()
+        + (size_of[Int64]() * 2)
+    ) + c_smem_layout.size() * size_of[c_type]()
 
     constrained[
         smem_size <= H100.shared_memory_per_multiprocessor - 1024,

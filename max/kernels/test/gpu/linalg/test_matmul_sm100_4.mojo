@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import argv, sizeof
+from sys import argv, size_of
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -191,8 +191,8 @@ fn load_AB[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -599,9 +599,9 @@ fn stsm_helper[
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
-    alias stsmx4_row_size = 32 // sizeof[dst.dtype]()
+    alias stsmx4_row_size = 32 // size_of[dst.dtype]()
     # Number of elements owned by each lane, each lane has 16B
-    alias stsmx4_lane_size = 16 // sizeof[dst.dtype]()
+    alias stsmx4_lane_size = 16 // size_of[dst.dtype]()
     # TODO: constrain the shared memory layout to be 2D row-major.
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
@@ -681,7 +681,7 @@ fn store_C_v1[
 
     # stmatrix related
     alias stsmx4N_bytes = 32
-    alias stsmx4N = stsmx4N_bytes // sizeof[c_type]()
+    alias stsmx4N = stsmx4N_bytes // size_of[c_type]()
     alias stsmx4_size_per_lane = (16 * stsmx4N) // WARP_SIZE
     # if the tile is not 32, it is assumed to be 16
     alias st_matrix_swizzle = TensorMapSwizzle.SWIZZLE_64B if stageN == 32 else TensorMapSwizzle.SWIZZLE_32B
@@ -1159,14 +1159,14 @@ fn blackwell_matmul_tma_pair_mma[
     # Total size = capacity - 1KB_reserved_by_L1
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
     # A and B per pipeline stage
-    alias AB_smem_per_stage = BM * BK * sizeof[a_type]() + BN * BK * sizeof[
+    alias AB_smem_per_stage = BM * BK * size_of[a_type]() + BN * BK * size_of[
         b_type
     ]()
     # Support double-buffer for output stages.
     alias num_output_stages = 2
     alias C_smem = output_tile_shape[0] * output_tile_shape[
         1
-    ] * num_output_stages * sizeof[c_type]()
+    ] * num_output_stages * size_of[c_type]()
     # Usage reserved for mbar and others
     # - tma_mbar_ptr: 8 bytes per pipeline stage
     # - mma_mbar_ptr: 8 bytes per pipeline stage

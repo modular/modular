@@ -13,7 +13,7 @@
 
 from collections.string.string_slice import _memchr, _memmem
 from math import align_down
-from sys import simdwidthof
+from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from bit import count_trailing_zeros
@@ -164,7 +164,7 @@ fn _memmem_baseline[
             needle[0],
         )
 
-    alias bool_mask_width = simdwidthof[DType.bool]()
+    alias bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](needle[0])
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width

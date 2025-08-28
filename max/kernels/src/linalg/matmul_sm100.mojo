@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import sizeof, alignof
+from sys import size_of, align_of
 from math import ceildiv, align_up
 from bit import prev_power_of_two
 from buffer.buffer import NDBuffer
@@ -185,8 +185,8 @@ fn load_AB[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -324,9 +324,9 @@ fn stsm_helper[
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
-    alias stsmx4_row_size = 32 // sizeof[dst.dtype]()
+    alias stsmx4_row_size = 32 // size_of[dst.dtype]()
     # Number of elements owned by each lane, each lane has 16B
-    alias stsmx4_lane_size = 16 // sizeof[dst.dtype]()
+    alias stsmx4_lane_size = 16 // size_of[dst.dtype]()
     # TODO: constrain the shared memory layout to be 2D row-major.
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
@@ -414,7 +414,7 @@ fn multi_stage_store_C[
 
     # stmatrix related
     alias stsmx4N_bytes = 32
-    alias stsmx4N = stsmx4N_bytes // sizeof[c_type]()  # 16
+    alias stsmx4N = stsmx4N_bytes // size_of[c_type]()  # 16
     alias stsmx4_size_per_lane = (16 * stsmx4N) // WARP_SIZE  # 8
     alias st_matrix_swizzle = TensorMapSwizzle.SWIZZLE_64B if stageN == 32 else TensorMapSwizzle.SWIZZLE_32B
     alias swizzle = make_swizzle[c_type, st_matrix_swizzle]()
@@ -1326,8 +1326,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     alias b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    alias a_smem_bytes_per_stage = BM * BK * sizeof[a_type]()
-    alias b_smem_bytes_per_stage = BN * BK * sizeof[b_type]()
+    alias a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
+    alias b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
     # A and B per pipeline stage
     alias AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
     # Support double-buffer for output stages.
@@ -1335,11 +1335,11 @@ fn blackwell_matmul_tma_umma_warp_specialized[
 
     alias c_smem_bytes = output_tile_shape[0] * output_tile_shape[
         1
-    ] * num_output_stages * sizeof[c_type]()
+    ] * num_output_stages * size_of[c_type]()
 
-    alias MBAR_BYTES = sizeof[Int64]()  # 8 bytes per barrier
-    alias CLC_RESPONSE_BYTES = sizeof[Int128]()  # 16 bytes per response
-    alias TMEM_ADDR_BYTES = sizeof[
+    alias MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
+    alias CLC_RESPONSE_BYTES = size_of[Int128]()  # 16 bytes per response
+    alias TMEM_ADDR_BYTES = size_of[
         Int32
     ]()  # 4 bytes or 32 bits for tensor memory address
     # the 'N' dimension of tensor memory is 512
@@ -1519,9 +1519,11 @@ fn matmul_sm100_fallback_kernel[
     alias b_size = b_smem_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -1541,8 +1543,8 @@ fn matmul_sm100_fallback_kernel[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
 
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (
@@ -1702,7 +1704,7 @@ fn matmul_sm100_fallback_kernel[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias alignment = alignof[SIMD[c_type, 2]]()
+                            alias alignment = align_of[SIMD[c_type, 2]]()
                             alias epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
                                 (Int(m), Int(n)), c_mn
@@ -1759,7 +1761,7 @@ fn matmul_sm100_fallback[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 
     alias block_dim = 128
 

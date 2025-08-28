@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from sys import sizeof
+from sys import size_of
 from sys.intrinsics import readfirstlane
 
 from buffer import NDBuffer
@@ -286,7 +286,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 fn hash(tensor: LayoutTensor) -> Int:
     # Calculate hash of the content of the layout tensor, it can be useful for debugging
     constrained[
-        sizeof[tensor.dtype]() == 2, "Only support 2 byte types for hash"
+        size_of[tensor.dtype]() == 2, "Only support 2 byte types for hash"
     ]()
     var hash_value: Int = 0
     alias size = tensor.layout.size()

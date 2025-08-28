@@ -14,7 +14,7 @@
 from math import ceildiv
 from pathlib import Path
 from random import rand, randint, random_float64
-from sys import alignof, argv, sizeof
+from sys import align_of, argv, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -89,7 +89,7 @@ fn repack_Q4_0_for_sm8x[
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
 ):
     alias group_size = 32
-    alias group_bytes = sizeof[DType.float16]() + (group_size // 2)
+    alias group_bytes = size_of[DType.float16]() + (group_size // 2)
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias WARP_SIZE = 32
@@ -147,7 +147,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,

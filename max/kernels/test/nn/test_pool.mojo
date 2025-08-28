@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from layout import (
     LayoutTensor,
@@ -76,7 +76,7 @@ fn pool[
         ),
     )
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
 
     if pool_method == PoolMethod.MAX:
         max_pool[int_type = DType.int32](
@@ -223,7 +223,7 @@ fn test_avg_pool_2d_with_padding[
         ),
     )
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
 
     avg_pool[int_type = DType.int32, count_boundary=count_boundary](
         input_tensor,
@@ -408,7 +408,7 @@ fn pool_ceil_test[
         ),
     )
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
 
     var output_shape = pool_shape_impl[
         DType.float32,
@@ -547,7 +547,7 @@ fn test_max_pool_pad_dilation_2d() raises:
         ),
     )
 
-    alias simd_width = simdwidthof[DType.float32]()
+    alias simd_width = simd_width_of[DType.float32]()
 
     max_pool[int_type = DType.int32](
         input_tensor,

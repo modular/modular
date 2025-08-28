@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call, sizeof
+from sys import external_call, size_of
 from sys.ffi import c_uint, c_int
 
 from gpu._utils import to_llvm_ptr
@@ -284,14 +284,14 @@ fn create_tma_descriptor[
     @parameter
     for i in range(rank):
         global_dim_arg[i] = global_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * sizeof[dtype]()
+        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
         box_dim_arg[i] = shared_mem_shape[rank - i - 1]
 
     debug_assert(
-        global_strides_arg[0] == sizeof[dtype](),
+        global_strides_arg[0] == size_of[dtype](),
         "TMA GMEM should be row-major, global stride",
-        " at dim 0 should be sizeof[dtype](): ",
-        sizeof[dtype](),
+        " at dim 0 should be size_of[dtype](): ",
+        size_of[dtype](),
         " but is: ",
         global_strides_arg[0],
     )
@@ -323,7 +323,7 @@ fn create_tma_descriptor[
             rank,
             global_buf._handle,
             global_dim_arg.unsafe_ptr(),
-            # global_strides_arg[0] is implicitly sizeof[dtype]()
+            # global_strides_arg[0] is implicitly size_of[dtype]()
             global_strides_arg.unsafe_ptr() + 1,
             box_dim_arg.unsafe_ptr(),
             element_stride_arg.unsafe_ptr(),

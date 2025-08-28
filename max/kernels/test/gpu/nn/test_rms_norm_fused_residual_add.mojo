@@ -163,7 +163,7 @@ fn run_rms_norm_fused_residual_add_gpu[
             rebind[IndexList[rank]](idx), residual_val + result_val
         )
 
-    elementwise[sum_fn, simdwidthof[dtype](), target="gpu"](
+    elementwise[sum_fn, simd_width_of[dtype](), target="gpu"](
         unfused_intermediate_buf.dynamic_shape,
         ctx,
     )

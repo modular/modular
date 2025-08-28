@@ -33,8 +33,8 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import bitwidthof, external_call, llvm_intrinsic
-from sys.info import simdwidthof, sizeof
+from sys import bit_width_of, external_call, llvm_intrinsic
+from sys.info import simd_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
@@ -3152,7 +3152,7 @@ struct GatherSum:
         ]:
             return x + y
 
-        gather_reduce[output.dtype, 0, 1, simdwidthof[output.dtype](), add](
+        gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
             output_ndbuffer, input_ndbuffer, indices_ndbuffer, 0
         )
 
@@ -3781,7 +3781,7 @@ struct LinalgBandPart:
 
         matrix_band_part[
             input_0_fn=input_fn,
-            simd_width = simdwidthof[dtype](),
+            simd_width = simd_width_of[dtype](),
             single_thread_blocking_override=False,
             target=target,
         ](
@@ -4173,7 +4173,7 @@ struct Softmax:
 
         softmax[
             output.dtype,
-            simdwidthof[output.dtype](),
+            simd_width_of[output.dtype](),
             output.rank,
             output_ndbuffer.shape,
             input_fn,
@@ -4210,7 +4210,7 @@ struct LogSoftmax:
 
         logsoftmax[
             output.dtype,
-            simdwidthof[output.dtype](),
+            simd_width_of[output.dtype](),
             output.rank,
             output_ndbuffer.shape,
             input_fn,
@@ -5481,7 +5481,7 @@ struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
     fn shape(input: InputTensor[dtype = DType.uint8, rank=2]) -> IndexList[2]:
-        alias block_nbytes = sizeof[Q4sym[group_size=32]]()
+        alias block_nbytes = size_of[Q4sym[group_size=32]]()
         alias quants_per_block = 32
         var num_block_per_batch = (
             input.size() // input.dim_size[0]()
@@ -5562,7 +5562,7 @@ struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
     fn shape(input: InputTensor[dtype = DType.uint8, rank=2]) -> IndexList[2]:
-        alias block_nbytes = sizeof[block_Q4_K]()
+        alias block_nbytes = size_of[block_Q4_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
         var num_block_per_batch = (
@@ -5655,7 +5655,7 @@ struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
     fn shape(input: InputTensor[dtype = DType.uint8, rank=2]) -> IndexList[2]:
-        alias block_nbytes = sizeof[block_Q6_K]()
+        alias block_nbytes = size_of[block_Q6_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
         var num_block_per_batch = (
@@ -8124,7 +8124,7 @@ fn _check_signal_buffer_size(
     signal_buffer_size: Int, input_size_bytes: Int
 ) raises:
     # The signal buffer has to be large enough to hold the entire input buffer.
-    var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
+    var min_signal_buffer_size = size_of[Signal]() + input_size_bytes
     if signal_buffer_size < min_signal_buffer_size:
         raise Error(
             "Expected signal buffer to be at least ",
@@ -8184,7 +8184,7 @@ struct DistributedAllReduceSum:
             ),
         ]()
 
-        var input_size_bytes = inputs[0].size() * sizeof[dtype]()
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
@@ -8272,7 +8272,7 @@ struct DistributedAllGather:
             ),
         ]()
 
-        var input_size_bytes = inputs[0].size() * sizeof[dtype]()
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
@@ -8356,7 +8356,7 @@ struct DistributedMatmulAllReduce:
             ),
         ]()
 
-        var input_size_bytes = outputs[0].size() * sizeof[c_type]()
+        var input_size_bytes = outputs[0].size() * size_of[c_type]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()

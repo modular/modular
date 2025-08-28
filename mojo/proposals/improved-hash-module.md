@@ -252,7 +252,7 @@ struct DJBX33A_Hasher[custom_secret: UInt64 = 0](Hasher):
     @always_inline
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """The algorithm is not optimal."""
-        alias size_in_bytes = size * dt.sizeof()
+        alias size_in_bytes = size * dt.size_of()
         var bytes = bitcast[DType.uint8, size_in_bytes](value)
         @parameter
         for i in range(size_in_bytes):

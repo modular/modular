@@ -30,13 +30,13 @@ from collections.string import StaticString
 from collections.optional import OptionalReg
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
-    alignof,
-    bitwidthof,
+    align_of,
+    bit_width_of,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    sizeof,
+    size_of,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer, CompilationTarget
@@ -736,7 +736,7 @@ fn async_copy[
         - L2 prefetch size must be 64, 128, or 256 bytes.
     """
     constrained[
-        not fill or sizeof[dtype]() <= sizeof[Int32](),
+        not fill or size_of[dtype]() <= size_of[Int32](),
         "if the fill value is specified, then the dtype must be 32bit or less",
     ]()
     constrained[size in (4, 8, 16)]()
@@ -753,8 +753,8 @@ fn async_copy[
     if is_amd_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
-        alias n_scalars = size // sizeof[dtype]()
-        var n_src_scalars = src_size // sizeof[dtype]()
+        alias n_scalars = size // size_of[dtype]()
+        var n_src_scalars = src_size // size_of[dtype]()
 
         @parameter
         if fill:
@@ -814,13 +814,13 @@ fn async_copy[
         @always_inline
         fn _i32_repr[fill: Scalar[dtype]]() -> Int32:
             @parameter
-            if sizeof[dtype]() == 1:
+            if size_of[dtype]() == 1:
                 return bitcast[DType.int32, 1](
                     SIMD[dtype, 4](fill, fill, fill, fill)
                 )
-            elif sizeof[dtype]() == 2:
+            elif size_of[dtype]() == 2:
                 return bitcast[DType.int32, 1](SIMD[dtype, 2](fill, fill))
-            elif sizeof[dtype]() == 4:
+            elif size_of[dtype]() == 4:
                 return bitcast[DType.int32](fill)
 
             return 0
@@ -1514,7 +1514,7 @@ fn _load_impl[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[dtype]]() if is_gpu() else 1,
+    alignment: Int = align_of[Scalar[dtype]]() if is_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
@@ -1558,11 +1558,11 @@ fn _load_impl[
     if prefetch_size:
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
-    alias bytes_to_load = sizeof[dtype]() * width
-    alias dtype_bitwidth = bitwidthof[dtype]()
+    alias bytes_to_load = size_of[dtype]() * width
+    alias dtype_bitwidth = bit_width_of[dtype]()
 
     @parameter
-    if bytes_to_load < sizeof[DType.uint32]():
+    if bytes_to_load < size_of[DType.uint32]():
         return ptr.load[width=width, alignment=alignment]()
 
     @parameter
@@ -1580,11 +1580,11 @@ fn _load_impl[
     @parameter
     if (
         dtype_bitwidth <= 16
-        and sizeof[DType.uint32]() <= bytes_to_load < sizeof[DType.uint64]()
+        and size_of[DType.uint32]() <= bytes_to_load < size_of[DType.uint64]()
     ):
         return bitcast[dtype, width](
             _load_impl[
-                width = (bytes_to_load // sizeof[DType.uint32]()),
+                width = (bytes_to_load // size_of[DType.uint32]()),
                 prefetch_size=prefetch_size,
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
@@ -1666,7 +1666,7 @@ fn load[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+    alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
@@ -1708,7 +1708,7 @@ fn load[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+    alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[dtype]], offset: OffsetType) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
 
@@ -1779,7 +1779,7 @@ fn _get_multimem_ld_reduce_asm[
     Constraints:
         - Only supported on SM90+ GPUs.
         - Type must be a floating point type.
-        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
     """
 
     constrained[
@@ -1791,7 +1791,7 @@ fn _get_multimem_ld_reduce_asm[
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
         "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
     ]()
-    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    alias total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1852,11 +1852,11 @@ fn multimem_ld_reduce[
 
     Constraints:
         - Only supported on SM90+ GPUs.
-        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
         - Type must be a floating point type.
         - float64 requires count=1 (no .vec qualifier allowed).
     """
-    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    alias total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -1969,16 +1969,16 @@ fn multimem_ld_reduce[
     Constraints:
         - Only supported on SM90+ GPUs.
         - simd_width must be 1, 2, 4, or 8.
-        - Total bit width (count * output_width * sizeof[dtype] * 8) must be 32, 64, or 128 bits.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
         - Type must be a floating point type.
         - float64 requires count=1 (no .vec qualifier allowed).
     """
-    alias output_width = 4 // sizeof[dtype]()
+    alias output_width = 4 // size_of[dtype]()
     alias count = simd_width // output_width
     constrained[
         simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
     ]()
-    alias total_bits = count * output_width * sizeof[dtype]() * 8
+    alias total_bits = count * output_width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -2028,7 +2028,7 @@ fn _get_multimem_st_asm[
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
         "multimem.st consistency must be in {weak, relaxed, release}",
     ]()
-    alias total_bits = count * width * sizeof[dtype]() * 8
+    alias total_bits = count * width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",
@@ -2106,7 +2106,7 @@ fn multimem_st[
     See Also:
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
-    alias total_bits = count * width * sizeof[dtype]() * 8
+    alias total_bits = count * width * size_of[dtype]() * 8
     constrained[
         total_bits in (32, 64, 128),
         "total bit width must be 32, 64, or 128 bits",

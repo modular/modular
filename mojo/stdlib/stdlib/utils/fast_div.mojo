@@ -17,7 +17,7 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from sys import bitwidthof
+from sys import bit_width_of
 
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
@@ -35,11 +35,11 @@ fn _ceillog2_and_is_pow2(x: Scalar) -> (Int32, Bool):
     """
 
     @parameter
-    for i in range(bitwidthof[x.dtype]()):
+    for i in range(bit_width_of[x.dtype]()):
         alias power_of_2 = __type_of(x)(1) << i
         if power_of_2 >= x:
             return (i, power_of_2 == x)
-    return (bitwidthof[x.dtype](), False)
+    return (bit_width_of[x.dtype](), False)
 
 
 @register_passable("trivial")
@@ -52,7 +52,7 @@ struct FastDiv[dtype: DType]:
     especially in scenarios where division is a frequent operation.
     """
 
-    alias uint_type = _uint_type_of_width[bitwidthof[dtype]()]()
+    alias uint_type = _uint_type_of_width[bit_width_of[dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -73,7 +73,7 @@ struct FastDiv[dtype: DType]:
                 Defaults to 1.
         """
         constrained[
-            bitwidthof[dtype]() <= 32,
+            bit_width_of[dtype]() <= 32,
             "larger types are not currently supported",
         ]()
         self._div = divisor
@@ -85,7 +85,7 @@ struct FastDiv[dtype: DType]:
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << bitwidthof[dtype]())
+                    (UInt64(1) << bit_width_of[dtype]())
                     * ((1 << cl.cast[DType.uint64]()) - divisor)
                     / divisor
                 )

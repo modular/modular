@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof, env_get_int, env_get_string, simdwidthof
+from sys import align_of, env_get_int, env_get_string, simd_width_of
 
 from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -26,10 +26,10 @@ from utils.index import product
 from sys.info import _TargetType
 
 
-fn alignof_simd[dtype: DType, simd_target: _TargetType]() -> Int:
+fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
-    alias pack_size = simdwidthof[dtype, target=simd_target]()
-    return alignof[SIMD[dtype, pack_size]]()
+    alias pack_size = simd_width_of[dtype, target=simd_target]()
+    return align_of[SIMD[dtype, pack_size]]()
 
 
 fn run_reduce[
@@ -49,7 +49,7 @@ fn run_reduce[
     var in_size = shape.flattened_length()
     var out_size = product(shape, rank - 1)
 
-    alias align = alignof_simd[dtype, simd_target = get_gpu_target()]()
+    alias align = align_of_simd[dtype, simd_target = get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[dtype], alignment=align].alloc(
         out_size
     )

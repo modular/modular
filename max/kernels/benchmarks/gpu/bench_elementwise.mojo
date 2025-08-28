@@ -14,11 +14,11 @@
 from collections.string import StaticString
 from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
 from sys import (
-    alignof,
+    align_of,
     env_get_int,
     env_get_string,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from sys.intrinsics import strided_load
 
@@ -120,8 +120,8 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
-    alias align = alignof[
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    alias align = align_of[
         SIMD[dtype, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
@@ -130,7 +130,8 @@ fn run_elementwise[
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     var stride = align_up(N, pack_size)
     var N_cache = (
-        align_up(128 * 1024 * 1024, stride * sizeof[dtype]()) // sizeof[dtype]()
+        align_up(128 * 1024 * 1024, stride * size_of[dtype]())
+        // size_of[dtype]()
     )
 
     var in_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
@@ -203,7 +204,7 @@ fn run_elementwise[
 
         b.iter_custom[kernel_launch](ctx)
 
-    var num_bytes = 2 * N * sizeof[dtype]()
+    var num_bytes = 2 * N * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(
             "elementwise",

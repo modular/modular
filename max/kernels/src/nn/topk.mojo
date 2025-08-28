@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv, exp, iota
-from sys import alignof, simdwidthof, sizeof
+from sys import align_of, simd_width_of, size_of
 
 import gpu.warp as warp
 from algorithm.functional import parallelize_over_rows
@@ -638,8 +638,8 @@ fn _block_reduce_topk[
     ]()
 
     # Calculate sizes for shared memory allocation
-    alias p_width = simdwidthof[DType.index]()
-    alias u_width = simdwidthof[Scalar[T]]()
+    alias p_width = simd_width_of[DType.index]()
+    alias u_width = simd_width_of[Scalar[T]]()
 
     # Allocate shared memory for indices and values
     var p_sram = stack_allocation[
@@ -738,7 +738,7 @@ fn _topk_stage1[
     var topk_sram = external_memory[
         TopK_2[T, largest],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[TopK_2[T, largest]](),
+        alignment = align_of[TopK_2[T, largest]](),
     ]()
 
     with PDL():
@@ -789,7 +789,7 @@ fn _topk_stage1[
 @always_inline("nodebug")
 fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     # Get dynamic shared memory size for stage 1
-    return Int(block_size * sizeof[TopK_2[dtype]]())
+    return Int(block_size * size_of[TopK_2[dtype]]())
 
 
 fn _topk_stage2[
@@ -864,7 +864,7 @@ fn _topk_stage2[
     var vals_sram = external_memory[
         Scalar[T],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[Scalar[T]](),
+        alignment = align_of[Scalar[T]](),
     ]()
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
@@ -1119,10 +1119,10 @@ fn _topk_gpu[
         ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
     )
     var num_bytes_sample_cache = max_k * (
-        sizeof[Scalar[dtype]]() + 2 * sizeof[DType.index]()
+        size_of[Scalar[dtype]]() + 2 * size_of[DType.index]()
     )
     var shared_mem_bytes_2 = (
-        num_elem_reduced * (sizeof[Scalar[dtype]]() + sizeof[DType.index]())
+        num_elem_reduced * (size_of[Scalar[dtype]]() + size_of[DType.index]())
         + num_bytes_sample_cache
     )
     shared_mem_bytes_2 = Int(

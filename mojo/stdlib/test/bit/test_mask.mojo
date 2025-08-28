@@ -13,7 +13,7 @@
 
 from testing import assert_equal
 from bit._mask import is_negative, splat
-from sys.info import bitwidthof
+from sys.info import bit_width_of
 
 
 def test_is_negative():
@@ -29,7 +29,7 @@ def test_is_negative():
     @parameter
     for i in range(len(dtypes)):
         alias D = dtypes[i]
-        var last_value = 2 ** (bitwidthof[D]() - 1) - 1
+        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
@@ -80,7 +80,7 @@ def test_compare():
     @parameter
     for i in range(len(dtypes)):
         alias D = dtypes[i]
-        var last_value = 2 ** (bitwidthof[D]() - 1) - 1
+        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter

@@ -15,7 +15,7 @@ from collections import OptionalReg
 from hashlib import default_comp_time_hasher
 from buffer.dimlist import DimList
 from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
-from sys import sizeof
+from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -34,7 +34,7 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.utils import elementwise_epilogue_type
-from sys import alignof
+from sys import align_of
 
 
 def test_matmul_sm100_blockwise_scaled_fp8[
@@ -56,7 +56,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var K = k.value
 
     debug_assert(
-        M * sizeof[DType.float32]() % 16 == 0,
+        M * size_of[DType.float32]() % 16 == 0,
         "TMA expects M to be divisible by 16 bytes",
     )
 
@@ -148,7 +148,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_dtype, width]](),
+        alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)

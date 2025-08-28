@@ -20,7 +20,7 @@ from shmem import *
 from os import listdir, getenv, setenv, abort
 from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
 from sys.ffi import c_int
-from sys import sizeof
+from sys import size_of
 from math import iota
 
 
@@ -72,7 +72,7 @@ fn ring_reduce(
     nreduce = elems_per_block
     signal += block_idx
 
-    var chunk_elems = chunk_size // sizeof[DType.int32]()
+    var chunk_elems = chunk_size // size_of[DType.int32]()
     var num_chunks = nreduce // chunk_elems
 
     # Reduce phase - data flows through ring accumulating values
@@ -122,7 +122,7 @@ fn ring_reduce(
 
 
 def main():
-    var min_ints = min_size // sizeof[DType.int32]()
+    var min_ints = min_size // size_of[DType.int32]()
     debug_assert(
         min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
     )
@@ -132,7 +132,7 @@ def main():
         var npes = shmem_n_pes()
 
         # Allocate buffers
-        var max_ints = max_size // sizeof[DType.int32]()
+        var max_ints = max_size // size_of[DType.int32]()
 
         var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
         var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
@@ -153,7 +153,7 @@ def main():
         # Test different sizes
         var size = min_size
         while size <= max_size:
-            var num_ints = size // sizeof[DType.int32]()
+            var num_ints = size // size_of[DType.int32]()
 
             # Warmup iterations
             for i in range(warmup_iters):

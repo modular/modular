@@ -20,7 +20,7 @@ from gpu.globals import WARPGROUP_SIZE
 from utils.index import Index, IndexList
 from gpu.host.info import H100
 from gpu.memory import AddressSpace
-from sys import sizeof
+from sys import size_of
 from os.atomic import Atomic
 from stdlib.bit import log2_floor
 from linalg.matmul_tile_scheduler import RasterOrder, WorkInfo
@@ -432,7 +432,7 @@ struct SplitKTileScheduler[
         var num_output_tiles = problem_blocks_m * problem_blocks_n
 
         var locks_workspace_bytes = (
-            num_output_tiles * sizeof[Int32]() * num_consumer
+            num_output_tiles * size_of[Int32]() * num_consumer
         )
 
         return Int(locks_workspace_bytes)

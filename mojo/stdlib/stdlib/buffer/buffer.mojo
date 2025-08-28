@@ -21,7 +21,7 @@ from buffer import NDBuffer
 
 from math import align_down, fma, iota
 from pathlib import Path
-from sys.info import alignof, is_gpu, is_nvidia_gpu, simdwidthof, sizeof
+from sys.info import align_of, is_gpu, is_nvidia_gpu, simd_width_of, size_of
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
@@ -265,7 +265,7 @@ struct NDBuffer[
 
     @staticmethod
     fn _default_alignment[width: Int = 1]() -> Int:
-        return alignof[SIMD[dtype, width]]() if is_nvidia_gpu() else 1
+        return align_of[SIMD[dtype, width]]() if is_nvidia_gpu() else 1
 
     @always_inline
     fn __init__(out self):
@@ -1222,7 +1222,7 @@ struct NDBuffer[
         Returns:
             The size of the NDBuffer in bytes.
         """
-        return self.size() * sizeof[dtype]()
+        return self.size() * size_of[dtype]()
 
     @always_inline
     fn zero(self: NDBuffer[mut=True, *_, **_]):
@@ -1322,11 +1322,11 @@ struct NDBuffer[
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
         )
-        self._simd_fill[simdwidthof[dtype]()](val)
+        self._simd_fill[simd_width_of[dtype]()](val)
 
     @staticmethod
     @always_inline("nodebug")
-    fn stack_allocation[*, alignment: Int = alignof[dtype]()]() -> Self:
+    fn stack_allocation[*, alignment: Int = align_of[dtype]()]() -> Self:
         """Constructs an NDBuffer instance backed by stack allocated memory space.
 
         Parameters:

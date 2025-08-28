@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context, expect_eq
@@ -28,7 +28,7 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", dtype, "]:")
 
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     alias rank = 2
     alias dim_x = 2

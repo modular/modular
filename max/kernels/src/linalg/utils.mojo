@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv
-from sys import alignof
+from sys import align_of
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 
 from algorithm import vectorize
@@ -576,22 +576,22 @@ fn get_pack_data_size[dtype: DType]() -> Int:
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
-        return 4 * KB // sizeof[dtype]()
+        return 4 * KB // size_of[dtype]()
 
     @parameter
     if CompilationTarget.is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
-        return 64 * KB // sizeof[dtype]()
+        return 64 * KB // size_of[dtype]()
 
     @parameter
     if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
-        return 512 * KB // sizeof[dtype]()
+        return 512 * KB // size_of[dtype]()
 
-    return 256 * KB // sizeof[dtype]()
+    return 256 * KB // size_of[dtype]()
 
 
 @always_inline
@@ -606,7 +606,7 @@ fn get_kernel_config[
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
@@ -799,7 +799,7 @@ fn apply_epilogue[
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[src.dtype, vec_width]](),
+                    alignment = align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
                 var m = (dst_idx + offset) // N

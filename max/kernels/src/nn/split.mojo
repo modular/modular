@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from sys import simdwidthof
+from sys import simd_width_of
 from sys.info import _current_target
 
 from algorithm import elementwise
@@ -118,7 +118,7 @@ fn split[
         alias compile_target = _current_target() if is_cpu[
             target
         ]() else get_gpu_target()
-        alias target_simd_width = simdwidthof[type, target=compile_target]()
+        alias target_simd_width = simd_width_of[type, target=compile_target]()
 
         elementwise[
             elementwise_fn_wrapper,

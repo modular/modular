@@ -20,7 +20,7 @@ from layout._mixed_tuple import (
     RuntimeInt,
     mixed_int_tuple_to_int_tuple,
 )
-from sys import sizeof
+from sys import size_of
 
 
 fn test_nested_layouts() raises:
@@ -32,8 +32,8 @@ fn test_nested_layouts() raises:
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
-    assert_equal(sizeof[__type_of(inner)](), sizeof[Int]())
-    assert_equal(sizeof[__type_of(nested)](), sizeof[Int]())
+    assert_equal(size_of[__type_of(inner)](), size_of[Int]())
+    assert_equal(size_of[__type_of(nested)](), size_of[Int]())
 
 
 fn test_int_tuple_conversion() raises:

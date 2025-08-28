@@ -36,7 +36,7 @@ from algorithm import vectorize
 from bit import log2_floor, pop_count
 from math import ceildiv
 from memory import pack_bits
-from sys import bitwidthof, simdwidthof
+from sys import bit_width_of, simd_width_of
 
 from .inline_array import InlineArray
 
@@ -44,7 +44,7 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = bitwidthof[UInt64]()
+alias _WORD_BITS = bit_width_of[UInt64]()
 alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
@@ -292,7 +292,7 @@ struct BitSet[size: UInt](
             A new bitset containing the result of applying the function to each
             corresponding pair of words from the input bitsets.
         """
-        alias simd_width = simdwidthof[UInt64]()
+        alias simd_width = simd_width_of[UInt64]()
         var res = Self()
 
         # Define a vectorized operation that processes multiple words at once

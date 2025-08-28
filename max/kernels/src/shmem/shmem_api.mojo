@@ -48,7 +48,7 @@ from sys import (
     CompilationTarget,
     is_amd_gpu,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
     argv,
 )
 from sys.ffi import c_int, external_call
@@ -290,7 +290,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](sizeof[dtype]() * size)
+        return nvshmem_malloc[dtype](size_of[dtype]() * size)
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_malloc"]()
         return UnsafePointer[Scalar[dtype]]()
@@ -298,7 +298,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
 fn shmem_calloc[
     dtype: DType
-](count: UInt, size: UInt = sizeof[dtype]()) -> UnsafePointer[Scalar[dtype]]:
+](count: UInt, size: UInt = size_of[dtype]()) -> UnsafePointer[Scalar[dtype]]:
     """Collectively allocate a zeroed block of symmetric memory.
 
     Parameters:
@@ -306,7 +306,7 @@ fn shmem_calloc[
 
     Args:
         count: The number of elements to allocate.
-        size: The size in bytes of each element (defaults to sizeof[dtype]()).
+        size: The size in bytes of each element (defaults to size_of[dtype]()).
 
     Returns:
         A pointer to the lowest byte address of the allocated space; otherwise, it

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import alignof
+from sys import align_of
 
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -689,7 +689,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutableAnyOrigin,
         ]
-        .stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -735,7 +735,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutableAnyOrigin,
         ]
-        .stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+        .stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[4, 4]()
         .fill(0)
     )

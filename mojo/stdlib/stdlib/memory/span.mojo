@@ -20,8 +20,8 @@ from memory import Span
 ```
 """
 
-from sys import alignof
-from sys.info import simdwidthof
+from sys import align_of
+from sys.info import simd_width_of
 
 from collections._index_normalization import normalize_index
 from memory import Pointer
@@ -34,7 +34,7 @@ struct _SpanIter[
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[T](),
+    alignment: Int = align_of[T](),
 ](Copyable, Movable):
     """Iterator for Span.
 
@@ -83,7 +83,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[T](),
+    alignment: Int = align_of[T](),
 ](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
     """A non-owning view of contiguous data.
 
@@ -317,7 +317,7 @@ struct Span[
             alias width = widths[i]
 
             @parameter
-            if simdwidthof[dtype]() >= width:
+            if simd_width_of[dtype]() >= width:
                 for _ in range((length - processed) // width):
                     if value in (ptr + processed).load[width=width]():
                         return True
@@ -631,7 +631,7 @@ struct Span[
             alias w = widths[i]
 
             @parameter
-            if simdwidthof[dtype]() >= w:
+            if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
                     var lhs_ptr = ptr + processed
                     var rhs_ptr = ptr + length - (processed + w)
@@ -669,7 +669,7 @@ struct Span[
             alias w = widths[i]
 
             @parameter
-            if simdwidthof[dtype]() >= w:
+            if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     p_curr.store(func(p_curr.load[width=w]()))
@@ -705,7 +705,7 @@ struct Span[
             alias w = widths[i]
 
             @parameter
-            if simdwidthof[dtype]() >= w:
+            if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
                     var p_curr = ptr + processed
                     var vec = p_curr.load[width=w]()

@@ -38,7 +38,7 @@ from sys import (
     CompilationTarget,
     is_amd_gpu,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
     argv,
 )
 from sys.ffi import c_int, external_call

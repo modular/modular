@@ -59,7 +59,7 @@ struct Fnv1a(Defaultable, Hasher):
         # values smaller than 8 bytes contribute only once
         # values which are multiple of 8 bytes contribute multiple times
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
-        alias rounds = max(1, value.dtype.sizeof() // 8)
+        alias rounds = max(1, value.dtype.size_of() // 8)
         var bits = value.to_bits()
 
         @parameter

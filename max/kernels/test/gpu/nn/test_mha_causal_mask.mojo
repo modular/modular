@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import isclose
 from random import rand
-from sys import argv, sizeof
+from sys import argv, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -170,7 +170,7 @@ fn test[
         qkv_type,
         num_heads,
         depth,
-        BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
+        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
         num_pipeline_stages=4 if (
             ctx.default_device_info is H100 or ctx.default_device_info is B200
         ) else 2,
@@ -223,7 +223,7 @@ fn test[
         qkv_type,
         num_heads,
         depth,
-        BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
+        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )

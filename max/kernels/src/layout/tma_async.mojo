@@ -32,7 +32,7 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from sys import alignof, llvm_intrinsic, simdwidthof, sizeof
+from sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from sys._assembly import inlined_assembly
 
 from gpu.host import DeviceBuffer, DeviceContext
@@ -88,7 +88,7 @@ fn _tma_desc_tile_layout[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
     constrained[
-        sizeof[type]() >= 1, "Don't support sub-byte type in TMA yet."
+        size_of[type]() >= 1, "Don't support sub-byte type in TMA yet."
     ]()
 
     constrained[
@@ -104,7 +104,7 @@ fn _tma_desc_tile_layout[
         if is_k_major:
             # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
             return Layout.row_major(
-                dim0, swizzle_mode.bytes() // sizeof[type]()
+                dim0, swizzle_mode.bytes() // size_of[type]()
             )
 
         constrained[
@@ -119,7 +119,7 @@ fn _tma_desc_tile_layout[
         # dimensions are also ordered by (K, MN).
         alias core_matrix_num_rows = 8
         return Layout.row_major(
-            core_matrix_num_rows, swizzle_mode.bytes() // sizeof[type]()
+            core_matrix_num_rows, swizzle_mode.bytes() // size_of[type]()
         )
 
     else:
@@ -130,7 +130,7 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            [dim0, dim1, swizzle_mode.bytes() // sizeof[type]()],
+            [dim0, dim1, swizzle_mode.bytes() // size_of[type]()],
             [1, 1, 1],
         )
 
@@ -686,11 +686,11 @@ struct TMATensorTile[
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
                 constrained[
-                    (copy_offset * sizeof[dtype]()) % 128 == 0,
+                    (copy_offset * size_of[dtype]()) % 128 == 0,
                     "copy_offset="
                     + String(copy_offset)
-                    + ", sizeof[dtype]()="
-                    + String(sizeof[dtype]())
+                    + ", size_of[dtype]()="
+                    + String(size_of[dtype]())
                     + "\nlayout="
                     + String(layout)
                     + "\ndesc_layout="
@@ -987,9 +987,9 @@ struct TMATensorTile[
         )
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
-        alias simd_width = simdwidthof[DType.uint8]()
-        alias src_align = alignof[SIMD[DType.uint8, simd_width]]()
-        alias dst_align = alignof[SIMD[DType.uint8, simd_width]]()
+        alias simd_width = simd_width_of[DType.uint8]()
+        alias src_align = align_of[SIMD[DType.uint8, simd_width]]()
+        alias dst_align = align_of[SIMD[DType.uint8, simd_width]]()
 
         alias descriptor_bytes = 128
 
@@ -1264,7 +1264,7 @@ struct TMATensorTile[
                     NoneType,
                     constraints="l,l",
                     has_side_effect=True,
-                ](desc_ptr, gmem_strides[rank - i - 1] * sizeof[dtype]())
+                ](desc_ptr, gmem_strides[rank - i - 1] * size_of[dtype]())
 
     @always_inline
     fn replace_tensormap_global_dim_strides_in_shared_mem[
@@ -1377,7 +1377,7 @@ def create_tma_tile[
     """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
-    alias swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * sizeof[
+    alias swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * size_of[
         tensor.dtype
     ]()
 
@@ -1469,8 +1469,8 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
-    alias desc_bytes_size = __desc_layout.size() * sizeof[type]()
-    alias layout_size = __tile_layout.size() * sizeof[type]()
+    alias desc_bytes_size = __desc_layout.size() * size_of[type]()
+    alias layout_size = __tile_layout.size() * size_of[type]()
 
     @parameter
     if desc_bytes_size < layout_size:
@@ -1496,12 +1496,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[1] * sizeof[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[1] * size_of[type]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[1] * sizeof[type]()),
+                String(tile_shape[1] * size_of[type]()),
                 " bytes.",
             ]()
 
@@ -1522,12 +1522,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[2] * sizeof[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[2] * size_of[type]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[2] * sizeof[type]()),
+                String(tile_shape[2] * size_of[type]()),
                 "bytes.",
             ]()
 
@@ -1608,8 +1608,8 @@ fn create_nested_tma_tile[
     """
     alias ResultType = __type_of(res)
     alias desc_layout = ResultType.desc_layout
-    alias desc_bytes_size = desc_layout.size() * sizeof[dtype]()
-    alias layout_size = ResultType.layout.size() * sizeof[dtype]()
+    alias desc_bytes_size = desc_layout.size() * size_of[dtype]()
+    alias layout_size = ResultType.layout.size() * size_of[dtype]()
 
     # When we do multiple TMA copy, every address has to be align to 128.
     constrained[
@@ -1630,12 +1630,12 @@ fn create_nested_tma_tile[
     @parameter
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         constrained[
-            (tile_n * sizeof[dtype]()) % swizzle_mode.bytes() == 0,
+            (tile_n * size_of[dtype]()) % swizzle_mode.bytes() == 0,
             String(swizzle_mode),
             " mode requires K dim multiple of ",
             String(swizzle_mode.bytes()),
             "B. K dim is now ",
-            String(tile_n * sizeof[dtype]()),
+            String(tile_n * size_of[dtype]()),
             " bytes.",
         ]()
 

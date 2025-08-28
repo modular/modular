@@ -16,7 +16,7 @@ from hashlib import default_comp_time_hasher
 from buffer.dimlist import DimList
 from buffer import NDBuffer
 from linalg.bmm import bmm_sm100_blockwise_scaled_fp8
-from sys import sizeof
+from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -35,7 +35,7 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.bmm import elementwise_epilogue_type
-from sys import alignof
+from sys import align_of
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -64,7 +64,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var bs = batch_size.value
 
     debug_assert(
-        M * sizeof[DType.float32]() % 16 == 0,
+        M * size_of[DType.float32]() % 16 == 0,
         "TMA expects M to be divisible by 16 bytes",
     )
 

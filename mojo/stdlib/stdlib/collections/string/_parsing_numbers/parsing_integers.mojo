@@ -79,7 +79,7 @@ fn to_integer(
     # 24 is not divisible by 16, so we stop at 8. Later on,
     # when we have better compile-time computation, we can
     # change 24 to be adapted to the simd width.
-    alias simd_width = min(sys.simdwidthof[DType.uint64](), 8)
+    alias simd_width = min(sys.simd_width_of[DType.uint64](), 8)
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 

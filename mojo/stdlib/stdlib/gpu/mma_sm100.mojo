@@ -13,7 +13,7 @@
 """This module includes utilities for working with the SM100 MMA instructions."""
 
 from os import abort
-from sys import sizeof
+from sys import size_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
@@ -1276,7 +1276,7 @@ fn mma_arrive[
     ]()
 
     alias type = mbar_ptr.type
-    constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
+    constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1310,7 +1310,7 @@ fn mma_arrive_multicast[
     ]()
 
     alias type = mbar_ptr.type
-    constrained[sizeof[type]() == 8, "mbar_ptr must be 8 bytes"]()
+    constrained[size_of[type]() == 8, "mbar_ptr must be 8 bytes"]()
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

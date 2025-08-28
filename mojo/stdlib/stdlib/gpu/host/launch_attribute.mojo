@@ -29,7 +29,7 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
-from sys import sizeof
+from sys import size_of
 
 
 from utils import StaticTuple
@@ -396,7 +396,7 @@ struct LaunchAttribute(Copyable, Defaultable, Movable):
     var id: LaunchAttributeID
     """The identifier specifying the type of this launch attribute."""
 
-    var __pad: StaticTuple[UInt8, 8 - sizeof[LaunchAttributeID]()]
+    var __pad: StaticTuple[UInt8, 8 - size_of[LaunchAttributeID]()]
     """Padding to ensure proper alignment of the structure."""
 
     var value: LaunchAttributeValue
@@ -522,7 +522,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
             .address_space_cast[AddressSpace.GENERIC]()
             .address
         )
-        self.num_bytes = count * sizeof[T]()
+        self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop
         self.miss_prop = miss_prop

@@ -32,7 +32,7 @@ with open("my_file.txt", "r") as f:
 """
 
 from os import PathLike, abort
-from sys import external_call, sizeof
+from sys import external_call, size_of
 from memory import AddressSpace, Span
 from io.write import _WriteBufferStack
 
@@ -216,7 +216,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         ```mojo
         import os
-        from sys.info import sizeof
+        from sys.info import size_of
 
         alias file_name = "/tmp/example.txt"
         var file = open(file_name, "r")
@@ -231,7 +231,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(first_element)
 
         # Skip 2 elements
-        _ = file.seek(2 * sizeof[DType.float32](), os.SEEK_CUR)
+        _ = file.seek(2 * size_of[DType.float32](), os.SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
         var ptr2 = UnsafePointer[Float32].alloc(8)
@@ -252,7 +252,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var bytes_read = external_call["KGEN_CompilerRT_IO_FileReadBytes", Int](
             self.handle,
             buffer.unsafe_ptr(),
-            len(buffer) * sizeof[dtype](),
+            len(buffer) * size_of[dtype](),
             Pointer(to=err_msg),
         )
 

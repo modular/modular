@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from layout import (
@@ -146,7 +146,7 @@ fn repeat_interleave[
         )
         collapsed_output.ptr.store(output_idx, input_value)
 
-    elementwise[func, simdwidthof[output.dtype]()](
+    elementwise[func, simd_width_of[output.dtype]()](
         collapsed_output.runtime_layout.shape.value
     )
 

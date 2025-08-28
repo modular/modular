@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import log, log2, log10
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
@@ -29,7 +29,7 @@ def run_elementwise[
 ](ctx: DeviceContext):
     alias length = 8192
 
-    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

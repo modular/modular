@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from math import inf, isnan, log, nan, sqrt
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm import elementwise, mean, sum, vectorize
 from algorithm.functional import unswitch
@@ -67,7 +67,7 @@ fn kl_div[
             ),
         )
 
-    elementwise[kl_div_elementwise, simdwidthof[dtype]()](len)
+    elementwise[kl_div_elementwise, simd_width_of[dtype]()](len)
 
 
 fn kl_div[
@@ -79,7 +79,7 @@ fn kl_div[
 ) -> Scalar[
     out_type
 ]:
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
@@ -148,7 +148,7 @@ fn correlation[
     var uu = Scalar[out_type]()
     var vv = Scalar[out_type]()
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
@@ -297,7 +297,7 @@ fn _sqrt[
             ),
         )
 
-    elementwise[apply_fn, simdwidthof[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
 fn _mul[
@@ -320,7 +320,7 @@ fn _mul[
             ),
         )
 
-    elementwise[apply_fn, simdwidthof[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
 fn _div[
@@ -341,7 +341,7 @@ fn _div[
             / c,
         )
 
-    elementwise[apply_fn, simdwidthof[dtype]()](len)
+    elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
 fn _sum[
@@ -363,7 +363,7 @@ fn _dot[
 ]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 

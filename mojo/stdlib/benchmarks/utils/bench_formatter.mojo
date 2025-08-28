@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 
@@ -41,7 +41,7 @@ fn bench_writer_simd[n: Int](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         var s1 = String()
-        s1.write(SIMD[DType.int32, simdwidthof[DType.int32]()](n))
+        s1.write(SIMD[DType.int32, simd_width_of[DType.int32]()](n))
         _ = s1^
 
     b.iter[call_fn]()

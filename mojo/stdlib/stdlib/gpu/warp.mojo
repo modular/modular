@@ -33,11 +33,11 @@ integers, floats, and half-precision floats, with SIMD vectorization.
 
 from sys import (
     CompilationTarget,
-    bitwidthof,
+    bit_width_of,
     is_amd_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    sizeof,
+    size_of,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
@@ -132,7 +132,7 @@ fn _shuffle_amd_helper[
     dtype: DType, simd_width: Int
 ](dst_lane: UInt32, val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
-    if sizeof[SIMD[dtype, simd_width]]() == 4:
+    if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
         var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
             dst_lane * 4, bitcast[DType.int32, 1](val)
@@ -146,10 +146,10 @@ fn _shuffle_amd_helper[
         return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
             dtype
         ]()
-    elif bitwidthof[dtype]() == 16:
+    elif bit_width_of[dtype]() == 16:
         var val_splatted = SIMD[dtype, 2](val._refine[size=1]())
         return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-    elif bitwidthof[dtype]() == 64:
+    elif bit_width_of[dtype]() == 64:
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)

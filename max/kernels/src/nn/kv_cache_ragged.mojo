@@ -13,7 +13,7 @@
 
 from collections import OptionalReg
 from sys.intrinsics import _type_is_eq
-from sys.info import _current_target, simdwidthof
+from sys.info import _current_target, simd_width_of
 from buffer import Dim, DimList, NDBuffer
 from algorithm.functional import elementwise, unswitch
 from gpu.host import DeviceContext, get_gpu_target
@@ -3048,13 +3048,13 @@ fn generic_kv_cache_radd_dispatch[
     if is_gpu[target]():
         debug_assert(ctx is not None, "ctx is None")
         alias compile_target = get_gpu_target()
-        alias simd_width = simdwidthof[dtype, target=compile_target]()
+        alias simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
             a.dynamic_shape, ctx.value()
         )
     else:
         alias compile_target = _current_target()
-        alias simd_width = simdwidthof[dtype, target=compile_target]()
+        alias simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](a.dynamic_shape)

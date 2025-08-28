@@ -21,7 +21,7 @@ from bit import count_leading_zeros
 
 from bit._mask import is_negative
 from sys import llvm_intrinsic
-from sys.info import bitwidthof
+from sys.info import bit_width_of
 
 from utils._select import _select_register_value as select
 
@@ -67,7 +67,7 @@ fn count_leading_zeros[
 
     # HACK(#5003): remove this workaround
     alias d = dtype if dtype is not DType.index else (
-        DType.int32 if dtype.sizeof() == 4 else DType.int64
+        DType.int32 if dtype.size_of() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
         val.cast[d](), False
@@ -311,7 +311,7 @@ fn bit_width(val: Int) -> Int:
     Returns:
         The number of bits required to represent the integer.
     """
-    alias bitwidth = bitwidthof[Int]()
+    alias bitwidth = bit_width_of[Int]()
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
@@ -335,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = bitwidthof[dtype]()
+    alias bitwidth = bit_width_of[dtype]()
 
     @parameter
     if dtype.is_unsigned():
@@ -376,7 +376,7 @@ fn log2_floor(val: UInt) -> UInt:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    return bitwidthof[UInt]() - count_leading_zeros(val) - 1
+    return bit_width_of[UInt]() - count_leading_zeros(val) - 1
 
 
 @always_inline
@@ -398,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = bitwidthof[dtype]()
+    alias bitwidth = bit_width_of[dtype]()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter
@@ -466,7 +466,7 @@ fn next_power_of_two(val: Int) -> Int:
         This operation is called `bit_ceil()` in C++.
     """
     return select(
-        val <= 1, 1, 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
+        val <= 1, 1, 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
     )
 
 
@@ -488,7 +488,7 @@ fn next_power_of_two(val: UInt) -> UInt:
     return select(
         val == 0,
         1,
-        1 << (bitwidthof[UInt]() - count_leading_zeros(Int(val - 1))),
+        1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1))),
     )
 
 
@@ -596,8 +596,8 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
     constrained[
-        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
-        "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
+        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
+        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
     ]()
 
     @parameter
@@ -670,8 +670,8 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
     constrained[
-        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
-        "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
+        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
+        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
     ]()
 
     @parameter

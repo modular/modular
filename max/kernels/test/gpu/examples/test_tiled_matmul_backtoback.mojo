@@ -14,8 +14,8 @@
 from collections import OptionalReg
 from math import ceildiv
 from os import abort
-from sys import sizeof
-from sys.info import alignof, simdwidthof
+from sys import size_of
+from sys.info import align_of, simd_width_of
 
 from buffer.dimlist import Dim
 from io.io import _printf
@@ -91,7 +91,7 @@ struct BackToBackMatmulConfig[
             + self.num_pipeline_stages
             * self.block_tile_shape[1]
             * self.block_tile_shape[2]
-        ) * sizeof[src_type]()
+        ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
         return Index(1, Int(ceildiv(M, self.block_tile_shape[0])), 1)
@@ -167,7 +167,7 @@ fn b2b_gemm[
         "The number of columns of `A` must be known.",
     ]()
 
-    alias simd_size = simdwidthof[d_type]()
+    alias simd_size = simd_width_of[d_type]()
 
     # A is M x K
     # B is K x L
@@ -236,7 +236,7 @@ fn b2b_gemm[
     var a_smem = external_memory[
         Scalar[in_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[in_type, simd_size]](),
+        alignment = align_of[SIMD[in_type, simd_size]](),
     ]()
     alias a_smem_size = BM * K  # single block
     var a_smem_iter = LayoutTensorIter[
@@ -491,10 +491,10 @@ fn b2b_gemm[
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
             alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
-            alias src_align = alignof[
-                SIMD[accum_type, simdwidthof[accum_type]()]
+            alias src_align = align_of[
+                SIMD[accum_type, simd_width_of[accum_type]()]
             ]()
-            alias dst_align = alignof[SIMD[d_type, simd_size]]()
+            alias dst_align = align_of[SIMD[d_type, simd_size]]()
 
             var d_smem_frag_offset = d_smem_frag.distance(
                 accum_smem_warp_tile.ptr
@@ -564,7 +564,7 @@ fn b2b_gemm[
                 var n = Int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     var vec = d_reg_frag.ptr.offset(src_idx).load[
-                        width=2, alignment = alignof[SIMD[d_type, 2]]()
+                        width=2, alignment = align_of[SIMD[d_type, 2]]()
                     ]()
                     epilogue((m, n), vec)
 

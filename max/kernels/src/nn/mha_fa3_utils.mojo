@@ -57,7 +57,7 @@ from nn.mha_utils import (
 )
 from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
-from sys import sizeof
+from sys import size_of
 
 
 @register_passable("trivial")
@@ -420,7 +420,7 @@ fn _produce[
         consumed_mbar[write_idx].wait(write_phase)
 
     p_mbar = produced_mbar + write_idx
-    p_mbar[0].expect_bytes(BN * depth * sizeof[kv_t.dtype]())
+    p_mbar[0].expect_bytes(BN * depth * size_of[kv_t.dtype]())
     tma_tile.async_copy(smem_tile, p_mbar[0], (UInt(src_col), UInt(src_row)))
 
 
@@ -705,7 +705,7 @@ fn produce[
     alias q_smem_size = (2 * q_size if persistent else q_size)
 
     alias q_copy_rows = max(group, 8) if decoding else Int(BM)
-    alias qk_bytes = (q_copy_rows + BN) * depth * sizeof[qkv_type]()
+    alias qk_bytes = (q_copy_rows + BN) * depth * size_of[qkv_type]()
 
     tile_state = tile_state_arg
     position = initial_position
@@ -778,7 +778,7 @@ fn produce[
         @parameter
         if wait:
             consumed_mbar_kv[write_idx].wait(write_phase)
-            alias bytes = BN * depth * sizeof[qkv_type]()
+            alias bytes = BN * depth * size_of[qkv_type]()
             p_mbar.expect_bytes(bytes)
         k_tma_op.async_copy(k_sub, p_mbar, (UInt(col), UInt(row)))
         state.step()
@@ -794,7 +794,7 @@ fn produce[
         ref p_mbar = produced_mbar_kv[write_idx]
         v_sub = v_tile(write_idx)
         consumed_mbar_kv[write_idx].wait(write_phase)
-        alias bytes = BN * depth * sizeof[qkv_type]()
+        alias bytes = BN * depth * size_of[qkv_type]()
         p_mbar.expect_bytes(bytes)
         v_tma_op.async_copy(v_sub, p_mbar, (UInt(col), UInt(row)))
         state.step()
@@ -894,7 +894,7 @@ fn produce[
                     break
                 ref pq_mbar = produced_mbar_q[q_idx_old]
                 position = get_position(docontinue.value())
-                pq_mbar.expect_bytes(q_copy_rows * depth * sizeof[qkv_type]())
+                pq_mbar.expect_bytes(q_copy_rows * depth * size_of[qkv_type]())
 
                 @parameter
                 for d in range((depth // 64) if decoding else 1):

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import vectorize
 from buffer import NDBuffer
@@ -83,7 +83,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
-    vectorize[compute_vector, simdwidthof[float_type]()](width)
+    vectorize[compute_vector, simd_width_of[float_type]()](width)
 
 
 fn run_mandelbrot(ctx: DeviceContext) raises:

@@ -21,7 +21,7 @@ from utils import IndexList
 """
 
 from hashlib.hasher import Hasher
-from sys import bitwidthof
+from sys import bit_width_of
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
@@ -718,7 +718,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             var element = self[i]
 
             @parameter
-            if bitwidthof[element_type]() == 32:
+            if bit_width_of[element_type]() == 32:
                 writer.write(Int32(element))
             else:
                 writer.write(Int64(element))

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import DimList, NDBuffer
@@ -110,7 +110,7 @@ fn bench_matmul_all_reduce[
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     # Partitioned matmul has size M * N / num_partitions
     var temp_length = m.value * n.value // num_partitions
-    var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * temp_length
+    var temp_buffer_num_bytes = ngpus * size_of[dtype]() * temp_length
 
     # Initialize buffers for each GPU
     @parameter
@@ -137,7 +137,7 @@ fn bench_matmul_all_reduce[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                size_of[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)

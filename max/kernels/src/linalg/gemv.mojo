@@ -15,7 +15,7 @@ from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    simdwidthof,
+    simd_width_of,
 )
 
 import gpu.warp as warp
@@ -458,7 +458,7 @@ fn gemv_gpu_dispatch[
     var k = shape.K
 
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
-    alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[a.type, target = get_gpu_target()]()
 
     var c_tensor = from_ndbuffer_row_major(c)
     var b_tensor = from_ndbuffer_row_major(b)
@@ -766,7 +766,7 @@ fn gemv_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
+    alias simd_width = simd_width_of[a.type, target = get_gpu_target()]()
 
     alias has_M = c.shape.has_value[0]()
     alias has_N = c.shape.has_value[1]()
@@ -848,7 +848,7 @@ fn gemv[
     a_buf: NDBuffer[a_type, 2, _, a_shape],
     b_buf: NDBuffer[b_type, 1, _, b_size],
 ) raises:
-    alias simd_width = simdwidthof[c_type]()
+    alias simd_width = simd_width_of[c_type]()
 
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

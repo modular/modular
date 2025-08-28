@@ -15,7 +15,7 @@
 from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
-from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, sizeof
+from sys import align_of, has_nvidia_gpu_accelerator, simd_width_of, size_of
 
 import gpu.warp as warp
 from algorithm.functional import (
@@ -348,16 +348,16 @@ fn flare_mla_decoding_dispatch[
     alias accum_type = get_accum_type[q.dtype]()
     alias num_pipeline_stages = 6
     # smem for q
-    var shared_mem_bytes = BM * depth * sizeof[q.dtype]()
+    var shared_mem_bytes = BM * depth * size_of[q.dtype]()
 
-    shared_mem_bytes += BN * depth * sizeof[k_t.dtype]()
+    shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
     alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
     # smem for p and warp_scratch
     shared_mem_bytes += (
-        BM * BN * sizeof[k_t.dtype]()
-        + 2 * num_warps * BM * sizeof[accum_type]()
+        BM * BN * size_of[k_t.dtype]()
+        + 2 * num_warps * BM * size_of[accum_type]()
     )
     alias num_blocks_y = num_heads // BM
 
@@ -567,7 +567,7 @@ fn mla_decoding_single_batch[
     alias k_type = k_t.dtype
     constrained[q_type == k_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias WN_O = 128
     alias nope_dim = depth_v
@@ -598,7 +598,7 @@ fn mla_decoding_single_batch[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -687,7 +687,9 @@ fn mla_decoding_single_batch[
     )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
@@ -1424,7 +1426,7 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * q_depth
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * config.type.sizeof()
+    alias smem_use = (q_smem + k_smem + v_smem) * config.type.size_of()
 
     var softmax_info_ptr = (
         softmax_info.value().data if softmax_info else UnsafePointer[
@@ -1643,7 +1645,7 @@ fn mla_prefill_single_batch[
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     ]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
@@ -1676,7 +1678,7 @@ fn mla_prefill_single_batch[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -1785,7 +1787,9 @@ fn mla_prefill_single_batch[
     )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
@@ -2678,7 +2682,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias target_simd_width = simdwidthof[type, target = get_gpu_target()]()
+    alias target_simd_width = simd_width_of[type, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         launch_shape, context

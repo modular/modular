@@ -16,12 +16,12 @@ from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
 from sys import (
-    alignof,
+    align_of,
     is_amd_gpu,
     is_nvidia_gpu,
     prefetch,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from sys.intrinsics import PrefetchOptions
 
@@ -268,7 +268,7 @@ struct LayoutTensor[
     layout_int_type: DType = _get_layout_type(layout, address_space),
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
-    alignment: Int = alignof[dtype](),
+    alignment: Int = align_of[dtype](),
 ](
     Copyable,
     DevicePassable,
@@ -2368,7 +2368,7 @@ struct LayoutTensor[
             result in undefined behavior.
         """
 
-        alias alignment = alignof[SIMD[dtype, width]]()
+        alias alignment = align_of[SIMD[dtype, width]]()
         return self.ptr.load[width=width, alignment=alignment](
             self._offset(m, n)
         )
@@ -2449,7 +2449,7 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
 
-        alias alignment = alignof[SIMD[dtype, width]]()
+        alias alignment = align_of[SIMD[dtype, width]]()
         return self.ptr.store[alignment=alignment](self._offset(m, n), val)
 
     @always_inline("nodebug")
@@ -4904,7 +4904,7 @@ struct LayoutTensor[
         """
         return (
             Scalar[linear_idx_type](Int(self.ptr) - Int(addr))
-            // sizeof[dtype]()
+            // size_of[dtype]()
         )
 
     @always_inline
@@ -4959,7 +4959,7 @@ struct LayoutTensor[
         """
 
         return Scalar[_uint_dtype](
-            (Int(self.ptr) - Int(src.ptr)) // sizeof[dtype]()
+            (Int(self.ptr) - Int(src.ptr)) // size_of[dtype]()
         )
 
     # Returns the linear index of an elem_i 0 ... size(layout).
@@ -5221,7 +5221,7 @@ struct LayoutTensor[
         ]()
 
         # Eligibility for 4, 8, 16 bytes async load.
-        alias element_size_bytes = sizeof[dtype]() * src_element_size
+        alias element_size_bytes = size_of[dtype]() * src_element_size
         constrained[
             element_size_bytes == 4
             or element_size_bytes == 8
@@ -5905,9 +5905,9 @@ fn copy_dram_to_sram[
         worker_idx
     )
 
-    alias simd_width = simdwidthof[dst.dtype]()
-    alias src_align = alignof[SIMD[src.dtype, simd_width]]()
-    alias dst_align = alignof[SIMD[dst.dtype, simd_width]]()
+    alias simd_width = simd_width_of[dst.dtype]()
+    alias src_align = align_of[SIMD[src.dtype, simd_width]]()
+    alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
     alias coalesce_src_element_layout = coalesce(src.element_layout)
     alias coalesce_dst_element_layout = coalesce(dst.element_layout)
@@ -6034,7 +6034,7 @@ fn copy_dram_to_sram[
     )
 
     alias simd_width = src_tensor.element_layout.size()
-    alias dst_align = alignof[SIMD[dst.dtype, simd_width]]()
+    alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
     alias num_stores_per_thread = dst_fragments.layout.size()
     var descriptor = get_amd_buffer_descriptor(src_iter, bound)
@@ -6151,7 +6151,7 @@ fn cp_async_k_major[
     ]()
 
     alias num_tiles = src_shape1 // desc_shape1
-    alias simd_size = simdwidthof[dtype]()
+    alias simd_size = simd_width_of[dtype]()
     # single warp group
     alias thread_layout = Layout.row_major(
         128 * simd_size // desc_shape1, desc_shape1 // simd_size
@@ -6259,7 +6259,7 @@ fn cp_async_mn_major[
     alias num_warps = 4  # single warp group
     alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
 
-    alias simd_size = simdwidthof[dtype]()
+    alias simd_size = simd_width_of[dtype]()
     alias thread_layout_per_warp = Layout.row_major(
         gpu_memory.WARP_SIZE * simd_size // desc_shape1,
         desc_shape1 // simd_size,
@@ -6524,7 +6524,7 @@ fn copy_dram_to_sram_async[
     # TODO: use the above when MOCO-1048 is fixed.
     alias bytes_32_banks = 128
     alias conflict_ways = min(
-        8 * row_size * sizeof[dst.dtype]() // bytes_32_banks, 8
+        8 * row_size * size_of[dst.dtype]() // bytes_32_banks, 8
     )
     constrained[
         (swizzle and (conflict_ways in (4, 8))) or not swizzle,
@@ -6752,7 +6752,7 @@ fn copy_sram_to_dram[
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
-        alias simd_size = simdwidthof[dst.dtype]()
+        alias simd_size = simd_width_of[dst.dtype]()
         # TODO: generalize the copy to non-scalar case if possible.
         constrained[
             src.element_layout.size() == simd_size
@@ -6760,8 +6760,10 @@ fn copy_sram_to_dram[
             "Only FP32 -> half precision downcast for vectorized copy.",
         ]()
 
-        alias src_align = alignof[SIMD[src.dtype, simdwidthof[src.dtype]()]]()
-        alias dst_align = alignof[SIMD[dst.dtype, simd_size]]()
+        alias src_align = align_of[
+            SIMD[src.dtype, simd_width_of[src.dtype]()]
+        ]()
+        alias dst_align = align_of[SIMD[dst.dtype, simd_size]]()
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
@@ -7105,7 +7107,7 @@ fn copy_local_to_dram[
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
+    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var descriptor = get_amd_buffer_descriptor(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
     alias num_stores_per_thread = dst_fragments.layout.size()
@@ -7253,7 +7255,9 @@ fn copy_dram_to_local[
     if offset:
         offset_helper(offset.value())
     else:
-        offset_helper((Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]())
+        offset_helper(
+            (Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]()
+        )
 
 
 @always_inline("nodebug")
@@ -7549,8 +7553,8 @@ fn copy_local_to_shared[
         if swizzle:
             alias swizzle_fn = swizzle.value()
             alias num_vecs = src.layout.size()
-            alias align_src = alignof[SIMD[src.dtype, src.element_size]]()
-            alias align_dst = alignof[SIMD[dst.dtype, dst.element_size]]()
+            alias align_src = align_of[SIMD[src.dtype, src.element_size]]()
+            alias align_dst = align_of[SIMD[dst.dtype, dst.element_size]]()
             var dst_frag_offset = dst_frag.distance(dst.ptr)
 
             @parameter
@@ -7759,7 +7763,7 @@ struct LayoutTensorIter[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[dtype](),
+    alignment: Int = align_of[dtype](),
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_int_type: DType = _get_index_type(address_space),

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from utils.index import Index, IndexList
 from gpu.memory import AddressSpace, fence_async_view_proxy
@@ -222,7 +222,7 @@ struct TileScheduler[
         var pred: UInt32 = 1 if lane_id < Self.cluster_size else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
-            sizeof[UInt128](),
+            size_of[UInt128](),
             UInt32(lane_id),
             pred,
         )

@@ -14,7 +14,7 @@
 from math import sqrt
 
 from buffer import NDBuffer
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from testing import assert_almost_equal
 from internal_utils import HostNDBuffer, random
@@ -143,7 +143,7 @@ fn run_rms_norm_fused_residual_add_gpu[
             rebind[IndexList[rank]](idx), residual_add_val
         )
 
-    elementwise[sum_fn, simdwidthof[dtype](), target="cpu"](
+    elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
         unfused_intermediate_buf.dynamic_shape,
     )
 

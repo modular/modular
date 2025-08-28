@@ -15,7 +15,7 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from collections import InlineArray
 from collections.string.string_slice import _get_kgen_string
-from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
+from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from sys._assembly import inlined_assembly
 from sys.info import (
     is_amd_gpu,
@@ -706,7 +706,7 @@ fn ld_matrix[
 
     # The register width is fixed at 4 Bytes (32 bits)
     alias register_btypes = 4
-    alias register_width = register_btypes // sizeof[dtype]()
+    alias register_width = register_btypes // size_of[dtype]()
     alias num_registers = simd_width // register_width
 
     # Full intrinsic is base + suffix
@@ -1094,12 +1094,12 @@ fn wgmma_async[
 
     Constraints:
         - The number of output registers must match the instruction shape:
-          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+          `(m * n // 128) * size_of(accum_type) == width * size_of(c_dtype)`.
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
     constrained[
-        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
@@ -1230,12 +1230,12 @@ fn wgmma_async[
 
     Constraints:
         - The number of output registers must match the instruction shape:
-          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+          `(m * n // 128) * size_of(accum_type) == width * size_of(c_dtype)`.
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
     constrained[
-        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
@@ -1372,8 +1372,8 @@ fn wgmma_async[
     - Column major matrix B (or row major for BF16).
     """
     constrained[
-        (m * n // 128) * sizeof[accum_type]()
-        == frag_c_width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]()
+        == frag_c_width * size_of[c_dtype](),
         "Number of output registers ",
         String(frag_c_width),
         " don't match the instruction shape ",
@@ -1381,7 +1381,7 @@ fn wgmma_async[
     ]()
 
     constrained[
-        (m * k // 128) * sizeof[a_type]() == frag_a_width * sizeof[a_dtype](),
+        (m * k // 128) * size_of[a_type]() == frag_a_width * size_of[a_dtype](),
         "Number of input a registers ",
         String(frag_a_width),
         " don't match the instruction shape ",

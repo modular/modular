@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import sizeof, env_get_bool, env_get_int
+from sys import size_of, env_get_bool, env_get_int
 
 from buffer.buffer import NDBuffer
 from gpu.grid_controls import PDLLevel
@@ -58,7 +58,7 @@ fn matmul_dispatch_sm100[
     if env_get_bool["AUTOTUNING_MODE", False]():
         alias BM = env_get_int["BM", 128]()
         alias BN = env_get_int["BN", 64]()
-        alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // sizeof[a_type]())
+        alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
         alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
         alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
         alias CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
@@ -103,7 +103,7 @@ fn matmul_dispatch_sm100[
         "a_type and b_type and c_type must be the same",
     ]()
 
-    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // sizeof[a_type]())
+    alias BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
     alias block_tile_shape = Index(128, 64, BK)
     alias MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     alias umma_shape = Index(

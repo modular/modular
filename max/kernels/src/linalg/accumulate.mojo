@@ -13,7 +13,7 @@
 
 from collections.optional import OptionalReg
 from math import fma
-from sys import alignof, prefetch
+from sys import align_of, prefetch
 from sys.info import CompilationTarget
 from sys.intrinsics import PrefetchOptions
 
@@ -53,7 +53,7 @@ struct _Accumulator[
     @always_inline
     fn __init__(out self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
-        alias alignment = alignof[SIMD[type, simd_width]]()
+        alias alignment = align_of[SIMD[type, simd_width]]()
         self._storage = NDBuffer[
             type, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
         ].stack_allocation[alignment=alignment]()

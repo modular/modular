@@ -16,7 +16,7 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -70,7 +70,7 @@ fn test_gather() raises:
         ].stack_allocation[alignment=64]()
 
         # Test gather
-        alias simd_width = simdwidthof[__mlir_type.`!pop.scalar<f32>`]()
+        alias simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
 
         gather[axis=0](
             output.make_dims_unknown(),
@@ -139,7 +139,7 @@ fn test_gather_3d() raises:
         ].stack_allocation[alignment=64]()
 
         # Test gather
-        alias simd_width = simdwidthof[DType.float32]()
+        alias simd_width = simd_width_of[DType.float32]()
 
         gather[axis=0](
             output.make_dims_unknown(),
@@ -215,7 +215,7 @@ fn test_gather_empty_indices() raises:
         ](output_stack)
 
         # Test gather
-        alias simd_width = simdwidthof[DType.float32]()
+        alias simd_width = simd_width_of[DType.float32]()
 
         gather[axis=0](
             output.make_dims_unknown(),

@@ -85,7 +85,7 @@ from collections.string.string_slice import (
 from hashlib.hasher import Hasher
 from os import PathLike, abort
 from os.atomic import Atomic
-from sys import bitwidthof, sizeof
+from sys import bit_width_of, size_of
 from sys.info import is_32bit
 from sys.ffi import c_char
 
@@ -174,7 +174,7 @@ struct String(
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    alias REF_COUNT_SIZE = sizeof[Atomic[DType.index]]()
+    alias REF_COUNT_SIZE = size_of[Atomic[DType.index]]()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -2337,7 +2337,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     )
     var n = UInt32(n0)
     var log2 = Int(
-        (bitwidthof[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
     return (n0 + lookup_table[Int(log2)]) >> 32
 
@@ -2376,7 +2376,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or bitwidthof[dtype]() <= 32:
+        if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, sizeof
+from sys import align_of, size_of
 import linalg.vendor_blas
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
@@ -23,10 +23,10 @@ from linalg.utils import elementwise_compute_lambda_type
 from utils.index import Index, IndexList
 
 alias block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
-    128, wgmma_n, 128 // sizeof[a_dtype]()
+    128, wgmma_n, 128 // size_of[a_dtype]()
 )
 alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
-    64, wgmma_n, 32 // sizeof[a_dtype]()
+    64, wgmma_n, 32 // size_of[a_dtype]()
 )
 
 
@@ -171,7 +171,7 @@ def main():
             _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_dtype, width]](),
+            alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
@@ -197,7 +197,7 @@ def main():
             _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_dtype, width]](),
+            alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import sizeof
+from sys import size_of
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -153,9 +153,9 @@ fn blackwell_tma_pair_umma_kernel[
         UInt8, address_space = AddressSpace.SHARED, alignment=8
     ]()
 
-    alias a_smem_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_layout.size() * sizeof[b_type]()
-    alias c_smem_bytes = c_smem_layout.size() * sizeof[c_type]()
+    alias a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
+    alias c_smem_bytes = c_smem_layout.size() * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -191,8 +191,8 @@ fn blackwell_tma_pair_umma_kernel[
     alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag = SIMD[accum_type, c_frag_size]()
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -287,8 +287,8 @@ fn blackwell_tma_pair_umma_kernel[
                 alias k = 64 * j
                 alias a_offset = a_smem_layout(IntTuple(0, k))
                 alias b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * sizeof[a_type]()) % 128) == 0]()
-                constrained[((b_offset * sizeof[b_type]()) % 128) == 0]()
+                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
+                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
@@ -523,9 +523,9 @@ fn blackwell_matmul_tma_pair_mma[
     c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
 
     alias smem_size = (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + BM * MMA_N * sizeof[c_type]()
+        BM * BK * size_of[a_type]()
+        + BN * BK * size_of[b_type]()
+        + BM * MMA_N * size_of[c_type]()
     ) + 16 + 16 + 16 + 16
 
     alias kernel = blackwell_tma_pair_umma_kernel[

@@ -16,7 +16,7 @@ the underlying data. This type is used to build custom graph operations.
 """
 from collections import OptionalReg
 from math import ceil, fma
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
 
@@ -85,7 +85,7 @@ fn simd_store_into_managed_tensor_slice[
 
     # Store alignment cannot exceed the data type's alignment.
     alias max_alignment = _gcd_pow2[
-        tensor.alignment, element_alignment * alignof[dtype]()
+        tensor.alignment, element_alignment * align_of[dtype]()
     ]()
 
     alias static_stride = tensor._static_strides.at[rank - 1]()
@@ -155,7 +155,7 @@ fn simd_load_from_managed_tensor_slice[
 
     # Load alignment cannot exceed the data type's alignment.
     alias max_alignment = _gcd_pow2[
-        tensor.alignment, element_alignment * alignof[dtype]()
+        tensor.alignment, element_alignment * align_of[dtype]()
     ]()
     alias invariant = not tensor.io_spec.mut
 
@@ -1329,9 +1329,9 @@ struct VariadicTensors[
 fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     @parameter
     if _is_gpu[target]():
-        return simdwidthof[dtype, target = get_gpu_target()]()
+        return simd_width_of[dtype, target = get_gpu_target()]()
 
-    return simdwidthof[dtype]()
+    return simd_width_of[dtype]()
 
 
 @__mogg_intrinsic_attr("mogg.for_each")

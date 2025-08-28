@@ -15,7 +15,7 @@ from collections import OptionalReg
 from math import exp2
 from os import abort
 from random import rand, randn
-from sys import argv, simdwidthof
+from sys import argv, simd_width_of
 
 import benchmark
 from algorithm.functional import elementwise
@@ -119,10 +119,10 @@ fn naive_dual_gemm[
             binary_lambda_fn=binary_sub,
         ](c01, a, b01, ctx)
 
-        alias simd_width = simdwidthof[
+        alias simd_width = simd_width_of[
             c_type, target = get_gpu_target["sm_80"]()
         ]()
-        alias align = alignof[SIMD[c_type, simd_width]]()
+        alias align = align_of[SIMD[c_type, simd_width]]()
 
         var M = c01.dim[0]()
         var N = c01.dim[1]() // 2
@@ -279,7 +279,7 @@ fn test_dual_matmul[
         2 * N, K
     ) if transpose_b else Layout.row_major(K, 2 * N)
     var mat_b01 = ManagedLayoutTensor[src_type, layout_b01](ctx)
-    alias src_simd_width = simdwidthof[src_type]()
+    alias src_simd_width = simd_width_of[src_type]()
 
     var mat_b01v = mat_b01.tensor().vectorize[1, src_simd_width]()
     var mat_b0_tensor = mat_b0.tensor()
@@ -377,7 +377,7 @@ fn test_dual_matmul[
     _ = mat_b01^
 
     alias cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
-    alias dst_simd_width = simdwidthof[dst_type]()
+    alias dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):
         for n in range(N // dst_simd_width):

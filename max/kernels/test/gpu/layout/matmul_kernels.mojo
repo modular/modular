@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import ceildiv
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -874,7 +874,7 @@ fn gemm_kernel_6[
     of rows in B.
     """
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var partition_col = thread_idx.x % (BN // TN)
     var partition_row = thread_idx.x // (BN // TN)
     var bidx = block_idx.x

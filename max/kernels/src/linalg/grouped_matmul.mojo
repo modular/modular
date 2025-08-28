@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from sys import simdwidthof, sizeof, alignof
+from sys import simd_width_of, size_of, align_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -298,10 +298,10 @@ fn grouped_matmul_sm90[
 
     alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
-        BM * BK * sizeof[a_type]()
-        + BN * BK * sizeof[b_type]()
-        + (sizeof[Int64]() * 2)
-    ) + c_smem_layout.size() * sizeof[c_type]()
+        BM * BK * size_of[a_type]()
+        + BN * BK * size_of[b_type]()
+        + (size_of[Int64]() * 2)
+    ) + c_smem_layout.size() * size_of[c_type]()
 
     alias kernel = grouped_matmul_kernel[
         a_type,
@@ -400,7 +400,7 @@ fn grouped_matmul_kernel[
     alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
     alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
@@ -450,11 +450,11 @@ fn grouped_matmul_kernel[
     alias a_smem_size = a_smem_layout.size() * pipeline_stages
     alias b_smem_size = b_smem_layout.size() * pipeline_stages
 
-    alias a_smem_bytes = a_smem_size * sizeof[a_type]()
-    alias b_smem_bytes = b_smem_size * sizeof[b_type]()
+    alias a_smem_bytes = a_smem_size * size_of[a_type]()
+    alias b_smem_bytes = b_smem_size * size_of[b_type]()
 
     alias c_smem_size = c_smem_layout.size()
-    alias c_smem_bytes = c_smem_size * sizeof[c_type]()
+    alias c_smem_bytes = c_smem_size * size_of[c_type]()
 
     var a_smem = smem.bitcast[Scalar[a_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
@@ -795,9 +795,11 @@ fn grouped_matmul_kernel_sm100[
     alias b_size = b_smem_layout.size()
 
     constrained[
-        ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
+        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
     ]()
-    constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
+    ]()
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
@@ -817,8 +819,8 @@ fn grouped_matmul_kernel_sm100[
         accum_type, c_frag_size
     ]()  # array of accumulator elements
 
-    alias a_expected_bytes = a_size * sizeof[a_type]()
-    alias b_expected_bytes = b_size * sizeof[b_type]()
+    alias a_expected_bytes = a_size * size_of[a_type]()
+    alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (
@@ -877,8 +879,8 @@ fn grouped_matmul_kernel_sm100[
                 alias k = 64 * j
                 alias a_offset = a_smem_layout(IntTuple(0, k))
                 alias b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * sizeof[a_type]()) % 128) == 0]()
-                constrained[((b_offset * sizeof[b_type]()) % 128) == 0]()
+                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
+                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
@@ -1006,7 +1008,7 @@ fn grouped_matmul_kernel_sm100[
 
                         @parameter
                         if elementwise_lambda_fn:
-                            alias alignment = alignof[SIMD[c_type, 2]]()
+                            alias alignment = align_of[SIMD[c_type, 2]]()
                             alias epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
                                 (Int(a_start_row + m), Int(n)), c_mn
@@ -1075,7 +1077,7 @@ fn grouped_matmul_sm100[
     c_tensor = from_ndbuffer_row_major(c)
 
     alias block_dim = 128
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    alias smem_use = (BM * size_of[a_type]() + BN * size_of[b_type]()) * BK + 24
 
     alias kernel = grouped_matmul_kernel_sm100[
         a_type,

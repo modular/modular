@@ -22,7 +22,7 @@ from algorithm import map
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
-from sys import is_nvidia_gpu, simdwidthof
+from sys import is_nvidia_gpu, simd_width_of
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -105,12 +105,12 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from sys import simdwidthof
+    from sys import simd_width_of
 
     # The amount of elements to loop through
     alias size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simdwidthof[DType.int32]()  # assumed to be 4 in this example
+    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)
@@ -214,12 +214,12 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from sys import simdwidthof
+    from sys import simd_width_of
 
     # The amount of elements to loop through
     alias size = 10
     # How many Dtype.int32 elements fit into the SIMD register (4 on 128bit)
-    alias simd_width = simdwidthof[DType.int32]()  # assumed to be 4 in this example
+    alias simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     fn main():
         var p = UnsafePointer[Int32].alloc(size)

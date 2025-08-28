@@ -17,7 +17,7 @@ from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
-from sys import sizeof
+from sys import size_of
 from testing import assert_equal, assert_true
 
 
@@ -43,7 +43,7 @@ def all_gather_test[
     var max_length = 0
     for i in range(ngpus):
         max_length = max(max_length, lengths[i])
-    var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * max_length
+    var temp_buffer_num_bytes = ngpus * size_of[dtype]() * max_length
 
     # Initialize input buffers and signal buffers.
     for i in range(ngpus):
@@ -66,7 +66,7 @@ def all_gather_test[
         # Create and initialize signal buffers.
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                size_of[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)

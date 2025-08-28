@@ -27,7 +27,7 @@ from sys.info import _is_sm_9x_or_newer, is_gpu
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
-from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, sizeof
+from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 
 
 # Check that the dimension is either x, y, or z.
@@ -674,7 +674,7 @@ fn strided_load[
 
     var offset = (
         Int(addr)
-        + stride * sizeof[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -718,7 +718,7 @@ fn strided_store[
 
     var offset = (
         Int(addr)
-        + stride * sizeof[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
     )
     scatter(value, offset, mask)
 

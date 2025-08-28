@@ -13,7 +13,7 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -32,7 +32,7 @@ from nn.conv_utils import (
 
 from utils.index import Index, IndexList
 
-alias simd_size: Int = simdwidthof[DType.float32]()
+alias simd_size: Int = simd_width_of[DType.float32]()
 
 
 # CHECK-LABEL: test_conv3d

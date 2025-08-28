@@ -19,7 +19,7 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8,
 )
 from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
-from sys import sizeof
+from sys import size_of
 from gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg import vendor_blas
@@ -41,7 +41,7 @@ from internal_utils import (
 from testing import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.utils import elementwise_epilogue_type
-from sys import alignof
+from sys import align_of
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -77,7 +77,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
     debug_assert(
-        total_num_tokens * sizeof[DType.float32]() % 16 == 0,
+        total_num_tokens * size_of[DType.float32]() % 16 == 0,
         "TMA expects total_num_tokens to be divisible by 16 bytes",
     )
 
@@ -184,7 +184,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_dtype, width]](),
+        alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)

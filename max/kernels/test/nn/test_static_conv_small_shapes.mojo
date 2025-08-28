@@ -14,7 +14,7 @@
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
 from math import ceildiv
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -54,7 +54,7 @@ alias conv_attr = ConvInfoStatic[2](
 )
 
 alias value_type = DType.float32
-alias simd_size = simdwidthof[value_type]()
+alias simd_size = simd_width_of[value_type]()
 alias micro_kernel_shape = get_micro_kernel_shape[
     2, WO, F, conv_attr, simd_size
 ]()

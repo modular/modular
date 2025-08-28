@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
-from sys import alignof, env_get_int, simdwidthof, sizeof
+from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.warp as warp
 from buffer import NDBuffer
@@ -667,7 +667,7 @@ fn _mha_sm90[
     alias kv_type = KVLUTType.dtype
     alias decoding: Bool = _is_decoding[MaxSeqLenType]()
 
-    alias simd_size = simdwidthof[kv_type]()
+    alias simd_size = simd_width_of[kv_type]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_consumer_threads = config.num_consumer_threads()
@@ -837,8 +837,8 @@ fn _mha_sm90[
     alias num_cols_output = o_vec_output_layout[1].size()
 
     # Rowwise max and sum for online softmax
-    alias accum_simd_width = simdwidthof[accum_type]()
-    alias row_alignment = alignof[SIMD[accum_type, accum_simd_width]]()
+    alias accum_simd_width = simd_width_of[accum_type]()
+    alias row_alignment = align_of[SIMD[accum_type, accum_simd_width]]()
     # Account for group query.
     alias kv_num_heads = num_heads // group
 

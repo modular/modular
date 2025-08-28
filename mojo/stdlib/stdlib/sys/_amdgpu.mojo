@@ -222,7 +222,7 @@ fn message_append_bytes(
         var prev_len = len(data_)
         # We can only send 7 packed UInt64s per message
         # Therefore, if the length is greater than 56,
-        # we need to take a 56 byte == (7 * sizeof[UInt64]())
+        # we need to take a 56 byte == (7 * size_of[UInt64]())
         # chunk to process.
         if len(data_) > 56:
             prev_len = 56

@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
-from sys.info import simdwidthof, sizeof
+from sys.info import simd_width_of, size_of
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
@@ -61,13 +61,14 @@ fn memcpy_or_fuse[
         memcpy(dest_data.offset(out_byte_offset), src_data, n)
     else:
         alias func = epilogue_fn.value()
-        alias simd_width = simdwidthof[dtype]()
+        alias simd_width = simd_width_of[dtype]()
 
-        var typed_offset = out_byte_offset // sizeof[dtype]()
-        var typed_len = n // sizeof[dtype]()
+        var typed_offset = out_byte_offset // size_of[dtype]()
+        var typed_len = n // size_of[dtype]()
         debug_assert(
-            n % sizeof[dtype]() == 0 and out_byte_offset % sizeof[dtype]() == 0,
-            "offset and length must be dividable by sizeof[dtype]",
+            n % size_of[dtype]() == 0
+            and out_byte_offset % size_of[dtype]() == 0,
+            "offset and length must be dividable by size_of[dtype]",
         )
 
         # Cast
@@ -136,7 +137,7 @@ fn _canonical_reshape[
     var shape = buf.get_shape()
     var h = product(shape, 0, axis)
     var w = buf.dim(axis)
-    var c = product(shape, axis + 1, rank) * sizeof[dtype]()
+    var c = product(shape, axis + 1, rank) * size_of[dtype]()
     return _CanonicallyReshapedBuffer(buf.data.bitcast[Int8](), h, w, c)
 
 
@@ -335,9 +336,9 @@ fn _concat[
             # these slices are contiguous
             memcpy_or_fuse[rank, dtype, epilogue_fn](
                 output.data.bitcast[Int8](),
-                output_offset * sizeof[dtype](),
+                output_offset * size_of[dtype](),
                 (inputs[i].data + input_offset).bitcast[Int8](),
-                w * c * sizeof[dtype](),
+                w * c * size_of[dtype](),
                 output.dynamic_shape,
             )
         w_offset += w
@@ -357,9 +358,9 @@ fn _concat_inner[
         var buffer_len = inputs[i].size()
         memcpy_or_fuse[rank, dtype, epilogue_fn](
             output.data.bitcast[Int8](),
-            num_elems_copied * sizeof[dtype](),
+            num_elems_copied * size_of[dtype](),
             inputs[i].data.bitcast[Int8](),
-            buffer_len * sizeof[dtype](),
+            buffer_len * size_of[dtype](),
             output.dynamic_shape,
         )
         num_elems_copied += buffer_len
@@ -426,7 +427,7 @@ fn _concat_small[
     inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
     alias single_thread_blocking_override = True
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
 
     @parameter
     @always_inline
@@ -514,7 +515,7 @@ fn _concat_cpu[
     alias KB = 1024
     alias min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    var output_bytes = output.num_elements() * sizeof[dtype]()
+    var output_bytes = output.num_elements() * size_of[dtype]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
