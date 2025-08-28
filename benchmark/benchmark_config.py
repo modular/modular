@@ -26,7 +26,7 @@ logger = logging.getLogger("max.benchmark")
 # we copied the max_config.py file to the current directory.
 try:
     from max.pipelines.lib import MAXConfig
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     logger.warning(
         "max.pipelines.lib not found, using max_config.py from current directory"
     )
