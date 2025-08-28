@@ -210,6 +210,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     chat_warmup_delay_ms: float = 0.0
     """Delay between starting chat sessions."""
 
+    ignore_first_turn_stats: bool = False
+    """Ignore the first turn statistics in multiturn chat sessions."""
+
     # Dataset-specific parameters (serving workloads)
     sonnet_input_len: int = 550
     sonnet_prefix_len: int = 200

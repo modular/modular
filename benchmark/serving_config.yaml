@@ -55,6 +55,7 @@ benchmark_config:
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   ttft_skip_requests: 0  # Skip first N requests for TTFT measurements
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
+  ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
 
   # Dataset-specific parameters (serving workloads)
   sonnet_input_len: 550
