@@ -379,8 +379,11 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
         void(ASTDecl &traitDecl,
              DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
         populateTrait) {
-  auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
-  OpBuilder b(module.getRegion());
+  OpBuilder b(shared.getTopLevelDecl().getIfOperation());
+  b.setInsertionPointToStart(
+      &cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation())
+           .getBodyRegion()
+           .front());
   MLIRContext *ctx = b.getContext();
   Location location =
       shared.diags.translateLocation(nestedFunctionOrTypeLocation);
@@ -388,7 +391,8 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
   auto closureTrait =
       b.create<TraitDeclOp>(location, StringAttr::get(ctx, originalName));
   ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
-      &*closureTrait, name, nestedFunctionOrTypeLocation, &moduleDecl);
+      &*closureTrait, name, moduleDecl.getLoc(), &shared.getTopLevelDecl());
+
   closureTrait.setDefinesClosure(true);
   // Populate the trait with parent and self methods.
   SmallVector<SymbolRefAttr> parents;
@@ -515,11 +519,10 @@ StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   MLIRContext *ctx = b.getContext();
 
   // Create the trait type.
-  StringRef root = moduleDecl.getSymbolRef().getRootReference();
   SmallVector<FlatSymbolRefAttr> path(
       moduleDecl.getSymbolRef().getNestedReferences());
   path.push_back(FlatSymbolRefAttr::get(trait.getSymNameAttr()));
-  SymbolRefAttr symbol = SymbolRefAttr::get(ctx, root, path);
+  SymbolRefAttr symbol = traitDecl.getSymbolRef();
   TraitType traitType = TraitType::get(ctx, symbol);
 
   // Give the struct a parameter "impl" of metatype trait.
@@ -744,6 +747,19 @@ StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   return declOp;
 }
 
+ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
+    FnTypeGeneratorType key, llvm::function_ref<ASTDecl *()> creation) {
+  auto ptr = closureTraitCache.find(key);
+  ASTDecl *traitDecl;
+  if (ptr != closureTraitCache.end()) {
+    traitDecl = ptr->getSecond();
+  } else {
+    traitDecl = creation();
+    closureTraitCache.insert({key, traitDecl});
+  }
+  return traitDecl;
+}
+
 std::pair<StructDeclOp, TraitDeclOp>
 ClosureEmitter::createParametricClosureWrapperStructDecl(
     ASTDecl &moduleDecl, StringAttr name,
@@ -781,9 +797,14 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
     builder.create<UnreachableOp>();
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
-  auto [closureTrait, traitDecl] = createTraitOp(
-      moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
-
+  auto createTraitFn = [&]() -> ASTDecl * {
+    auto [closureTrait, traitDecl] = createTraitOp(
+        moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
+    return traitDecl;
+  };
+  ASTDecl *traitDecl =
+      getOrCreateClosureTrait(dependentSignatureType, createTraitFn);
+  TraitDeclOp closureTrait = cast<TraitDeclOp>(traitDecl->getIfOperation());
   // Now create a wrapper struct that conforms to the trait we created.
   return {createStructWrapper(moduleDecl, name.getValue(), *traitDecl,
                               nestedFunctionOrTypeLocation),

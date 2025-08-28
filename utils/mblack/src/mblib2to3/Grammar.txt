@@ -34,7 +34,10 @@ async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [unified_capture] ['->' result_type] ['as' NAME] ':' suite
 unified_capture: UNIFIED ['{' [capture_list] '}']
 capture_list: capture_item (',' capture_item)* [',']
-capture_item: (VAR | OWNED | REF | MUT | READ ) NAME
+# Support both specific captures (e.g., "var x", "mut y") and global capture
+# modes (e.g., "var", "var^", "read") used by unified closures. Only
+# VAR allows the move marker '^'.
+capture_item: (VAR ['^'] [NAME]) | (READ [NAME]) | (MUT [NAME]) | (REF NAME) | (OWNED NAME)
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
