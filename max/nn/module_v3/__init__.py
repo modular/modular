@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Module implementation using eager tensors."""
 
+from .linear import Linear
 from .module import Module, module_dataclass
 from .sequential import Sequential
 
-__all__ = ["Module", "Sequential", "module_dataclass"]
+__all__ = [
+    "Linear",
+    "Module",
+    "Sequential",
+    "module_dataclass",
+]
