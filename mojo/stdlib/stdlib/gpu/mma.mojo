@@ -129,6 +129,24 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     d = rebind[__type_of(d)](r)
 
 
+@fieldwise_init
+@register_passable("trivial")
+struct _AMD_F8F6F4_MATRIX_FORMAT:
+    """Represents the matrix format value to control the type and shape for the inputs
+    of the llvm.amdgcn.mfma.scale.f8f6f4 intrinsics.
+    """
+
+    var _value: Int32
+    alias float8_e4m3 = Self(0)
+    alias float8_e5m2 = Self(1)
+    alias float6_e2m3 = Self(2)
+    alias float6_e3m2 = Self(3)
+    alias float4_e2m1 = Self(4)
+
+    fn __init__(out self, value: Int):
+        self._value = value
+
+
 @always_inline
 fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     @parameter
@@ -143,6 +161,35 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # Compute Project (OCP) float8 dtypes.
     alias fp8_dtype = get_amd_fp8_dtype()
     alias bf8_dtype = get_amd_bf8_dtype()
+
+    @parameter
+    fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+
+        alias intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
+            (32, 32, 4, 4)
+        ](
+            a.size, b.size, c.size, d.size
+        ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
+
+        @parameter
+        fn _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
+            return (
+                _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype
+                == fp8_dtype else _AMD_F8F6F4_MATRIX_FORMAT.float8_e5m2
+            )
+
+        return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.size]](
+            bitcast[DType.int32, 8](a),
+            bitcast[DType.int32, 8](b),
+            c,
+            _matrix_format[a.dtype](),
+            _matrix_format[b.dtype](),
+            zero,
+            zero,
+            zero,
+            zero,
+        )
 
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
@@ -292,6 +339,14 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             zero,
             zero,
         )
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
 
     # ===------------------------------------------------------------------===#
     # F32 = BF8 * BF8 + F32
@@ -309,6 +364,14 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             zero,
             zero,
         )
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
 
     else:
         _unsupported_mma_op(d, a, b, c)
