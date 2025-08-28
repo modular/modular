@@ -71,7 +71,7 @@ struct BlockingSpinLock(Defaultable):
 
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
-        while not self.counter.compare_exchange_weak(expected, owner):
+        while not self.counter.compare_exchange(expected, owner):
             # this should be yield
             waiter.wait()
             expected = Self.UNLOCKED
@@ -90,7 +90,7 @@ struct BlockingSpinLock(Defaultable):
         if self.counter.load() != owner:
             # No one else can modify other than owner
             return False
-        while not self.counter.compare_exchange_weak(expected, Self.UNLOCKED):
+        while not self.counter.compare_exchange(expected, Self.UNLOCKED):
             expected = owner
         return True
 

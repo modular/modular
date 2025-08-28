@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from os.atomic import Atomic, Consistency, _compare_exchange_weak_integral_impl
+from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
@@ -661,11 +661,7 @@ struct Buffer(Copyable, Movable):
                 UnsafePointer(to=p._handle[].next),
                 0,
             )
-            if _compare_exchange_weak_integral_impl[
-                scope="",
-                failure_ordering = Consistency.SEQUENTIAL,
-                success_ordering = Consistency.SEQUENTIAL,
-            ](top, f, n):
+            if Atomic.compare_exchange(top, f, n):
                 break
 
             sleep(UInt(1))
@@ -698,11 +694,7 @@ struct Buffer(Copyable, Movable):
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if _compare_exchange_weak_integral_impl[
-                scope="",
-                failure_ordering = Consistency.SEQUENTIAL,
-                success_ordering = Consistency.SEQUENTIAL,
-            ](top, f, ptr):
+            if Atomic.compare_exchange(top, f, ptr):
                 break
             sleep(UInt(1))
 
