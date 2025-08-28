@@ -19,15 +19,7 @@ what we publish.
 
 ### ✨ Highlights
 
-### Documentation
-
-- New [Mojo vision](/mojo/vision) doc explains our motivations and design
-decisions for the Mojo language.
-
-- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
-language across multiple phases.
-
-### Language enhancements
+### 🔥 Legendary
 
 - Mojo now has support for default trait methods, allowing traits to provide
   reusable behavior without requiring every conforming struct to re-implement it.
@@ -80,6 +72,16 @@ language across multiple phases.
   ```
 
   Note that in the future only '...' will mark a trait method as not defaulted.
+
+### Documentation
+
+- New [Mojo vision](/mojo/vision) doc explains our motivations and design
+decisions for the Mojo language.
+
+- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
+language across multiple phases.
+
+### Language enhancements
 
 - Methods on structs may now declare their `self` argument with a `deinit`
   argument convention.  This argument convention is used for methods like
