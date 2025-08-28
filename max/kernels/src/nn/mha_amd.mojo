@@ -142,7 +142,7 @@ fn convert_f32_to_bf16[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
 
     @parameter
     if use_truncation:
-        res = __type_of(res).from_bits((x.to_bits() >> 16).cast[DType.uint16]())
+        res = __type_of(res)(from_bits=(x.to_bits() >> 16).cast[DType.uint16]())
     else:
         res = x.cast[dtype]()
 

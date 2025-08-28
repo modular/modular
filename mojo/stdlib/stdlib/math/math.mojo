@@ -459,8 +459,8 @@ fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(x).from_bits(
-        r.to_bits[u32]()
+    return __type_of(x)(
+        from_bits=r.to_bits[u32]()
         + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
     )
 
@@ -526,7 +526,7 @@ fn _ldexp_impl[
     alias integral_type = FPUtils[dtype].integral_type
     var m = exp.cast[integral_type]() + FPUtils[dtype].exponent_bias()
 
-    return x * __type_of(x).from_bits(m << FPUtils[dtype].mantissa_width())
+    return x * __type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
 
 
 @always_inline
@@ -739,7 +739,7 @@ fn frexp[
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
         zero,
     )
-    var frac = selector.select(T.from_bits(x_int & ~mask1 | mask2), zero)
+    var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
     return StaticTuple[size=2](frac, exp)
 
 

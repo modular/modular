@@ -185,6 +185,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
+- The `SIMD.from_bits` factory method is now a constructor, use
+  `SIMD(from_bits=...)` instead.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will

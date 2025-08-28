@@ -790,27 +790,24 @@ struct SIMD[dtype: DType, size: Int](
         self = Self(res)
 
     @staticmethod
-    fn from_bits[
+    fn __init__[
         int_dtype: DType, //
-    ](value: SIMD[int_dtype, size]) -> SIMD[dtype, size]:
+    ](out self, *, from_bits: SIMD[int_dtype, size]):
         """Initializes the SIMD vector from the bits of an integral SIMD vector.
 
         Parameters:
             int_dtype: The integral type of the input SIMD vector.
 
         Args:
-            value: The SIMD vector to copy the bits from.
-
-        Returns:
-            The bitcast SIMD vector.
+            from_bits: The SIMD vector to copy the bits from.
         """
         constrained[int_dtype.is_integral(), "the SIMD type must be integral"]()
 
         @parameter
         if dtype is DType.bool and int_dtype in (DType.uint8, DType.int8):
-            return value.ne(0)._refine[dtype]()
+            self = from_bits.ne(0)._refine[dtype]()
         else:
-            return bitcast[dtype, size](value)
+            self = bitcast[dtype, size](from_bits)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1915,7 +1912,7 @@ struct SIMD[dtype: DType, size: Int](
                 )
 
             alias mask = FPUtils[dtype].exponent_mantissa_mask()
-            return Self.from_bits(self.to_bits() & mask)
+            return Self(from_bits=self.to_bits() & mask)
 
     @always_inline("nodebug")
     fn __round__(self) -> Self:
@@ -3680,8 +3677,8 @@ fn _f32_to_bfloat16[
     var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
     var rounding_bias = 0x7FFF + lsb
     var bf16_bits = (f32_bits + rounding_bias) >> _f32_bf16_mantissa_diff
-    var bf16 = SIMD[DType.bfloat16, width].from_bits(
-        bf16_bits.cast[DType.uint16]()
+    var bf16 = SIMD[DType.bfloat16, width](
+        from_bits=bf16_bits.cast[DType.uint16]()
     )
     return _isnan(f32).select(_nan[DType.bfloat16](), bf16)
 
@@ -3822,7 +3819,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         bits & ~((1 << (shift_factor - e)) - 1),
         bits,
     )
-    return __type_of(x).from_bits(bits)
+    return __type_of(x)(from_bits=bits)
 
 
 fn _write_scalar[
