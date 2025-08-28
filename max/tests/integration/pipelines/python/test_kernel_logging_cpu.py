@@ -11,11 +11,12 @@ enables kernel launch/completion logging during pipeline execution on CPU.
 """
 
 import logging
+import os
 import re
+import subprocess
+import sys
 
 import hf_repo_lock
-import pytest
-from max.entrypoints import pipelines
 from max.pipelines.lib import generate_local_model_path
 
 # Use a small, fast model for testing
@@ -25,28 +26,18 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def run_pipeline_with_env(
-    env_vars: dict[str, str],
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> str:
-    """Run a simple pipeline with given environment variables.
+def run_pipeline_subprocess(env_vars: dict[str, str]) -> tuple[str, str]:
+    """Run pipeline via subprocess to capture stderr output.
 
     Args:
         env_vars: Environment variables to set
-        capsys: pytest fixture to capture output
-        monkeypatch: pytest fixture to manage environment variables
 
     Returns:
-        Combined stdout/stderr output
+        Tuple of (stdout, stderr) from pipeline execution
     """
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
-
-    # Set up environment variables using monkeypatch
-    for key, value in env_vars.items():
-        monkeypatch.setenv(key, value)
 
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
@@ -55,200 +46,111 @@ def run_pipeline_with_env(
         logger.warning(f"Falling back to repo_id: {REPO_ID}")
         local_model_path = REPO_ID
 
-    # Run the pipeline
-    with pytest.raises(SystemExit):
-        pipelines.main(
-            [
-                "generate",
-                "--model-path",
-                local_model_path,
-                "--prompt",
-                "Hi",
-                "--max-new-tokens",
-                "1",
-                "--trust-remote-code",
-                "--quantization-encoding=float32",
-                "--device-memory-utilization=0.1",
-                "--huggingface-model-revision",
-                REVISION,
-            ]
-        )
+    # Build command to run pipeline directly with python
+    # Note: We can't use bazelw from inside a bazel test, so we run the pipeline directly
+    cmd = [
+        sys.executable,
+        "-m",
+        "max.entrypoints.pipelines",
+        "generate",
+        "--model-path",
+        local_model_path,
+        "--prompt",
+        "Hi",
+        "--max-new-tokens",
+        "1",
+        "--trust-remote-code",
+        "--quantization-encoding=float32",
+        "--device-memory-utilization=0.1",
+        "--huggingface-model-revision",
+        REVISION,
+    ]
 
-    captured = capsys.readouterr()
-    return captured.out + captured.err
+    # Prepare environment with our variables
+    env = os.environ.copy()
+    env.update(env_vars)
 
-
-def extract_kernel_logs(output: str) -> list[str]:
-    """Extract kernel log lines from pipeline output.
-
-    Args:
-        output: Combined stdout/stderr from pipeline execution
-
-    Returns:
-        List of kernel log lines matching the pattern [KERNEL] LAUNCH/COMPLETE
-    """
-    kernel_log_pattern = r"\[KERNEL\] (LAUNCH|COMPLETE) .* at \+[\d\.]+ms"
-    return re.findall(kernel_log_pattern, output)
-
-
-def extract_kernel_logs_with_device(output: str) -> list[str]:
-    """Extract kernel log lines that include device information.
-
-    Args:
-        output: Combined stdout/stderr from pipeline execution
-
-    Returns:
-        List of complete kernel log lines that include device info
-    """
-    # Updated pattern to match logs with device info: [KERNEL] ACTION name on DEVICE at +time
-    kernel_log_pattern = r"\[KERNEL\] (LAUNCH|COMPLETE) .* on (CPU|GPU:\d+|Multi\([^)]+\)) at \+[\d\.]+ms"
-    return re.findall(kernel_log_pattern, output, re.MULTILINE)
-
-
-def extract_filtered_kernel_names(output: str) -> list[str]:
-    """Extract kernel names from log output to verify filtering.
-
-    Args:
-        output: Combined stdout/stderr from pipeline execution
-
-    Returns:
-        List of kernel names that appeared in the logs
-    """
-    kernel_name_pattern = r"\[KERNEL\] (?:LAUNCH|COMPLETE) ([^\s]+) on"
-    return re.findall(kernel_name_pattern, output, re.MULTILINE)
-
-
-def test_kernel_logging_disabled_by_default(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test that kernel logging runs without errors when MAX_LOG_KERNELS is not set."""
-    # Simply verify the pipeline runs successfully without kernel logging enabled
-    output = run_pipeline_with_env({}, capsys, monkeypatch)
-
-    # Pipeline should succeed and produce output
-    assert len(output.strip()) > 0, "Pipeline should produce some output"
-
-
-def test_kernel_logging_enabled_with_1(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test that kernel logging runs without errors when MAX_LOG_KERNELS=1."""
-    # The key test is that the pipeline runs successfully WITH kernel logging enabled
-    # The actual kernel logs appear at console level and bypass Python's capture
-    output = run_pipeline_with_env(
-        {"MAX_LOG_KERNELS": "1"}, capsys, monkeypatch
+    # Run the command and capture output
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,  # 5 minute timeout
     )
 
+    # The command might exit with non-zero due to SystemExit in pipeline
+    # We still want to capture the output
+    return result.stdout, result.stderr
+
+
+def test_kernel_logging_disabled_by_default() -> None:
+    """Test that kernel logging runs without errors when MAX_LOG_KERNELS is not set."""
+    # Simply verify the pipeline runs successfully without kernel logging enabled
+    stdout, stderr = run_pipeline_subprocess({})
+
     # Pipeline should succeed and produce output
-    assert len(output.strip()) > 0, "Pipeline should produce some output"
-    # If we got here without exception, kernel logging didn't crash the pipeline
+    assert len(stdout.strip()) > 0, "Pipeline should produce some output"
+
+    # Should not contain any [KERNEL] logs
+    kernel_logs = re.findall(r"\[KERNEL\]", stderr)
+    assert len(kernel_logs) == 0, "Should not have kernel logs by default"
 
 
-def test_kernel_logging_different_values(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_kernel_logging_different_values() -> None:
     """Test that different kernel logging values work without errors."""
     # Test various environment variable values
-    test_values = ["true", "yes", "1", "0", "false"]
+    test_values = ["true", "yes", "1"]
 
     for value in test_values:
-        output = run_pipeline_with_env(
-            {"MAX_LOG_KERNELS": value}, capsys, monkeypatch
-        )
-        # Pipeline should succeed regardless of kernel logging setting
-        assert len(output.strip()) > 0, (
+        stdout, stderr = run_pipeline_subprocess({"MAX_LOG_KERNELS": value})
+
+        # Pipeline should succeed and produce output
+        assert len(stdout.strip()) > 0, "Pipeline should produce some output"
+
+        # Should contain some [KERNEL] logs
+        kernel_logs = re.findall(r"\[KERNEL\]", stderr)
+        assert len(kernel_logs) != 0, (
             f"Pipeline should produce output with MAX_LOG_KERNELS={value}"
         )
 
 
-def test_kernel_logging_includes_device_info_cpu(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test that kernel logs include CPU device information when enabled.
+def test_kernel_logging_detailed_output() -> None:
+    """Test that actual kernel logs are captured from stderr and have correct format.
 
-    Note: Kernel logs are output directly to console via C++ std::cerr and
-    bypass Python's capsys capture mechanism. This test validates:
-    1. Pipeline execution succeeds with device logging enabled on CPU
-    2. Log format patterns correctly match expected CPU device info formats
+    This test validates actual log output by running the pipeline via subprocess
+    and capturing stderr, which contains the real kernel logs from llvm::errs().
     """
-    # Run with kernel logging enabled
-    output = run_pipeline_with_env(
-        {"MAX_LOG_KERNELS": "1"}, capsys, monkeypatch
-    )
+    # Run pipeline with logging enabled
+    stdout, stderr = run_pipeline_subprocess({"MAX_LOG_KERNELS": "1"})
 
     # Pipeline should succeed
-    assert len(output.strip()) > 0, "Pipeline should produce some output"
-
-    # Verify the regex pattern correctly identifies CPU device information formats
-    test_logs = [
-        "[KERNEL] LAUNCH test_kernel on CPU at +1.234ms",
-        "[KERNEL] COMPLETE test_kernel on CPU at +2.567ms",
-        "[KERNEL] LAUNCH multi_kernel on Multi(CPU,CPU) at +3.890ms",
-    ]
-
-    for test_log in test_logs:
-        matches = extract_kernel_logs_with_device(test_log)
-        assert len(matches) > 0, (
-            f"Pattern should match CPU device log: {test_log}"
-        )
-        # Verify the captured groups contain expected device info
-        match_tuple = matches[0]
-        action = match_tuple[0]
-        device = match_tuple[1]
-        assert action in ["LAUNCH", "COMPLETE"], (
-            f"Action should be LAUNCH/COMPLETE: {action}"
-        )
-        assert device.startswith(("CPU", "Multi(")), (
-            f"Device should be CPU or Multi(...): {device}"
-        )
-
-
-def test_kernel_logging_filters_low_level_primitives_cpu(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test that low-level primitives are filtered out of kernel logs on CPU.
-
-    This test verifies that the kernel filtering implementation correctly
-    excludes low-level primitives like mgp.buffer.alloc and index.constant
-    that don't correspond to meaningful graph operations.
-    """
-    # Run with kernel logging enabled
-    output = run_pipeline_with_env(
-        {"MAX_LOG_KERNELS": "1"}, capsys, monkeypatch
+    assert len(stdout.strip()) > 0 or len(stderr.strip()) > 0, (
+        "Pipeline should produce some output with logging enabled"
     )
 
-    # Pipeline should succeed
-    assert len(output.strip()) > 0, "Pipeline should produce some output"
+    # Should contain kernel logs when enabled (logs go to stderr)
+    kernel_launch_logs = re.findall(r"\[KERNEL\] LAUNCH.*", stderr)
+    kernel_complete_logs = re.findall(r"\[KERNEL\] COMPLETE.*", stderr)
 
-    # Extract kernel names from any logs that might appear in console output
-    # Note: Since logs go to C++ stderr, they may not be captured by capsys,
-    # but we can still test the filtering logic conceptually
-    filtered_kernels = [
-        "index.constant",
-        "mgp.buffer.alloc",
-        "mgp.buffer.free",
-        "mgp.buffer.constant",
-        "mgp.tensor.from_buffer",
-        "mgp.tensor.to_buffer",
-    ]
+    # We expect to see some kernel logs when logging is enabled
+    # Note: The exact number may vary based on model execution and caching
+    assert len(kernel_launch_logs) > 0 and len(kernel_complete_logs) > 0, (
+        "Should have kernel logs when MAX_LOG_KERNELS=1"
+    )
 
-    # Test the regex pattern against expected filtered kernel formats
-    for kernel in filtered_kernels:
-        test_log = f"[KERNEL] LAUNCH {kernel} on CPU at +1.234ms"
-        kernel_names = extract_filtered_kernel_names(test_log)
+    # Validate log format for actual logs we captured
+    # Both LAUNCH and COMPLETE logs should have the same format: [KERNEL] ACTION ... on DEVICE at +TIME
+    for log in kernel_launch_logs[:5]:  # Check first few logs
+        # Should match the expected format: [KERNEL] LAUNCH ... on DEVICE at +TIME
+        assert re.match(
+            r"\[KERNEL\] LAUNCH .+ on CPU at \+[\d\.]+ms",
+            log,
+        ), f"LAUNCH log should match expected format: {log}"
 
-        # The regex should extract the kernel name, but the implementation
-        # should filter it out (this test validates the regex works)
-        if kernel_names:
-            assert kernel_names[0] == kernel, (
-                f"Regex should extract kernel name: {kernel}"
-            )
-
-    # Test that graph operations would be allowed through
-    allowed_kernels = ["mo.matmul", "mo.conv2d", "nn.attention"]
-    for kernel in allowed_kernels:
-        test_log = f"[KERNEL] LAUNCH {kernel} on CPU at +1.234ms"
-        kernel_names = extract_filtered_kernel_names(test_log)
-        assert len(kernel_names) > 0 and kernel_names[0] == kernel, (
-            f"Graph operation should be extractable: {kernel}"
-        )
+    for log in kernel_complete_logs[:5]:  # Check first few logs
+        # Should match the expected format: [KERNEL] COMPLETE ... on DEVICE at +TIME
+        assert re.match(
+            r"\[KERNEL\] COMPLETE .+ on CPU at \+[\d\.]+ms",
+            log,
+        ), f"COMPLETE log should match expected format: {log}"
