@@ -87,8 +87,8 @@ import builtin.
       server,
       "test:///test.mojo",
       `
-@value
-struct Foo:
+@fieldwise_init
+struct Foo(Copyable, Movable):
   var __other: Int
   var ___another__: Int
   var __dunder__: Int
