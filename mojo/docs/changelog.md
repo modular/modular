@@ -162,6 +162,25 @@ what we publish.
   alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
   ```
 
+- Deprecated flatcase functions in `sys.info`:
+  - `simdbitwidth` 
+  - `simdbytewidth` 
+  - `sizeof` 
+  - `alignof` 
+  - `bitwidthof` 
+  - `bitwidthof` 
+  - `simdwidthof` 
+  - `simdwidthof`
+  and added snake_case counterparts:
+  - `simd_bit_width`
+  - `simd_byte_width`
+  - `size_of`
+  - `align_of`
+  - `bit_width_of`
+  - `bit_width_of`
+  - `simd_width_of`
+  - `simd_width_of`
+    
 - Added support for AMD RX 6900 XT consumer-grade GPU.
 
 - Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
