@@ -1026,9 +1026,9 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   auto [closureWrapper, trait] = shared.getOrCreateParametricClosureWrapper(
       loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel());
 
-  ClosureEmitter emitter(*moduleDecl, shared);
-  Value wrapperInstance = emitter.emitClosureOp(nestedFnDecl, captures,
-                                                closureWrapper, trait, mlirLoc);
+  ClosureEmitter &emitter = shared.getClosureEmitter();
+  Value wrapperInstance = emitter.emitClosureOp(
+      *moduleDecl, nestedFnDecl, captures, closureWrapper, trait, mlirLoc);
 
   nestedFnDecl.getIfOperation()->erase();
   nestedFnDecl.setIRValue(nullptr);
@@ -1064,14 +1064,15 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 
   // Create an instance of the closure implementation in the parent function
   // right after the nested function definition.
-  ClosureEmitter emitter(*moduleDecl, shared);
+  ClosureEmitter &emitter = shared.getClosureEmitter();
   StructDeclOp closureImpl =
       emitter.replaceNestedFunctionWithClosureImplStructDecl(
-          captures, paramCaptures, nestedFnDecl, wrapperSig);
+          *moduleDecl, captures, paramCaptures, nestedFnDecl, wrapperSig);
   if (!closureImpl)
     return {};
 
-  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, loc);
+  emitter.createWrapperInitWithImpl(*moduleDecl, closureWrapper, closureImpl,
+                                    loc);
 
   builder.restoreInsertionPoint(insertPoint);
 

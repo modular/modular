@@ -412,6 +412,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
         diBuilder->createFile(diags.getBufferNameIdentifier()), "Mojo",
         /*isOptimized=*/true, options.getDIEmissionKind());
   }
+  closureEmitter = std::make_unique<ClosureEmitter>(*this);
 }
 
 SharedState::~SharedState() { declResolver.reset(); }
@@ -1924,9 +1925,8 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
   if (!existing) {
     std::string name =
         ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
-    ClosureEmitter emitter(*moduleDecl, *this);
-    existing = emitter.createClosureWrapperStructDecl(
-        StringAttr::get(getContext(), name), sig, loc);
+    existing = closureEmitter->createClosureWrapperStructDecl(
+        *moduleDecl, StringAttr::get(getContext(), name), sig, loc);
   }
   return existing;
 }
@@ -1940,9 +1940,9 @@ SharedState::getOrCreateParametricClosureWrapper(SMLoc loc,
   if (ptr == impl->parametricClosureWrappers.end()) {
     std::string name =
         ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
-    ClosureEmitter emitter(*moduleDecl, *this);
-    auto result = emitter.createParametricClosureWrapperStructDecl(
-        StringAttr::get(getContext(), name), sig, loc, inlineLevel);
+    auto result = closureEmitter->createParametricClosureWrapperStructDecl(
+        *moduleDecl, StringAttr::get(getContext(), name), sig, loc,
+        inlineLevel);
     impl->parametricClosureWrappers.insert({{sig, moduleDecl}, result});
     return result;
   }
