@@ -8,7 +8,7 @@
 # RUN: llvm-objdump -t %t | FileCheck %s
 
 from compile import compile_info
-from sys import argv, sizeof
+from sys import argv, size_of
 
 
 fn get_type(dtype: DType) -> DType:
@@ -16,7 +16,7 @@ fn get_type(dtype: DType) -> DType:
 
 
 fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
-    alias b = sizeof[get_type(dtype)]()
+    alias b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 

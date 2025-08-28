@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from compile import compile_info
-from sys import sizeof
+from sys import size_of
 
 
 fn get_type(dtype: DType) -> DType:
@@ -14,7 +14,7 @@ fn get_type(dtype: DType) -> DType:
 
 
 fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
-    alias b = sizeof[get_type(dtype)]()
+    alias b = size_of[get_type(dtype)]()
     return b + Int(M[0])
 
 
