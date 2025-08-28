@@ -205,10 +205,7 @@ class DecodeScheduler(Scheduler):
         )
 
     def reserve_memory_and_send_to_prefill(self) -> None:
-        """Continuously pulls requests from the request queue and forwards them to the prefill node.
-
-        Breaks when the request queue is empty. Memory reservation is pending implementation.
-        """
+        """Continuously pulls requests from the request queue and forwards them to the prefill node."""
         self.pending_reqs |= dict(self.request_pull_socket.drain_nowait())
 
         while (
@@ -218,6 +215,10 @@ class DecodeScheduler(Scheduler):
                 + len(self.pending_prefill_requests)
             )
             < self.scheduler_config.max_batch_size_tg
+            and (
+                self.paged_manager is None
+                or self.paged_manager.free_blocks_pct > 0.1
+            )
         ):
             # Pop off request queue
             req_id, context = self.pending_reqs.popitem(last=False)
