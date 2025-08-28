@@ -1420,7 +1420,9 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        grid_dim[0] // cluster_shape[0], grid_dim[1] // cluster_shape[1], 1
+        ceildiv(grid_dim[0], cluster_shape[0]),
+        ceildiv(grid_dim[1], cluster_shape[1]),
+        1,
     )
 
     ctx.enqueue_function[kernel](
