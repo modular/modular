@@ -70,6 +70,8 @@ public:
                                   StringRef name, CaptureConvention capture,
                                   IREmitter &emitter,
                                   ASTDecl *signatureDecl = nullptr);
+  ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
+                                   llvm::function_ref<ASTDecl *()> creation);
 
 private:
   MLIRContext *ctx;
@@ -136,6 +138,10 @@ private:
   ClosureParent moveParent;
   /// Anytype trait is a parent of all closures. Cache its defining op.
   ClosureParent anyParent;
+
+  /// Closure traits live in the top level module. This cache guards against
+  /// emitting duplicates.
+  DenseMap<Type, ASTDecl *> closureTraitCache;
 };
 
 } // namespace M::KGEN::LIT
