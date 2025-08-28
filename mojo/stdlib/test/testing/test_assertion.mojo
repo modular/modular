@@ -80,6 +80,10 @@ def test_assert_not_equal_is_generic():
 
 def test_assert_equal_with_simd():
     assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 1))
+    # comparison with IntLiteral should be straightforward and not require
+    # using any constructor
+    assert_equal(1, UInt8(1))
+    assert_equal(1, Int8(1))
 
     with assert_raises():
         assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 2))
