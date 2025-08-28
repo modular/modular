@@ -365,6 +365,70 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
       !pop.simd<4, f8e4m3fnuz>,
       !pop.simd<4, f8e5m2fnuz>
   }
+
+  // CHECK-LABEL: scalar_cast_f8_f32
+  kgen.func @scalar_cast_f8_f32(%f8: !pop.scalar<f8e4m3fnuz>) -> !pop.scalar<f32> {
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK: %[[INPUT0:.+]] = llvm.mlir.undef : vector<4xi8>
+    // CHECK: %[[INPUT1:.+]] = llvm.insertelement %arg0, %[[INPUT0]][%[[ZERO]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT2:.+]] = llvm.bitcast %[[INPUT1]] : vector<4xi8> to i32
+    // CHECK: %[[RES:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.f32.fp8"(%[[INPUT2]], %[[ZERO]]) : (i32, i32) -> f32
+    // CHECK: llvm.return %[[RES]] : f32
+    %0 = pop.cast %f8: !pop.scalar<f8e4m3fnuz> to !pop.scalar<f32>
+    kgen.return %0 : !pop.scalar<f32>
+  }
+
+  // CHECK-LABEL: simd2_cast_f8_f32
+  kgen.func @simd2_cast_f8_f32(%f8: !pop.simd<2, f8e4m3fnuz>) -> !pop.simd<2, f32> {
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[INPUT0:.+]] = llvm.mlir.undef : vector<4xi8>
+    // CHECK: %[[FP8_0:.+]] = llvm.extractelement %arg0[%[[ZERO]] : i32] : vector<2xi8>
+    // CHECK: %[[INPUT1:.+]] = llvm.insertelement %[[FP8_0]], %[[INPUT0]][%[[ZERO]] : i32] : vector<4xi8>
+    // CHECK: %[[FP8_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<2xi8>
+    // CHECK: %[[INPUT2:.+]] = llvm.insertelement %[[FP8_1]], %[[INPUT1]][%[[ONE]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT3:.+]] = llvm.bitcast %[[INPUT2]] : vector<4xi8> to i32
+    // CHECK: %[[RES:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"(%[[INPUT3]], %[[FALSE]]) : (i32, i1) -> vector<2xf32>
+    // CHECK: llvm.return %[[RES]] : vector<2xf32>
+    %0 = pop.cast %f8 : !pop.simd<2, f8e4m3fnuz> to !pop.simd<2, f32>
+    kgen.return %0 : !pop.simd<2, f32>
+  }
+
+  // CHECK-LABEL: simd4_cast_f8_f32
+  kgen.func @simd4_cast_f8_f32(%f8: !pop.simd<4, f8e4m3fnuz>) -> !pop.simd<4, f32> {
+    // CHECK-DAG: %[[TRUE:.+]] = llvm.mlir.constant(true) : i1
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[THREE:.+]] = llvm.mlir.constant(3 : i32) : i32
+    // CHECK-DAG: %[[TWO:.+]] = llvm.mlir.constant(2 : i32) : i32
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[RES0:.+]] = llvm.mlir.undef : vector<4xf32>
+    // CHECK-DAG: %[[INPUT0:.+]] = llvm.mlir.undef : vector<4xi8>
+    // CHECK: %[[FP8_0:.+]] = llvm.extractelement %arg0[%[[ZERO]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT1:.+]] = llvm.insertelement %[[FP8_0]], %[[INPUT0]][%[[ZERO]] : i32] : vector<4xi8>
+    // CHECK: %[[FP8_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT2:.+]] = llvm.insertelement %[[FP8_1]], %[[INPUT1]][%[[ONE]] : i32] : vector<4xi8>
+    // CHECK: %[[FP8_2:.+]] = llvm.extractelement %arg0[%[[TWO]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT3:.+]] = llvm.insertelement %[[FP8_2]], %[[INPUT2]][%[[TWO]] : i32] : vector<4xi8>
+    // CHECK: %[[FP8_3:.+]] = llvm.extractelement %arg0[%[[THREE]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT4:.+]] = llvm.insertelement %[[FP8_3]], %[[INPUT3]][%[[THREE]] : i32] : vector<4xi8>
+    // CHECK: %[[INPUT5:.+]] = llvm.bitcast %[[INPUT4]] : vector<4xi8> to i32
+    // CHECK: %[[RES1:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"(%[[INPUT5]], %[[FALSE]]) : (i32, i1) -> vector<2xf32>
+    // CHECK: %[[RES2:.+]] = llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"(%[[INPUT5]], %[[TRUE]]) : (i32, i1) -> vector<2xf32>
+    // CHECK: %[[FP32_0:.+]] = llvm.extractelement %[[RES1]][%[[ZERO]] : i32] : vector<2xf32>
+    // CHECK: %[[RES3:.+]] = llvm.insertelement %[[FP32_0]], %[[RES0]][%[[ZERO]] : i32] : vector<4xf32>
+    // CHECK: %[[FP32_1:.+]] = llvm.extractelement %[[RES1]][%[[ONE]] : i32] : vector<2xf32>
+    // CHECK: %[[RES4:.+]] = llvm.insertelement %[[FP32_1]], %[[RES3]][%[[ONE]] : i32] : vector<4xf32>
+    // CHECK: %[[FP32_2:.+]] = llvm.extractelement %[[RES2]][%[[ZERO]] : i32] : vector<2xf32>
+    // CHECK: %[[RES5:.+]] = llvm.insertelement %[[FP32_2]], %[[RES4]][%[[TWO]] : i32] : vector<4xf32>
+    // CHECK: %[[FP32_3:.+]] = llvm.extractelement %[[RES2]][%[[ONE]] : i32] : vector<2xf32>
+    // CHECK: %[[RES6:.+]] = llvm.insertelement %[[FP32_3]], %[[RES5]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK: llvm.return %[[RES6]] : vector<4xf32>
+    %0 = pop.cast %f8 : !pop.simd<4, f8e4m3fnuz> to !pop.simd<4, f32>
+    kgen.return %0 : !pop.simd<4, f32>
+  }
+
 }
 
 // -----
