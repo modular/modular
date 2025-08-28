@@ -264,7 +264,7 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
         fence[Consistency.ACQUIRE]()
         # ...
   ```
-  
+
 - `Span` now implements a generic `.count()` method which can be passed a
   function that returns a boolean SIMD vector. The function counts how many
   times it returns `True` evaluating it in a vectorized manner. This works for
@@ -296,3 +296,5 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - Fixed <https://github.com/modular/modular/issues/5190>
 - Fixed <https://github.com/modular/modular/issues/5139> - Crash on malformed initializer.
 - Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
+- Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
+  docs.

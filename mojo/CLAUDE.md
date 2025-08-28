@@ -14,23 +14,47 @@ ecosystem with systems programming and metaprogramming features.
 
 ### Building the Standard Library
 
+Bazel is the build system of choice for this repo and you can build
+the Mojo Standard Library with:
+
 ```bash
-./stdlib/scripts/build-stdlib.sh
+./bazelw build //mojo/stdlib/stdlib
 ```
 
-This creates a `build/stdlib.mojopkg` file in the repo root.
+This creates a `stdlib.mojopkg` (the built artifact) from the Bazel build
+directory: `bazel-bin/mojo/stdlib/stdlib/stdlib.mojopkg`.
 
 ### Running Tests
 
+From the root of the repo, you can choose to use Bazel or a convenient
+shell script (for those who are not as familiar with Bazel).
+
+Using bazel:
+
 ```bash
-# Run all tests
-./stdlib/scripts/run-tests.sh
+# Run all the stdlib tests
+./bazelw test mojo/stdlib/test/...
 
 # Run specific test file
-./stdlib/scripts/run-tests.sh ./stdlib/test/utils/test_span.mojo
+./bazelw test //mojo/stdlib/test/memory:test_span.mojo.test
 
 # Run tests in specific directory
-./stdlib/scripts/run-tests.sh ./stdlib/test/utils
+./bazelw test mojo/stdlib/test/collections/...
+```
+
+For those are not as familiar with Bazel, we provide a wrapper
+script: `run-tests.sh` that uses Bazel under the hood. Here
+are some equivalent examples:
+
+```bash
+# Run all tests
+./mojo/stdlib/scripts/run-tests.sh
+
+# Run specific test file
+./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/utils/test_span.mojo
+
+# Run tests in specific directory
+./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/utils
 
 # Run specific test suites with lit directly
 lit -sv stdlib/test/builtin stdlib/test/collections
@@ -83,18 +107,11 @@ modules:
 
 ```bash
 # Build the standard library first
-./stdlib/scripts/build-stdlib.sh
+./bazelw build //mojo/stdlib/stdlib
 
 # Use the locally built stdlib
-MODULAR_MOJO_MAX_IMPORT_PATH=../build mojo main.mojo
+MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/stdlib mojo main.mojo
 ```
-
-#### Test Structure
-
-- Tests use the `lit` tool with `FileCheck` for validation
-- Migrating to use `testing` module assertions (`assert_equal`, `assert_true`,
-  etc.)
-- Test files must start with: `# RUN: %mojo %s`
 
 #### Memory Management
 
@@ -119,8 +136,6 @@ MODULAR_MOJO_MAX_IMPORT_PATH=../build mojo main.mojo
 - **Do NOT** add dependencies to the stdlib module
 - **Always** sign commits with `Signed-off-by` (use `git commit -s`)
 - **Always** follow the Apache License v2.0 with LLVM Exceptions
-- Prefer using Batch tool for multiple file operations to reduce context usage
-- When making multiple bash calls, use Batch to run them in parallel
 
 ## Performance Considerations
 
@@ -132,7 +147,7 @@ MODULAR_MOJO_MAX_IMPORT_PATH=../build mojo main.mojo
 
 - Linux x86_64 and aarch64
 - macOS ARM64
-- Windows is not currently supported
+- Windows is *not* currently supported and is not on the immediate radar.
 
 ## Internal APIs
 
