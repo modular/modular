@@ -127,6 +127,8 @@ language across multiple phases.
 - The `__disable_del` keyword and statement has been removed, use `deinit`
   methods instead.
 
+- The previously deprecated `@value` decorator has been removed.
+
 ### Standard library changes
 
 - Added `Path(..).name()` method to the `Path` type, which returns the name of

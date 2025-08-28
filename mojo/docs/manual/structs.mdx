@@ -341,23 +341,3 @@ essential lifecycle methods you need (and save yourself some time) using the
 [Struct definition](#struct-definition)), and the `Copyable` and `Movable`
 traits (described in
 [Making a struct copyable and movable](#making-a-struct-copyable-and-movable)).
-
-
-### `@value` decorator
-
-When you add the [`@value` decorator](/mojo/manual/decorators/value) to a
-struct, Mojo will synthesize the essential [lifecycle
-methods](/mojo/manual/lifecycle/life) so your object provides full value
-semantics. Specifically, it generates the `__init__()`, `__copyinit__()`, and
-`__moveinit__()` methods, which allow you to construct, copy, and move your
-struct type in a manner that's value semantic and compatible with Mojo's
-ownership model.
-
-:::caution @value is Deprecated
-
-The `@value` decorator was deprecated in v25.5, in favor of the `@fieldwise_init`
-decorator (described in [Struct definition](#struct-definition)), and the
-`Copyable` and `Movable` traits (described in
-[Making a struct copyable and movable](#making-a-struct-copyable-and-movable)).
-
-:::
