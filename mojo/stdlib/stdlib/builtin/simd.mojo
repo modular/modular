@@ -3380,6 +3380,27 @@ fn _convert_float8_to_f32[
         DType.float8_e5m2,
     ):
         return _convert_float8_to_f16(val).cast[DType.float32]()
+
+    elif (
+        _is_amd_mi300x()
+        and dtype
+        in (
+            DType.float8_e4m3fnuz,
+            DType.float8_e5m2fnuz,
+        )
+    ) or (
+        _cdna_4_or_newer()
+        and dtype
+        in (
+            DType.float8_e4m3fn,
+            DType.float8_e5m2,
+        )
+    ):
+        var res = __mlir_op.`pop.cast`[
+            _type = SIMD[DType.float32, size]._mlir_type
+        ](val.value)
+        return SIMD[DType.float32, size](mlir_value=res)
+
     else:
 
         @always_inline
