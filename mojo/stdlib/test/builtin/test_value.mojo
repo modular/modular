@@ -13,17 +13,16 @@
 
 
 from testing import assert_false, assert_true, assert_equal
-from memory import memcpy
 
 # ===-----------------------------------------------------------------------===#
 # Triviality Struct
 # ===-----------------------------------------------------------------------===#
 
-alias event_trivial = 1
-alias event_init = 2
-alias event_del = 4
-alias event_copy = 8
-alias event_move = 16
+alias EVENT_TRIVIAL = 0b1  # 1
+alias EVENT_INIT = 0b10  # 2
+alias EVENT_DEL = 0b100  # 4
+alias EVENT_COPY = 0b1000  # 8
+alias EVENT_MOVE = 0b10000  # 16
 
 
 struct ConditionalTriviality[T: Movable & Copyable](Copyable, Movable):
@@ -34,32 +33,32 @@ struct ConditionalTriviality[T: Movable & Copyable](Copyable, Movable):
 
     fn __init__(out self, mut events: List[Int]):
         self.events = UnsafePointer(to=events)
-        self.add_event(event_init)
+        self.add_event(EVENT_INIT)
 
     fn __del__(deinit self):
         @parameter
         if T.__del__is_trivial:
-            self.add_event(event_del | event_trivial)
+            self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
-            self.add_event(event_del)
+            self.add_event(EVENT_DEL)
 
     fn __copyinit__(out self, other: Self):
         self.events = other.events
 
         @parameter
         if T.__copyinit__is_trivial:
-            self.add_event(event_copy | event_trivial)
+            self.add_event(EVENT_COPY | EVENT_TRIVIAL)
         else:
-            self.add_event(event_copy)
+            self.add_event(EVENT_COPY)
 
     fn __moveinit__(out self, deinit other: Self):
         self.events = other.events
 
         @parameter
         if T.__moveinit__is_trivial:
-            self.add_event(event_move | event_trivial)
+            self.add_event(EVENT_MOVE | EVENT_TRIVIAL)
         else:
-            self.add_event(event_move)
+            self.add_event(EVENT_MOVE)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -78,11 +77,11 @@ def test_type_trivial():
     assert_equal(
         events,
         [
-            event_init,
-            event_copy | event_trivial,
-            event_del | event_trivial,
-            event_move | event_trivial,
-            event_del | event_trivial,
+            EVENT_INIT,
+            EVENT_COPY | EVENT_TRIVIAL,
+            EVENT_DEL | EVENT_TRIVIAL,
+            EVENT_MOVE | EVENT_TRIVIAL,
+            EVENT_DEL | EVENT_TRIVIAL,
         ],
     )
 
@@ -96,7 +95,7 @@ def test_type_not_trivial():
     value^.__del__()
     var value_move = value_copy^
     assert_equal(
-        events, [event_init, event_copy, event_del, event_move, event_del]
+        events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
     )
 
 
