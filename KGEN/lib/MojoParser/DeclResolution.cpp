@@ -2210,18 +2210,6 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
         traits.push_back(decl->getSymbolRef());
       return success();
     }
-    // @value
-    if (declRef->spelling == "value") {
-      // During signature resolution, add the `Copyable` and `Movable` traits.
-      if (ASTDecl *decl = shared.lookupBuiltinTrait(
-              "Copyable", structDecl.getParentDecl(), decorator->getLoc()))
-        traits.push_back(decl->getSymbolRef());
-      if (ASTDecl *decl = shared.lookupBuiltinTrait(
-              "Movable", structDecl.getParentDecl(), decorator->getLoc()))
-        traits.push_back(decl->getSymbolRef());
-      // Fallthrough the decorator to body resolution.
-      return failure();
-    }
     // We don't process @explicit_destroy here, we do it in resolveSignature.
   }
 
@@ -2450,10 +2438,6 @@ struct StructBodyDecorators : public SharedStateUser {
   LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp);
 
 private:
-  /// Process the @value body decorator on structs.  This synthesizes the
-  /// fieldwise init, copy ctor and move ctor if requested.
-  void processValueDecorator(SMLoc decoratorLoc);
-
   /// Process the @fieldwise_init body decorator on structs.
   void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
 
@@ -2529,29 +2513,6 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
   return {};
 }
 
-void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
-  // Generate the fieldwise init.
-  StructEmitter structEmitter(structDecl);
-  StructDeclOp declOp = cast_or_null<StructDeclOp>(structDecl.getIfOperation());
-  // Generate the copy and memberwise init stubs.
-  auto stubs = structEmitter.addMissingValueMemberStubsToStruct();
-  if (!stubs) {
-    emitError(decoratorLoc, "'@value' cannot synthesize fieldwise init for '")
-        << declOp.getSymName() << "'";
-    structDecl.setErroneous();
-    return;
-  }
-
-  shared.emitWarning(
-      decoratorLoc,
-      "'@value' is deprecated, please move to '@fieldwise_init' and explicit "
-      "`Copyable` and `Movable` conformances instead");
-
-  // Generate the fieldwise init unless it already has one.
-  if (!findFieldwiseInit(structDecl))
-    structEmitter.synthesizeFieldwiseInit();
-}
-
 /// Process the @fieldwise_init body decorator on structs. 'isRequired'
 /// indicates whether it is an error to already have a fieldwise init.
 void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
@@ -2618,7 +2579,11 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       return success();
     }
     if (declRef->spelling == "value") {
-      processValueDecorator(decorator->getRangeStart());
+      // TODO(Mojo 25.7): remove this entirely.
+      shared.emitError(declRef->getLoc(),
+                       "'@value' has been removed, please use "
+                       "'@fieldwise_init' and explicit "
+                       "`Copyable` and `Movable` conformances instead");
       return success();
     }
     if (declRef->spelling == "explicit_destroy")

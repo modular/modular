@@ -60,9 +60,9 @@ var w = SIMD[DType.int8, 2](-50, 31)
 # CHECK:     (f32) [3] = 4
 # CHECK:   }
 # CHECK: }
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Foo:
+struct Foo(Copyable):
   var v: Int
   var w: SIMD[DType.int8, 2]
   var x: Bool
