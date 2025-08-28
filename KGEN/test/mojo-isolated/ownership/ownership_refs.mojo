@@ -505,3 +505,26 @@ struct FieldSensitiveUse:
         self.y = String()
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
         # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}([[TMP]])
+
+
+# MOCO-2077: https://github.com/modular/modular/issues/4705
+# CHECK-LABEL: lit.fn @"test_getitem_setitem
+fn test_getitem_setitem(mut d: TestDict[Int, Int]):
+    # This should bind to a mutable reference, not an immutable one.
+    # CHECK: %0 = lit.call {{.*}}@TestDict::@"__getitem__
+    # CHECK: lit.call {{.*}}@"check_mutability{{.*}}<:!Bool {:i1 1}, {{.*}}(%0)
+    check_mutability(d[])
+
+
+fn check_mutability[
+    is_mutable: Bool, //, origin: Origin[is_mutable], T: AnyType
+](ref [origin]s: T):
+    pass
+
+
+struct TestDict[K: AnyType, V: AnyType]:
+    fn __getitem__(ref self) -> ref [self] V:
+        while True: pass
+
+    fn __setitem__(mut self, var value: V):
+        pass

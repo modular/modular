@@ -328,6 +328,15 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   return {};
 }
 
+/// This method is called when we have selected an overload candidate that
+/// matches the operand list, but some argument requires an origin and the
+/// argument doesn't have it. This could be because the argument is a computed
+/// lvalue or SRValue, but either way we need to spill it to memory to expose
+/// the origin.
+///
+/// This operands in question are indicated by the info.getArgsNeedingOrigins()
+/// bitset, and this method emits them and mutates the operand list so that
+/// overload resolution can be iterated and will succeed.
 static LogicalResult
 emitOperandsNeedingOriginsToMemory(const OverloadFitness &info,
                                    FnTypeGeneratorType expectedSig,
@@ -351,6 +360,23 @@ emitOperandsNeedingOriginsToMemory(const OverloadFitness &info,
 
     assert(!operands[i].ir.isMValue() &&
            "Should only emit values in registers to memory");
+
+    // If the argument is a DLValue, then we might have a getter/setter pair,
+    // but we are only going to use the getter.  In the case when the getter
+    // returns a reference, we can directly use that. Reference arguments cannot
+    // support writeback anyway.
+    if (auto lv = operands[i].ir.getIfDLValue()) {
+      ValueDest loadDest(EC_RefBinding);
+      auto newVal = lv->emitLoad(loadDest, emitter);
+      if (!newVal)
+        return failure(); // Failed to emit the PValue/SValue to an MRValue.
+      operands.values[i].ir = newVal;
+
+      // If the getter returned a reference, then use that value, otherwise drop
+      // an RValue into a temporary and bind an immutable ref.
+      if (operands[i].ir.isMValue())
+        continue;
+    }
 
     // We emit this as an MBValue instead of an MRValue specifically so we
     // do not infer mutability from the temporary.  We don't want ref's with
