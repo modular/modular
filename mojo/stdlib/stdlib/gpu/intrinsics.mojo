@@ -499,17 +499,6 @@ struct Scope(Copyable, EqualityComparable, Movable, Writable):
         """
         return self is other
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if two `Scope` instances are not equal.
-
-        Args:
-            other: The other `Scope` instance to compare with.
-
-        Returns:
-            True if the instances are different, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances have the same value.
 

@@ -583,21 +583,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares this tuple to another tuple for non-equality.
-
-        The tuples are non-equal if at least one element of LHS isn't equal to
-        the corresponding element from RHS.
-
-        Args:
-            rhs: The other tuple.
-
-        Returns:
-            The comparison result.
-        """
-        return not (self == rhs)
-
-    @always_inline
     fn __lt__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using LT comparison.
 

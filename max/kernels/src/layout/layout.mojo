@@ -834,18 +834,6 @@ struct Layout(
         return self.shape == other.shape and self.stride == other.stride
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Layout) -> Bool:
-        """Checks if this layout is not equal to another layout.
-
-        Args:
-            other: The layout to compare with.
-
-        Returns:
-            True if the layouts are not equal, False otherwise.
-        """
-        return not (self == other)
-
-    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Returns the number of dimensions in the layout.
 

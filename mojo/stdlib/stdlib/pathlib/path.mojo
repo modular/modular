@@ -211,17 +211,6 @@ struct Path(
         """
         return self.path.as_string_slice() == other
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Returns True if the two paths are not equal.
-
-        Args:
-          other: The other path to compare against.
-
-        Returns:
-          True if the paths are not equal and False otherwise.
-        """
-        return not self == other
-
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the path string value.
 

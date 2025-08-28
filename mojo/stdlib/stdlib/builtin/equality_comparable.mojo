@@ -26,7 +26,7 @@ trait EqualityComparable:
             True if the instances are equal according to the type's definition
             of equality, False otherwise.
         """
-        pass
+        ...
 
     fn __ne__(self, other: Self) -> Bool:
         """Define whether two instances of the object are not equal to each other.
@@ -38,4 +38,4 @@ trait EqualityComparable:
             True if the instances are not equal according to the type's definition
             of equality, False otherwise.
         """
-        pass
+        return not self.__eq__(other)

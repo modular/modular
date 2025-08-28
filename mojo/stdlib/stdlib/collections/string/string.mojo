@@ -775,18 +775,6 @@ struct String(
         return self.as_string_slice() == other
 
     @always_inline("nodebug")
-    fn __ne__(self, other: String) -> Bool:
-        """Compares two Strings if they do not have the same values.
-
-        Args:
-            other: The rhs of the operation.
-
-        Returns:
-            True if the Strings are not equal and False otherwise.
-        """
-        return not (self == other)
-
-    @always_inline("nodebug")
     fn __ne__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 

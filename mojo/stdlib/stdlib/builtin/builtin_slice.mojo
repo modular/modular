@@ -145,19 +145,6 @@ struct Slice(
             and self.step == other.step
         )
 
-    @always_inline
-    fn __ne__(self, other: Self) -> Bool:
-        """Compare this slice to the other.
-
-        Args:
-            other: The slice to compare to.
-
-        Returns:
-            False if start, end, and step values of this slice match the
-            corresponding values of the other slice and True otherwise.
-        """
-        return not (self == other)
-
     fn indices(self, length: Int) -> (Int, Int, Int):
         """Returns a tuple of 3 integers representing the start, end, and step
            of the slice if applied to a container of the given length.

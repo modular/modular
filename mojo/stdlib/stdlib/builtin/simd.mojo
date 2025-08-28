@@ -1169,20 +1169,6 @@ struct SIMD[dtype: DType, size: Int](
         return Bool(self.eq(rhs).reduce_and())
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares two SIMD vectors for inequality.
-
-        Args:
-            rhs: The SIMD vector to compare with.
-
-        Returns:
-            True if any elements of the SIMD vectors are not equal, False
-            otherwise.
-        """
-        # TODO: remove this implementation once we have default traits methods.
-        return not self == rhs
-
-    @always_inline
     fn __gt__(self, rhs: Self) -> Bool:
         """Compares two Scalars using greater-than comparison.
 

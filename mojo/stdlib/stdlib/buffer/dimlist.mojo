@@ -252,18 +252,6 @@ struct Dim(
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: Dim) -> Bool:
-        """Compare two dimensions for inequality.
-
-        Args:
-            rhs: The dimension to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return not self == rhs
-
     @no_inline
     fn __str__(self) -> String:
         """Converts the Dim to a String. If the value is unknown, then the

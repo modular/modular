@@ -83,18 +83,6 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
         return self is other
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
-
-    @always_inline("nodebug")
     fn __ne__(self, other: AddressSpace) -> Bool:
         """Checks if the two address spaces are not equal.
 
@@ -222,18 +210,6 @@ struct AddressSpace(
           True if the two address spaces are equal and False otherwise.
         """
         return self is other
-
-    @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
 
     @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:

@@ -264,20 +264,6 @@ struct ComplexSIMD[dtype: DType, size: Int](
         """
         return Bool((self.re.eq(rhs.re) & self.im.eq(rhs.im)).reduce_and())
 
-    # TODO: remove this implementation once we have default trait methods.
-    @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares two ComplexSIMD for inequality.
-
-        Args:
-            rhs: The ComplexSIMD to compare with.
-
-        Returns:
-            True if any elements of the ComplexSIMD are not equal, False
-            otherwise.
-        """
-        return not self == rhs
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#

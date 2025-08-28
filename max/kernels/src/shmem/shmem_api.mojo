@@ -124,9 +124,6 @@ struct SHMEMScope(Copyable, EqualityComparable, Movable):
     fn __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
-
 
 # ===----------------------------------------------------------------------=== #
 # Constants

@@ -172,18 +172,6 @@ struct PyObjectPtr(
         """
         return self._unsized_obj_ptr == rhs._unsized_obj_ptr
 
-    @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compare two PyObjectPtr for inequality.
-
-        Args:
-            rhs: The right-hand side PyObjectPtr to compare.
-
-        Returns:
-            Bool: True if the pointers are not equal, False otherwise.
-        """
-        return not (self == rhs)
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#

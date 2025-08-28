@@ -470,17 +470,6 @@ struct Consistency(Copyable, EqualityComparable, Movable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two Consistency instances are not equal.
-
-        Args:
-            other: The Consistency instance to compare against.
-
-        Returns:
-            True if the consistency levels are different, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two Consistency instances are identical.
 
