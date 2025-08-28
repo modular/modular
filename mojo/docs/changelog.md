@@ -252,6 +252,19 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
+- Added `os.atomic.fence` for creating atomic memory fences.
+  ([#5216](https://github.com/modular/modular/pull/5216) by
+  [@nate](https://github.com/NathanSWard))
+
+  ```mojo
+    from os.atomic import Atomic, Consistency, fence
+
+    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
+      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
+        fence[Consistency.ACQUIRE]()
+        # ...
+  ```
+  
 - `Span` now implements a generic `.count()` method which can be passed a
   function that returns a boolean SIMD vector. The function counts how many
   times it returns `True` evaluating it in a vectorized manner. This works for
