@@ -217,7 +217,8 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    // Keep the top level closures around.
+    // Keep the top level closures around. These should NEVER be included in
+    // bytecode packages.
     if (auto traitDecl = dyn_cast<TraitDeclOp>(op))
       if (traitDecl.getDefinesClosure())
         return WalkResult::skip();
