@@ -1061,8 +1061,22 @@ class Scheduler:
 
                     valid_specs.append(df)
                     valid = True
+            elif b.exec_output.return_code == os.EX_OK:
+                df = pd.DataFrame().from_dict(
+                    {
+                        "mesh_idx": [b.idx],
+                        "name": ["-"],
+                        "met (ms)": [0],
+                        "iters": [0],
+                        "spec": [str(spec.mesh[b.idx])],
+                    }
+                )
+                valid_specs.append(df)
+                valid = True
+
             if not valid:
                 invalid_specs.append(idx)
+
         return valid_specs, invalid_specs
 
     @staticmethod
@@ -1101,14 +1115,15 @@ class Scheduler:
 
             for idx in invalid_specs:
                 s = bi_list[idx].spec_instance
-                msg = bi_list[idx].build_output
-                if msg.stdout or msg.stderr:
+                build_output = bi_list[idx].build_output
+                # check build failure
+                if build_output.stdout or build_output.stderr:
                     output_lines += [LINE]
                     output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
-                    if msg.stdout:
-                        output_lines.append(msg.stdout)
-                    if msg.stderr:
-                        output_lines.append(msg.stderr)
+                    if build_output.stdout:
+                        output_lines.append(build_output.stdout)
+                    if build_output.stderr:
+                        output_lines.append(build_output.stderr)
 
         output_lines += [LINE]
         output_lines += [
