@@ -21,10 +21,10 @@ from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
 def test_unsafepointer_of_move_only_type():
-    var actions_ptr = UnsafePointer[List[String]].alloc(1)
-    actions_ptr.init_pointee_move(List[String]())
+    var actions = List[String]()
+    var actions_ptr = UnsafePointer[mut=False](to=actions)
 
-    var ptr = UnsafePointer[ObservableMoveOnly].alloc(1)
+    var ptr = UnsafePointer[ObservableMoveOnly[actions_ptr.origin]].alloc(1)
     ptr.init_pointee_move(ObservableMoveOnly(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
@@ -43,8 +43,6 @@ def test_unsafepointer_of_move_only_type():
     ptr.free()
     assert_equal(len(actions_ptr[0]), 4)
     assert_equal(actions_ptr[0][3], "__del__")
-
-    actions_ptr.free()
 
 
 def test_unsafepointer_move_pointee_move_count():
@@ -143,6 +141,7 @@ def test_unsafepointer_string():
 
 def test_eq():
     var local = 1
+    # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
     var p1 = UnsafePointer(to=local).origin_cast[mut=False]()
     var p2 = p1
     assert_equal(p1, p2)
