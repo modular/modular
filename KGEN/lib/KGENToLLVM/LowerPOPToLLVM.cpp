@@ -1445,7 +1445,8 @@ static LogicalResult lowerLifetimeMarker(Operation *op, ValueRange values,
   for (unsigned i = 0, e = values.size(); i < e; ++i) {
     Value ptr = op->getOperand(i);
     Value value = values[i];
-    auto alloc = ptr.template getDefiningOp<StackAllocationOp>();
+    [[maybe_unused]] auto alloc =
+        ptr.template getDefiningOp<StackAllocationOp>();
     assert(alloc && "expected a parent stack allocation");
     SmallVector<Value> newValues;
 
