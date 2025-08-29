@@ -278,6 +278,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - The `SIMD.from_bits` factory method is now a constructor, use
   `SIMD(from_bits=...)` instead.
 
+- `StringSlice.from_utf8` factory method is now a constructor, use
+  `StringSlice(from_utf8=...)` instead.
+
 - Added `os.atomic.fence` for creating atomic memory fences.
   ([#5216](https://github.com/modular/modular/pull/5216) by
   [@nate](https://github.com/NathanSWard))

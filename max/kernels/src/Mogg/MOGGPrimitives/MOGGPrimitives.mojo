@@ -76,7 +76,7 @@ fn pack_string_res(
         length=str_len,
     )
     # We can not free the resource ptr embedded in MEF, create a copy
-    return StringSlice.from_utf8(span).__str__()
+    return String(StringSlice(from_utf8=span))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -92,13 +92,11 @@ fn create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
-    var str = err.__str__()
-    var strslice = str.as_string_slice()
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        strslice.unsafe_ptr(),
-        strslice.byte_length(),
+        err.unsafe_cstr_ptr(),
+        err.byte_length(),
     )
 
 
