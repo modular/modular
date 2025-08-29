@@ -343,7 +343,7 @@ struct TaskGroup(Defaultable):
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
-        var prev: Int = Int(self.counter.fetch_sub(1).value)
+        var prev: Int = Int(self.counter.fetch_sub(1)._mlir_value)
         return prev - 1
 
     @staticmethod

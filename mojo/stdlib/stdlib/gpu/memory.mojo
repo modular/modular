@@ -999,7 +999,7 @@ fn external_memory[
                 alignment=alignment,
             ]._mlir_type,
             name = _get_kgen_string[name](),
-            alignment = alignment.value,
+            alignment = alignment._mlir_value,
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()

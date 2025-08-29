@@ -306,7 +306,7 @@ struct Bool(
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return self.__int__().value
+        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:

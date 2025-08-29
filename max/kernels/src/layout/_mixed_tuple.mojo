@@ -345,7 +345,7 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
             UnsafePointer(to=self[i]).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx.value]:
+    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -357,7 +357,9 @@ struct MixedTuple[*element_types: MixedTupleLike](MixedTupleLike, Sized):
         var storage_ptr = UnsafePointer(to=self.storage).address
 
         # Get pointer to the element
-        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx.value](storage_ptr)
+        var elt_ptr = __mlir_op.`kgen.pack.gep`[index = idx._mlir_value](
+            storage_ptr
+        )
         # Return as reference, propagating mutability
         return UnsafePointer(elt_ptr)[]
 

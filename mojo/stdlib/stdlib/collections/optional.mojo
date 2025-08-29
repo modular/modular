@@ -480,7 +480,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
             value: The value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(0).value
+            _type = Self._mlir_type, index = Int(0)._mlir_value
         ](value)
 
     # TODO(MSTDL-715):
@@ -506,7 +506,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
             value: The None value.
         """
         self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(1).value
+            _type = Self._mlir_type, index = Int(1)._mlir_value
         ](__mlir_attr.false)
 
     # ===-------------------------------------------------------------------===#
@@ -563,7 +563,9 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
         Returns:
             True if the optional has a value and False otherwise.
         """
-        return __mlir_op.`kgen.variant.is`[index = Int(0).value](self._value)
+        return __mlir_op.`kgen.variant.is`[index = Int(0)._mlir_value](
+            self._value
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -576,7 +578,9 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
         Returns:
             The contained value.
         """
-        return __mlir_op.`kgen.variant.get`[index = Int(0).value](self._value)
+        return __mlir_op.`kgen.variant.get`[index = Int(0)._mlir_value](
+            self._value
+        )
 
     fn or_else(var self, var default: T) -> T:
         """Return the underlying value contained in the Optional or a default

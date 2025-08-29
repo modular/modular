@@ -197,7 +197,7 @@ struct AddressSpace(
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self._value.value
+        return self._value._mlir_value
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -288,7 +288,7 @@ struct Pointer[
         `, `,
         origin._mlir_origin,
         `, `,
-        address_space._value.value,
+        address_space._value._mlir_value,
         `>`,
     ]
     alias _with_origin = Pointer[type, _, address_space]
@@ -330,7 +330,9 @@ struct Pointer[
         self._value = _mlir_value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, ref [origin, address_space._value.value]to: type):
+    fn __init__(
+        out self, *, ref [origin, address_space._value._mlir_value]to: type
+    ):
         """Constructs a Pointer from a reference to a value.
 
         Args:

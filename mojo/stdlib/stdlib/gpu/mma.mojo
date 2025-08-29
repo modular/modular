@@ -646,11 +646,11 @@ fn _dtype_to_nvvm_wgmma_type[
 fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m.value,
+        +m._mlir_value,
         `, n =`,
-        +n.value,
+        +n._mlir_value,
         `, k =`,
-        +k.value,
+        +k._mlir_value,
         `>`,
     ]
 
@@ -1199,10 +1199,10 @@ fn wgmma_async[
     ]()
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
-        mat_a_desc.desc.value
+        mat_a_desc.desc._mlir_value
     )
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
-        mat_b_desc.desc.value
+        mat_b_desc.desc._mlir_value
     )
 
     alias layout_a_value = _get_kgen_string[layout_a]()
@@ -1230,7 +1230,7 @@ fn wgmma_async[
                 `!kgen.variadic_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
-                width.value,
+                width._mlir_value,
                 `>`,
             ],
             `)>`,
@@ -1335,10 +1335,10 @@ fn wgmma_async[
     ]()
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
-        mat_a_desc.desc.value
+        mat_a_desc.desc._mlir_value
     )
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
-        mat_b_desc.desc.value
+        mat_b_desc.desc._mlir_value
     )
 
     alias layout_a_value = _get_kgen_string[layout_a]()
@@ -1365,7 +1365,7 @@ fn wgmma_async[
                 `!kgen.variadic_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
-                width.value,
+                width._mlir_value,
                 `>`,
             ],
             `)>`,
@@ -1462,7 +1462,7 @@ fn wgmma_async[
     ]()
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
-        mat_b_desc.desc.value
+        mat_b_desc.desc._mlir_value
     )
     alias trans_b = 1 if layout_b == "row" else 0
 

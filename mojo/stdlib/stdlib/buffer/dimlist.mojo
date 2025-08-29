@@ -169,7 +169,7 @@ struct Dim(
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.get().value
+        return self.get()._mlir_value
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Dim) -> Dim:
@@ -652,7 +652,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         return Self(
             VariadicList[Dim](
                 __mlir_op.`pop.variadic.splat`[
-                    numElements = length.value, _type = Variadic[Dim]
+                    numElements = length._mlir_value, _type = Variadic[Dim]
                 ](Dim())
             )
         )

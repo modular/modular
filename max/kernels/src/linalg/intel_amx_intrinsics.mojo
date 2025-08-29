@@ -78,7 +78,7 @@ fn _tile_loadd[dst: Int](base: OpaquePointer, stride: Int):
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&ig_expand=7471,7472,7472&text=_tile_loadd
     """
     llvm_intrinsic["llvm.x86.tileloadd64", NoneType](
-        Int8(dst), base, stride.value
+        Int8(dst), base, stride._mlir_value
     )
 
 
