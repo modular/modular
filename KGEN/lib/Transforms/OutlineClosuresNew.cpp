@@ -76,13 +76,12 @@ struct ClosureLifter {
   /// Given components of the lifted function, generate a closure symbol, which
   /// is an abstraction of a symbol used to reference functions that do not yet
   /// exist.
-  ClosureSymbolAttr
-  createClosureSymbolAttr(GeneratorOp parent, StringRef name,
-                          ClosureMethod method, ArrayRef<Type> argTypes,
-                          ArrayRef<Type> resultTypes, ClosureType closureType,
-                          ArrayRef<Type> params,
-                          ParamClosureType closureParamType,
-                          ArrayRef<ArgConvention> argConventions);
+  ClosureSymbolAttr createClosureSymbolAttr(
+      GeneratorOp parent, StringRef name, ClosureMethod method,
+      ArrayRef<Type> argTypes, ArrayRef<Type> resultTypes,
+      ClosureType closureType, ArrayRef<Type> params,
+      ParamClosureType closureParamType, ArrayRef<ArgConvention> argConventions,
+      FnEffects effects);
   /// Given a closure init op, generate functions for call, copy, move, and del
   /// + struct instance to store captures.
   LogicalResult liftClosureInit(ClosureInitOp closureInit,
@@ -361,7 +360,8 @@ ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
     GeneratorOp parent, StringRef name, ClosureMethod method,
     ArrayRef<Type> argTypes, ArrayRef<Type> resultTypes,
     ClosureType closureType, ArrayRef<Type> params,
-    ParamClosureType closureParamType, ArrayRef<ArgConvention> argConventions) {
+    ParamClosureType closureParamType, ArrayRef<ArgConvention> argConventions,
+    FnEffects effects) {
   MLIRContext *cxt = parent->getContext();
   SmallVector<Type> originalArgTypes;
   Type selfType =
@@ -374,7 +374,7 @@ ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
       FunctionType::get(cxt, originalArgTypes, resultTypes);
   M::KGEN::FuncTypeGeneratorType originalfuncGenType =
       M::KGEN::FuncTypeGeneratorType::get(params, originalFuncType,
-                                          argConventions);
+                                          argConventions, effects);
   SmallVector<TypedAttr> boundParams;
   llvm::append_range(boundParams,
                      llvm::map_to_vector(params, [&](Type type) -> TypedAttr {
@@ -457,7 +457,7 @@ void ClosureLifter::createClosureGenerator(
   ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
       closureInitData.getGenerator(), closureInitData.regionName(), method,
       argTypes, resultTypes, closureInitData.getClosureType(), {},
-      closureInitData.getParamClosureType(), argConventions);
+      closureInitData.getParamClosureType(), argConventions, {});
   liftedClosureSymbols[closureAttr] = sym;
 }
 
@@ -600,7 +600,7 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
       closureInitData.getGenerator(), closureInitData.regionName(),
       ClosureMethod::CALL, argTypes, closureInitData.results(),
       closureInitData.getClosureType(), paramsUnmapped,
-      closureInitData.getParamClosureType(), conventions);
+      closureInitData.getParamClosureType(), conventions, effects);
   liftedClosureSymbols[closureAttr] = sym;
 }
 
