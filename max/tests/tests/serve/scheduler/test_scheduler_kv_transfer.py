@@ -27,7 +27,7 @@ from max.interfaces import (
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    KVTransferEngineMetadata,
+    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
@@ -41,9 +41,10 @@ from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.queue.zmq_queue import (
     ZmqPullSocket,
     ZmqPushSocket,
+    generate_zmq_inproc_endpoint,
     generate_zmq_ipc_path,
 )
-from max.serve.scheduler import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import PayloadType
 from max.serve.scheduler.decode_scheduler import DecodeScheduler
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
 from max.serve.scheduler.text_batch_constructor import (
@@ -120,44 +121,33 @@ def decode_cancel_zmq_path():
     return generate_zmq_ipc_path()
 
 
-@pytest.fixture
-def decode_dispatch_endpoint() -> str:
-    return "tcp://127.0.0.1:5555"
-
-
-@pytest.fixture
-def decode_dispatcher_factory(
-    decode_dispatch_endpoint,  # noqa: ANN001
-    prefill_dispatch_endpoint,  # noqa: ANN001
-):
-    config = DispatcherConfig(
+def create_dispatcher_config() -> tuple[str, DispatcherConfig]:
+    bind_address = generate_zmq_inproc_endpoint()
+    return bind_address, DispatcherConfig(
         transport=TransportType.DYNAMIC_ZMQ,
         transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=decode_dispatch_endpoint,
-            instance_id="decode_service",
-            default_destination_address=prefill_dispatch_endpoint,
+            bind_address=bind_address,
         ),
     )
-    return DispatcherFactory[
-        TransportMessage[
-            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
-        ]
-    ](
+
+
+@pytest.fixture
+def decode_dispatcher_factory():
+    _, config = create_dispatcher_config()
+    return DispatcherFactory[TransportMessage[PayloadType]](
         config,
-        transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
-        ],
+        transport_payload_type=TransportMessage[PayloadType],
     )
 
 
 @pytest.fixture
 def decode_scheduler(
-    mock_pipeline,  # noqa: ANN001
-    decode_paged_manager,  # noqa: ANN001
-    decode_request_zmq_path,  # noqa: ANN001
-    decode_response_zmq_path,  # noqa: ANN001
-    decode_cancel_zmq_path,  # noqa: ANN001
-    decode_dispatcher_factory,  # noqa: ANN001
+    mock_pipeline: Mock,
+    decode_paged_manager: PagedKVCacheManager,
+    decode_request_zmq_path: str,
+    decode_response_zmq_path: str,
+    decode_cancel_zmq_path: str,
+    decode_dispatcher_factory: DispatcherFactory[TransportMessage[PayloadType]],
 ) -> Callable[[], DecodeScheduler]:
     def create_scheduler() -> DecodeScheduler:
         # Create dispatcher client
@@ -185,32 +175,11 @@ def decode_scheduler(
 
 
 @pytest.fixture
-def prefill_dispatch_endpoint() -> str:
-    return "tcp://127.0.0.1:5556"
-
-
-@pytest.fixture
-def prefill_dispatcher_factory(
-    prefill_dispatch_endpoint,  # noqa: ANN001
-    decode_dispatch_endpoint,  # noqa: ANN001
-):
-    config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=prefill_dispatch_endpoint,
-            instance_id="prefill_service",
-            default_destination_address=decode_dispatch_endpoint,
-        ),
-    )
-    return DispatcherFactory[
-        TransportMessage[
-            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
-        ]
-    ](
+def prefill_dispatcher_factory():
+    _, config = create_dispatcher_config()
+    return DispatcherFactory[TransportMessage[PayloadType]](
         config,
-        transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
-        ],
+        transport_payload_type=TransportMessage[PayloadType],
     )
 
 
