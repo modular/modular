@@ -276,6 +276,9 @@ fn fn_raises_with_return_type(x: Index) raises -> Index:
 
     Returns:
         `0`.
+
+    Raises:
+        Exception description goes here.
     """
     return `0`
 
