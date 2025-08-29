@@ -42,7 +42,7 @@ struct NmStruct:
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
 alias notMaterializedAlias = NmStruct(77)
-# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = <{x: !Bool = {:i1 0}}>
+# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = <{x: !Bool = {_mlir_value: i1 = 0}}>
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
@@ -61,10 +61,10 @@ fn nmResult() -> NmStruct:
 # CHECK-LABEL: lit.fn @"useNonmaterializable
 fn useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{_mlir_value: i1 = 1}
     var gotConverted1 = NmStruct(76) + NmStruct(1)
     # CHECK: lit.var.decl "gotConverted2" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{_mlir_value: i1 = 0}
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)

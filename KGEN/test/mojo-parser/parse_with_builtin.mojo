@@ -8,7 +8,7 @@
 
 
 # CHECK-LABEL: lit.fn @"import_of_import
-# CHECK-SAME: #SIMD <:!DType {:dtype f64}, :!Int {1}>
+# CHECK-SAME: #SIMD <:!DType {_mlir_value: dtype = f64}, :!Int {1}>
 fn import_of_import(arg: Float64):
     pass
 
@@ -35,7 +35,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
 # CHECK-LABEL: lit.fn @"testSIMDGetter
 fn testSIMDGetter[
     type: DType
-](var a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](var a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type._mlir_value, `>`]:
     # CHECK: %[[AVAL:.*]] = lit.ref.load %a
     # CHECK: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])

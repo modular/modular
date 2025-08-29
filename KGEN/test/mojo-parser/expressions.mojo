@@ -518,13 +518,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # otherwise.
 
   # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(
-  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "value">, b, a)>
+  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">, b, a)>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "value">, a, b)>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">, a, b)>
   alias d = a or b
 
 # CHECK-LABEL: lit.fn @"do_math
@@ -568,7 +568,7 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
-    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:i1 1}
+    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{_mlir_value: i1 = 1}
     # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond
     cond = True
     i += i
@@ -577,14 +577,14 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "value">, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "value">,
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {_mlir_value: dtype = f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">,
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond(#lit.struct.extract<:!Bool cond, "value">, {2}, {3})>
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   return i
 
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
@@ -789,8 +789,8 @@ def literals():
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
     alias b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
-    c = False         # CHECK: !Bool = <{:i1 0}>
-    c = True          # CHECK: !Bool = <{:i1 1}>
+    c = False         # CHECK: !Bool = <{_mlir_value: i1 = 0}>
+    c = True          # CHECK: !Bool = <{_mlir_value: i1 = 1}>
 
 # CHECK-LABEL: lit.fn @"_strings
 fn _strings():
@@ -982,7 +982,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {_mlir_value: i1 = 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int

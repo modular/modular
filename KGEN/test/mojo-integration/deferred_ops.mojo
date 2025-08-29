@@ -73,7 +73,7 @@ fn simd_to_kgen_struct[
     `!kgen.struct<(`,
     __mlir_type[
         `!kgen.variadic_splat<`,
-        __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+        __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
         `, `,
         n.value,
         `>`,
@@ -99,7 +99,7 @@ fn simd_to_kgen_struct[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
-                __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
                 `, `,
                 n.value,
                 `>`,
@@ -116,7 +116,7 @@ fn simd_to_kgen_struct[
                 `!kgen.struct<(`,
                 __mlir_type[
                     `!kgen.variadic_splat<`,
-                    __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                    __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
                     `, `,
                     n.value,
                     `>`,
@@ -139,7 +139,7 @@ fn kgen_struct_to_simd_reverse[
         `!kgen.struct<(`,
         __mlir_type[
             `!kgen.variadic_splat<`,
-            __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+            __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
             `, `,
             n.value,
             `>`,
@@ -152,7 +152,7 @@ fn kgen_struct_to_simd_reverse[
     @parameter
     for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+            _type = __mlir_type[`!pop.scalar<`, dtype._mlir_value, `>`],
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
