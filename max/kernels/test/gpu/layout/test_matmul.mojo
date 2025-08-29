@@ -135,7 +135,7 @@ struct test_matmul[
                 __type_of(result.runtime_layout.shape)(m, n),
                 __type_of(result.runtime_layout.stride)(n, 1),
             )
-            return __type_of(result)(ptr, dynamic_layout)
+            return {ptr, dynamic_layout}
 
         var a = create_tensor[a_layout](
             self.M, self.K, self.a_device_buffer._unsafe_ptr()
