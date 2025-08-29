@@ -37,10 +37,10 @@ struct FastDiv[dtype: DType](Stringable, Writable):
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
-    var _sh1: Int32
-    var _sh2: Int32
+    var _sh1: UInt8
+    var _sh2: UInt8
     var _is_pow2: Bool
-    var _log2_shift: Int32
+    var _log2_shift: UInt8
 
     @always_inline
     fn __init__(out self, divisor: Int = 1):
@@ -60,7 +60,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         self._div = divisor
 
         self._is_pow2 = divisor.is_power_of_two()
-        self._log2_shift = log2_ceil(Int32(divisor))
+        self._log2_shift = log2_ceil(Int32(divisor)).cast[DType.uint8]()
 
         # Only compute magic number parameters if not power of 2
         if not self._is_pow2:
