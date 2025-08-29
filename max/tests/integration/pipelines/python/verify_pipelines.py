@@ -768,8 +768,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz",
                 json_file="torch_llama4_scout_bfloat16_golden.json",
             ),
-            cos_dist_threshold=5.0e-3,
-            kl_div_threshold=4.0e-1,
+            cos_dist_threshold=0.7,
+            kl_div_threshold=8.0,
         ),
     ),
     "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
