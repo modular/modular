@@ -1233,6 +1233,9 @@ bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 /// `Movable` etc.  On error this returns null but does not print an error.
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
                                          SMLoc loc) {
+  if (useBuiltinModule)
+    context = &importModule("stdlib.prelude", /*currentPackage=*/nullptr, loc);
+
   LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
     for (ASTDecl *result : lookup.getIfSuccess()) {
@@ -1271,10 +1274,20 @@ ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
   return getTypeCheckErrorType();
 }
 
+ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
+                                       llvm::SMLoc loc) {
+  if (useBuiltinModule) {
+    ASTDecl &preludeModule =
+        importModule("stdlib.prelude", /*currentPackage=*/nullptr, loc);
+    return lookupNamedType(name, preludeModule, loc);
+  }
+  return lookupNamedType(name, context, loc);
+}
+
 ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
                                                 llvm::SMLoc loc, bool inMem) {
-  return lookupNamedType(inMem ? "VariadicListMem" : "VariadicList", context,
-                         loc);
+  return lookupBuiltinType(inMem ? "VariadicListMem" : "VariadicList", context,
+                           loc);
 }
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {

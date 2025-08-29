@@ -424,33 +424,39 @@ public:
   /// success.
   ASTType lookupNamedType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
 
+  /// Lookup the specified name in builtin.prelude when builtin is enabled. If
+  /// builtin is disabled, search from the provided `context`. The function
+  /// check whether it is a non-parameterized type. This emits a diagnostic on
+  /// error and returns null, or returns the type on success.
+  ASTType lookupBuiltinType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
+
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("Bool", context, loc);
+    return lookupBuiltinType("Bool", context, loc);
   }
   ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("Tuple", context, loc);
+    return lookupBuiltinType("Tuple", context, loc);
   }
   ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("Error", context, loc);
+    return lookupBuiltinType("Error", context, loc);
   }
   ASTType getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("String", context, loc);
+    return lookupBuiltinType("String", context, loc);
   }
   ASTType getBuiltinIntLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("IntLiteral", context, loc);
+    return lookupBuiltinType("IntLiteral", context, loc);
   }
   ASTType getBuiltinFloatLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("FloatLiteral", context, loc);
+    return lookupBuiltinType("FloatLiteral", context, loc);
   }
   ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("StringLiteral", context, loc);
+    return lookupBuiltinType("StringLiteral", context, loc);
   }
   ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
                                      bool inMem);
   ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("VariadicPack", context, loc);
+    return lookupBuiltinType("VariadicPack", context, loc);
   }
   ASTDecl *getBuiltinCoroutineType(llvm::SMLoc loc);
   ASTDecl *getBuiltinRaisingCoroutineType(llvm::SMLoc loc);
