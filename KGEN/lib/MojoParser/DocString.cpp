@@ -670,6 +670,14 @@ private:
           !funcOp.getSpecialFunctionInfo().hasSelfResult())
         emitDiag(funcOp.getLoc(),
                  "function has results, but no 'Returns' in doc string");
+      if (!sections[DocString::kSectionRaises] && canThrow && !funcOp.isDef())
+        // Ignore 'def' functions because they implicitly throw but shouldn't
+        // require 'Raises' docs. (canThrow is always true for `def`.)
+        // TODO: This should be an error, but we first need to add `Raises`
+        // docstrings to resolve all the warnings in the standard library.
+        emitDiag(funcOp.getLoc(),
+                 "function can throw errors, but no 'Raises' in doc string",
+                 /*emitError=*/false);
     }
   }
 
@@ -721,14 +729,17 @@ private:
   // Diagnostics
 
   /// Emit a diagnostic at the given doc string location.
-  InflightDiag emitDiag(const char *loc, const Twine &msg = {}) {
+  /// TODO: Remove the emitError argument, but we first need to add `Raises`
+  /// docstrings to resolve all the warnings in the standard library.
+  InflightDiag emitDiag(const char *loc, const Twine &msg = {},
+                        bool emitError = true) {
     SMLoc smLoc = translateLoc(loc);
-    return smLoc.isValid() ? emitDiag(smLoc, msg)
-                           : emitDiag(docStr->getLoc(), msg);
+    return smLoc.isValid() ? emitDiag(smLoc, msg, emitError)
+                           : emitDiag(docStr->getLoc(), msg, emitError);
   }
   template <typename T>
-  InflightDiag emitDiag(T loc, const Twine &msg = {}) {
-    if (errorOnInvalidDocStrings)
+  InflightDiag emitDiag(T loc, const Twine &msg = {}, bool emitError = true) {
+    if (emitError && errorOnInvalidDocStrings)
       return sharedState.emitError(loc, msg);
     return sharedState.emitWarning(loc, msg);
   }

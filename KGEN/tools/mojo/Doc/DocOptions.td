@@ -48,11 +48,12 @@ def ValidationOptionGroup :
 
 def diagnose_missing_doc_strings : Flag<["--", "-"],
   "diagnose-missing-doc-strings">, Group<ValidationOptionGroup>, Index<0>,
-  HelpText<"Emits diagnostics for missing or partial doc strings.">;
+  HelpText<"Emits diagnostic warnings for missing or partial doc strings.">;
 
 def validate_doc_strings : Flag<["--", "-"],
   "validate-doc-strings">, Group<ValidationOptionGroup>, Index<1>,
-  HelpText<"Emits errors for invalid doc strings instead of warnings.">;
+  HelpText<"Emits errors for invalid doc strings instead of warnings. "
+           "Must be combined with `--diagnose-missing-doc-strings`.">;
 
 defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
   ValidationOptionGroup, Index<2>, MetaVarName<"PATH">,
