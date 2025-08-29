@@ -619,20 +619,13 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
         return self.__str__()
 
-    fn __delitem__(mut self, idx: Some[Indexer]) -> None:
+    fn __delitem__(mut self, i: Int) -> None:
         """Delete an item from the list at the given index.
 
         Args:
-            idx: The index of the item to delete.
+            i: The index of the item to delete.
         """
-        var normalized_idx = normalize_index["List", assert_always=False](
-            idx, UInt(len(self))
-        )
-
-        (self._data + normalized_idx).destroy_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j).move_pointee_into(self._data + j - 1)
-        self._len -= 1
+        _ = self.pop(i)
 
     fn __delitem__(mut self, slice: Slice) -> None:
         """Delete a slice of items from the list.
