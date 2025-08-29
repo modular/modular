@@ -3213,7 +3213,7 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
 /// 'else' block removed (merged into their body).
 void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // True if this is a parameter for, false if this is an infinite HLCF::LoopOp.
-  bool isParamFor = isa<ParamForOp>(loopOp);
+  [[maybe_unused]] bool isParamFor = isa<ParamForOp>(loopOp);
   assert((!isParamFor ||
           isa<UnreachableOp>(loopOp.getRegion(1).front().front())) &&
          "LowerSemanticCF should have handled this");

@@ -92,13 +92,13 @@ TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
   auto traitDeclParent =
       shared.lookupBuiltinTrait(traitName, &moduleDecl, moduleDecl.getLoc());
   if (traitDeclParent->resolvedness < DeclResolvedness::body) {
-    bool outcome = succeeded(shared.declResolver->resolveBody(
+    [[maybe_unused]] bool outcome = succeeded(shared.declResolver->resolveBody(
         *traitDeclParent, traitDeclParent->getLoc()));
     assert(outcome && "builtins should not fail body resolution.");
   }
 
   for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
-    for (auto decl : decls) {
+    for ([[maybe_unused]] auto decl : decls) {
       assert(succeeded(shared.declResolver->resolveSignature(*decl,
                                                              decl->getLoc())) &&
              "builtin trait nested decls should not fail signature resolution");

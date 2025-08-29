@@ -274,10 +274,11 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
                                  firstConformanceOp.getOperation());
 
-    FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(
-        *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
-        structDefinesMethod, builder,
-        traitDecl.getSymbolRef().getLeafReference().strref());
+    [[maybe_unused]] FnOp newFn =
+        structEmitter.synthesizeDefaultTraitMethodWrapper(
+            *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
+            structDefinesMethod, builder,
+            traitDecl.getSymbolRef().getLeafReference().strref());
 
     // If newFn is null something went very wrong -- assert
     assert(newFn && "Couldn't synthesize default trait wrapper in body");
