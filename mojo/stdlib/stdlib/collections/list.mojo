@@ -635,30 +635,31 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
 
         var start, end, step = slice.indices(len(self))
-        var r = range(start, end, step)
-        var r_len = len(r)
+        var slice_range = range(start, end, step)
+        var slice_range_len = len(slice_range)
 
-        if not r_len:
+        if not slice_range_len:
             return  # Nothing to delete
         elif step == 1:
             # contiguous range, can optimize
-            for i in r:
+            for i in slice_range:
                 (self._data + i).destroy_pointee()
             for j in range(end, self._len):
-                (self._data + j).move_pointee_into(self._data + j - r_len)
-            self._len -= r_len
+                (self._data + j).move_pointee_into(
+                    self._data + j - slice_range_len
+                )
+            self._len -= slice_range_len
         else:
             # non-contiguous range
-            var to_delete = [i for i in r]
-            var to_delete_idx = 0
+            var slice_range_idx = 0
             var write_idx = 0
             for read_idx in range(self._len):
                 if (
-                    to_delete_idx < r_len
-                    and read_idx == to_delete[to_delete_idx]
+                    slice_range_idx < slice_range_len
+                    and read_idx == slice_range[slice_range_idx]
                 ):
                     (self._data + read_idx).destroy_pointee()
-                    to_delete_idx += 1
+                    slice_range_idx += 1
                 else:
                     if write_idx != read_idx:
                         (self._data + read_idx).move_pointee_into(
