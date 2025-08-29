@@ -43,7 +43,7 @@ domain-specific libraries for machine learning and scientific computing.
 import math
 from collections import InlineArray
 from hashlib.hasher import Hasher
-from math import Ceilable, CeilDivable, Floorable, Truncable
+from math import Ceilable, CeilDivable, Floorable, Truncable, ceildiv
 from math.math import _call_ptx_intrinsic
 from sys import (
     CompilationTarget,
@@ -1902,23 +1902,122 @@ struct SIMD[dtype: DType, size: Int](
             alias mask = FPUtils[dtype].exponent_mantissa_mask()
             return Self(from_bits=self.to_bits() & mask)
 
-    @always_inline("nodebug")
-    fn __round__(self) -> Self:
+    fn __round__[mode: RoundMode, to_multiple_of: UInt](self) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
-        This rounding goes to the nearest integer with ties away from zero.
+        Parameters:
+            mode: The `RoundMode` for the operation.
+            to_multiple_of: The target base for which self is is rounded until
+                reaching a multiple thereof.
 
         Returns:
             The elementwise rounded value of this SIMD vector.
         """
+        alias int_or_bool = dtype.is_integral() or dtype is DType.bool
 
         @parameter
-        if dtype.is_integral() or dtype is DType.bool:
+        if to_multiple_of == 0:
+            return 0
+        elif to_multiple_of == 1 and int_or_bool:
             return self
 
-        return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
-            self
-        )
+        @always_inline("nodebug")
+        @parameter
+        fn _round_up(value: SIMD) -> __type_of(value):
+            @parameter
+            if to_multiple_of.is_power_of_two():
+                alias offset = to_multiple_of - 1
+                var v = value.cast[_unsigned_integral_type_of[dtype]()]()
+                return ((v + offset) & ~offset).cast[value.dtype]()
+            else:
+                return ceildiv(value, to_multiple_of) * to_multiple_of
+
+        @always_inline("nodebug")
+        @parameter
+        fn _round_down(value: SIMD) -> __type_of(value):
+            @parameter
+            if to_multiple_of.is_power_of_two():
+                alias offset = to_multiple_of - 1
+                var v = value.cast[_unsigned_integral_type_of[dtype]()]()
+                return (v & ~offset).cast[value.dtype]()
+            else:
+                return (value // to_multiple_of) * to_multiple_of
+
+        @always_inline("nodebug")
+        @parameter
+        fn _round(value: SIMD) -> __type_of(value):
+            @parameter
+            if mode is RoundMode.Up:
+                return _round_up(value)
+            elif mode is RoundMode.Down:
+                return _round_down(value)
+
+            var lhs_multiple = _round_down(value)
+            var rem = value % to_multiple_of
+            var half: __type_of(value)
+
+            @parameter
+            if int_or_bool:
+                half = to_multiple_of // 2
+            else:
+                half = {to_multiple_of / 2}
+
+            var go_lhs: SIMD[DType.bool, __type_of(value).size]
+
+            @parameter
+            if mode is RoundMode.HalfUp:
+
+                @parameter
+                if to_multiple_of % 2 == 0:
+                    go_lhs = rem.lt(half)
+                else:
+                    go_lhs = rem.le(half)
+            elif mode is RoundMode.HalfDown:
+                go_lhs = rem.le(half)
+            elif mode is RoundMode.ToEven:
+                go_lhs = (lhs_multiple % 2).eq(0)
+            elif mode is RoundMode.HalfToEven:
+                constrained[
+                    to_multiple_of % 2 != 0,
+                    "RoundMode.HalfToEven cannot be used for even ",
+                    "to_multiple_of because the values in the middle will ",
+                    "always be between even numbers",
+                ]()
+
+                @parameter
+                if int_or_bool:
+                    go_lhs = rem.le(half) | (
+                        rem.eq(half) & (lhs_multiple % 2).eq(0)
+                    )
+                else:
+                    # TODO: do these have the same performance and behavior?
+                    return llvm_intrinsic[
+                        "llvm.roundeven",
+                        __type_of(value),
+                        has_side_effect=False,
+                    ](value)
+            elif mode is RoundMode.ToZero:
+                go_lhs = value.ge(0)
+            elif mode is RoundMode.HalfToZero:
+
+                @parameter
+                if to_multiple_of % 2 == 0:
+                    go_lhs = rem.lt(half)
+                else:
+                    go_lhs = rem.le(half)
+                go_lhs |= rem.eq(half) & value.ge(0)
+            else:
+                constrained[False, "Rounding mode not implemented"]()
+                go_lhs = False
+            return go_lhs.select(lhs_multiple, _round_up(value))
+
+        @parameter
+        if dtype.is_integral():
+            return _round(self)
+        elif dtype is DType.bool:
+            return _round(self.cast[DType.uint8]()).cast[dtype]()
+        else:
+            return _round(self)
 
     @always_inline("nodebug")
     fn __round__(self, ndigits: Int) -> Self:
@@ -1938,7 +2037,7 @@ struct SIMD[dtype: DType, size: Int](
             return self
 
         var exp = Self(10) ** ndigits
-        return (self * exp).__round__() / exp
+        return round(self * exp) / exp
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
