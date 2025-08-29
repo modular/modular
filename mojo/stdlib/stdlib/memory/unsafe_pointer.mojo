@@ -635,8 +635,8 @@ struct UnsafePointer[
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
                     alignment = alignment.value,
-                    isVolatile = volatile.value,
-                    isInvariant = invariant.value,
+                    isVolatile = volatile._mlir_value,
+                    isInvariant = invariant._mlir_value,
                 ]((self + i).address)
             return v
 
@@ -644,8 +644,8 @@ struct UnsafePointer[
 
         return __mlir_op.`pop.load`[
             alignment = alignment.value,
-            isVolatile = volatile.value,
-            isInvariant = invariant.value,
+            isVolatile = volatile._mlir_value,
+            isInvariant = invariant._mlir_value,
         ](address)
 
     @always_inline("nodebug")
@@ -845,7 +845,7 @@ struct UnsafePointer[
         ]()
 
         __mlir_op.`pop.store`[
-            alignment = alignment.value, isVolatile = volatile.value
+            alignment = alignment.value, isVolatile = volatile._mlir_value
         ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")

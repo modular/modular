@@ -201,9 +201,17 @@ language across multiple phases.
     return v == 42
   ```
 
-- Several types that can be constructed from raw MLIR values now require the use
-  of an `mlir_value` keyword-only argument initializer. Affected types include:
-  `SIMD`, `UInt`.
+- Several types that wrap MLIR types have been changed to further
+  encapsulate their behavior, hiding this low-level behavior from non-advanced
+  users.
+
+  - Types that can be constructed from raw MLIR values now require the use
+    of an `mlir_value` keyword-only argument initializer.
+    Affected types include: `SIMD`, `UInt`.
+
+  - Types with raw MLIR type fields have had their `value` fields renamed to
+    `_mlir_value`.
+    Affected types include: `Bool`, `DType`.
 
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
 

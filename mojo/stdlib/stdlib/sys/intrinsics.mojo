@@ -78,7 +78,7 @@ fn llvm_intrinsic[
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -86,7 +86,7 @@ fn llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)
 
 
@@ -174,7 +174,7 @@ fn gather[
 
     var result = llvm_intrinsic[
         "llvm.masked.gather",
-        __mlir_type[`!pop.simd<`, size.value, `, `, dtype.value, `>`],
+        SIMD[dtype, size]._mlir_type,
     ](
         UnsafePointer(to=base).bitcast[
             __mlir_type[`!pop.simd<`, size.value, `, address>`],

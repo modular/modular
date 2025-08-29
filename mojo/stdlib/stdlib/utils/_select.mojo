@@ -35,4 +35,4 @@ fn _select_register_value[
         used in very low level libraries where IR size/compile time matters
         because it flattens if statements early in the compiler pipeline.
     """
-    return __mlir_op.`pop.select`(condition.value, lhs, rhs)
+    return __mlir_op.`pop.select`(condition._mlir_value, lhs, rhs)

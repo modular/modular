@@ -853,9 +853,7 @@ fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     return Int(
         __mlir_attr[
             `#kgen.param.expr<get_sizeof, #kgen.type<`,
-            `!pop.scalar<`,
-            dtype.value,
-            `>`,
+            Scalar[dtype]._mlir_type,
             `> : !kgen.type,`,
             target,
             `> : index`,
@@ -918,9 +916,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     return Int(
         __mlir_attr[
             `#kgen.param.expr<get_alignof, #kgen.type<`,
-            `!pop.scalar<`,
-            dtype.value,
-            `>`,
+            Scalar[dtype]._mlir_type,
             `> : !kgen.type,`,
             target,
             `> : index`,
@@ -970,9 +966,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     Returns:
         The size of the dtype in bits.
     """
-    return bit_width_of[
-        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target=target
-    ]()
+    return bit_width_of[Scalar[dtype]._mlir_type, target=target]()
 
 
 @deprecated("Use `sys.bit_width_of()` instead.")
@@ -1018,15 +1012,7 @@ fn simd_width_of[
     Returns:
         The vector size of the dtype on the host system.
     """
-    return simd_width_of[
-        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target
-    ]()
-
-
-@deprecated("Use `sys.simd_width_of()` instead.")
-@always_inline("nodebug")
-fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
-    return simd_width_of[dtype, target]()
+    return simd_width_of[Scalar[dtype]._mlir_type, target]()
 
 
 @always_inline("nodebug")

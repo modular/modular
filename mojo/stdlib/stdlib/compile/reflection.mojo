@@ -76,7 +76,7 @@ fn get_type_name[
         `#kgen.get_type_name<`,
         type,
         `, `,
-        qualified_builtins.value,
+        qualified_builtins._mlir_value,
         `> : !kgen.string`,
     ]
     return StaticString(res)

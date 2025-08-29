@@ -425,7 +425,7 @@ struct SIMD[dtype: DType, size: Int](
 
     # Fields
     alias _mlir_type = __mlir_type[
-        `!pop.simd<`, size.value, `, `, dtype.value, `>`
+        `!pop.simd<`, size.value, `, `, dtype._mlir_value, `>`
     ]
     var value: Self._mlir_type
     """The underlying storage for the vector."""
@@ -679,7 +679,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
-        ](value.value)
+        ](value._mlir_value)
 
         self.value = rebind[Self._Mask._mlir_type](s)
 
@@ -700,7 +700,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
-        ](fill.value)
+        ](fill._mlir_value)
 
         @parameter
         if size == 1:

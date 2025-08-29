@@ -23,7 +23,7 @@ from buffer.dimlist import DimList
 
 from utils import Index, StaticTuple
 
-alias void = DType.invalid.value
+alias void = DType.invalid._mlir_value
 
 
 struct __tile:

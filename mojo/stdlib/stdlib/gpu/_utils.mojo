@@ -179,7 +179,7 @@ fn simd_to_llvm_struct[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
-                __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                Scalar[dtype]._mlir_type,
                 `, `,
                 n.value,
                 `>`,
@@ -196,7 +196,7 @@ fn simd_to_llvm_struct[
                 `!kgen.struct<(`,
                 __mlir_type[
                     `!kgen.variadic_splat<`,
-                    __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                    Scalar[dtype]._mlir_type,
                     `, `,
                     n.value,
                     `>`,
@@ -251,7 +251,7 @@ fn llvm_struct_to_simd[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
-                __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                Scalar[dtype]._mlir_type,
                 `, `,
                 n.value,
                 `>`,
@@ -263,7 +263,7 @@ fn llvm_struct_to_simd[
     @parameter
     for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+            _type = Scalar[dtype]._mlir_type,
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
@@ -312,7 +312,7 @@ fn array_to_llvm_struct[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
-                __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                Scalar[dtype]._mlir_type,
                 `, `,
                 n.value,
                 `>`,
@@ -329,7 +329,7 @@ fn array_to_llvm_struct[
                 `!kgen.struct<(`,
                 __mlir_type[
                     `!kgen.variadic_splat<`,
-                    __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                    Scalar[dtype]._mlir_type,
                     `, `,
                     n.value,
                     `>`,
@@ -384,7 +384,7 @@ fn llvm_struct_to_array[
             `!kgen.struct<(`,
             __mlir_type[
                 `!kgen.variadic_splat<`,
-                __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+                Scalar[dtype]._mlir_type,
                 `, `,
                 n.value,
                 `>`,
@@ -396,7 +396,7 @@ fn llvm_struct_to_array[
     @parameter
     for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
+            _type = Scalar[dtype]._mlir_type,
             index = __mlir_attr[i.value, `:index`],
         ](st)
 
