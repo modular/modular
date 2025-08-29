@@ -858,7 +858,8 @@ static void lowerAttributesAndTypes(
             return std::make_pair(
                 BindParamsAttr::get(cast<TypedAttr>(replacer.replace(
                                         bindParams.getGenerator())),
-                                    newOperands),
+                                    newOperands,
+                                    /*evaluationContext=*/nullptr),
                 WalkResult::skip());
         }
 

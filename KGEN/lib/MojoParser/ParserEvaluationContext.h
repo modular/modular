@@ -24,12 +24,6 @@ public:
   /// Simplifying getters for evaluatable attributes. These should be used
   /// instead of directly creating attributes so that immediately simplifiable
   /// attributes do not need to be created in the first place.
-  TypedAttr getBindParamsAttr(TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues);
-
-  /// Simplifying getters for evaluatable attributes. These should be used
-  /// instead of directly creating attributes so that immediately simplifiable
-  /// attributes do not need to be created in the first place.
   TypedAttr getGetWitnessAttr(TypedAttr typeParam, StringAttr traitName,
                               StringAttr witnessName, Type type);
 

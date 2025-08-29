@@ -377,37 +377,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
 
 FailureOr<TypedAttr>
 IREvaluator::evaluateBindParams(BindParamsAttr bindParams) {
-  // This should be a GeneratorAttr now.
-  auto genAttr = dyn_cast<GeneratorAttr>(bindParams.getGenerator());
-  if (!genAttr) {
-    emitError({*errorLoc,
-               "bind_params operand did not evaluate to a generator value"});
-    return failure();
-  }
-
-  // Easy case: if all parameters are available, bind them immediately.
-  if (bindParams.getParamValues().size() ==
-      genAttr.getInputParamTypes().size()) {
-    GeneratorAttr specializedGenerator =
-        genAttr.getSpecializedGenerator(bindParams.getParamValues(), this);
-    // If the user expected an instantiated value, return the instantiated body.
-    // If this was a real mismatch, the replacer will catch it.
-    if (specializedGenerator.getType() != bindParams.getType())
-      return specializedGenerator.getInstantiatedValue();
-    return cast<TypedAttr>(specializedGenerator);
-  }
-
-  // Even if the params aren't fully bound, simplify what we can to canonicalize
-  // parameter expressions as much as possible. Leave any remaining parameters
-  // as unbound.
-  SmallVector<TypedAttr> paramValues(bindParams.getParamValues());
-  for (Type paramType :
-       genAttr.getInputParamTypes().drop_front(paramValues.size())) {
-    paramValues.push_back(UnboundAttr::get(paramType));
-  }
-  GeneratorAttr specializedGenerator =
-      genAttr.getSpecializedGenerator(paramValues, this);
-  return cast<TypedAttr>(specializedGenerator);
+  // Simply re-construct the bind params with the current evaluation context.
+  return BindParamsAttr::get(bindParams.getGenerator(),
+                             bindParams.getParamValues(), this);
 }
 
 FailureOr<TypedAttr>

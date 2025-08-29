@@ -995,7 +995,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   if (!newBindings)
     return {};
 
-  return shared.getEvaluationContext().getBindParamsAttr(fnRef, newBindings);
+  return BindParamsAttr::get(fnRef, newBindings,
+                             &shared.getEvaluationContext());
 }
 
 void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }

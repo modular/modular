@@ -782,8 +782,8 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
       // Apply whatever it produced to the attr of signature type to resolve the
       // remaining arguments.
-      attr =
-          shared.getEvaluationContext().getBindParamsAttr(attr, {bindingAttr});
+      attr = BindParamsAttr::get(attr, {bindingAttr},
+                                 &shared.getEvaluationContext());
     }
 
     // Materialize signatures as closures.

@@ -619,7 +619,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         }));
     auto callOp = b.create<LIT::CallOp>(
         result,
-        shared.getEvaluationContext().getBindParamsAttr(symbol, paramArgs),
+        BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext()),
         origins, operands);
     IREmitter::emitNormalReturn(b, callOp.getResult(0));
     return op;

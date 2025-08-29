@@ -243,7 +243,8 @@ void OutlineClosuresPass::runOnOperation() {
              regionDecl.getFuncTypeGenerator().getInputParamTypes())
           partialBindings.push_back(UnboundAttr::get(paramType));
 
-        signature = BindParamsAttr::get(wrapperSymbol, partialBindings);
+        signature = BindParamsAttr::get(wrapperSymbol, partialBindings,
+                                        /*evaluationContext=*/nullptr);
       }
 
       // Now replace the region decl with a partial binding to the lifted

@@ -1327,8 +1327,8 @@ static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
   if (!newBindings)
     return {};
 
-  return emitter.shared.getEvaluationContext().getBindParamsAttr(callable.get(),
-                                                                 newBindings);
+  return BindParamsAttr::get(callable.get(), newBindings,
+                             &emitter.shared.getEvaluationContext());
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
