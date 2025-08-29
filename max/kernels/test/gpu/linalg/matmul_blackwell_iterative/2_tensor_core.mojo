@@ -64,7 +64,7 @@ fn is_benchmark() -> Bool:
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-fn kernel_2[
+fn kernel_3[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -77,8 +77,8 @@ fn kernel_2[
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -173,13 +173,6 @@ fn kernel_2[
     var a_smem_tile = a_smem_tile_t(a_smem)
     var b_smem_tile = b_smem_tile_t(b_smem)
 
-    # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
-
     alias accum_type = get_accum_type[a_type]()
 
     alias c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
@@ -192,11 +185,15 @@ fn kernel_2[
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (
-        (ptr_tmem_addr + 2)
+        (b_smem + b_size)
         .bitcast[SharedMemBarrier]()
         .static_alignment_cast[alignment=8]()
     )
     mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
+    var ptr_tmem_addr = (
+        (mma_mbar + 1).bitcast[UInt32]().static_alignment_cast[alignment=16]()
+    )
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -364,7 +361,7 @@ fn kernel_2[
                     )
 
 
-fn blackwell_matmul_tma_umma[
+fn kernel_2[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -375,8 +372,8 @@ fn blackwell_matmul_tma_umma[
     transpose_b: Bool,
     umma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -417,7 +414,7 @@ fn blackwell_matmul_tma_umma[
 
     alias block_dim = 128
 
-    alias kernel = kernel_2[
+    alias kernel = kernel_3[
         a_type,
         b_type,
         c_type,
@@ -476,7 +473,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
     alias dict_of_shapes = make_dict_of_shapes()
 
-    print("Benchmarking kernel_2")
+    print("Benchmarking kernel_3")
     print("============================================")
     print("Shapes: [M, N, K]")
     print("Data types: a=", a_type, ", b=", b_type, ", c=", c_type)
@@ -498,7 +495,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 shape[2],
                 "]",
             )
-            test_blackwell_matmul_tma_umma[
+            test_kernel_2[
                 a_type,
                 b_type,
                 c_type,
@@ -511,7 +508,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("Error: Failed to run benchmark for this shape")
 
 
-def test_blackwell_matmul_tma_umma[
+def test_kernel_2[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -587,7 +584,7 @@ def test_blackwell_matmul_tma_umma[
 
     alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
-    blackwell_matmul_tma_umma[
+    kernel_2[
         transpose_b=transpose_b,
         umma_shape=umma_shape,
         block_tile_shape=block_tile_shape,
@@ -609,7 +606,7 @@ def test_blackwell_matmul_tma_umma[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            blackwell_matmul_tma_umma[
+            kernel_2[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16
                 block_tile_shape=block_tile_shape,  # 64, 128, 64 (BM, BN, entirety of BK)
@@ -679,8 +676,9 @@ def main():
             # Run the benchmark
             print("\n\n========== Running Benchmarks ==========\n")
             benchmark_blackwell_matmul(ctx)
+            return
 
-        test_blackwell_matmul_tma_umma[
+        test_kernel_2[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
