@@ -12,18 +12,14 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/pipelines/lib",
-        requirement("aiohttp"),
         requirement("gguf"),
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
+        requirement("jinja2"),
         requirement("numpy"),
         requirement("pillow"),
-        requirement("torch"),
         requirement("transformers"),
-    ] + select({
-        "//:has_gpu": [requirement("xgrammar")],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 pkg_files(

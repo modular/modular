@@ -13,8 +13,8 @@
 
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import env_get_string, os_is_windows
-from tempfile import NamedTemporaryFile, gettempdir
+from sys import CompilationTarget
+from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -96,14 +96,14 @@ def test_read_write_bytes():
 
 fn get_user_path() -> Path:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return Path("C:") / "Users" / "user"
     return Path("/home/user")
 
 
 fn get_current_home() -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return os.env.getenv("USERPROFILE")
     return os.env.getenv("HOME")
 
@@ -112,7 +112,7 @@ def set_home(path: Path):
     path_str = String(path)
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         _ = os.env.setenv("USERPROFILE", path_str)
     else:
         _ = os.env.setenv("HOME", path_str)
@@ -177,6 +177,32 @@ def test_stat():
     )
 
 
+# More elaborate tests in `os/path/test_basename.mojo`
+def test_name():
+    # Root directories
+    assert_equal("", Path("/").name())
+
+    # Empty strings
+    assert_equal("", Path("").name())
+
+    # Current directory (matching behavior of python, doesn't resolve `..` etc.)
+    assert_equal(".", Path(".").name())
+
+    # Parent directory
+    assert_equal("..", Path("..").name())
+
+    # Absolute paths
+    assert_equal("file", Path("/file").name())
+    assert_equal("file.txt", Path("/file.txt").name())
+    assert_equal("file", Path("/dir/file").name())
+    assert_equal("file", Path("/dir/subdir/file").name())
+
+    # Relative paths
+    assert_equal("file", Path("dir/file").name())
+    assert_equal("file", Path("dir/subdir/file").name())
+    assert_equal("file", Path("file").name())
+
+
 def main():
     test_cwd()
     test_path()
@@ -189,3 +215,4 @@ def main():
     test_expand_user()
     test_home()
     test_stat()
+    test_name()

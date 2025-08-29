@@ -13,13 +13,12 @@
 
 from math import floor, iota
 from os import abort
-from sys import env_get_int, sizeof
+from sys import size_of
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
@@ -51,8 +50,8 @@ fn _human_memory(size: Int) -> String:
     return String(size) + "B"
 
 
-@value
-struct Config(Writable):
+@fieldwise_init
+struct Config(Copyable, Movable, Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.
@@ -102,7 +101,7 @@ struct Config(Writable):
             )
             return Self.UNDEFINED
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
             writer.write("device_to_device")
             return
@@ -128,7 +127,7 @@ fn bench_memcpy(
     context: DeviceContext,
 ) raises:
     alias dtype = DType.float32
-    length_in_elements = length_in_bytes // sizeof[dtype]()
+    length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
     ) if config.pinned_memory else DeviceContext(
@@ -198,7 +197,7 @@ fn bench_p2p(
     ctx2: DeviceContext,
 ) raises:
     alias dtype = DType.float32
-    length_in_elements = length_in_bytes // sizeof[dtype]()
+    length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length_in_elements)
@@ -251,7 +250,7 @@ fn bench_p2p(
             except e:
                 print("Verification failed at index", i)
                 print("Expected:", i, "Got:", host_ptr[i])
-                abort(e)
+                abort(String(e))
 
     # Parallelize verification using sync_parallelize
     var shape = IndexList[1](

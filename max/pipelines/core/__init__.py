@@ -11,52 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Callable as _Callable
-from typing import Union as _Union
-
-from .context import (
-    InputContext,
-    TextAndVisionContext,
-    TextContext,
-)
-from .interfaces import (
-    EmbeddingsGenerator,
-    EmbeddingsResponse,
-    LogProbabilities,
-    PipelineTask,
-    PipelineTokenizer,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
-)
-
-PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
+from .context import TextAndVisionContext, TextContext, TTSContext
 
 __all__ = [
-    "InputContext",
+    "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "EmbeddingsGenerator",
-    "LogProbabilities",
-    "TextResponse",
-    "EmbeddingsResponse",
-    "TextGenerationStatus",
-    "TextGenerationResponse",
-    "PipelineTask",
-    "PipelineTokenizer",
-    "TokenGenerator",
-    "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
-    "PipelinesFactory",
 ]

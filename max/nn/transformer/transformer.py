@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, TypeVar, cast
+from typing import Callable, TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
@@ -23,14 +23,13 @@ from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding, EmbeddingV1
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV1
+from ..rotary_embedding import RotaryEmbedding
 
 
 class TransformerBlock(Module):
@@ -43,7 +42,7 @@ class TransformerBlock(Module):
         attention_norm: Layer,
         mlp_norm: Layer,
         residual_multiplier: float = 1.0,
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
@@ -55,9 +54,9 @@ class TransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
-        **kwargs,
+        kv_collection: PagedKVCacheCollection,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         residual_multiplier = ops.constant(
             self.residual_multiplier, x.dtype, device=x.device
@@ -66,7 +65,8 @@ class TransformerBlock(Module):
             layer_idx,
             self.input_layernorm(x),
             kv_collection,
-            **kwargs,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
         )
 
         if self.residual_multiplier != 1.0:
@@ -101,15 +101,13 @@ class Transformer(Module):
         output: LinearV1 | Linear,
         embedding: EmbeddingV1 | Embedding,
         kv_params: KVCacheParams,
-        kv_collection_constructor: (
-            FetchContinuousBatchingKVCacheCollection
-            | FetchPagedKVCacheCollection
-        ),
+        kv_collection_constructor: FetchPagedKVCacheCollection,
+        rope: RotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads
@@ -121,6 +119,7 @@ class Transformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
+        self.rope = rope
         self.return_logits = return_logits
 
     def _apply_logits_postprocessor(
@@ -135,7 +134,7 @@ class Transformer(Module):
         tokens: TensorValueLike,
         kv_cache_inputs: Sequence[TensorValue],
         return_n_logits: TensorValue,
-        **kwargs,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens)
 
@@ -145,14 +144,17 @@ class Transformer(Module):
             )
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
-        input_row_offsets = kwargs["input_row_offsets"]
+
+        # Create position embeddings shared across the decoder layers.
+        freqs_cis = self.rope.freqs_cis
 
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                **kwargs,
+                freqs_cis=freqs_cis,
+                input_row_offsets=input_row_offsets,
             )
 
         # Retrieve a variable number of tokens
@@ -188,7 +190,7 @@ class Transformer(Module):
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+            offsets = input_row_offsets
 
         if logits:
             last_logits, logits = self._apply_logits_postprocessor(

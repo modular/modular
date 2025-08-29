@@ -1,0 +1,138 @@
+load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_multirun//:defs.bzl", "command", "multirun")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//bazel:api.bzl", "mojo_binary")
+
+exports_files(["mblack-wrapper.py"])
+
+npm_link_all_packages(
+    name = "node_modules",
+)
+
+directory_path(
+    name = "entry_point",
+    directory = ":node_modules/markdownlint-cli/dir",
+    path = "markdownlint.js",
+)
+
+js_binary(
+    name = "markdownlint",
+    data = [
+        ":node_modules/deep-extend",
+        ":node_modules/markdownlint-cli",
+    ],
+    entry_point = ":entry_point",
+)
+
+sh_binary(
+    name = "markdownlint-wrapper",
+    srcs = ["markdownlint-wrapper.sh"],
+    data = [":markdownlint"],
+)
+
+command(
+    name = "markdownlint.check",
+    command = "markdownlint-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "markdownlint.fix",
+    arguments = ["--fix"],
+    command = "markdownlint-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "ruff-wrapper",
+    srcs = ["ruff-wrapper.sh"],
+    data = select({
+        "//:linux_x86_64": ["@ruff-x86_64-unknown-linux-gnu//:ruff"],
+        "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
+        "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
+    }),
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff.check",
+    arguments = ["check"],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff.fix",
+    arguments = ["fix"],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "mblack.check",
+    arguments = [
+        "--quiet",
+        "--check",
+        "--diff",
+        ".",
+    ],
+    command = "@mblack",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "mblack.fix",
+    arguments = [
+        "--quiet",
+        ".",
+    ],
+    command = "@mblack",
+    visibility = ["//visibility:public"],
+)
+
+mojo_binary(
+    name = "check_licenses",
+    srcs = [":check_licenses.mojo"],
+    deps = ["@mojo//:stdlib"],
+)
+
+command(
+    name = "check_licenses.check",
+    command = ":check_licenses",
+    run_from_workspace_root = True,
+)
+
+command(
+    name = "check_licenses.fix",
+    arguments = ["--fix"],
+    command = ":check_licenses",
+    run_from_workspace_root = True,
+)
+
+multirun(
+    name = "lint",
+    buffer_output = True,
+    commands = [
+        ":check_licenses.check",
+        ":markdownlint.check",
+        ":mblack.check",
+        ":ruff.check",
+    ],
+    jobs = 0,
+    visibility = ["//visibility:public"],
+)
+
+multirun(
+    name = "fix",
+    buffer_output = True,
+    commands = [
+        ":check_licenses.fix",
+        ":markdownlint.fix",
+        ":mblack.fix",
+        ":ruff.fix",
+    ],
+    jobs = 0,
+    visibility = ["//visibility:public"],
+)

@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import randn
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 from utils import IndexList
 
@@ -49,7 +47,9 @@ fn bench_add[
     @parameter
     @always_inline
     @__copy_capture(input0, input1, output)
-    fn add[simd_width: Int, _rank: Int](out_index: IndexList[_rank]):
+    fn add[
+        simd_width: Int, _rank: Int, alignment: Int = 1
+    ](out_index: IndexList[_rank]):
         var idx = rebind[IndexList[rank]](out_index)
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
@@ -70,17 +70,18 @@ fn bench_add[
         BenchId("add", String(shape)),
         shape,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * sizeof[type]() * 3),
+        ThroughputMeasure(BenchMetric.elements, size * size_of[type]() * 3),
     )
 
     ctx.enqueue_copy(output_ptr_host, output_ptr)
 
-    alias nelts = simdwidthof[type]()
+    alias nelts = simd_width_of[type]()
     for i in range(0, size, nelts):
         if not (
-            output_ptr_host.load[width=nelts](i)
-            == input0_ptr_host.load[width=nelts](i)
-            + input1_ptr_host.load[width=nelts](i)
+            output_ptr_host.load[width=nelts](i).eq(
+                input0_ptr_host.load[width=nelts](i)
+                + input1_ptr_host.load[width=nelts](i)
+            )
         ).reduce_and():
             raise Error(String("mismatch at flattened idx ", i))
 

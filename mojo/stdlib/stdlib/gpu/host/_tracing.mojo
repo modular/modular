@@ -11,21 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, Optional
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
-    sizeof,
+    size_of,
 )
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
-
-from memory import UnsafePointer, stack_allocation
 
 from utils.variant import Variant
 
@@ -138,7 +134,7 @@ struct Color(Intable):
     var _value: Int
 
     alias FORMAT = 1  # ARGB
-    alias MODULAR_MAX = Self(0xB5BAF5)
+    alias MODULAR_PURPLE = Self(0xB5BAF5)
     alias BLUE = Self(0x0000FF)
     alias GREEN = Self(0x008000)
     alias ORANGE = Self(0xFFA500)
@@ -146,6 +142,32 @@ struct Color(Intable):
     alias RED = Self(0xFF0000)
     alias WHITE = Self(0xFFFFFF)
     alias YELLOW = Self(0xFFFF00)
+
+    fn __init__(out self, colorname: StaticString):
+        """Initialize Color from a StaticString color name.
+
+        Args:
+            colorname: The name of the color to use.
+        """
+        if colorname == "modular_purple":
+            self = Color.MODULAR_PURPLE
+        elif colorname == "blue":
+            self = Color.BLUE
+        elif colorname == "green":
+            self = Color.GREEN
+        elif colorname == "orange":
+            self = Color.ORANGE
+        elif colorname == "purple":
+            self = Color.PURPLE
+        elif colorname == "red":
+            self = Color.RED
+        elif colorname == "white":
+            self = Color.WHITE
+        elif colorname == "yellow":
+            self = Color.YELLOW
+        else:
+            # Default to MODULAR_PURPLE for unknown color names
+            self = Color.MODULAR_PURPLE
 
     fn __int__(self) -> Int:
         return self._value
@@ -188,7 +210,7 @@ struct _C_EventAttributes:
 @always_inline
 fn color_from_category(category: Int) -> Color:
     if category == _TraceType_MAX:
-        return Color.MODULAR_MAX
+        return Color.MODULAR_PURPLE
     if category == _TraceType_KERNEL:
         return Color.GREEN
     if category == _TraceType_ASYNCRT:
@@ -218,7 +240,7 @@ struct EventAttributes:
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=sizeof[_C_EventAttributes](),
+            size=size_of[_C_EventAttributes](),
             category=category,
             color_type=Color.FORMAT,
             color=Int(resolved_color),
@@ -296,7 +318,7 @@ alias _roctxRangeStop = _dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Mark:
+struct _Mark(Defaultable):
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
     fn __init__(out self):
@@ -315,7 +337,7 @@ struct _Mark:
         self._fn[_roctxMarkA.fn_type](val)
 
 
-struct _RangeStart:
+struct _RangeStart(Defaultable):
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
     fn __init__(out self):
@@ -334,7 +356,7 @@ struct _RangeStart:
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
-struct _RangeEnd:
+struct _RangeEnd(Defaultable):
     var _fn: fn (RangeID) -> NoneType
 
     fn __init__(out self):
@@ -348,7 +370,7 @@ struct _RangeEnd:
         self._fn(val)
 
 
-struct _RangePush:
+struct _RangePush(Defaultable):
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
     fn __init__(out self):
@@ -367,7 +389,7 @@ struct _RangePush:
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
-struct _RangePop:
+struct _RangePop(Defaultable):
     var _fn: _nvtxRangePop.fn_type
 
     fn __init__(out self):

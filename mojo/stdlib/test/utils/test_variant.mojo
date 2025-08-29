@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from sys.ffi import _Global
 
-from memory import UnsafePointer
 from test_utils import MoveCopyCounter, ObservableDel
 from testing import assert_equal, assert_false, assert_true
 
@@ -41,20 +39,13 @@ struct Poison(Copyable, Movable):
     fn __init__(out self):
         pass
 
-    fn __init__(out self, *, other: Self):
-        _poison_ptr().init_pointee_move(True)
-
     fn __copyinit__(out self, other: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn copy(self) -> Self:
-        # Invokes __copyinit__, which sets the poision value.
-        return self
-
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         _poison_ptr().init_pointee_move(True)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         _poison_ptr().init_pointee_move(True)
 
 
@@ -64,7 +55,7 @@ alias TestVariant = Variant[MoveCopyCounter, Poison]
 def test_basic():
     alias IntOrString = Variant[Int, String]
     var i = IntOrString(4)
-    var s = IntOrString(String("4"))
+    var s = IntOrString("4")
 
     # isa
     assert_true(i.isa[Int]())
@@ -172,21 +163,21 @@ def test_get_returns_mutable_reference():
     v1.set[String]("hello")
     assert_equal(100, x)  # the x reference is still valid
 
-    var v2: Variant[Int, String] = String("something")
+    var v2: Variant[Int, String] = "something"
     v2[String] = "something else"
     assert_equal(v2[String], "something else")
 
 
 def test_is_type_supported():
-    var x: Variant[Float64, Int32]
-    assert_equal(x.is_type_supported[Float64](), True)
-    assert_equal(x.is_type_supported[Int32](), True)
-    assert_equal(x.is_type_supported[Float32](), False)
-    assert_equal(x.is_type_supported[UInt32](), False)
-    var y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 2]](), True)
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 4]](), True)
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 8]](), False)
+    var _x: Variant[Float64, Int32]
+    assert_equal(_x.is_type_supported[Float64](), True)
+    assert_equal(_x.is_type_supported[Int32](), True)
+    assert_equal(_x.is_type_supported[Float32](), False)
+    assert_equal(_x.is_type_supported[UInt32](), False)
+    var _y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 2]](), True)
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 4]](), True)
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
 
 
 def main():

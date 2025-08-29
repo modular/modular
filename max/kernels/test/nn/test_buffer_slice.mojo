@@ -11,25 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, IndexList
 
 
 fn print_elements[
-    type: DType, in_rank: Int
-](tensor: NDBuffer[type, in_rank]) raises:
+    dtype: DType, in_rank: Int
+](tensor: NDBuffer[dtype, in_rank]) raises:
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 
     @always_inline
     @parameter
-    fn print_elements_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
+    fn print_elements_lambda[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
         print(tensor[index])
 

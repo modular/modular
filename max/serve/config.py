@@ -15,13 +15,15 @@
 Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
+from __future__ import annotations
+
 import socket
-import tempfile
-import uuid
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -61,10 +63,6 @@ class MetricRecordingMethod(Enum):
     PROCESS = "PROCESS"
 
 
-def generate_zmq_ipc_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid.uuid4()}"
-
-
 class Settings(BaseSettings):
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
@@ -81,10 +79,7 @@ class Settings(BaseSettings):
     #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
-        extra="allow",
-        populate_by_name=False,
+        env_file=".env", env_prefix="", extra="allow", populate_by_name=False
     )
 
     # Server configuration
@@ -97,6 +92,11 @@ class Settings(BaseSettings):
         default=False,
         alias="MAX_SERVE_OFFLINE_INFERENCE",
     )
+    headless: bool = Field(
+        default=False,
+        description="If True, runs a model worker and dispatch worker without starting an API server.",
+        alias="MAX_SERVE_HEADLESS",
+    )
     host: str = Field(
         description="Hostname to use", default="0.0.0.0", alias="MAX_SERVE_HOST"
     )
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_port(cls, port: int, info: ValidationInfo):
         # In offline inference mode, port is not used and always valid.
-        if info.data["offline_inference"]:
+        if info.data["offline_inference"] or info.data["headless"]:
             return port
 
         # check if port is already in use
@@ -125,8 +125,20 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    # File URI configuration
+    allowed_image_roots: list[str] = Field(
+        description="List of allowed root directories for file:// URI access",
+        default_factory=list,
+        alias="MAX_SERVE_ALLOWED_IMAGE_ROOTS",
+    )
+    max_local_image_bytes: int = Field(
+        description="Maximum size in bytes for local image files accessed via file:// URIs",
+        default=20_000_000,  # 20MB
+        alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
+    )
+
     # Telemetry and logging configuration
-    logs_console_level: str = Field(
+    logs_console_level: Union[str, None] = Field(
         default="INFO",
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
@@ -151,6 +163,11 @@ class Settings(BaseSettings):
         description="Structured logging for deployed services",
         alias="MODULAR_STRUCTURED_LOGGING",
     )
+    logs_enable_components: Union[str, None] = Field(
+        default=None,
+        description="Comma separated list of additional components to enable for logging",
+        alias="MAX_SERVE_LOGS_ENABLE_COMPONENTS",
+    )
 
     disable_telemetry: bool = Field(
         default=False,
@@ -165,9 +182,7 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_USE_HEARTBEAT",
     )
     mw_timeout_s: float = Field(
-        default=20 * 60.0,
-        description="",
-        alias="MAX_SERVE_MW_TIMEOUT",
+        default=20 * 60.0, description="", alias="MAX_SERVE_MW_TIMEOUT"
     )
     mw_health_fail_s: float = Field(
         # TODO: we temporarily set it to 1 minute to handle long context input
@@ -192,6 +207,12 @@ class Settings(BaseSettings):
         default=MetricLevel.BASIC,
         description="Determines the level of detail in the metrics emitted. Metrics tagged at a higher level will be dropped. This does nothing if metric recording is disabled.",
         alias="MAX_SERVE_METRIC_LEVEL",
+    )
+
+    detailed_metric_buffer_factor: int = Field(
+        default=20,
+        description="How many detailed metrics to buffer before sending them to the telemetry worker",
+        alias="MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR",
     )
 
     @field_validator("metric_level", mode="before")
@@ -227,40 +248,40 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
     )
 
-    experimental_enable_kvcache_agent: bool = Field(
-        default=False,
-        description="Experimental: Enable KV Cache Agent support.",
-        alias="MAX_SERVE_EXPERIMENTAL_ENABLE_KVCACHE_AGENT",
-    )
-
     request_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
     )
 
     response_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
     )
 
     cancel_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
-        description="Expose Cancel ZMQ Socket for communication betwee the API and Model Worker(s)",
+        default_factory=generate_zmq_ipc_path,
+        description="Expose Cancel ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
     )
 
-    prefill_zmq_endpoint: Optional[str] = Field(
-        default=None,
-        description="Experimental: Expose Prefill Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_PREFILL_ZMQ_ENDPOINT",
+    kv_cache_events_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_path,
+        description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
+        alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
-    decode_zmq_endpoint: Optional[str] = Field(
+    dispatcher_config: DispatcherConfig = Field(
+        default_factory=DispatcherConfig,
+        description="Expose Dispatcher Config for use in inter-node communication.",
+        alias="MAX_SERVE_DISPATCHER_CONFIG",
+    )
+
+    log_prefix: Optional[str] = Field(
         default=None,
-        description="Experimental: Expose Decode Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_DECODE_ZMQ_ENDPOINT",
+        description="Prefix to prepend to all log messages for this service instance.",
+        alias="MAX_SERVE_LOG_PREFIX",
     )
 
 

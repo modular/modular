@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -27,7 +27,7 @@ alias type = DType.float32
 
 def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     alias length = 256
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simd_width_of[type, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)
@@ -44,7 +44,9 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
     @always_inline
     @__copy_capture(out_buffer, in_buffer, exponent)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
 
         var val = in_buffer.load[width=simd_width](idx).cast[DType.bfloat16]()

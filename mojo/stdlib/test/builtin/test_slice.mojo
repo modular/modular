@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_true
 
 
 def test_none_end_folds():
@@ -48,7 +47,7 @@ struct Sliceable:
         return a
 
 
-def test_slicable():
+def test_sliceable():
     var sliceable = Sliceable()
 
     var new_slice = sliceable[1:"hello":4.0]
@@ -137,7 +136,7 @@ def test_slice_indices():
 
 def main():
     test_none_end_folds()
-    test_slicable()
+    test_sliceable()
     test_slice_stringable()
     test_slice_eq()
     test_slice_indices()

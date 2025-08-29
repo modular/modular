@@ -12,18 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
-from random import rand, randn
+from math import ceildiv, isclose
+from random import randn
 from sys import argv
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import assert_with_measure
-from internal_utils._measure import cosine
-from memory import UnsafePointer
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
@@ -96,8 +92,8 @@ fn test[
     # var v_size = k_size
     var o_size = q_size
     var mask_size = (
-        num_heads if mask_rank == 4 else 1
-    ) * seq_len * num_keys * batch_size
+        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
+    )
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -139,7 +135,7 @@ fn test[
         randn[qkv_type](k_ptr, k_size)
         randn[mask_type](mask_ptr, mask_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -180,7 +176,7 @@ fn test[
     ctx.enqueue_copy(k_device_ptr, k_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
@@ -542,9 +538,15 @@ fn test_prefill[
         var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
         var sectime = nstime / 1000000
 
-        var tflops = 2 * batch_size * num_heads * (
-            (-seq_len * seq_len + 2 * seq_len * num_keys)
-        ) * (depth + kv_depth) / sectime / 1e9
+        var tflops = (
+            2
+            * batch_size
+            * num_heads
+            * ((-seq_len * seq_len + 2 * seq_len * num_keys))
+            * (depth + kv_depth)
+            / sectime
+            / 1e9
+        )
         print(nrun, "runs avg: ", sectime, " ms   ", tflops, " TFLOPs")
 
     else:

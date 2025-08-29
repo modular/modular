@@ -28,6 +28,14 @@ from ._utils import (
     ndbuffer_to_str,
     parse_shape,
     random,
-    update_bench_config,
+    update_bench_config_args,
     zero,
+    Timer,
+    initialize,
+    InitializationType,
+    init_vector_launch,
 )
+
+from .dispatch_utils import TuningConfig, Table
+from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia
+from .amd_configs import TuningConfigAMD, TuningTableAMD

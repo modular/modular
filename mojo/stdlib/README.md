@@ -3,11 +3,7 @@
 This folder contains the open-source Mojo standard library! 🔥
 
 We're thrilled to have you join our community of developers eager to build a
-vibrant and supportive ecosystem. If you just want to *use* the Mojo standard
-library, it’s already included with Mojo—simply install the Magic CLI and
-create a Mojo project:
-
-- [Get started with Magic.](https://docs.modular.com/magic/)
+vibrant and supportive ecosystem.
 
 ## Vision and roadmap
 

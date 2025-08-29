@@ -23,9 +23,7 @@ print(CompilationTarget.is_x86())
 
 from collections.string.string_slice import _get_kgen_string
 
-from memory import UnsafePointer
-
-from .ffi import OpaquePointer, _external_call_const, external_call
+from .ffi import _external_call_const, external_call
 
 alias _TargetType = __mlir_type.`!kgen.target`
 
@@ -39,12 +37,55 @@ fn _current_target() -> _TargetType:
 struct CompilationTarget[value: _TargetType = _current_target()]:
     """A struct that provides information about a target architecture.
 
-    This struct encapsulates various methods to query target-specific information
-    such as architecture features, OS details, endianness, and memory characteristics.
+    This struct encapsulates various methods to query target-specific
+    information such as architecture features, OS details, endianness, and
+    memory characteristics.
 
     Parameters:
         value: The target architecture to query. Defaults to the current target.
     """
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn unsupported_target_error[
+        result: AnyType = NoneType._mlir_type,
+        *,
+        operation: Optional[String] = None,
+        note: Optional[String] = None,
+    ]() -> result:
+        """Produces a constraint failure when called indicating that some
+        operation is not supported by the current compilation target.
+
+        Parameters:
+            result: The never-returned result type of this function.
+            operation: Optional name of the operation that is not supported.
+                Should be a function name or short description.
+            note: Optional additional note to print.
+
+        Returns:
+            This function does not return normally, however a return type
+            can be specified to satisfy Mojo type checking.
+        """
+
+        alias note_text = " Note: " + note.value() if note else ""
+
+        @parameter
+        if operation:
+            constrained[
+                False,
+                "Current compilation target does not support operation: "
+                + operation.value()
+                + "."
+                + note_text,
+            ]()
+        else:
+            constrained[
+                False,
+                "Current compilation target does not support this operation."
+                + note_text,
+            ]()
+
+        return os.abort[result]()
 
     @always_inline("nodebug")
     @staticmethod
@@ -65,6 +106,74 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             `> : i1`,
         ]
 
+    @always_inline("nodebug")
+    @staticmethod
+    fn _arch() -> StaticString:
+        return StaticString(Self.__arch())
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn __arch() -> __mlir_type.`!kgen.string`:
+        return __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            Self.value,
+            `, "arch" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+
+    @staticmethod
+    fn _is_arch[name: StaticString]() -> Bool:
+        """Helper function to check if the target architecture is the same as
+        given by the name.
+
+        NOTE: This function is needed so that we don't compare the strings at
+        compile time using `==`, which would lead to a recursions due to SIMD
+        (and potentially many other things) depending on architecture checks.
+
+        Parameters:
+            name: The name to check against the target architecture.
+
+        Returns:
+            True if the target architecture is the same as the given name,
+            False otherwise.
+        """
+        return __mlir_attr[
+            `#kgen.param.expr<eq,`,
+            Self.__arch(),
+            `, `,
+            _get_kgen_string[name](),
+            `> : i1`,
+        ]
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _os() -> StaticString:
+        var res = __mlir_attr[
+            `#kgen.param.expr<target_get_field,`,
+            Self.value,
+            `, "os" : !kgen.string`,
+            `> : !kgen.string`,
+        ]
+        return StaticString(res)
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn default_compile_options() -> StaticString:
+        """Returns the default compile options for the compilation target.
+
+        Returns:
+            The string of default compile options for the compilation target.
+        """
+
+        @parameter
+        if is_triple["nvptx64-nvidia-cuda", Self.value]():
+            # TODO: use `is_nvidia_gpu` when moved to into this struct.
+            return "nvptx-short-ptr=true"
+        else:
+            return ""
+
+    # Features
+
     @staticmethod
     fn has_sse4() -> Bool:
         """Checks if the target supports SSE4 instructions.
@@ -73,6 +182,96 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             True if the target supports SSE4, False otherwise.
         """
         return Self._has_feature["sse4"]()
+
+    @staticmethod
+    fn has_avx() -> Bool:
+        """Returns True if the host system has AVX, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX, otherwise returns False.
+        """
+        return Self._has_feature["avx"]()
+
+    @staticmethod
+    fn has_avx2() -> Bool:
+        """Returns True if the host system has AVX2, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX2, otherwise returns False.
+        """
+        return Self._has_feature["avx2"]()
+
+    @staticmethod
+    fn has_avx512f() -> Bool:
+        """Returns True if the host system has AVX512, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX512, otherwise returns False.
+        """
+        return Self._has_feature["avx512f"]()
+
+    @staticmethod
+    fn has_intel_amx() -> Bool:
+        """Returns True if the host system has Intel AMX support, otherwise returns
+        False.
+
+        Returns:
+            True if the host system has Intel AMX and False otherwise.
+        """
+        return Self._has_feature["amx-tile"]()
+
+    @staticmethod
+    fn has_fma() -> Bool:
+        """Returns True if the target has FMA (Fused Multiply-Add) support,
+        otherwise returns False.
+
+        Returns:
+            True if the target has FMA support, otherwise returns False.
+        """
+        return Self._has_feature["fma"]()
+
+    @staticmethod
+    fn has_vnni() -> Bool:
+        """Returns True if the target has avx512_vnni, otherwise returns False.
+
+        Returns:
+            True if the target has avx512_vnni, otherwise returns False.
+        """
+        return (
+            Self._has_feature["avx512vnni"]() or Self._has_feature["avxvnni"]()
+        )
+
+    @staticmethod
+    fn has_neon() -> Bool:
+        """Returns True if the target has Neon support, otherwise returns
+        False.
+
+        Returns:
+            True if the target support the Neon instruction set.
+        """
+        return Self._has_feature["neon"]() or Self.is_apple_silicon()
+
+    @staticmethod
+    fn has_neon_int8_dotprod() -> Bool:
+        """Returns True if the target has the Neon int8 dot product extension,
+        otherwise returns False.
+
+        Returns:
+            True if the target support the Neon int8 dot product extension and
+            False otherwise.
+        """
+        return Self.has_neon() and Self._has_feature["dotprod"]()
+
+    @staticmethod
+    fn has_neon_int8_matmul() -> Bool:
+        """Returns True if the target has the Neon int8 matrix multiplication
+        extension (I8MM), otherwise returns False.
+
+        Returns:
+            True if the target support the Neon int8 matrix multiplication
+            extension (I8MM) and False otherwise.
+        """
+        return Self.has_neon() and Self._has_feature["i8mm"]()
 
     # Platforms
 
@@ -85,389 +284,159 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         """
         return Self.has_sse4()
 
+    @staticmethod
+    fn is_apple_m1() -> Bool:
+        """Check if the target is an Apple M1 system.
+
+        Returns:
+            True if the host system is an Apple M1, False otherwise.
+        """
+        return Self._is_arch["apple-m1"]()
+
+    @staticmethod
+    fn is_apple_m2() -> Bool:
+        """Check if the target is an Apple M2 system.
+
+        Returns:
+            True if the host system is an Apple M2, False otherwise.
+        """
+        return Self._is_arch["apple-m2"]()
+
+    @staticmethod
+    fn is_apple_m3() -> Bool:
+        """Check if the target is an Apple M3 system.
+
+        Returns:
+            True if the host system is an Apple M3, False otherwise.
+        """
+        return Self._is_arch["apple-m3"]()
+
+    @staticmethod
+    fn is_apple_m4() -> Bool:
+        """Check if the target is an Apple M4 system.
+
+        Returns:
+            True if the host system is an Apple M4, False otherwise.
+        """
+        return Self._is_arch["apple-m4"]()
+
+    @staticmethod
+    fn is_apple_silicon() -> Bool:
+        """Check if the host system is an Apple Silicon with AMX support.
+
+        Returns:
+            True if the host system is an Apple Silicon with AMX support, and
+            False otherwise.
+        """
+        return (
+            Self.is_apple_m1()
+            or Self.is_apple_m2()
+            or Self.is_apple_m3()
+            or Self.is_apple_m4()
+        )
+
+    @staticmethod
+    fn is_neoverse_n1() -> Bool:
+        """Returns True if the host system is a Neoverse N1 system, otherwise
+        returns False.
+
+        Returns:
+            True if the host system is a Neoverse N1 system and False otherwise.
+        """
+        return Self._is_arch["neoverse-n1"]()
+
+    # OS
+
+    @staticmethod
+    fn is_linux() -> Bool:
+        """Returns True if the host operating system is Linux.
+
+        Returns:
+            True if the host operating system is Linux and False otherwise.
+        """
+        return Self._os() == "linux"
+
+    @staticmethod
+    fn is_macos() -> Bool:
+        """Returns True if the host operating system is macOS.
+
+        Returns:
+            True if the host operating system is macOS and False otherwise.
+        """
+        return Self._os() in ["darwin", "macosx"]
+
+    @staticmethod
+    fn is_windows() -> Bool:
+        """Returns True if the host operating system is Windows.
+
+        Returns:
+            True if the host operating system is Windows and False otherwise.
+        """
+        return Self._os() == "windows"
+
+
+fn platform_map[
+    T: Copyable & Movable, //,
+    operation: Optional[String] = None,
+    *,
+    linux: Optional[T] = None,
+    macos: Optional[T] = None,
+    windows: Optional[T] = None,
+]() -> T:
+    """Helper for defining a compile time value depending
+    on the current compilation target, raising a compilation
+    error if trying to access the value on an unsupported target.
+
+    Example:
+
+    ```mojo
+    alias EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    ```
+
+    Parameters:
+        T: The type of the value.
+        operation: The operation to show in the compilation error.
+        linux: Optional support for linux targets.
+        macos: Optional support for macos targets.
+        windows: Optional support for windows targets.
+    """
+
+    @parameter
+    if CompilationTarget.is_macos() and macos:
+        return macos.value()
+    elif CompilationTarget.is_linux() and linux:
+        return linux.value()
+    elif CompilationTarget.is_windows() and windows:
+        return windows.value()
+    else:
+        return CompilationTarget.unsupported_target_error[
+            T, operation=operation
+        ]()
+
 
 @always_inline("nodebug")
 fn _accelerator_arch() -> StaticString:
-    return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+    """Returns the accelerator architecture string for the current target
+    accelerator.
 
-
-fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StaticString:
-    return __mlir_attr[
-        `#kgen.param.expr<target_get_field,`,
-        target,
-        `, "arch" : !kgen.string`,
-        `> : !kgen.string`,
-    ]
-
-
-@always_inline("nodebug")
-fn _current_arch_kgen() -> __mlir_type.`!kgen.string`:
-    return __mlir_attr[
-        `#kgen.param.expr<target_get_field,`,
-        _current_target(),
-        `, "arch" : !kgen.string`,
-        `> : !kgen.string`,
-    ]
-
-
-@always_inline("nodebug")
-fn _current_arch() -> StaticString:
-    return _current_arch_kgen()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.is_x86()` instead.")
-fn is_x86() -> Bool:
-    """Returns True if the host system architecture is X86 and False otherwise.
+    If there is no accelerator on the system, this function returns an empty
+    string.
 
     Returns:
-        True if the host system architecture is X86 and False otherwise.
+        The accelerator architecture string for the current target accelerator.
     """
-    return CompilationTarget.has_sse4()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_sse4()` instead.")
-fn has_sse4() -> Bool:
-    """Returns True if the host system has sse4, otherwise returns False.
-
-    Returns:
-        True if the host system has sse4, otherwise returns False.
-    """
-    return CompilationTarget.has_sse4()
-
-
-@always_inline("nodebug")
-fn has_avx() -> Bool:
-    """Returns True if the host system has AVX, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn has_avx2() -> Bool:
-    """Returns True if the host system has AVX2, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX2, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx2" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn has_avx512f() -> Bool:
-    """Returns True if the host system has AVX512, otherwise returns False.
-
-    Returns:
-        True if the host system has AVX512, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "avx512f" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn has_fma() -> Bool:
-    """Returns True if the host system has FMA (Fused Multiply-Add) support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system has FMA support, otherwise returns False.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "fma" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn has_vnni() -> Bool:
-    """Returns True if the host system has avx512_vnni, otherwise returns False.
-
-    Returns:
-        True if the host system has avx512_vnni, otherwise returns False.
-    """
-    return (
-        __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "avx512vnni" : !kgen.string`,
-            `> : i1`,
-        ]
-        or __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "avxvnni" : !kgen.string`,
-            `> : i1`,
-        ]
+    return StaticString(
+        __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
     )
-
-
-@always_inline("nodebug")
-fn has_neon() -> Bool:
-    """Returns True if the host system has Neon support, otherwise returns
-    False.
-
-    Returns:
-        True if the host system support the Neon instruction set.
-    """
-    alias neon_flag: Bool = __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "neon" : !kgen.string`,
-        `> : i1`,
-    ]
-
-    @parameter
-    if neon_flag:
-        return True
-    return is_apple_silicon()
-
-
-@always_inline("nodebug")
-fn has_neon_int8_dotprod() -> Bool:
-    """Returns True if the host system has the Neon int8 dot product extension,
-    otherwise returns False.
-
-    Returns:
-        True if the host system support the Neon int8 dot product extension and
-        False otherwise.
-    """
-    return (
-        has_neon()
-        and __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "dotprod" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
-
-
-@always_inline("nodebug")
-fn has_neon_int8_matmul() -> Bool:
-    """Returns True if the host system has the Neon int8 matrix multiplication
-    extension (I8MM), otherwise returns False.
-
-    Returns:
-        True if the host system support the Neon int8 matrix multiplication
-        extension (I8MM) and False otherwise.
-    """
-    return (
-        has_neon()
-        and __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "i8mm" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
-
-
-@always_inline("nodebug")
-fn is_apple_m1() -> Bool:
-    """Returns True if the host system is an Apple M1 with AMX support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system is an Apple M1 with AMX support and False
-        otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _current_arch_kgen(),
-        `, "apple-m1" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn is_apple_m2() -> Bool:
-    """Returns True if the host system is an Apple M2 with AMX support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system is an Apple M2 with AMX support and False
-        otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _current_arch_kgen(),
-        `, "apple-m2" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn is_apple_m3() -> Bool:
-    """Returns True if the host system is an Apple M3 with AMX support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system is an Apple M3 with AMX support and False
-        otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _current_arch_kgen(),
-        `, "apple-m3" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn is_apple_m4() -> Bool:
-    """Returns True if the host system is an Apple M4 with AMX support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system is an Apple M4 with AMX support and False
-        otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _current_arch_kgen(),
-        `, "apple-m4" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn is_apple_silicon() -> Bool:
-    """Returns True if the host system is an Apple Silicon with AMX support,
-    otherwise returns False.
-
-    Returns:
-        True if the host system is an Apple Silicon with AMX support and False
-        otherwise.
-    """
-    return is_apple_m1() or is_apple_m2() or is_apple_m3() or is_apple_m4()
-
-
-@always_inline("nodebug")
-fn is_neoverse_n1() -> Bool:
-    """Returns True if the host system is a Neoverse N1 system, otherwise
-    returns False.
-
-    Returns:
-        True if the host system is a Neoverse N1 system and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _current_arch_kgen(),
-        `, "neoverse-n1" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn has_intel_amx() -> Bool:
-    """Returns True if the host system has Intel AMX support, otherwise returns
-    False.
-
-    Returns:
-        True if the host system has Intel AMX and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "amx-tile" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn _os_attr() -> StaticString:
-    return __mlir_attr[
-        `#kgen.param.expr<target_get_field,`,
-        _current_target(),
-        `, "os" : !kgen.string`,
-        `> : !kgen.string`,
-    ]
-
-
-@always_inline("nodebug")
-fn os_is_macos() -> Bool:
-    """Returns True if the host operating system is macOS.
-
-    Returns:
-        True if the host operating system is macOS and False otherwise.
-    """
-    return (
-        __mlir_attr[
-            `#kgen.param.expr<eq,`,
-            _get_kgen_string[_os_attr()](),
-            `,`,
-            `"darwin" : !kgen.string`,
-            `> : i1`,
-        ]
-        or __mlir_attr[
-            `#kgen.param.expr<eq,`,
-            _get_kgen_string[_os_attr()](),
-            `,`,
-            `"macosx" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
-
-
-@always_inline("nodebug")
-fn os_is_linux() -> Bool:
-    """Returns True if the host operating system is Linux.
-
-    Returns:
-        True if the host operating system is Linux and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _get_kgen_string[_os_attr()](),
-        `,`,
-        `"linux" : !kgen.string`,
-        `> : i1`,
-    ]
-
-
-@always_inline("nodebug")
-fn os_is_windows() -> Bool:
-    """Returns True if the host operating system is Windows.
-
-    Returns:
-        True if the host operating system is Windows and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        _get_kgen_string[_os_attr()](),
-        `,`,
-        `"windows" : !kgen.string`,
-        `> : i1`,
-    ]
 
 
 @always_inline("nodebug")
 fn _triple_attr[
-    triple: __mlir_type.`!kgen.target` = _current_target()
+    target: _TargetType = _current_target()
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
-        triple,
+        target,
         `, "triple" : !kgen.string`,
         `> : !kgen.string`,
     ]
@@ -475,7 +444,7 @@ fn _triple_attr[
 
 @always_inline("nodebug")
 fn is_triple[
-    name: StringLiteral, target: __mlir_type.`!kgen.target` = _current_target()
+    name: StringLiteral, target: _TargetType = _current_target()
 ]() -> Bool:
     """Returns True if the target triple of the compiler matches the input and
     False otherwise.
@@ -551,6 +520,29 @@ fn _is_sm_120x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+fn is_apple_gpu() -> Bool:
+    """Returns True if the target triple is for Apple GPU (Metal) and False otherwise.
+    Returns:
+        True if the triple target is Apple GPU and False otherwise.
+    """
+    return is_triple["air64-apple-macosx"]()
+
+
+@always_inline("nodebug")
+fn is_apple_gpu[subarch: StaticString]() -> Bool:
+    """Returns True if the target triple of the compiler is `air64-apple-macosx`
+    and we are compiling for the specified sub-architecture and False otherwise.
+
+    Parameters:
+        subarch: The subarchitecture (e.g. sm_80).
+
+    Returns:
+        True if the triple target is cuda and False otherwise.
+    """
+    return is_apple_gpu() and CompilationTarget._is_arch[subarch]()
+
+
+@always_inline("nodebug")
 fn is_nvidia_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `nvptx64-nvidia-cuda`
     False otherwise.
@@ -572,7 +564,76 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
     Returns:
         True if the triple target is cuda and False otherwise.
     """
-    return is_nvidia_gpu() and _current_arch() == subarch
+    return is_nvidia_gpu() and CompilationTarget._is_arch[subarch]()
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna3() -> Bool:
+    return (
+        is_amd_gpu["amdgpu:gfx1100"]()
+        or is_amd_gpu["amdgpu:gfx1101"]()
+        or is_amd_gpu["amdgpu:gfx1102"]()
+        or is_amd_gpu["amdgpu:gfx1103"]()
+        # These last two are technically RDNA3.5, but we'll treat them as RDNA3
+        # for now.
+        or is_amd_gpu["amdgpu:gfx1150"]()
+        or is_amd_gpu["amdgpu:gfx1151"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna4() -> Bool:
+    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna() -> Bool:
+    return _is_amd_rdna3() or _is_amd_rdna4()
+
+
+@always_inline("nodebug")
+fn _is_amd_mi300x() -> Bool:
+    return is_amd_gpu["amdgpu:gfx942"]()
+
+
+@always_inline("nodebug")
+fn _is_amd_mi355x() -> Bool:
+    return is_amd_gpu["amdgpu:gfx950"]()
+
+
+@always_inline("nodebug")
+fn _cdna_version() -> Int:
+    constrained[
+        _is_amd_mi300x() or _is_amd_mi355x(),
+        "querying the cdna version is only supported on AMD hardware",
+    ]()
+
+    @parameter
+    if _is_amd_mi300x():
+        return 3
+    else:
+        return 4
+
+
+@always_inline("nodebug")
+fn _cdna_3_or_newer() -> Bool:
+    @parameter
+    if is_amd_gpu():
+        return _cdna_version() >= 3
+    return False
+
+
+@always_inline("nodebug")
+fn _cdna_4_or_newer() -> Bool:
+    @parameter
+    if is_amd_gpu():
+        return _cdna_version() >= 4
+    return False
+
+
+@always_inline("nodebug")
+fn _is_amd_cdna() -> Bool:
+    return _is_amd_mi300x() or _is_amd_mi355x()
 
 
 @always_inline("nodebug")
@@ -587,8 +648,19 @@ fn is_amd_gpu() -> Bool:
 
 
 @always_inline("nodebug")
+fn is_amd_gpu[subarch: StaticString]() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the specified sub-architecture, False otherwise.
+
+    Returns:
+        True if the triple target is amdgpu and False otherwise.
+    """
+    return is_amd_gpu() and _accelerator_arch() == subarch
+
+
+@always_inline("nodebug")
 fn is_gpu() -> Bool:
-    """Returns True if the target triple is GPU and  False otherwise.
+    """Returns True if the target triple is GPU and False otherwise.
 
     Returns:
         True if the triple target is GPU and False otherwise.
@@ -597,22 +669,20 @@ fn is_gpu() -> Bool:
 
 
 @always_inline("nodebug")
-fn is_little_endian[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Bool:
-    """Returns True if the host endianness is little and False otherwise.
+fn is_little_endian[target: _TargetType = _current_target()]() -> Bool:
+    """Returns True if the target's endianness is little and False otherwise.
 
     Parameters:
         target: The target architecture.
 
     Returns:
-        True if the host target is little endian and False otherwise.
+        True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
-            _current_target(),
+            target,
             `, "endianness" : !kgen.string`,
             `> : !kgen.string`,
         ],
@@ -623,16 +693,14 @@ fn is_little_endian[
 
 
 @always_inline("nodebug")
-fn is_big_endian[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Bool:
-    """Returns True if the host endianness is big and False otherwise.
+fn is_big_endian[target: _TargetType = _current_target()]() -> Bool:
+    """Returns True if the target's endianness is big and False otherwise.
 
     Parameters:
         target: The target architecture.
 
     Returns:
-        True if the host target is big endian and False otherwise.
+        True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
@@ -649,7 +717,7 @@ fn is_big_endian[
 
 
 @always_inline("nodebug")
-fn is_32bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
+fn is_32bit[target: _TargetType = _current_target()]() -> Bool:
     """Returns True if the maximum integral value is 32 bit.
 
     Parameters:
@@ -658,11 +726,11 @@ fn is_32bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 32 bit, False otherwise.
     """
-    return sizeof[DType.index, target]() == sizeof[DType.int32, target]()
+    return size_of[DType.index, target]() == size_of[DType.int32, target]()
 
 
 @always_inline("nodebug")
-fn is_64bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
+fn is_64bit[target: _TargetType = _current_target()]() -> Bool:
     """Returns True if the maximum integral value is 64 bit.
 
     Parameters:
@@ -671,13 +739,11 @@ fn is_64bit[target: __mlir_type.`!kgen.target` = _current_target()]() -> Bool:
     Returns:
         True if the maximum integral value is 64 bit, False otherwise.
     """
-    return sizeof[DType.index, target]() == sizeof[DType.int64, target]()
+    return size_of[DType.index, target]() == size_of[DType.int64, target]()
 
 
 @always_inline("nodebug")
-fn simdbitwidth[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn simd_bit_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bits) of the specified target.
 
     Parameters:
@@ -696,10 +762,14 @@ fn simdbitwidth[
     )
 
 
+@deprecated("Use `sys.simd_bit_width()` instead.")
 @always_inline("nodebug")
-fn simdbytewidth[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn simdbitwidth[target: _TargetType = _current_target()]() -> Int:
+    return simd_bit_width[target]()
+
+
+@always_inline("nodebug")
+fn simd_byte_width[target: _TargetType = _current_target()]() -> Int:
     """Returns the vector size (in bytes) of the specified target.
 
     Parameters:
@@ -709,13 +779,17 @@ fn simdbytewidth[
         The vector size (in bytes) of the host system.
     """
     alias CHAR_BIT = 8
-    return simdbitwidth[target]() // CHAR_BIT
+    return simd_bit_width[target]() // CHAR_BIT
+
+
+@deprecated("Use `sys.simd_byte_width()` instead.")
+@always_inline("nodebug")
+fn simdbytewidth[target: _TargetType = _current_target()]() -> Int:
+    return simd_byte_width[target]()
 
 
 @always_inline("nodebug")
-fn sizeof[
-    type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the type.
 
     Parameters:
@@ -727,14 +801,14 @@ fn sizeof[
 
     Example:
     ```mojo
-    from sys.info import sizeof
+    from sys.info import size_of
     def main():
         print(
-            sizeof[UInt8]() == 1,
-            sizeof[UInt16]() == 2,
-            sizeof[Int32]() == 4,
-            sizeof[Float64]() == 8,
-            sizeof[
+            size_of[UInt8]() == 1,
+            size_of[UInt16]() == 2,
+            size_of[Int32]() == 4,
+            size_of[Float64]() == 8,
+            size_of[
                 SIMD[DType.uint8, 4]
             ]() == 4,
         )
@@ -759,10 +833,14 @@ fn sizeof[
     )
 
 
+@deprecated("Use `sys.size_of()` instead.")
 @always_inline("nodebug")
-fn sizeof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn sizeof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+    return size_of[type, target]()
+
+
+@always_inline("nodebug")
+fn size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
@@ -785,10 +863,14 @@ fn sizeof[
     )
 
 
+@deprecated("Use `sys.size_of()` instead.")
 @always_inline("nodebug")
-fn alignof[
-    type: AnyType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn sizeof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return size_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
     Parameters:
@@ -816,10 +898,14 @@ fn alignof[
     )
 
 
+@deprecated("Use `sys.align_of()` instead.")
 @always_inline("nodebug")
-fn alignof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn alignof[type: AnyType, target: _TargetType = _current_target()]() -> Int:
+    return align_of[type, target]()
+
+
+@always_inline("nodebug")
+fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
@@ -842,10 +928,15 @@ fn alignof[
     )
 
 
+@deprecated("Use `sys.align_of()` instead.")
 @always_inline("nodebug")
-fn bitwidthof[
-    type: AnyTrivialRegType,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+fn alignof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return align_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn bit_width_of[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -857,13 +948,19 @@ fn bitwidthof[
         The size of the type in bits.
     """
     alias CHAR_BIT = 8
-    return CHAR_BIT * sizeof[type, target=target]()
+    return CHAR_BIT * size_of[type, target=target]()
+
+
+@deprecated("Use `sys.bit_width_of()` instead.")
+@always_inline("nodebug")
+fn bitwidthof[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
+]() -> Int:
+    return bit_width_of[type, target]()
 
 
 @always_inline("nodebug")
-fn bitwidthof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
-]() -> Int:
+fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
@@ -873,15 +970,20 @@ fn bitwidthof[
     Returns:
         The size of the dtype in bits.
     """
-    return bitwidthof[
+    return bit_width_of[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`], target=target
     ]()
 
 
+@deprecated("Use `sys.bit_width_of()` instead.")
 @always_inline("nodebug")
-fn simdwidthof[
-    type: AnyTrivialRegType,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+fn bitwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return bit_width_of[dtype, target]()
+
+
+@always_inline("nodebug")
+fn simd_width_of[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -892,12 +994,20 @@ fn simdwidthof[
     Returns:
         The vector size of the type on the host system.
     """
-    return simdbitwidth[target]() // bitwidthof[type, target]()
+    return simd_bit_width[target]() // bit_width_of[type, target]()
+
+
+@deprecated("Use `sys.simd_width_of()` instead.")
+@always_inline("nodebug")
+fn simdwidthof[
+    type: AnyTrivialRegType, target: _TargetType = _current_target()
+]() -> Int:
+    return simd_width_of[type, target]()
 
 
 @always_inline("nodebug")
-fn simdwidthof[
-    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
+fn simd_width_of[
+    dtype: DType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -908,7 +1018,15 @@ fn simdwidthof[
     Returns:
         The vector size of the dtype on the host system.
     """
-    return simdwidthof[__mlir_type[`!pop.scalar<`, dtype.value, `>`], target]()
+    return simd_width_of[
+        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target
+    ]()
+
+
+@deprecated("Use `sys.simd_width_of()` instead.")
+@always_inline("nodebug")
+fn simdwidthof[dtype: DType, target: _TargetType = _current_target()]() -> Int:
+    return simd_width_of[dtype, target]()
 
 
 @always_inline("nodebug")
@@ -952,13 +1070,16 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         The version triple of macOS.
     """
 
-    constrained[os_is_macos(), "the operating system must be macOS"]()
+    constrained[
+        CompilationTarget.is_macos(),
+        "the operating system must be macOS",
+    ]()
 
     alias INITIAL_CAPACITY = 32
 
     # Overallocate the string.
     var buf_len = Int(INITIAL_CAPACITY)
-    var osver = String(unsafe_uninit_length=buf_len)
+    var osver = String(unsafe_uninit_length=UInt(buf_len))
 
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
@@ -1024,3 +1145,12 @@ fn has_nvidia_gpu_accelerator() -> Bool:
         True if the host system has an NVIDIA GPU.
     """
     return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
+
+
+@always_inline("nodebug")
+fn has_apple_gpu_accelerator() -> Bool:
+    """Returns True if the host system has a Metal GPU and False otherwise.
+    Returns:
+        True if the host system has a Metal GPU.
+    """
+    return is_apple_gpu() or "metal" in _accelerator_arch()

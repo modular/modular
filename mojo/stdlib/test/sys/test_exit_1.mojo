@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not %mojo %s
 
 import sys
 
 
 fn main():
+    # CHECK: Running...
+    print("Running...")
     sys.exit(1)

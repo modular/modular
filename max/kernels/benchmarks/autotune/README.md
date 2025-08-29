@@ -1,10 +1,12 @@
-# Find the optimal kernel parameters using `kbench`
+# `kbench`: Benchmarking toolkit for Mojo kernels
 
-This script runs a grid-search of all the parameters for a mojo benchmark.
+`kbench` builds and executes through a grid of all the parameter combinations
+ for a Mojo benchmark. This toolkit is used for benchmarking, tuning
+ (finding optimal kernel parameters), and plotting Mojo kernels.
 
 ## Table of Contents
 
-- [Why the tuning driver is written in Python?](#why-the-tuning-driver-is-written-in-python)
+- [Why is `kbench` written in Python?](#why-is-kbench-written-in-python)
 - [Setup for tuning](#setup-for-tuning)
 - [Usage](#usage)
   - [Example](#example)
@@ -19,7 +21,7 @@ This script runs a grid-search of all the parameters for a mojo benchmark.
   - [Enable object cache](#enable-object-cache)
   - [Clear object cache](#clear-object-cache)
 
-## Why the tuning driver is written in Python?
+## Why is `kbench` written in Python?
 
 In other words, why the driver cannot be in the same process as the entity that
 is autotuned?
@@ -37,10 +39,43 @@ autotuning problem, so just leaned into building something simple.
 Compile using `--config=production`:
 
 ```bash
-bb //... --config=production
 br //:install --config=production
 setup-gpu-benchmarking
 ```
+
+### Setup kbench
+
+Before running you many need to export the `$KERNEL_BENCHMARKS_ROOT`
+environment variable. This is the root directory of the kbench repository.
+
+```bash
+export KERNEL_BENCHMARKS_ROOT=$MODULAR_PATH/open-source/max/max/kernels/benchmarks
+```
+
+There are two ways to run kbench:
+
+1. Using bazel:
+   Running with bazel should automatically build and install mojo
+
+    ```bash
+    br //open-source/max/max/kernels/benchmarks/autotune:kbench -- --help
+
+    ```
+
+    When running from bazel, note your .yaml files reference a mojo file,
+    you'll need to be in a directory where that file is accessible.
+
+    ```bash
+    br //open-source/max/max/kernels/benchmarks/autotune:kbench --  test.yaml --dryrun
+    ```
+
+2. Using uv:
+    If you use uv, you'll need to install `modular` first, so that `mojo` will be
+    available.
+
+    ```bash
+    uv run kbench --help
+    ```
 
 ## Usage
 
@@ -62,7 +97,7 @@ setup-gpu-benchmarking
     )
     ```
 
-1. Define your input params in mojo using the following sys env functions:
+1. Define your input params in Mojo using the following sys env functions:
 
     ```mojo
     fn main():
@@ -284,12 +319,12 @@ analyze the data in `.pkl` files.
 
 ## Compile-time Parameters vs. Runtime Variables
 
-Building with various compile-time parameters does NOT hit mojo-cache and
+Building with various compile-time parameters does NOT hit Mojo-cache and
 increases compilation time. Therefore, it is essential to minimize the number
 of parameters, or simply replace them with runtime variables to reduce the time
 spent in (re)compilation.
 
-Following example shows how to define a runtime variable in mojo using
+Following example shows how to define a runtime variable in Mojo using
 `arg_parse` utility function. Note that the name in YAML is now prefixed with
 `$`:
 
@@ -337,6 +372,3 @@ kbench -c test.yaml
 kbench --clear-cache
 kbench -cc
 ```
-
-- ToDo: add details about object-cache dump at the end of shapes loop
-- ToDo: links to kplot and kprofile

@@ -15,7 +15,7 @@ from os import abort
 
 
 struct UnsafeMaybeUninitialized[ElementType: AnyType](
-    ExplicitlyCopyable, Copyable, Movable
+    Copyable, Defaultable, ExplicitlyCopyable, Movable
 ):
     """A memory location that may or may not be initialized.
 
@@ -32,40 +32,19 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         ElementType: The type of the element to store.
     """
 
-    alias type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
-    var _array: Self.type
+    alias _mlir_type = __mlir_type[`!pop.array<1, `, Self.ElementType, `>`]
+
+    var _array: Self._mlir_type
 
     @always_inline
     fn __init__(out self):
         """The memory is now considered uninitialized."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    @doc_private
-    @always_inline
-    fn copy(self) -> Self:
-        """This method is not intended to be called.
-
-        Trying to call this method will abort.
-
-        Returns:
-            Nothing, this method always aborts.
-        """
-        return abort[Self](
-            "You should never call the copy() method of"
-            " UnsafeMaybeUninitialized because it's ambiguous to copy"
-            " possibly uninitialized memory. Use"
-            " `UnsafeMaybeUninitialized.copy_from()` instead if you want to"
-            " trigger an explicit copy of the content of"
-            " UnsafeMaybeUninitialized. It has very specific semantics."
-        )
-
     @always_inline
     fn __init__[
         MovableType: Movable
-    ](
-        out self: UnsafeMaybeUninitialized[MovableType],
-        owned value: MovableType,
-    ):
+    ](out self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
         """The memory is now considered initialized.
 
         Parameters:
@@ -79,7 +58,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
 
     @always_inline
     fn __copyinit__(out self, other: Self):
-        """Copy another object.
+        """This method is not intended to be called.
 
         This method should never be called as implicit copy should not
         be done on memory that may be uninitialized.
@@ -92,8 +71,14 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The object to copy.
         """
-        abort("You should never call __copyinit__ on MaybeUninitialized")
-        self = Self()
+        self = abort[Self](
+            "You should never call __copyinit__ on UnsafeMaybeUninitialized"
+            " UnsafeMaybeUninitialized because it's ambiguous to copy"
+            " possibly uninitialized memory. Use"
+            " `UnsafeMaybeUninitialized.copy_from()` instead if you want to"
+            " trigger an explicit copy of the content of"
+            " UnsafeMaybeUninitialized. It has very specific semantics."
+        )
 
     @always_inline
     fn copy_from[
@@ -132,7 +117,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_explicit_copy(other)
 
     @always_inline
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move another object.
 
         This method should never be called as implicit moves should not
@@ -196,10 +181,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
     @always_inline
     fn write[
         MovableType: Movable
-    ](
-        mut self: UnsafeMaybeUninitialized[MovableType],
-        owned value: MovableType,
-    ):
+    ](mut self: UnsafeMaybeUninitialized[MovableType], var value: MovableType,):
         """Write a value into an uninitialized memory location.
 
         Calling this method assumes that the memory is uninitialized.
@@ -245,7 +227,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().destroy_pointee()
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """This is a no-op.
 
         Calling this method assumes that the memory is uninitialized.

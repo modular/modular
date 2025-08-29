@@ -21,13 +21,13 @@ from sys import PrefetchLocality
 
 import math
 from collections.string.string_slice import _get_kgen_string
+from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
-from .info import is_amd_gpu, is_nvidia_gpu, sizeof
+from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 
 
 # Check that the dimension is either x, y, or z.
@@ -75,35 +75,19 @@ fn llvm_intrinsic[
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
+        __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=None,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
+        return rebind[type](None)
 
-        @parameter
-        if has_side_effect:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-            ](loaded_pack)
-            return rebind[type](None)
-        else:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
-            return rebind[type](None)
     else:
-
-        @parameter
-        if has_side_effect:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-            ](loaded_pack)
-        else:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
+        return __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=type,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -116,7 +100,7 @@ fn llvm_intrinsic[
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
     dtype: DType
-](owned addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
+](var addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
     return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
 
 
@@ -124,7 +108,7 @@ fn _unsafe_aliasing_address_to_pointer[
 fn gather[
     dtype: DType, size: Int, //, *, invariant: Bool = False
 ](
-    owned base: SIMD[DType.index, size],
+    var base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
     alignment: Int = 0,
@@ -140,10 +124,10 @@ fn gather[
     corresponding lanes of the `passthrough` operand.
 
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
-    `pass` a call of the form:
+    `passthrough` a call of the form:
 
-    ```python
-    gather(base, mask, pass)
+    ```mojo
+    result = gather(base, mask, passthrough)
     ```
 
     is equivalent to the following sequence of scalar loads in C++:
@@ -200,7 +184,7 @@ fn gather[
         passthrough,
     )
     _ = base
-    return result
+    return SIMD(mlir_value=result)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -213,7 +197,7 @@ fn scatter[
     dtype: DType, size: Int, //
 ](
     value: SIMD[dtype, size],
-    owned base: SIMD[DType.index, size],
+    var base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
     alignment: Int = 0,
 ):
@@ -236,14 +220,14 @@ fn scatter[
     Scatter with overlapping addresses is guaranteed to be ordered from
     least-significant to most-significant element.
 
-    In general, for some vector %value, vector of pointers %base, and mask
-    %mask instructions of the form:
+    In general, for some vector `value`, vector of pointers `base`, and mask
+    `mask` a call of the form:
 
-    ```mlir
-    %0 = pop.simd.scatter %value, %base[%mask] : !pop.simd<N, type>
+    ```mojo
+    scatter(value, base, mask)
     ```
 
-    is equivalent to the following sequence of scalar loads in C++:
+    is equivalent to the following sequence of scalar stores in C++:
 
     ```cpp
     for (int i = 0; i < N; i++)
@@ -363,7 +347,7 @@ struct PrefetchCache:
 
 
 @register_passable("trivial")
-struct PrefetchOptions:
+struct PrefetchOptions(Defaultable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -533,7 +517,7 @@ fn prefetch[
 fn masked_load[
     dtype: DType, //, size: Int
 ](
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
     alignment: Int = 1,
@@ -580,7 +564,7 @@ fn masked_store[
     size: Int
 ](
     value: SIMD,
-    addr: UnsafePointer[Scalar[value.dtype], **_],
+    addr: UnsafePointer[Scalar[value.dtype], mut=True, **_],
     mask: SIMD[DType.bool, size],
     alignment: Int = 1,
 ):
@@ -622,7 +606,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -661,9 +645,11 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = True,
+    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
+        fill=True
+    ),
 ) -> SIMD[dtype, simd_width]:
     """Loads values from addr according to a specific stride.
 
@@ -686,9 +672,10 @@ fn strided_load[
     if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
-    var offset = Int(addr) + stride * sizeof[dtype]() * math.iota[
-        DType.index, simd_width
-    ]()
+    var offset = (
+        Int(addr)
+        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+    )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
 
@@ -703,9 +690,11 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = True,
+    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
+        fill=True
+    ),
 ):
     """Loads values from addr according to a specific stride.
 
@@ -727,9 +716,10 @@ fn strided_store[
             addr.store(value[0])
         return
 
-    var offset = Int(addr) + stride * sizeof[dtype]() * math.iota[
-        DType.index, simd_width
-    ]()
+    var offset = (
+        Int(addr)
+        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+    )
     scatter(value, offset, mask)
 
 
@@ -816,9 +806,6 @@ fn expect[T: AnyTrivialRegType, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 
-    Constraints:
-        Only work with integer types.
-
     Parameters:
         T: The type of the input value.
         expected_val: The expected value of `val`.
@@ -828,7 +815,12 @@ fn expect[T: AnyTrivialRegType, //, expected_val: T](val: T) -> T:
 
     Returns:
         The input value.
+
+    Notes:
+        Only works with integer/boolean types.
     """
+    if is_compile_time():
+        return val
     return llvm_intrinsic["llvm.expect", T, has_side_effect=False](
         val, expected_val
     )
@@ -916,7 +908,7 @@ fn lane_id() -> UInt:
             )
         )
 
-    else:
+    elif is_amd_gpu():
         alias none = Scalar[DType.int32](-1)
         alias zero = Scalar[DType.int32](0)
         var t = llvm_intrinsic[
@@ -929,6 +921,12 @@ fn lane_id() -> UInt:
                 ](none, t).cast[DType.uint32]()
             )
         )
+
+    else:
+        return CompilationTarget.unsupported_target_error[
+            UInt,
+            operation="lane_id",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1064,7 +1062,7 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
 
 
 @register_passable("trivial")
-struct _ThreadIdx:
+struct _ThreadIdx(Defaultable):
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
 
@@ -1078,8 +1076,15 @@ struct _ThreadIdx:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
-        else:
+        elif is_amd_gpu():
             return "llvm.amdgcn.workitem.id." + dim
+        elif is_apple_gpu():
+            return "llvm.air.thread_position_in_threadgroup." + dim
+        else:
+            return CompilationTarget.unsupported_target_error[
+                StaticString,
+                operation="thread_idx field access",
+            ]()
 
     @always_inline("nodebug")
     fn __getattr__[dim: StringLiteral](self) -> UInt:
@@ -1091,7 +1096,7 @@ struct _ThreadIdx:
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
@@ -1104,7 +1109,7 @@ alias thread_idx = _ThreadIdx()
 
 
 @register_passable("trivial")
-struct _BlockIdx:
+struct _BlockIdx(Defaultable):
     """BlockIdx provides static methods for getting the x/y/z coordinates of
     a block within a grid."""
 
@@ -1118,8 +1123,15 @@ struct _BlockIdx:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
-        else:
+        elif is_amd_gpu():
             return "llvm.amdgcn.workgroup.id." + dim
+        elif is_apple_gpu():
+            return "llvm.air.threadgroup_position_in_grid." + dim
+        else:
+            return CompilationTarget.unsupported_target_error[
+                StaticString,
+                operation="block_idx field access",
+            ]()
 
     @always_inline("nodebug")
     fn __getattr__[dim: StringLiteral](self) -> UInt:
@@ -1131,7 +1143,7 @@ struct _BlockIdx:
         _verify_xyz[dim]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
-            Int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
+            llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
         )
 
 
@@ -1153,7 +1165,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
 
 
 @register_passable("trivial")
-struct _BlockDim:
+struct _BlockDim(Defaultable):
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
 
@@ -1180,7 +1192,17 @@ struct _BlockDim:
                     ]()
                 )
             )
-        else:
+        elif is_apple_gpu():
+            return UInt(
+                Int(
+                    llvm_intrinsic[
+                        "llvm.air.threads_per_threadgroup." + dim,
+                        Int32,
+                        has_side_effect=False,
+                    ]()
+                )
+            )
+        elif is_amd_gpu():
 
             @parameter
             fn _get_offset() -> Int:
@@ -1195,6 +1217,12 @@ struct _BlockDim:
 
             return _get_gcn_idx[_get_offset(), DType.uint16]()
 
+        else:
+            return CompilationTarget.unsupported_target_error[
+                UInt,
+                operation="block_dim field access",
+            ]()
+
 
 alias block_dim = _BlockDim()
 
@@ -1204,7 +1232,7 @@ alias block_dim = _BlockDim()
 
 
 @register_passable("trivial")
-struct _GridDim:
+struct _GridDim(Defaultable):
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
 
@@ -1231,7 +1259,7 @@ struct _GridDim:
                     ]()
                 )
             )
-        else:
+        elif is_amd_gpu():
 
             @parameter
             fn _get_offset() -> Int:
@@ -1245,6 +1273,11 @@ struct _GridDim:
                     return 2
 
             return _get_gcn_idx[_get_offset(), DType.uint32]()
+        else:
+            return CompilationTarget.unsupported_target_error[
+                UInt,
+                operation="grid_dim field access",
+            ]()
 
 
 alias grid_dim = _GridDim()
@@ -1255,7 +1288,7 @@ alias grid_dim = _GridDim()
 
 
 @register_passable("trivial")
-struct _GridIdx:
+struct _GridIdx(Defaultable):
     """GlobalIdx provides static methods for getting the x/y/z global offset of
     the kernel launch."""
 
@@ -1287,7 +1320,7 @@ alias global_idx = _GridIdx()
 
 
 @register_passable("trivial")
-struct _ClusterDim:
+struct _ClusterDim(Defaultable):
     """ClusterDim provides static methods for getting the x/y/z dimension of a
     Cluster."""
 
@@ -1322,7 +1355,7 @@ alias cluster_dim = _ClusterDim()
 
 
 @register_passable("trivial")
-struct _ClusterIdx:
+struct _ClusterIdx(Defaultable):
     """_ClusterIdx provides static methods for getting the x/y/z coordinates of
     a cluster within a grid."""
 
@@ -1362,7 +1395,7 @@ alias cluster_idx = _ClusterIdx()
 
 
 @register_passable("trivial")
-struct _Cluster_BlockIdx:
+struct _Cluster_BlockIdx(Defaultable):
     """_Cluster_BlockIdx provides static methods for getting the x/y/z coordinates of
     a threadblock within a cluster."""
 

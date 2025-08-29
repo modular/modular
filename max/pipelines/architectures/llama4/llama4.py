@@ -17,29 +17,38 @@ from __future__ import annotations
 from typing import cast
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.nn import (
+    MLP,
+    Allreduce,
     ColumnParallelLinear,
-    DistributedMLP,
-    DistributedRMSNorm,
     Llama3RotaryEmbedding,
     Module,
     ReturnLogits,
+    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     PagedKVCacheCollection,
 )
 from max.nn.layer import LayerList
 
 from .layers.attention import Llama4TextAttention
-from .layers.moe import DistributedMoE
+from .layers.moe import DistributedLlama4MoE, Llama4MoEGate
 from .model_config import Llama4Config
 
 
-def distribute_value(v, devices: list[DeviceRef]):
+def distribute_value(
+    v: TensorValue, devices: list[DeviceRef]
+) -> list[TensorValue]:
     return [v.to(device) for device in devices]
 
 
@@ -52,7 +61,7 @@ class Llama4DecoderLayer(Module):
         config: Llama4Config,
         layer_idx: int,
         devices: list[DeviceRef],
-    ):
+    ) -> None:
         super().__init__()
         is_nope_layer = (layer_idx + 1) % config.no_rope_layer_interval == 0
         use_rope = not is_nope_layer
@@ -75,34 +84,55 @@ class Llama4DecoderLayer(Module):
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
         if self.is_moe_layer:
-            self.feed_forward = DistributedMoE(
-                hidden_dim=config.hidden_size,
-                top_k=config.num_experts_per_tok,
-                num_experts=config.num_local_experts,
-                intermediate_size=config.intermediate_size,
-                intermediate_size_mlp=config.intermediate_size_mlp,
-                dtype=config.dtype,
+            self.feed_forward = DistributedLlama4MoE(
                 devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.num_local_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.intermediate_size,
+                gate_cls=Llama4MoEGate,
+                has_shared_experts=True,
+                shared_experts_dim=config.intermediate_size,
+                dtype=config.dtype,
+                apply_router_weight_first=True,
             )
         else:
-            self.feed_forward = DistributedMLP(
+            self.feed_forward = MLP(
                 config.dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size_mlp,
                 devices=config.devices,
             )
-        self.input_layernorm = DistributedRMSNorm(
+            self.feed_forward.sharding_strategy = (
+                ShardingStrategy.tensor_parallel(len(config.devices))
+            )
+            self.feed_forward_shards = self.feed_forward.shard(config.devices)
+            self.feed_forward_allreduce = Allreduce(
+                num_accelerators=len(config.devices)
+            )
+        self.input_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
+            multiply_before_cast=False,
         )
-        self.post_attention_layernorm = DistributedRMSNorm(
+        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.input_layernorm_shards = self.input_layernorm.shard(config.devices)
+
+        self.post_attention_layernorm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
+            multiply_before_cast=False,
+        )
+        self.post_attention_layernorm.sharding_strategy = (
+            ShardingStrategy.replicate(len(config.devices))
+        )
+        self.post_attention_layernorm_shards = (
+            self.post_attention_layernorm.shard(config.devices)
         )
         self.devices = devices
 
@@ -111,13 +141,16 @@ class Llama4DecoderLayer(Module):
         xs: list[TensorValue],
         distributed_cache_positions: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
+        # Apply input layer norm to each shard
+        norm_xs = [
+            self.input_layernorm_shards[i](xs[i]) for i in range(len(xs))
+        ]
+
         attn_outs = self.self_attn(
-            self.input_layernorm(xs),
+            norm_xs,
             distributed_cache_positions,
             kv_collections,
             signal_buffers=signal_buffers,
@@ -125,11 +158,22 @@ class Llama4DecoderLayer(Module):
         )
 
         hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
-        post_norm_states = self.post_attention_layernorm(hidden_states)
+        # Apply post attention layer norm to each shard
+        post_norm_states = [
+            self.post_attention_layernorm_shards[i](hidden_states[i])
+            for i in range(len(hidden_states))
+        ]
 
-        mlp_outs = self.feed_forward(
-            post_norm_states, signal_buffers=signal_buffers
-        )
+        if self.is_moe_layer:
+            mlp_outs = self.feed_forward(
+                post_norm_states, signal_buffers=signal_buffers
+            )
+        else:
+            mlp_outs = [
+                shard(x)
+                for shard, x in zip(self.feed_forward_shards, post_norm_states)
+            ]
+            mlp_outs = self.feed_forward_allreduce(mlp_outs, signal_buffers)
         hidden_states = [
             h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
         ]
@@ -139,7 +183,7 @@ class Llama4DecoderLayer(Module):
 class Llama4TextModel(Module):
     """The Llama4 text transformer model."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         super().__init__()
         self.rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -157,12 +201,16 @@ class Llama4TextModel(Module):
                 for layer_idx in range(config.num_hidden_layers)
             ]
         )
-        self.norm = DistributedRMSNorm(
+        self.norm = RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
-            devices=config.devices,
+            multiply_before_cast=False,
         )
+        self.norm.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+        self.norm_shards = self.norm.shard(config.devices)
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
@@ -205,13 +253,8 @@ class Llama4TextModel(Module):
         ]
 
         input_row_offsets = kwargs["input_row_offsets"]
-        root_cache_lengths = kv_cache_inputs_per_dev[0][1]
-        valid_lengths: TensorValue = ops.rebind(
-            input_row_offsets[1:] - input_row_offsets[:-1],
-            root_cache_lengths.shape,
-        )
         distributed_cache_positions = distribute_value(
-            cache_positions, self.devices
+            TensorValue(cache_positions), self.devices
         )
         for _, layer in enumerate(self.layers):
             h = layer(
@@ -226,15 +269,30 @@ class Llama4TextModel(Module):
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, self.devices)
+        # Apply norm to each shard
+        norm_last_token = [
+            self.norm_shards[i](last_token_distributed[i])
+            for i in range(len(self.devices))
+        ]
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+            self.lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
         )
 
         logits = None
         offsets = None
 
         if self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
+            logits = ops.cast(
+                self.lm_head(
+                    [
+                        self.norm_shards[i](h[i])
+                        for i in range(len(self.devices))
+                    ],
+                    signal_buffers,
+                )[0],
+                DType.float32,
+            )
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
 
         if logits is not None and offsets is not None:
@@ -246,7 +304,7 @@ class Llama4TextModel(Module):
 class Llama4(Module):
     """The Llama4 model (currently text-only)."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         self.language_model = Llama4TextModel(config)
 
     def __call__(

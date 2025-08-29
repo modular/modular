@@ -13,16 +13,18 @@
 
 from gpu.host import DeviceContext
 from gpu.id import block_idx
-from linalg.matmul_tile_scheduler import TileScheduler, WorkInfo
+from linalg.matmul_tile_scheduler import TileScheduler
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 fn test_kernel():
     problem_shape = Index(12, 12, 20)
 
     scheduler = TileScheduler[
-        tile_shape = Index(4, 4, 4), grid_shape = Index(2, 2)
+        problem_shape = Index(12, 12, 20),
+        tile_shape = Index(4, 4, 4),
+        grid_shape = Index(2, 2),
     ](problem_shape)
 
     num_output_tiles = scheduler.num_output_tiles()

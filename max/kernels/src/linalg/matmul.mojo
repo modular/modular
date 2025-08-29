@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
-from collections.string.string_slice import StaticString, get_static_string
+from collections import OptionalReg
+from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
-from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
+from sys.info import align_of, simd_width_of
 
-from algorithm import sync_parallelize, tile, unswitch, vectorize
+from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -77,16 +77,16 @@ trait InnerMatmulKernel(Copyable):
 
 fn elementwise_epilogue_c_tile[
     simd_width: Int,
-    type: DType,
+    dtype: DType,
     origin: MutableOrigin,
     c_shape: DimList,
-    func: fn[type: DType, width: Int, *, alignment: Int = 1] (
-        IndexList[2], SIMD[type, width]
+    func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+        IndexList[2], SIMD[dtype, width]
     ) capturing [_] -> None,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: NDBuffer[type, 2, origin, c_shape],
+    c: NDBuffer[dtype, 2, origin, c_shape],
 ):
     @always_inline
     @parameter
@@ -96,7 +96,7 @@ fn elementwise_epilogue_c_tile[
             var m_coord = idx_m + offset.M
             var c_coord = Index(m_coord, n_coord)
             var c_val = c.load[width=col_chunk_size](c_coord)
-            func[type, col_chunk_size](c_coord, c_val)
+            func[dtype, col_chunk_size](c_coord, c_val)
 
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
@@ -165,7 +165,7 @@ fn tiled_matmul_run[
 
 
 # Tiled Matmul Implementation.
-@value
+@fieldwise_init
 struct TiledMatmul[
     a_mut: Bool,
     b_mut: Bool, //,
@@ -184,7 +184,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutableOrigin,
     algorithm: InnerMatmulKernel,
-]:
+](Copyable, Movable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
@@ -362,7 +362,10 @@ struct TiledMatmul[
         @always_inline
         @parameter
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            var last_k_tile = k_offset + k_tile_size + self.global_tile_offset.K == self.global_tile_shape.K
+            var last_k_tile = (
+                k_offset + k_tile_size + self.global_tile_offset.K
+                == self.global_tile_shape.K
+            )
             self._outer_n_loop(
                 GemmShape(0, 0, k_offset) + self.global_tile_offset,
                 k_tile_size,
@@ -409,7 +412,7 @@ fn _small_matmul[
     b: NDBuffer[_, 2, _, _],
     c: NDBuffer[mut=True, _, 2, _, _],
 ):
-    alias simd_width = simdwidthof[c.type]()
+    alias simd_width = simd_width_of[c.type]()
 
     var M = a.dim[0]()
     var N = b.dim[0]() if transpose_b else b.dim[1]()
@@ -460,20 +463,20 @@ fn _small_matmul[
         @parameter
         @always_inline
         fn last_update[
-            _type: DType, width: Int
-        ](coords: IndexList[2], val: SIMD[_type, width]):
+            _dtype: DType, width: Int
+        ](coords: IndexList[2], val: SIMD[_dtype, width]):
             @parameter
             if epilogue_wrapper:
                 alias func = epilogue_wrapper.value()
-                func[_type, width](coords, val)
+                func[_dtype, width](coords, val)
             else:
                 c.store[width=width](coords, rebind[SIMD[c.type, width]](val))
 
         @always_inline
         @parameter
         fn accum_out_row[
-            output_func: fn[type: DType, width: Int] (
-                IndexList[2], SIMD[type, width]
+            output_func: fn[dtype: DType, width: Int] (
+                IndexList[2], SIMD[dtype, width]
             ) capturing [_] -> None,
         ](m: Int, k: Int):
             var a_val = a[m, k].cast[c.type]()
@@ -583,7 +586,7 @@ fn _matmul_cpu_impl[
 
         alias use_i8mm = kernel_id == InnerKernelID.I8MM
         alias simd_size = config.simd_size
-        alias alignment = alignof[SIMD[c.type, simd_size]]()
+        alias alignment = align_of[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr = UnsafePointer[
@@ -648,8 +651,8 @@ fn _matmul_cpu_impl[
                     True, MutableAnyOrigin
                 ](),
                 b,
-                sub_matmul_config.shape,
-                sub_matmul_config.offset,
+                GemmShape(sub_matmul_config.shape),
+                GemmShape(sub_matmul_config.offset),
             )
 
         # i8mm partition needs to be optimized as a function of m, n and k
@@ -890,7 +893,6 @@ fn matmul[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                _trace_description=_trace_description,
             ](c, a, b, ctx.value())
 
 

@@ -20,7 +20,7 @@ import click
 import yaml
 
 
-def shell(arg_str: str, check: bool = False, verbose=True):
+def shell(arg_str: str, check: bool = False, verbose=True):  # noqa: ANN001
     if not arg_str:
         return None
     print(f"$ [{arg_str}]")
@@ -36,11 +36,11 @@ def shell(arg_str: str, check: bool = False, verbose=True):
     return p.stdout.split("\n")
 
 
-def export_env(key, val):
+def export_env(key, val) -> None:  # noqa: ANN001
     os.environ[key] = val
 
 
-def export_arg_env():
+def export_arg_env() -> None:
     """
     export ARGO_SERVER='argo-workflows-staging-release-cea88dd5-server.argo.svc.platform-staging-karpenter-eks-cluster-3b48ea0.local:80'
     export ARGO_HTTP1=true
@@ -68,18 +68,18 @@ def export_arg_env():
         export_env(k, v)
 
 
-def check_argo_workflow_exists(git_sha):
+def check_argo_workflow_exists(git_sha):  # noqa: ANN001
     # check if workflow exists and return the output of argo list as yaml else None
     result = shell(
         f'argo list --prefix "kernels-{git_sha}" --completed -o yaml'
     )
-    if not result[0] == "[]":
+    if result[0] != "[]":
         result_yaml = yaml.safe_load("\n".join(result))
         return result_yaml
     return None
 
 
-def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):
+def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):  # noqa: ANN001
     print(
         f"Checking {last_n_commits} of origin/main for existing CI workflows"
         " (baseline)"
@@ -107,28 +107,28 @@ def search_workflows(branch_sha, last_n_commits=100, timeout_secs=60):
 
 
 def download_artifacts(
-    target_name,
-    main_sha,
-    branch_sha,
-    ref_main_yaml,
-    ref_branch_yaml,
-    output_dir,
-    extension,
-):
+    target_name,  # noqa: ANN001
+    main_sha,  # noqa: ANN001
+    branch_sha,  # noqa: ANN001
+    ref_main_yaml,  # noqa: ANN001
+    ref_branch_yaml,  # noqa: ANN001
+    output_dir,  # noqa: ANN001
+    extension,  # noqa: ANN001
+) -> None:
     # print("found workflow for ", current_sha)
     # TODO: convert to PATH
 
     shell(f"mkdir -p {output_dir}/main")
     shell(f"mkdir -p {output_dir}/branch")
 
-    artifcat_name = "result-dir"
+    artifact_name = "result-dir"
     shell(
         f"argo cp {ref_main_yaml[0]['metadata']['name']} --artifact-name"
-        f" {artifcat_name} {output_dir}/main"
+        f" {artifact_name} {output_dir}/main"
     )
     shell(
         f"argo cp {ref_branch_yaml[0]['metadata']['name']} --artifact-name"
-        f" {artifcat_name} {output_dir}/branch"
+        f" {artifact_name} {output_dir}/branch"
     )
 
     result_main = shell(f"find {output_dir}/main/argo/|grep result-dir.tgz")
@@ -157,7 +157,7 @@ def download_artifacts(
     print("\n".join(kp))
 
 
-def compare_to_main(target_name, branch_sha, output_dir, extension):
+def compare_to_main(target_name, branch_sha, output_dir, extension) -> None:  # noqa: ANN001
     export_arg_env()
     main_sha, ref_main_yaml, ref_branch_yaml = search_workflows(
         branch_sha=branch_sha
@@ -226,11 +226,11 @@ kdiff: compare performance with origin/main
 @click.argument("branch_sha", nargs=-1, type=click.UNPROCESSED)
 def cli(
     branch_sha: click.UNPROCESSED,
-    run_branch,
-    output_path,
-    extension,
-    targets,
-    verbose,
+    run_branch,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    extension,  # noqa: ANN001
+    targets,  # noqa: ANN001
+    verbose,  # noqa: ANN001
 ) -> bool:
     assert len(branch_sha) == 1
     assert output_path
@@ -268,7 +268,7 @@ def cli(
         )
 
 
-def main():
+def main() -> None:
     cli()
 
 

@@ -29,9 +29,8 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
-from sys import sizeof
+from sys import size_of
 
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -210,14 +209,6 @@ struct LaunchAttributeID(Writable):
         """
         return self != other
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `LaunchAttribute`.
@@ -228,11 +219,8 @@ struct LaunchAttributeID(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer interface.
 
         Args:
             writer: The writer to write to.
@@ -242,7 +230,7 @@ struct LaunchAttributeID(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttributeValue:
+struct LaunchAttributeValue(Defaultable):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -262,7 +250,6 @@ struct LaunchAttributeValue:
         """Initializes a new `LaunchAttributeValue` with zeroed storage."""
         self._storage = StaticTuple[UInt8, 64](0)
 
-    @implicit
     fn __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttributeValue` from an `AccessPolicyWindow`.
 
@@ -273,7 +260,6 @@ struct LaunchAttributeValue:
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    @implicit
     fn __init__(out self, dim: Dim):
         """Initializes a LaunchAttributeValue from a Dim (dimension) object.
 
@@ -284,7 +270,6 @@ struct LaunchAttributeValue:
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    @implicit
     fn __init__(out self, value: Bool):
         """Initializes a LaunchAttributeValue from a boolean object..
 
@@ -366,14 +351,6 @@ struct AccessProperty(Writable):
         """
         return self != other
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the `AccessProperty`.
@@ -384,11 +361,8 @@ struct AccessProperty(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessProperty` to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer instance to write the formatted string to.
@@ -402,7 +376,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Movable):
+struct LaunchAttribute(Copyable, Defaultable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -413,7 +387,7 @@ struct LaunchAttribute(Copyable, Movable):
     var id: LaunchAttributeID
     """The identifier specifying the type of this launch attribute."""
 
-    var __pad: StaticTuple[UInt8, 8 - sizeof[LaunchAttributeID]()]
+    var __pad: StaticTuple[UInt8, 8 - size_of[LaunchAttributeID]()]
     """Padding to ensure proper alignment of the structure."""
 
     var value: LaunchAttributeValue
@@ -422,8 +396,8 @@ struct LaunchAttribute(Copyable, Movable):
     fn __init__(out self):
         """Initializes a new LaunchAttribute with IGNORE ID and zeroed value."""
         self.id = LaunchAttributeID.IGNORE
-        self.__pad = __type_of(self.__pad)()
-        self.value = LaunchAttributeValue()
+        self.__pad = {}
+        self.value = {}
 
     fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
         """Initializes a `LaunchAttribute` with a specific ID and value.
@@ -433,10 +407,9 @@ struct LaunchAttribute(Copyable, Movable):
             value: The `LaunchAttributeValue` to set.
         """
         self.id = id
-        self.__pad = __type_of(self.__pad)()
+        self.__pad = {}
         self.value = value
 
-    @implicit
     fn __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttribute` from an `AccessPolicyWindow`.
 
@@ -468,7 +441,7 @@ struct LaunchAttribute(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct AccessPolicyWindow(Writable):
+struct AccessPolicyWindow(Defaultable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -485,7 +458,7 @@ struct AccessPolicyWindow(Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: UnsafePointer[NoneType]
+    var base_ptr: OpaquePointer
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -505,7 +478,7 @@ struct AccessPolicyWindow(Writable):
 
     fn __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = UnsafePointer[NoneType]()
+        self.base_ptr = OpaquePointer()
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL
@@ -539,7 +512,7 @@ struct AccessPolicyWindow(Writable):
             .address_space_cast[AddressSpace.GENERIC]()
             .address
         )
-        self.num_bytes = count * sizeof[T]()
+        self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop
         self.miss_prop = miss_prop
@@ -554,14 +527,11 @@ struct AccessPolicyWindow(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessPolicyWindow` to a writer.
 
         This method formats all the fields of the AccessPolicyWindow into a human-readable
         string representation and writes it to the provided writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer instance to write the formatted string to.

@@ -14,7 +14,6 @@
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 
 fn vec_func[
@@ -22,13 +21,13 @@ fn vec_func[
 ](
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = op(in0[tid], in1[tid])
+    output[tid] = op(in0[tid], in1[tid])
 
 
 @no_inline
@@ -55,6 +54,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
     var block_dim = 32
 
     alias kernel = vec_func[add_with_captured]
+    # TODO(MAXPLAT-335): Make compile_function_experimental support this case.
     var kernel_func = ctx.compile_function_checked[kernel, kernel]()
     ctx.enqueue_function_checked(
         kernel_func,

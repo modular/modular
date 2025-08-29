@@ -1,0 +1,68 @@
+load("//bazel:api.bzl", "mojo_library", "requirement")
+load(":custom_op_example.bzl", "custom_op_example_py_binary")
+
+filegroup(
+    name = "kernel_sources",
+    srcs = glob(["operations/*.mojo"]),
+)
+
+custom_op_example_py_binary(
+    name = "addition",
+    srcs = ["addition.py"],
+    extra_data = [
+        ":operations",
+    ],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "grayscale",
+    srcs = ["grayscale.py"],
+    extra_data = [
+        ":operations",
+    ],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+        requirement("pillow"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "whisper",
+    srcs = ["whisper.py"],
+    create_test = False,
+    extra_data = [
+        ":operations",
+    ],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("datasets"),
+        requirement("librosa"),
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "graph",
+    srcs = ["graph.py"],
+    extra_deps = [
+        "//SDK/lib/API/python/max/torch",
+        requirement("torch"),
+    ],
+)
+
+mojo_library(
+    name = "operations",
+    srcs = [":kernel_sources"],
+    deps = [
+        "@mojo//:compiler",
+        "@mojo//:layout",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+    ],
+)

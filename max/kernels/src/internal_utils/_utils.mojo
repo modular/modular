@@ -11,40 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from collections.string import StaticString
-from os import abort
-from pathlib import Path
 from random import rand, random_float64
-from sys import argv, bitwidthof, env_get_string, is_defined
-from sys.info import alignof
+from sys import argv, env_get_string
 
 from benchmark import (
     Bench,
     Bencher,
     BenchId,
-    BenchMetric,
     ThroughputMeasure,
     clobber_memory,
     keep,
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from memory import UnsafePointer
-from memory.unsafe import bitcast
-from stdlib.builtin.io import _snprintf
-from tensor_internal import DynamicTensor, ManagedTensorSlice
-from testing import assert_almost_equal, assert_equal, assert_true
+from io.io import _snprintf
+from tensor_internal import DynamicTensor
+from testing import assert_equal, assert_true
 
-from utils import Index, IndexList
+from utils import IndexList
 from utils.index import product
+import time
+from math import ceildiv
+from gpu import *
+from gpu.random import Random
+
+from collections import OptionalReg
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
@@ -54,19 +51,18 @@ struct ValOrDim[dim: Dim = Dim()]:
         ]()
         self.value = dim.get()
 
-    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 
 
-@value
+@fieldwise_init
 struct HostNDBuffer[
-    type: DType,
+    dtype: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
-    var tensor: NDBuffer[type, rank, MutableAnyOrigin, shape]
+](Copyable, Movable):
+    var tensor: NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 
     @always_inline
     fn __init__(
@@ -79,28 +75,25 @@ struct HostNDBuffer[
                 " all shapes are statically known"
             ),
         ]()
-        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
-            UnsafePointer[Scalar[type]].alloc(shape.product().get()),
+        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
+            UnsafePointer[Scalar[dtype]].alloc(shape.product().get()),
         )
 
     @always_inline
-    @implicit
-    fn __init__(out self, tensor: NDBuffer[type, rank, _, shape]):
+    fn __init__(out self, tensor: NDBuffer[dtype, rank, _, shape]):
         self.tensor = tensor
 
     @always_inline
-    @implicit
     fn __init__(
         out self,
         dynamic_shape: IndexList[rank, **_],
     ):
-        self.tensor = NDBuffer[type, rank, _, shape](
-            UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
+        self.tensor = NDBuffer[dtype, rank, _, shape](
+            UnsafePointer[Scalar[dtype]].alloc(product(dynamic_shape, rank)),
             dynamic_shape,
         )
 
     @always_inline
-    @implicit
     fn __init__(
         out self,
         dynamic_shape: DimList,
@@ -108,13 +101,13 @@ struct HostNDBuffer[
         self = Self(_make_tuple[rank](dynamic_shape))
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.tensor.data.free()
 
     def copy_to_device(
         self, ctx: DeviceContext
-    ) -> DeviceNDBuffer[type, rank, shape]:
-        var retval = DeviceNDBuffer[type, rank, shape](
+    ) -> DeviceNDBuffer[dtype, rank, shape]:
+        var retval = DeviceNDBuffer[dtype, rank, shape](
             self.tensor.dynamic_shape, ctx=ctx
         )
         ctx.enqueue_copy(retval.buffer, self.tensor.data)
@@ -123,7 +116,7 @@ struct HostNDBuffer[
     fn to_layout_tensor(
         self,
         out result: LayoutTensor[
-            type, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
+            dtype, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
         ],
     ):
         result = __type_of(result)(
@@ -134,16 +127,16 @@ struct HostNDBuffer[
         )
 
 
-@value
+@fieldwise_init
 struct DeviceNDBuffer[
-    type: DType,
+    dtype: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
-    var buffer: DeviceBuffer[type]
+](Copyable, Movable):
+    var buffer: DeviceBuffer[dtype]
     var tensor: NDBuffer[
-        type,
+        dtype,
         rank,
         MutableAnyOrigin,
         shape,
@@ -163,8 +156,8 @@ struct DeviceNDBuffer[
             ),
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[type](shape.product().get())
-        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
+        self.buffer = ctx.enqueue_create_buffer[dtype](shape.product().get())
+        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(),
         )
 
@@ -176,10 +169,10 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[type](
+        self.buffer = ctx.enqueue_create_buffer[dtype](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(), dynamic_shape
         )
 
@@ -201,10 +194,10 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.enqueue_create_buffer[type](
+        self.buffer = ctx.enqueue_create_buffer[dtype](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
+        self.tensor = NDBuffer[dtype, rank, MutableAnyOrigin, shape](
             self.buffer._unsafe_ptr(), dynamic_shape, stride
         )
 
@@ -220,15 +213,15 @@ struct DeviceNDBuffer[
 
     def copy_from_device(
         self, ctx: DeviceContext
-    ) -> HostNDBuffer[type, rank, shape]:
-        var retval = HostNDBuffer[type, rank, shape](self.tensor.dynamic_shape)
+    ) -> HostNDBuffer[dtype, rank, shape]:
+        var retval = HostNDBuffer[dtype, rank, shape](self.tensor.dynamic_shape)
         ctx.enqueue_copy(retval.tensor.data, self.buffer)
         return retval^
 
     fn to_layout_tensor(
         ref self,
         out result: LayoutTensor[
-            type, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
+            dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
         ],
     ):
         result = __type_of(result)(
@@ -240,21 +233,21 @@ struct DeviceNDBuffer[
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
-@value
-struct TestTensor[type: DType, rank: Int]:
-    var ndbuffer: NDBuffer[type, rank, MutableAnyOrigin]
+@fieldwise_init
+struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
+    var ndbuffer: NDBuffer[dtype, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
 
     fn __init__(
         out self,
         shape: DimList,
-        values: List[Scalar[type]] = List[Scalar[type]](),
+        values: List[Scalar[dtype]] = List[Scalar[dtype]](),
     ):
         self.num_elements = Int(shape.product[rank]())
         self.shape = shape
-        self.ndbuffer = NDBuffer[type, rank](
-            UnsafePointer[Scalar[type]].alloc(self.num_elements), shape
+        self.ndbuffer = NDBuffer[dtype, rank](
+            UnsafePointer[Scalar[dtype]].alloc(self.num_elements), shape
         )
         if len(values) == 1:
             for i in range(self.num_elements):
@@ -268,26 +261,26 @@ struct TestTensor[type: DType, rank: Int]:
     fn __copyinit__(out self, other: Self):
         self.num_elements = other.num_elements
         self.shape = other.shape
-        self.ndbuffer = NDBuffer[type, rank](
-            UnsafePointer[Scalar[type]].alloc(self.num_elements), self.shape
+        self.ndbuffer = NDBuffer[dtype, rank](
+            UnsafePointer[Scalar[dtype]].alloc(self.num_elements), self.shape
         )
         for i in range(self.num_elements):
             self.ndbuffer.data[i] = other.ndbuffer.data[i]
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.ndbuffer.data.free()
 
-    fn to_managed_tensor_slice(self) -> DynamicTensor[type, rank].Type:
-        return DynamicTensor[type, rank].Type(self.ndbuffer)
+    fn to_managed_tensor_slice(self) -> DynamicTensor[dtype, rank]:
+        return DynamicTensor[dtype, rank](self.ndbuffer)
 
 
-@value
-struct InitializationType:
+struct InitializationType(Copyable, EqualityComparable, Movable):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
     alias uniform_distribution = InitializationType(2)
     alias arange = InitializationType(3)
+    alias fill = InitializationType(4)
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -297,6 +290,9 @@ struct InitializationType:
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
 
     @staticmethod
     fn from_str(str: String) raises -> Self:
@@ -308,6 +304,8 @@ struct InitializationType:
             return InitializationType.uniform_distribution
         elif str == "arange":
             return InitializationType.arange
+        elif str == "fill":
+            return InitializationType.fill
         else:
             raise Error("Invalid initialization type")
 
@@ -340,7 +338,7 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer):
+fn zero(buffer: NDBuffer[mut=True, *_, **_]):
     buffer.zero()
 
 
@@ -348,6 +346,7 @@ fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
     buffer.fill(val.cast[buffer.type]())
 
 
+# TODO: refactor the following to run exactly once.
 fn bench_compile_time[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -508,25 +507,33 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @always_inline
-fn _str_fmt_width[max_width: Int = 256](str: String, str_width: Int) -> String:
-    """Formats string with a given width.
-
-    Returns:
-        sprintf("%-*s", str_width, str)
+fn _str_fmt_width[str_max: Int = 256](s: String, str_width: Int) -> String:
+    """Return `s` padded on the left with spaces so that the total length is
+    exactly `str_width`.  If `s` is already longer than `str_width` it is
+    returned unchanged. This re-implementation avoids the previous reliance on `_snprintf`
     """
-    debug_assert(str_width > 0, "Should have str_width>0")
+    debug_assert(str_width > 0, "str_width must be positive")
+    var current_len = len(s)
+    if current_len >= str_width:
+        return s
 
-    var result = String(capacity=max_width)
-    var actualLen = _snprintf["%-*s"](
-        result.unsafe_ptr(), max_width, str_width, str.unsafe_ptr()
-    )
-    debug_assert(
-        actualLen <= max_width, "Attempted to access outside array bounds!"
-    )
-    result.resize(actualLen)
-    return result^
+    # pads to the right to match numpy
+    var out = s
+    var pad_len = str_width - current_len
+    out += " " * pad_len
+    return out
 
 
+@always_inline
+fn _compute_max_scalar_str_len[rank: Int](x: NDBuffer[_, rank]) -> Int:
+    """Return the maximum string length of all scalar elements in `x`."""
+    var max_len: Int = 0
+    for i in range(x.num_elements()):
+        max_len = max(max_len, len(String(x.data[i])))
+    return max_len
+
+
+@always_inline
 fn ndbuffer_to_str[
     rank: Int,
     axis: Int = 0,
@@ -534,41 +541,73 @@ fn ndbuffer_to_str[
     x: NDBuffer[_, rank],
     prev: IndexList[rank] = IndexList[rank](),
     width: Int = 8,
-    space_in: String = "",
+    indent: String = "",
 ) -> String:
-    """Pretty print a rank-dimensional NDBuffer.
-
-    Returns:
-        String(NDBuffer[rank]).
+    """Pretty-print an NDBuffer similar to NumPy's ndarray formatting.
+    The tensor is rendered as nested bracketed lists, one row (or sub-tensor)
+    per line, without the index headers previously produced.
     """
     var cur = prev
 
-    var space = space_in
-    for _ in range(axis):
-        space += " "
-    var s = String()
+    var effective_width = width
+    if axis == 0 and indent == "":
+        # ensure we have enough space to print the longest scalar plus one
+        # leading space for separation.
+        var computed = _compute_max_scalar_str_len[rank](x) + 1
+        effective_width = max(effective_width, computed)
 
-    for i in range(axis):
-        s += String(prev[i]) + ","
-    s = space + "(" + s + ")"
+    # maximum desired terminal width before wrapping.
+    var max_line_width = 120
 
-    var out_str = s + ":[\n" + space
-    for i in range(x.dynamic_shape[axis]):
-        cur[axis] = i
+    var out_str = String()
 
-        @parameter
-        if axis == rank - 1:
-            out_str += _str_fmt_width(String(x[cur]), width)
-        else:
-            out_str += ndbuffer_to_str[rank, axis + 1](x, cur, width, space)
-    out_str += "]\n"
+    @parameter
+    if axis == rank - 1:
+        # base case – print a 1-d slice
+        var num_elems = x.dynamic_shape[axis]
+        out_str += "["
+        var line_len: Int = 0
+        for i in range(num_elems):
+            cur[axis] = i
+            var formatted = _str_fmt_width(String(x[cur]), effective_width)
+
+            # decide if we need to wrap before appending this element.
+            if i > 0:
+                if line_len + 1 + effective_width > max_line_width:
+                    out_str += (
+                        "\n" + indent + " "
+                    )  # align under opening bracket
+                    line_len = 0
+                else:
+                    # use single separator since previous value already padded right
+                    out_str += " "
+                    line_len += 1
+
+            if i == num_elems - 1:
+                out_str += String(x[cur])
+            else:
+                out_str += formatted
+            line_len += effective_width
+        out_str += "]"
+    else:
+        # Recursive case – print higher-rank slices, line by line.
+        out_str += "["
+        var next_indent = indent + " "
+        for i in range(x.dynamic_shape[axis]):
+            cur[axis] = i
+            if i > 0:
+                out_str += "\n" + next_indent
+            out_str += ndbuffer_to_str[rank, axis + 1](
+                x, cur, effective_width, next_indent
+            )
+        out_str += "]"
     return out_str
 
 
 fn array_equal[
-    type: DType,
+    dtype: DType,
     rank: Int,
-](x_array: NDBuffer[type, rank], y_array: NDBuffer[type, rank],) raises:
+](x_array: NDBuffer[dtype, rank], y_array: NDBuffer[dtype, rank],) raises:
     """Assert two ndbuffers have identical type, rank, length, and values."""
 
     assert_true(
@@ -579,9 +618,9 @@ fn array_equal[
         assert_equal(x_array.data[i], y_array.data[i])
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Mode(Stringable):
+struct Mode(Copyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")
@@ -594,11 +633,11 @@ struct Mode(Stringable):
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if String(Self.RUN.handle) == h[]:
+            if String(Self.RUN.handle) == h:
                 self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h[]:
+            elif String(Self.BENCHMARK.handle) == h:
                 self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h[]:
+            elif String(Self.VERIFY.handle) == h:
                 self.append(Self.VERIFY)
 
     fn append(mut self, other: Self):
@@ -635,7 +674,7 @@ fn random[
         rand(buffer.data, buffer.num_elements(), min=min, max=max)
 
 
-fn update_bench_config(mut b: Bench) raises:
+fn update_bench_config_args(mut b: Bench) raises:
     # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
 
     # b.config.out_file = Path(arg_parse("bench-out-file", String(b.config.out_file)))
@@ -645,8 +684,12 @@ fn update_bench_config(mut b: Bench) raises:
     b.config.max_runtime_secs = arg_parse(
         "bench-max-runtime-secs", b.config.max_runtime_secs
     )
+    # TODO: min_warmuptime_secs will be removed from bencher.mojo and here.
     b.config.min_warmuptime_secs = arg_parse(
         "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
+    )
+    b.config.num_warmup_iters = arg_parse(
+        "bench-num-warmup-iters", b.config.num_warmup_iters
     )
     # set bench-max-batch-size=1 for single iteration
     b.config.max_batch_size = arg_parse(
@@ -659,4 +702,100 @@ fn update_bench_config(mut b: Bench) raises:
     )
     b.config.flush_denormals = arg_parse(
         "bench-flush-denormals", b.config.flush_denormals
+    )
+
+
+struct Timer:
+    var start: Float64
+    var current: Float64
+
+    var report: List[String]
+
+    fn __init__(out self):
+        self.start = time.perf_counter_ns()
+        self.current = self.start
+        self.report = List[String]()
+
+    fn measure(mut self, msg: String):
+        var current = time.perf_counter_ns()
+        var elapsed = current - self.current
+        self.current = current
+        self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
+
+    fn print(self) raises:
+        for i in range(len(self.report)):
+            print(self.report[i])
+        print(
+            "[total-elapsed] "
+            + String((self.current - self.start) / 1e6)
+            + " (ms)"
+        )
+        print(
+            "-----------------------------------------------------------------------"
+        )
+
+
+# TODO: limited support for 1D, generalize to nD
+fn init_vector_gpu[
+    dtype: DType
+](
+    x: UnsafePointer[Scalar[dtype]],
+    len: Int,
+    mode: InitializationType,
+    value: Scalar[dtype],
+):
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+
+    @parameter
+    fn apply(values: SIMD[dtype, 4]):
+        @parameter
+        for i in range(4):
+
+            @parameter
+            if i == 3:
+                if tid >= len:
+                    return
+            x[tid] = Scalar[dtype](values[i])
+            tid += stride
+
+    var values = SIMD[dtype, 4]()
+    if mode == InitializationType.zero:
+        values = SIMD[dtype, 4](0)
+    elif mode == InitializationType.one:
+        values = SIMD[dtype, 4](1)
+    elif mode == InitializationType.fill:
+        values = SIMD[dtype, 4](value)
+    elif mode == InitializationType.uniform_distribution:
+        var rng = Random(offset=tid)
+        values = SIMD[dtype, 4](rng.step_uniform())
+    elif mode == InitializationType.arange:
+        values = SIMD[dtype, 4](
+            UInt64(tid).cast[dtype](),
+            UInt64(tid + stride).cast[dtype](),
+            UInt64(tid + 2 * stride).cast[dtype](),
+            UInt64(tid + 3 * stride).cast[dtype](),
+        )
+    apply(values)
+
+
+fn init_vector_launch[
+    dtype: DType, block_dim: Int = 256
+](
+    out_device: DeviceBuffer[dtype],
+    length: Int,
+    init_type: InitializationType,
+    context: DeviceContext,
+    value: OptionalReg[Scalar[dtype]] = None,
+) raises:
+    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
+    # using num-threads = 1/4th of length to initialize the array
+
+    context.enqueue_function[init_vector_gpu[dtype]](
+        out_device,
+        length,
+        init_type,
+        value.or_else(0),
+        grid_dim=(num_blocks),
+        block_dim=(block_dim),
     )

@@ -16,18 +16,14 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
@@ -64,14 +60,14 @@ class Llama4Inputs(ModelInputs):
     execution.
     """
 
-    tokens: np.ndarray | Tensor
+    tokens: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets: np.ndarray | Tensor
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
-    cache_positions: np.ndarray | Tensor
+    cache_positions: npt.NDArray[np.integer[Any]] | Tensor
     """Positions in the cache of each input token."""
 
     signal_buffers: list[Tensor]
@@ -79,9 +75,9 @@ class Llama4Inputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: np.ndarray | Tensor,
-        input_row_offsets: np.ndarray | Tensor,
-        cache_positions: np.ndarray | Tensor,
+        tokens: npt.NDArray[np.integer[Any]] | Tensor,
+        input_row_offsets: npt.NDArray[np.integer[Any]] | Tensor,
+        cache_positions: npt.NDArray[np.integer[Any]] | Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
@@ -158,9 +154,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         # Contents of signal buffer should be filled with zeros.
         self.signal_buffers = [
             Tensor.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
             )
             for dev in self.devices
         ]
@@ -215,10 +209,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return Llama4Config.get_kv_params(
-            huggingface_config,
-            n_devices,
-            kv_cache_config,
-            cache_dtype,
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -272,11 +263,10 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=Llama4Config.get_num_layers(
-                huggingface_config=huggingface_config,
+                huggingface_config=huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -306,8 +296,18 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         logger.info("Building and compiling model...")
         before = time.perf_counter()
         graph = self._build_graph()
+        after_build = time.perf_counter()
+
+        logger.info(f"Building graph took {after_build - before:.6f} seconds")
+
+        before_compile = time.perf_counter()
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )
@@ -351,7 +351,11 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = Llama4(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=False,  # We do not use vision weights
+        )
         self.state_dict = nn_model.state_dict()
 
         signals = Signals(
@@ -442,15 +446,19 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[1]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                logits=cast(Tensor, model_outputs[0]),
-                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -481,8 +489,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).

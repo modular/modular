@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
-from math import ceildiv, isclose
+from math import ceildiv
 from pathlib import Path
-from random import rand, randint, random_float64, seed
-from sys import alignof, argv, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from random import rand, randint, random_float64
+from sys import align_of, argv, size_of
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -30,64 +28,40 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import DEFAULT_GPU_ARCH
 from gpu.intrinsics import lop
 from gpu.memory import (
     AddressSpace,
-    async_copy_commit_group,
-    async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    arange,
     assert_almost_equal,
-    assert_equal,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
-    LayoutTensorIter,
-    _swizzle_signature,
-    copy,
     copy_dram_to_sram,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_local_to_local,
-    copy_sram_to_dram,
 )
-from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from linalg.matmul_gpu import _matmul_gpu, multistage_gemm
+from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import (
-    MatmulConfig,
     MatmulKernels,
-    block_swizzle,
-    select_config,
 )
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import (
     multistage_gemm_q,
     pack_Q_tile,
-    q_smem_usage,
 )
 
 from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from utils.index import Index
 
 
 fn is_benchmark() -> Bool:
@@ -115,7 +89,7 @@ fn repack_Q4_0_for_sm8x[
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
 ):
     alias group_size = 32
-    alias group_bytes = sizeof[DType.float16]() + (group_size // 2)
+    alias group_bytes = size_of[DType.float16]() + (group_size // 2)
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias WARP_SIZE = 32
@@ -173,7 +147,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -224,9 +198,11 @@ fn repack_Q4_0_for_sm8x[
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
             alias thd_layout = Layout.row_major(8, 4)
-            var thread_tile = raw_Q_tile.slice[:, 2:]().vectorize[
-                1, 2
-            ]().distribute[thd_layout](lane_id)
+            var thread_tile = (
+                raw_Q_tile.slice[:, 2:]()
+                .vectorize[1, 2]()
+                .distribute[thd_layout](lane_id)
+            )
 
             @parameter
             for i_ele in range(16):
@@ -344,9 +320,13 @@ fn create_ref_b[
         ceildiv(BLOCK_K, group_size), repack_tile[0]
     ](0, warp_x)
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
-    var scales_reg_tiles = tb[scales_type]().row_major[
-        repack_tile[0] // 8, 1
-    ]().local().alloc().vectorize[1, 1]()
+    var scales_reg_tiles = (
+        tb[scales_type]()
+        .row_major[repack_tile[0] // 8, 1]()
+        .local()
+        .alloc()
+        .vectorize[1, 1]()
+    )
     # load scales
     scales_reg_tiles.vectorize[8, 1]().copy_from(
         warp_scales_tile.vectorize[1, 8]().distribute[
@@ -361,7 +341,7 @@ fn create_ref_b[
     var mma_tile_iter_1 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 0)
     var mma_tile_iter_2 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 1)
 
-    var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[lane_id])
+    var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
     @always_inline
     fn int4tobf16(
@@ -377,27 +357,29 @@ fn create_ref_b[
 
         var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
 
-        var v = bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS).fma(
-            BF16_SCALE, BF16_ZERO
+        var v = (
+            bitcast[DType.bfloat16, 2](t)
+            .fma(BF16_ONE, BF16_BIAS)
+            .fma(BF16_SCALE, BF16_ZERO)
         )
         return v
 
     alias write_back_layout = Layout.row_major(1, 32)
-    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0])
+    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
 
     @parameter
     for i in range(0, TILE_N // 8, 2):
         var q_int = vec[i // 2]
 
         var v1 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i, 0])
         )
         mma_tile_iter_1[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
         ](v1)
         q_int >>= 4
         var v2 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i, 0])
         )
         mma_tile_iter_2[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
@@ -407,14 +389,14 @@ fn create_ref_b[
         mma_tile_iter_2._incr()
 
         v1 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1, 0])
         )
         mma_tile_iter_1[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
         ](v1)
         q_int >>= 4
         v2 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1, 0])
         )
         mma_tile_iter_2[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
@@ -445,7 +427,7 @@ fn test_repack_Q4_0_for_sm8x(
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[type: DType](array: InlineArray[Scalar[type]]):
+    fn fill_random[dtype: DType](array: InlineArray[Scalar[dtype]]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):
@@ -495,10 +477,13 @@ fn test_repack_Q4_0_for_sm8x(
 
     zero(repacked_b_host.tensor)
     build_b_buffer(N, K, gguf_b_host.tensor.data)
+    var gguf_dequan_ref_host_tensor = gguf_dequan_ref_host.to_layout_tensor()
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        gguf_b_host.tensor,
-        gguf_dequan_ref_host.tensor,
-        gguf_dequan_ref_host.tensor.get_shape(),
+        gguf_b_host.to_layout_tensor(),
+        gguf_dequan_ref_host_tensor,
+        rebind[IndexList[gguf_dequan_ref_host_tensor.rank]](
+            gguf_dequan_ref_host_tensor.runtime_layout.shape.value.canonicalize()
+        ),
     )
     zero(repacked_dequan_host.tensor)
 
@@ -625,7 +610,7 @@ fn test_repack_Q4_0_for_sm8x(
 
 
 fn test_quantized[
-    type: DType
+    dtype: DType
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     # quantization configs
     alias group_size = 128
@@ -658,7 +643,7 @@ fn test_quantized[
     var dynamic_c_shape = DimList(m.value, n.value)
 
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
+    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
     var c_host = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
     var c_host_ref = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
 
@@ -683,7 +668,7 @@ fn test_quantized[
     var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[type, 2, shape=static_b_shape](
+    var b_device = DeviceNDBuffer[dtype, 2, shape=static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
     var b_device_ref = DeviceNDBuffer[a_type, 2, static_b_ref_shape](
@@ -698,7 +683,7 @@ fn test_quantized[
 
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
-    alias b_tensor_type = LayoutTensor[type, b_layout]
+    alias b_tensor_type = LayoutTensor[dtype, b_layout]
     alias b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
 
     var b_tensor = b_tensor_type(
@@ -728,7 +713,7 @@ fn test_quantized[
         dynamic_c_shape, ctx=ctx
     )
 
-    alias kernels = MatmulKernels[a_type, type, a_type, True]()
+    alias kernels = MatmulKernels[a_type, dtype, a_type, True]()
     alias config = kernels.ampere_128x128_4
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -754,7 +739,7 @@ fn test_quantized[
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(
-            "Tranpose B ",
+            "Transpose B ",
             "True",
             nrun,
             " runs avg(s)",
@@ -768,7 +753,7 @@ fn test_quantized[
     ](c_device.tensor, a_device.tensor, b_device.tensor, config, ctx)
 
     alias dequan = create_ref_b[
-        type,
+        dtype,
         a_type,
         b_tensor.layout,
         b_ref_tensor.layout,

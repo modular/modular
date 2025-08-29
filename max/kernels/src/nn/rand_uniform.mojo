@@ -16,7 +16,7 @@ from gpu.random import Random
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal._indexing import _dot_prod, _row_major_strides
 
-from utils import IndexList, product
+from utils import IndexList
 
 
 fn random_uniform[
@@ -61,7 +61,7 @@ fn random_uniform[
     @always_inline
     @__copy_capture(strides, delta)
     fn generate[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
         constrained[width <= 4]()
 

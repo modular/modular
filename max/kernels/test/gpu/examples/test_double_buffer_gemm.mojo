@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import ceildiv, isclose
-from sys import argv, simdwidthof
+from sys import argv, simd_width_of
 from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
 from buffer import NDBuffer
@@ -32,7 +31,6 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from testing import assert_almost_equal
 
@@ -67,7 +65,7 @@ fn sgemm_double_buffer[
 ):
     alias _uint = Scalar[itype]
 
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     var M = c.shape[0]()
     var N = c.shape[1]()
@@ -98,21 +96,30 @@ fn sgemm_double_buffer[
 
     # Double buffer in shared memory.
     alias a_smem_size = BK * BM_padded
-    var a_smem_tile = LayoutTensor[
-        a_type,
-        Layout.row_major(2 * BK, BM_padded),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().slice[:, :BM]().split[2]()
+    var a_smem_tile = (
+        LayoutTensor[
+            a_type,
+            Layout.row_major(2 * BK, BM_padded),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .slice[:, :BM]()
+        .split[2]()
+    )
 
     # Align the address by the maximum async copy size (16 bytes).
     alias b_smem_size = BK * BN
-    var b_smem_tile = LayoutTensor[
-        b_type,
-        Layout.row_major(2 * BK, BN),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().split[2]()
+    var b_smem_tile = (
+        LayoutTensor[
+            b_type,
+            Layout.row_major(2 * BK, BN),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .split[2]()
+    )
 
     # Global memory tile.
     var a_gmem_tile = a.tile[BM, BK](block_idx.y, 0)
@@ -296,16 +303,6 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device._unsafe_ptr()
-    )
-    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
-        a_device._unsafe_ptr()
-    )
-    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
-        b_device._unsafe_ptr()
-    )
-
     var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
     var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
@@ -361,18 +358,23 @@ fn test(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
+    var c_tensor_ref = LayoutTensor[DType.float32, c_layout](c_device_ref)
+
     # Naive gemm.
     alias BLOCK_DIM = 16
     alias gemm_naive = matmul_kernel_naive[
-        DType.float32, DType.float32, DType.float32, BLOCK_DIM
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        a_tensor.layout,
+        b_tensor.layout,
+        c_tensor_ref.layout,
+        BLOCK_DIM,
     ]
-    var c_buffer_ref = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device_ref._unsafe_ptr()
-    )
     ctx.enqueue_function[gemm_naive](
-        c_buffer_ref,
-        a_buffer,
-        b_buffer,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

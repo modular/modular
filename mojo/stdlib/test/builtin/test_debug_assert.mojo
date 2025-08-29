@@ -14,7 +14,6 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -D DEBUG -debug-level full %s | FileCheck %s
 
 
 def main():
@@ -35,7 +34,7 @@ def test_debug_assert():
 # CHECK-LABEL: test_debug_assert_multiple_args
 def test_debug_assert_multiple_args():
     print("== test_debug_assert_multiple_args")
-    debug_assert(True, "passing mutliple args: ", 42, ", ", 4.2)
+    debug_assert(True, "passing multiple args: ", 42, ", ", 4.2)
     # CHECK: is reached
     print("is reached")
 
@@ -49,8 +48,8 @@ def test_debug_assert_writable():
 
 
 @fieldwise_init
-struct WritableOnly:
+struct WritableOnly(Writable):
     var message: String
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.message)

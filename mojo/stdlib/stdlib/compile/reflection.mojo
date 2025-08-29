@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from sys.info import _current_target
+from sys.info import _current_target, _TargetType
 
 
 fn get_linkage_name[
     func_type: AnyTrivialRegType, //,
-    target: __mlir_type.`!kgen.target`,
+    target: _TargetType,
     func: func_type,
 ]() -> StaticString:
     """Returns `func` symbol name.
@@ -30,13 +29,14 @@ fn get_linkage_name[
     Returns:
         Symbol name.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_linkage_name,`,
+    var res = __mlir_attr[
+        `#kgen.get_linkage_name<`,
         target,
         `,`,
         func,
         `> : !kgen.string`,
     ]
+    return StaticString(res)
 
 
 fn get_linkage_name[
@@ -53,3 +53,30 @@ fn get_linkage_name[
         Symbol name.
     """
     return get_linkage_name[_current_target(), func]()
+
+
+fn get_type_name[
+    type_type: AnyTrivialRegType, //,
+    type: type_type,
+    *,
+    qualified_builtins: Bool = False,
+]() -> StaticString:
+    """Returns the struct name of the given type parameter.
+
+    Parameters:
+        type_type: Type of type.
+        type: A mojo type.
+        qualified_builtins: Whether to print fully qualified builtin type names
+            (e.g. `stdlib.builtin.int.Int`) or shorten them (e.g. `Int`).
+
+    Returns:
+        Type name.
+    """
+    var res = __mlir_attr[
+        `#kgen.get_type_name<`,
+        type,
+        `, `,
+        qualified_builtins.value,
+        `> : !kgen.string`,
+    ]
+    return StaticString(res)

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import asyncio
 import ctypes
@@ -21,24 +22,23 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, Optional
+from typing import Any, Callable
 
 import uvloop
-import zmq
-from max.pipelines.core import PipelinesFactory
+from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
+from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler import TokenGeneratorSchedulerConfig, load_scheduler
+from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
-logger = logging.getLogger(__name__)
-# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-logger.propagate = False
+logger = logging.getLogger("max.serve")
 
 
 def _set_pdeathsig(pdeathsig: int) -> None:
@@ -77,7 +77,7 @@ class ModelWorker:
         ]
         if settings.metric_recording not in supported_methods:
             logger.info(
-                "Unsuported recording method. Metrics unavailable in model worker"
+                "Unsupported recording method. Metrics unavailable in model worker"
             )
             return
 
@@ -89,11 +89,12 @@ class ModelWorker:
     async def run(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorSchedulerConfig,
+        pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory | None = None,
     ) -> None:
         """Runs a model worker process.
 
@@ -103,14 +104,14 @@ class ModelWorker:
         Args:
             pc: Process control for managing worker lifecycle
             model_factory: Factory function to create the model pipeline
-            pipeline_config: Configuration for the token generation pipeline
+            pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
+            dispatcher_factory: Factory for creating dispatcher client instances
         """
-        # Configure Logging
         configure_logging(settings)
         pid = os.getpid()
-        logger.info("Starting model worker on process %d!", pid)
+        logger.debug("Starting model worker on process %d!", pid)
 
         # Configure Metrics
         async with metric_client_factory() as metric_client:
@@ -120,27 +121,54 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
-        # Initialize ZeroMQ Context.
-        # This should only be done once per process.
-        zmq_ctx = zmq.Context(io_threads=2)
+            # create dispatcher client
+            pipeline_role = pipeline_config.pipeline_role
 
-        # Retrieve Scheduler.
-        scheduler = load_scheduler(
-            pc,
-            pipeline,
-            zmq_ctx,
-            settings,
-            pipeline_config,
-        )
+            if (
+                not pipeline_role.uses_dispatch_service
+                and dispatcher_factory is not None
+            ):
+                logger.info(
+                    f"Dispatcher factory is not required for {pipeline_role}. Overriding with None."
+                )
+                dispatcher_factory = None
 
-        # Mark the start of the process, and run the scheduler.
-        pc.set_started()
-        logger.debug("Started model worker!")
+            dispatcher_client = None
+            if pipeline_role.uses_dispatch_service:
+                if dispatcher_factory is None:
+                    raise ValueError(
+                        f"Dispatcher factory is required for {pipeline_role} but was not provided"
+                    )
+                logger.debug(f"Starting dispatcher client for {pipeline_role}")
+                dispatcher_client = dispatcher_factory.create_client()
+                dispatcher_client.start()
 
-        scheduler.run()
+            # Retrieve Scheduler.
+            scheduler = load_scheduler(
+                pipeline,
+                pipeline_config,
+                settings,
+                dispatcher_client,
+            )
 
-        # Close the process.
-        pc.set_completed()
+            # Mark the start of the process, and run the scheduler.
+            pc.set_started()
+            logger.debug("Started model worker!")
+
+            while not pc.is_canceled():
+                pc.beat()
+                try:
+                    # This method must terminate in a reasonable amount of time
+                    # so that the ProcessMonitor heartbeat is periodically run.
+                    scheduler.run_iteration()
+                except Exception as e:
+                    logger.exception("An error occurred during scheduling")
+                    raise e
+
+            # Close the process.
+            pc.set_completed()
+            if dispatcher_client is not None:
+                dispatcher_client.stop()
         logger.debug("Stopped model worker!")
 
     @staticmethod
@@ -148,11 +176,12 @@ class ModelWorker:
     def __call__(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorSchedulerConfig,
+        pipeline_config: PipelineConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -163,10 +192,10 @@ class ModelWorker:
         Args:
             pc: Process control for managing worker lifecycle
             model_factory: Factory for creating model pipeline instances
-            pipeline_config: Configuration for the token generation pipeline
+            pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
-            ctx: Multiprocessing context for worker process
+            dispatcher_factory: Factory for creating dispatcher client instances
         """
         try:
             _set_pdeathsig(signal.SIGTERM)
@@ -177,32 +206,35 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
+                    dispatcher_factory,
                 )
             )
         except KeyboardInterrupt:
             pass
         except Exception as e:
             logger.exception(
-                "Encountered an error in ModelWorker.run %s",
-                e,
-                stack_info=True,
+                "Encountered an error in ModelWorker.run %s", e, stack_info=True
             )
 
 
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory,
-    batch_config: TokenGeneratorSchedulerConfig,
+    pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    kvcache_agent_queue: Optional[multiprocessing.Queue] = None,
-    zmq_io_threads: int = 1,
+    pipeline_task: PipelineTask,
+    dispatcher_factory: DispatcherFactory | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
     Args:
-        factories (PipelinesFactory): Token generator factory functions.
-        name (str, optional): Worker name. Defaults to "MODEL_<uuid>".
+        model_factory: Factory for creating model pipeline instances
+        pipeline_config: The config for the pipeline
+        settings: Global server settings
+        metric_client: Metric client for recording metrics
+        pipeline_task: The task for the pipeline
+        dispatcher_factory: Factory for creating dispatcher client instances
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -214,24 +246,18 @@ async def start_model_worker(
 
     mp_context = multiprocessing.get_context("spawn")
     pc = ProcessControl(
-        mp_context,
-        "model-worker",
-        health_fail_s=settings.mw_health_fail_s,
+        mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
-    zmq_ctx = zmq.Context(io_threads=zmq_io_threads)
-    engine_queue: EngineQueue = EngineQueue(
+    engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
         mp_context,
         worker_pc=pc,
         request_zmq_endpoint=settings.request_zmq_endpoint,
         response_zmq_endpoint=settings.response_zmq_endpoint,
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        zmq_ctx=zmq_ctx,
+        pipeline_task=pipeline_task,
     )
-    queue_args = {
-        "KV_CACHE_AGENT": kvcache_agent_queue,
-    }
 
-    logger.info("Starting worker: %s", worker_name)
+    logger.debug("Starting worker: %s", worker_name)
     worker = mp_context.Process(
         name=worker_name,
         target=ModelWorker(),
@@ -239,9 +265,10 @@ async def start_model_worker(
         args=(
             pc,
             model_factory,
-            batch_config,
+            pipeline_config,
             settings,
-            metric_client.cross_process_factory(),
+            metric_client.cross_process_factory(settings),
+            dispatcher_factory,
         ),
     )
     worker.start()
@@ -253,13 +280,12 @@ async def start_model_worker(
         unhealthy_poll_s=200e-3,
     )
 
-    use_heartbeat = settings.use_heartbeat
-    if not use_heartbeat:
+    if not settings.use_heartbeat:
         engine_queue.use_process_healthcheck(worker)
 
     # before progressing, observe the worker process to be healthy or dead
     dt = asyncio.create_task(monitor.until_dead())
-    if use_heartbeat:
+    if settings.use_heartbeat:
         ht = asyncio.create_task(monitor.until_healthy())
     else:
         ht = asyncio.create_task(monitor.until_started())
@@ -308,7 +334,7 @@ async def start_model_worker(
     logger.debug("Model worker task is alive and healthy")
 
     try:
-        if use_heartbeat:
+        if settings.use_heartbeat:
             worker_task = asyncio.create_task(monitor.shutdown_if_unhealthy())
         else:
             worker_task = asyncio.create_task(monitor.shutdown_if_dead())

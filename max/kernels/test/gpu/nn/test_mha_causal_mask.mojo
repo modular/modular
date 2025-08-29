@@ -12,21 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
-from sys import argv, sizeof
+from sys import argv, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100
-from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
+from gpu.host import DeviceContext
+from gpu.host.info import A100, H100, B200
+from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig
+from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
 from testing import assert_almost_equal
+
+from bit import count_trailing_zeros
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -89,7 +90,7 @@ fn test[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -135,7 +136,7 @@ fn test[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
@@ -169,8 +170,10 @@ fn test[
         qkv_type,
         num_heads,
         depth,
-        BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
-        num_pipeline_stages=2,
+        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
+        num_pipeline_stages=4 if (
+            ctx.default_device_info is H100 or ctx.default_device_info is B200
+        ) else 2,
     )
 
     @parameter
@@ -216,7 +219,15 @@ fn test[
         Index(batch_size, seq_len, num_heads, depth),
     )
 
-    flash_attention(
+    alias config_baseline = MHAConfig(
+        qkv_type,
+        num_heads,
+        depth,
+        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
+        num_pipeline_stages=2,
+        algorithm=FlashAttentionAlgorithm(2),
+    )
+    flash_attention[config=config_baseline](
         output_device_ref,
         q_device,
         k_device,
@@ -262,205 +273,233 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
-        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            1,
-        ](128, 128, ctx, is_benchmark())
-
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            3,
-        ](14, 14, ctx, is_benchmark())
-
-        test[
-            DType.float32,
-            DType.float32,
-            128,
-            1,
-        ](178, 178, ctx, is_benchmark())
-
-        # bf16 depth == 128, bf16-fp32 mma
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            depth=128,
-            num_heads=1,
-        ](128, 128, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            depth=128,
-            num_heads=1,
-        ](384, 384, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-        ](1024, 1024, ctx)
-
-        # BF16 with sequence length not multiple of 128
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            group=3,
-        ](64, 64, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](102, 102, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](14, 14, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            1,
-        ](528, 528, ctx)
-
-        # BF16 with differnet length for prompt and cache.
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](128, 256, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            group=3,
-        ](32, 77, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            16,
-            group=8,
-        ](201, 400, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            12,
-            group=4,
-        ](1000, 2000, ctx)
-
-        # BF16 token gen
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-        ](1, 512, ctx, is_benchmark())
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            11,
-        ](1, 256, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](1, 11, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](1, 11, ctx, num_partitions=OptionalReg[Int](2))
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            2,
-        ](1, 523, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-        ](1, 29, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](1, 156, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](1, 208, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 1208, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 2008, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 5000, ctx)
+        alias is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
+        alias min_depth = 64
+        alias max_depth = 256 if is_sm90orsm100 else 128
 
         @parameter
-        if ctx.device_info is A100 or ctx.device_info is H100:
+        for d in range(
+            count_trailing_zeros(min_depth), count_trailing_zeros(max_depth) + 1
+        ):
+            alias depth = 1 << d
+
+            @parameter
+            if depth <= 128:
+                # fp32 tf32-fp32 mma
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    1,
+                ](128, 128, ctx, is_benchmark())
+
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    3,
+                ](14, 14, ctx, is_benchmark())
+
+                test[
+                    DType.float32,
+                    DType.float32,
+                    depth,
+                    1,
+                ](178, 178, ctx, is_benchmark())
+
+            # bf16 depth == 128, bf16-fp32 mma
             test[
                 DType.bfloat16,
                 DType.bfloat16,
-                128,
+                depth=depth,
+                num_heads=1,
+            ](128, 128, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth=depth,
+                num_heads=1,
+            ](384, 384, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                24,
+                group=3,
+            ](1024, 1024, ctx)
+
+            # BF16 with sequence length not multiple of 128
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                3,
+                group=3,
+            ](64, 64, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                3,
+                group=3,
+            ](102, 102, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                1,
+            ](14, 14, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                1,
+            ](528, 528, ctx)
+
+            # BF16 with different length for prompt and cache.
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                1,
+            ](128, 256, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                3,
+                group=3,
+            ](32, 77, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                16,
+                group=8,
+            ](201, 400, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                12,
+                group=4,
+            ](1000, 2000, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
                 32,
-                group=16,
+                group=4,
+            ](201, 600, ctx)
+
+            # BF16 token gen
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                32,
+            ](1, 512, ctx, is_benchmark())
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                11,
+            ](1, 256, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                1,
+            ](1, 11, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                1,
+            ](1, 11, ctx, num_partitions=OptionalReg[Int](2))
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                2,
+            ](1, 523, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.float32,
+                depth,
+                24,
+                group=3,
+            ](1, 29, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                3,
+                group=3,
+            ](1, 156, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                3,
+                group=3,
+            ](1, 208, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
+            ](1, 1208, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
             ](1, 2008, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
+            ](1, 5000, ctx)
+
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth,
+                32,
+                group=4,
+            ](1, 600, ctx)
+
+            @parameter
+            if ctx.default_device_info is A100 or is_sm90orsm100:
+                test[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    depth,
+                    32,
+                    group=16,
+                ](1, 2008, ctx)

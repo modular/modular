@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import InlineArray
 from collections.string._unicode import _get_uppercase_mapping
 
 from testing import assert_equal

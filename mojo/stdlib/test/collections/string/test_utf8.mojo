@@ -10,22 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_valid_utf8,
 )
-from sys.info import alignof, sizeof
 
-from memory import Span, UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-alias GOOD_SEQUENCES = List[List[Byte]](
+alias GOOD_SEQUENCES = [
     List("a".as_bytes()),
     List("\xc3\xb1".as_bytes()),
     List("\xe2\x82\xa1".as_bytes()),
@@ -35,10 +32,10 @@ alias GOOD_SEQUENCES = List[List[Byte]](
     List("\xf0\x90\x80\x80".as_bytes()),
     List("\xee\x80\x80".as_bytes()),
     List("very very very long string 🔥🔥🔥".as_bytes()),
-)
+]
 
 
-alias BAD_SEQUENCES = List[List[Byte]](
+alias BAD_SEQUENCES = [
     List[Byte](0xC3, 0x28),  # continuation bytes does not start with 10xx
     List[Byte](0xA0, 0xA1),  # first byte is continuation byte
     List[Byte](0xE2, 0x28, 0xA1),  # second byte should be continuation byte
@@ -77,7 +74,7 @@ alias BAD_SEQUENCES = List[List[Byte]](
     ),  # missing continuation byte
     List[Byte](0xDF),  # missing continuation byte
     List[Byte](0xEF, 0xBF),  # missing continuation byte
-)
+]
 
 # ===----------------------------------------------------------------------=== #
 # Tests
@@ -133,8 +130,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
     )
     for item in positive:
-        assert_true(_is_valid_utf8(Span(item[])))
-        assert_true(_is_valid_utf8(Span(item[])))
+        assert_true(_is_valid_utf8(Span(item)))
+        assert_true(_is_valid_utf8(Span(item)))
     var negative = List[List[UInt8]](
         List[UInt8](0x80),
         List[UInt8](0xBF),
@@ -163,8 +160,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
     )
     for item in negative:
-        assert_false(_is_valid_utf8(Span(item[])))
-        assert_false(_is_valid_utf8(Span(item[])))
+        assert_false(_is_valid_utf8(Span(item)))
+        assert_false(_is_valid_utf8(Span(item)))
 
 
 fn validate_utf8(span: Span[Byte]) -> Bool:
@@ -173,21 +170,21 @@ fn validate_utf8(span: Span[Byte]) -> Bool:
 
 def test_good_utf8_sequences():
     for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence[]))
+        assert_true(validate_utf8(sequence))
 
 
 def test_bad_utf8_sequences():
     for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(Span(sequence[])))
+        assert_false(validate_utf8(Span(sequence)))
 
 
 def test_stringslice_from_utf8():
     for sequence in GOOD_SEQUENCES:
-        _ = StringSlice.from_utf8(Span(sequence[]))
+        _ = StringSlice.from_utf8(Span(sequence))
 
     for sequence in BAD_SEQUENCES:
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice.from_utf8(Span(sequence[]))
+            _ = StringSlice.from_utf8(Span(sequence))
 
 
 def test_combination_good_utf8_sequences():
@@ -240,8 +237,7 @@ def test_count_utf8_continuation_bytes():
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
         var span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
-        var str_slice = StringSlice(unsafe_from_utf8=span)
-        assert_equal(amnt, _count_utf8_continuation_bytes(str_slice))
+        assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, List[UInt8](c, c, c, c, c))
     _test(2, List[UInt8](b2, c, b2, c, b1))

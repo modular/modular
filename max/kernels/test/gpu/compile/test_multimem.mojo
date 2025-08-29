@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from gpu.memory import *
 from testing import *
@@ -21,7 +21,7 @@ def test_multimem_ld_reduce():
     print("== test_multimem_ld_reduce")
     assert_true(
         "multimem.ld_reduce.weak.gpu.global.max.v2.bf16 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=2,
@@ -31,12 +31,12 @@ def test_multimem_ld_reduce():
                 consistency = Consistency.WEAK,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.ld_reduce.relaxed.sys.global.add.v4.bf16 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
@@ -46,12 +46,12 @@ def test_multimem_ld_reduce():
                 consistency = Consistency.RELAXED,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.ld_reduce.relaxed.sys.global.add.v4.bf16 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
@@ -61,12 +61,12 @@ def test_multimem_ld_reduce():
                 consistency = Consistency.RELAXED,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.ld_reduce.relaxed.sys.global.add.acc::f32.v4.bf16 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
@@ -75,12 +75,12 @@ def test_multimem_ld_reduce():
                 consistency = Consistency.RELAXED,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.ld_reduce.relaxed.sys.global.add.v4.bf16x2 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
@@ -91,12 +91,28 @@ def test_multimem_ld_reduce():
                 output_width=2,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.ld_reduce.relaxed.sys.global.add.acc::f32.v4.bf16x2 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.bfloat16,
+                count=4,
+                reduction = ReduceOp.ADD,
+                scope = Scope.SYSTEM,
+                consistency = Consistency.RELAXED,
+                accum_type = DType.float32,
+                output_width=2,
+            ],
+            target = H100.target(),
+        ]().asm
     )
 
     assert_true(
         "multimem.ld_reduce.relaxed.sys.global.max.v4.bf16x2 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_ld_reduce[
                 DType.bfloat16,
                 count=4,
@@ -107,7 +123,105 @@ def test_multimem_ld_reduce():
                 output_width=2,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
+    )
+
+    # Test count=1 (scalar operations)
+    assert_true(
+        "multimem.ld_reduce.relaxed.gpu.global.add.bf16x2 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.bfloat16,
+                count=1,
+                reduction = ReduceOp.ADD,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+                accum_type = DType.bfloat16,
+                output_width=2,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.ld_reduce.weak.sys.global.max.f32 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.float32,
+                count=1,
+                reduction = ReduceOp.MAX,
+                scope = Scope.SYSTEM,
+                consistency = Consistency.WEAK,
+                accum_type = DType.float32,
+                output_width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.ld_reduce.relaxed.gpu.global.add.f64 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.float64,
+                count=1,
+                reduction = ReduceOp.ADD,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+                accum_type = DType.float64,
+                output_width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    # Test count=8 (v8 operations)
+    assert_true(
+        "multimem.ld_reduce.relaxed.gpu.global.add.v8.bf16 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.bfloat16,
+                count=8,
+                reduction = ReduceOp.ADD,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+                accum_type = DType.bfloat16,
+                output_width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.ld_reduce.weak.sys.global.max.v8.f16 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.float16,
+                count=8,
+                reduction = ReduceOp.MAX,
+                scope = Scope.SYSTEM,
+                consistency = Consistency.WEAK,
+                accum_type = DType.float16,
+                output_width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.ld_reduce.relaxed.cluster.global.add.v8.f16 "
+        in _compile_code[
+            multimem_ld_reduce[
+                DType.float16,
+                count=8,
+                reduction = ReduceOp.ADD,
+                scope = Scope.CLUSTER,
+                consistency = Consistency.RELAXED,
+                accum_type = DType.float16,
+                output_width=1,
+            ],
+            target = H100.target(),
+        ]().asm
     )
 
 
@@ -116,7 +230,7 @@ def test_multimem_st():
 
     assert_true(
         "multimem.st.weak.cta.global.v2.bf16x2 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_st[
                 DType.bfloat16,
                 count=2,
@@ -125,12 +239,12 @@ def test_multimem_st():
                 width=2,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.st.relaxed.gpu.global.v4.f32 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_st[
                 DType.float32,
                 count=4,
@@ -138,12 +252,12 @@ def test_multimem_st():
                 consistency = Consistency.RELAXED,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.st.release.sys.global.v4.f16x2 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_st[
                 DType.float16,
                 count=4,
@@ -152,12 +266,12 @@ def test_multimem_st():
                 width=2,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
     )
 
     assert_true(
         "multimem.st.relaxed.cluster.global.v4.bf16 "
-        in _compile_code_asm[
+        in _compile_code[
             multimem_st[
                 DType.bfloat16,
                 count=4,
@@ -165,7 +279,79 @@ def test_multimem_st():
                 consistency = Consistency.RELAXED,
             ],
             target = H100.target(),
-        ]()
+        ]().asm
+    )
+
+    # Test count=1 (scalar operations)
+    assert_true(
+        "multimem.st.relaxed.gpu.global.bf16x2 "
+        in _compile_code[
+            multimem_st[
+                DType.bfloat16,
+                count=1,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+                width=2,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.st.weak.sys.global.f32 "
+        in _compile_code[
+            multimem_st[
+                DType.float32,
+                count=1,
+                scope = Scope.SYSTEM,
+                consistency = Consistency.WEAK,
+                width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.st.release.gpu.global.f64 "
+        in _compile_code[
+            multimem_st[
+                DType.float64,
+                count=1,
+                scope = Scope.GPU,
+                consistency = Consistency.RELEASE,
+                width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    # Test count=8 (v8 operations)
+    assert_true(
+        "multimem.st.relaxed.gpu.global.v8.f16 "
+        in _compile_code[
+            multimem_st[
+                DType.float16,
+                count=8,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+                width=1,
+            ],
+            target = H100.target(),
+        ]().asm
+    )
+
+    assert_true(
+        "multimem.st.weak.cluster.global.v8.bf16 "
+        in _compile_code[
+            multimem_st[
+                DType.bfloat16,
+                count=8,
+                scope = Scope.CLUSTER,
+                consistency = Consistency.WEAK,
+                width=1,
+            ],
+            target = H100.target(),
+        ]().asm
     )
 
 

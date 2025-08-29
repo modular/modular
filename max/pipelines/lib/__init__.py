@@ -13,26 +13,26 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
-from .config import PipelineConfig
-from .config_enums import (
-    PipelineEngine,
-    PipelineRole,
-    RepoType,
-    RopeType,
-    SupportedEncoding,
-)
+from .config import AudioGenerationConfig, PipelineConfig
+from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import (
-    HuggingFaceFile,
     HuggingFaceRepo,
     download_weight_files,
     generate_local_model_path,
-    repo_exists_with_retry,
+    try_to_load_from_cache,
+    validate_hf_repo_access,
 )
+from .kv_cache_config import KVCacheConfig
+from .lora import LoRAManager
+from .lora_config import LoRAConfig
+from .lora_request_processor import LoRARequestProcessor
 from .max_config import (
-    KVCacheConfig,
-    ProfilingConfig,
-    SamplingConfig,
+    MAXConfig,
+    convert_max_config_value,
+    deep_merge_max_configs,
+    get_default_max_config_file_section_name,
+    resolve_max_config_inheritance,
 )
 from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig, MAXModelConfigBase
@@ -45,51 +45,72 @@ from .pipeline import (
     get_paged_manager,
     upper_bounded_default,
 )
+from .profiling_config import ProfilingConfig
+from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .sampling import rejection_sampler, token_sampler
+from .sampling import (
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
+from .sampling_config import SamplingConfig
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
-    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
+    max_tokens_to_generate,
 )
+from .weight_path_parser import WeightPathParser
 
 __all__ = [
-    "download_weight_files",
+    "MEMORY_ESTIMATOR",
+    "PIPELINE_REGISTRY",
+    "AudioGenerationConfig",
     "EmbeddingsPipeline",
-    "generate_local_model_path",
-    "HuggingFaceFile",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
+    "LoRAConfig",
+    "LoRAManager",
+    "LoRARequestProcessor",
+    "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
-    "MEMORY_ESTIMATOR",
     "ModelInputs",
     "ModelOutputs",
     "PipelineConfig",
-    "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
-    "PIPELINE_REGISTRY",
-    "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
-    "rejection_sampler",
-    "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
-    "token_sampler",
-    "upper_bounded_default",
+    "WeightPathParser",
+    "convert_max_config_value",
+    "deep_merge_max_configs",
+    "download_weight_files",
+    "generate_local_model_path",
+    "get_default_max_config_file_section_name",
     "get_paged_manager",
+    "max_tokens_to_generate",
+    "ragged_token_merger",
+    "rejection_sampler",
+    "rejection_sampler_with_residuals",
+    "resolve_max_config_inheritance",
+    "token_sampler",
+    "try_to_load_from_cache",
+    "upper_bounded_default",
+    "validate_hf_repo_access",
 ]

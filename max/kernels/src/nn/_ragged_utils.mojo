@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target, simdwidthof
+from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
-from layout import Layout, LayoutTensor
+from layout import LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
-from tensor_internal import ManagedTensorSlice
 
 from utils import IndexList
 
@@ -78,20 +77,22 @@ fn get_batch_from_row_offsets(
 
 fn merge_ragged_tensors[
     rank: Int,
-    type: DType, //,
+    dtype: DType, //,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, type, rank],
+    c: NDBuffer[mut=True, dtype, rank],
     c_row_offsets: NDBuffer[mut=True, DType.uint32, 1],
-    a: NDBuffer[type, rank],
+    a: NDBuffer[dtype, rank],
     a_row_offsets: NDBuffer[DType.uint32, 1],
-    b: NDBuffer[type, rank],
+    b: NDBuffer[dtype, rank],
     b_row_offsets: NDBuffer[DType.uint32, 1],
     ctx: DeviceContextPtr,
 ) raises:
     @always_inline
     @parameter
-    fn merge_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+    fn merge_fn[
+        width: Int, rank_: Int, alignment: Int = 1
+    ](idx: IndexList[rank_]):
         constrained[rank_ == rank, "Invalid rank passed to the kernel"]()
 
         var a_tensor_size = a.dim[0]()
@@ -118,7 +119,7 @@ fn merge_ragged_tensors[
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
-        var val: SIMD[type, width]
+        var val: SIMD[dtype, width]
         if is_tensor_a:
             val = a.load[width=width](src_idx)
         else:
@@ -146,8 +147,8 @@ fn merge_ragged_tensors[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    ]() else get_gpu_target()
+    alias target_simd_width = simd_width_of[dtype, target=compile_target]()
     alias kernel_simd_width = 1 if rank == 1 else target_simd_width
 
     elementwise[

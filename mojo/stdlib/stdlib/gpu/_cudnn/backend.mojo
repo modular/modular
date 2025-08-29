@@ -17,7 +17,6 @@ from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-from memory import UnsafePointer
 
 from .infer import cudnnStatus_t, cudnnContext
 
@@ -26,7 +25,10 @@ from .infer import cudnnStatus_t, cudnnContext
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
+    "libcudnn.so",
+    "libcudnn.so.9",
     "libcudnn.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 )
 
@@ -55,9 +57,9 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-fn cudnnBackendInitialize(descriptor: UnsafePointer[NoneType]) -> cudnnStatus_t:
+fn cudnnBackendInitialize(descriptor: OpaquePointer) -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendInitialize", fn (UnsafePointer[NoneType]) -> cudnnStatus_t
+        "cudnnBackendInitialize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -104,7 +106,6 @@ struct cudnnBackendKnobType_t(Writable):
     alias CUDNN_KNOB_TYPE_LOAD_SIZE = Self(36)
     alias CUDNN_KNOB_TYPE_COUNTS = Self(37)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -121,7 +122,7 @@ struct cudnnBackendKnobType_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K:
             return writer.write("CUDNN_KNOB_TYPE_SPLIT_K")
         if self is Self.CUDNN_KNOB_TYPE_SWIZZLE:
@@ -267,7 +268,6 @@ struct cudnnPointwiseMode_t(Writable):
     alias CUDNN_POINTWISE_GEN_INDEX = Self(48)
     alias CUDNN_POINTWISE_BINARY_SELECT = Self(49)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -284,7 +284,7 @@ struct cudnnPointwiseMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_POINTWISE_ADD:
             return writer.write("CUDNN_POINTWISE_ADD")
         if self is Self.CUDNN_POINTWISE_ADD_SQUARE:
@@ -442,7 +442,6 @@ struct cudnnBackendDescriptorType_t(Writable):
     alias CUDNN_BACKEND_RNG_DESCRIPTOR = Self(32)
     alias CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR = Self(33)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -459,7 +458,7 @@ struct cudnnBackendDescriptorType_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BACKEND_POINTWISE_DESCRIPTOR:
             return writer.write("CUDNN_BACKEND_POINTWISE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR:
@@ -570,20 +569,20 @@ struct cudnnBackendDescriptorType_t(Writable):
 
 
 fn cudnnBackendSetAttribute(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     element_count: Int64,
-    array_of_elements: UnsafePointer[NoneType],
+    array_of_elements: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
         fn (
-            UnsafePointer[NoneType],
+            OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         descriptor,
@@ -603,7 +602,6 @@ struct cudnnBackendBehaviorNote_t(Writable):
     alias CUDNN_BEHAVIOR_NOTE_REQUIRES_BIAS_INT8x32_REORDER = Self(2)
     alias CUDNN_BEHAVIOR_NOTE_TYPE_COUNT = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -620,7 +618,7 @@ struct cudnnBackendBehaviorNote_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION:
             return writer.write("CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION")
         if self is Self.CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER:
@@ -657,7 +655,6 @@ struct cudnnBackendLayoutType_t(Writable):
     alias CUDNN_LAYOUT_TYPE_PREFERRED_PAD8CK = Self(3)
     alias CUDNN_LAYOUT_TYPE_COUNT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -674,7 +671,7 @@ struct cudnnBackendLayoutType_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NCHW:
             return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_NCHW")
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NHWC:
@@ -706,7 +703,6 @@ struct cudnnBackendNormFwdPhase_t(Writable):
     alias CUDNN_NORM_FWD_INFERENCE = Self(0)
     alias CUDNN_NORM_FWD_TRAINING = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -723,7 +719,7 @@ struct cudnnBackendNormFwdPhase_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_FWD_INFERENCE:
             return writer.write("CUDNN_NORM_FWD_INFERENCE")
         if self is Self.CUDNN_NORM_FWD_TRAINING:
@@ -752,7 +748,6 @@ struct cudnnBackendHeurMode_t(Writable):
     alias CUDNN_HEUR_MODE_A = Self(3)
     alias CUDNN_HEUR_MODES_COUNT = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -769,7 +764,7 @@ struct cudnnBackendHeurMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_HEUR_MODE_INSTANT:
             return writer.write("CUDNN_HEUR_MODE_INSTANT")
         if self is Self.CUDNN_HEUR_MODE_B:
@@ -815,7 +810,6 @@ struct cudnnBackendNumericalNote_t(Writable):
     alias CUDNN_NUMERICAL_NOTE_WINOGRAD_TILE_13x13 = Self(8)
     alias CUDNN_NUMERICAL_NOTE_TYPE_COUNT = Self(9)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -832,7 +826,7 @@ struct cudnnBackendNumericalNote_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NUMERICAL_NOTE_TENSOR_CORE:
             return writer.write("CUDNN_NUMERICAL_NOTE_TENSOR_CORE")
         if self is Self.CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS:
@@ -871,12 +865,12 @@ struct cudnnBackendNumericalNote_t(Writable):
 
 fn cudnnBackendCreateDescriptor(
     descriptor_type: cudnnBackendDescriptorType_t,
-    descriptor: UnsafePointer[UnsafePointer[NoneType]],
+    descriptor: UnsafePointer[OpaquePointer],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
         fn (
-            cudnnBackendDescriptorType_t, UnsafePointer[UnsafePointer[NoneType]]
+            cudnnBackendDescriptorType_t, UnsafePointer[OpaquePointer]
         ) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
 
@@ -916,7 +910,6 @@ struct cudnnBackendAttributeType_t(Writable):
     alias CUDNN_TYPE_NORM_FWD_PHASE = Self(28)
     alias CUDNN_TYPE_RNG_DISTRIBUTION = Self(29)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -933,7 +926,7 @@ struct cudnnBackendAttributeType_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TYPE_HANDLE:
             return writer.write("CUDNN_TYPE_HANDLE")
         if self is Self.CUDNN_TYPE_DATA_TYPE:
@@ -1016,7 +1009,6 @@ struct cudnnRngDistribution_t(Writable):
     alias CUDNN_RNG_DISTRIBUTION_UNIFORM = Self(1)
     alias CUDNN_RNG_DISTRIBUTION_NORMAL = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1033,7 +1025,7 @@ struct cudnnRngDistribution_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RNG_DISTRIBUTION_BERNOULLI:
             return writer.write("CUDNN_RNG_DISTRIBUTION_BERNOULLI")
         if self is Self.CUDNN_RNG_DISTRIBUTION_UNIFORM:
@@ -1054,9 +1046,9 @@ struct cudnnRngDistribution_t(Writable):
         return Int(self._value)
 
 
-fn cudnnBackendFinalize(descriptor: UnsafePointer[NoneType]) -> cudnnStatus_t:
+fn cudnnBackendFinalize(descriptor: OpaquePointer) -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn (UnsafePointer[NoneType]) -> cudnnStatus_t
+        "cudnnBackendFinalize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -1068,7 +1060,6 @@ struct cudnnBackendTensorReordering_t(Writable):
     alias CUDNN_TENSOR_REORDERING_INT8x32 = Self(1)
     alias CUDNN_TENSOR_REORDERING_F16x16 = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1085,7 +1076,7 @@ struct cudnnBackendTensorReordering_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TENSOR_REORDERING_NONE:
             return writer.write("CUDNN_TENSOR_REORDERING_NONE")
         if self is Self.CUDNN_TENSOR_REORDERING_INT8x32:
@@ -1325,7 +1316,6 @@ struct cudnnBackendAttributeName_t(Writable):
     alias CUDNN_ATTR_OPERATION_RNG_DESC = Self(210)
     alias CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC = Self(211)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1342,7 +1332,7 @@ struct cudnnBackendAttributeName_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ATTR_POINTWISE_MODE:
             return writer.write("CUDNN_ATTR_POINTWISE_MODE")
         if self is Self.CUDNN_ATTR_POINTWISE_MATH_PREC:
@@ -1885,7 +1875,6 @@ struct cudnnBackendNormMode_t(Writable):
     alias CUDNN_GROUP_NORM = Self(3)
     alias CUDNN_RMS_NORM = Self(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1902,7 +1891,7 @@ struct cudnnBackendNormMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYER_NORM:
             return writer.write("CUDNN_LAYER_NORM")
         if self is Self.CUDNN_INSTANCE_NORM:
@@ -1934,7 +1923,6 @@ struct cudnnSignalMode_t(Writable):
     alias CUDNN_SIGNAL_SET = Self(0)
     alias CUDNN_SIGNAL_WAIT = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1951,7 +1939,7 @@ struct cudnnSignalMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SIGNAL_SET:
             return writer.write("CUDNN_SIGNAL_SET")
         if self is Self.CUDNN_SIGNAL_WAIT:
@@ -1970,7 +1958,7 @@ struct cudnnSignalMode_t(Writable):
         return Int(self._value)
 
 
-alias cudnnBackendDescriptor_t = UnsafePointer[NoneType]
+alias cudnnBackendDescriptor_t = OpaquePointer
 
 
 @fieldwise_init
@@ -1980,7 +1968,6 @@ struct cudnnBnFinalizeStatsMode_t(Writable):
     alias CUDNN_BN_FINALIZE_STATISTICS_TRAINING = Self(0)
     alias CUDNN_BN_FINALIZE_STATISTICS_INFERENCE = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1997,7 +1984,7 @@ struct cudnnBnFinalizeStatsMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_TRAINING:
             return writer.write("CUDNN_BN_FINALIZE_STATISTICS_TRAINING")
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_INFERENCE:
@@ -2022,7 +2009,6 @@ struct cudnnGenStatsMode_t(Writable):
     var _value: Int8
     alias CUDNN_GENSTATS_SUM_SQSUM = Self(0)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2039,7 +2025,7 @@ struct cudnnGenStatsMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_GENSTATS_SUM_SQSUM:
             return writer.write("CUDNN_GENSTATS_SUM_SQSUM")
         abort("invalid cudnnGenStatsMode_t entry")
@@ -2057,25 +2043,25 @@ struct cudnnGenStatsMode_t(Writable):
 
 
 fn cudnnBackendDestroyDescriptor(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn (UnsafePointer[NoneType]) -> cudnnStatus_t,
+        fn (OpaquePointer) -> cudnnStatus_t,
     ]()(descriptor)
 
 
 fn cudnnBackendExecute(
     handle: UnsafePointer[cudnnContext],
-    execution_plan: UnsafePointer[NoneType],
-    variant_pack: UnsafePointer[NoneType],
+    execution_plan: OpaquePointer,
+    variant_pack: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
         fn (
             UnsafePointer[cudnnContext],
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(handle, execution_plan, variant_pack)
 
@@ -2091,7 +2077,6 @@ struct cudnnResampleMode_t(Writable):
     alias CUDNN_RESAMPLE_AVGPOOL_EXCLUDE_PADDING = Self(4)
     alias CUDNN_RESAMPLE_MAXPOOL = Self(5)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2108,7 +2093,7 @@ struct cudnnResampleMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RESAMPLE_NEAREST:
             return writer.write("CUDNN_RESAMPLE_NEAREST")
         if self is Self.CUDNN_RESAMPLE_BILINEAR:
@@ -2139,22 +2124,22 @@ alias cudnnFraction_t = cudnnFractionStruct
 
 
 fn cudnnBackendGetAttribute(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     requested_element_count: Int64,
     element_count: UnsafePointer[Int64],
-    array_of_elements: UnsafePointer[NoneType],
+    array_of_elements: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
         fn (
-            UnsafePointer[NoneType],
+            OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
             Int64,
             UnsafePointer[Int64],
-            UnsafePointer[NoneType],
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         descriptor,
@@ -2174,7 +2159,6 @@ struct cudnnPaddingMode_t(Writable):
     alias CUDNN_NEG_INF_PAD = Self(1)
     alias CUDNN_EDGE_VAL_PAD = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2191,7 +2175,7 @@ struct cudnnPaddingMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ZERO_PAD:
             return writer.write("CUDNN_ZERO_PAD")
         if self is Self.CUDNN_NEG_INF_PAD:

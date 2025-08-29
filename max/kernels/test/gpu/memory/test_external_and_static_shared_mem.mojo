@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import alignof, simdwidthof
+from sys.info import align_of
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_equal
 
 
@@ -31,7 +31,7 @@ def test_external_shared_mem(ctx: DeviceContext):
         var dynamic_sram = external_memory[
             Float32,
             address_space = AddressSpace.SHARED,
-            alignment = alignof[Float32](),
+            alignment = align_of[Float32](),
         ]()
         dynamic_sram[thread_idx.x] = thread_idx.x
         sram[thread_idx.x] = thread_idx.x

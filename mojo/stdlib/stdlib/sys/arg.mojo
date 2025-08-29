@@ -12,33 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functions and variables for interacting with execution and system
 environment.
-
-You can import these APIs from the `sys` package. For example:
-
-```mojo
-from sys import argv
-def main():
-    arguments = argv()
-    print(
-        arguments[0], #app.mojo
-        arguments[1]  #Hello world!
-    )
-    for arg in arguments:
-        print(arg)
-# If the program is app.mojo:
-# mojo run app.mojo "Hello world!"
-```
 """
 
 
 from sys import external_call
 
-from memory import UnsafePointer
-
 
 # TODO: When we have global variables, this should be a global list.
 fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:
-    """The list of command line arguments.
+    """Gets the list of command line arguments given to the `mojo` CLI.
+
+    For example:
+
+    ```mojo title="app.mojo"
+    from sys import argv
+
+    def main():
+        args = argv()
+        for arg in args:
+            print(arg)
+    ```
+
+    ```sh
+    mojo app.mojo "Hello world"
+    ```
+
+    ```output
+    app.mojo
+    Hello world
+    ```
 
     Returns:
         The list of command line arguments provided when mojo was invoked.

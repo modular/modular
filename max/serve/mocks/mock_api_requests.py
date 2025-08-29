@@ -14,11 +14,14 @@
 """Provides some canonical client data"""
 
 import time
+from typing import Any
 
 
 def simple_openai_request(
-    model_name="gpt-3.5-turbo", content="Say this is a test!", stream=False
-):
+    model_name: str = "gpt-3.5-turbo",
+    content: str = "Say this is a test!",
+    stream: bool = False,
+) -> dict[str, Any]:
     return {
         "model": model_name,
         "messages": [{"role": "user", "content": content}],
@@ -30,9 +33,9 @@ def simple_openai_request(
 def simple_openai_response(
     contents: str,
     model_name: str = "unnamed-model",
-    response_id="response_id_0",
-    timestamp=time.time_ns(),
-):
+    response_id: str = "response_id_0",
+    timestamp: int = time.time_ns(),
+) -> dict[str, Any]:
     return {
         "id": response_id,
         "object": "chat.completion",
@@ -58,7 +61,7 @@ def simple_openai_response(
     }
 
 
-def simple_openai_stream_request():
+def simple_openai_stream_request() -> dict[str, Any]:
     """
     A simple streaming request.
     Verify via:
@@ -74,9 +77,9 @@ def simple_openai_stream_request():
 def simple_openai_stream_response(
     contents: list[str],
     model_name: str = "unnamed-model",
-    response_id="response_id_0",
-    timestamp=time.time_ns(),
-):
+    response_id: str = "response_id_0",
+    timestamp: int = time.time_ns(),
+) -> list[dict[str, Any]]:
     json_response = []
     # TODO this needs to be individually callable by the token gen
     # go over the message list and wrap each to the response.
@@ -116,7 +119,7 @@ def simple_openai_stream_response(
     return json_response
 
 
-def simple_kserve_request():
+def simple_kserve_request() -> dict[str, Any]:
     return {
         "inputs": [
             {
@@ -136,7 +139,7 @@ def simple_kserve_request():
     }
 
 
-def simple_kserve_response():
+def simple_kserve_response() -> dict[str, Any]:
     return {
         "id": "infer-add",
         "model_name": "Add",

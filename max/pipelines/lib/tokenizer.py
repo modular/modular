@@ -21,19 +21,17 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
 import numpy as np
-import torch
-from max.pipelines.core import (
+import numpy.typing as npt
+from max.interfaces import (
     PipelineTokenizer,
-    TextAndVisionContext,
-    TextContext,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
 )
+from max.pipelines.core import TextAndVisionContext, TextContext
 from PIL import Image
 from transformers import (
     AutoProcessor,
@@ -45,12 +43,21 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+from typing_extensions import ParamSpec
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
+TokenGeneratorContext = TypeVar("TokenGeneratorContext")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
 
 class IdentityPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, str],
+    PipelineTokenizer[TokenGeneratorContext, str, TextGenerationRequest],
 ):
     @property
     def eos(self) -> int:
@@ -67,7 +74,6 @@ class IdentityPipelineTokenizer(
 
     async def decode(
         self,
-        context: TokenGeneratorContext,
         encoded: str,
         **kwargs,
     ) -> str:
@@ -77,11 +83,14 @@ class IdentityPipelineTokenizer(
 
 
 class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, np.ndarray]
+    PipelineTokenizer[
+        TokenGeneratorContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ],
 ):
     def __init__(
-        self,
-        delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
     ) -> None:
         assert isinstance(
             delegate, (PreTrainedTokenizer, PreTrainedTokenizerFast)
@@ -89,20 +98,13 @@ class PreTrainedPipelineTokenizer(
         self.delegate = delegate
 
     def apply_chat_template(
-        self, messages: list[TokenGeneratorRequestMessage]
+        self, messages: list[TextGenerationRequestMessage]
     ) -> str:
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                " PreTrainedTokenGeneratorTokenizer"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        templated_message = self.delegate.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -114,14 +116,11 @@ class PreTrainedPipelineTokenizer(
 
     async def encode(
         self, prompt: str, add_special_tokens: bool = False
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         return np.array(self.delegate.encode(prompt))
 
     async def decode(
-        self,
-        context: TokenGeneratorContext,
-        encoded: np.ndarray,
-        **kwargs,
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         return self.delegate.decode(encoded, **kwargs)
 
@@ -140,12 +139,18 @@ def max_tokens_to_generate(
     return min(max_new_tokens, _difference_between_max_and_prompt)
 
 
-async def run_with_default_executor(fn, *args):
+async def run_with_default_executor(
+    fn: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
+) -> _R:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, fn, *args)
+    return await loop.run_in_executor(None, fn, *args, **kwargs)
 
 
-class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
+class TextTokenizer(
+    PipelineTokenizer[
+        TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]
+):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
     def __init__(
@@ -157,9 +162,10 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
+        pipeline_config: PipelineConfig | None = None,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         try:
@@ -190,6 +196,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         self._encode_without_special_tokens = functools.partial(
             self.delegate.encode, add_special_tokens=False
         )
+        self.max_length = max_length or self.delegate.model_max_length
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
@@ -200,26 +207,82 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             self._llama_whitespace_fix_dummy_token_len,
         ) = self._llama_whitespace_fix_dummy_token
 
+        # cache tokenizer eos token ids
+        self._default_eos_token_ids = set([self.eos])
+
+        if pipeline_config:
+            huggingface_config = pipeline_config.model_config.huggingface_config
+            if eos_token_id := getattr(
+                huggingface_config, "eos_token_id", None
+            ):
+                if isinstance(eos_token_id, int):
+                    self._default_eos_token_ids.add(eos_token_id)
+                elif isinstance(eos_token_id, list):
+                    self._default_eos_token_ids.update(eos_token_id)
+
+    @staticmethod
+    def _flatten_text_generation_request_message(
+        messages: list[TextGenerationRequestMessage],
+    ) -> list[dict[str, str]]:
+        flattened_messages: list[dict[str, str]] = []
+        for message in messages:
+            flattened_message = {
+                "role": message["role"],
+                "content": "",
+            }
+            if isinstance(message["content"], str):
+                flattened_message["content"] = message["content"]
+            elif isinstance(message["content"], list):
+                for content in message["content"]:
+                    if "type" not in content:
+                        raise ValueError(
+                            "Malformed message content, missing 'type' field"
+                        )
+                    if content["type"] != "text":
+                        raise ValueError(
+                            f"Unsupported content type: {content['type']}"
+                        )
+
+                    if flattened_message["content"] != "":
+                        flattened_message["content"] += "\n"
+
+                    flattened_message["content"] += content["text"]
+
+                if "content" not in flattened_message:
+                    raise ValueError(
+                        "Malformed message content, missing 'content' field with type 'text'"
+                    )
+            else:
+                raise ValueError(
+                    f"Unsupported content type: {type(message['content'])}"
+                )
+
+            flattened_messages.append(flattened_message)
+
+        return flattened_messages
+
     def apply_chat_template(
         self,
-        messages: list[TokenGeneratorRequestMessage],
-        tools: Optional[list[TokenGeneratorRequestTool]],
+        messages: list[TextGenerationRequestMessage],
+        tools: Optional[list[TextGenerationRequestTool]],
+        chat_template_options: Optional[dict[str, Any]] = None,
     ) -> str:
-        try:
-            templated_message = self.delegate.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                tools=tools,
-            )
-            return cast(str, templated_message)
-        except Exception:
-            msg = (
-                "apply_chat_template failed for"
-                f" TextTokenizer({self.model_path})"
-            )
-            logger.warning(msg)
-            return "\n".join([str(message["content"]) for message in messages])
+        chat_template_options = chat_template_options or {
+            "add_generation_prompt": True
+        }
+
+        flattened_messages = self._flatten_text_generation_request_message(
+            messages
+        )
+
+        templated_message = self.delegate.apply_chat_template(
+            flattened_messages,
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -231,10 +294,10 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
     async def encode(
         self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
-        encoded_prompt: np.ndarray
+        encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
@@ -247,18 +310,19 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
                     self._encode_without_special_tokens, prompt
                 )
 
-            max_length = self.max_length or self.delegate.model_max_length
-            if max_length and len(encoded_prompt) > max_length:
+            if self.max_length and len(encoded_prompt) > self.max_length:
                 raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
+                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
         return encoded_prompt
 
     async def decode(
-        self, context: TextContext, encoded: np.ndarray, **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         # Sometimes, encoded comes in as an int so, make it np array
@@ -276,40 +340,56 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
         return self.delegate.decode(encoded, **kwargs)
 
-    async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
-        """Create a new TextContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+    async def _generate_prompt_and_token_ids(
+        self,
+        prompt: Optional[Union[Sequence[int], str]],
+        messages: Optional[list[TextGenerationRequestMessage]],
+        tools: Optional[list[TextGenerationRequestTool]] = None,
+        chat_template_options: Optional[dict[str, Any]] = None,
+    ) -> tuple[Union[str, list[int]], npt.NDArray[np.integer[Any]]]:
+        if prompt and messages:
+            raise ValueError("both prompt and messages cannot be provided.")
 
-        prompt: Union[str, list[int]]
-        add_special_tokens = True
-        if request.prompt is not None:
-            if isinstance(request.prompt, str):
-                prompt = str(request.prompt)
-            else:
-                prompt = [int(t) for t in request.prompt]
-        elif request.messages is not None:
-            prompt = self.apply_chat_template(request.messages, request.tools)
-            # Chat templating already adds special tokens, therefore we step around this here.
-            add_special_tokens = False
+        if isinstance(prompt, str):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(prompt, list):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(messages, list):
+            prompt = self.apply_chat_template(
+                messages, tools, chat_template_options
+            )
+            return prompt, await self.encode(prompt, add_special_tokens=False)
         else:
-            raise ValueError(f"{request} does not provide messages or prompt.")
+            raise ValueError(
+                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
+            )
 
-        encoded_prompt = await self.encode(
-            prompt, add_special_tokens=add_special_tokens
-        )
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: Optional[list[int]],
+        stop: Optional[list[str]],
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = self._default_eos_token_ids
+        eos_sequences = list()
 
-        # TODO(zheng): We should probably just make max_new_tokens an optional
-        # instead of -1.
-        max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
 
-        max_gen_tokens = max_tokens_to_generate(
-            len(encoded_prompt),
-            self.max_length,
-            max_new_tokens,
+        return eos_token_ids, eos_sequences
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
+        # Encode Prompt / Messages
+        prompt, token_ids = await self._generate_prompt_and_token_ids(
+            prompt=request.prompt,
+            messages=request.messages,
+            tools=request.tools,
+            chat_template_options=request.chat_template_options,
         )
 
         json_schema = (
@@ -317,17 +397,38 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             if request.response_format
             else None
         )
+
+        eos_token_ids, eos_sequences = await self._get_eos_variables(
+            request.sampling_params.ignore_eos,
+            request.sampling_params.stop_token_ids,
+            request.sampling_params.stop,
+        )
+
+        # Calculate Max Length
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+        elif self.max_new_tokens != -1:
+            max_new_tokens = self.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            len(token_ids), self.max_length, max_new_tokens
+        )
+
         context = TextContext(
-            prompt=prompt,
-            cache_seq_id=request.index,
-            max_length=len(encoded_prompt) + max_gen_tokens
+            request_id=request.request_id,
+            eos_token_ids=eos_token_ids,
+            eos_sequences=eos_sequences,
+            max_length=len(token_ids) + max_gen_tokens
             if max_gen_tokens is not None
-            else None,
-            tokens=np.array(encoded_prompt),
+            else self.max_length,
+            tokens=np.array(token_ids),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
-            ignore_eos=request.ignore_eos,
+            sampling_params=request.sampling_params,
+            model_name=request.model_name,
+            target_endpoint=request.target_endpoint,
         )
         return context
 
@@ -348,7 +449,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         return dummy_token_id, len(dummy_token_decoded)
 
     def _decode_with_llama_whitespace_fix(
-        self, encoded: np.ndarray, **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         if encoded.shape == ():
             # The np.insert below will replace the token instead of prepend it
@@ -361,9 +462,24 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
 
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
 
 class TextAndVisionTokenizer(
-    PipelineTokenizer[TextAndVisionContext, np.ndarray]
+    PipelineTokenizer[
+        TextAndVisionContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ],
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -375,9 +491,9 @@ class TextAndVisionTokenizer(
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
@@ -388,6 +504,8 @@ class TextAndVisionTokenizer(
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        self.max_length = max_length or self.delegate.model_max_length
+
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
         self._encode_with_special_tokens = functools.partial(
@@ -397,14 +515,13 @@ class TextAndVisionTokenizer(
             self.delegate.encode, add_special_tokens=False
         )
         self.processor = AutoProcessor.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
+            model_path, revision=revision, trust_remote_code=trust_remote_code
         )
+        self._default_eos_token_ids = set([self.eos])
 
     def _wrap_str_message_content(
-        self, messages: list[TokenGeneratorRequestMessage]
-    ) -> list[TokenGeneratorRequestMessage]:
+        self, messages: list[TextGenerationRequestMessage]
+    ) -> list[TextGenerationRequestMessage]:
         # Wrap string type values of "content" key with "type": "text" and its
         # value. For example, if the message is {"content": "Hello, world!"},
         # it will be wrapped with {"type": "text", "text": "Hello, world!"}.
@@ -422,32 +539,16 @@ class TextAndVisionTokenizer(
         return messages
 
     def apply_chat_template(
-        self, messages: list[TokenGeneratorRequestMessage]
+        self, messages: list[TextGenerationRequestMessage]
     ) -> str:
         # TODO: Refactor this.
         if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             messages = self._wrap_str_message_content(messages)
-        try:
-            templated_message = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            return cast(str, templated_message)
-        except Exception as e:
-            msg = "apply_chat_template failed for TextAndVisionTokenizer"
-            logger.warning(msg)
-            logger.warning(str(e))
-            prompt = []
-            for message in messages:
-                if isinstance(message["content"], str):
-                    prompt.append(message["content"])
-                elif isinstance(message["content"], list):
-                    for content in message["content"]:
-                        if content["type"] == "text":
-                            if "text" in content:
-                                prompt.append(content["text"])
-                            else:
-                                prompt.append(content["content"])
-            return "\n".join(prompt)
+        templated_message = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
 
     @property
     def eos(self) -> int:
@@ -459,10 +560,10 @@ class TextAndVisionTokenizer(
 
     async def encode(
         self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
-    ) -> np.ndarray:
+    ) -> npt.NDArray[np.integer[Any]]:
         """Transform the provided prompt into a token array."""
 
-        encoded_prompt: np.ndarray
+        encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
@@ -486,16 +587,15 @@ class TextAndVisionTokenizer(
         return encoded_prompt
 
     async def decode(
-        self, context: TextAndVisionContext, encoded: np.ndarray, **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
         """Transformer a provided encoded token array, back into readable text."""
         return self.delegate.decode(encoded, **kwargs)
 
     async def new_context(
-        self, request: TokenGeneratorRequest
+        self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
-        """Create a new TextAndVisionContext object, leveraging necessary information like
-        cache_seq_id and prompt from TokenGeneratorRequest."""
+        """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
         prompt: Union[str, Sequence[int]]
         add_special_tokens = True
         if request.prompt is not None:
@@ -510,37 +610,40 @@ class TextAndVisionTokenizer(
         # Load images.
         images = (
             [
-                Image.open(io.BytesIO(image_data))
+                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
                 for image_data in request.images
             ]
             if request.images
             else None
         )
-        # PixtralProcessor returns a torch tensor or a list of torch tensors.
-        # LlamaVision returns a np Array.
+        # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
             images=images,
             add_special_tokens=add_special_tokens,
+            return_tensors="np",
         )
 
         if "input_ids" not in processed_inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(processed_inputs["input_ids"][0])
+
+        # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
+        if isinstance(processed_inputs["input_ids"][0], int):
+            encoded_prompt = np.array(processed_inputs["input_ids"])
+        else:
+            encoded_prompt = np.array(processed_inputs["input_ids"][0])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
         max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
-            encoded_prompt.shape[0],
-            self.max_length,
-            max_new_tokens,
+            encoded_prompt.shape[0], self.max_length, max_new_tokens
         )
 
         extra_model_args = dict()
@@ -551,12 +654,14 @@ class TextAndVisionTokenizer(
                 raise ValueError(msg)
             pixel_values = processed_inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
-                pixel_values = tuple(
-                    tensor.numpy() if torch.is_tensor(tensor) else tensor
-                    for tensor in pixel_values
+                pixel_values = tuple(pixel_values)
+            elif isinstance(pixel_values, np.ndarray):
+                pixel_values = (pixel_values,)
+            else:
+                raise ValueError(
+                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
                 )
-            elif torch.is_tensor(pixel_values):
-                pixel_values = (pixel_values.numpy(),)
+
             if "aspect_ratio_ids" in processed_inputs:
                 extra_model_args["aspect_ratio_ids"] = (
                     processed_inputs.aspect_ratio_ids
@@ -566,7 +671,13 @@ class TextAndVisionTokenizer(
                     processed_inputs.aspect_ratio_mask
                 )
         else:
-            pixel_values = ()
+            pixel_values = tuple()
+
+        # Pass through image token indices if present
+        if "image_token_indices" in processed_inputs:
+            extra_model_args["image_token_indices"] = processed_inputs[
+                "image_token_indices"
+            ]
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))
@@ -574,16 +685,40 @@ class TextAndVisionTokenizer(
             else None
         )
 
+        if request.sampling_params.ignore_eos:
+            eos_token_ids = set()
+        else:
+            eos_token_ids = self._default_eos_token_ids
+
         context = TextAndVisionContext(
-            prompt=prompt,
+            request_id=request.request_id,
+            eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
             extra_model_args=extra_model_args,
-            cache_seq_id=request.index,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
-            else None,
+            else self.max_length,
             json_schema=json_schema,
-            ignore_eos=request.ignore_eos,
         )
         return context
+
+
+def _rgba_to_rgb(
+    image: Image.Image,
+    background_color: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
+    """Convert an RGBA image to RGB with filled background color."""
+    assert image.mode == "RGBA"
+    converted = Image.new("RGB", image.size, background_color)
+    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+    return converted
+
+
+def _convert_image_mode(image: Image.Image, to_mode: str):
+    if image.mode == to_mode:
+        return image
+    elif image.mode == "RGBA" and to_mode == "RGB":
+        return _rgba_to_rgb(image)
+    else:
+        return image.convert(to_mode)

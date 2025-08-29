@@ -13,10 +13,16 @@
 
 from math import iota
 from random import randn, seed
-from sys.info import has_neon
+from sys.info import CompilationTarget
 
-from memory import UnsafePointer
-from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
+from nn.activations import (
+    elu,
+    gelu,
+    gelu_approximate,
+    leaky_relu,
+    relu,
+    relu_n1,
+)
 from test_utils import compare, libm_call
 from testing import assert_almost_equal
 
@@ -67,6 +73,32 @@ fn test_relu_n1():
 
     # CHECK: [0.0, 0.5, 1.0, 1.0]
     print(relu_n1(0.5 * simd_val))
+
+
+# CHECK-LABEL: test_leaky_relu
+fn test_leaky_relu():
+    print("== test_leaky_relu")
+
+    var simd_val = iota[DType.float32, 4]()
+
+    # Test with negative slope of 0.01
+    var slope_001 = SIMD[DType.float32, 1](0.01)
+
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    print(leaky_relu(simd_val, slope_001))
+
+    # For negative values: [-2, -1, 0, 1] with slope 0.01
+    # Expected: [-0.02, -0.01, 0.0, 1.0]
+    # CHECK: [-0.02, -0.01, 0.0, 1.0]
+    print(leaky_relu(simd_val - 2, slope_001))
+
+    # Test with different slope (0.1)
+    var slope_01 = SIMD[DType.float32, 1](0.1)
+
+    # For negative values: [-2, -1, 0, 1] with slope 0.1
+    # Expected: [-0.2, -0.1, 0.0, 1.0]
+    # CHECK: [-0.2, -0.1, 0.0, 1.0]
+    print(leaky_relu(simd_val - 2, slope_01))
 
 
 def test_gelu_bfloat16():
@@ -133,35 +165,34 @@ fn test_gelu_float64():
 
 @always_inline
 fn erf_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    var eval = libm_call[type, simd_width, "erff", "err"](arg)
-    return eval
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    return libm_call["erff", "err"](arg)
 
 
 @always_inline
 fn gelu_libm[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the GELU Op using the equation
     $0.5 * x * (1 + erf_libm(x / sqrt(2)))$.
 
     Parameters:
-        type: DType used for the computation.
+        dtype: DType used for the computation.
         simd_width: SIMD width used for the computation.
 
     Args:
         x: The value to compute the GELU operation on.
 
     Returns:
-        SIMD[type, size]: The result of the GELU operation.
+        SIMD[dtype, size]: The result of the GELU operation.
 
     Constraints:
         Type must be a floating point type.
     """
     alias inv_SQRT_2 = 0.70710678118654752440
     constrained[
-        type.is_floating_point(),
+        dtype.is_floating_point(),
         "dtype must be a floating point type",
     ]()
     # 0.5 * x * (1 + erf(x / SQRT_2))
@@ -211,10 +242,11 @@ def main():
     test_elu()
     test_relu()
     test_relu_n1()
+    test_leaky_relu()
     test_gelu_float32()
     test_gelu_float64()
     test_gelu_libm()
 
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_gelu_bfloat16()

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the Complex type.
+"""Implements the Complex dtype.
 
 You can import these APIs from the `complex` package. For example:
 
@@ -20,6 +20,7 @@ from complex import ComplexSIMD
 """
 
 import math
+from math.math import _Expable
 from sys import llvm_intrinsic
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
@@ -32,13 +33,15 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 
 @register_passable("trivial")
-struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
+struct ComplexSIMD[dtype: DType, size: Int](
+    EqualityComparable, Stringable, Writable, _Expable
+):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
 
     Parameters:
-        type: DType of the value.
+        dtype: DType of the value.
         size: SIMD width of the value.
     """
 
@@ -46,7 +49,8 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    alias element_type = SIMD[type, size]
+    alias type = dtype
+    alias element_type = SIMD[dtype, size]
     var re: Self.element_type
     """The real part of the complex SIMD value."""
     var im: Self.element_type
@@ -79,19 +83,16 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this complex value to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
         """
 
         # TODO(MSTDL-700):
-        #   Add a Writer.reserve() method, to afford writer implementions
+        #   Add a Writer.reserve() method, to afford writer implementations
         #   to request reservation of additional space from `Writer`
         #   implementations that support that. Then use the logic below to
         #   call that method here.
@@ -132,7 +133,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
             writer.write("]")
 
     @always_inline
-    fn __abs__(self) -> SIMD[type, size]:
+    fn __abs__(self) -> SIMD[dtype, size]:
         """Returns the magnitude of the complex value.
 
         Returns:
@@ -172,6 +173,49 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         )
 
     @always_inline
+    fn __mul__(self, rhs: Scalar[dtype]) -> Self:
+        """Multiplies a complex value to a scalar.
+
+        Args:
+            rhs: Scalar value to multiply with.
+
+        Returns:
+            A product of self and rhs.
+        """
+        return Self(self.re * rhs, self.im * rhs)
+
+    @always_inline
+    fn __rmul__(self, lhs: Scalar[dtype]) -> Self:
+        """Multiplies a complex value to a scalar.
+
+        Args:
+            lhs: Scalar value to multiply with.
+
+        Returns:
+            A product of self and lhs.
+        """
+        return Self(self.re * lhs, self.im * lhs)
+
+    @always_inline
+    fn __imul__(mut self, rhs: Self):
+        """Multiplies two complex values inplace.
+
+        Args:
+            rhs: Complex value to multiply with.
+        """
+        self = self * rhs
+
+    @always_inline
+    fn __imul__(mut self, rhs: Scalar[dtype]):
+        """Multiplies a complex value to a scalar inplace.
+
+        Args:
+            rhs: Scalar value to multiply with.
+        """
+        self.re *= rhs
+        self.im *= rhs
+
+    @always_inline
     fn __sub__(self, rhs: Self) -> Self:
         """Subtracts two complex values.
 
@@ -208,23 +252,44 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         """
         return ComplexSIMD(-self.re, -self.im)
 
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
+        """Compares two ComplexSIMD for equality.
+
+        Args:
+            rhs: The ComplexSIMD to compare with.
+
+        Returns:
+            True if all elements of the ComplexSIMD are equal, False otherwise.
+        """
+        return Bool((self.re.eq(rhs.re) & self.im.eq(rhs.im)).reduce_and())
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn norm(self) -> SIMD[type, size]:
+    fn conj(self) -> Self:
+        """Return the complex conjugate of self.
+
+        Returns:
+            The complex conjugate of self.
+        """
+        return Self(self.re, -self.im)
+
+    @always_inline
+    fn norm(self) -> SIMD[dtype, size]:
         """Returns the magnitude of the complex value.
 
         Returns:
             Value of `sqrt(re*re + im*im)`.
         """
-        return llvm_intrinsic["llvm.sqrt", SIMD[type, size]](
+        return llvm_intrinsic["llvm.sqrt", SIMD[dtype, size]](
             self.squared_norm()
         )
 
     @always_inline
-    fn squared_norm(self) -> SIMD[type, size]:
+    fn squared_norm(self) -> SIMD[dtype, size]:
         """Returns the squared magnitude of the complex value.
 
         Returns:
@@ -282,9 +347,9 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
 
 
 # TODO: we need this overload, because the Absable trait requires returning Self
-# type. We could maybe get rid of this if we had associated types?
+# dtype. We could maybe get rid of this if we had associated dtypes?
 @always_inline
-fn abs(x: ComplexSIMD[*_]) -> SIMD[x.type, x.size]:
+fn abs(x: ComplexSIMD[*_]) -> SIMD[x.dtype, x.size]:
     """Performs elementwise abs (norm) on each element of the complex value.
 
     Args:

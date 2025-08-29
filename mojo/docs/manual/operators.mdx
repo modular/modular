@@ -102,7 +102,7 @@ the order of evaluation:
 :::note
 
 Mojo also uses the caret (`^`) as the [*transfer
-sigil*](/mojo/manual/values/ownership#transfer-arguments-owned-and-). In
+sigil*](/mojo/manual/values/ownership#transfer-arguments-var-and-). In
 expressions where its use might be ambiguous, Mojo treats the character as the
 bitwise XOR operator. For example, `x^+1` is treated as `(x)^(+1)`.
 
@@ -222,19 +222,29 @@ different types, you can explicitly convert a value to the desired type either
 by invoking its [`cast()`](/mojo/stdlib/builtin/simd/SIMD#cast) method or by
 passing it as an argument to the constructor of the target type.
 
+For example, to fix the previous example, add an explicit conversion:
+
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
-print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
-print("simd4:", simd4)
+var i8: Int8 = 8
+var f64: Float64 = 64.0
+result = Float64(i8) * f64
+```
+
+Here are some more examples of converting SIMD values using both constructors
+and the `cast()` method:
+
+```mojo
+simd4 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+simd5 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+simd6 = simd4 * simd5.cast[DType.float32]()  # Convert with cast() method
+print("simd6:", simd6)
+simd7 = simd5 + SIMD[DType.int16, 4](simd4)  # Convert with SIMD constructor
+print("simd7:", simd7)
 ```
 
 ```output
-simd3: [-2.2, 6.6, -13.200001, 22.0]
-simd4: [1, 5, 1, 9]
-```
+simd6: [-2.2, 6.6, -13.200001, 22.0]
+simd7: [1, 5, 1, 9]```
 
 One exception is that the exponentiation operator, `**`, is overloaded so that
 you can specify an `Int` type exponent. All values in the `SIMD` are
@@ -392,7 +402,7 @@ compared.
     ```mojo
     simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
     simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)
-    simd3 = simd1 > simd2  # SIMD[DType.bool, 4]
+    simd3 = simd1.gt(simd2)  # SIMD[DType.bool, 4]
     print(simd3)
     ```
 
@@ -406,9 +416,9 @@ compared.
   `SIMD[DType.bool]` result. For example:
 
     ```mojo
-    simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-    simd2 = simd1 > 2  # SIMD[DType.bool, 4]
-    print(simd2)
+    simd4 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    simd5 = simd4 > 2  # SIMD[DType.bool, 4]
+    print(simd5)
     ```
 
     ```output
@@ -421,9 +431,9 @@ compared.
   provided and produces a `SIMD[DType.bool]` result. For example:
 
     ```mojo
-    simd1 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
-    simd2 = simd1 > 0.5  # SIMD[DType.bool, 4]
-    print(simd2)
+    simd6 = SIMD[DType.float32, 4](1.1, -2.2, 3.3, -4.4)
+    simd7 = simd6 > 0.5  # SIMD[DType.bool, 4]
+    print(simd7)
     ```
 
     ```output
@@ -473,34 +483,26 @@ As discussed in [Strings](/mojo/manual/types#strings), the
 [`String`](/mojo/stdlib/collections/string/string/String) type represents a
 mutable string value. In contrast, the
 [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) type
-represents a literal string that is embedded into your compiled program. At
-run-time a `StringLiteral` is loaded into memory as a constant that persists for
-the duration of your program's execution.
-
-The `String` type has a constructor that accepts a `StringLiteral` value, which
-means that a `StringLiteral` can be implicitly converted to a `String` at
-run-time if you pass it as an argument to a function or assign it to a `String`
-type variable. You also can use the [`String`
-constructor](/mojo/stdlib/collections/string/string/String#__init__) to
-explicitly convert the `StringLiteral` to a `String` value at run-time.
-
-Additionally, the
-[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice) type
-is a non-copying view of a `String` or `StringLiteral` value. It provides some
-additional methods for string manipulation. A common use case is to create a
-`StringSlice` from a `StringLiteral` using the `StaticString` alias so that you
-can then invoke the `format()` method on it. For example:
+represents a literal string that is embedded into your compiled program, but
+at run-time it materializes to a `String`, allowing you to mutate it:
 
 ```mojo
-alias message = StaticString('{} says, "{}"')
-name = "Pat"
-greeting = "Good day!"
-print(message.format(name, greeting))
+message = "Hello"       # type = String
+alias name = " Pat"       # type = StringLiteral
+greeting = " good Day!"  # type = String
+
+# Mutate the original `message` String
+message += name
+message += greeting
+print(message)
 ```
 
 ```output
-Pat says, "Good day!"
+Hello Pat good day!
 ```
+
+This means that `StringLiteral` values can be intermixed with `String` values in
+any runtime expression without having to convert between types.
 
 #### String concatenation
 
@@ -514,36 +516,9 @@ alias last_name = "Curie"
 alias marie = "Marie " + last_name
 print(marie)
 
-# Compile-time concatenation assigned to a run-time StringLiteral type variable
+# Compile-time concatenation before materializing to a run-time `String`
 pierre = "Pierre " + last_name
 print(pierre)
-```
-
-```output
-Marie Curie
-Pierre Curie
-```
-
-With the `String` type the `+` operator performs run-time string concatenation
-to produce a new `String` value. You can also concatenate a `String` and a
-`StringLiteral` to produce a new `String` result.
-
-```mojo
-var first_name: String = "Grace"
-var last_name: String = " Hopper"
-
-# String type result
-programmer = first_name + last_name
-print(programmer)
-
-# String type result
-singer = first_name + " Slick"
-print(singer)
-```
-
-```output
-Grace Hopper
-Grace Slick
 ```
 
 :::tip
@@ -561,6 +536,9 @@ you can write:
 ```mojo
 result = String("The point at (", x, ", ", y, ")")
 ```
+
+This will write the underlying data using a stack buffer, and will only allocate
+and memcpy to the heap once.
 
 :::
 
@@ -631,19 +609,19 @@ the character encoding.
 var animal: String = "bird"
 
 is_cat_eq = "cat" == animal
-print(StaticString('Is "cat" equal to "{}"?').format(animal), is_cat_eq)
+print('Is "cat" equal to "{}"?'.format(animal), is_cat_eq)
 
 is_cat_ne = "cat" != animal
-print(StaticString('Is "cat" not equal to "{}"?').format(animal), is_cat_ne)
+print('Is "cat" not equal to "{}"?'.format(animal), is_cat_ne)
 
 is_bird_eq = "bird" == animal
-print(StaticString('Is "bird" equal to "{}"?').format(animal), is_bird_eq)
+print('Is "bird" equal to "{}"?'.format(animal), is_bird_eq)
 
 is_cat_gt = "CAT" > animal
-print(StaticString('Is "CAT" greater than "{}"?').format(animal), is_cat_gt)
+print('Is "CAT" greater than "{}"?'.format(animal), is_cat_gt)
 
 is_ge_cat = animal >= "CAT"
-print(StaticString('Is "{}" greater than or equal to "CAT"?').format(animal), is_ge_cat)
+print('Is "{}" greater than or equal to "CAT"?'.format(animal), is_ge_cat)
 ```
 
 ```output
@@ -684,7 +662,7 @@ by index -1. Specifying an index beyond the bounds of the string results in a
 run-time error.
 
 ```mojo
-alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # StringLiteral type value
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # String type value
 print(alphabet[0], alphabet[-1])
 
 # The following would produce a run-time error
@@ -704,7 +682,7 @@ end values. Omitting `start` is the same as specifying `0`, and omitting `end`
 is the same as specifying 1 plus the length of the string.
 
 ```mojo
-var alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
 print(alphabet[1:4])  # The 2nd through 4th characters
 print(alphabet[:6])   # The first 6 characters
 print(alphabet[-6:])  # The last 6 characters
@@ -800,6 +778,94 @@ Hello, Vera
 Enter a name or 'quit' to exit: quit
 ```
 
+### Type merging
+
+When an expression involves values of different types,
+Mojo needs to statically determine the return type of the expression. This
+process is called *type merging*. By default, Mojo determines type merging
+based on implicit conversions. Individual structs can also define custom type
+merging behavior.
+
+The following code demonstrates type merging based on implicit conversions:
+
+```mojo
+list = [0.5, 1, 2]
+for value in list:
+    print(value)
+```
+
+```output
+0.5
+1.0
+2.0
+```
+
+Here, the list literal includes both float and integer literals, which
+materialize as `Float64` and `Int`, respectively. Since `Int` can be
+implicitly converted to `Float64`, the result is a `List[Float64]`.
+
+Here's an example of where type merging fails:
+
+```mojo
+a: Int = 0
+b: String = "Hello"
+c = a if a > 0 else b   # Error: value of type 'Int' is not compatible with
+                        # value of type 'String'mojo
+```
+
+In this case, `Int` can't be implicitly converted to a `String`, and
+`String` can't be implicitly converted to an `Int`, so type merging fails. This
+is the correct result: there's no way for Mojo to know what type you want `c` to
+take. You can fix this by adding an explicit conversion:
+
+```mojo
+c = String(a) if a > 0 else b
+```
+
+Individual structs can define custom type merging logic by defining a
+`__merge_with__()` dunder method. For example:
+
+```mojo
+@fieldwise_init
+struct MyType(Movable, Copyable):
+    var val: Int
+
+    def __bool__(self) -> Bool:
+        return self.val > 0
+
+    def __merge_with__[other_type: __type_of(Int)](self) -> Int:
+        return Int(self.val)
+
+def main():
+    i = 0
+    m = MyType(9)
+    print(i if i > 0 else m)  # prints "9"
+```
+
+If either type in the expression defines a custom `__merge_with__()` dunder
+for merging with the other type, this type takes precedence over any implicit
+conversions. (Note that the result type doesn't have to be either of the input
+types, it could be a third type.)
+
+A type can declare multiple `__merge_with__()` overrides for different types.
+
+At a high level, the logic for merging two types goes like this:
+
+- Does either type define a `__merge_with__()` method for the other type? If so,
+  the returned value determines the target type.
+  - If **both** types define a `__merge_with__()` method for the other type,
+    the two methods must both return the same type, or the conversion fails.
+  - Both types must be implicitly convertible to the target type (a type is
+    always implicitly convertible to itself).
+- Is either type implicitly convertible to the other type?
+  - If only one type is implicitly convertible to the other type, convert it.
+  - If both types are convertible to the other type, the conversion is
+    ambiguous, and it fails.
+
+For more background on type merging and the `__merge_with__()` dunder, see the
+proposal,
+[Customizable Type Merging in Mojo](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md).
+
 ## Implement operators for custom types
 
 When you create a custom struct, Mojo allows you to define the behavior of many
@@ -833,7 +899,7 @@ operator. For example, you could implement the `-` negative operator for a
 `MyInt` struct like this:
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -896,7 +962,7 @@ argument, we need to implement an `__radd__()` method, because the built-in
 type.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt:
     var value: Int
 
@@ -961,7 +1027,7 @@ As an example, consider implementing support for all of the comparison operator
 dunder methods for a custom `MyInt` struct.
 
 ```mojo
-@value
+@fieldwise_init
 struct MyInt(
     Comparable
 ):
@@ -1105,15 +1171,20 @@ will not be based on the `ComplexSIMD` struct or be compatible with it.
 
 Our `Complex` struct is an example of a simple value type consisting of trivial
 numeric fields and requiring no special constructor or destructor behaviors.
-This means that we can take advantage of Mojo's
-[`@value`](/mojo/manual/decorators/value) decorator, which is described in
-[Simple value types](/mojo/manual/lifecycle/life#value-decorator), to
-automatically implement a member-wise initializer (a constructor with arguments
-for each field), a copy constructor, a move constructor, and a destructor.
+This means we can use the
+[`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
+decorator, which declares that the type can be trivially copied, moved, and
+destroyed—and doesn't need a copy constructor, move constructor, or destructor.
+
+For the time being, we'll also use the
+[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
+automatically implement a field-wise initializer (a constructor with arguments
+for each field).
 
 ```mojo
-@value
-struct Complex():
+@fieldwise_init
+@register_passable("trivial")
+struct Complex:
     var re: Float64
     var im: Float64
 ```
@@ -1123,7 +1194,7 @@ real and imaginary fields.
 
 ```mojo
 c1 = Complex(-1.2, 6.5)
-print(StaticString("c1: Real: {}; Imaginary: {}").format(c1.re, c1.im))
+print("c1: Real: {}; Imaginary: {}".format(c1.re, c1.im))
 ```
 
 ```output
@@ -1134,7 +1205,7 @@ As a convenience, let's add an explicit constructor to handle the case of
 creating a `Complex` instance with an imaginary component of 0.
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex():
     var re: Float64
     var im: Float64
@@ -1144,11 +1215,14 @@ struct Complex():
         self.im = im
 ```
 
+Since this constructor also handles creating a `Complex` instance with both real
+and imaginary components, we don't need the `@fieldwise_init` decorator anymore.
+
 Now we can create a `Complex` instance and provide just a real component.
 
 ```mojo
 c2 = Complex(3.14159)
-print(StaticString("c2: Real: {}; Imaginary: {}").format(c2.re, c2.im))
+print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
 ```
 
 ```output
@@ -1166,7 +1240,7 @@ methods in [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
-@value
+@register_passable("trivial")
 struct Complex(
     Writable,
     Stringable,
@@ -1176,7 +1250,7 @@ struct Complex(
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
             writer.write(" - ", -self.im)
@@ -1244,7 +1318,7 @@ Now let's try getting and setting the real and imaginary components of a
 
 ```mojo
 c2 = Complex(3.14159)
-print(StaticString("c2[0]: {}; c2[1]: {}").format(c2[0], c2[1]))
+print("c2[0]: {}; c2[1]: {}".format(c2[0], c2[1]))
 c2[0] = 2.71828
 c2[1] = 42
 print("c2[0] = 2.71828; c2[1] = 42; c2:", c2)
@@ -1521,7 +1595,6 @@ representing floating point numbers when performing arithmetic operations. But
 we'll go ahead and implement the operators for completeness.)
 
 ```mojo
-@value
 struct Complex(
     EqualityComparable,
     Formattable,
@@ -1532,7 +1605,7 @@ struct Complex(
         return self.re == other.re and self.im == other.im
 
     fn __ne__(self, other: Self) -> Bool:
-        return self.re != other.re and self.im != other.im
+        return self.re != other.re or self.im != other.im
 ```
 
 :::note

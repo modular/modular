@@ -18,7 +18,7 @@ from python import Python
 
 
 def run_display(
-    owned grid: Grid,
+    var grid: Grid,
     window_height: Int = 600,
     window_width: Int = 600,
     background_color: String = "black",

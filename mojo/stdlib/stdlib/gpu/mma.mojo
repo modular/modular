@@ -15,15 +15,37 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from collections import InlineArray
 from collections.string.string_slice import _get_kgen_string
-from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
+from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from sys._assembly import inlined_assembly
+from sys.info import (
+    is_amd_gpu,
+    _is_amd_rdna,
+    _cdna_4_or_newer,
+    CompilationTarget,
+)
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
+from gpu._utils import (
+    simd_to_llvm_struct,
+    llvm_struct_to_simd,
+    array_to_llvm_struct,
+    llvm_struct_to_array,
+    dtype_to_llvm_type,
+)
+
+
+fn get_amd_fp8_dtype() -> DType:
+    return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
+
+
+fn get_amd_bf8_dtype() -> DType:
+    return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 
 @always_inline
@@ -31,94 +53,213 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
         False,
         # fmt: off
+        String(
         "no valid implementation of mma for for a=",
-        String(a.size), "x",  String(a.dtype),
-        ", b=",  String(b.size), "x",  String(b.dtype),
-        ", c=",  String(c.size), "x",  String(c.dtype),
-        ", and d=", String(d.size), "x", String(d.dtype),
+        a.size, "x",  a.dtype,
+        ", b=",  b.size, "x",  b.dtype,
+        ", c=",  c.size, "x",  c.dtype,
+        ", and d=", d.size, "x", d.dtype,
+        ),
         # fmt: on
     ]()
 
 
 @always_inline
+fn _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
+    return a is type and b is type and c is type and d is type
+
+
+@always_inline
+fn _has_type[
+    abcd: Tuple[DType, DType, DType, DType]
+](a: DType, b: DType, c: DType, d: DType) -> Bool:
+    return a is abcd[0] and b is abcd[1] and c is abcd[2] and d is abcd[3]
+
+
+@always_inline
+fn _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
+    return a == size and b == size and c == size and d == size
+
+
+@always_inline
+fn _has_shape[
+    abcd: Tuple[Int, Int, Int, Int]
+](a: Int, b: Int, c: Int, d: Int) -> Bool:
+    return a == abcd[0] and b == abcd[1] and c == abcd[2] and d == abcd[3]
+
+
+@always_inline
+fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    """AMD RDNA3+ WMMA implementation for matrix multiplication.
+
+    RDNA3/4 GPUs use WMMA instructions.
+    Per https://gpuopen.com/learn/wmma_on_rdna3/
+    the following intrinsics are supported:
+    - llvm.amdgcn.wmma.f32.16x16x16.f16
+    - llvm.amdgcn.wmma.f32.16x16x16.bf16
+    - llvm.amdgcn.wmma.f16.16x16x16.f16
+    - llvm.amdgcn.wmma.bf16.16x16x16.bf16
+    - llvm.amdgcn.wmma.i32.16x16x16.iu8
+    - llvm.amdgcn.wmma.i32.16x16x16.iu4
+    """
+
+    @parameter
+    fn get_intrinsic_name() -> String:
+        # ===------------------------------------------------------------------===#
+        # F32 = F16 * F16 + F32 (16x16x16)
+        # Or
+        # F32 = BF16 * BF16 + F32 (16x16x16)
+        # ===------------------------------------------------------------------===#
+        @parameter
+        if (
+            _has_type[
+                (DType.float16, DType.float16, DType.float32, DType.float32)
+            ](a.dtype, b.dtype, c.dtype, d.dtype)
+            or _has_type[
+                (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+            ](a.dtype, b.dtype, c.dtype, d.dtype)
+        ) and _has_shape[4](a.size, b.size, c.size, d.size):
+            alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+            return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+        else:
+            _unsupported_mma_op(d, a, b, c)
+            return ""
+
+    var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
+    d = rebind[__type_of(d)](r)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct _AMD_F8F6F4_MATRIX_FORMAT:
+    """Represents the matrix format value to control the type and shape for the inputs
+    of the llvm.amdgcn.mfma.scale.f8f6f4 intrinsics.
+    """
+
+    var _value: Int32
+    alias float8_e4m3 = Self(0)
+    alias float8_e5m2 = Self(1)
+    alias float6_e2m3 = Self(2)
+    alias float6_e3m2 = Self(3)
+    alias float4_e2m1 = Self(4)
+
+    fn __init__(out self, value: Int):
+        self._value = value
+
+
+@always_inline
 fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    @parameter
+    if _is_amd_rdna():
+        # Use WMMA instructions for RDNA3+ consumer GPUs.
+        _mma_wmma_rdna(d, a, b, c)
+        return
+
+    alias zero: UInt32 = 0
+
+    # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
+    # Compute Project (OCP) float8 dtypes.
+    alias fp8_dtype = get_amd_fp8_dtype()
+    alias bf8_dtype = get_amd_bf8_dtype()
+
+    @parameter
+    fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+
+        alias intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
+            (32, 32, 4, 4)
+        ](
+            a.size, b.size, c.size, d.size
+        ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
+
+        @parameter
+        fn _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
+            return (
+                _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype
+                == fp8_dtype else _AMD_F8F6F4_MATRIX_FORMAT.float8_e5m2
+            )
+
+        return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.size]](
+            bitcast[DType.int32, 8](a),
+            bitcast[DType.int32, 8](b),
+            c,
+            _matrix_format[a.dtype](),
+            _matrix_format[b.dtype](),
+            zero,
+            zero,
+            zero,
+            zero,
+        )
+
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     @parameter
-    if (
-        d.dtype is DType.float16
-        and a.dtype is DType.float16
-        and b.dtype is DType.float16
-        and c.dtype is DType.float16
-    ):
+    if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
         constrained[
             False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
         ]()
+
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
+        a.size, b.size, c.size, d.size
     ):
 
         @parameter
         if block_size == 16:
-            alias zero: UInt32 = 0
             # Note: 4x4x4_16B (i.e., 16 blocks).
-            var r = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[c.dtype, c.size]
+            d = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.size]
             ](a, b, c, zero, zero, zero)
-            d = rebind[__type_of(d)](r)
         else:
-            alias zero: UInt32 = 0
-            var r = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.dtype, c.size]
+            d = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.size]
             ](a, b, c, zero, zero, zero)
-            d = rebind[__type_of(d)](r)
-    elif (
-        d.dtype is DType.float32
-        and d.size == 16
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 16
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
+        a.size, b.size, c.size, d.size
     ):
-        alias zero: UInt32 = 0
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[c.dtype, c.size]
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)
-        d = rebind[__type_of(d)](r)
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
+    ):
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.f16", SIMD[d.dtype, d.size]
+        ](a, b, c, zero, zero, zero)
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
+        a.size, b.size, c.size, d.size
+    ):
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x16.f16", SIMD[d.dtype, d.size]
+        ](a, b, c, zero, zero, zero)
 
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
+        a.size, b.size, c.size, d.size
     ):
 
         @parameter
         if block_size == 16:
-            alias zero: UInt32 = 0
             # Note: 4x4x4_16B (i.e., 16 blocks)
-            var r = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[c.dtype, c.size]
+            d = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.size]
             ](
                 bitcast[DType.int16, 4](a),
                 bitcast[DType.int16, 4](b),
@@ -127,11 +268,9 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 zero,
                 zero,
             )
-            d = rebind[__type_of(d)](r)
         else:
-            alias zero: UInt32 = 0
-            var r = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[c.dtype, c.size]
+            d = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.size]
             ](
                 bitcast[DType.int16, 4](a),
                 bitcast[DType.int16, 4](b),
@@ -140,20 +279,13 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 zero,
                 zero,
             )
-            d = rebind[__type_of(d)](r)
-    elif (
-        d.dtype is DType.float32
-        and d.size == 16
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 16
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
+        a.size, b.size, c.size, d.size
     ):
-        alias zero: UInt32 = 0
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[c.dtype, c.size]
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[d.dtype, d.size]
         ](
             bitcast[DType.int16, 4](a),
             bitcast[DType.int16, 4](b),
@@ -162,26 +294,85 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             zero,
             zero,
         )
-        d = rebind[__type_of(d)](r)
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
+    ):
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.bf16", SIMD[d.dtype, d.size]
+        ](a, b, c, zero, zero, zero)
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
+        a.size, b.size, c.size, d.size
+    ):
+        constrained[_cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"]()
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x16.bf16", SIMD[d.dtype, d.size]
+        ](a, b, c, zero, zero, zero)
 
     # ===------------------------------------------------------------------===#
-    # F32 = FP32 * FP32 + FP32
+    # F32 = F32 * F32 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 1
-        and b.dtype is DType.float32
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
-        alias zero: UInt32 = 0
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[c.dtype, c.size]
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(1, 1, 4, 4)](a.size, b.size, c.size, d.size):
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)
-        d = rebind[__type_of(d)](r)
+
+    # ===------------------------------------------------------------------===#
+    # F32 = F8 * F8 + F32
+    # ===------------------------------------------------------------------===#
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.fp8.fp8", SIMD[d.dtype, d.size]
+        ](
+            bitcast[DType.int64, 1](a),
+            bitcast[DType.int64, 1](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+    elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+
+    # ===------------------------------------------------------------------===#
+    # F32 = BF8 * BF8 + F32
+    # ===------------------------------------------------------------------===#
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x32.bf8.bf8", SIMD[d.dtype, d.size]
+        ](
+            bitcast[DType.int64, 1](a),
+            bitcast[DType.int64, 1](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+    elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+        d = _f8f6f4_intrinsic()
+
     else:
         _unsupported_mma_op(d, a, b, c)
 
@@ -192,16 +383,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     @parameter
-    if (
-        d.dtype is DType.float16
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 2
-        and c.dtype is DType.float16
-        and c.size == 4
-    ):
+    if _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var sa = a.split()
         var sc = c.split()
 
@@ -211,16 +395,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ](sa[0], sa[1], b, sc[0], sc[1])
 
         d = rebind[__type_of(d)](r[0].join(r[1]))
-    elif (
-        d.dtype is DType.float16
-        and d.size == 2
-        and a.dtype is DType.float16
-        and a.size == 1
-        and b.dtype is DType.float16
-        and b.size == 1
-        and c.dtype is DType.float16
-        and c.size == 2
-    ):
+    elif _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(1, 1, 2, 2)](a.size, b.size, c.size, d.size):
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m8n8k4.row.col.f16.f16",
             _RegisterPackType[Float16, Float16],
@@ -230,15 +407,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 2, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var c0 = bitcast[DType.float32, 4](c)
@@ -257,15 +429,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
 
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
-    elif (
-        d.dtype is DType.float32
-        and d.size == 2
-        and a.dtype is DType.float16
-        and a.size == 1
-        and b.dtype is DType.float16
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 2
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(1, 1, 2, 2)](
+        a.size, b.size, c.size, d.size
     ):
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m8n8k4.row.col.f32.f32",
@@ -276,15 +443,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 2, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var c0 = bitcast[DType.float32, 4](c)
@@ -303,15 +465,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 8
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 4, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var sa1 = sa[0].split()
@@ -339,16 +496,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = tf32 * tf32 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 2
-        and b.dtype is DType.float32
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(2, 1, 4, 4)](a.size, b.size, c.size, d.size):
         var a0 = bitcast[DType.uint32, 2](a)
         var b0 = bitcast[DType.uint32, 1](b)
         var c0 = bitcast[DType.float32, 4](c)
@@ -367,16 +517,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 4
-        and b.dtype is DType.float32
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
         var c0 = bitcast[DType.float32, 4](c)
@@ -401,15 +544,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = FP8 * FP8 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float8_e4m3fn
-        and a.size == 16
-        and b.dtype is DType.float8_e4m3fn
-        and b.size == 8
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float8_e4m3fn, DType.float8_e4m3fn, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
@@ -434,15 +572,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c[3],
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float8_e5m2
-        and a.size == 16
-        and b.dtype is DType.float8_e5m2
-        and b.size == 8
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float8_e5m2, DType.float8_e5m2, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
@@ -470,6 +603,78 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     else:
         _unsupported_mma_op(d, a, b, c)
+
+
+fn _dtype_to_nvvm_type[
+    out_type: DType, in_type: DType = out_type
+]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if out_type is DType.float16 or out_type is DType.uint32:
+        # Special case when input types are integers, the result has to be integer too.
+        if in_type != out_type and in_type.is_integral():
+            return __mlir_attr.`si32`
+        return __mlir_attr.`f16`
+    else:
+        return out_type.__mlir_type()
+
+
+fn _dtype_to_nvvm_wgmma_type[
+    out_type: DType, in_type: DType = out_type
+]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if out_type is DType.float8_e4m3fn:
+        return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
+    elif out_type is DType.float8_e5m2:
+        return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
+    elif out_type is DType.float16 or out_type is DType.uint32:
+        # Special case when input types are integers, the result has to be integer too.
+        if in_type != out_type and in_type.is_integral():
+            return __mlir_attr[`#nvvm.wgmma_type<s32>`]
+        return __mlir_attr[`#nvvm.wgmma_type<f16>`]
+    elif out_type is DType.int8:
+        return __mlir_attr[`#nvvm.wgmma_type<s8>`]
+    elif out_type is DType.uint8:
+        return __mlir_attr[`#nvvm.wgmma_type<u8>`]
+    elif out_type is DType.float32:
+        return __mlir_attr[`#nvvm.wgmma_type<tf32>`]
+    else:
+        return __mlir_deferred_attr[
+            `#nvvm.wgmma_type<`, +_dtype_to_nvvm_type[out_type, in_type](), `>`
+        ]
+
+
+fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
+    return __mlir_deferred_attr[
+        `#nvvm.shape<m =`,
+        +m.value,
+        `, n =`,
+        +n.value,
+        `, k =`,
+        +k.value,
+        `>`,
+    ]
+
+
+fn _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if s == 0:
+        return __mlir_attr.`#nvvm.wgmma_scale_out<zero>`
+    else:
+        return __mlir_attr.`#nvvm.wgmma_scale_out<one>`
+
+
+fn _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if s == -1:
+        return __mlir_attr.`#nvvm.wgmma_scale_in<neg>`
+    else:
+        return __mlir_attr.`#nvvm.wgmma_scale_in<one>`
+
+
+fn _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
+    return __mlir_deferred_attr[
+        `#nvvm.mma_layout<`, +_get_kgen_string[s](), `>`
+    ]
 
 
 @always_inline
@@ -504,8 +709,10 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     @parameter
     if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
-    else:
+    elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
+    else:
+        return CompilationTarget.unsupported_target_error[operation="mma"]()
 
 
 # ===------------------------------------------------------------------===#
@@ -515,15 +722,15 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn ld_matrix[
-    type: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[Scalar[type], **_],) -> SIMD[type, simd_width]:
+    dtype: DType, //, simd_width: Int, *, transpose: Bool = False
+](ptr: UnsafePointer[Scalar[dtype], **_],) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
     to be directly usable by tensor core Matrix Multiply-Accumulate (MMA) instructions.
 
     Parameters:
-        type: The data type of the matrix elements (e.g. float16, float32).
+        dtype: The data type of the matrix elements (e.g. float16, float32).
         simd_width: The width of the SIMD vector to load.
         transpose: Whether to transpose the matrix during load (only supported for half precision).
 
@@ -553,17 +760,16 @@ fn ld_matrix[
         # Load transposed matrix
         var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
         ```
-        .
     """
 
     constrained[
-        (transpose and type.is_half_float()) or (not transpose),
+        (transpose and dtype.is_half_float()) or (not transpose),
         "Transposed ld_matrix is only for half precision.",
     ]()
 
     # The register width is fixed at 4 Bytes (32 bits)
     alias register_btypes = 4
-    alias register_width = register_btypes // sizeof[type]()
+    alias register_width = register_btypes // size_of[dtype]()
     alias num_registers = simd_width // register_width
 
     # Full intrinsic is base + suffix
@@ -576,7 +782,7 @@ fn ld_matrix[
             return ".trans" + sfx
         return sfx
 
-    var d: SIMD[type, simd_width]
+    var d: SIMD[dtype, simd_width]
 
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
@@ -585,17 +791,17 @@ fn ld_matrix[
     if num_registers == 1:
         alias ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
-        var r0 = bitcast[type, register_width](r[0])
+        var r0 = bitcast[dtype, register_width](r[0])
 
-        d = rebind[SIMD[type, simd_width]](r0)
+        d = rebind[SIMD[dtype, simd_width]](r0)
 
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
-        var r0 = bitcast[type, register_width](r[0])
-        var r1 = bitcast[type, register_width](r[1])
+        var r0 = bitcast[dtype, register_width](r[0])
+        var r1 = bitcast[dtype, register_width](r[1])
 
-        d = rebind[SIMD[type, simd_width]](r0.join(r1))
+        d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
         constrained[
@@ -608,16 +814,16 @@ fn ld_matrix[
         ](ptr)
 
         # Unpack result to 4 vectors (one per register), then concat them to return.
-        var r0 = bitcast[type, register_width](r[0])
-        var r1 = bitcast[type, register_width](r[1])
-        var r2 = bitcast[type, register_width](r[2])
-        var r3 = bitcast[type, register_width](r[3])
-        d = rebind[SIMD[type, simd_width]](r0.join(r1).join(r2.join(r3)))
+        var r0 = bitcast[dtype, register_width](r[0])
+        var r1 = bitcast[dtype, register_width](r[1])
+        var r2 = bitcast[dtype, register_width](r[2])
+        var r3 = bitcast[dtype, register_width](r[3])
+        d = rebind[SIMD[dtype, simd_width]](r0.join(r1).join(r2.join(r3)))
 
         # The following creates additional copies uint32 <-> 2xbf16 in matmul.
         # @parameter
         # for i in range(num_registers):
-        #     var vec_per_register = bitcast[type, register_width](
+        #     var vec_per_register = bitcast[dtype, register_width](
         #         rebind[UInt32](r[i])
         #     )
 
@@ -708,7 +914,7 @@ fn st_matrix[
 
 # Shared memory operand descriptor.
 @register_passable("trivial")
-struct WGMMADescriptor[dtype: DType]:
+struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     """Descriptor for shared memory operands used in warp group matrix multiply operations.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -751,7 +957,6 @@ struct WGMMADescriptor[dtype: DType]:
     to efficiently access shared memory with the appropriate layout and access patterns.
     """
 
-    @implicit
     fn __init__(out self, val: Int64):
         """Initialize descriptor with raw 64-bit value.
 
@@ -766,7 +971,7 @@ struct WGMMADescriptor[dtype: DType]:
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: Int64) -> Int64:
+    fn _insert_bit[start_bit: Int](self, val: Int64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -778,7 +983,7 @@ struct WGMMADescriptor[dtype: DType]:
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return self.desc | (val << start_bit)
+        return Self(self.desc | (val << start_bit))
 
     @staticmethod
     fn create[
@@ -824,21 +1029,21 @@ struct WGMMADescriptor[dtype: DType]:
         var start_address = (base_ptr & 0x3FFFF) >> 4
 
         # Start from LSB in case updated higher bits gets overwritten.
-        var desc = Int64(0)
+        var desc = Self(0)
         # bits [48 .. 32]
         # bits  0:14 address in share memory
-        desc = Self._insert_bit[0](desc, start_address)
+        desc = desc._insert_bit[0](start_address)
         # bits 14:16 unused
         # bits 16:30 leading dim byte offset
-        desc = Self._insert_bit[16](desc, lead_dim)
+        desc = desc._insert_bit[16](lead_dim)
         # bits 30:32 unused
         # bits 32:46 stride dim byte offset
-        desc = Self._insert_bit[32](desc, stride_dim)
+        desc = desc._insert_bit[32](stride_dim)
         # bits 49:52 offset
-        desc = Self._insert_bit[49](desc, offset)
+        desc = desc._insert_bit[49](offset)
         # bits 53:62 unused
         # bits 62:64 swizzle type
-        desc = Self._insert_bit[62](desc, swizzle)
+        desc = desc._insert_bit[62](swizzle)
 
         return desc
 
@@ -861,7 +1066,7 @@ struct WGMMADescriptor[dtype: DType]:
         Returns:
             New descriptor with updated base address.
         """
-        return self.desc + ((offset & 0x3FFFF) >> 4)
+        return Self(self.desc + ((offset & 0x3FFFF) >> 4))
 
 
 @always_inline
@@ -951,12 +1156,12 @@ fn wgmma_async[
 
     Constraints:
         - The number of output registers must match the instruction shape:
-          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+          `(m * n // 128) * size_of(accum_type) == width * size_of(c_dtype)`.
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
     constrained[
-        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
@@ -1003,22 +1208,36 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
-    var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
-        shape_m = m.value,
-        shape_n = n.value,
-        shape_k = k.value,
-        type_a = a_type.__mlir_type(),
-        type_b = b_type.__mlir_type(),
-        type_c = c_dtype.__mlir_type(),
-        layout_a=layout_a_value,
-        layout_b=layout_b_value,
-        scale_d = scale_d.value,
-        scale_a = scale_a.value,
-        scale_b = scale_b.value,
-        _type = c_reg.type,
-    ](desc_a_value, desc_b_value, c_reg.array)
+    alias type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+        c_dtype, a_type
+    ]()
 
-    return rebind[StaticTuple[Scalar[c_dtype], width]](res)
+    var llvmst = array_to_llvm_struct[c_dtype, width](c_reg)
+    # TODO: Simplify with parametric alias
+    var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
+        shape = _get_shape[m, n, k](),
+        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
+        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        typeD=type_d_value,
+        scaleD = _to_nvvm_scale_out[scale_d](),
+        scaleA = _to_nvvm_scale_in[scale_a](),
+        scaleB = _to_nvvm_scale_in[scale_b](),
+        layoutA = _to_nvvm_layout[layout_a](),
+        layoutB = _to_nvvm_layout[layout_b](),
+        _type = __mlir_type[
+            `!llvm.struct<(`,
+            __mlir_type[
+                `!kgen.variadic_splat<`,
+                dtype_to_llvm_type[c_dtype],
+                `, `,
+                width.value,
+                `>`,
+            ],
+            `)>`,
+        ],
+    ](llvmst, desc_a_value, desc_b_value)
+
+    return llvm_struct_to_array[c_dtype, width](llvmres)
 
 
 @always_inline
@@ -1073,12 +1292,12 @@ fn wgmma_async[
 
     Constraints:
         - The number of output registers must match the instruction shape:
-          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+          `(m * n // 128) * size_of(accum_type) == width * size_of(c_dtype)`.
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
     constrained[
-        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]() == width * size_of[c_dtype](),
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
@@ -1124,33 +1343,36 @@ fn wgmma_async[
 
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
+    alias type_d_value = __mlir_attr.`#nvvm.wgmma_type<f32>` if c_dtype is DType.float32 else _dtype_to_nvvm_wgmma_type[
+        c_dtype, a_type
+    ]()
 
-    fn dtype_to_nvvm_type[
-        out_type: DType, in_type: DType = out_type
-    ]() -> __mlir_type.`!kgen.deferred`:
-        @parameter
-        if out_type is DType.float16 or out_type is DType.uint32:
-            # Special case when input types are integers, the result has to be integer too.
-            if in_type != out_type and in_type.is_integral():
-                return __mlir_attr.`si32`
-            return __mlir_attr.`f16`
-        else:
-            return out_type.__mlir_type()
+    var llvmst = simd_to_llvm_struct[c_dtype, width](c_reg)
+    # TODO: Simplify with parametric alias
+    var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
+        shape = _get_shape[m, n, k](),
+        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
+        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        typeD=type_d_value,
+        scaleD = _to_nvvm_scale_out[scale_d](),
+        scaleA = _to_nvvm_scale_in[scale_a](),
+        scaleB = _to_nvvm_scale_in[scale_b](),
+        layoutA = _to_nvvm_layout[layout_a](),
+        layoutB = _to_nvvm_layout[layout_b](),
+        _type = __mlir_type[
+            `!llvm.struct<(`,
+            __mlir_type[
+                `!kgen.variadic_splat<`,
+                dtype_to_llvm_type[c_dtype],
+                `, `,
+                width.value,
+                `>`,
+            ],
+            `)>`,
+        ],
+    ](llvmst, desc_a_value, desc_b_value)
 
-    return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-        shape_m = m.value,
-        shape_n = n.value,
-        shape_k = k.value,
-        type_a = dtype_to_nvvm_type[a_type](),
-        type_b = dtype_to_nvvm_type[b_type](),
-        type_c = dtype_to_nvvm_type[c_dtype, a_type](),
-        layout_a=layout_a_value,
-        layout_b=layout_b_value,
-        scale_d = scale_d.value,
-        scale_a = scale_a.value,
-        scale_b = scale_b.value,
-        _type = __type_of(c_reg.value),
-    ](desc_a_value, desc_b_value, c_reg.value)
+    return llvm_struct_to_simd[c_dtype, width](llvmres)
 
 
 @always_inline
@@ -1211,10 +1433,9 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-
     constrained[
-        (m * n // 128) * sizeof[accum_type]()
-        == frag_c_width * sizeof[c_dtype](),
+        (m * n // 128) * size_of[accum_type]()
+        == frag_c_width * size_of[c_dtype](),
         "Number of output registers ",
         String(frag_c_width),
         " don't match the instruction shape ",
@@ -1222,7 +1443,7 @@ fn wgmma_async[
     ]()
 
     constrained[
-        (m * k // 128) * sizeof[a_type]() == frag_a_width * sizeof[a_dtype](),
+        (m * k // 128) * size_of[a_type]() == frag_a_width * size_of[a_dtype](),
         "Number of input a registers ",
         String(frag_a_width),
         " don't match the instruction shape ",

@@ -10,13 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo -D ASSERT=warn %s | FileCheck %s
 
 from math import ceildiv
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import NDBuffer
-from runtime.asyncrt import num_physical_cores
+from sys.info import num_physical_cores
 
 
 # CHECK-LABEL: test_sync_parallelize

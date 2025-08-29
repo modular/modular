@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import byte_swap, rotate_bits_left
-from memory import UnsafePointer, bitcast
+from bit import rotate_bits_left
+from memory import bitcast
 
-from ._hasher import _HashableWithHasher, _Hasher
+from .hasher import Hasher
 
 alias U256 = SIMD[DType.uint64, 4]
 alias U128 = SIMD[DType.uint64, 2]
@@ -31,7 +31,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
         rhs: 64 bit uint.
 
     Returns:
-        A value which is similar in its bitpattern to result of a folded multply.
+        A value which is similar in its bitpattern to result of a folded multiply.
     """
     # Extend to 128 bits and multiply.
     m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
@@ -54,18 +54,21 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
     if length >= 2:
         if length >= 4:
             # len 4-8
-            var a = data.bitcast[Scalar[DType.uint32]]().load().cast[
-                DType.uint64
-            ]()
-            var b = data.offset(length - 4).bitcast[
-                Scalar[DType.uint32]
-            ]().load().cast[DType.uint64]()
+            var a = (
+                data.bitcast[Scalar[DType.uint32]]().load().cast[DType.uint64]()
+            )
+            var b = (
+                data.offset(length - 4)
+                .bitcast[Scalar[DType.uint32]]()
+                .load()
+                .cast[DType.uint64]()
+            )
             return U128(a, b)
         else:
             # len 2-3
-            var a = data.bitcast[Scalar[DType.uint16]]().load().cast[
-                DType.uint64
-            ]()
+            var a = (
+                data.bitcast[Scalar[DType.uint16]]().load().cast[DType.uint64]()
+            )
             var b = data.offset(length - 1).load().cast[DType.uint64]()
             return U128(a, b)
     else:
@@ -77,9 +80,9 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
             return U128(0, 0)
 
 
-struct AHasher[key: U256](_Hasher):
+struct AHasher[key: U256](Defaultable, Hasher):
     """Adopted AHash algorithm which produces fast and high quality hash value by
-    implementing `_Hasher` trait.
+    implementing `Hasher` trait.
 
     References:
 
@@ -123,7 +126,11 @@ struct AHasher[key: U256](_Hasher):
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
     fn _update_with_bytes(
-        mut self, data: UnsafePointer[UInt8, mut=False, **_], length: Int
+        mut self,
+        data: UnsafePointer[
+            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+        ],
+        length: Int,
     ):
         """Consume provided data to update the internal buffer.
 
@@ -134,22 +141,28 @@ struct AHasher[key: U256](_Hasher):
         self.buffer = (self.buffer + length) * MULTIPLE
         if length > 8:
             if length > 16:
-                var tail = data.offset(length - 16).bitcast[
-                    Scalar[DType.uint64]
-                ]().load[width=2]()
+                var tail = (
+                    data.offset(length - 16)
+                    .bitcast[Scalar[DType.uint64]]()
+                    .load[width=2]()
+                )
                 self._large_update(tail)
                 var offset = 0
                 while length - offset > 16:
-                    var block = data.offset(offset).bitcast[
-                        Scalar[DType.uint64]
-                    ]().load[width=2]()
+                    var block = (
+                        data.offset(offset)
+                        .bitcast[Scalar[DType.uint64]]()
+                        .load[width=2]()
+                    )
                     self._large_update(block)
                     offset += 16
             else:
                 var a = data.bitcast[Scalar[DType.uint64]]().load()
-                var b = data.offset(length - 8).bitcast[
-                    Scalar[DType.uint64]
-                ]().load()
+                var b = (
+                    data.offset(length - 8)
+                    .bitcast[Scalar[DType.uint64]]()
+                    .load()
+                )
                 self._large_update(U128(a, b))
         else:
             var value = _read_small(data, length)
@@ -162,22 +175,39 @@ struct AHasher[key: U256](_Hasher):
             new_data: Value used for update.
         """
 
-        @parameter
-        if new_data.dtype.is_floating_point():
-            v64 = new_data.to_bits().cast[DType.uint64]()
-        else:
-            v64 = new_data.cast[DType.uint64]()
+        # number of rounds a single vector value will contribute to a hash
+        # values smaller than 8 bytes contribute only once
+        # values which are multiple of 8 bytes contribute multiple times
+        # e.g. int128 is 16 bytes long and evaluates to 2 rounds
+        alias rounds = max(1, new_data.dtype.size_of() // 8)
 
         @parameter
-        if v64.size == 1:
-            self._update(v64[0])
-        else:
+        if rounds == 1:
+            # vector values are not bigger than 8 bytes each
+            var u64 = new_data.to_bits[DType.uint64]()
 
             @parameter
-            for i in range(0, v64.size, 2):
-                self._large_update(U128(v64[i], v64[i + 1]))
+            if u64.size == 1:
+                self._update(u64[0])
+            else:
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+                @parameter
+                for i in range(0, u64.size, 2):
+                    self._large_update(U128(u64[i], u64[i + 1]))
+        else:
+            # vector values will contribute to hash in multiple rounds
+            @parameter
+            for i in range(new_data.size):
+                var v = new_data[i]
+                constrained[v.dtype.size_of() > 8 and v.dtype.is_integral()]()
+
+                @parameter
+                for r in range(0, rounds, 2):
+                    var u64_1 = (v >> (r * 64)).cast[DType.uint64]()
+                    var u64_2 = (v >> ((r + 1) * 64)).cast[DType.uint64]()
+                    self._large_update(U128(u64_1, u64_2))
+
+    fn update[T: Hashable](mut self, value: T):
         """Update the buffer value with new hashable value.
 
         Args:
@@ -186,7 +216,7 @@ struct AHasher[key: U256](_Hasher):
         value.__hash__(self)
 
     @always_inline
-    fn finish(owned self) -> UInt64:
+    fn finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:

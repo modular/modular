@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, isqrt
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm import mean, variance
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
-from memory import UnsafePointer
+from gpu.host import get_gpu_target
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -28,36 +26,36 @@ from utils.index import Index, IndexList
 
 
 fn run_layer_norm_block[
-    type: DType,
+    dtype: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
-    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
+        var val = Scalar[dtype](i)
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[type]()
-        beta_h[i] = (i / cols).cast[type]()
+        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[type](cols)
-    var beta_d = ctx.enqueue_create_buffer[type](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, 2](data_d.unsafe_ptr(), data_shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type]()
+    var data_buf = NDBuffer[dtype, 2](data_d.unsafe_ptr(), data_shape)
+    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -66,7 +64,7 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         return data_buf.load[width=width](Index(row, col))
 
     @__copy_capture(gamma)
@@ -74,19 +72,31 @@ fn run_layer_norm_block[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return gamma.load[width=width](idx[0])
 
-    var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn output_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]):
+        data_buf.store[width=width, alignment=alignment](
+            IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
+        )
+
+    var max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    )
 
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         ctx.enqueue_function[
-            layer_norm_gpu_block[simd_width, input_fn, gamma_fn]
+            layer_norm_gpu_block[simd_width, input_fn, gamma_fn, output_fn]
         ](
-            data_buf,
+            IndexList[2](rows, cols),
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -101,7 +111,7 @@ fn run_layer_norm_block[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -123,36 +133,36 @@ fn run_layer_norm_block[
 
 
 fn run_layer_norm_gpu[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu")
 
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
+        var val = Scalar[dtype](i)
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[type]()
-        beta_h[i] = (i / cols).cast[type]()
+        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[type](cols)
-    var beta_d = ctx.enqueue_create_buffer[type](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type]()
+    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
+    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -163,7 +173,7 @@ fn run_layer_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
@@ -171,15 +181,25 @@ fn run_layer_norm_gpu[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return gamma.load[width=width](idx[0])
 
-    layer_norm_gpu[input_fn, gamma_fn](shape, beta, epsilon, data_buf, ctx=ctx)
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn output_fn[
+        width: Int, rank_: Int, alignment: Int
+    ](idx: IndexList[rank_], val: SIMD[dtype, width]):
+        data_buf.store[width=width, alignment=alignment](
+            rebind[IndexList[rank]](idx), rebind[SIMD[dtype, width]](val)
+        )
+
+    layer_norm_gpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon, ctx=ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -201,36 +221,36 @@ fn run_layer_norm_gpu[
 
 
 fn run_layer_norm_warp_tiling[
-    type: DType,
+    dtype: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
-    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
+        var val = Scalar[dtype](i)
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[type]()
-        beta_h[i] = (i / cols).cast[type]()
+        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        beta_h[i] = (i / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[type](cols)
-    var beta_d = ctx.enqueue_create_buffer[type](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, 2](data_d._unsafe_ptr(), data_shape)
-    var gamma = NDBuffer[type, 1](gamma_d._unsafe_ptr(), param_shape)
-    var beta = NDBuffer[type, 1](beta_d._unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type]()
+    var data_buf = NDBuffer[dtype, 2](data_d._unsafe_ptr(), data_shape)
+    var gamma = NDBuffer[dtype, 1](gamma_d._unsafe_ptr(), param_shape)
+    var beta = NDBuffer[dtype, 1](beta_d._unsafe_ptr(), param_shape)
+    var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -239,7 +259,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[type, width]:
+    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         return data_buf.load[width=width](Index(row, col))
 
     @__copy_capture(gamma)
@@ -247,19 +267,33 @@ fn run_layer_norm_warp_tiling[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return gamma.load[width=width](idx[0])
 
-    var max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+    @__copy_capture(data_buf)
+    @always_inline
+    @parameter
+    fn output_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]):
+        data_buf.store[width=width, alignment=alignment](
+            IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
+        )
+
+    var max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    )
 
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         ctx.enqueue_function[
-            layer_norm_gpu_warp_tiling[simd_width, input_fn, gamma_fn]
+            layer_norm_gpu_warp_tiling[
+                simd_width, input_fn, gamma_fn, output_fn
+            ]
         ](
-            data_buf,
+            IndexList[2](rows, cols),
             beta,
             epsilon,
             grid_dim=(rows, 1),
@@ -274,7 +308,7 @@ fn run_layer_norm_warp_tiling[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)

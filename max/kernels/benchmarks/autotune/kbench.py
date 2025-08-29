@@ -15,18 +15,23 @@ from __future__ import annotations
 import copy
 import csv
 import functools
+import gc
+import logging
+import math
 import os
 import pickle
 import shutil
 import string
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import product
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
+from subprocess import list2cmdline
 from time import time
 from typing import Any
 
@@ -34,10 +39,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
-from model.utils.exceptions import CLIException, pretty_exception_handler
-from modular.utils import logging, yaml
-from modular.utils.subprocess import list2cmdline, run_shell_command
-from modular.utils.yaml import YAML
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -47,10 +49,11 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from utils import pretty_exception_handler
 
-CONSOLE = Console()
+CONSOLE = Console(width=80)
 CURRENT_FILE = Path(__file__).resolve()
-LINE = "\n" + 80 * "-"
+LINE = "\n" + 70 * "-"
 
 
 def store_pickle(path: Path | str, data: Any) -> None:
@@ -78,7 +81,7 @@ def configure_logging(
         logging.basicConfig(format="%(message)s", handlers=[debug_handler])
     else:
         logging.basicConfig(format="%(levelname)s: %(message)s")
-        CONSOLE = Console(force_terminal=False, color_system=None)
+        CONSOLE = Console(width=80, force_terminal=False, color_system=None)
 
     log_level = (
         logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
@@ -86,7 +89,7 @@ def configure_logging(
     logging.getLogger().setLevel(log_level)
 
     if verbose and pretty_output:
-        traceback.install(suppress=[click, yaml, rich])
+        traceback.install(suppress=[click, rich])
     elif pretty_output:
         sys.excepthook = pretty_exception_handler
 
@@ -117,28 +120,32 @@ def flatten(value: int | object | Iterable) -> list[Any]:
     ]
 
 
+# TODO: remove and replace directly with subprocess.run
 def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     """Execute a shell command with error handling."""
     try:
         if dryrun:
             print(list2cmdline(cmd))
-            return ProcessOutput(None, None)
+            return ProcessOutput(None, None, -1, None)
 
-        output = run_shell_command(cmd, check=False, capture_output=True)
+        # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
+        env = os.environ.copy()
+        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
         return ProcessOutput(
-            output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
+            output.stdout.decode("utf-8"),
+            output.stderr.decode("utf-8"),
+            output.returncode,
         )
+
     except Exception as exc:
-        raise CLIException(
-            cmd=cmd, err=f"Unable to run command {list2cmdline(cmd)}"
-        ) from exc
+        raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
 
 @dataclass
 class ParamSpace:
     name: str
     value: Any
-    value_set: set[Any] = field(default_factory=set)
+    value_set: list[Any] = field(default_factory=list)
     length: int = 0
 
     def __post_init__(self) -> None:
@@ -150,7 +157,8 @@ class ParamSpace:
             self.value = [eval(x) for x in self.value]
         except:
             pass
-        self.value_set = set(sorted(set(flatten(self.value))))
+        # Note: as of python3.7+ the built-in dict is guaranteed to maintain insertion order.
+        self.value_set = list(dict.fromkeys(flatten(self.value)))
         self.value = None
         self.length = len(self.value_set)
 
@@ -159,13 +167,14 @@ class ParamSpace:
 class ProcessOutput:
     stdout: str | None = None
     stderr: str | None = None
+    return_code: int = -1
     path: Path | None = None
 
-    def log(self):
+    def log(self) -> None:
         if self.stdout:
-            logging.debug("output" + self.stdout + LINE)
+            logging.debug("output " + self.stdout + LINE)
         if self.stderr:
-            logging.debug("error" + self.stderr + LINE)
+            logging.debug("error " + self.stderr + LINE)
 
 
 class KBENCH_MODE(Enum):
@@ -184,9 +193,9 @@ class KbenchCache:
 
     def clear(self) -> None:
         """Remove cache file if it exists."""
+        logging.debug(f"Removing kbench-cache: {self.path}")
         if self.path.exists():
-            logging.debug(f"Removing kbench-cache: {self.path}")
-            run_shell_command(["rm", str(self.path)])
+            subprocess.run(["rm", str(self.path)])
 
     def load(self) -> None:
         """Load cache from file."""
@@ -211,7 +220,7 @@ class KbenchCache:
         if not self.is_active:
             return None
         # TODO: revise the following conflict.
-        if obj_path in self.data.keys():
+        if obj_path in self.data:
             logging.debug(f"overwriting {key} already in obj-cache")
         self.data[key] = str(obj_path)
         return obj_path
@@ -227,6 +236,15 @@ class SpecInstance:
     @functools.cached_property
     def mojo_binary(self) -> str:
         """Find mojo binary in PATH."""
+        # Check for Bazel-provided mojo binary first
+        if mojo_path := os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH"):
+            if os.path.exists(mojo_path):
+                return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MODULAR_MOJO_MAX_DRIVER_PATH '{mojo_path}' does not exist."
+                )
+        # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
         raise FileNotFoundError("Could not find the `mojo` binary.")
@@ -257,9 +275,10 @@ class SpecInstance:
         self,
         *,
         output_dir: Path,
-        build_opts: list[str] = [],
+        build_opts: list[str] = [],  # noqa: B006
         dryrun: bool = False,
         idx: int = -1,
+        enable_logging: bool = True,
     ) -> ProcessOutput:
         """Build the spec instance. Use set of compile-time
         parameters as path of the compiled binary and store
@@ -269,12 +288,13 @@ class SpecInstance:
         bin_name = self.hash(with_variables=False)
         bin_path = output_dir / Path(bin_name)
 
-        logging.info(f"building [{idx}][{bin_name}]")
-        logging.debug(
-            f"defines: {self._get_defines}"
-            + "\n"
-            + f"vars   : {self._get_vars}"
-        )
+        if enable_logging:
+            logging.info(f"building [{idx}][{bin_name}]")
+            logging.debug(
+                f"defines: {self._get_defines}"
+                + "\n"
+                + f"vars   : {self._get_vars}"
+            )
 
         # TODO: add mojo-specific functions and allow for further expansion to other executors.
         cmd = self.get_executor()
@@ -290,17 +310,19 @@ class SpecInstance:
             ]
         )
         out = _run_cmdline(cmd, dryrun)
-        if out.stderr:
-            return ProcessOutput(out.stdout, out.stderr, None)
-        return ProcessOutput(out.stdout, out.stderr, bin_path)
+        if out.return_code == os.EX_OK:
+            out.path = bin_path
+        else:
+            out.path = None
+        return out
 
     def execute(
         self,
         binary_path: Path,
         output_file: Path,
         dryrun: bool = False,
-        exec_prefix: list[str] = [],
-        exec_suffix: list[str] = [],
+        exec_prefix: list[str] = [],  # noqa: B006
+        exec_suffix: list[str] = [],  # noqa: B006
     ) -> ProcessOutput:
         vars = self._get_vars
         cmd = []
@@ -328,6 +350,8 @@ class SpecInstance:
         return "/".join(tokens)
 
     def hash(self, with_variables: bool = True) -> str:
+        MAX_FILENAME_LEN = 224
+
         tokens = [self.file_stem]
         for param in self.params:
             name = param.name
@@ -336,13 +360,20 @@ class SpecInstance:
                 continue
             name = name.replace("$", "")
             tokens.append(f"{name}-{param.value}")
-        return "_".join(tokens)
+
+        hash_str = "_".join(tokens)
+        if len(hash_str) < MAX_FILENAME_LEN:
+            return hash_str
+        else:
+            MAX_HASH_DIGITS = 8
+            hash_hex = hash(hash_str) % (10**MAX_HASH_DIGITS)
+            return f"{hash_str[: MAX_FILENAME_LEN - MAX_HASH_DIGITS]}{hash_hex}"
 
 
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params):
+    def __init__(self, name, file, params) -> None:  # noqa: ANN001
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -375,13 +406,13 @@ class GridSearchStrategy:
         self.offset += 1
         return res
 
-    def __getitem__(self, i):
+    def __getitem__(self, i):  # noqa: ANN001
         return self.instances[i]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other):
+    def extend(self, other) -> None:  # noqa: ANN001
         self.instances.extend(other.instances)
 
 
@@ -392,6 +423,7 @@ class Spec:
     params: list[list[ParamSpace]] = field(default_factory=list)
     mesh_idx: int = 0
     mesh: list[SpecInstance] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
 
     @staticmethod
     def load_yaml(file: Path) -> Spec:
@@ -411,8 +443,8 @@ class Spec:
         try:
             logging.info(f"Loading yaml [{file}]" + LINE)
             return Spec.loads(file.read_text())
-        except Exception:
-            raise ValueError(f"Could not load spec from {file}")
+        except Exception as e:
+            raise ValueError(f"Could not load spec from {file}\nException: {e}")  # noqa: B904
 
     @staticmethod
     def load_yaml_list(yaml_path_list: list[str]) -> Spec:
@@ -447,7 +479,7 @@ class Spec:
             if IFS in p:
                 name, val = p.split(IFS)
 
-            if name not in d.keys():
+            if name not in d:
                 d[name] = []
 
             # This supports list of params per one definition
@@ -464,7 +496,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list: list[str]):
+    def extend_params(self, param_list: list[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -475,7 +507,8 @@ class Spec:
                 found = False
                 for ps in cfg:
                     if ps.name == k:
-                        ps.value_set.update(v)
+                        ps.value_set.append(v)
+                        ps.value_set = list(dict.fromkeys(ps.value_set))
                         found = True
                         break
                 if not found:
@@ -483,7 +516,7 @@ class Spec:
 
         self.setup_mesh()
 
-    def extend_shape_params(self, param_set: list[Param]):
+    def extend_shape_params(self, param_set: list[Param]) -> None:
         # TODO: check for collisions in param-names
 
         extra_params: list[ParamSpace] = []
@@ -498,7 +531,7 @@ class Spec:
             self.params = [extra_params]
         self.setup_mesh()
 
-    def dump_yaml(self, out_path: Path):
+    def dump_yaml(self, out_path: Path) -> None:
         assert self.mesh, "There are no instances to write to YAML!"
         obj = {
             "name": self.name,
@@ -506,7 +539,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -520,15 +553,15 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
-        if "name" not in obj.keys():
+        if "name" not in obj:
             logging.warning("Field [name] is not set in YAML")
-        if "file" not in obj.keys():
+        if "file" not in obj:
             logging.warning("Field [file] is not set in YAML")
 
         params: list[list[ParamSpace]] = []
-        if "params" in obj.keys():
+        if "params" in obj:
             for cfg in obj["params"]:
                 e: list[ParamSpace] = []
                 for k, v in cfg.items():
@@ -541,10 +574,10 @@ class Spec:
             name=obj.get("name", ""),
             file=obj.get("file", ""),
             params=params,
+            rules=obj.get("rules", []),
         )
 
-    def __len__(self):
-        assert self.mesh
+    def __len__(self) -> int:
         return len(self.mesh)
 
     def __post_init__(self):
@@ -552,7 +585,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
@@ -582,10 +617,11 @@ class Spec:
 
         Return the total size of mesh.
         """
-        self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        grid_mesh = list(GridSearchStrategy(self.name, self.file, self.params))
+        self.mesh = self.apply_rules(grid_mesh, self.rules)
         return len(self.mesh)
 
-    def join(self, other: Spec):
+    def join(self, other: Spec) -> None:
         assert self.name == other.name
         assert self.file == other.file
         assert len(other.mesh) > 0
@@ -594,7 +630,39 @@ class Spec:
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
 
-    def filter(self, filter_list: list[str]):
+    @staticmethod
+    def apply_rules(
+        mesh: list[SpecInstance], rules: list[str]
+    ) -> list[SpecInstance]:
+        new_mesh: list[SpecInstance] = []
+
+        if not rules:
+            return mesh
+
+        def remove_dlr(s: str) -> str:
+            return s.replace("$", "")
+
+        for s in mesh:
+            valid = True
+            for r in rules:
+                # TODO: revise handling of $ in string.
+                locals = {remove_dlr(p.name): p.value for p in s.params}
+                r = remove_dlr(r)
+
+                try:
+                    e = eval(r, {}, locals)
+                # the following exception is required in case a parameter
+                # is present in rule and missing from spec-instance combination.
+                except NameError:
+                    e = True
+                valid = valid & e
+                if not valid:
+                    break
+            if valid:
+                new_mesh.append(s)
+        return new_mesh
+
+    def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
         for f in filter_list:
             if "=" in f:
@@ -602,7 +670,7 @@ class Spec:
             elif ":" in f:
                 name, val = f.split(":")
 
-            if name not in filters.keys():
+            if name not in filters:
                 filters[name] = []
             filters[name].append(val)
 
@@ -631,7 +699,7 @@ class Spec:
         return self
 
     def __next__(self) -> SpecInstance:
-        assert self.mesh != None, (
+        assert self.mesh is not None, (
             "Should call self.init_mesh after loading or in postinit."
         )
 
@@ -652,10 +720,19 @@ class Spec:
         return "\n".join(rs)
 
 
-def _get_tmp_path(file_path):
+def _get_tmp_path(file_path):  # noqa: ANN001
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
     return Path(tf)
+
+
+def _get_core_count():
+    try:
+        # The 'os.sched_getaffinity' method is only available on some Unix platforms
+        return len(os.sched_getaffinity(0))  # type: ignore[attr-defined, unused-ignore]
+    except AttributeError:
+        # To cover other platforms, including mac
+        return cpu_count()
 
 
 @dataclass
@@ -672,6 +749,7 @@ class BuildItem:
         build_output: output message for build
         build_elapsed_time: elapsed time for build
         exec_output: output message for exec
+        exec_benchmark_time: measured time for executing the entire benchmark
     """
 
     idx: int
@@ -682,8 +760,9 @@ class BuildItem:
     output_path: Path = Path()
 
     build_output: ProcessOutput = field(default_factory=ProcessOutput)
-    build_elapsed_time: int = 0
+    build_elapsed_time: float = 0
     exec_output: ProcessOutput = field(default_factory=ProcessOutput)
+    exec_benchmark_time: float = 0
 
 
 class Scheduler:
@@ -704,6 +783,9 @@ class Scheduler:
     output_dir: Path
     num_specs: int
 
+    CHUNK_SIZE: int = 1
+    EXEC_STRIDE: int = 100
+
     def __init__(
         self,
         num_cpu: int,
@@ -714,7 +796,8 @@ class Scheduler:
         dryrun: bool,
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
-    ):
+    ) -> None:
+        self.num_cpu = num_cpu
         self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
@@ -739,7 +822,7 @@ class Scheduler:
         self.progress = progress
 
     @staticmethod
-    def kbench_mkdir(output_dir):
+    def kbench_mkdir(output_dir):  # noqa: ANN001
         """Run the following command:
         `rm -rf {output_dir} && mkdir -p {output_dir}`
         """
@@ -749,13 +832,21 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
-    def mk_output_dirs(self):
+    def get_chunksize(self, num_elements: int) -> int:
+        elements_per_cpu = math.ceil(num_elements / self.num_cpu)
+        return min(elements_per_cpu, self.CHUNK_SIZE)
+
+    def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
         output_dir_list = [b.output_dir for b in self.build_items]
-        res = self.cpu_pool.imap(self.kbench_mkdir, output_dir_list)
-        for r in res:
+
+        for r in self.cpu_pool.imap(
+            self.kbench_mkdir,
+            output_dir_list,
+            chunksize=self.CHUNK_SIZE,
+        ):
             logging.debug(f"mkdir [{r}]")
         logging.debug("Created directories for all instances in spec." + LINE)
 
@@ -779,7 +870,7 @@ class Scheduler:
                 unique_build_paths[bin_name] = bin_path
             else:
                 # Neither found in the cache, nor exists in the unique_build_items
-                if bin_name not in unique_build_items.keys():
+                if bin_name not in unique_build_items:
                     unique_build_items[bin_name] = i
                     debug_msg += [f"Added to schedule (ref_idx=[{i}])"]
                 else:
@@ -792,15 +883,15 @@ class Scheduler:
     @staticmethod
     def _pool_build_wrapper(bi: BuildItem) -> BuildItem:
         t_start_item = time()
-        build_output = bi.spec_instance.build(
+        bi.build_output = bi.spec_instance.build(
             output_dir=bi.output_dir,
             build_opts=bi.build_opts,
             dryrun=bi.dryrun,
             idx=bi.idx,
+            enable_logging=False,
         )
         build_elapsed_time = int((time() - t_start_item) * 1e3)
 
-        bi.build_output = build_output
         bi.build_elapsed_time = build_elapsed_time
         return bi
 
@@ -820,30 +911,40 @@ class Scheduler:
             f"scheduled {len(unique_build_items)} unique build items out of {self.num_specs}"
             + LINE
         )
-
         if unique_build_items:
             obj_cache = self.obj_cache
-            build_result = self.cpu_pool.map(
-                self._pool_build_wrapper, unique_build_items
-            )
 
             build_progress = self.progress.add_task(
                 "build",
                 total=len(unique_build_items),
+                auto_refresh=False,
             )
 
-            for b in build_result:
-                i = b.idx
-                s = b.spec_instance
-
+            for cnt, b in enumerate(
+                self.cpu_pool.imap(
+                    self._pool_build_wrapper,
+                    unique_build_items,
+                    chunksize=self.CHUNK_SIZE,
+                    # alternatively: self.get_chunksize(len(unique_build_items))
+                )
+            ):
                 build_output = b.build_output
                 # update the data with build_output result
-                self.build_items[i].build_output = build_output
-                self.build_items[i].build_elapsed_time = b.build_elapsed_time
+                self.build_items[b.idx].build_output = build_output
+                self.build_items[
+                    b.idx
+                ].build_elapsed_time = b.build_elapsed_time
 
-                bin_name = s.hash(with_variables=False)
+                bin_name = b.spec_instance.hash(with_variables=False)
+
                 self.progress.update(
-                    build_progress, description=f"building {str(bin_name)}"
+                    build_progress,
+                    description=f"build [ {b.idx} ][ {bin_name} ] finished",
+                )
+
+                num_unique_build_items = len(unique_build_items)
+                logging.info(
+                    f"build [{b.idx}][{bin_name}] ({_percentage(cnt + 1, num_unique_build_items)}%)"
                 )
 
                 # print build_output stdout and stderr using log function.
@@ -853,82 +954,288 @@ class Scheduler:
                 # - cache is active
                 # - no error is reported in stderr
                 # - build_output path is found
-                if not build_output.stderr and build_output.path:
+                if build_output.return_code == os.EX_OK and build_output.path:
                     binary_path = build_output.path
                     obj_cache.store(bin_name, binary_path)
                     unique_build_paths[bin_name] = binary_path
 
                 self.progress.update(build_progress, advance=1)
+            logging.info(
+                f"finished building {len(unique_build_paths)} unique items"
+                + LINE
+            )
         return unique_build_paths
 
-    def execute_all(
-        self, unique_build_paths, profile, exec_prefix, exec_suffix
-    ):
+    def execute_item(
+        self,
+        build_item: BuildItem,
+        unique_build_paths,  # noqa: ANN001
+        profile,  # noqa: ANN001
+        exec_prefix,  # noqa: ANN001
+        exec_suffix,  # noqa: ANN001
+    ) -> None:
         """Execute all the items in the scheduler"""
-        exec_progress = self.progress.add_task(
-            "run",
-            total=len(self.build_items),
+
+        bin_name = build_item.spec_instance.hash(with_variables=False)
+        bin_path = unique_build_paths.get(bin_name, None)
+
+        exec_prefix_item = copy.deepcopy(exec_prefix)
+        exec_suffix_item = copy.deepcopy(exec_suffix)
+
+        profile_output = f"{build_item.output_dir}/{bin_name}_profile"
+        if profile in ["ncu", "ncu-single"]:
+            exec_prefix_item.extend(["ncu", "-o", profile_output])
+            if profile == "ncu-single":
+                exec_suffix_item.extend(
+                    ["--bench-max-iters=0", "--bench-max-batch-size=1"]
+                )
+        if profile in ["rocm", "rocprof-compute"]:
+            exec_prefix_item.extend(
+                f"rocprof-compute profile --name NAME -p {profile_output} --".split()
+            )
+            logging.info(f"writing profiling results to {profile_output}")
+
+        if bin_path:
+            t_start = time()
+            exec_output = build_item.spec_instance.execute(
+                bin_path,
+                build_item.output_path,
+                dryrun=build_item.dryrun,
+                exec_prefix=exec_prefix_item,
+                exec_suffix=exec_suffix_item,
+            )
+            build_item.exec_output = exec_output
+            build_item.exec_benchmark_time = time() - t_start
+            exec_output.log()
+        else:
+            logging.error(f"Could not find binary [{bin_name}]")
+
+    def close_pool(self) -> None:
+        self.cpu_pool.close()
+        self.cpu_pool.join()
+
+    @staticmethod
+    def get_build_df(bi_list: list[BuildItem]) -> pd.DataFrame:
+        build_df = pd.DataFrame(
+            {
+                "name": ["build" for b in bi_list],
+                "spec": [f"{str(b.spec_instance)}" for b in bi_list],
+            }
         )
 
-        exec_prefix_in = copy.deepcopy(exec_prefix)
-        exec_suffix_in = copy.deepcopy(exec_suffix)
+        build_elapsed_time_list = [b.build_elapsed_time for b in bi_list]
+        build_df.insert(
+            len(build_df.columns),
+            "met (ms)",
+            pd.Series(build_elapsed_time_list),
+        )
+        build_df.insert(len(build_df.columns), "iters", 1)
+        build_df.insert(
+            len(build_df.columns),
+            "mesh_idx",
+            pd.Series([bi.idx for bi in bi_list]),
+        )
+        build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
 
-        for b in self.build_items:
-            s = b.spec_instance
-            bin_name = s.hash(with_variables=False)
-            bin_path = unique_build_paths.get(bin_name, None)
+        build_df["name"] = build_df["name"].astype("string")
+        build_df["spec"] = build_df["spec"].astype("string")
+        build_df["met (ms)"] = build_df["met (ms)"].astype("float64")
 
-            self.progress.update(exec_progress, description=f"run {str(s)}")
+        return pd.DataFrame(
+            build_df.loc[:, ["mesh_idx", "name", "met (ms)", "iters", "spec"]]
+        )
 
-            exec_prefix = copy.deepcopy(exec_prefix_in)
-            exec_suffix = copy.deepcopy(exec_suffix_in)
+    # Retrieve, sort, and pick top choices
+    @staticmethod
+    def get_valid_specs(bi_list: list[BuildItem], spec: Spec):
+        valid_specs: list[pd.DataFrame] = []
+        invalid_specs: list[int] = []
 
-            profile_output = f"{b.output_dir}/{bin_name}_profile"
-            if profile in ["ncu", "ncu-single"]:
-                exec_prefix.extend(["ncu", "-o", profile_output])
-                if profile == "ncu-single":
-                    exec_suffix.extend(
-                        ["--bench-max-iters=0", "--bench-max-batch-size=1"]
-                    )
-            if profile in ["rocm", "rocprof-compute"]:
-                exec_prefix.extend(
-                    f"rocprof-compute profile --name NAME -p {profile_output} --".split()
+        for idx, b in enumerate(bi_list):
+            valid = False
+            if os.path.exists(b.output_path):
+                df = pd.read_csv(b.output_path, index_col=None, header=0)
+                if not df.empty:
+                    df.insert(0, "mesh_idx", b.idx)
+                    df.insert(len(df.columns), "spec", str(spec.mesh[b.idx]))
+
+                    valid_specs.append(df)
+                    valid = True
+            if not valid and b.exec_output.return_code == os.EX_OK:
+                df = pd.DataFrame().from_dict(
+                    {
+                        "mesh_idx": [b.idx],
+                        "name": ["-"],
+                        "met (ms)": [0],
+                        "iters": [0],
+                        "spec": [str(spec.mesh[b.idx])],
+                    }
                 )
-                logging.info(f"writing profiling results to {profile_output}")
+                valid_specs.append(df)
+                valid = True
 
-            if bin_path:
-                exec_output = s.execute(
-                    bin_path,
-                    b.output_path,
-                    dryrun=b.dryrun,
-                    exec_prefix=exec_prefix,
-                    exec_suffix=exec_suffix,
-                )
-                b.exec_output = b.exec_output
-                exec_output.log()
+            if not valid:
+                invalid_specs.append(idx)
+
+        return valid_specs, invalid_specs
+
+    @staticmethod
+    def dump(
+        bi_list: list[BuildItem],
+        spec: Spec,
+        output_path: Path = Path(),
+        mode: KBENCH_MODE = KBENCH_MODE.RUN,
+        t_build_total: float = 0.0,
+        t_elapsed_total: float = 0.0,
+        verbose: bool = False,
+    ):
+        output_lines = []
+        output_dict: dict[str, Any] = {}
+
+        build_df = Scheduler.get_build_df(bi_list)
+        output_dict["build_df"] = build_df
+
+        output_lines += [LINE]
+        output_lines += ["Build time stats:"]
+        output_lines += [build_df.to_string(index=False)]
+
+        output_lines += [LINE]
+        output_lines += [f"Running ['{spec.file}']"]
+
+        ###############################
+        valid_specs, invalid_specs = Scheduler.get_valid_specs(bi_list, spec)
+        num_invalid_specs = len(invalid_specs)
+        num_valid_specs = len(valid_specs)
+
+        if num_invalid_specs:
+            output_lines += [LINE]
+            output_lines += [
+                f"Number of invalid specs: {num_invalid_specs} (out of {len(spec)})"
+            ]
+
+            for idx in invalid_specs:
+                s = bi_list[idx].spec_instance
+                build_output = bi_list[idx].build_output
+                # check build failure
+                if build_output.stdout or build_output.stderr:
+                    output_lines += [LINE]
+                    output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
+                    if build_output.stdout:
+                        output_lines.append(build_output.stdout)
+                    if build_output.stderr:
+                        output_lines.append(build_output.stderr)
+
+        output_lines += [LINE]
+        output_lines += [
+            f"Number of valid executed specs: {num_valid_specs} (out of {len(spec)})"
+        ]
+
+        if num_valid_specs:
+            merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
+            # Convert 'name' and 'spec' columns to pandas string
+            merged_df["name"] = merged_df["name"].astype("string")
+            merged_df["spec"] = merged_df["spec"].astype("string")
+
+            ###############################
+            # Get the name of column 2 (met (ms))
+            output_dict["merged_df"] = merged_df
+
+            met_col = str(merged_df.columns[2])
+            if mode == KBENCH_MODE.TUNE:
+                tune_df = merged_df.sort_values([met_col], ascending=True)
+
+                output_dict["tune_df"] = tune_df
+                output_lines += [tune_df.to_string(index=False)]
+                # Index to top spec after sort
+                top_spec_idx = tune_df.iloc[0].mesh_idx
+                runtime = tune_df.iloc[0][met_col]
+
+                output_lines += [LINE]
+                output_lines += ["Spec with the best measured time:"]
+                output_lines += [
+                    f"mesh_idx: {top_spec_idx} measured time: {runtime:6f} (ms)"
+                ]
+                output_lines += [bi_list[top_spec_idx].spec_instance.to_obj()]
+                output_lines += [LINE]
             else:
-                logging.error(f"Could not find binary [{bin_name}]")
+                output_lines += [merged_df.to_string(index=False)]
+                output_lines += [LINE]
+            ###############################
 
-            self.progress.update(exec_progress, advance=1)
+        t_benchmark_total = sum([bi.exec_benchmark_time for bi in bi_list])
+        t_overhead = t_elapsed_total - (t_build_total + t_benchmark_total)
+
+        timing_details = pd.DataFrame(
+            {
+                "Step": ["build", "benchmark", "kbench overhead", "TOTAL"],
+                "Total (s)": [
+                    t_build_total,
+                    t_benchmark_total,
+                    t_overhead,
+                    t_elapsed_total,
+                ],
+            }
+        ).round(3)
+        timing_str = "Total elapsed time per step:\n" + str(
+            timing_details.to_markdown(index=False, tablefmt="rounded_grid")
+        )
+        output_lines += [timing_str]
+        output_str = "\n".join(output_lines)
+        if verbose:
+            print(output_str)
+        else:
+            logging.info(timing_str)
+
+        if output_path:
+            output_dict["name"] = spec.name
+            output_dict["file"] = spec.file
+            output_suffix = output_path.suffix
+            pkl_path = output_path.with_suffix(output_suffix + ".pkl")
+            csv_path = output_path.with_suffix(output_suffix + ".csv")
+            txt_path = output_path.with_suffix(output_suffix + ".txt")
+
+            store_pickle(f"{pkl_path}", output_dict)
+
+            # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
+            # THIS IS CRITICAL for CI automated kernel benchmarks workflow.
+            if mode == KBENCH_MODE.RUN and valid_specs:
+                merged_df.drop(columns=["mesh_idx"]).to_csv(
+                    csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                )
+            elif mode == KBENCH_MODE.BUILD:
+                build_df.to_csv(
+                    csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC
+                )
+            with open(txt_path, "w") as f:
+                f.write(output_str + "\n")
+            logging.info(f"wrote results to [{txt_path}]")
+            logging.info(f"wrote results to [{csv_path}]")
+            logging.info(f"wrote results to [{pkl_path}]")
+
+
+def _percentage(x: int, y: int) -> int:
+    if x > 0 and y > 0:
+        return int((x / y) * 100.0)
+    return 0
 
 
 def run(
-    yaml_path_list,
+    yaml_path_list,  # noqa: ANN001
     obj_cache: KbenchCache,
     shape: SpecInstance,
-    output_path=None,
-    mode=KBENCH_MODE.RUN,
-    param_list=None,
-    filter_list=None,
-    build_opts: list[str] = [],
+    output_path: Path = Path(),
+    mode=KBENCH_MODE.RUN,  # noqa: ANN001
+    param_list=None,  # noqa: ANN001
+    filter_list=None,  # noqa: ANN001
+    build_opts: list[str] = [],  # noqa: B006
     profile: str = "",
-    exec_prefix: list[str] = [],
-    exec_suffix: list[str] = [],
+    exec_prefix: list[str] = [],  # noqa: B006
+    exec_suffix: list[str] = [],  # noqa: B006
     dryrun: bool = False,
-    verbose=False,
-    output_dir=None,
-    num_cpu=1,
-):
+    verbose=False,  # noqa: ANN001
+    output_dir=None,  # noqa: ANN001
+    num_cpu=1,  # noqa: ANN001
+) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
         assert len(yaml_path_list), "There should be at least 1 YAML as input."
@@ -956,6 +1263,14 @@ def run(
     # Generate a tmp path for intermediate results.
     if not output_dir:
         output_dir = _get_tmp_path(spec.file)
+    else:
+        output_path = output_dir / output_path
+    os.makedirs(output_path.parent, exist_ok=True)
+
+    # strip output_path suffix
+    if output_path.suffix in [".csv", ".pkl", ".txt"]:
+        output_path = output_path.with_suffix("")
+
     output_dir = Path(output_dir)
     logging.info(f"output-dir: [{output_dir}]")
 
@@ -968,11 +1283,12 @@ def run(
         TimeElapsedColumn(),
         console=CONSOLE,
         expand=True,
+        transient=True,
     )
 
-    # Set num_cpu to the maximum number of available CPUs
+    # Set num_cpu to the half of maximum number of available CPUs
     if num_cpu == -1:
-        num_cpu = len(os.sched_getaffinity(0))
+        num_cpu = max(_get_core_count() // 2, 1)
 
     logging.info(f"num cpu's: {num_cpu}")
     # Kbench Singleton Scheduler
@@ -997,138 +1313,79 @@ def run(
             # - could not find executable in the cache or cache is not active,
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
-            if mode == KBENCH_MODE.RUN:
-                scheduler.execute_all(
-                    unique_build_paths,
-                    profile=profile,
-                    exec_prefix=exec_prefix,
-                    exec_suffix=exec_suffix,
+            scheduler.close_pool()
+            t_build_total = time() - t_start_total
+
+            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
+                num_build_items = len(scheduler.build_items)
+                exec_progress = scheduler.progress.add_task(
+                    "run",
+                    total=num_build_items,
                 )
+
+                # execute build items in batches of size Scheduler.EXEC_STRIDE
+                for lower_bound in range(
+                    0, num_build_items, Scheduler.EXEC_STRIDE
+                ):
+                    upper_bound = min(
+                        lower_bound + Scheduler.EXEC_STRIDE, num_build_items
+                    )
+
+                    for b in scheduler.build_items[lower_bound:upper_bound]:
+                        logging.info(
+                            f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
+                        )
+
+                        scheduler.progress.update(
+                            exec_progress,
+                            description=f"run [ {str(b.spec_instance)} ]",
+                        )
+
+                        # TODO: measure cpu time of each item
+                        scheduler.execute_item(
+                            b,
+                            unique_build_paths,
+                            profile=profile,
+                            exec_prefix=exec_prefix,
+                            exec_suffix=exec_suffix,
+                        )
+
+                        scheduler.progress.update(exec_progress, advance=1)
+
+                    t_elapsed_total = time() - t_start_total
+
+                    # dump results that have been executed so far
+                    # ensure there are more than one iterations of stride loop.
+                    if num_build_items >= Scheduler.EXEC_STRIDE:
+                        Scheduler.dump(
+                            scheduler.build_items[0:upper_bound],
+                            spec,
+                            output_path,
+                            mode,
+                            t_build_total,
+                            t_elapsed_total,
+                            verbose=False,
+                        )
+                logging.info("finished running all binaries")
         except KeyboardInterrupt:
+            scheduler.close_pool()
             obj_cache.dump()
             sys.exit(0)
 
+    ###############################
+    # dump all the details
     t_elapsed_total = time() - t_start_total
-    output_lines = []
-    output_dict: dict[str, Any] = {}
-    ########################################################
-    # Elapsed time per spec
-    build_df = pd.DataFrame(
-        {
-            "name": ["build" for b in scheduler.build_items],
-            "spec": [f"{str(b.spec_instance)}" for b in scheduler.build_items],
-        }
+    gc.collect()
+    Scheduler.dump(
+        scheduler.build_items,
+        spec,
+        output_path,
+        mode,
+        t_build_total,
+        t_elapsed_total,
+        verbose=verbose,
     )
-    build_elapsed_time_list = [
-        b.build_elapsed_time for b in scheduler.build_items
-    ]
-    build_df.insert(
-        len(build_df.columns), "met (ms)", pd.Series(build_elapsed_time_list)
-    )
-    build_df.insert(len(build_df.columns), "iters", 1)
-    build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
-
-    build_df = build_df.loc[:, ["name", "met (ms)", "iters", "spec"]]
-
-    output_dict["build_df"] = build_df
-    if verbose:
-        output_lines += [LINE]
-        output_lines += ["Build time stats:"]
-        output_lines += [build_df.to_string(index=False)]
-
-    ########################################################
-    # Retrieve, sort, and pick top choices
-    valid_specs = []
-    invalid_specs: list[list] = []
-    for b in scheduler.build_items:
-        i = b.idx
-        try:
-            df = pd.read_csv(b.output_path, index_col=None, header=0)
-            if not df.empty:
-                df.insert(0, "mesh_idx", i)
-                df.insert(len(df.columns), "spec", str(spec.mesh[i]))
-                valid_specs.append(df)
-            else:
-                invalid_specs.append([i, b.build_output])
-
-        except:
-            invalid_specs.append([i, b.build_output])
-
-    output_lines += [LINE]
-    output_lines += [f"Running ['{spec.file}']"]
-
-    if invalid_specs:
-        output_lines += [LINE]
-        output_lines += [
-            f"Number of invalid specs: {len(invalid_specs)} (out of {len(spec)})"
-        ]
-        for idx, msg in invalid_specs:
-            s = scheduler.build_items[idx].spec_instance
-            output_lines += [LINE]
-            output_lines += [f"mesh_idx: [{idx}][{s.to_obj()}]"]
-            if msg.stdout:
-                output_lines.append(msg.stdout)
-            if msg.stderr:
-                output_lines.append(msg.stderr)
-
-    output_lines += [LINE]
-    output_lines += [
-        f"Number of valid executed specs: {len(valid_specs)} (out of {len(spec)})"
-    ]
-
-    if valid_specs:
-        merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
-        ########################################################
-        # Get the name of column 2 (met (ms))
-        output_dict["merged_df"] = merged_df
-        met_col = merged_df.columns[2]
-        if mode == KBENCH_MODE.TUNE:
-            tune_df = merged_df.sort_values([met_col], ascending=True)
-
-            output_dict["tune_df"] = tune_df
-            output_lines += [tune_df.to_string(index=False)]
-            # Index to top spec after sort
-            top_spec_idx = tune_df.iloc[0].mesh_idx
-            runtime = tune_df.iloc[0][met_col]
-
-            output_lines += [LINE]
-            output_lines += ["Spec with the best measured time:"]
-            output_lines += [LINE]
-            output_lines += [f"mesh_idx: {top_spec_idx} Runtime: {runtime}"]
-            s = scheduler.build_items[top_spec_idx].spec_instance
-            output_lines += [s.to_obj()]
-            output_lines += [LINE]
-        else:
-            output_lines += [merged_df.to_string(index=False)]
-            output_lines += [LINE]
-        ########################################################
-
-    output_lines += [f"Total elapsed running time: {t_elapsed_total:.3f} (s)"]
-    output_str = "\n".join([str(x) for x in output_lines])
-    print(output_str)
-
-    if output_path:
-        output_dict["name"] = spec.name
-        output_dict["file"] = spec.file
-        store_pickle(f"{output_path}.pkl", output_dict)
-
-        # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
-        # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
-        if mode == KBENCH_MODE.RUN and valid_specs:
-            merged_df.drop(columns=["mesh_idx"]).to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        elif mode == KBENCH_MODE.BUILD:
-            build_df.to_csv(
-                output_path, index=False, quoting=csv.QUOTE_NONNUMERIC
-            )
-        else:
-            with open(output_path, "w") as f:
-                f.write(output_str + "\n")
-
-        logging.info(f"wrote results to [{output_path}]")
-    logging.info(f"output-dir: [{output_dir}]")
-    print(LINE + "\n\n")
+    logging.info(f"output-dir: [{output_dir}]\n{LINE}")
 
 
 @functools.cache
@@ -1136,18 +1393,18 @@ def get_nvidia_smi():
     return shutil.which("nvidia-smi")
 
 
-def reset_gpu():
+def reset_gpu() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    run_shell_command([nvidia_smi, "-r"])
+    subprocess.check_call([nvidia_smi, "-r"])
 
 
-def check_gpu_clock():
+def check_gpu_clock() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    output = run_shell_command(
+    output = subprocess.check_output(
         [
             nvidia_smi,
             "--query-gpu",
@@ -1155,15 +1412,13 @@ def check_gpu_clock():
             "--format",
             "csv",
         ],
-        check=False,
-        capture_output=True,
     )
 
     # We check for persistence here as a proxy to check if setup-gpu-benchmarking
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
-    if "Disabled" in output.stdout.decode("utf-8"):
+    if "Disabled" in output.decode("utf-8"):
         raise Exception(
             "the clock frequency for the GPU is not locked, please use"
             " `setup-gpu-benchmarking` to ensure that the frequencies and power"
@@ -1184,16 +1439,16 @@ class FileGlobArg:
     def __iter__(self):
         return (Path(file).resolve() for file in self._files)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._files)
 
 
 def set_build_opts(
-    debug_level=None,
-    optimization_level=None,
-    use_experimental_kernels=None,
-    target_accelerator=None,
-    disable_warnings=None,
+    debug_level=None,  # noqa: ANN001
+    optimization_level=None,  # noqa: ANN001
+    use_experimental_kernels=None,  # noqa: ANN001
+    target_accelerator=None,  # noqa: ANN001
+    disable_warnings=None,  # noqa: ANN001
 ):
     build_opts = []
     if debug_level:
@@ -1212,9 +1467,7 @@ def set_build_opts(
     return build_opts
 
 
-help_str = (
-    "Grid-search all the params for a mojo benchmark and pick the top value"
-)
+help_str = "Benchmarking toolkit for Mojo kernels"
 
 
 @click.command(help=help_str, no_args_is_help=True)
@@ -1230,7 +1483,11 @@ help_str = (
     multiple=True,
 )
 @click.option(
-    "--output", "-o", "output_path", default=None, help="Path to output file."
+    "--output",
+    "-o",
+    "output_path",
+    default="output.csv",
+    help="Path to output file.",
 )
 @click.option(
     "--output-dir",
@@ -1244,7 +1501,7 @@ help_str = (
     "tune",
     is_flag=True,
     default=False,
-    help="Tune by running and finding the best running time.",
+    help="Sort results by running time.",
 )
 @click.option(
     "--build",
@@ -1274,7 +1531,7 @@ help_str = (
 @click.option(
     "--target-accelerator",
     default=None,
-    help="Specifiy the mojo target accelerator.",
+    help="Specify the mojo target accelerator.",
 )
 @click.option(
     "--disable-warnings",
@@ -1299,8 +1556,8 @@ help_str = (
 )
 @click.option(
     "--num-cpu",
-    default=1,
-    help="Set the total number of cpu cores for building. Set to -1 for max number of cores (default=1).",
+    default=-1,
+    help="Set the total number of cpu cores for building. Set to -1 for max number of cores (default=-1).",
 )
 @click.option(
     "--dryrun",
@@ -1344,29 +1601,29 @@ help_str = (
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,
-    filter,
-    output_path,
-    output_dir,
-    tune,
-    build,
-    param,
-    debug_level,
-    use_experimental_kernels,
-    optimization_level,
-    target_accelerator,
-    disable_warnings,
-    force,
-    cached,
-    clear_cache,
-    num_cpu,
-    dryrun,
-    verbose,
-    shapes,
-    build_opts,
-    profile,
-    exec_prefix,
-    exec_suffix,
+    files,  # noqa: ANN001
+    filter,  # noqa: ANN001
+    output_path,  # noqa: ANN001
+    output_dir,  # noqa: ANN001
+    tune,  # noqa: ANN001
+    build,  # noqa: ANN001
+    param,  # noqa: ANN001
+    debug_level,  # noqa: ANN001
+    use_experimental_kernels,  # noqa: ANN001
+    optimization_level,  # noqa: ANN001
+    target_accelerator,  # noqa: ANN001
+    disable_warnings,  # noqa: ANN001
+    force,  # noqa: ANN001
+    cached,  # noqa: ANN001
+    clear_cache,  # noqa: ANN001
+    num_cpu,  # noqa: ANN001
+    dryrun,  # noqa: ANN001
+    verbose,  # noqa: ANN001
+    shapes,  # noqa: ANN001
+    build_opts,  # noqa: ANN001
+    profile,  # noqa: ANN001
+    exec_prefix,  # noqa: ANN001
+    exec_suffix,  # noqa: ANN001
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1381,24 +1638,28 @@ def cli(
     elif tune:
         mode = KBENCH_MODE.TUNE
 
-    if not force:
-        check_gpu_clock()
-
     obj_cache = KbenchCache()
-
     # check kbench_cache and load it if exists:
     if clear_cache:
         obj_cache.clear()
-
     if cached:
         obj_cache.load()
+
+    if not len(files) and not len(shapes):
+        logging.debug(
+            "Nothing more to do without parameter or shape YAML provided!"
+        )
+        return True
+
+    if not force:
+        check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
     shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
     shape_path_list = (
-        [sh.hash(with_variables=True) for sh in shape_list]
+        [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
-        else [output_path]
+        else [Path(output_path)]
     )
 
     assert len(shape_path_list) == len(shape_list), (
@@ -1444,12 +1705,15 @@ def cli(
     return True
 
 
-def main():
+def main() -> None:
     try:
         cli()
     except Exception:
-        CONSOLE.print_exception(suppress=[click, yaml, rich])
+        CONSOLE.print_exception(suppress=[click, rich])
 
 
 if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        os.chdir(directory)
+
     main()

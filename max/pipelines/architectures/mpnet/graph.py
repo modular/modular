@@ -13,14 +13,16 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 import numpy as np
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.graph.weights import Weights
-from max.nn import EmbeddingV1, LayerNormV1, LinearV1, Sequential
-from max.nn.layer import Layer
+from max.graph.weights import WeightData
+from max.nn import Embedding, LayerNorm, Linear, Sequential
+from max.nn.layer import Module
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 
@@ -33,62 +35,37 @@ def _quantization_encoding(
     return None
 
 
-class MPNetEmbeddings(Layer):
+class MPNetEmbeddings(Module):
     """An embeddings layer that combines the tokens embeddings and positions
     embeddings."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         config = self.config = huggingface_config
-        self.word_embeddings = EmbeddingV1(
-            weights.word_embeddings.weight.allocate(
-                DType.float32,
-                [
-                    config.vocab_size,
-                    config.hidden_size,
-                ],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.word_embeddings = Embedding(
+            config.vocab_size,
+            config.hidden_size,
+            dtype,
             device,
+            _quantization_encoding(pipeline_config),
         )
-        self.position_embeddings = EmbeddingV1(
-            weights.position_embeddings.weight.allocate(
-                DType.float32,
-                [
-                    config.max_position_embeddings,
-                    config.hidden_size,
-                ],
-            ).cast(dtype),
+        self.position_embeddings = Embedding(
+            config.max_position_embeddings, config.hidden_size, dtype, device
+        )
+        self.layer_norm = LayerNorm(
+            config.hidden_size,
             device,
-        )
-        self.layer_norm = LayerNormV1(
-            weight=weights.LayerNorm.weight.allocate(
-                DType.float32,
-                [config.hidden_size],
-            ),
-            bias=weights.LayerNorm.bias.allocate(
-                DType.float32, [config.hidden_size]
-            ),
+            DType.float32,
             eps=config.layer_norm_eps,
-        )
-        self.position_ids = weights.position_ids.allocate(
-            DType.int64,
-            [
-                1,
-                config.max_position_embeddings,
-            ],
+            use_bias=True,
         )
 
-    def __call__(
-        self,
-        input_ids: TensorValue,
-    ) -> TensorValue:
+    def __call__(self, input_ids: TensorValue) -> TensorValue:
         position_ids = _create_position_ids_from_input_ids(
             input_ids, self.config.pad_token_id
         )
@@ -106,16 +83,16 @@ def _create_position_ids_from_input_ids(
     return incremental_indices + padding_idx
 
 
-class MPNetSelfAttention(Layer):
+class MPNetSelfAttention(Module):
     """Self-attention layer with position compensation."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+        device: DeviceRef,
+    ) -> None:
         config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(
@@ -123,53 +100,37 @@ class MPNetSelfAttention(Layer):
         )
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.q = LinearV1(
-            weights.q.weight.allocate(
-                DType.float32,
-                [self.all_head_size, config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.q.bias.allocate(
-                DType.float32,
-                [self.all_head_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.q = Linear(
+            config.hidden_size,
+            self.all_head_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
-        self.k = LinearV1(
-            weights.k.weight.allocate(
-                DType.float32,
-                [self.all_head_size, config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.k.bias.allocate(
-                DType.float32,
-                [self.all_head_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.k = Linear(
+            config.hidden_size,
+            self.all_head_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
-        self.v = LinearV1(
-            weights.v.weight.allocate(
-                DType.float32,
-                [self.all_head_size, config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.v.bias.allocate(
-                DType.float32,
-                [self.all_head_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.v = Linear(
+            config.hidden_size,
+            self.all_head_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
-        self.o = LinearV1(
-            weights.o.weight.allocate(
-                DType.float32,
-                [config.hidden_size, config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.o.bias.allocate(
-                DType.float32,
-                [config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.o = Linear(
+            config.hidden_size,
+            config.hidden_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
 
     def transpose_for_scores(self, x: TensorValue) -> TensorValue:
@@ -182,7 +143,7 @@ class MPNetSelfAttention(Layer):
 
     def __call__(
         self,
-        hidden_states,
+        hidden_states: TensorValue,
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
@@ -217,31 +178,26 @@ class MPNetSelfAttention(Layer):
         return self.o(c)
 
 
-class MPNetAttention(Layer):
+class MPNetAttention(Module):
     """Container for the attention and attention output layer norm layers."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+        device: DeviceRef,
+    ) -> None:
         config = huggingface_config
         self.attn = MPNetSelfAttention(
-            pipeline_config,
-            weights.attn,
-            huggingface_config,
-            dtype,
+            pipeline_config, huggingface_config, dtype, device
         )
-        self.layer_norm = LayerNormV1(
-            weight=weights.LayerNorm.weight.allocate(
-                DType.float32, [config.hidden_size]
-            ),
-            bias=weights.LayerNorm.bias.allocate(
-                DType.float32, [config.hidden_size]
-            ),
+        self.layer_norm = LayerNorm(
+            config.hidden_size,
+            device,
+            DType.float32,
             eps=config.layer_norm_eps,
+            use_bias=True,
         )
 
     def __call__(
@@ -250,11 +206,7 @@ class MPNetAttention(Layer):
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
-        attn_output = self.attn(
-            hidden_states,
-            attention_mask,
-            position_bias,
-        )
+        attn_output = self.attn(hidden_states, attention_mask, position_bias)
         return self.layer_norm(attn_output + hidden_states)
 
 
@@ -267,28 +219,24 @@ _ACTIVATIONS = {
 }
 
 
-class MPNetIntermediate(Layer):
+class MPNetIntermediate(Module):
     """Fully connected layer with an activation function."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+        device: DeviceRef,
+    ) -> None:
         config = huggingface_config
-        self.dense = LinearV1(
-            weights.dense.weight.allocate(
-                DType.float32,
-                [config.intermediate_size, config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.dense.bias.allocate(
-                DType.float32,
-                [config.intermediate_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.dense = Linear(
+            config.hidden_size,
+            config.intermediate_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
         self.intermediate_act_fn = _ACTIVATIONS[config.hidden_act]
 
@@ -298,36 +246,29 @@ class MPNetIntermediate(Layer):
         return hidden_states
 
 
-class MPNetOutput(Layer):
+class MPNetOutput(Module):
     """Layer that combines the outputs of the intermediate and attention layers."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+        device: DeviceRef,
+    ) -> None:
         config = huggingface_config
-        self.dense = LinearV1(
-            weights.dense.weight.allocate(
-                DType.float32,
-                [config.hidden_size, config.intermediate_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
-            bias=weights.dense.bias.allocate(
-                DType.float32,
-                [config.hidden_size],
-                _quantization_encoding(pipeline_config),
-            ).cast(dtype),
+        self.dense = Linear(
+            config.intermediate_size,
+            config.hidden_size,
+            dtype,
+            device,
+            has_bias=True,
+            quantization_encoding=_quantization_encoding(pipeline_config),
         )
-        self.layer_norm = LayerNormV1(
-            weight=weights.LayerNorm.weight.allocate(
-                DType.float32, [config.hidden_size]
-            ),
-            bias=weights.LayerNorm.bias.allocate(
-                DType.float32, [config.hidden_size]
-            ),
+        self.layer_norm = LayerNorm(
+            config.hidden_size,
+            device,
+            DType.float32,
             eps=config.layer_norm_eps,
         )
 
@@ -339,30 +280,24 @@ class MPNetOutput(Layer):
         return hidden_states
 
 
-class MPNetLayer(Layer):
+class MPNetLayer(Module):
     """An Encoder layer block."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
-    ):
+        device: DeviceRef,
+    ) -> None:
         self.attention = MPNetAttention(
-            pipeline_config,
-            weights.attention,
-            huggingface_config,
-            dtype,
+            pipeline_config, huggingface_config, dtype, device
         )
         self.intermediate = MPNetIntermediate(
-            pipeline_config,
-            weights.intermediate,
-            huggingface_config,
-            dtype,
+            pipeline_config, huggingface_config, dtype, device
         )
         self.output = MPNetOutput(
-            pipeline_config, weights.output, huggingface_config, dtype
+            pipeline_config, huggingface_config, dtype, device
         )
 
     def __call__(
@@ -372,90 +307,74 @@ class MPNetLayer(Layer):
         position_bias: TensorValue,
     ) -> TensorValue:
         attention_output = self.attention(
-            hidden_states,
-            attention_mask,
-            position_bias=position_bias,
+            hidden_states, attention_mask, position_bias=position_bias
         )
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
 
 
-class MPNetEncoder(Layer):
+class MPNetEncoder(Module):
     """Encoder that contains stacks of MPNetLayers."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         config = self.config = huggingface_config
         self.n_heads = config.num_attention_heads
         num_hidden_layers = config.num_hidden_layers
         self.layer = Sequential(
             [
-                MPNetLayer(
-                    pipeline_config, weights.layer[n], huggingface_config, dtype
-                )
-                for n in range(num_hidden_layers)
+                MPNetLayer(pipeline_config, huggingface_config, dtype, device)
+                for _ in range(num_hidden_layers)
             ]
         )
-        self.relative_attention_bias = EmbeddingV1(
-            weights.relative_attention_bias.weight.allocate(
-                DType.float32,
-                [
-                    config.relative_attention_num_buckets,
-                    config.num_attention_heads,
-                ],
-            ).cast(dtype),
-            device=device,
+        self.relative_attention_bias = Embedding(
+            config.relative_attention_num_buckets,
+            config.num_attention_heads,
+            dtype,
+            device,
         )
         self.num_attention_heads = config.num_attention_heads
 
     def __call__(
-        self,
-        hidden_states: TensorValue,
-        attention_mask: TensorValue,
+        self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer.layers:
-            hidden_states = layer(
-                hidden_states,
-                attention_mask,
-                position_bias,
-            )
+            hidden_states = layer(hidden_states, attention_mask, position_bias)
         return hidden_states
 
     def compute_position_bias(self, hidden_states: TensorValue) -> TensorValue:
         shape = hidden_states.shape
         bsz, qlen, klen = shape[0], shape[1], shape[1]
-        start = ops.constant(0, DType.int64, device=DeviceRef.CPU())
-        step = ops.constant(1, DType.int64, device=DeviceRef.CPU())
         context_position = ops.range(
-            start, qlen, step, qlen, device=DeviceRef.CPU()
-        ).cast(DType.int64)[:, None]
+            0, qlen, dtype=DType.int64, device=DeviceRef.CPU()
+        )[:, None]
         memory_position = ops.range(
-            start, klen, step, klen, device=DeviceRef.CPU()
-        ).cast(DType.int64)[None, :]
+            0, klen, dtype=DType.int64, device=DeviceRef.CPU()
+        )[None, :]
         relative_position = memory_position - context_position
         rp_bucket = self.relative_position_bucket(
             relative_position,
             num_buckets=self.config.relative_attention_num_buckets,
-        )
+        ).to(self.relative_attention_bias.device)
         values = self.relative_attention_bias(rp_bucket)
         values = ops.unsqueeze(ops.permute(values, [2, 0, 1]), 0)
         values = ops.broadcast_to(
-            values,
-            [bsz, self.num_attention_heads, qlen, klen],
+            values, [bsz, self.num_attention_heads, qlen, klen]
         )
         return values
 
     @staticmethod
     def relative_position_bucket(
-        relative_position: TensorValue, num_buckets=32, max_distance=128
+        relative_position: TensorValue,
+        num_buckets: int = 32,
+        max_distance: int = 128,
     ) -> TensorValue:
         n = -relative_position
 
@@ -480,11 +399,11 @@ class MPNetEncoder(Layer):
         )
 
         val_if_large = ops.min(val_if_large, max_bucket)
-        ret += ops.select(is_small, n, val_if_large)
+        ret += ops.where(is_small, n, val_if_large)
         return ret
 
 
-class MPNetModel(Layer):
+class MPNetModel(Module):
     """The MPNet encoder model.
 
     Based on the MPNetModel transformers implementation."""
@@ -492,21 +411,18 @@ class MPNetModel(Layer):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        weights: Weights,
         huggingface_config: AutoConfig,
         dtype: DType,
         device: DeviceRef,
-    ):
+    ) -> None:
         self.embeddings = MPNetEmbeddings(
             pipeline_config,
-            weights.embeddings,
             huggingface_config=huggingface_config,
             dtype=dtype,
             device=device,
         )
         self.encoder = MPNetEncoder(
             pipeline_config,
-            weights.encoder,
             huggingface_config=huggingface_config,
             dtype=dtype,
             device=device,
@@ -514,13 +430,9 @@ class MPNetModel(Layer):
         self.pool_outputs = pipeline_config.pool_embeddings
 
     def __call__(
-        self,
-        input_ids: TensorValue,
-        attention_mask: TensorValue,
+        self, input_ids: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
-        embedding_output = self.embeddings(
-            input_ids=input_ids,
-        )
+        embedding_output = self.embeddings(input_ids=input_ids)
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
@@ -530,8 +442,7 @@ class MPNetModel(Layer):
             device=attention_mask.device,
         )
         encoded_results = self.encoder(
-            embedding_output,
-            attention_mask=extended_attention_mask,
+            embedding_output, attention_mask=extended_attention_mask
         )
         if self.pool_outputs:
             # Pool the embeddings.
@@ -558,7 +469,7 @@ class MPNetModel(Layer):
 
 def build_graph(
     pipeline_config: PipelineConfig,
-    weights: Weights,
+    state_dict: Mapping[str, DLPackArray | WeightData],
     huggingface_config: AutoConfig,
     dtype: DType,
     input_device: DeviceRef,
@@ -572,19 +483,15 @@ def build_graph(
     )
 
     with Graph(
-        "mpnet",
-        input_types=[
-            input_ids_type,
-            attention_mask_type,
-        ],
+        "mpnet", input_types=[input_ids_type, attention_mask_type]
     ) as graph:
         mpnet = MPNetModel(
             pipeline_config,
-            weights,
             huggingface_config,
             dtype,
             device=input_device,
         )
+        mpnet.load_state_dict(state_dict)
         input_ids = graph.inputs[0].tensor
         attention_mask = graph.inputs[1].tensor
         graph.output(mpnet(input_ids, attention_mask))

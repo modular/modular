@@ -11,39 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from math import iota
 
-from layout import Layout, LayoutTensor, RuntimeTuple
-from memory import Span, UnsafePointer
+from layout import LayoutTensor, RuntimeTuple
 
 from utils import IndexList
-from utils.index import Index
 
 
-@value
-struct BoundingBox[type: DType]:
-    var nw: SIMD[type, 2]
-    var se: SIMD[type, 2]
+@fieldwise_init
+struct BoundingBox[dtype: DType](Copyable, Movable):
+    var nw: SIMD[dtype, 2]
+    var se: SIMD[dtype, 2]
 
     fn __init__(
         out self,
-        y1: Scalar[type],
-        x1: Scalar[type],
-        y2: Scalar[type],
-        x2: Scalar[type],
+        y1: Scalar[dtype],
+        x1: Scalar[dtype],
+        y2: Scalar[dtype],
+        x2: Scalar[dtype],
     ):
-        self.nw = SIMD[type, 2](max(y1, y2), max(x1, x2))
-        self.se = SIMD[type, 2](min(y1, y2), min(x1, x2))
+        self.nw = SIMD[dtype, 2](max(y1, y2), max(x1, x2))
+        self.se = SIMD[dtype, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[type]) -> Scalar[type]:
+    fn iou(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
         var intersection_area = self.intersection_area(other)
 
         var union_area = self.area() + other.area() - intersection_area
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(self, other: BoundingBox[type]) -> Scalar[type]:
+    fn intersection_area(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
         var nw = min(self.nw, other.nw)
         var se = max(self.se, other.se)
 
@@ -52,18 +49,18 @@ struct BoundingBox[type: DType]:
 
         return Self(nw, se).area()
 
-    fn area(self) -> Scalar[type]:
+    fn area(self) -> Scalar[dtype]:
         return (self.se[0] - self.nw[0]) * (self.se[1] - self.nw[1])
 
 
 @always_inline
 fn _get_bounding_box[
-    type: DType
+    dtype: DType
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: LayoutTensor[type, **_],
-) -> BoundingBox[type]:
+    boxes: LayoutTensor[dtype, **_],
+) -> BoundingBox[dtype]:
     constrained[boxes.rank == 3, "boxes must be of rank 3"]()
     var y1 = boxes[batch_size, box_idx, 0][0]
     var x1 = boxes[batch_size, box_idx, 1][0]
@@ -73,10 +70,10 @@ fn _get_bounding_box[
 
 
 fn non_max_suppression[
-    type: DType
+    dtype: DType
 ](
-    boxes: LayoutTensor[type, **_],
-    scores: LayoutTensor[type, **_],
+    boxes: LayoutTensor[dtype, **_],
+    scores: LayoutTensor[dtype, **_],
     output: LayoutTensor[mut=True, DType.int64, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
@@ -97,7 +94,7 @@ fn non_max_suppression[
         output[pred_count, 2] = box_idx
         pred_count += 1
 
-    non_max_suppression[type, store_to_outputs](
+    non_max_suppression[dtype, store_to_outputs](
         boxes,
         scores,
         max_output_boxes_per_class,
@@ -107,10 +104,10 @@ fn non_max_suppression[
 
 
 fn non_max_suppression_shape_func[
-    type: DType
+    dtype: DType
 ](
-    boxes: LayoutTensor[type, **_],
-    scores: LayoutTensor[type, **_],
+    boxes: LayoutTensor[dtype, **_],
+    scores: LayoutTensor[dtype, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -127,7 +124,7 @@ fn non_max_suppression_shape_func[
     fn incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         box_pred_count += 1
 
-    non_max_suppression[type, incr_pred_count](
+    non_max_suppression[dtype, incr_pred_count](
         boxes,
         scores,
         max_output_boxes_per_class,
@@ -139,11 +136,11 @@ fn non_max_suppression_shape_func[
 
 
 fn non_max_suppression[
-    type: DType,
+    dtype: DType,
     func: fn (Int64, Int64, Int64) capturing [_] -> None,
 ](
-    boxes: LayoutTensor[type, **_],
-    scores: LayoutTensor[type, **_],
+    boxes: LayoutTensor[dtype, **_],
+    scores: LayoutTensor[dtype, **_],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -180,7 +177,7 @@ fn non_max_suppression[
 
     # Allocate the box indices and scores without initializing their elements.
     var box_idxs = List[Int64](unsafe_uninit_length=num_boxes)
-    var per_class_scores = List[Scalar[type]](unsafe_uninit_length=num_boxes)
+    var per_class_scores = List[Scalar[dtype]](unsafe_uninit_length=num_boxes)
 
     for b in range(batch_size):
         for c in range(num_classes):
@@ -199,11 +196,11 @@ fn non_max_suppression[
             var num_boxes_remaining = 0
             for i in range(num_boxes):
                 var score = per_class_scores_ptr.load(i)
-                if score > score_threshold.cast[type]():
+                if score > score_threshold.cast[dtype]():
                     per_class_scores[i] = score
                     num_boxes_remaining += 1
                 else:
-                    per_class_scores[i] = Scalar[type].MIN
+                    per_class_scores[i] = Scalar[dtype].MIN
 
             iota(box_idxs)
 
@@ -235,18 +232,18 @@ fn non_max_suppression[
                 ):
                     var next_box = _get_bounding_box(b, Int(box_idxs[i]), boxes)
 
-                    if pred.iou(next_box) > iou_threshold.cast[type]():
-                        per_class_scores[Int(box_idxs[i])] = Scalar[type].MIN
+                    if pred.iou(next_box) > iou_threshold.cast[dtype]():
+                        per_class_scores[Int(box_idxs[i])] = Scalar[dtype].MIN
                         num_boxes_remaining -= 1
                 pred_idx += 1
                 # don't need to sort all of box_idxs because:
-                #   1. the start of the array contains already outputed predictions whose order cannot change
+                #   1. the start of the array contains already outputted predictions whose order cannot change
                 #   2. the end of the array contains neginf values
-                # note we need to use num_boxes_curr_pred instead of num_boxes_remainig
+                # note we need to use num_boxes_curr_pred instead of num_boxes_remaining
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
                 sort[_greater_than](
                     Span[box_idxs.T, __origin_of(box_idxs)](
-                        ptr=box_idxs.data + pred_idx,
+                        ptr=box_idxs.unsafe_ptr() + pred_idx,
                         length=num_boxes_curr_pred,
                     )
                 )

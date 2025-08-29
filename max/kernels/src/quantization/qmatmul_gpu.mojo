@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string import StaticString
-from math import ceildiv, isclose
-from pathlib import Path
-from random import rand, randint, random_float64, seed
-from sys import alignof, argv, is_nvidia_gpu, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
+from collections import OptionalReg
+from math import ceildiv
 
 from bit import log2_floor
 from buffer import NDBuffer
@@ -31,16 +27,14 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, is_gpu
-from gpu.intrinsics import lop
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import is_gpu
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
 from layout import RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
@@ -48,32 +42,25 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    _swizzle_signature,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_local,
     copy_sram_to_dram,
 )
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import warp_split_k_reduction
-from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import (
     MatmulConfig,
-    MatmulKernels,
     block_swizzle,
-    select_config,
 )
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index, IndexList
+from utils.index import Index
 from utils.numerics import get_accum_type
 
 
@@ -119,7 +106,7 @@ fn multistage_mma_q[
     transpose_b_next: Bool = False,
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
-    next_op_b_iter_alignment: Int = alignof[b_type](),
+    next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
@@ -141,8 +128,8 @@ fn multistage_mma_q[
     *,
     num_b_rows: OptionalReg[Int] = None,
 ):
-    alias simd_size = simdwidthof[a_type]()
-    alias simd_b_size = simdwidthof[b_type]()
+    alias simd_size = simd_width_of[a_type]()
+    alias simd_b_size = simd_width_of[b_type]()
     alias num_scales_stages = ceildiv(
         (num_pipeline_stages - 1) * BK, group_size
     ) + 1
@@ -234,12 +221,14 @@ fn multistage_mma_q[
 
                     # We only need one warp for copying scales...
                     if tid < WARP_SIZE:
-                        var src_fragments = scales_iter[].bitcast[
-                            scales_type, address_space = AddressSpace.GENERIC
-                        ]().vectorize[1, async_copy_scales_veclen]().distribute[
-                            async_copy_scales_layout
-                        ](
-                            Int(tid)
+                        var src_fragments = (
+                            scales_iter[]
+                            .bitcast[
+                                scales_type,
+                                address_space = AddressSpace.GENERIC,
+                            ]()
+                            .vectorize[1, async_copy_scales_veclen]()
+                            .distribute[async_copy_scales_layout](Int(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
@@ -270,17 +259,30 @@ fn multistage_mma_q[
     alias c_frag_size = frag_size[2]
 
     # Register tiles.
-    var a_reg_tiles = tb[a_type]().row_major[
-        2 * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2]()
+    var a_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * num_m_mmas, a_frag_size]()
+        .local()
+        .alloc()
+        .split[2]()
+    )
 
-    var b_reg_tiles = tb[a_type]().row_major[
-        2 * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2]()
+    var b_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * num_n_mmas, b_frag_size]()
+        .local()
+        .alloc()
+        .vectorize[1, b_frag_size]()
+        .split[2]()
+    )
 
-    var scales_reg_tiles = tb[scales_type]().row_major[
-        num_n_mmas, 1
-    ]().local().alloc().vectorize[1, 1]()
+    var scales_reg_tiles = (
+        tb[scales_type]()
+        .row_major[num_n_mmas, 1]()
+        .local()
+        .alloc()
+        .vectorize[1, 1]()
+    )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
@@ -343,7 +345,7 @@ fn multistage_mma_q[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-                # prefecth scales into regs every (group_size) rows
+                # prefetch scales into regs every (group_size) rows
                 if (k_tile_id + 1) % (group_size // BK) == 0:
                     scales_smem_iter._incr()
                     scales_warp_tile = scales_smem_iter[].tile[
@@ -425,15 +427,16 @@ fn multistage_mma_q[
 
                             # We only need one warp for copying scales...
                             if tid < WARP_SIZE:
-                                var src_fragments = scales_iter[].bitcast[
-                                    scales_type,
-                                    address_space = AddressSpace.GENERIC,
-                                ]().vectorize[
-                                    1, async_copy_scales_veclen
-                                ]().distribute[
-                                    async_copy_scales_layout
-                                ](
-                                    Int(tid)
+                                var src_fragments = (
+                                    scales_iter[]
+                                    .bitcast[
+                                        scales_type,
+                                        address_space = AddressSpace.GENERIC,
+                                    ]()
+                                    .vectorize[1, async_copy_scales_veclen]()
+                                    .distribute[async_copy_scales_layout](
+                                        Int(tid)
+                                    )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
@@ -475,7 +478,7 @@ fn multistage_qgemm_kernel[
         is_nvidia_gpu(),
         "Quantized gemm only supports NVIDIA hardwares for now.",
     ]()
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     alias repack_tile = Index(64, 16)
     alias group_bytes = group_size // 2 + 2
@@ -514,7 +517,9 @@ fn multistage_qgemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    var warp_k_part_id = (
+        tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    )
     var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
@@ -526,14 +531,14 @@ fn multistage_qgemm_kernel[
     ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[a_type, simd_size]](),
+        alignment = align_of[SIMD[a_type, simd_size]](),
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
 
@@ -594,7 +599,7 @@ fn multistage_qgemm_kernel[
     ](scales_smem + warp_k_part_id * scales_smem_size, scales_smem_size)
 
     # global memory iterator
-    var bk_start: Int = (K // BK // num_warp_k_partitions) * warp_k_part_id
+    var bk_start: Int = Int((K // BK // num_warp_k_partitions) * warp_k_part_id)
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
     alias b_tile_axis = 1 if transpose_b else 0
@@ -602,9 +607,10 @@ fn multistage_qgemm_kernel[
         b_tile_coords[0], b_tile_coords[1]
     )
     alias groups_per_iter = ceildiv(BK, group_size)
-    var bk_scales_start: Int = (
-        K // (groups_per_iter * group_size) // num_warp_k_partitions
-    ) * warp_k_part_id
+    var bk_scales_start: Int = Int(
+        (K // (groups_per_iter * group_size) // num_warp_k_partitions)
+        * warp_k_part_id
+    )
     var scales_gmem_iter = scales.tiled_iterator[
         ceildiv(BK, group_size), BN, axis=0
     ](bk_scales_start, block_idx[0])
@@ -619,9 +625,13 @@ fn multistage_qgemm_kernel[
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
 
-    var c_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
+    var c_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     multistage_mma_q[
         BM,
@@ -629,8 +639,8 @@ fn multistage_qgemm_kernel[
         BK,
         WM,
         WN,
-        num_threads_per_warp_k_part,
-        num_pipeline_stages,
+        Int(num_threads_per_warp_k_part),
+        Int(num_pipeline_stages),
         transpose_b,
         group_size,
         pack_factor,
@@ -642,7 +652,7 @@ fn multistage_qgemm_kernel[
         b_smem_iter,
         scales_smem_iter,
         scales_gmem_iter,
-        ceildiv(K // num_warp_k_partitions, BK),
+        Int(ceildiv(K // num_warp_k_partitions, BK)),
     )
 
     # reduce within the threadblock
@@ -651,10 +661,10 @@ fn multistage_qgemm_kernel[
         warp_split_k_reduction[
             BM,
             BN,
-            num_threads_per_warp_k_part,
-            num_warp_k_partitions,
+            Int(num_threads_per_warp_k_part),
+            Int(num_warp_k_partitions),
         ](
-            warp_k_part_id,
+            Int(warp_k_part_id),
             c_reg_tile,
         )
         if warp_k_part_id > 0:
@@ -694,20 +704,20 @@ fn multistage_qgemm_kernel[
         for i in range(__type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
             alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-            var dst_idx = 0
+            var dst_idx: Int
 
             @parameter
             if c_gmem_frag.layout.all_dims_known():
-                dst_idx = dst_static_idx
+                dst_idx = Int(dst_static_idx)
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
-            alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
+            alias alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
-            if m < M and n < N:
+            if UInt(m) < M and UInt(n) < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
-                    alignment = alignof[SIMD[c_type, src_simd_width_y]](),
+                    alignment = align_of[SIMD[c_type, src_simd_width_y]](),
                 ]()
 
                 @parameter
@@ -717,7 +727,7 @@ fn multistage_qgemm_kernel[
 
                     @parameter
                     for j in range(dst_simd_width_x):
-                        if m + j < M:
+                        if UInt(m + j) < M:
                             epilogue[alignment=alignment](
                                 (m + j, n), vec[j].cast[c_type]()
                             )
@@ -733,13 +743,17 @@ fn multistage_qgemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[c_type]().row_major[
-            WM, WN
-        ]().shared().view(
-            a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN)
+        var accum_smem_warp_tile = (
+            tb[c_type]()
+            .row_major[WM, WN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -774,12 +788,12 @@ fn multistage_qgemm_kernel[
                 alias src_idx = __type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    c_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_gmem_frag.layout.all_dims_known():
@@ -789,8 +803,8 @@ fn multistage_qgemm_kernel[
 
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
-                if m < M and n < N:
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
+                if UInt(m) < M and UInt(n) < N:
                     epilogue[alignment=alignment](
                         (m, n),
                         accum_smem_warp_tile.ptr.load[
@@ -937,7 +951,7 @@ fn repack_Q4_0_for_sm8x[
     q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
 ):
     alias group_size = 32
-    alias group_bytes = sizeof[DType.float16]() + (group_size // 2)
+    alias group_bytes = size_of[DType.float16]() + (group_size // 2)
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias WARP_SIZE = 32
@@ -949,7 +963,7 @@ fn repack_Q4_0_for_sm8x[
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
-    var lane_id: Int = tid % WARP_SIZE
+    var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = Int(q_layout.shape[0])
@@ -995,7 +1009,7 @@ fn repack_Q4_0_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var qb_smem = LayoutTensor[
         DType.uint8,
@@ -1039,7 +1053,9 @@ fn repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            Int(warp_x), Int(warp_y)
+        )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
@@ -1048,13 +1064,15 @@ fn repack_Q4_0_for_sm8x[
             alias thd_layout = Layout.row_major(8, 4)
             # The first 2 Bytes is the scale for this Q4_0 block
             # GGUF pack elements 0-15 in the lower 4-bit of the 16 Bytes,
-            # and elments 16-31 in the higher 4-bit of the 16 Bytes.
+            # and elements 16-31 in the higher 4-bit of the 16 Bytes.
             #
             # This gets elements 0, 1, 8, 9, 16, 17, 24, 25 for
             # thread 0.
-            var thread_tile = raw_Q_tile.slice[:, 2:]().vectorize[
-                1, 2
-            ]().distribute[thd_layout](lane_id)
+            var thread_tile = (
+                raw_Q_tile.slice[:, 2:]()
+                .vectorize[1, 2]()
+                .distribute[thd_layout](lane_id)
+            )
 
             @parameter
             for i_e in range(16):
@@ -1064,7 +1082,7 @@ fn repack_Q4_0_for_sm8x[
 
             var repack_warp_tile = repacked_gemm_iter[].tile[
                 64, group_size // pack_factor
-            ](warp_x, warp_y)
+            ](Int(warp_x), Int(warp_y))
             repack_warp_tile.vectorize[2, 2]().store(
                 lane_id, 0, pack_Q_tile(frag_0)
             )
@@ -1082,7 +1100,7 @@ fn repack_Q4_0_for_sm8x[
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = scales_gmem_iter[].tile[1, 64](
-                warp_y, warp_x
+                Int(warp_y), Int(warp_x)
             )
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
@@ -1125,7 +1143,7 @@ fn repack_GPTQ_for_sm8x[
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
-    alias group_bytes = sizeof[DType.float16]() + weights_bytes_per_group
+    alias group_bytes = size_of[DType.float16]() + weights_bytes_per_group
     alias pack_factor = 8
     alias repack_tile = Index(64, 16)
     alias BN = 128
@@ -1136,7 +1154,7 @@ fn repack_GPTQ_for_sm8x[
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
-    var lane_id: Int = tid % WARP_SIZE
+    var lane_id: Int = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
     alias N = Int(in_layout.shape[1])
@@ -1193,7 +1211,7 @@ fn repack_GPTQ_for_sm8x[
     var smem = external_memory[
         UInt8,
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[DType.uint8, 1]](),
+        alignment = align_of[SIMD[DType.uint8, 1]](),
     ]()
     var weights_smem = LayoutTensor[
         DType.uint8,
@@ -1210,7 +1228,7 @@ fn repack_GPTQ_for_sm8x[
         block_idx[0], block_idx[1]
     )
     var raw_weights_gmem_iter = raw_weights_gmem_tile.tiled_iterator[
-        BN, 2 * weights_bytes_per_group // sizeof[DType.uint32](), axis=1
+        BN, 2 * weights_bytes_per_group // size_of[DType.uint32](), axis=1
     ](0, 0)
     var raw_scales_gmem_tile = raw_scales.tile[BN, BK_groups](
         block_idx[0], block_idx[1]
@@ -1256,7 +1274,7 @@ fn repack_GPTQ_for_sm8x[
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var repacked_warp_tile = repacked_weights_gmem_iter[].tile[
                 repack_tile[0], group_size // pack_factor
-            ](warp_x, warp_y)
+            ](Int(warp_x), Int(warp_y))
 
             @parameter
             for i_Q_tile in range(group_size // repack_tile[1]):
@@ -1267,21 +1285,19 @@ fn repack_GPTQ_for_sm8x[
                 if has_perm:
                     var p_block_idx = perm_idx.tile[BK](block_idx[1])
                     var p_group_idx = p_block_idx.tile[group_size](
-                        2 * i + warp_y
+                        Int(2 * i + warp_y)
                     )
                     var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
-                    var thd_idx = (
-                        p_Qtile_idx.vectorize[2]().distribute[
-                            thd_layout, axis=1
-                        ](lane_id)
-                    )
+                    var thd_idx = p_Qtile_idx.vectorize[2]().distribute[
+                        thd_layout, axis=1
+                    ](lane_id)
                     var n_idx = lane_id // 4
 
                     var weights_K = raw_weights.tile[BN, uint_K](
                         block_idx[0], 0
                     )
                     var weights_K_wrap = weights_K.tile[repack_tile[0], uint_K](
-                        warp_x, 0
+                        Int(warp_x), 0
                     )
 
                     @parameter
@@ -1301,7 +1317,7 @@ fn repack_GPTQ_for_sm8x[
                 else:
                     var raw_weights_warp_tile = weights_smem.tile[
                         repack_tile[0], weights_bytes_per_group
-                    ](warp_x, warp_y)
+                    ](Int(warp_x), Int(warp_y))
                     var raw_Q_tile = raw_weights_warp_tile.tile[
                         repack_tile[0], repack_tile[1] // 2
                     ](0, i_Q_tile)
@@ -1324,10 +1340,10 @@ fn repack_GPTQ_for_sm8x[
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = repacked_scales_gmem_iter[].tile[1, 64](
-                warp_y, warp_x
+                Int(warp_y), Int(warp_x)
             )
             var raw_scales_warp_tile = raw_scales_gmem_iter[].tile[64, 1](
-                warp_x, warp_y
+                Int(warp_x), Int(warp_y)
             )
 
             alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
@@ -1361,17 +1377,19 @@ fn q_smem_usage[config: MatmulConfig, group_size: Int]() -> Int:
     alias pack_factor = 8
 
     # fmt: off
-    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[config.a_type]()
-    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[DType.uint32]() // pack_factor
-    var c_usage = block_mnk[0] * block_mnk[1] * sizeof[DType.float32]()
+    var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[config.a_type]()
+    var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[DType.uint32]() // pack_factor
+    var c_usage = block_mnk[0] * block_mnk[1] * size_of[DType.float32]()
     var num_scales_stages = ceildiv((num_pipeline_stages - 1) * block_mnk[2], group_size) + 1
     var scales_usage = block_mnk[1] * ceildiv(block_mnk[2], group_size
-    ) * num_scales_stages * sizeof[config.a_type]()
-    var slice_k_reduction = block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * sizeof[DType.float32]()
+    ) * num_scales_stages * size_of[config.a_type]()
+    var slice_k_reduction: UInt = block_mnk[0] * block_mnk[1] * (num_warp_k_partitions // 2) * size_of[DType.float32]()
     # fmt: on
 
-    var smem_usage = num_warp_k_partitions * (a_usage + b_usage + scales_usage)
-    return max(c_usage, smem_usage, slice_k_reduction)
+    var smem_usage: UInt = num_warp_k_partitions * (
+        a_usage + b_usage + scales_usage
+    )
+    return Int(max(c_usage, Int(smem_usage), Int(slice_k_reduction)))
 
 
 fn multistage_gemm_q[
@@ -1401,7 +1419,7 @@ fn multistage_gemm_q[
     var tensor_b = from_ndbuffer_row_major(b)
 
     alias smem_usage = q_smem_usage[config, group_size]()
-    alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
+    alias max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
     @parameter
     if smem_usage > max_smem:
@@ -1411,7 +1429,7 @@ fn multistage_gemm_q[
         # and retry pipeline stages reduction
         @parameter
         for partition_reduction in range(
-            log2_floor(config.num_warp_k_partitions) + 1
+            log2_floor(Int(config.num_warp_k_partitions)) + 1
         ):
 
             @parameter
@@ -1449,7 +1467,9 @@ fn multistage_gemm_q[
                         elementwise_lambda_fn,
                     ]
 
-                    ctx.enqueue_function[gemm_kernel_type](
+                    ctx.enqueue_function_checked[
+                        gemm_kernel_type, gemm_kernel_type
+                    ](
                         tensor_c,
                         tensor_a,
                         tensor_b,
@@ -1477,7 +1497,7 @@ fn multistage_gemm_q[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[gemm_kernel_type](
+    ctx.enqueue_function_checked[gemm_kernel_type, gemm_kernel_type](
         tensor_c,
         tensor_a,
         tensor_b,
@@ -2005,7 +2025,7 @@ fn gpu_qint4_repack_Q4_0[
         tensor_b.layout, tensor_packed_b.layout, DType.bfloat16
     ]
 
-    cuda_ctx.enqueue_function[repack](
+    cuda_ctx.enqueue_function_checked[repack, repack](
         tensor_b,
         tensor_packed_b,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -2075,7 +2095,7 @@ fn gpu_qint4_repack_GPTQ[
             perm_layout = tensor_perm.layout,
         ]
 
-        cuda_ctx.enqueue_function[repack](
+        cuda_ctx.enqueue_function_checked[repack, repack](
             tensor_b,
             tensor_packed_b,
             tensor_perm,

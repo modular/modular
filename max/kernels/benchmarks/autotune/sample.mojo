@@ -11,24 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
-from time import sleep
+from sys import env_get_dtype, env_get_int
 
 from benchmark import (
     Bench,
     BenchConfig,
     Bencher,
     BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-    keep,
 )
 from internal_utils import (
     Mode,
     arg_parse,
     env_get_shape,
     int_list_to_tuple,
-    update_bench_config,
+    update_bench_config_args,
 )
 
 
@@ -49,11 +45,11 @@ fn bench_func[
         "gemm/dtype=", dtype, "/m=", M, "/n=", N, "/k=", N, "/stages=", stages
     )
 
-    if mode == Mode.BENCHMARK:
+    if Mode.BENCHMARK == mode:
         m.bench_function[bench_iter](BenchId(name))
-    if mode == Mode.VERIFY:
+    if Mode.VERIFY == mode:
         print("verifying dummy results...PASS")
-    if mode == Mode.RUN:
+    if Mode.RUN == mode:
         print("pretending to run the kernel...PASS")
 
 
@@ -69,18 +65,19 @@ fn main() raises:
     var mode = Mode(arg_parse("mode", "benchmark"))
 
     print("mode=" + String(mode))
-    if mode == Mode.RUN:
+
+    if Mode.RUN == mode:
         print("-- mode: run kernel once")
-    if mode == Mode.BENCHMARK:
+    if Mode.BENCHMARK == mode:
         print("-- mode: run kernel benchmark")
-    if mode == Mode.VERIFY:
+    if Mode.VERIFY == mode:
         print("-- mode: verify kernel")
 
     var m = Bench(
         BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
     )
 
-    update_bench_config(m)
+    update_bench_config_args(m)
 
     bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode)
 

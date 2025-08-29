@@ -12,18 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv
-from sys import alignof
+from sys import align_of
 from sys._build import is_debug_build
 from sys.info import (
-    has_avx2,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
-    is_neoverse_n1,
-    os_is_macos,
-    simdwidthof,
-    sizeof,
+    CompilationTarget,
+    simd_width_of,
+    size_of,
 )
 
 from algorithm import vectorize
@@ -31,17 +25,16 @@ from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 
 alias elementwise_epilogue_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> None
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> None
 
 alias elementwise_compute_lambda_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -73,9 +66,8 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-@value
 @register_passable("trivial")
-struct MicroKernelShape:
+struct MicroKernelShape(Copyable, Movable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -87,9 +79,9 @@ struct MicroKernelShape:
         self.simd_cols = cols
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct GemmShape:
+struct GemmShape(Copyable, Movable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -118,6 +110,36 @@ struct GemmShape:
         """
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
+    @staticmethod
+    fn get[
+        transpose_b: Bool,
+        layout_c: Layout,
+        layout_a: Layout,
+        layout_b: Layout,
+    ](
+        c: LayoutTensor[_, layout_c, _, **_],
+        a: LayoutTensor[_, layout_a, _, **_],
+        b: LayoutTensor[_, layout_b, _, **_],
+    ) -> GemmShape:
+        """Constructor of a gemm shape record from input buffers.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: LayoutTensor with allocated output space.
+            a: LayoutTensor containing matrix operand A.
+            b: LayoutTensor containing matrix operand B.
+        """
+
+        # We only want a 2D tensor for now
+        constrained[c.rank == 2]()
+        constrained[a.rank == 2]()
+        constrained[b.rank == 2]()
+
+        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
+
     # TODO: re-enable using IndexList.
     @always_inline
     fn __getitem__(self, idx: Int) -> Int:
@@ -138,7 +160,6 @@ struct GemmShape:
             self.K = value
             return
 
-    @implicit
     fn __init__(out self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
@@ -164,7 +185,7 @@ struct GemmShape:
         Args:
             rhs: Another gemm shape record to add with.
         """
-        return self.as_index() + rhs.as_index()
+        return GemmShape(self.as_index() + rhs.as_index())
 
     fn __sub__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise subtraction of two gemm shape records.
@@ -172,7 +193,7 @@ struct GemmShape:
         Args:
             rhs: Another gemm shape record to subtract with.
         """
-        return self.as_index() - rhs.as_index()
+        return GemmShape(self.as_index() - rhs.as_index())
 
 
 # Helper heuristic function to decide on tile size
@@ -188,9 +209,9 @@ fn calculate_tile_n_k[
     given the cache size and desired data layout.
 
     Parameters:
-        a_type: The type of the A tensor.
-        b_type: The type of the B tensor.
-        c_type: The type of the C tensor.
+        a_type: The dtype of the A tensor.
+        b_type: The dtype of the B tensor.
+        c_type: The dtype of the C tensor.
         kernel_cols: The umber of columns of the micro kernel.
 
     Returns:
@@ -258,11 +279,36 @@ fn _get_tile_n_k[
     return tile_n_k
 
 
+@always_inline
+fn _get_tile_n_k[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    kernel_cols: Int,
+    transpose_b: Bool,
+    layout: Layout,
+](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
+    constrained[b.rank == 2]()
+    var tile_n_k: IndexList[2]
+
+    @parameter
+    if not transpose_b:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(1), b.dim(0)
+        )
+    else:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
+            b.dim(0), b.dim(1)
+        )
+
+    return tile_n_k
+
+
 # The number of registers used for the inner kernel is:
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
 fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
 
         @parameter
         if kernel_type:
@@ -277,7 +323,7 @@ fn get_matmul_kernel_shape_ARM[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
     @parameter
-    if is_neoverse_n1():
+    if CompilationTarget.is_neoverse_n1():
 
         @parameter
         if kernel_type:
@@ -307,7 +353,7 @@ fn get_matmul_kernel_shape[
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return get_matmul_kernel_shape_ARM[
             a_type, b_type, c_type, kernel_type
         ]()
@@ -327,13 +373,13 @@ fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
 # prefetching at least on the Graviton 2 performs worse than without.
 fn get_matmul_prefetch_b_distance_k() -> Int:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return 0
     return 4
 
 
 # Min task size. This is copied from MLAS.
-# TODO: Replase this magic number with a heuristic based on arch.
+# TODO: Replace this magic number with a heuristic based on arch.
 fn get_min_task_size() -> Int:
     return 65536
 
@@ -378,8 +424,8 @@ fn get_matmul_num_tasks[
     return num_tasks
 
 
-@value
-struct SubMatmulConfig:
+@fieldwise_init
+struct SubMatmulConfig(Copyable, Movable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -517,7 +563,7 @@ fn get_partitioned_matmul_mojo_shape[
     return Index(num_row_tasks, num_col_tasks)
 
 
-fn get_pack_data_size[type: DType]() -> Int:
+fn get_pack_data_size[dtype: DType]() -> Int:
     """Utility to compute the number of elements to pack in each tile.
     Returns:
         The number of elements to pack.
@@ -529,22 +575,22 @@ fn get_pack_data_size[type: DType]() -> Int:
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
-        return 4 * KB // sizeof[type]()
+        return 4 * KB // size_of[dtype]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
-        return 64 * KB // sizeof[type]()
+        return 64 * KB // size_of[dtype]()
 
     @parameter
-    if has_neon() or has_avx512f():
+    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
-        return 512 * KB // sizeof[type]()
+        return 512 * KB // size_of[dtype]()
 
-    return 256 * KB // sizeof[type]()
+    return 256 * KB // size_of[dtype]()
 
 
 @always_inline
@@ -559,7 +605,7 @@ fn get_kernel_config[
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = simdwidthof[c_type]()
+    alias simd_size = simd_width_of[c_type]()
 
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
@@ -576,12 +622,15 @@ fn get_kernel_config[
 @always_inline
 fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     @parameter
-    if has_neon_int8_dotprod() and not has_neon_int8_matmul():
+    if (
+        CompilationTarget.has_neon_int8_dotprod()
+        and not CompilationTarget.has_neon_int8_matmul()
+    ):
         return (
             (a_type is DType.int8 and b_type is DType.int8)
             or (a_type is DType.uint8 and b_type is DType.uint8)
         ) and c_type is DType.int32
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         return (
             a_type is DType.uint8
             and b_type is DType.int8
@@ -596,7 +645,7 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
     return (
         # Return False for now until i8mm is fully ready.
-        has_neon_int8_matmul()
+        CompilationTarget.has_neon_int8_matmul()
         and (
             (a_type is DType.uint8 and b_type is DType.uint8)
             or (a_type is DType.uint8 and b_type is DType.int8)
@@ -610,12 +659,12 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         return m > 0 and m <= 32
-    elif has_neon():
+    elif CompilationTarget.has_neon():
 
         @parameter
-        if is_neoverse_n1():
+        if CompilationTarget.is_neoverse_n1():
             return (k % 4096) == 0
         else:
             return m > 32
@@ -681,9 +730,9 @@ fn packA_i8mm[
     vectorize[packA_helper, 2](t1 - t0)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct InnerKernelID:
+struct InnerKernelID(Copyable, Movable):
     alias DEFAULT = InnerKernelID(0)
     alias VNNI = InnerKernelID(1)
     alias NEON = InnerKernelID(2)
@@ -706,9 +755,9 @@ fn select_inner_kernel[
     @parameter
     if use_i8mm:
         return InnerKernelID.I8MM
-    elif has_neon() and not use_vnni and not use_i8mm:
+    elif CompilationTarget.has_neon() and not use_vnni and not use_i8mm:
         return InnerKernelID.NEON
-    elif not use_vnni and not has_neon():
+    elif not use_vnni and not CompilationTarget.has_neon():
         return InnerKernelID.DEFAULT
     else:
         return InnerKernelID.VNNI
@@ -743,13 +792,13 @@ fn apply_epilogue[
             for j in range(num_copies):
                 alias src_idx = src_offset + src.element_layout(j)
                 alias dst_idx = dst_offset + dst_element_layout(j)
-                # C matrix dimension. For 2D simd tile, element_layout perserves
+                # C matrix dimension. For 2D simd tile, element_layout preserves
                 # the matrix dimension, layout doesn't.
                 alias N = dst_element_layout.stride[0].value()
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[src.dtype, vec_width]](),
+                    alignment = align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
                 var m = (dst_idx + offset) // N

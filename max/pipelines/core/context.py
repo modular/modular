@@ -15,249 +15,154 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, Optional, Protocol, Union, runtime_checkable
+import math
+import time
+import uuid
+from typing import Any, Optional
 
+import llguidance
+import msgspec
 import numpy as np
-
-from .interfaces import LogProbabilities, TextGenerationStatus
+import numpy.typing as npt
+from max.interfaces import (
+    GenerationStatus,
+    InputContext,
+    LogProbabilities,
+    SamplingParams,
+    TextGenerationOutput,
+)
 
 CHUNK_SIZE = 128
 
 
-@runtime_checkable
-class InputContext(Protocol):
-    """A base class for model contexts, represent model inputs for TokenGenerators.
+def _check_text_context_implements_input_context(
+    context: TextContext,
+) -> InputContext:
+    # Not used at run-time; here only for the type checker to check that
+    # TextContext properly implements InputContext.  If you get an "incompatible
+    # type" error here, you introduced an incompatibility!
+    return context
 
-    Token array layout:
-    .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-    . +--------------------+---------------+-----------------+----------------+
-    . |     completed      |  next_tokens  |                 |  preallocated  |
-    . +--------------------+---------------+-----------------+----------------+
-    .            start_idx ^    active_idx ^         end_idx ^
 
-    -    completed: The tokens that have already been processed and encoded.
-    -  next_tokens: The tokens that will be processed in the next iteration.
-                    This may be a subset of the full prompt due to chunked prefill.
-    - preallocated: The token slots that have been preallocated. The token array
-                    resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
+class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
+    """A base class for model context, specifically for Text model variants.
+
+    This class manages the state and processing of text generation, including token management,
+    caching, and generation parameters.
+
+    Configuration:
+        request_id: A unique identifier for this sequence.
+        max_length: Maximum allowed length of the generated sequence
+        tokens: NumPy array containing the token IDs
+        eos_token_ids: Set of token IDs that indicate end of sequence
+        log_probabilities: Whether to return token log probabilities
+        log_probabilities_echo: Whether to return log probabilities for prompt tokens
+        ignore_eos: Whether to ignore end of sequence tokens and continue generating
+        matcher: Optional grammar matcher for constrained decoding
+        json_schema: Optional JSON schema for structured output
+        sampling_params: Parameters controlling the token sampling strategy
+        min_tokens: Minimum number of new tokens to generate.
+        target_endpoint: Optional target endpoint identifier for routing requests
+        _status: Current generation status (active, finished, etc)
+        _size: Current allocated size of token array
+        _start_idx: Start index of current generation window
+        _active_idx: Current position in token sequence
+        _end_idx: End index of valid tokens
+        _completion_start_idx: Start index of completion tokens
+        _completion_end_idx: End index of completion tokens
+        _prompt_len: Length of original prompt
+        _log_probabilities_data: Token log probabilities data
+        _is_initial_prompt: Whether this is the initial prompt encoding
+        _draft_offset: Offset for draft decoding
     """
 
-    def set_draft_offset(self, idx: int) -> None: ...
+    request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
+    max_length: int
+    tokens: npt.NDArray[np.integer[Any]]
+    eos_token_ids: set[int] = msgspec.field(default_factory=set)
+    eos_sequences: list[list[int]] = msgspec.field(default_factory=list)
+    log_probabilities: int = msgspec.field(default=0)
+    log_probabilities_echo: bool = msgspec.field(default=False)
+    ignore_eos: bool = msgspec.field(default=False)
+    json_schema: str | None = msgspec.field(default=None)
+    sampling_params: SamplingParams = msgspec.field(
+        default_factory=SamplingParams
+    )
+    model_name: str = msgspec.field(default="")
+    _matcher: Any | None = msgspec.field(default=None)
+    status: GenerationStatus = msgspec.field(default=GenerationStatus.ACTIVE)
+    _size: int = msgspec.field(default=-1)
+    _start_idx: int = msgspec.field(default=0)
+    _active_idx: int = msgspec.field(default=-1)
+    _end_idx: int = msgspec.field(default=-1)
+    _completion_start_idx: int = msgspec.field(default=-1)
+    _completion_end_idx: int = msgspec.field(default=-1)
+    _prompt_len: int = msgspec.field(default=-1)
+    _log_probabilities_data: dict[int, LogProbabilities] = msgspec.field(
+        default_factory=dict
+    )
+    _is_initial_prompt: bool = msgspec.field(default=True)
+    _draft_offset: int = msgspec.field(default=0)
+    target_endpoint: str | None = msgspec.field(default=None)
 
-    @property
-    def ignore_eos(self) -> bool: ...
+    def __post_init__(self) -> None:
+        """Initialize context state after deserialization.
 
-    @property
-    def active_idx(self) -> int: ...
+        This method is called each time the model is deserialized from msgspec.
+        We only update fields that have their default initialization values (-1),
+        preserving any explicitly set values during deserialization.
 
-    @property
-    def start_idx(self) -> int: ...
+        The method:
+        1. Validates token array dimensionality
+        2. Initializes size based on token length if not already set
+        3. Sets active/end indices to token length if not already set
+        4. Sets completion indices to match active index if not already set
+        5. Resizes token array to match size if needed
 
-    @property
-    def end_idx(self) -> int: ...
-
-    @property
-    def committed_idx(self) -> int: ...
-
-    @property
-    def current_length(self) -> int:
-        """The current length of the sequence, including completed and active tokens."""
-        ...
-
-    @property
-    def max_length(self) -> int | None:
-        """The maximum length of this sequence."""
-        ...
-
-    @property
-    def log_probabilities(self) -> int:
-        """When > 0, returns the log probabilities for the top N tokens for each
-        element token in the sequence."""
-        ...
-
-    @property
-    def log_probabilities_echo(self) -> bool:
-        """When True, the input tokens are added to the returned logprobs."""
-        ...
-
-    @property
-    def active_length(self) -> int:
-        """Current sequence length: num tokens input this iteration.
-
-        This will be the prompt size for context encoding, and simply 1 for
-        token generation.
+        Raises:
+            ValueError: If tokens array is not one-dimensional
         """
-        ...
-
-    @property
-    def next_tokens(self) -> np.ndarray:
-        """The next prompt tokens to be input during this iteration.
-
-        This should be a 1D array of tokens of length active_length.
-        """
-        ...
-
-    @property
-    def tokens(self) -> np.ndarray:
-        """All tokens in the context."""
-        ...
-
-    @property
-    def prompt_tokens(self) -> np.ndarray:
-        """Prompt tokens in the context."""
-        ...
-
-    @property
-    def generated_tokens(self) -> np.ndarray:
-        """All generated tokens in the context."""
-        ...
-
-    def update(
-        self,
-        new_token: int,
-        log_probabilities: Optional[LogProbabilities] = None,
-        is_eos: bool = False,
-    ) -> None:
-        """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        ...
-
-    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
-        """Updates the token array, while ensuring the new token is returned to the user."""
-        ...
-
-    def bump_token_indices(
-        self,
-        start_idx: int = 0,
-        active_idx: int = 0,
-        end_idx: int = 0,
-        committed_idx: int = 0,
-    ) -> None:
-        """Update the start_idx, active_idx and end_idx without manipulating the token array."""
-        ...
-
-    def set_token_indices(
-        self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
-    ) -> None:
-        """Set the token indices without manipulating the token array."""
-        ...
-
-    def rollback(self, idx: int) -> None:
-        """Rollback and remove the last idx tokens."""
-        ...
-
-    @property
-    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
-        """An optional xgr Grammar Matcher provided when using structured output."""
-        ...
-
-    @property
-    def json_schema(self) -> str | None:
-        """A json schema to use during constrained decoding."""
-        ...
-
-    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
-        """Set a grammar matcher for use during constrained decoding."""
-        ...
-
-    def reset(self) -> None:
-        """Resets the context's state by combining all tokens into a new prompt.
-        This method is used when a request is evicted, meaning that the context
-        needed to be re-encoded in the following CE iteration."""
-        ...
-
-    def outstanding_completion_tokens(
-        self,
-    ) -> list[tuple[int, Optional[LogProbabilities]]]:
-        """Return the list of outstanding completion tokens and log probabilities
-        that must be returned to the user."""
-        ...
-
-    def compute_num_available_steps(
-        self,
-        max_seq_len: int,
-    ) -> int:
-        """Compute the max number of steps we can execute for a given context
-        without exceeding the max_seq_len."""
-        ...
-
-    @property
-    def cache_seq_id(self) -> int:
-        """Returns the cache slot assigned to the context, raising an error if not assigned."""
-        ...
-
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assigns the context to a cache slot."""
-        ...
-
-    def unassign_from_cache(self) -> None:
-        """Unassigns the context from a cache slot."""
-        ...
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Returns True if input is assigned to a cache slot, False otherwise."""
-        ...
-
-
-class TextContext:
-    """A base class for model context, specifically for Text model variants."""
-
-    def __init__(
-        self,
-        prompt: Union[str, Sequence[int]],
-        max_length: int | None,
-        tokens: np.ndarray,
-        cache_seq_id: int | None = None,
-        log_probabilities: int = 0,
-        log_probabilities_echo: bool = False,
-        json_schema: str | None = None,
-        ignore_eos: bool = False,
-    ) -> None:
-        self._cache_seq_id = cache_seq_id
-        self.prompt = prompt
-        self.max_length = max_length
-
-        if tokens.ndim != 1:
-            msg = f"tokens must be one dimensional array: got shape '{tokens.shape}'"
+        if self.tokens.ndim != 1:
+            msg = f"tokens must be one dimensional array: got shape '{self.tokens.shape}'"
             raise ValueError(msg)
 
-        self.size = int(np.ceil(len(tokens) / CHUNK_SIZE) * CHUNK_SIZE)
+        if self._size == -1:
+            self._size = int(
+                np.ceil(len(self.tokens) / CHUNK_SIZE) * CHUNK_SIZE
+            )
 
-        # Create a fresh array since the input tokens may be a view or share memory with
-        # another array in the caller, which prevents us from resizing it directly.
-        # The extra space is initialized to zero and will be filled with generated tokens.
-        assert len(tokens) <= self.size
-        self._tokens = np.zeros(self.size, dtype=tokens.dtype)
-        self._tokens[: len(tokens)] = tokens
+        if self._active_idx == -1:
+            self._active_idx = len(self.tokens)
 
-        self._active_idx = len(tokens)
-        self._start_idx = 0
-        self._end_idx = self._active_idx
-        self._completion_start_idx = self._active_idx
-        self._completion_end_idx = self._active_idx
-        self._prompt_len = len(tokens)
+        if self._end_idx == -1:
+            self._end_idx = self._active_idx
 
-        # Which prefix of tokens have been committed into the prefix cache.
-        # This should be a multiple of page_size and less than start_idx.
-        # When prefix caching is disabled, this should be 0.
-        self._committed_idx = 0
+        if self._completion_start_idx == -1:
+            self._completion_start_idx = self._active_idx
 
-        self.log_probabilities = log_probabilities
-        self.log_probabilities_echo = log_probabilities_echo
-        self._log_probabilities_data: dict[int, LogProbabilities] = {}
+        if self._completion_end_idx == -1:
+            self._completion_end_idx = self._active_idx
 
-        self.matcher = None
-        self.json_schema = json_schema
-        self.is_initial_prompt = True
-        self.ignore_eos = ignore_eos
-        self.active_status = TextGenerationStatus.ACTIVE
+        if self._prompt_len == -1:
+            self._prompt_len = self._active_idx
 
-        self._draft_offset = 0
+        if self.min_tokens + self._prompt_len > self.max_length:
+            raise ValueError(
+                f"min_tokens ({self.min_tokens}) + prompt_len ({self._prompt_len}) must be less than or equal to max_length ({self.max_length})"
+            )
+
+        # Resize Data Up
+        # Ensure the tokens array is at least self._size
+        if self._end_idx < self._size:
+            self.tokens = np.resize(self.tokens, self._size)
+
+    @property
+    def all_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        return self.tokens[: self.end_idx]
+
+    @property
+    def is_done(self) -> bool:
+        return self.status.is_done
 
     @property
     def start_idx(self) -> int:
@@ -268,15 +173,50 @@ class TextContext:
         return self._active_idx
 
     @property
+    def min_tokens(self) -> int:
+        """The minimum number of new tokens to generate."""
+        return self.sampling_params.min_new_tokens
+
+    @property
     def end_idx(self) -> int:
         return self._end_idx
 
-    @property
-    def committed_idx(self) -> int:
-        return self._committed_idx
+    def get_min_token_logit_mask(
+        self, num_steps: int
+    ) -> list[npt.NDArray[np.int32]]:
+        """Returns a set of indices for the tokens in the output that should be masked.
 
-    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
-        self.matcher = matcher
+        This is primarily used for the min_tokens setting, where we mask
+        `eos` tokens in the logits to avoid generating them before we reach
+        min_tokens.
+
+        Returns:
+            A set of indices for the tokens in the output that should be masked.
+        """
+
+        ret_list: list[npt.NDArray[np.int32]] = []
+        start_range = self._prompt_len
+        end_range = self._prompt_len + self.min_tokens
+
+        for i in range(self._active_idx, self._active_idx + num_steps):
+            if i < start_range or i >= end_range:
+                ret_list.append(np.zeros((0, 2), dtype=np.int32))
+                continue
+
+            new_list = []
+            for eos_token_id in self.eos_token_ids:
+                new_list.append((0, eos_token_id))
+
+            ret_list.append(np.asarray(new_list, dtype=np.int32))
+
+        return ret_list
+
+    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+        self._matcher = matcher
+
+    @property
+    def matcher(self) -> llguidance.LLMatcher | None:
+        return self._matcher
 
     def rollback(self, idx: int) -> None:
         new_active_idx = self.active_idx - idx
@@ -298,8 +238,8 @@ class TextContext:
         if self._active_idx < self._completion_end_idx:
             self._completion_end_idx = new_active_idx
 
-            if self.active_status == TextGenerationStatus.END_OF_SEQUENCE:
-                self.active_status = TextGenerationStatus.ACTIVE
+            if self.status == GenerationStatus.END_OF_SEQUENCE:
+                self.status = GenerationStatus.ACTIVE
 
     @property
     def current_length(self) -> int:
@@ -320,19 +260,16 @@ class TextContext:
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
-        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         new_start_idx = start_idx + self._start_idx
         new_active_idx = active_idx + self._active_idx
         new_end_idx = end_idx + self._end_idx
-        new_committed_idx = committed_idx + self._committed_idx
 
         self.set_token_indices(
             start_idx=new_start_idx,
             active_idx=new_active_idx,
             end_idx=new_end_idx,
-            committed_idx=new_committed_idx,
         )
 
     def set_token_indices(
@@ -340,7 +277,6 @@ class TextContext:
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         new_start_idx = start_idx if start_idx is not None else self._start_idx
@@ -348,9 +284,6 @@ class TextContext:
             active_idx if active_idx is not None else self._active_idx
         )
         new_end_idx = end_idx if end_idx is not None else self._end_idx
-        new_committed_idx = (
-            committed_idx if committed_idx is not None else self._committed_idx
-        )
 
         if new_start_idx >= new_active_idx:
             msg = f"""
@@ -369,37 +302,81 @@ class TextContext:
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx
         self._end_idx = new_end_idx
-        self._committed_idx = new_committed_idx
 
     @property
-    def next_tokens(self) -> np.ndarray:
-        return self._tokens[self._start_idx : self._active_idx]
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """Returns the tokens between start_idx and active_idx.
+
+        Returns:
+            np.ndarray: Array of tokens that have been generated but not yet processed.
+        """
+        return self.tokens[self._start_idx : self._active_idx]
 
     def set_draft_offset(self, idx: int) -> None:
+        """Sets the draft offset index used for speculative decoding.
+
+        Args:
+            idx: The index to set as the draft offset.
+        """
         self._draft_offset = idx
 
     @property
-    def tokens(self) -> np.ndarray:
-        return self._tokens[: self._end_idx]
+    def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """Returns the original prompt tokens.
+
+        Returns:
+            np.ndarray: Array of tokens from the initial prompt.
+        """
+        return self.tokens[: self._prompt_len]
 
     @property
-    def prompt_tokens(self) -> np.ndarray:
-        return self._tokens[: self._prompt_len]
+    def generated_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """Returns all tokens that have been generated after the prompt.
 
-    @property
-    def generated_tokens(self) -> np.ndarray:
-        return self._tokens[self._prompt_len : self._end_idx]
+        Returns:
+            np.ndarray: Array of generated tokens from prompt_len to end_idx.
+        """
+        return self.tokens[self._prompt_len : self._end_idx]
 
     def _upsize(self) -> None:
-        if self._end_idx >= self.size:
-            self.size += CHUNK_SIZE
-            self._tokens = np.resize(self._tokens, self.size)
+        """Increases the size of the token array if needed.
+
+        Resizes the token array by CHUNK_SIZE if end_idx has reached the current size.
+        """
+        if self._end_idx >= self._size:
+            self._size += CHUNK_SIZE
+            self.tokens = np.resize(self.tokens, self._size)
+
+    def _is_eos(self, new_token: int) -> bool:
+        """
+        Checks for end-of-sequence conditions.
+
+        This function performs two checks:
+        1. Whether the newly generated token is in the set of `eos_token_ids`.
+        2. Whether appending the new token results in a sequence that matches any per-request `stop` sequence.
+        """
+        if new_token in self.eos_token_ids:
+            return True
+
+        if not self.eos_sequences:
+            return False
+
+        for eos in self.eos_sequences:
+            if self._end_idx - self._prompt_len < len(eos):
+                continue
+
+            comp_tokens = self.generated_tokens
+            comp_tokens = comp_tokens[len(comp_tokens) - len(eos) :]
+
+            if np.array_equal(comp_tokens, eos):
+                return True
+
+        return False
 
     def update(
         self,
         new_token: int,
         log_probabilities: Optional[LogProbabilities] = None,
-        is_eos: bool = False,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
@@ -413,7 +390,7 @@ class TextContext:
 
         # Update tokens and log probabilities data
         self._upsize()
-        self._tokens[self._active_idx] = new_token
+        self.tokens[self._active_idx] = new_token
         if log_probabilities:
             self._log_probabilities_data[self._active_idx] = log_probabilities
 
@@ -422,73 +399,85 @@ class TextContext:
         self._active_idx += 1
         self._end_idx += 1
 
-        if is_eos:
-            self.active_status = TextGenerationStatus.END_OF_SEQUENCE
+        if self._is_eos(new_token):
+            self.status = GenerationStatus.END_OF_SEQUENCE
+        elif self.active_idx >= self.max_length:
+            self.status = GenerationStatus.MAXIMUM_LENGTH
+            # We must return the last token that fits in max length.
+            self._completion_end_idx += 1
 
-        if self.active_status == TextGenerationStatus.ACTIVE:
+        if self.status == GenerationStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
-            assert self.matcher.accept_token(new_token)
+            assert self.matcher.consume_token(new_token)
 
-        self.is_initial_prompt = False
+        self._is_initial_prompt = False
 
-    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
+    def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-
+        is_eos = new_token in self.eos_token_ids
         self._upsize()
 
         # Update tokens
-        self._tokens[self._active_idx] = new_token
+        self.tokens[self._active_idx] = new_token
 
         # Bump Indices
         self._active_idx += 1
         self._end_idx += 1
 
         if is_eos:
-            self.active_status = TextGenerationStatus.END_OF_SEQUENCE
+            self.status = GenerationStatus.END_OF_SEQUENCE
 
-        if self.active_status == TextGenerationStatus.ACTIVE:
+        if self.status == GenerationStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
-            assert self.matcher.accept_token(new_token)
+            assert self.matcher.consume_token(new_token)
 
-        self.is_initial_prompt = False
+        self._is_initial_prompt = False
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.unassign_from_cache()
         self._start_idx = 0
-        self._committed_idx = 0
 
-        self.is_initial_prompt = True
+        self._is_initial_prompt = True
 
-    def outstanding_completion_tokens(
-        self,
-    ) -> list[tuple[int, Optional[LogProbabilities]]]:
-        """Return the list of outstanding completion tokens and log probabilities
-        that must be returned to the user."""
-        res = []
+    def to_generation_output(self) -> TextGenerationOutput:
+        """Get completion tokens that are ready to be returned to the user.
+
+        This method retrieves tokens that have been generated but not yet
+        delivered to the user, along with their associated log probability data.
+
+        Returns:
+            TextGenerationOutput: The completion tokens and their associated
+            log probabilities, if available.
+        """
+        tokens: list[int] = []
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in range(
             self._completion_start_idx, self._completion_end_idx
         ):
-            # We are using a pop here instead of a get, as we should not have
-            # to maintain this data once it is returned. The expectation is that
-            # this method never returns the same tokens more than once.
-            res.append(
-                (
-                    self._tokens[token_idx],
-                    self._log_probabilities_data.pop(token_idx, None),
-                )
-            )
+            tokens.append(int(self.tokens[token_idx]))
+            if token_idx in self._log_probabilities_data:
+                if log_probabilities is None:
+                    log_probabilities = []
+                # We are using a pop here instead of a get, as we should not have
+                # to maintain this data once it is returned. The expectation is that
+                # this method never returns the same tokens more than once.
+                log_probability = self._log_probabilities_data.pop(token_idx)
+                log_probabilities.append(log_probability)
 
         self._completion_start_idx = self._completion_end_idx
-        self.active_status = TextGenerationStatus.ACTIVE
 
-        return res
+        return TextGenerationOutput(
+            request_id=self.request_id,
+            tokens=tokens,
+            log_probabilities=log_probabilities,
+            final_status=self.status,
+        )
 
     def compute_num_available_steps(
         self,
@@ -499,76 +488,213 @@ class TextContext:
         return max_seq_len - (self.current_length - self.active_length)
 
     @property
-    def cache_seq_id(self) -> int:
-        if self._cache_seq_id is None:
-            raise RuntimeError("Context is not yet assigned to a cache slot")
-        return self._cache_seq_id
+    def needs_ce(self) -> bool:
+        """Returns whether this context needs context encoding (CE).
 
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        if self._cache_seq_id is not None:
-            raise RuntimeError("Context is already assigned to a cache slot")
-        self._cache_seq_id = cache_seq_id
+        CE mode indicates that the context has additional prompt tokens to encode.
 
-    def unassign_from_cache(self) -> None:
-        self._cache_seq_id = None
+        Returns:
+            bool: True if the context needs CE, False otherwise.
+        """
+        return self._start_idx < self._prompt_len
 
     @property
-    def is_assigned_to_cache(self) -> bool:
-        return self._cache_seq_id is not None
+    def is_initial_prompt(self) -> bool:
+        """Returns true if the context has not been updated with tokens."""
+        return self._is_initial_prompt
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return (
-            f"TextContext("
-            f"cache_seq_id={self._cache_seq_id}, "
-            f"committed_idx={self.committed_idx}, "
-            f"start_idx={self.start_idx}, "
-            f"active_idx={self.active_idx}, "
-            f"end_idx={self.end_idx})"
+            f"{self.__class__.__name__}("
+            f"request_id={self.request_id}, "
+            f"start_idx={self._start_idx}, "
+            f"active_idx={self._active_idx}, "
+            f"end_idx={self._end_idx}"
+            ")"
         )
 
 
-class TextAndVisionContext(TextContext):
+class TextAndVisionContext(
+    TextContext, tag=True, kw_only=True, omit_defaults=True
+):
     """A base class for model context, specifically for Vision model variants."""
 
-    def __init__(
-        self,
-        cache_seq_id: int,
-        prompt: Union[str, Sequence[int]],
-        max_length: int | None,
-        tokens: np.ndarray,
-        pixel_values: Sequence[np.ndarray],
-        extra_model_args: dict[str, Any],
-        log_probabilities: int = 0,
-        log_probabilities_echo: bool = False,
-        json_schema: str | None = None,
-        ignore_eos: bool = False,
-    ) -> None:
-        super().__init__(
-            cache_seq_id=cache_seq_id,
-            prompt=prompt,
-            max_length=max_length,
-            tokens=tokens,
-            log_probabilities=log_probabilities,
-            log_probabilities_echo=log_probabilities_echo,
-            json_schema=json_schema,
-            ignore_eos=ignore_eos,
-        )
-        self.pixel_values = pixel_values
-        self.extra_model_args = extra_model_args
+    pixel_values: tuple[npt.NDArray[np.floating[Any]], ...] = msgspec.field(
+        default_factory=tuple
+    )
+    extra_model_args: dict[str, npt.NDArray[Any]] = msgspec.field(
+        default_factory=dict
+    )
+
+    # Flag to track whether vision encoding is still needed.
+    _needs_vision_encoding: bool = msgspec.field(default=True)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if len(self.pixel_values) > 1:
+            raise ValueError("only one image supported in TextAndVisionContext")
+        self._needs_vision_encoding = bool(self.pixel_values)
+
+    @property
+    def needs_vision_encoding(self) -> bool:
+        """Gets whether vision encoding is needed for this context."""
+        return self._needs_vision_encoding and bool(self.pixel_values)
+
+    @needs_vision_encoding.setter
+    def needs_vision_encoding(self, value: bool) -> None:
+        """Sets whether vision encoding is needed.
+
+        Args:
+            value: True if vision encoding is needed, False if already complete.
+        """
+        self._needs_vision_encoding = value
 
     def update(
         self,
         new_token: int,
         log_probabilities: Optional[LogProbabilities] = None,
-        is_eos: bool = False,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        super().update(
-            new_token=new_token,
-            log_probabilities=log_probabilities,
-            is_eos=is_eos,
-        )
+        super().update(new_token=new_token, log_probabilities=log_probabilities)
 
-        # Update context not to re-encode the same image in next steps. There are no image tokens
-        # expected after context encoding.
-        self.pixel_values = ()
+        # Vision encoding is no longer needed after token generation starts.
+        self.needs_vision_encoding = False
+
+    def reset(self) -> None:
+        """Resets the context's state by combining all tokens into a new prompt."""
+        super().reset()
+        # Re-enable vision encoding on reset (e.g., after preemption).
+        self.needs_vision_encoding = bool(self.pixel_values)
+
+
+SPEECH_TOKEN_audio_chunk_size = 128
+
+
+class TTSContext(TextContext):
+    """A context for Text-to-Speech (TTS) model inference.
+
+    This class extends TextContext to handle speech token generation and management.
+    It maintains buffers for audio prompt tokens and generated speech tokens, along
+    with tracking indices for decoding progress.
+
+    Configuration:
+        audio_prompt_tokens: Array of input audio prompt tokens used for voice cloning
+        streaming: Whether the request is streaming the audio to client
+        _speech_token_size: Size of the speech token buffer, defaults to SPEECH_TOKEN_audio_chunk_size
+        _speech_token_end_idx: Index marking the end of valid speech tokens
+        _speech_tokens: Buffer containing the generated speech tokens
+        _decoded_index: Index tracking how many tokens have been decoded to audio
+        _block_counter: Counter tracking number of speech token blocks generated
+    """
+
+    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
+        default_factory=lambda: np.array([], dtype=np.int32)
+    )
+
+    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = msgspec.field(
+        default=None
+    )
+
+    # For silence detection.
+    audio_buffer: npt.NDArray[np.floating[Any]] | None = msgspec.field(
+        default=None
+    )
+    prev_samples_beyond_offset: int = msgspec.field(default=0)
+
+    streaming: bool = msgspec.field(default=False)
+
+    # Fields for tracking the state of speech token or audio generation.
+    _speech_token_size: int = msgspec.field(
+        default=SPEECH_TOKEN_audio_chunk_size
+    )
+    _speech_token_end_idx: int = msgspec.field(default=0)
+    _speech_tokens: npt.NDArray[np.integer[Any]] = msgspec.field(
+        default_factory=lambda: np.zeros(
+            SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
+        )
+    )
+    decoded_index: int = msgspec.field(default=0)
+    _block_counter: int = msgspec.field(default=0)
+    _arrival_time: float = msgspec.field(default_factory=lambda: time.time())
+
+    audio_generation_status: GenerationStatus = msgspec.field(
+        default=GenerationStatus.ACTIVE
+    )
+
+    @property
+    def is_done(self) -> bool:
+        return self.audio_generation_status.is_done
+
+    @property
+    def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        return self._speech_tokens[: self._speech_token_end_idx]
+
+    @property
+    def block_counter(self) -> int:
+        return self._block_counter
+
+    def update_speech_tokens(
+        self, new_tokens: npt.NDArray[np.integer[Any]]
+    ) -> None:
+        """Updates the next_tokens"""
+        self._upsize_speech_tokens(len(new_tokens))
+        self._speech_tokens[
+            self._speech_token_end_idx : self._speech_token_end_idx
+            + len(new_tokens)
+        ] = new_tokens
+        self._speech_token_end_idx += len(new_tokens)
+        self._block_counter += 1
+
+    def _upsize_speech_tokens(self, new_size: int) -> None:
+        if self._speech_token_end_idx + new_size >= self._speech_token_size:
+            self._speech_token_size += (
+                math.ceil(new_size / SPEECH_TOKEN_audio_chunk_size)
+            ) * SPEECH_TOKEN_audio_chunk_size
+            self._speech_tokens = np.resize(
+                self._speech_tokens, self._speech_token_size
+            )
+
+    def next_speech_tokens(
+        self, audio_chunk_size: int | None = None, buffer: int | None = None
+    ) -> tuple[npt.NDArray[np.integer[Any]], int]:
+        """Returns a chunk of the next unseen speech tokens.
+
+        Calling this function will *not* update the index of the last seen
+        token. This must be done by setting `decoded_index` after the chunk
+        is processed.
+
+        Args:
+            audio_chunk_size: The number of speech tokens to return.
+            buffer: The number of previous speech tokens to pass to the audio
+                decoder on each generation step.
+
+        Returns:
+            A tuple of (chunk of speech tokens, buffer).
+        """
+        start_idx = self.decoded_index
+        if buffer is not None:
+            buffer = min(buffer, start_idx)
+            start_idx = max(0, start_idx - buffer)
+
+        end_idx = self._speech_token_end_idx
+        if audio_chunk_size is not None:
+            end_idx = min(end_idx, self.decoded_index + audio_chunk_size)
+
+        chunk = self._speech_tokens[start_idx:end_idx]
+
+        return chunk, buffer or 0
+
+    def has_undecoded_speech_tokens(self, exclude_last_n: int = 0) -> bool:
+        """Checks whether there are undecoded speech tokens.
+
+        Args:
+            exclude_last_n: Number of tokens to exclude from the end when
+                checking for undecoded tokens. For example, if set to 1,
+                the last token will not be considered when checking for
+                undecoded tokens.
+
+        Returns:
+            True if there are undecoded speech tokens (excluding the last n tokens),
+            False otherwise.
+        """
+        return self.decoded_index < self._speech_token_end_idx - exclude_last_n

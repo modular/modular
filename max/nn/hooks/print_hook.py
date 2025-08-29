@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import deque
+from collections.abc import Generator
 from typing import Any, Optional
 
 from max.graph import TensorValue
@@ -35,7 +36,7 @@ class PrintHook(BasePrintHook):
     print ops can be added to the graph.
     """
 
-    def __init__(self, export_path: Optional[str] = None):
+    def __init__(self, export_path: Optional[str] = None) -> None:
         super().__init__(export_path=export_path)
         add_layer_hook(self)
         if export_path is not None:
@@ -44,7 +45,7 @@ class PrintHook(BasePrintHook):
                 " to stdout with COMPACT format."
             )
 
-    def name_layers(self, model: Layer):
+    def name_layers(self, model: Layer) -> None:
         """Create names for all layers in the model based on nested attributes."""
         for layer, name in _walk_layers(model):
             self.add_layer(layer, name)
@@ -61,20 +62,20 @@ class PrintHook(BasePrintHook):
             return True
         return False
 
-    def remove(self):
+    def remove(self) -> None:
         super().remove()
         clear_hooks()  # TODO: Add individual hook remover.
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.summarize()
 
 
 _SUPPORTED_TYPES = (Layer, list, tuple)
 
 
-def _walk_layers(model):
+def _walk_layers(model: Layer) -> Generator[tuple[Layer, str], None, None]:
     """Walks through model and yields all layers with generated names."""
-    seen = IdentitySet()
+    seen = IdentitySet[Layer]()
     seen.add(model)
     queue: deque[tuple[Any, str]] = deque([(model, "model")])
 

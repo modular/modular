@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """The attention mechanism used within the model."""
 
-from .attention import Attention, AttentionQKV
 from .attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeQKV,
@@ -20,27 +19,41 @@ from .attention_with_rope import (
     DistributedAttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
-    LatentAttentionWithRope,
 )
 from .interfaces import (
     AttentionImpl,
     AttentionImplQKV,
     DistributedAttentionImpl,
 )
+from .mask_config import (
+    AttentionMaskVariant,
+    MHAMaskConfig,
+    MHAMaskVariant,
+    PositionalEncodingVariant,
+)
+from .multi_latent_attention import (
+    DistributedLatentAttentionWithRope,
+    LatentAttentionWithRope,
+)
+from .multihead_attention import MultiheadAttention
 from .ragged_attention import RaggedAttention
 
 __all__ = [
-    "Attention",
-    "AttentionQKV",
     "AttentionImpl",
     "AttentionImplQKV",
+    "AttentionMaskVariant",
+    "AttentionWithRope",
+    "AttentionWithRopeQKV",
     "AttentionWithRopeV1",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
-    "AttentionWithRopeQKV",
-    "RaggedAttention",
-    "AttentionWithRope",
-    "GPTQAttentionWithRope",
+    "DistributedLatentAttentionWithRope",
     "GGUFQAttentionWithRope",
+    "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
+    "MHAMaskConfig",
+    "MHAMaskVariant",
+    "MultiheadAttention",
+    "PositionalEncodingVariant",
+    "RaggedAttention",
 ]

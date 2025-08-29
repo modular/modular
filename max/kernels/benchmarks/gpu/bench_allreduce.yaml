@@ -17,7 +17,7 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce.mojo
 params:
 # Test hyperparameters.
 - dtype: [DType.bfloat16, DType.float32]
-  num_gpus: [2, 4, 8]
+  num_gpus: [2, 4]
   rank: [1]
 
   # Test configurations covering edge cases

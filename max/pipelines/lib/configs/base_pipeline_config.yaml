@@ -1,0 +1,57 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Base Pipeline Configuration
+# This is a base configuration that can be inherited by other configurations.
+# It contains the default values for all MAXConfig classes.
+
+# NOTE: THIS IS A WORK IN PROGRESS - (default) config values here may be incorrect
+# incomplete and/or not parsed in any codepath yet!
+
+# --------------- START MAXConfigs ------------------------------ #
+
+# KV Cache Configuration - matches fields in KVCacheConfig
+kv_cache_config:
+  cache_strategy: model_default
+  kv_cache_page_size: 128
+  enable_prefix_caching: false
+  enable_kvcache_swapping_to_host: false
+  device_memory_utilization: 0.9
+  host_kvcache_swap_space_gb: 50.0
+
+# Sampling Configuration - matches fields in SamplingConfig  
+sampling_config:
+  in_dtype: float32
+  out_dtype: float32
+  enable_structured_output: false
+  enable_variable_logits: false
+  do_penalties: false
+  enable_min_tokens: false
+
+# Profiling Configuration - matches fields in ProfilingConfig
+profiling_config:
+  gpu_profiling: off
+
+# LoRA Configuration - matches fields in LoRAConfig
+lora_config:
+  enable_lora: false
+  lora_paths: []
+  max_lora_rank: 16
+  max_num_loras: 100
+
+# Example future config section (would be auto-discovered if the class exists)
+# TODO: Add PipelineConfig and MAXModelConfig
+# pipeline_config:
+#   engine: None
+#   max_length: 2048
+#   batch_size: 32

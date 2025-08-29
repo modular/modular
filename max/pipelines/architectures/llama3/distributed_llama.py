@@ -20,28 +20,26 @@ import logging
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
+    MLP,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
-    DistributedMLP,
-    DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
     Linear,
-    Llama3RotaryEmbedding,
+    RMSNorm,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheStrategy,
 )
 
 logger = logging.getLogger("max.pipelines")
-from .model_config import Llama3Config
+from .model_config import Llama3Config, create_rope_embedding
 
 
 class DistributedLlama3(DistributedTransformer):
-    def __init__(self, config: Llama3Config):
+    def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
 
         if config.quantization_config:
@@ -51,7 +49,7 @@ class DistributedLlama3(DistributedTransformer):
 
         if config.stacked_mlp:
             raise ValueError(
-                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs.",
+                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs."
             )
 
         if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
@@ -60,61 +58,90 @@ class DistributedLlama3(DistributedTransformer):
                 "None for model that uses `RMSNorm`."
             )
 
-        rope = Llama3RotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
+        rope = create_rope_embedding(
+            hidden_size=config.hidden_size,
+            num_attention_heads=config.num_attention_heads,
+            rope_theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            interleaved=config.interleaved_rope_weights,
-            scaling_params=config.rope_scaling_params,
+            interleaved_rope_weights=config.interleaved_rope_weights,
+            rope_scaling_params=config.rope_scaling_params,
+            longrope_scaling_params=config.longrope_scaling_params,
             device=config.devices[0],
         )
 
         create_distributed_norm = functools.partial(
-            DistributedRMSNorm,
+            RMSNorm,
             dim=config.hidden_size,
             dtype=config.norm_dtype or config.dtype,
             eps=config.rms_norm_eps,
-            devices=config.devices,
         )
 
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
+        fp8_cfg = config.float8_config
+        linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
 
-        layers = [
-            DistributedTransformerBlock(
-                attention=DistributedAttentionWithRope(
-                    stacked_qkv=config.stacked_qkv,
-                    scale=config.attention_multiplier,
-                    clip_qkv=config.clip_qkv,
-                    num_attention_heads=config.num_attention_heads,
-                    num_key_value_heads=config.num_key_value_heads,
-                    hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
-                    dtype=config.dtype,
-                    rope=rope,
-                    linear_cls=linear_cls,
-                    devices=config.devices,
-                    float8_config=config.float8_config,
-                ),
-                mlp=DistributedMLP(
-                    config.dtype,
-                    config.model_quantization_encoding,
-                    config.hidden_size,
-                    config.intermediate_size,
-                    config.devices,
-                    linear_cls,
-                ),
-                attention_norm=create_distributed_norm(),
-                mlp_norm=create_distributed_norm(),
-                devices=config.devices,
-                use_subgraph=config.use_subgraphs,
-                # TODO: Support residual_multiplier
-                # residual_multiplier=config.residual_multiplier,
+        layers = []
+        for layer_idx in range(config.num_hidden_layers):
+            # Deal with the float8 case where individual layers are ignored
+            # specially: assume bfloat16 dtype for "ignored" layers in fp8
+            # quantized models.
+            attn_qkv_dtype = (
+                DType.bfloat16
+                if fp8_cfg and layer_idx not in fp8_cfg.attn_qkv_in_float8
+                else config.dtype
             )
-            for _ in range(config.num_hidden_layers)
-        ]
+            mlp_dtype = (
+                DType.bfloat16
+                if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
+                else config.dtype
+            )
+
+            mlp = MLP(
+                mlp_dtype,
+                config.model_quantization_encoding,
+                config.hidden_size,
+                config.intermediate_size,
+                config.devices,
+                linear_cls,
+                float8_config=(
+                    fp8_cfg
+                    if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
+                    else None
+                ),
+                dist_gemm_config=config.dist_gemm_config,
+            )
+
+            layers.append(
+                DistributedTransformerBlock(
+                    attention=DistributedAttentionWithRope(
+                        stacked_qkv=config.stacked_qkv,
+                        scale=config.attention_multiplier,
+                        clip_qkv=config.clip_qkv,
+                        num_attention_heads=config.num_attention_heads,
+                        num_key_value_heads=config.num_key_value_heads,
+                        hidden_size=config.hidden_size,
+                        kv_params=config.kv_params,
+                        dtype=attn_qkv_dtype,
+                        rope=rope,
+                        linear_cls=linear_cls,
+                        devices=config.devices,
+                        has_bias=config.attention_bias,
+                        # Only pass the float8 config if this attention layer is quantized.
+                        float8_config=(
+                            fp8_cfg
+                            if fp8_cfg
+                            and (layer_idx in fp8_cfg.attn_qkv_in_float8)
+                            else None
+                        ),
+                    ),
+                    mlp=mlp,
+                    attention_norm=create_distributed_norm(),
+                    mlp_norm=create_distributed_norm(),
+                    devices=config.devices,
+                    distributed_gemm_config=config.dist_gemm_config,
+                    # TODO: Support residual_multiplier
+                    # residual_multiplier=config.residual_multiplier,
+                )
+            )
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
@@ -122,6 +149,8 @@ class DistributedLlama3(DistributedTransformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
+        if fp8_cfg and fp8_cfg.embedding_output_dtype:
+            embedding_output_dtype = fp8_cfg.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
@@ -135,19 +164,14 @@ class DistributedLlama3(DistributedTransformer):
             config.vocab_size,
             embedding_output_dtype,
             devices=config.devices,
+            tied_weight=(
+                embedding_layer.weight if config.tie_word_embeddings else None
+            ),
             quantization_encoding=embedding_output_quantization,
         )
 
-        if config.tie_word_embeddings:
-            output.set_shared_weight("weight", embedding_layer.weight)
-
-        kv_collection_cls: (
-            type[FetchContinuousBatchingKVCacheCollection]
-            | type[FetchPagedKVCacheCollection]
-        )
-        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        kv_collection_cls: type[FetchPagedKVCacheCollection]
+        if config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
         else:
             raise ValueError(
@@ -167,7 +191,9 @@ class DistributedLlama3(DistributedTransformer):
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
             devices=config.devices,
+            rope=rope,
             return_logits=config.return_logits,
+            use_subgraphs=config.use_subgraphs,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
             # logits_postprocessor=config.logits_postprocessor,

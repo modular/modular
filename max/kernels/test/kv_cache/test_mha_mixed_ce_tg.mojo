@@ -15,13 +15,12 @@ from collections import Set
 from math import ceildiv, isqrt
 from random import random_ui64
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -39,11 +38,11 @@ def execute_ragged_flash_attention():
     var num_layers = 1
     var layer_idx = 0
 
-    var true_ce_prompt_lens = List[Int](100, 200, 300, 400)
-    var mixed_ce_prompt_lens = List[Int](50, 100, 150, 100)
+    var true_ce_prompt_lens = [100, 200, 300, 400]
+    var mixed_ce_prompt_lens = [50, 100, 150, 100]
 
-    var true_ce_cache_lens = List[Int](0, 0, 0, 0)
-    var mixed_ce_cache_lens = List[Int](50, 100, 150, 300)
+    var true_ce_cache_lens = [0, 0, 0, 0]
+    var mixed_ce_cache_lens = [50, 100, 150, 300]
 
     var batch_size = len(true_ce_prompt_lens)
 

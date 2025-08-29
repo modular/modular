@@ -10,15 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import InlineArray
-from sys.info import sizeof
+from sys.info import size_of
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import DelRecorder
-from testing import assert_equal, assert_false, assert_true
+from test_utils import CopyCounter, DelRecorder, MoveCounter
+from testing import assert_equal, assert_true
 
 
 def test_array_unsafe_get():
@@ -75,7 +72,7 @@ def test_array_int():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[Int, 3](5)
+    var arr2 = InlineArray[Int, 3](fill=5)
     assert_equal(arr2[0], 5)
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
@@ -147,7 +144,7 @@ def test_array_str():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[String, 3]("hi")
+    var arr2 = InlineArray[String, 3](fill="hi")
     assert_equal(arr2[0], "hi")
     assert_equal(arr2[1], "hi")
     assert_equal(arr2[2], "hi")
@@ -217,8 +214,8 @@ def test_array_unsafe_assume_initialized_constructor_string():
 
 def test_array_contains():
     var arr = InlineArray[String, 3]("hi", "hello", "hey")
-    assert_true(String("hi") in arr)
-    assert_true(not String("greetings") in arr)
+    assert_true("hi" in arr)
+    assert_true(not "greetings" in arr)
 
 
 def test_inline_array_runs_destructors():
@@ -226,7 +223,7 @@ def test_inline_array_runs_destructors():
     var destructor_counter = List[Int]()
     var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
     alias capacity = 32
-    var inline_list = InlineArray[DelRecorder, 4, run_destructors=True](
+    var inline_list = InlineArray[DelRecorder, 4](
         DelRecorder(0, pointer_to_destructor_counter),
         DelRecorder(10, pointer_to_destructor_counter),
         DelRecorder(20, pointer_to_destructor_counter),
@@ -253,18 +250,71 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_sizeof_array[current_type: Copyable & Movable, capacity: Int]():
-    """Testing if `sizeof` the array equals capacity * `sizeof` current_type.
+def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+    """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = sizeof[current_type]()
+    alias size_of_current_type = size_of[current_type]()
     assert_equal(
-        sizeof[InlineArray[current_type, capacity]](),
+        size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
+
+
+def test_move():
+    """Test that moving an InlineArray works correctly."""
+
+    # === 1. Check that the move constructor is called correctly. ===
+
+    var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
+    var copied_arr = arr.copy()
+
+    for i in range(len(arr)):
+        # The elements were moved into the array
+        assert_equal(arr[i].move_count, 1)
+
+    var moved_arr = arr^
+
+    for i in range(len(moved_arr)):
+        # Check that the moved array has the same elements as the copied array
+        assert_equal(copied_arr[i].value, moved_arr[i].value)
+        # Check that the move constructor was called again for each element
+        assert_equal(moved_arr[i].move_count, 2)
+
+    # === 2. Check that the copy constructor is not called when moving. ===
+
+    var arr2 = InlineArray[CopyCounter, 3]({}, {}, {})
+    for i in range(len(arr2)):
+        # The elements were moved into the array and not copied
+        assert_equal(arr2[i].copy_count, 0)
+
+    var moved_arr2 = arr2^
+
+    for i in range(len(moved_arr2)):
+        # Check that the copy constructor was not called
+        assert_equal(moved_arr2[i].copy_count, 0)
+
+    # === 3. Check that the destructor is not called when moving. ===
+
+    var destructor_counter = List[Int]()
+    var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
+    var del_recorder = DelRecorder(0, pointer_to_destructor_counter)
+    var arr3 = InlineArray[DelRecorder, 1](del_recorder)
+
+    assert_equal(len(pointer_to_destructor_counter[]), 0)
+
+    var moved_arr3 = arr3^
+
+    assert_equal(len(pointer_to_destructor_counter[]), 0)
+
+    _ = moved_arr3
+
+    # Double check that the destructor is called when the array is destroyed
+    assert_equal(len(pointer_to_destructor_counter[]), 1)
+    _ = del_recorder
 
 
 def main():
@@ -276,4 +326,5 @@ def main():
     test_array_contains()
     test_inline_array_runs_destructors()
     test_unsafe_ptr()
-    test_sizeof_array[Int, capacity=32]()
+    test_size_of_array[Int, capacity=32]()
+    test_move()

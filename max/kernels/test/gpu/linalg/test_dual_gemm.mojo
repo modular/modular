@@ -15,22 +15,21 @@ from collections import OptionalReg
 from math import exp2
 from os import abort
 from random import rand, randn
-from sys import argv, simdwidthof
+from sys import argv, simd_width_of
 
 import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from linalg._multistage_gemm_gpu import distance, multistage_gemm_kernel
+from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import StaticTuple
@@ -87,7 +86,6 @@ fn multistage_gemm_simple[
         c,
         a,
         b,
-        UnsafePointer[Int32](),
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
@@ -121,10 +119,10 @@ fn naive_dual_gemm[
             binary_lambda_fn=binary_sub,
         ](c01, a, b01, ctx)
 
-        alias simd_width = simdwidthof[
-            c_type, target = _get_gpu_target["sm_80"]()
+        alias simd_width = simd_width_of[
+            c_type, target = get_gpu_target["sm_80"]()
         ]()
-        alias align = alignof[SIMD[c_type, simd_width]]()
+        alias align = align_of[SIMD[c_type, simd_width]]()
 
         var M = c01.dim[0]()
         var N = c01.dim[1]() // 2
@@ -132,7 +130,9 @@ fn naive_dual_gemm[
         @always_inline
         @__copy_capture(c01, N)
         @parameter
-        fn binary[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+        fn binary[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx0: IndexList[rank]):
             var m: Int = idx0[0]
             var n: Int = idx0[1]
             c01.vectorize[1, simd_width]()[
@@ -146,7 +146,7 @@ fn naive_dual_gemm[
         elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
         ctx.synchronize()
     except e:
-        abort(e)
+        abort(String(e))
 
 
 fn runtime_row_major[
@@ -185,7 +185,7 @@ fn test_dual_matmul[
         num_pipeline_stages=4,
         num_k_partitions=1,
     )
-    alias M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.device_info.shared_memory_per_multiprocessor else config
+    alias M256_N28672_K4096_config = M256_N28672_K4096_config_a100 if M256_N28672_K4096_config_a100.shared_mem_usage() <= ctx.default_device_info.shared_memory_per_multiprocessor else config
     alias M512_N28672_K4096_config = MatmulConfig[
         src_type, src_type, dst_type, transpose_b
     ](
@@ -279,7 +279,7 @@ fn test_dual_matmul[
         2 * N, K
     ) if transpose_b else Layout.row_major(K, 2 * N)
     var mat_b01 = ManagedLayoutTensor[src_type, layout_b01](ctx)
-    alias src_simd_width = simdwidthof[src_type]()
+    alias src_simd_width = simd_width_of[src_type]()
 
     var mat_b01v = mat_b01.tensor().vectorize[1, src_simd_width]()
     var mat_b0_tensor = mat_b0.tensor()
@@ -377,7 +377,7 @@ fn test_dual_matmul[
     _ = mat_b01^
 
     alias cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
-    alias dst_simd_width = simdwidthof[dst_type]()
+    alias dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):
         for n in range(N // dst_simd_width):

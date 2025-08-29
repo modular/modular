@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.vendor_blas
-from buffer import DimList, NDBuffer
+from buffer import DimList
 from gpu import barrier
 from gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -34,9 +33,7 @@ from internal_utils import (
     zero,
 )
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
@@ -44,7 +41,6 @@ from layout.tensor_core_async import (
 )
 
 from utils import StaticTuple
-from utils.index import Index
 
 
 fn wgmma_kernel_ss[
@@ -104,10 +100,8 @@ fn wgmma_kernel_ss[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -124,9 +118,11 @@ fn wgmma_kernel_ss[
     var warp_id = thread_idx.x // 32
     var lane_id = thread_idx.x % 32
 
-    var th_local_res = c_gmem.tile[16, WMMA_N](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lane_id)
+    var th_local_res = (
+        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lane_id)
+    )
 
     for i in range(num_output_regs):
         th_local_res[(i // 2) % 2, i // 4][i % 2] = c_reg[i].cast[
@@ -141,7 +137,7 @@ fn wgmma_e4m3_e4m3_f32[
     c_type: DType,
     transpose_b: Bool = False,
     a_reg: Bool = False,
-](ctx: DeviceContext, handle: vendor_blas.Handle) raises:
+](ctx: DeviceContext) raises:
     print(
         "== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => ",
         N,
@@ -218,7 +214,6 @@ fn wgmma_e4m3_e4m3_f32[
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device.tensor,
@@ -245,7 +240,6 @@ fn wgmma_e4m3_e4m3_f32[
 
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref.tensor,
             a_device.tensor,
             b_device_col_major.tensor,
@@ -275,14 +269,13 @@ fn wgmma_e4m3_e4m3_f32[
 
 fn main() raises:
     with DeviceContext() as ctx:
-        with vendor_blas.Handle[vendor_blas.Backend.CUBLASLT]() as handle:
 
-            @parameter
-            for n in range(8, 32, 8):
-                wgmma_e4m3_e4m3_f32[
-                    64,
-                    n,
-                    32,
-                    DType.bfloat16,
-                    True,
-                ](ctx, handle)
+        @parameter
+        for n in range(8, 32, 8):
+            wgmma_e4m3_e4m3_f32[
+                64,
+                n,
+                32,
+                DType.bfloat16,
+                True,
+            ](ctx)

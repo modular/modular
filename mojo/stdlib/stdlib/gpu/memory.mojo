@@ -26,24 +26,23 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections import OptionalReg
 from collections.string import StaticString
+from collections.optional import OptionalReg
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
-    alignof,
-    bitwidthof,
+    align_of,
+    bit_width_of,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    sizeof,
+    size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_9x_or_newer, CompilationTarget
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
-from memory import UnsafePointer
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.pointer import _GPUAddressSpace
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
@@ -52,7 +51,7 @@ from memory.unsafe import bitcast
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
+from ._utils import to_i16, to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
 from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
@@ -400,7 +399,7 @@ struct Fill:
         """
         return self != other
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the fill pattern.
 
@@ -426,7 +425,7 @@ struct Fill:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Consistency(Copyable, Movable, EqualityComparable):
+struct Consistency(Copyable, EqualityComparable, Movable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -470,17 +469,6 @@ struct Consistency(Copyable, Movable, EqualityComparable):
             True if the consistency levels are equal, False otherwise.
         """
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two Consistency instances are not equal.
-
-        Args:
-            other: The Consistency instance to compare against.
-
-        Returns:
-            True if the consistency levels are different, False otherwise.
-        """
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         """Tests if two Consistency instances are identical.
@@ -622,7 +610,7 @@ struct ReduceOp:
         """
         return self != other
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the reduction operation.
 
@@ -697,17 +685,17 @@ fn _mark_eviction[
 
 @always_inline("nodebug")
 fn async_copy[
-    type: DType, //,
+    dtype: DType, //,
     size: Int,
     *,
-    fill: OptionalReg[Scalar[type]] = None,
+    fill: OptionalReg[Scalar[dtype]] = None,
     bypass_L1_16B: Bool = True,
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
-    src_size: Int32 = 0,
+    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    dst: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    src_size: Int32 = Int32(size),
     predicate: Bool = False,
 ):
     """Asynchronously copies data from global memory to shared memory.
@@ -717,7 +705,7 @@ fn async_copy[
     the PTX cp.async instruction on NVIDIA GPUs.
 
     Parameters:
-        type: The data type to copy (e.g. float32, int32).
+        dtype: The data type to copy (e.g. float32, int32).
         size: Number of bytes to copy (must be 4, 8, or 16).
         fill: Optional fill value for uncopied bytes when src_size < size.
         bypass_L1_16B: If True, bypasses L1 cache for 16-byte copies.
@@ -731,14 +719,14 @@ fn async_copy[
         predicate: Optional predicate to conditionally execute the copy.
 
     Constraints:
-        - Fill value only supported for types <= 32 bits.
+        - Fill value only supported for dtypes <= 32 bits.
         - Size must be 4, 8, or 16 bytes.
         - Cannot enable both L2 prefetch and L1 bypass.
         - L2 prefetch size must be 64, 128, or 256 bytes.
     """
     constrained[
-        not fill or sizeof[type]() <= sizeof[Int32](),
-        "if the fill value is specified, then the type must be 32bit or less",
+        not fill or size_of[dtype]() <= size_of[Int32](),
+        "if the fill value is specified, then the dtype must be 32bit or less",
     ]()
     constrained[size in (4, 8, 16)]()
     constrained[
@@ -754,8 +742,8 @@ fn async_copy[
     if is_amd_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
-        alias n_scalars = size // sizeof[type]()
-        var n_src_scalars = src_size // sizeof[type]()
+        alias n_scalars = size // size_of[dtype]()
+        var n_src_scalars = src_size // size_of[dtype]()
 
         @parameter
         if fill:
@@ -813,15 +801,15 @@ fn async_copy[
 
         # Pack filling values into 4B registers.
         @always_inline
-        fn _i32_repr[fill: Scalar[type]]() -> Int32:
+        fn _i32_repr[fill: Scalar[dtype]]() -> Int32:
             @parameter
-            if sizeof[type]() == 1:
+            if size_of[dtype]() == 1:
                 return bitcast[DType.int32, 1](
-                    SIMD[type, 4](fill, fill, fill, fill)
+                    SIMD[dtype, 4](fill, fill, fill, fill)
                 )
-            elif sizeof[type]() == 2:
-                return bitcast[DType.int32, 1](SIMD[type, 2](fill, fill))
-            elif sizeof[type]() == 4:
+            elif size_of[dtype]() == 2:
+                return bitcast[DType.int32, 1](SIMD[dtype, 2](fill, fill))
+            elif size_of[dtype]() == 4:
                 return bitcast[DType.int32](fill)
 
             return 0
@@ -902,6 +890,13 @@ fn async_copy_commit_group():
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.commit.group", NoneType]()
+    elif is_amd_gpu() or not is_gpu():
+        # This operation is a no-op on AMD and CPU.
+        pass
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="async_copy_commit_group"
+        ]()
 
 
 @always_inline
@@ -925,6 +920,13 @@ fn async_copy_wait_group(n: Int32):
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.group", NoneType](n)
+    elif is_amd_gpu() or not is_gpu():
+        # This operation is a no-op on AMD and CPU.
+        pass
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="async_copy_wait_group"
+        ]()
 
 
 @always_inline
@@ -946,16 +948,23 @@ fn async_copy_wait_all():
     @parameter
     if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
+    elif is_amd_gpu() or not is_gpu():
+        # This operation is a no-op on AMD and CPU.
+        pass
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="async_copy_wait_all"
+        ]()
 
 
 @always_inline
 fn external_memory[
-    type: AnyTrivialRegType,
+    dtype: AnyTrivialRegType,
     *,
     address_space: _AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[type, address_space=address_space, alignment=alignment]:
+]() -> UnsafePointer[dtype, address_space=address_space, alignment=alignment]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -963,7 +972,7 @@ fn external_memory[
     address space with the given alignment requirements.
 
     Parameters:
-        type: The type of elements stored in the memory. Must be a trivial register type.
+        dtype: The dtype of elements stored in the memory. Must be a trivial register dtype.
         address_space: The memory address space to allocate in (e.g. shared, global).
         alignment: The minimum alignment requirement in bytes for the allocated memory.
         name: Optional symbolic name for the external memory allocation. Defaults to
@@ -981,11 +990,11 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[type, 0], address_space=address_space, alignment=alignment
+        StaticTuple[dtype, 0], address_space=address_space, alignment=alignment
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
-                StaticTuple[type, 0],
+                StaticTuple[dtype, 0],
                 address_space=address_space,
                 alignment=alignment,
             ]._mlir_type,
@@ -993,7 +1002,7 @@ fn external_memory[
             alignment = alignment.value,
         ]()
     )
-    return extern_ptr_symbol.bitcast[type]()
+    return extern_ptr_symbol.bitcast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1003,9 +1012,9 @@ fn external_memory[
 
 @always_inline
 fn fence_proxy_tensormap_generic_sys_acquire[
-    type: AnyType,
+    dtype: AnyType,
 ](
-    ptr: UnsafePointer[type, address_space = GPUAddressSpace.GENERIC, **_],
+    ptr: UnsafePointer[dtype, address_space = GPUAddressSpace.GENERIC, **_],
     size: Int32,
 ):
     """Acquires a system-wide memory fence for tensor map operations.
@@ -1015,7 +1024,7 @@ fn fence_proxy_tensormap_generic_sys_acquire[
     memory operations are completed before subsequent tensor map accesses.
 
     Parameters:
-        type: The data type of the tensor map object being synchronized.
+        dtype: The data type of the tensor map object being synchronized.
 
     Args:
         ptr: Pointer to the tensor map object in system memory that needs to be synchronized.
@@ -1050,12 +1059,12 @@ fn fence_proxy_tensormap_generic_sys_release():
 
 
 @always_inline
-fn tma_store_fence():
-    """Establishes a memory fence for shared memory stores in TMA operations.
+fn fence_async_view_proxy():
+    """Establishes a memory fence for shared memory view operations.
 
     This function creates a memory barrier that ensures all previous shared memory
-    stores are completed before subsequent TMA (Tensor Memory Access) store operations
-    begin. This is crucial for maintaining memory consistency in tensor operations.
+    stores are completed before subsequent shared memory view operations begin.
+    This is crucial for maintaining memory consistency.
 
     Note:
 
@@ -1084,14 +1093,17 @@ fn fence_mbarrier_init():
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
 
 
-@always_inline
+@always_inline("nodebug")
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier
     rank: Int,  # Dimensionality of the tensor (1, 2, or 3)
+    /,
+    *,
+    cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: UnsafePointer[NoneType],
+    tma_descriptor: OpaquePointer,
     mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
 ):
@@ -1105,6 +1117,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
         rank: The dimensionality of the tensor (1, 2, or 3).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1127,45 +1140,105 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     """
     constrained[rank <= 3, "Expecting rank-1 or rank-2 tensors"]()
 
+    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    alias tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d",
+        ".cta_group::",
+        cta_group,
+        ".shared::cluster.global.mbarrier::complete_tx::bytes",
+    )
+
     @parameter
     if rank == 3:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_i32(coords[2]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_i32(coords[2]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+            )
     elif rank == 2:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+            )
     else:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3}], [$2];",
+                NoneType,
+                constraints="r,l,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+            )
 
 
 @always_inline
 fn cp_async_bulk_tensor_shared_cluster_global_multicast[
-    dst_type: AnyType, mbr_type: AnyType, rank: Int
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    rank: Int,
+    /,
+    *,
+    cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: UnsafePointer[NoneType],
+    tma_descriptor: OpaquePointer,
     mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
     multicast_mask: UInt16,
@@ -1181,6 +1254,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         dst_type: The data type of the destination tensor elements.
         mbr_type: The data type of the memory barrier.
         rank: The dimensionality of the tensor (must be 1 or 2).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1206,28 +1280,69 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
+    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    alias tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d",
+        ".cta_group::",
+        cta_group,
+        ".shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster",
+    )
+
     @parameter
     if rank == 2:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_llvm_shared_mem_ptr(mem_bar),
-            to_i16(multicast_mask),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4, $5}], [$2], $3;",
+                NoneType,
+                constraints="r,l,r,h,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                multicast_mask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+            )
     else:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_llvm_shared_mem_ptr(mem_bar),
-            to_i16(multicast_mask),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4}], [$2], $3;",
+                NoneType,
+                constraints="r,l,r,h,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                multicast_mask,
+                Int32(coords[0]),
+            )
 
 
 @always_inline
@@ -1238,7 +1353,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: UnsafePointer[NoneType],
+    tma_descriptor: OpaquePointer,
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation to transfer tensor data from shared CTA
@@ -1305,7 +1420,7 @@ fn cp_async_bulk_tensor_reduce[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
-    tma_descriptor: UnsafePointer[NoneType],
+    tma_descriptor: OpaquePointer,
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous reduction operation between shared CTA memory and global memory
@@ -1318,7 +1433,7 @@ fn cp_async_bulk_tensor_reduce[
     Parameters:
         src_type: The data type of the source tensor elements.
         rank: The dimensionality of the tensor (must be 1 or 2).
-        reduction_kind: The type of reduction operation to perform. Supported operations are:
+        reduction_kind: The dtype of reduction operation to perform. Supported operations are:
                        "add", "min", "max", "inc", "dec", "and", "or", "xor".
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to `EVICT_NORMAL`.
@@ -1381,22 +1496,22 @@ fn cp_async_bulk_tensor_reduce[
 
 @always_inline
 fn _load_impl[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = align_of[Scalar[dtype]]() if is_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
     This function provides low-level control over cache behavior and memory access patterns
     for loading data from global memory into vector registers.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1420,7 +1535,7 @@ fn _load_impl[
         ptr.address_space == _GPUAddressSpace.GENERIC,
         "must be global address space",
     ]()
-    constrained[type.is_numeric(), "type must be numeric"]()
+    constrained[dtype.is_numeric(), "type must be numeric"]()
 
     @parameter
     if is_amd_gpu():
@@ -1432,33 +1547,33 @@ fn _load_impl[
     if prefetch_size:
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
-    alias bytes_to_load = sizeof[type]() * width
-    alias type_bitwidth = bitwidthof[type]()
+    alias bytes_to_load = size_of[dtype]() * width
+    alias dtype_bitwidth = bit_width_of[dtype]()
 
     @parameter
-    if bytes_to_load < sizeof[DType.uint32]():
+    if bytes_to_load < size_of[DType.uint32]():
         return ptr.load[width=width, alignment=alignment]()
 
     @parameter
-    if type.is_floating_point() or type.is_signed():
-        return bitcast[type, width](
+    if dtype.is_floating_point() or dtype.is_signed():
+        return bitcast[dtype, width](
             _load_impl[
                 width=width,
                 prefetch_size=prefetch_size,
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
                 alignment=alignment,
-            ](ptr.bitcast[Scalar[_uint_type_of_width[type_bitwidth]()]]())
+            ](ptr.bitcast[Scalar[_uint_type_of_width[dtype_bitwidth]()]]())
         )
 
     @parameter
     if (
-        type_bitwidth <= 16
-        and sizeof[DType.uint32]() <= bytes_to_load < sizeof[DType.uint64]()
+        dtype_bitwidth <= 16
+        and size_of[DType.uint32]() <= bytes_to_load < size_of[DType.uint64]()
     ):
-        return bitcast[type, width](
+        return bitcast[dtype, width](
             _load_impl[
-                width = (bytes_to_load // sizeof[DType.uint32]()),
+                width = (bytes_to_load // size_of[DType.uint32]()),
                 prefetch_size=prefetch_size,
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
@@ -1466,7 +1581,7 @@ fn _load_impl[
             ](ptr.bitcast[UInt32]())
         )
 
-    alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
+    alias dtype_mnemonic = "u" + _int_to_str[dtype_bitwidth]()
     alias cache_policy_mnemonic = cache_policy.mnemonic()
     alias eviction_policy_mnemonic = (
         ".L1::" + eviction_policy.mnemonic()
@@ -1482,37 +1597,37 @@ fn _load_impl[
     )
     alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
-    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + type_mnemonic
+    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + dtype_mnemonic
 
-    var res = SIMD[type, width]()
+    var res = SIMD[dtype, width]()
 
     @parameter
     if width == 1:
         var tmp = inlined_assembly[
             "ld.global " + cache_policy_inst + cache_operation + " $0, [$2];",
-            Scalar[type],
+            Scalar[dtype],
             constraints="=r,l,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0])
-        return SIMD[type, width](tmp)
+        return SIMD[dtype, width](tmp)
     elif width == 2:
         var tmp = inlined_assembly[
             instruction_name + " {$0, $1}, [$2];",
-            _RegisterPackType[Scalar[type], Scalar[type]],
+            _RegisterPackType[Scalar[dtype], Scalar[dtype]],
             constraints="=r,=r,l,r,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1])
-        return SIMD[type, width](tmp[0], tmp[1])
+        return SIMD[dtype, width](tmp[0], tmp[1])
     elif width == 4:
         var tmp = inlined_assembly[
             instruction_name + " {$0, $1, $2, $3}, [$4];",
             _RegisterPackType[
-                Scalar[type], Scalar[type], Scalar[type], Scalar[type]
+                Scalar[dtype], Scalar[dtype], Scalar[dtype], Scalar[dtype]
             ],
             constraints="=r,=r,=r,=r,l,r,r,r,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
-        return SIMD[type, width](tmp[0], tmp[1], tmp[2], tmp[3])
+        return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
 
     var lhs = _load_impl[
         width = width // 2,
@@ -1528,27 +1643,27 @@ fn _load_impl[
         eviction_policy=eviction_policy,
         alignment=alignment,
     ](ptr + width // 2)
-    return rebind[SIMD[type, width]](lhs.join(rhs))
+    return lhs.join(rhs)._refine[size=width]()
 
 
 @always_inline
 fn load[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
     cache behavior and memory access patterns.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1575,15 +1690,15 @@ fn load[
 @always_inline
 fn load[
     OffsetType: Indexer,
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]], offset: OffsetType) -> SIMD[type, width]:
+    alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]], offset: OffsetType) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1591,7 +1706,7 @@ fn load[
 
     Parameters:
         OffsetType: Type of the offset value.
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1622,7 +1737,7 @@ fn load[
 
 @always_inline("nodebug")
 fn _get_multimem_ld_reduce_asm[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     reduction: ReduceOp,
@@ -1638,63 +1753,69 @@ fn _get_multimem_ld_reduce_asm[
     available on SM90+ GPUs.
 
     Parameters:
-        type: Data type for the operation (float32, float16, or bfloat16).
-        count: Number of elements to load and reduce (2 or 4).
+        dtype: Data dtype for the operation (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
-        accum_type: Data type used for accumulation during reduction. Defaults to
-            float32 for float16/bfloat16 inputs and matches input type for float32.
-        output_width: Width of each output SIMD vector (default 1).
+        accum_type: Data dtype used for accumulation during reduction. Defaults to
+            float32 for float16/bfloat16 inputs and matches input dtype for float32.
+        output_width: Number of elements packed into a single output register (e.g. bf16x2).
 
     Returns:
         A string literal containing the PTX assembly instruction.
 
     Constraints:
         - Only supported on SM90+ GPUs.
-        - Type must be float32, float16, or bfloat16.
-        - Count must be 2 or 4.
+        - Type must be a floating point type.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
     """
+
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[type.is_floating_point(), "type must be floating point"]()
-    constrained[
-        type in (DType.float32, DType.float16, DType.bfloat16),
-        "type must be float32, float16, or bfloat16",
-    ]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.ACQUIRE),
         "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}",
     ]()
+    alias total_bits = count * output_width * size_of[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]()
+    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
     alias op = "." + reduction.mnemonic()
-    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
     )
     alias accum = (
         ".acc::" + _get_type_mnemonic[accum_type]()
-    ) if accum_type is not type else ""
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + type_mnemonic
+    ) if accum_type is not dtype else ""
+    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
     return asm
 
 
 @always_inline("nodebug")
 fn multimem_ld_reduce[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
-    accum_type: DType = get_accum_type[type](),
+    accum_type: DType = get_accum_type[dtype](),
     output_width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-) -> StaticTuple[SIMD[accum_type, output_width], count]:
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+) -> StaticTuple[SIMD[dtype, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
     This function loads multiple values from global memory and performs a reduction
@@ -1702,14 +1823,14 @@ fn multimem_ld_reduce[
     feature available on SM90+ GPUs for improved performance.
 
     Parameters:
-        type: Data type for the operation (float32, float16, or bfloat16).
-        count: Number of elements to load and reduce (2 or 4).
+        dtype: Data dtype for the operation (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
-        accum_type: Data type used for accumulation. Defaults to a wider type than input
+        accum_type: Data dtype used for accumulation. Defaults to a wider dtype than input
                    (e.g. float32 for float16 inputs) to maintain precision during reduction.
-        output_width: Width of each output SIMD vector (default 1).
+        output_width: Number of elements packed into a single output register (e.g. bf16x2).
 
     Args:
         addr: Pointer to global memory where data will be loaded from.
@@ -1720,13 +1841,22 @@ fn multimem_ld_reduce[
 
     Constraints:
         - Only supported on SM90+ GPUs.
-        - Count must be 2 or 4.
-        - Type must be float32, float16, or bfloat16.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
+        - Type must be a floating point type.
+        - float64 requires count=1 (no .vec qualifier allowed).
     """
-    constrained[count in (2, 4), "count must be 2 or 4"]()
+    alias total_bits = count * output_width * size_of[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias asm = _get_multimem_ld_reduce_asm[
-        type,
+        dtype,
         count=count,
         reduction=reduction,
         scope=scope,
@@ -1736,41 +1866,142 @@ fn multimem_ld_reduce[
     ]()
 
     @parameter
-    if count == 2:
+    if count == 1:
+        var r = inlined_assembly[
+            asm + " {$0}, [$1];",
+            SIMD[dtype, output_width],
+            constraints="=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
+        return StaticTuple[SIMD[dtype, output_width], count](r)
+    elif count == 2:
         var r = inlined_assembly[
             asm + " {$0,$1}, [$2];",
             _RegisterPackType[
-                SIMD[accum_type, output_width], SIMD[accum_type, output_width]
+                SIMD[dtype, output_width], SIMD[dtype, output_width]
             ],
             constraints="=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
-        return StaticTuple[SIMD[accum_type, output_width], count](r[0], r[1])
-
-    @parameter
-    if count == 4:
+        return StaticTuple[SIMD[dtype, output_width], count](r[0], r[1])
+    elif count == 4:
         var r = inlined_assembly[
             asm + " {$0,$1,$2,$3}, [$4];",
             _RegisterPackType[
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
-                SIMD[accum_type, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
             ],
             constraints="=r,=r,=r,=r,l,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType]())
 
-        return StaticTuple[SIMD[accum_type, output_width], count](
+        return StaticTuple[SIMD[dtype, output_width], count](
             r[0], r[1], r[2], r[3]
         )
+    elif count == 8:
+        var r = inlined_assembly[
+            asm + " {$0,$1,$2,$3,$4,$5,$6,$7}, [$8];",
+            _RegisterPackType[
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+                SIMD[dtype, output_width],
+            ],
+            constraints="=r,=r,=r,=r,=r,=r,=r,=r,l,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType]())
 
-    return StaticTuple[SIMD[accum_type, output_width], count]()
+        return StaticTuple[SIMD[dtype, output_width], count](
+            r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+        )
+
+    return StaticTuple[SIMD[dtype, output_width], count]()
+
+
+@always_inline("nodebug")
+fn multimem_ld_reduce[
+    dtype: DType,
+    *,
+    simd_width: Int,
+    reduction: ReduceOp,
+    scope: Scope,
+    consistency: Consistency,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+) -> SIMD[dtype, simd_width]:
+    """Simplified multimem_ld_reduce that automatically calculates optimal packing.
+
+    This wrapper automatically determines the optimal output_width and count
+    parameters based on the requested simd_width and data type, using 32-bit
+    word packing for efficiency.
+
+    Parameters:
+        dtype: Data dtype for the operation (must be a floating point type).
+        simd_width: Total number of elements to process.
+        reduction: Type of reduction operation to perform.
+        scope: Memory scope for the operation.
+        consistency: Memory consistency model to use.
+        accum_type: Data dtype used for accumulation.
+    Args:
+        addr: Pointer to global memory where data will be loaded from.
+
+    Returns:
+        A SIMD vector containing simd_width elements with the reduction results.
+
+    Constraints:
+        - Only supported on SM90+ GPUs.
+        - simd_width must be 1, 2, 4, or 8.
+        - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
+        - Type must be a floating point type.
+        - float64 requires count=1 (no .vec qualifier allowed).
+    """
+    alias output_width = 4 // size_of[dtype]()
+    alias count = simd_width // output_width
+    constrained[
+        simd_width in (1, 2, 4, 8), "simd_width must be 1, 2, 4, or 8"
+    ]()
+    alias total_bits = count * output_width * size_of[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
+
+    var results = multimem_ld_reduce[
+        dtype,
+        count=count,
+        reduction=reduction,
+        scope=scope,
+        consistency=consistency,
+        accum_type=accum_type,
+        output_width=output_width,
+    ](addr)
+
+    # Pack results into a single SIMD vector
+    var result = SIMD[dtype, simd_width]()
+
+    @parameter
+    for i in range(count):
+
+        @parameter
+        for j in range(output_width):
+            result[i * output_width + j] = results[i][j]
+    return result
 
 
 @always_inline("nodebug")
 fn _get_multimem_st_asm[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     scope: Scope,
@@ -1780,37 +2011,42 @@ fn _get_multimem_st_asm[
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[type.is_floating_point(), "type must be floating point"]()
-    constrained[
-        type in (DType.float32, DType.float16, DType.bfloat16),
-        "type must be float32, float16, or bfloat16",
-    ]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
         consistency
         in (Consistency.WEAK, Consistency.RELAXED, Consistency.RELEASE),
         "multimem.st consistency must be in {weak, relaxed, release}",
     ]()
+    alias total_bits = count * width * size_of[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]()
-    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
+    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[width]() if width > 1 else ""
     )
-    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + type_mnemonic
+    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + dtype_mnemonic
     return asm
 
 
 @always_inline("nodebug")
 fn multimem_st[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     scope: Scope,
     consistency: Consistency,
     width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-    values: StaticTuple[SIMD[type, width], count],
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
     """Stages an inline multimem.st instruction.
 
@@ -1818,9 +2054,8 @@ fn multimem_st[
     multimem address using the specified memory consistency model and scope.
 
     Parameters:
-        type: The data type of elements to store (must be float16, bfloat16, or
-            float32).
-        count: Number of vector elements per store operation (2 or 4).
+        dtype: The data type of elements to store (must be a floating point type).
+        count: Vector size for PTX (corresponds to .v2, .v4, .v8 qualifiers, or no .v for scalar).
         scope: Memory scope for visibility of the store operation
             (CTA/Cluster/GPU/System).
         consistency: Memory consistency semantics (weak/relaxed/release).
@@ -1836,9 +2071,10 @@ fn multimem_st[
 
     - Requires SM90+ GPU architecture (PTX ISA 8.1+).
     - The address must be a valid multimem address.
-    - Supported type-width combinations must total 32/64/128 bits.
+    - Supported dtype-width combinations must total 32/64/128 bits.
     - Default memory semantics: weak consistency (when not specified).
-    - Vector stores (.v2/.v4) require matching total size constraints.
+    - Vector stores (.v2/.v4/.v8) require matching total size constraints.
+    - float64 requires count=1 (no .vec qualifier allowed).
 
     Example:
 
@@ -1859,10 +2095,18 @@ fn multimem_st[
     See Also:
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
-    constrained[count in (2, 4), "count must be 2 or 4"]()
+    alias total_bits = count * width * size_of[dtype]() * 8
+    constrained[
+        total_bits in (32, 64, 128),
+        "total bit width must be 32, 64, or 128 bits",
+    ]()
+    constrained[
+        dtype != DType.float64 or count == 1,
+        "float64 requires count=1 (no .vec qualifier allowed)",
+    ]()
 
     alias asm = _get_multimem_st_asm[
-        type,
+        dtype,
         count=count,
         scope=scope,
         consistency=consistency,
@@ -1870,7 +2114,14 @@ fn multimem_st[
     ]()
 
     @parameter
-    if count == 2:
+    if count == 1:
+        inlined_assembly[
+            asm + " [$0], {$1};",
+            NoneType,
+            constraints="l,r,~{memory}",
+            has_side_effect=True,
+        ](addr.bitcast[NoneType](), values[0])
+    elif count == 2:
         inlined_assembly[
             asm + " [$0], {$1,$2};",
             NoneType,
@@ -1884,6 +2135,23 @@ fn multimem_st[
             constraints="l,r,r,r,r,~{memory}",
             has_side_effect=True,
         ](addr.bitcast[NoneType](), values[0], values[1], values[2], values[3])
+    elif count == 8:
+        inlined_assembly[
+            asm + " [$0], {$1,$2,$3,$4,$5,$6,$7,$8};",
+            NoneType,
+            constraints="l,r,r,r,r,r,r,r,r,~{memory}",
+            has_side_effect=True,
+        ](
+            addr.bitcast[NoneType](),
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+            values[4],
+            values[5],
+            values[6],
+            values[7],
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1891,22 +2159,26 @@ fn multimem_st[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_mnemonic[type: DType]() -> StaticString:
+fn _get_type_mnemonic[dtype: DType]() -> StaticString:
     """Returns the mnemonic string representation for a given DType.
 
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if type is DType.float32:
+    if dtype is DType.float32:
         return "f32"
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return "f16"
-    elif type is DType.bfloat16:
+    elif dtype is DType.bfloat16:
         return "bf16"
-    if type is DType.float64:
+    elif dtype is DType.float64:
         return "f64"
+    elif dtype is DType.float8_e4m3fn:
+        return "e4m3"
+    elif dtype is DType.float8_e5m2:
+        return "e5m2"
 
-    return "unknown type mnemonic"
+    return "unknown dtype mnemonic"
 
 
 fn _int_to_str[val: Int]() -> StaticString:

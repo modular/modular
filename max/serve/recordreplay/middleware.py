@@ -250,17 +250,12 @@ class _TransactionRecordingContext:
                 headers = list(event["headers"])
                 event["headers"] = headers[:]
                 self._response_start = schema.ResponseStart(
-                    timestamp=_now(),
-                    status=event["status"],
-                    headers=headers,
+                    timestamp=_now(), status=event["status"], headers=headers
                 )
                 # We ignore the presence of trailers (and never record them).
         elif self._include_responses and event["type"] == "http.response.body":
             self._response_chunks.append(
-                schema.ResponseChunk(
-                    timestamp=_now(),
-                    body=event["body"],
-                )
+                schema.ResponseChunk(timestamp=_now(), body=event["body"])
             )
             if not event.get("more_body"):
                 self._response_done = True
@@ -285,12 +280,12 @@ class _TransactionRecordingContext:
             path = raw_path.decode("utf-8")
         else:
             path = urllib.parse.quote(self._scope["path"])
-            # If raw_path is not provided, it's not possible to distinguish
-            # between having _no_ query string (question mark not present at
-            # all) and having an _empty_ query string (question mark followed
-            # by nothing).  We assume the former is more likely.
-            if query_string := self._scope.get("query_string"):
-                path += "?" + query_string.decode("utf-8")
+        # It's not possible to distinguish between having _no_ query string
+        # (question mark not present at all) and having an _empty_ query string
+        # (question mark followed by nothing). We assume the former is more
+        # likely.
+        if query_string := self._scope.get("query_string"):
+            path += "?" + query_string.decode("utf-8")
         request = schema.Request(
             start_timestamp=self._start_timestamp,
             end_timestamp=self._request_done_timestamp,
@@ -301,8 +296,7 @@ class _TransactionRecordingContext:
         )
         if self._response_start is not None:
             response = schema.Response(
-                start=self._response_start,
-                chunks=self._response_chunks,
+                start=self._response_start, chunks=self._response_chunks
             )
         else:
             response = None

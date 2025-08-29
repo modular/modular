@@ -11,26 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
 from collections import InlineArray
 from math import floor
-from sys import env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int, size_of
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
+from comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import arg_parse
-from memory import UnsafePointer
+from internal_utils import arg_parse, init_vector_launch, InitializationType
 from testing import assert_almost_equal, assert_true
 
 from utils.index import IndexList, StaticTuple
@@ -64,66 +60,68 @@ fn _human_memory(size: Int) -> String:
 
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
-    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int
+    dtype: DType, rank: Int, ngpus: Int, max_num_blocks: Int
 ](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
     # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var out_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
-    var length = num_bytes // sizeof[type]()
+    var length = num_bytes // size_of[dtype]()
 
     # Initialize buffers for each GPU
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
-        out_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
+        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        out_bufs_list.append(
+            list_of_ctx[i].enqueue_create_buffer[dtype](length)
+        )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
-        # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[type, rank](host_buffer, DimList(length))
-        host_nd_buf.fill(Scalar[type](i + 1))
+        # Initialize each device buffer i with values (i + 1).0
+        init_vector_launch[dtype](
+            in_bufs_list[i],
+            length,
+            InitializationType.fill,
+            list_of_ctx[i],
+            value=Scalar[dtype](i + 1),
+        )
 
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal]() + temp_buffer_num_bytes
+                size_of[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
-        # Copy data to device
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
-
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        fill={}
     )
-    var out_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        fill={}
     )
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[type, rank](
+        in_bufs[i] = NDBuffer[dtype, rank](
             in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
-        out_bufs[i] = NDBuffer[type, rank](
+        out_bufs[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
         # Ensure setup has propagated.
@@ -131,12 +129,12 @@ fn bench_reduce[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[type, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
     @parameter
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[type, rank](
+        out_bufs_capture[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
@@ -145,14 +143,14 @@ fn bench_reduce[
     @__copy_capture(out_bufs_capture)
     fn outputs_lambda[
         input_index: Int,
-        _type: DType,
+        _dtype: DType,
         _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
         out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val)
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
     @parameter
@@ -173,7 +171,7 @@ fn bench_reduce[
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
-    var name = String(_get_test_str[type](ngpus, num_bytes))
+    var name = String(_get_test_str[dtype](ngpus, num_bytes))
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
@@ -181,7 +179,7 @@ fn bench_reduce[
     )
 
     # Copy results back and verify
-    var expected_sum = Scalar[type](0)
+    var expected_sum = Scalar[dtype](0)
 
     @parameter
     for i in range(ngpus):
@@ -206,8 +204,10 @@ fn bench_reduce[
     _ = signal_buffers^
 
 
-fn _get_test_str[type: DType](ngpus: Int, num_bytes: Int) -> String:
-    return String("allreduce-", type, "-", ngpus, "-", _human_memory(num_bytes))
+fn _get_test_str[dtype: DType](ngpus: Int, num_bytes: Int) -> String:
+    return String(
+        "allreduce-", dtype, "-", ngpus, "-", _human_memory(num_bytes)
+    )
 
 
 def main():
@@ -220,14 +220,14 @@ def main():
     alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
 
     assert_true(DeviceContext.number_of_devices() >= num_gpus)
-    assert_true(num_bytes % sizeof[dtype]() == 0)
+    assert_true(num_bytes % size_of[dtype]() == 0)
 
     # Create GPU context.
     var ctx = List[DeviceContext]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
-    if not can_enable_p2p(ctx):
+    if not can_enable_p2p():
         # Don't benchmark the naive allreduce.
         print("P2P not enabled, skipping benchmark.")
         return
@@ -238,7 +238,7 @@ def main():
     var m = Bench()
 
     bench_reduce[
-        type=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
+        dtype=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
     ](m, ctx, num_bytes)
 
     m.dump_report()

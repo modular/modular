@@ -15,7 +15,7 @@
 # Test the MLIR rewriter C API
 
 import _mlir
-from _mlir import Context, Location, Module, Operation, Rewriter
+from _mlir import Context, Module, Operation, Rewriter
 from testing import assert_equal
 
 

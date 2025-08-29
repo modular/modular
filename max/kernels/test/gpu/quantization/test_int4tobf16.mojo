@@ -13,21 +13,17 @@
 
 # https://github.com/PaddlePaddle/Paddle/blob/3862f8303d2723c03ffb42ce332d4c570906669f/paddle/phi/kernels/funcs/weight_only_gemv.cu#L795
 
-# logic and shift instruciton: lop3
+# logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from sys import has_neon
-from sys.info import is_amd_gpu
+from sys.info import CompilationTarget, is_amd_gpu
 
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
-
-from utils import StaticTuple
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
@@ -96,7 +92,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
 def main():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         with DeviceContext() as ctx:
             test_int4tobfloat16[no_lop=False](ctx)
             test_int4tobfloat16[no_lop=True](ctx)

@@ -12,19 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from os import PathLike, abort
+from os import abort
 from os.atomic import Atomic
 from sys import external_call
-from sys.info import num_physical_cores
-from sys.param_env import is_defined
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from .tracing import TraceLevel
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
@@ -32,7 +28,7 @@ from .tracing import TraceLevel
 
 
 @register_passable("trivial")
-struct _Chain(Boolable):
+struct _Chain(Boolable, Defaultable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -137,7 +133,7 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    owned handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+    var handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
 
@@ -159,7 +155,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(owned handle: Coroutine[*_], out result: handle.type):
+fn _run(var handle: Coroutine[*_], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
@@ -201,8 +197,7 @@ struct Task[type: AnyType, origins: OriginSet]:
     var _result: type
     """Storage for the result value produced by the task."""
 
-    @implicit
-    fn __init__(out self, owned handle: Coroutine[type, origins]):
+    fn __init__(out self, var handle: Coroutine[type, origins]):
         """Initialize a task with a coroutine.
 
         Takes ownership of the provided coroutine and sets up the task to receive
@@ -226,7 +221,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         """
         return self._result
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -279,9 +274,9 @@ struct Task[type: AnyType, origins: OriginSet]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext:
+struct TaskGroupContext(Copyable, Movable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -305,20 +300,10 @@ struct _TaskGroupBox(Copyable, Movable):
 
     var handle: AnyCoroutine
 
-    fn __init__[type: AnyType](out self, owned coro: Coroutine[type]):
-        var handle = coro._handle
-        __disable_del coro
-        self.handle = handle
+    fn __init__[type: AnyType](out self, var coro: Coroutine[type]):
+        self.handle = coro^._take_handle()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
-    fn __del__(owned self):
+    fn __del__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
@@ -326,18 +311,8 @@ struct _TaskGroupBox(Copyable, Movable):
     fn __copyinit__(out self, existing: Self):
         self = abort[Self]("_TaskGroupBox.__copyinit__ should never get called")
 
-    # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
-    # should never get called.
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
 
-        Returns:
-            A copy of this value.
-        """
-        return abort[Self]("_TaskGroupBox.copy should never get called")
-
-
-struct TaskGroup:
+struct TaskGroup(Defaultable):
     """A group of tasks that can be executed concurrently.
 
     TaskGroup manages a collection of coroutines that can be executed in parallel.
@@ -362,13 +337,13 @@ struct TaskGroup:
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(UnsafePointer[_Chain](to=self.chain))
 
     @always_inline
     fn _counter_decr(mut self) -> Int:
-        var prev: Int = self.counter.fetch_sub(1).value
+        var prev: Int = Int(self.counter.fetch_sub(1).value)
         return prev - 1
 
     @staticmethod
@@ -382,7 +357,7 @@ struct TaskGroup:
     fn create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        owned task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type],
     ):
         """Add a new task to the TaskGroup for execution.
 
@@ -396,7 +371,7 @@ struct TaskGroup:
     fn _create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        owned task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type],
         desired_worker_id: Int = -1,
     ):
         # TODO(MOCO-771): Enforce that `task.origins` is a subset of
@@ -452,7 +427,7 @@ struct TaskGroup:
 
 
 @register_passable("trivial")
-struct DeviceContextPtr:
+struct DeviceContextPtr(Defaultable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -461,7 +436,7 @@ struct DeviceContextPtr:
     by the graph compiler.
     """
 
-    var _handle: UnsafePointer[NoneType]
+    var _handle: OpaquePointer
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -470,10 +445,9 @@ struct DeviceContextPtr:
 
         This creates a `DeviceContextPtr` that doesn't point to any device context.
         """
-        self._handle = UnsafePointer[NoneType]()
+        self._handle = OpaquePointer()
 
-    @implicit
-    fn __init__(out self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: OpaquePointer):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
@@ -490,7 +464,7 @@ struct DeviceContextPtr:
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = rebind[UnsafePointer[NoneType]](device._handle)
+        self._handle = rebind[OpaquePointer](device._handle)
 
     fn __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.

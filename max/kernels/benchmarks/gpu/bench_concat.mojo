@@ -13,14 +13,13 @@
 
 from os import abort
 from random import randn
-from sys import env_get_int, sizeof
+from sys import env_get_int, size_of
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from builtin._closure import __ownership_keepalive
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -101,7 +100,7 @@ fn bench_concat[
         # TODO: Pick relevant benchmetric.
         ThroughputMeasure(
             BenchMetric.elements,
-            out_shape.flattened_length() * sizeof[type]() * 2,
+            out_shape.flattened_length() * size_of[type]() * 2,
         ),
     )
 
@@ -112,7 +111,9 @@ fn bench_concat[
         var input = inputs_host[i]
 
         @parameter
-        fn check[width: Int, _rank: Int](coords: IndexList[_rank]):
+        fn check[
+            width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
             var out_coords = coords
             out_coords[axis] += offset
             if (

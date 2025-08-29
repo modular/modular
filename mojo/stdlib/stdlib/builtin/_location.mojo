@@ -16,15 +16,12 @@
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SourceLocation(Writable, Stringable, Copyable, Movable):
+struct _SourceLocation(Copyable, Movable, Stringable, Writable):
     """Type to carry file name, line, and column information."""
 
     var line: Int
     var col: Int
     var file_name: StaticString
-
-    fn __init__(out self, *, other: Self):
-        self = other
 
     @no_inline
     fn __str__(self) -> String:
@@ -42,12 +39,9 @@ struct _SourceLocation(Writable, Stringable, Copyable, Movable):
         """
         return String("At ", self, ": ", msg)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats the source location to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -64,10 +58,7 @@ fn __source_location() -> _SourceLocation:
     Returns:
         The location information of the __source_location() call.
     """
-    var line: __mlir_type.index
-    var col: __mlir_type.index
-    var file_name: __mlir_type.`!kgen.string`
-    line, col, file_name = __mlir_op.`kgen.source_loc`[
+    var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = Int(0).value,
         _type = (
             __mlir_type.index,
@@ -76,11 +67,11 @@ fn __source_location() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, file_name)
+    return _SourceLocation(line, col, StaticString(file_name))
 
 
 @always_inline("nodebug")
-fn __call_location[inline_count: Int = 1]() -> _SourceLocation:
+fn __call_location[*, inline_count: Int = 1]() -> _SourceLocation:
     """Returns the location for where the caller of this function is called. An
     optional `inline_count` parameter can be specified to skip over that many
     levels of calling functions.
@@ -104,10 +95,7 @@ fn __call_location[inline_count: Int = 1]() -> _SourceLocation:
         The location information of where the caller of this function (i.e. the
           function whose body __call_location() is used in) is called.
     """
-    var line: __mlir_type.index
-    var col: __mlir_type.index
-    var file_name: __mlir_type.`!kgen.string`
-    line, col, file_name = __mlir_op.`kgen.source_loc`[
+    var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = inline_count.value,
         _type = (
             __mlir_type.index,
@@ -116,4 +104,4 @@ fn __call_location[inline_count: Int = 1]() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, file_name)
+    return _SourceLocation(line, col, StaticString(file_name))

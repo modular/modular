@@ -13,13 +13,12 @@
 """The utilities provided in this module help normalize the access
 to data elements in arrays."""
 
-from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
 
 @always_inline
 fn normalize_index[
-    I: Indexer, //, container_name: StaticString
+    I: Indexer, //, container_name: StaticString, assert_always: Bool = True
 ](idx: I, length: UInt) -> UInt:
     """Normalize the given index value to a valid index value for the given container length.
 
@@ -28,6 +27,7 @@ fn normalize_index[
     Parameters:
         I: A type that can be used as an index.
         container_name: The name of the container. Used for the error message.
+        assert_always: Toggles "safe" or "none" assert mode for `debug_assert`.
 
     Args:
         idx: The index value to normalize.
@@ -36,6 +36,8 @@ fn normalize_index[
     Returns:
         The normalized index value.
     """
+
+    alias assert_mode = "safe" if assert_always else "none"
 
     @parameter
     if (
@@ -50,7 +52,7 @@ fn normalize_index[
         var i = UInt(index(idx))
         # TODO: Consider a way to construct the error message after the assert has failed
         # something like "Indexing into an empty container" if length == 0 else "..."
-        debug_assert[assert_mode="safe", cpu_only=True](
+        debug_assert[assert_mode=assert_mode, cpu_only=True](
             i < length,
             container_name,
             " index out of bounds: index (",
@@ -79,7 +81,7 @@ fn normalize_index[
         #     Which means UInt(idx + length) signed bit is off
         #     therefore idx + length >= 0
         # in either case we can infer 0 <= idx + length < length
-        debug_assert[assert_mode="safe", cpu_only=True](
+        debug_assert[assert_mode=assert_mode, cpu_only=True](
             i < length,
             container_name,
             " index out of bounds: index (",

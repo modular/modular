@@ -24,6 +24,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.interfaces.request import RequestID
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
@@ -64,7 +65,8 @@ class KVCacheInputs:
                 for item in value:
                     yield from item
             else:
-                yield cast(Tensor, value)
+                assert isinstance(value, Tensor)
+                yield value
 
     @overload
     def __getitem__(self, index: int) -> Tensor: ...
@@ -139,7 +141,7 @@ class KVCacheInputSymbols:
     .. code-block:: python
 
         @dataclass
-        class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
+        class KVCacheInputSymbols(KVCacheInputSymbols):
             kv_blocks: TensorType
             cache_lengths: TensorType
             lookup_table: TensorType
@@ -155,7 +157,7 @@ class KVCacheInputSymbols:
             else:
                 yield value
 
-    def __getitem__(self, index) -> Any:
+    def __getitem__(self, index: int | slice) -> Any:
         return list(self)[index]
 
 
@@ -181,8 +183,10 @@ class KVCacheManager(ABC, Generic[T]):
         self.session = session
 
         # Attributes for managing available slots.
-        self.available = set(range(self.max_batch_size))
-        self.active: set[int] = set()
+        self._available = set(range(self.max_batch_size))
+
+        # Mappings between request IDs and sequence IDs
+        self._request_to_seq_id: dict[RequestID, int] = {}
 
         self.is_ragged = is_ragged
         increment_cache_lengths_graph = (
@@ -223,10 +227,8 @@ class KVCacheManager(ABC, Generic[T]):
 
     @abstractmethod
     def fetch(
-        self,
-        batch: list[T],
-        num_steps: int = 1,
-    ) -> list[KVCacheInputs]:
+        self, batch: Sequence[T], num_steps: int = 1
+    ) -> Sequence[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
         sequence ids and prompts."""
         ...
@@ -234,73 +236,60 @@ class KVCacheManager(ABC, Generic[T]):
     @abstractmethod
     def input_symbols(
         self,
+        devices: Sequence[Device] | None = None,
+        num_layers: int | None = None,
     ) -> Sequence[KVCacheInputSymbols]:
         """Returns the input symbols for the kv cache manager."""
         ...
 
-    def claim(self, n: int) -> list[int]:
-        """Claims ``n`` blocks of memory in the cache for incoming requests.
+    def external_claim(self, request_id: RequestID) -> None:
+        """Reserve a sequence ID for the given request ID."""
+        if request_id in self._request_to_seq_id:
+            raise ValueError(f"Request ID {request_id} is already claimed")
 
-        This returns a list of sequence ids, which identify a sequence's
-        location within the cache. This sequence id can then be passed
-        in the fetch function to return the :obj:`ContinuousBatchingKVCacheCollection`
-        for those sequences.
-        """
-        # TODO we should remove this interface and just use external_claim.
-        seq_ids = []
+        if not self._available:
+            raise ValueError("No available sequence IDs to claim")
 
-        for _ in range(n):
-            seq_id = self.available.pop()
-            self.active.add(seq_id)
-            seq_ids.append(seq_id)
+        # Get the next available sequence ID
+        seq_id = self._available.pop()
 
-        return seq_ids
+        # Update mappings
+        self._request_to_seq_id[request_id] = seq_id
 
-    def external_claim(self, seq_ids: list[int]) -> None:
-        """Variant of the above where sequence ids are reserved externally."""
-        for seq_id in seq_ids:
-            if seq_id in self.active:
-                raise ValueError(
-                    f"Attempted to claim {seq_id} but it is already in active set"
-                )
-
-            self.available.remove(seq_id)
-            self.active.add(seq_id)
-
-    def step(self, batch: list[T]) -> None:
+    def step(self, batch: Sequence[T]) -> None:
         """Commit the new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled."""
         ...
 
-    def release(self, seq_id: int) -> None:
-        """Release :obj:`seq_id` provided, marking this sequence as complete.
-        This returns the :obj:`seq_id` back to the available pool of cache memory,
+    def release(self, request_id: RequestID) -> None:
+        """Release the sequence associated with :obj:`request_id`, marking this sequence as complete.
+        This returns the sequence ID back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
-        if seq_id not in self.active:
+        if request_id not in self._request_to_seq_id:
             raise ValueError(
-                f"Attempted to release {seq_id} but it is not in active set"
+                f"Attempted to release request ID {request_id} but it is not claimed"
             )
 
-        self.active.remove(seq_id)
-        self.available.add(seq_id)
+        # Look up the sequence ID
+        seq_id = self._request_to_seq_id[request_id]
 
-    def contains(self, seq_id: int) -> bool:
-        return seq_id not in self.slots_remaining
+        # Clean up mappings
+        del self._request_to_seq_id[request_id]
 
-    @property
-    def slots_remaining(self) -> set[int]:
-        """The outstanding cache slots available."""
-        return self.available
+        self._available.add(seq_id)
 
-    def num_kv_inputs(self) -> int:
-        """Returns the default number of KV cache inputs for KV managers.
+    def contains(self, request_id: RequestID) -> bool:
+        """Check if the given request ID is currently active in the cache.
 
-        Subclasses with a different number of KV cache inputs should override
-        this method and :obj:`increment_cache_lengths`.
+        Args:
+            request_id: The request ID to check for.
+
+        Returns:
+            True if the request ID is active in the cache, False otherwise.
         """
-        return 4
+        return request_id in self._request_to_seq_id
 
     def increment_cache_lengths(
         self,
@@ -358,8 +347,16 @@ class KVCacheManager(ABC, Generic[T]):
         max_lengths = kv_cache_inputs[0].max_lengths
 
         # Update the cache_lengths of our batch by the previous sequence length.
+        # Handle both single tensor and list of tensors for compatibility
+        if isinstance(prev_model_inputs.input_row_offsets, list):
+            # InternVL case: use the first tensor (row offsets are identical across devices)
+            row_offsets = prev_model_inputs.input_row_offsets[0]
+        else:
+            # Standard case: single tensor
+            row_offsets = prev_model_inputs.input_row_offsets
+
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            prev_model_inputs.input_row_offsets, *cache_lengths
+            row_offsets, *cache_lengths
         )
 
         # Advance to the next step of the max_lengths tensor.
@@ -450,8 +447,9 @@ class KVCacheManager(ABC, Generic[T]):
             "update_cache_lengths",
             input_types=[input_row_offsets_type, *cache_lengths_types],
         ) as graph:
-            inp_row_offset, *cache_lengths = graph.inputs
-            assert isinstance(inp_row_offset, TensorValue)
+            inp_row_offset, *cache_lengths = (
+                inp.tensor for inp in graph.inputs
+            )
             # broadcast the inp_row_offset to all devices (naive)
             # get rid of this if statement after #51465 merges
             if len(self.devices) > 1:

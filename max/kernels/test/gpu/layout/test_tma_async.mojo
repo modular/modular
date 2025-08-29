@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up, ceildiv
-from sys import sizeof
+from sys import size_of
 
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.id import block_idx, thread_idx
-from gpu.memory import ReduceOp, tma_store_fence
+from gpu.memory import ReduceOp, fence_async_view_proxy
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -28,10 +26,9 @@ from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
 
 from utils.index import Index
-from utils.static_tuple import StaticTuple
 
 
 # Test loading a single 2d tile.
@@ -47,7 +44,7 @@ fn test_tma_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,
@@ -91,7 +88,7 @@ fn test_tma_multiple_loads_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     alias N = layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)
@@ -230,7 +227,7 @@ fn test_tma_async_store_kernel[
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
-    tma_store_fence()
+    fence_async_view_proxy()
 
     if thread_idx.x == 0:
         tma_tile.async_store(tile, (block_idx.x * tileN, block_idx.y * tileM))
@@ -264,7 +261,7 @@ fn test_tma_async_multiple_store_kernel[
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             tma_tile.async_store(tile, (UInt(i) * tileN, block_idx.y * tileM))
@@ -361,7 +358,7 @@ fn test_tma_async_reduce_kernel[
     copy_dram_to_sram[thread_layout](tile, src_tile)
 
     barrier()
-    tma_store_fence()
+    fence_async_view_proxy()
 
     if thread_idx.x == 0:
         tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
@@ -397,7 +394,7 @@ fn test_tma_async_multiple_reduce_kernel[
         copy_dram_to_sram[thread_layout](tile, src_tile)
 
         barrier()
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
@@ -493,7 +490,7 @@ fn test_tma_loads_two_buffers_kernel[
 ):
     alias tileM = a_tile_layout.shape[0].value()
     alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
     alias N = a_layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)
@@ -648,7 +645,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 ):
     alias tileM = a_tile_layout.shape[0].value()
     alias tileN = a_tile_layout.shape[1].value()
-    alias expected_bytes = a_tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = a_tile_layout.size() * size_of[dtype]()
 
     alias N = a_layout.shape[1].value()
     alias num_iters = ceildiv(N, tileN)
@@ -697,7 +694,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        tma_store_fence()
+        fence_async_view_proxy()
 
         if thread_idx.x == 0:
             a_tma_dst_tile.async_store(
@@ -725,6 +722,19 @@ def test_tma_load_and_store_two_buffers_row_major[
     var b_src = ManagedLayoutTensor[DType.float32, src_layout](ctx)
     var a_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
     var b_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
+
+    # Initialize destinations to known values.
+    alias a_dst_value = 1.5
+    alias b_dst_value = 1.25
+
+    var a_dst_host = a_dst.tensor()
+    var b_dst_host = b_dst.tensor()
+    # Ensure that the buffers have been fully created before accessing their data.
+    ctx.synchronize()
+    for m in range(dst_M):
+        for n in range(dst_N):
+            a_dst_host[m, n] = a_dst_value
+            b_dst_host[m, n] = b_dst_value
 
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
@@ -780,8 +790,12 @@ def test_tma_load_and_store_two_buffers_row_major[
                 )
 
             else:
-                assert_equal(a_dst_host[m, n].cast[DType.float32](), 0.0)
-                assert_equal(b_dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(
+                    a_dst_host[m, n].cast[DType.float32](), a_dst_value
+                )
+                assert_equal(
+                    b_dst_host[m, n].cast[DType.float32](), b_dst_value
+                )
 
     ctx.synchronize()
     _ = a_src^

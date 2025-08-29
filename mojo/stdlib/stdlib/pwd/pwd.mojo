@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget
 
 # ===----------------------------------------------------------------------=== #
 # Passwd
@@ -21,7 +21,7 @@ from ._macos import _getpw_macos
 
 
 @fieldwise_init
-struct Passwd(Stringable, Writable, Copyable, Movable):
+struct Passwd(Copyable, Movable, Stringable, Writable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 
@@ -40,11 +40,8 @@ struct Passwd(Stringable, Writable, Copyable, Movable):
     var pw_shell: String
     """Shell program."""
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this string to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -97,17 +94,18 @@ fn getpwuid(uid: Int) raises -> Passwd:
         only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _getpw_macos(UInt32(uid))
     else:
         return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(owned name: String) raises -> Passwd:
+fn getpwnam(var name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 
@@ -128,11 +126,12 @@ fn getpwnam(owned name: String) raises -> Passwd:
         only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _getpw_macos(name)
     else:
         return _getpw_linux(name)

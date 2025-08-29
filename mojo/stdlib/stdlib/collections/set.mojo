@@ -13,10 +13,11 @@
 """Implements the  Set datatype."""
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
+from hashlib import Hasher, default_hasher
 
 
-struct Set[T: KeyElement](
-    Sized, Comparable, Hashable, Boolable, Copyable, Movable, KeyElement
+struct Set[T: KeyElement, H: Hasher = default_hasher](
+    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
 ):
     """A set data type.
 
@@ -30,7 +31,7 @@ struct Set[T: KeyElement](
     set.add(4)
 
     for element in set:
-        print(element[])
+        print(element)
 
     set -= Set[Int](3, 4, 5)
     print(set == Set[Int](1, 2))  # True
@@ -41,16 +42,16 @@ struct Set[T: KeyElement](
 
     Parameters:
         T: The element type of the set. Must implement KeyElement.
+        H: The tpe of the hasher used to hash keys.
     """
 
     # Fields
-    var _data: Dict[T, NoneType]
+    var _data: Dict[T, NoneType, H]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @implicit
     fn __init__(out self, *ts: T, __set_literal__: () = ()):
         """Construct a set from initial elements.
 
@@ -60,11 +61,11 @@ struct Set[T: KeyElement](
         """
         # TODO: Reserve space in this set. Also, take the elements as 'owned'
         # and transfer them into the set to eliminate copyability.
-        self._data = Dict[T, NoneType]()
+        self._data = Dict[T, NoneType, H]()
         for t in ts:
-            self.add(t[])
+            self.add(t)
 
-    @implicit
+    # TODO: Should take the list owned so we can transfer the elements out.
     fn __init__(out self, elements: List[T, *_]):
         """Construct a set from a List of elements.
 
@@ -73,7 +74,7 @@ struct Set[T: KeyElement](
         """
         self = Self()
         for e in elements:
-            self.add(e[])
+            self.add(e)
 
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
@@ -110,20 +111,9 @@ struct Set[T: KeyElement](
         if len(self) != len(other):
             return False
         for e in self:
-            if e[] not in other:
+            if e not in other:
                 return False
         return True
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Set inequality.
-
-        Args:
-            other: Another Set instance to check equality against.
-
-        Returns:
-            True if the sets are different and False otherwise.
-        """
-        return not (self == other)
 
     fn __and__(self, other: Self) -> Self:
         """The set intersection operator.
@@ -278,20 +268,23 @@ struct Set[T: KeyElement](
         """
         return len(self._data)
 
-    fn __hash__(self) -> UInt:
-        """A hash value of the elements in the set.
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying values.
 
-        The hash value is order independent, so s1 == s2 -> hash(s1) == hash(s2).
+        The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
 
-        Returns:
-            A hash value of the set suitable for non-cryptographic purposes.
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
         """
-        var hash_value = 0
+        var hash_value: UInt64 = 0
         # Hash combination needs to be commutative so iteration order
         # doesn't impact the hash value.
         for e in self:
-            hash_value ^= hash(e[])
-        return hash_value
+            hash_value ^= hash(e)
+        hasher.update(hash_value)
 
     @no_inline
     fn __str__[U: KeyElement & Representable, //](self: Set[U]) -> String:
@@ -322,12 +315,11 @@ struct Set[T: KeyElement](
         return self.__str__()
 
     fn write_to[
-        W: Writer, U: KeyElement & Representable, //
-    ](self: Set[U], mut writer: W):
+        U: KeyElement & Representable, //
+    ](self: Set[U], mut writer: Some[Writer]):
         """Write Set string representation to a `Writer`.
 
         Parameters:
-            W: A type conforming to the Writer trait.
             U: The type of the List elements. Must implement the `Representable`
                 and `KeyElement` traits.
 
@@ -337,7 +329,7 @@ struct Set[T: KeyElement](
         writer.write("{")
         var written = 0
         for item in self:
-            writer.write(repr(item[]))
+            writer.write(repr(item))
             if written < len(self) - 1:
                 writer.write(", ")
             written += 1
@@ -347,7 +339,9 @@ struct Set[T: KeyElement](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> _DictKeyIter[T, NoneType, __origin_of(self._data)]:
+    fn __iter__(
+        ref self,
+    ) -> _DictKeyIter[T, NoneType, H, __origin_of(self._data)]:
         """Iterate over elements of the set, returning immutable references.
 
         Returns:
@@ -362,7 +356,7 @@ struct Set[T: KeyElement](
         Args:
             t: The element to add to the set.
         """
-        self._data[t] = None
+        self._data[t.copy()] = None
 
     fn remove(mut self, t: T) raises:
         """Remove an element from the set.
@@ -391,9 +385,9 @@ struct Set[T: KeyElement](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next__()[]
+        var first = iter.__next_ref__().copy()
         self.remove(first)
-        return first
+        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.
@@ -407,7 +401,7 @@ struct Set[T: KeyElement](
         """
         var result = self
         for o in other:
-            result.add(o[])
+            result.add(o)
 
         return result^
 
@@ -421,10 +415,10 @@ struct Set[T: KeyElement](
             A new set containing only the elements which appear in both
             this set and the `other` set.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
         for v in self:
-            if v[] in other:
-                result.add(v[])
+            if v in other:
+                result.add(v)
 
         return result^
 
@@ -438,10 +432,10 @@ struct Set[T: KeyElement](
             A new set containing elements that are in this set but not in
             the `other` set.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
         for e in self:
-            if e[] not in other:
-                result.add(e[])
+            if e not in other:
+                result.add(e)
         return result^
 
     fn update(mut self, other: Self):
@@ -454,7 +448,7 @@ struct Set[T: KeyElement](
             other: Another Set instance to union with this one.
         """
         for e in other:
-            self.add(e[])
+            self.add(e)
 
     fn intersection_update(mut self, other: Self):
         """In-place set intersection update.
@@ -480,7 +474,7 @@ struct Set[T: KeyElement](
         """
         for o in other:
             try:
-                self.remove(o[])
+                self.remove(o)
             except:
                 pass
 
@@ -497,7 +491,7 @@ struct Set[T: KeyElement](
             return False
 
         for element in self:
-            if element[] not in other:
+            if element not in other:
                 return False
 
         return True
@@ -512,7 +506,7 @@ struct Set[T: KeyElement](
             True if this set is disjoint with the `other` set, False otherwise.
         """
         for element in self:
-            if element[] in other:
+            if element in other:
                 return False
 
         return True
@@ -530,7 +524,7 @@ struct Set[T: KeyElement](
             return False
 
         for element in other:
-            if element[] not in self:
+            if element not in self:
                 return False
 
         return True
@@ -544,15 +538,15 @@ struct Set[T: KeyElement](
         Returns:
             A new set containing the symmetric difference of the two sets.
         """
-        var result = Set[T]()
+        var result = Set[T, H]()
 
         for element in self:
-            if element[] not in other:
-                result.add(element[])
+            if element not in other:
+                result.add(element)
 
         for element in other:
-            if element[] not in self:
-                result.add(element[])
+            if element not in self:
+                result.add(element)
 
         return result^
 

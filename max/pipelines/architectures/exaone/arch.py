@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -32,14 +32,8 @@ exaone_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
         SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     example_repo_ids=[
         "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",

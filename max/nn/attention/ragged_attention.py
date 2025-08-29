@@ -16,24 +16,20 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Union
+from typing import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 
 from ..clamp import clamp
-from ..kernels import (
-    MHAMaskVariant,
-    flash_attention_ragged,
-    fused_qkv_ragged_matmul,
-)
+from ..kernels import flash_attention_ragged, fused_qkv_ragged_matmul
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
 from ..layer import Module
 from ..linear import Linear
+from .mask_config import MHAMaskVariant
 
 
 @dataclass
@@ -55,11 +51,11 @@ class RaggedAttention(Module):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -183,9 +179,7 @@ class RaggedAttention(Module):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue:
         # Get attributes from input.

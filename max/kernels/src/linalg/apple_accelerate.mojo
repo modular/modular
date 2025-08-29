@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import fma
 from os import abort
-from sys import os_is_macos, simdwidthof
+from sys import CompilationTarget, simd_width_of
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
@@ -25,8 +24,6 @@ from algorithm.functional import (
     parallelize_over_rows,
 )
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index
@@ -86,7 +83,9 @@ fn _init_dylib() -> _OwnedDLHandle:
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
-    constrained[os_is_macos(), "operating system must be macOS"]()
+    constrained[
+        CompilationTarget.is_macos(), "operating system must be macOS"
+    ]()
     return _ffi_get_dylib_function[
         APPLE_ACCELERATE(),
         func_name,
@@ -124,20 +123,23 @@ fn use_apple_accelerate_lib[
     a_type: DType,
     b_type: DType,
 ]() -> Bool:
-    return os_is_macos() and a_type == b_type == c_type is DType.float32
+    return (
+        CompilationTarget.is_macos()
+        and a_type == b_type == c_type is DType.float32
+    )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CBLASOrder:
+struct _CBLASOrder(Copyable, Movable):
     var value: Int32
     alias ROW_MAJOR = _CBLASOrder(101)
     alias COL_MAJOR = _CBLASOrder(102)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CBLASTranspose:
+struct _CBLASTranspose(Copyable, Movable):
     var value: Int32
     alias NO_TRANSPOSE = _CBLASTranspose(111)
     alias TRANSPOSE = _CBLASTranspose(112)
@@ -272,7 +274,7 @@ fn apple_gemv[
     if b_packed == False and transpose_b == True:
         K = b.dim(1)
 
-    alias simd_width = simdwidthof[c.type]()
+    alias simd_width = simd_width_of[c.type]()
 
     @always_inline
     @__copy_capture(c, a, b, K)
@@ -286,17 +288,12 @@ fn apple_gemv[
             @parameter
             fn compute_fn[width: Int](k: Int):
                 var a_val = a.load[width=width](0, k).cast[c.type]()
-                var b_val = b.load[width=width](n, k).cast[
-                    c.type
-                ]() if b_packed or (
-                    not b_packed and transpose_b
-                ) else transposed_b.load[
-                    width=width
-                ](
-                    n, k
-                ).cast[
-                    c.type
-                ]()
+                var b_val = (
+                    b.load[width=width](n, k).cast[c.type]() if b_packed
+                    or (not b_packed and transpose_b) else transposed_b.load[
+                        width=width
+                    ](n, k).cast[c.type]()
+                )
 
                 @parameter
                 if width == 1:
@@ -383,12 +380,12 @@ fn apple_matmul[
             var m = c.dim[0]()
             var n = c.dim[1]()
             alias epilogue = elementwise_lambda_fn.value()
-            alias simd_size = simdwidthof[c.type]()
+            alias simd_size = simd_width_of[c.type]()
 
             @always_inline
             @parameter
             fn epilogue_on_col_chunk[
-                simd_width: Int, rank: Int
+                simd_width: Int, rank: Int, alignment: Int = 1
             ](idx: IndexList[rank]):
                 var c_coord = IndexList[2](idx[0], idx[1])
                 var c_val = c.load[width=simd_width](c_coord)

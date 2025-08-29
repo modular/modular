@@ -17,14 +17,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from max.graph import (
-    BufferValue,
-    TensorValue,
-    TensorValueLike,
-)
+from max.graph import BufferValue, TensorValue, TensorValueLike
 
 from ..kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -44,13 +39,13 @@ class AttentionImpl(Layer, ABC):
     - ...
 
     There are a series of shared attributes, however, more may be needed for each individual variant.
-    For example, we may introduce an OptimizedRotaryEmbedding class for the AttentionWithRope class:
+    For example, we may introduce an RotaryEmbedding class for the AttentionWithRope class:
 
     .. code-block:: python
 
         @dataclass
         class AttentionWithRope(AttentionImpl):
-            rope: OptimizedRotaryEmbedding
+            rope: RotaryEmbedding
             ...
 
     We expect the ``__call__`` abstractmethod to remain relatively consistent, however the ``**kwargs``
@@ -67,10 +62,10 @@ class AttentionImpl(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: ContinuousBatchingKVCacheCollection,
+                kv_collection: PagedKVCacheCollection,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, ContinuousBatchingKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -110,9 +105,9 @@ class AttentionImpl(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
-        **kwargs,
+        kv_collection: PagedKVCacheCollection,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue: ...
 
 
@@ -127,10 +122,9 @@ class DistributedAttentionImpl(Module, ABC):
         layer_idx: TensorValue,
         x: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
-        **kwargs,
+        kv_collections: list[PagedKVCacheCollection],
+        freqs_cis: list[TensorValue],
+        input_row_offsets: TensorValue,
     ) -> list[TensorValue]: ...
 
 
@@ -146,13 +140,13 @@ class AttentionImplQKV(Layer, ABC):
     - ...
 
     There are a series of shared attributes, however, more may be needed for each individual variant.
-    For example, we may introduce an OptimizedRotaryEmbedding class for the AttentionWithRope class:
+    For example, we may introduce an RotaryEmbedding class for the AttentionWithRope class:
 
     .. code-block:: python
 
         @dataclass
         class AttentionWithRope(AttentionImpl):
-            rope: OptimizedRotaryEmbedding
+            rope: RotaryEmbedding
             ...
 
     We expect the ``__call__`` abstractmethod to remain relatively consistent, however the ``**kwargs``
@@ -169,10 +163,10 @@ class AttentionImplQKV(Layer, ABC):
             def __call__(
                 self,
                 x: TensorValueLike,
-                kv_collection: ContinuousBatchingKVCacheCollection,
+                kv_collection: PagedKVCacheCollection,
                 valid_lengths: TensorValueLike,
                 **kwargs,
-            ) -> tuple[TensorValue, ContinuousBatchingKVCacheCollection]: ...
+            ) -> tuple[TensorValue, PagedKVCacheCollection]: ...
 
                 if "attn_mask" not in kwargs:
                     raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
@@ -220,7 +214,7 @@ class AttentionImplQKV(Layer, ABC):
         self,
         layer_idx: TensorValue,
         x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
-        **kwargs,
+        kv_collection: PagedKVCacheCollection,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue: ...

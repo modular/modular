@@ -14,17 +14,21 @@
 from math import ceildiv
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from buffer import DimList
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
+from internal_utils._utils import static, ValOrDim, dynamic
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
+from sys import env_get_int, env_get_string
 
 from utils import IndexList
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn _get_run_name[
     transpose: Bool,
-    type: DType,
+    in_dtype: DType,
+    out_dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
@@ -34,20 +38,24 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var str = name
-    str += "("
-    str += type.__str__()
-    str += ") : "
-    str += shape_c_dim[0].__str__()
-    str += ","
-    str += shape_c_dim[1].__str__()
-    str += ","
-    str += shape_a_dim[1].__str__()
-    return str
+    return String(
+        name,
+        "(",
+        in_dtype,
+        "->",
+        out_dtype,
+        ") : ",
+        shape_c_dim[0].__str__(),
+        ",",
+        shape_c_dim[1].__str__(),
+        ",",
+        shape_a_dim[1].__str__(),
+    )
 
 
 fn bench_matmul[
-    dtype: DType,
+    in_dtype: DType,
+    out_dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
@@ -58,9 +66,9 @@ fn bench_matmul[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[dtype, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c = DeviceNDBuffer[out_dtype, 2, shape_c](shape_c_dim, ctx=ctx)
+    var mat_a = DeviceNDBuffer[in_dtype, 2, shape_a](shape_a_dim, ctx=ctx)
+    var mat_b = DeviceNDBuffer[in_dtype, 2, shape_b](shape_b_dim, ctx=ctx)
 
     @parameter
     @always_inline
@@ -76,9 +84,9 @@ fn bench_matmul[
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[False, dtype, shape_c, shape_a, shape_b](
-                "gemv_gevm", shape_c_dim, shape_a_dim, shape_b_dim
-            )
+            _get_run_name[
+                False, in_dtype, out_dtype, shape_c, shape_a, shape_b
+            ]("gemv_gevm", shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         ThroughputMeasure(
             BenchMetric.flops,
@@ -93,7 +101,8 @@ fn bench_matmul[
 
 
 fn bench_matmul_transpose[
-    dtype: DType,
+    in_dtype: DType,
+    out_dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
@@ -104,9 +113,9 @@ fn bench_matmul_transpose[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[dtype, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c = DeviceNDBuffer[out_dtype, 2, shape_c](shape_c_dim, ctx=ctx)
+    var mat_a = DeviceNDBuffer[in_dtype, 2, shape_a](shape_a_dim, ctx=ctx)
+    var mat_b = DeviceNDBuffer[in_dtype, 2, shape_b](shape_b_dim, ctx=ctx)
 
     @parameter
     @always_inline
@@ -122,7 +131,7 @@ fn bench_matmul_transpose[
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[True, dtype, shape_c, shape_a, shape_b](
+            _get_run_name[True, in_dtype, out_dtype, shape_c, shape_a, shape_b](
                 "gemv_transpose", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
@@ -139,7 +148,8 @@ fn bench_matmul_transpose[
 
 
 fn bench_matmul_naive[
-    dtype: DType,
+    in_type: DType,
+    out_type: DType,
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
@@ -150,9 +160,13 @@ fn bench_matmul_naive[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) raises:
-    var mat_c = DeviceNDBuffer[dtype, 2, shape_c](shape_c_dim, ctx=ctx)
-    var mat_a = DeviceNDBuffer[dtype, 2, shape_a](shape_a_dim, ctx=ctx)
-    var mat_b = DeviceNDBuffer[dtype, 2, shape_b](shape_b_dim, ctx=ctx)
+    var mat_c = DeviceNDBuffer[out_type, 2, shape_c](shape_c_dim, ctx=ctx)
+    var mat_a = DeviceNDBuffer[in_type, 2, shape_a](shape_a_dim, ctx=ctx)
+    var mat_b = DeviceNDBuffer[in_type, 2, shape_b](shape_b_dim, ctx=ctx)
+
+    var c_tensor = from_ndbuffer_row_major(mat_c.tensor)
+    var a_tensor = from_ndbuffer_row_major(mat_a.tensor)
+    var b_tensor = from_ndbuffer_row_major(mat_b.tensor)
 
     var M = shape_c_dim[0]
     var N = shape_c_dim[1]
@@ -169,11 +183,19 @@ fn bench_matmul_naive[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[
-                matmul_kernel_naive[dtype, dtype, dtype, BLOCK_DIM]
+                matmul_kernel_naive[
+                    out_type,
+                    in_type,
+                    in_type,
+                    c_tensor.layout,
+                    a_tensor.layout,
+                    b_tensor.layout,
+                    BLOCK_DIM,
+                ]
             ](
-                mat_c.tensor.data,
-                mat_a.tensor.data,
-                mat_b.tensor.data,
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 UInt(M),
                 UInt(N),
                 UInt(K),
@@ -185,7 +207,7 @@ fn bench_matmul_naive[
 
     h.bench_function[bench_func](
         BenchId(
-            _get_run_name[True, dtype, shape_c, shape_a, shape_b](
+            _get_run_name[True, in_type, out_type, shape_c, shape_a, shape_b](
                 "gemv_naive", shape_c_dim, shape_a_dim, shape_b_dim
             )
         ),
@@ -203,27 +225,9 @@ fn bench_matmul_naive[
     _ = mat_b^
 
 
-struct ValOrDim[dim: Dim = Dim()]:
-    var value: Int
-
-    fn __init__(out self):
-        constrained[
-            not dim.is_dynamic(),
-            "Can't construct a dynamic dim with no runtime value",
-        ]()
-        self.value = dim.get()
-
-    @implicit
-    fn __init__(out self, v: Int):
-        self.value = v
-
-
-fn dynamic(d: Int) -> ValOrDim:
-    return ValOrDim(d)
-
-
 fn create_matmul_bench[
-    dtype: DType
+    in_dtype: DType,
+    out_dtype: DType,
 ](
     ctx: DeviceContext,
     mut h: Bench,
@@ -234,7 +238,8 @@ fn create_matmul_bench[
 ) raises:
     if mode == "default":
         bench_matmul[
-            dtype,
+            in_dtype,
+            out_dtype,
             DimList(m.dim, n.dim),
             DimList(m.dim, k.dim),
             DimList(k.dim, n.dim),
@@ -242,38 +247,53 @@ fn create_matmul_bench[
 
     elif mode == "transpose":
         bench_matmul_transpose[
-            dtype,
+            in_dtype,
+            out_dtype,
             DimList(m.dim, n.dim),
             DimList(m.dim, k.dim),
             DimList(n.dim, k.dim),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (n.value, k.value))
     elif mode == "naive":
         bench_matmul_naive[
-            dtype,
+            in_dtype,
+            out_dtype,
             DimList(m.dim, n.dim),
             DimList(m.dim, k.dim),
             DimList(k.dim, n.dim),
         ](ctx, h, (m.value, n.value), (m.value, k.value), (k.value, n.value))
 
 
+@parameter
+fn get_dtype[output_type: String]() -> DType:
+    if output_type == "float32":
+        return DType.float32
+    elif output_type == "float16":
+        return DType.float16
+
+    return DType.bfloat16
+
+
 fn main() raises:
     var h = Bench()
 
-    alias dtype = DType.bfloat16
-    alias M = 1
+    alias input_type = DType.bfloat16
 
-    var N = arg_parse("N", 1)
-    var K = arg_parse("K", 1)
+    var M = Int(arg_parse("M", 1))
+    alias N = env_get_int["N", 1]()
+    alias K = env_get_int["K", 1]()
+
+    alias output_type = get_dtype[env_get_string["output_type", "bfloat16"]()]()
+
     var mode = arg_parse("mode", "default")  # [default, naive, transpose]
     var shape = IndexList[3](M, N, K)
 
     with DeviceContext() as ctx:
-        create_matmul_bench[dtype](
+        create_matmul_bench[input_type, output_type](
             ctx,
             h,
             dynamic(shape[0]),
-            dynamic(shape[1]),
-            dynamic(shape[2]),
+            static[N](),
+            static[K](),
             mode,
         )
 

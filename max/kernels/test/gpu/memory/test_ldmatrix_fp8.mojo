@@ -13,18 +13,21 @@
 
 from math import ceildiv
 
-from gpu import WARP_SIZE, barrier, lane_id, thread_idx
+from gpu import WARP_SIZE, barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
+from gpu.memory import AddressSpace
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_almost_equal
 
 from utils.numerics import get_accum_type
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
+from utils import IndexList
 
 
 fn test_ldmatrix_fp8[
@@ -135,14 +138,42 @@ fn check_ldmatrix_fp8[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
+
+    # Create LayoutTensors directly
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor_ref = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        c_device_ref._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+        a_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[input_type, layout, MutableAnyOrigin](
+        b_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(
+            IndexList[2](N, K)
+        ),  # N x K for transpose_b=True
+    )
+
     ctx.enqueue_function[
         matmul_kernel_naive[
-            DType.float32, input_type, input_type, BLOCK_DIM, transpose_b=True
+            DType.float32,
+            input_type,
+            input_type,
+            c_tensor_ref.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+            transpose_b=True,
         ]
     ](
-        c_device_ref,
-        a_device,
-        b_device,
+        c_tensor_ref,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,

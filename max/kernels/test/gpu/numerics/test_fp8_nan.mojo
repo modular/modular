@@ -16,15 +16,15 @@ from gpu.host import DeviceContext
 from memory import bitcast
 
 
-fn print_bits[type: DType](val: Scalar[type]):
+fn print_bits[dtype: DType](val: Scalar[dtype]):
     var u8 = bitcast[DType.uint8](val)
-    var bits = String()
+    var bits = String(capacity=32)
 
     @parameter
     for i in reversed(range(8)):
         bits.write((u8 >> i) & 1)
 
-    print(type, "nan:", u8, bits)
+    print(dtype, "nan:", u8, bits)
 
 
 fn test():

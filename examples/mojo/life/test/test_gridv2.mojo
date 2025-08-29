@@ -14,13 +14,12 @@
 from gridv2 import Grid
 from testing import *
 
-alias data4x4 = [
+alias data4x4: List[List[Int8]] = [
     [0, 1, 1, 0],
     [1, 1, 0, 0],
     [0, 0, 1, 1],
     [1, 0, 0, 1],
 ]
-var str4x4 = " ** \n**  \n  **\n*  *"
 
 
 def grid4x4() -> Grid[4, 4]:
@@ -37,7 +36,7 @@ def test_gridv2_init():
     assert_equal(4, grid.cols)
     for row in range(4):
         for col in range(4):
-            assert_equal(0, grid[row, col])
+            assert_equal(Int8(0), grid[row, col])
 
 
 def test_gridv2_index():
@@ -46,25 +45,26 @@ def test_gridv2_index():
         for col in range(4):
             assert_equal(data4x4[row][col], grid[row, col])
             grid[row, col] = 1
-            assert_equal(1, grid[row, col])
+            assert_equal(Int8(1), grid[row, col])
             grid[row, col] = 0
-            assert_equal(0, grid[row, col])
+            assert_equal(Int8(0), grid[row, col])
 
 
 def test_gridv2_str():
     grid = grid4x4()
     grid_str = String(grid)
+    var str4x4 = " ** \n**  \n  **\n*  *"
     assert_equal(str4x4, grid_str)
 
 
 def test_gridv2_evolve():
-    data_gen2 = [
+    data_gen2: List[List[Int8]] = [
         [0, 0, 1, 0],
         [1, 0, 0, 0],
         [0, 0, 1, 0],
         [1, 0, 0, 0],
     ]
-    data_gen3 = [
+    data_gen3: List[List[Int8]] = [
         [0, 1, 0, 1],
         [0, 1, 0, 1],
         [0, 1, 0, 1],

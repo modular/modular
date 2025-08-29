@@ -1,11 +1,18 @@
 load("//bazel:api.bzl", "mojo_test")
 
+_GPU_MEMORY = {
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
+}
+
 [
     mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
         enable_assertions = src != "test_kv_cache_ragged_matmul.mojo",  # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "5"),
+        },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"],
         deps = [

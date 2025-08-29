@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from random import randn_float64
-from sys import has_neon
+from sys import CompilationTarget
 
 from testing import assert_almost_equal, assert_equal
 
@@ -59,7 +58,9 @@ def check_float64_values():
     # BFloat16 values on ARM systems.
     assert_equal(
         Float64(
-            __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
+            mlir_value=__mlir_op.`pop.cast`[
+                _type = __mlir_type[`!pop.scalar<f64>`]
+            ](
                 __mlir_attr.`#pop.simd<"33"> : !pop.scalar<bf16>`,
             )
         ),
@@ -69,7 +70,9 @@ def check_float64_values():
     assert_equal(
         String(
             Float64(
-                __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
+                mlir_value=__mlir_op.`pop.cast`[
+                    _type = __mlir_type[`!pop.scalar<f64>`]
+                ](
                     __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
                 )
             )
@@ -83,7 +86,7 @@ def main():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_methods()
 
         test_bf_primitives()

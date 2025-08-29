@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 """Build a Mistral model that runs on multiple devices."""
 
 from __future__ import annotations
@@ -18,19 +19,16 @@ import functools
 import logging
 
 from max.nn import (
+    MLP,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
-    DistributedMLP,
-    DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    OptimizedRotaryEmbedding,
+    RMSNorm,
+    RotaryEmbedding,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -40,10 +38,10 @@ from .model_config import MistralConfig
 class DistributedMistral(DistributedTransformer):
     """The Mistral text transformer model."""
 
-    def __init__(self, config: MistralConfig):
+    def __init__(self, config: MistralConfig) -> None:
         assert len(config.devices) > 1
 
-        rope = OptimizedRotaryEmbedding(
+        rope = RotaryEmbedding(
             dim=config.num_attention_heads * config.head_dim,
             n_heads=config.num_attention_heads,
             head_dim=config.head_dim,
@@ -54,11 +52,10 @@ class DistributedMistral(DistributedTransformer):
         )
 
         distributed_norm = functools.partial(
-            DistributedRMSNorm,
+            RMSNorm,
             dim=config.hidden_size,
             dtype=config.dtype,
             eps=config.rms_norm_eps,
-            devices=config.devices,
         )
 
         layers = [
@@ -77,7 +74,7 @@ class DistributedMistral(DistributedTransformer):
                     has_bias=False,
                     clip_qkv=False,
                 ),
-                mlp=DistributedMLP(
+                mlp=MLP(
                     dtype=config.dtype,
                     quantization_encoding=None,
                     hidden_dim=config.hidden_size,
@@ -86,6 +83,7 @@ class DistributedMistral(DistributedTransformer):
                 ),
                 attention_norm=distributed_norm(),
                 mlp_norm=distributed_norm(),
+                distributed_gemm_config=None,
             )
             for i in range(config.num_hidden_layers)
         ]
@@ -107,15 +105,11 @@ class DistributedMistral(DistributedTransformer):
             quantization_encoding=None,
         )
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-
         if config.kv_params.cache_strategy != KVCacheStrategy.PAGED:
             raise ValueError(
                 "Unsupported caching strategy "
                 + str(config.kv_params.cache_strategy)
             )
-
-        kv_collection_cls = FetchPagedKVCacheCollection
 
         super().__init__(
             dim=config.hidden_size,
@@ -125,9 +119,10 @@ class DistributedMistral(DistributedTransformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
+            kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
-            return_logits=config.return_logits,
             devices=config.devices,
+            rope=rope,
+            return_logits=config.return_logits,
         )

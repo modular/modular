@@ -58,7 +58,9 @@ class Allreduce(Module):
         self.devices = [Accelerator(id=id) for id in range(num_accelerators)]
 
     def __call__(
-        self, inputs: Iterable[TensorValue], signal_buffers: list[BufferValue]
+        self,
+        inputs: Iterable[TensorValue],
+        signal_buffers: Iterable[BufferValue],
     ) -> list[TensorValue]:
         """Performs allreduce operation with automatic implementation selection.
 

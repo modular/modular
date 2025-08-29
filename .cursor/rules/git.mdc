@@ -1,6 +1,7 @@
 ---
 description: This rule outlines best practices for effective use of Git, including code organization, commit strategies, branching models, and collaborative workflows.
-globs: **/.git/*
+globs:
+alwaysApply: false
 ---
 - **Commit Strategies:**
   - **Atomic Commits:** Keep commits small and focused. Each commit should address a single, logical change. This makes it easier to understand the history and revert changes if needed.

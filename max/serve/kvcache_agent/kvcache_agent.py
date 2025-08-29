@@ -13,13 +13,14 @@
 
 import concurrent.futures
 import logging
-import multiprocessing
 import queue
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 import grpc
+from max.interfaces import msgpack_numpy_decoder
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     KVCacheStateUpdate,
     MemoryTier,
@@ -30,8 +31,9 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceServicer,
     add_KVCacheAgentServiceServicer_to_server,
 )
+from max.serve.queue.zmq_queue import ZmqPullSocket
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass
@@ -59,9 +61,9 @@ class KVCacheAgentServerConfig:
 class KVCacheAgentServicer(KVCacheAgentServiceServicer):
     """Implementation of the KVCacheAgentService service."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the KVCacheAgentServicer."""
-        self._subscribers = set()
+        self._subscribers: set[Any] = set()
         self._cache_state: dict[MemoryTier, set[str]] = {}
         self._lock = threading.RLock()
 
@@ -88,7 +90,7 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
         with self._lock:
             # Send initial state with all existing entries
             if self._cache_state:
-                for memory_tier in self._cache_state.keys():
+                for memory_tier in self._cache_state:
                     if self._cache_state[memory_tier]:
                         initial_update = KVCacheStateUpdate(
                             update_type=UpdateType.UPDATE_TYPE_ADDED,
@@ -203,8 +205,8 @@ class KVCacheAgentServer:
     def __init__(
         self,
         config: KVCacheAgentServerConfig,
-        queue: multiprocessing.Queue,
-    ):
+        kv_cache_events_zmq_endpoint: str,
+    ) -> None:
         """
         Initialize the KVCacheAgentServer.
 
@@ -212,7 +214,11 @@ class KVCacheAgentServer:
             config: Configuration for the server.
         """
         self.config = config
-        self._queue = queue
+        self._kv_cache_events_pull_socket = ZmqPullSocket[KVCacheChangeMessage](
+            zmq_endpoint=kv_cache_events_zmq_endpoint,
+            # GENAI-233: This is currently non-functional.
+            deserialize=msgpack_numpy_decoder(int),
+        )
         self.server = grpc.server(
             concurrent.futures.ThreadPoolExecutor(
                 max_workers=self.config.num_workers
@@ -226,36 +232,33 @@ class KVCacheAgentServer:
         # Add a listening port
         self.server.add_insecure_port(self.config.address)
 
-        # Start a background thread to process queue messages
-        self._queue_stop_event = threading.Event()
-        self._queue_thread = threading.Thread(
-            target=self._process_queue_messages,
+        # Start a background thread to process kv cache events
+        self._kv_cache_events_stop_event = threading.Event()
+        self._kv_cache_events_thread = threading.Thread(
+            target=self._process_kv_cache_events,
             daemon=True,
-            name="KVCacheAgentQueueProcessor",
+            name="KVCacheAgentEventsProcessor",
         )
         self._started = False
 
-    def _process_queue_messages(self) -> None:
+    def _pull_from_kv_cache_events_socket(self) -> KVCacheChangeMessage:
         """
-        Process messages from the queue and update the cache state.
+        Pull a message from the kv cache events socket.
+        """
+        return self._kv_cache_events_pull_socket.get_nowait()
 
-        Runs in a background thread, continuously polling the queue for new messages.
+    def _process_kv_cache_events(self) -> None:
+        """
+        Process messages from the kv cache events socket and update the cache state.
+
+        Runs in a background thread, continuously polling the kv cache events socket for new messages.
         Based on the message type, it will call the appropriate method to update the cache.
         """
-        logger.info("Queue processor thread started")
+        logger.info("KV Cache Events processor thread started")
 
-        while not self._queue_stop_event.is_set():
+        while not self._kv_cache_events_stop_event.is_set():
             try:
-                try:
-                    message: KVCacheChangeMessage = self._queue.get(
-                        block=True, timeout=0.01
-                    )
-                except queue.Empty:
-                    continue
-
-                if message is None:
-                    logger.warning("Received None message from queue")
-                    continue
+                message = self._pull_from_kv_cache_events_socket()
 
                 logger.debug(f"Received message: {message}")
 
@@ -269,12 +272,13 @@ class KVCacheAgentServer:
                     )
                 else:
                     logger.warning(f"Unknown operation: {message.update_type}")
-
+            except queue.Empty:
+                continue
             except Exception as e:
                 logger.error(f"Error processing queue message: {e}")
                 # Continue processing other messages even if one fails
 
-        logger.info("Queue processor thread stopped")
+        logger.info("KV Cache Events processor thread stopped")
 
     def start(self) -> None:
         """Start the KVCacheAgentServer."""
@@ -282,7 +286,7 @@ class KVCacheAgentServer:
             return
 
         self.server.start()
-        self._queue_thread.start()
+        self._kv_cache_events_thread.start()
         self._started = True
         logger.info(f"KVCacheAgentServer started on {self.config.address}")
 
@@ -296,9 +300,9 @@ class KVCacheAgentServer:
         if not self._started:
             return
 
-        self._queue_stop_event.set()
+        self._kv_cache_events_stop_event.set()
         self.server.stop(grace)
-        self._queue_thread.join()
+        self._kv_cache_events_thread.join()
         self._started = False
         logger.info("KVCacheAgentServer stopped")
 
@@ -306,11 +310,11 @@ class KVCacheAgentServer:
         """Block until the server terminates."""
         if self._started:
             self.server.wait_for_termination()
-            self._queue_thread.join()
+            self._kv_cache_events_thread.join()
 
 
 def start_kvcache_agent_service(
-    queue: multiprocessing.Queue,
+    kv_cache_events_zmq_endpoint: str,
     host: str = "0.0.0.0",
     port: int = 50051,
     num_workers: int = 10,
@@ -319,7 +323,7 @@ def start_kvcache_agent_service(
     Start the KVCacheAgentService on the specified address and port.
 
     Args:
-        queue: The queue MAX Serve uses to communicate the KV cache updates to the agent.
+        kv_cache_events_zmq_endpoint: The ZMQ endpoint for the agent to listen for kv cache events.
         host: The server address to bind to.
         port: The port to listen on.
         num_workers: Number of worker threads for handling requests.
@@ -327,9 +331,10 @@ def start_kvcache_agent_service(
     Returns:
         KVCacheAgentServer: The running server instance.
     """
+
     config = KVCacheAgentServerConfig(
         host=host, port=port, num_workers=num_workers
     )
-    server = KVCacheAgentServer(config, queue)
+    server = KVCacheAgentServer(config, kv_cache_events_zmq_endpoint)
     server.start()
     return server

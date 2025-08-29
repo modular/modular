@@ -12,33 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import isclose, isqrt
+from math import isqrt
 from random import random_ui64, seed
-from sys import has_nvidia_gpu_accelerator
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import HostNDBuffer, DeviceNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
-
-from utils import Index, IndexList
+from utils import IndexList
+from collections import OptionalReg
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int,
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    sink: Bool = False,
 ](
     valid_lengths: List[Int],
     max_seq_len_cache: Int,
@@ -48,12 +50,10 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     var batch_size = len(valid_lengths)
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,
@@ -61,7 +61,7 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )
@@ -95,11 +95,11 @@ def execute_ragged_flash_attention[
     cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     random(q_ragged_host.tensor)
     q_padded_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -111,8 +111,10 @@ def execute_ragged_flash_attention[
     for bs in range(batch_size):
         unpadded_seq_len = valid_lengths[bs]
         ragged_start_idx = Int(input_row_offsets_host.tensor[bs])
-        padded_ptr = q_padded_host.tensor._offset((bs, 0, 0, 0))
-        ragged_ptr = q_ragged_host.tensor._offset((ragged_start_idx, 0, 0))
+        padded_ptr = q_padded_host.tensor._offset(IndexList[4](bs, 0, 0, 0))
+        ragged_ptr = q_ragged_host.tensor._offset(
+            IndexList[3](ragged_start_idx, 0, 0)
+        )
         memcpy(
             padded_ptr,
             ragged_ptr,
@@ -124,7 +126,7 @@ def execute_ragged_flash_attention[
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -133,12 +135,12 @@ def execute_ragged_flash_attention[
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     test_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
-    kv_block_host = HostNDBuffer[type, 6](
+    kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -180,8 +182,27 @@ def execute_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    # ragged execution
-    flash_attention[ragged=True](
+    # Create sink weights (weird lifetime behavior if inside of parameter if, so we always creted it)
+    # TODO: fix this
+    var sink_weights_shape = IndexList[1](num_q_heads)
+    var sink_weights_host = HostNDBuffer[dtype, 1](sink_weights_shape)
+
+    # Initialize sink weights with varying negative values
+    for h in range(num_q_heads):
+        sink_weights_host.tensor[h] = Scalar[dtype](-2.0 - 0.5 * h)
+
+    sink_weights_device = sink_weights_host.copy_to_device(ctx)
+
+    var sink_weights_device_tensor: OptionalReg[
+        NDBuffer[dtype, 1, MutableAnyOrigin]
+    ] = None
+
+    @parameter
+    if sink:
+        sink_weights_device_tensor = sink_weights_device.tensor
+
+    # ragged execution with sink weights
+    flash_attention[ragged=True, sink=sink](
         test_output_device.tensor,
         q_ragged_device.tensor,
         k_cache_device,
@@ -194,9 +215,12 @@ def execute_ragged_flash_attention[
         ](input_row_offsets_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
+        sink_weights=sink_weights_device_tensor,
     )
+    ctx.synchronize()
+
     # padded execution
-    flash_attention(
+    flash_attention[sink=sink, naive_kernel=True](
         ref_output_device.tensor,
         q_padded_device.tensor,
         k_cache_device,
@@ -209,6 +233,7 @@ def execute_ragged_flash_attention[
         ](valid_lengths_device.tensor),
         isqrt(Float32(kv_params.head_size)),
         ctx,
+        sink_weights=sink_weights_device_tensor,
     )
 
     ctx.enqueue_copy(test_output_host.tensor.data, test_output_device.buffer)
@@ -229,7 +254,8 @@ def execute_ragged_flash_attention[
                         assert_almost_equal(
                             ref_val,
                             test_val,
-                            rtol=1e-2 if type is DType.bfloat16 else 1e-4,
+                            rtol=1e-2 if dtype is DType.bfloat16 else 1e-4,
+                            atol=5e-3,  # numerical instability between naive and optimized kernels
                         )
                     except e:
                         print(
@@ -261,18 +287,18 @@ def execute_ragged_flash_attention[
     _ = cache_lengths_device^
     _ = input_row_offsets_host^
     _ = input_row_offsets_device^
+    _ = sink_weights_device^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = (DType.float32, DType.bfloat16)
+    alias dtypes = (DType.float32, DType.bfloat16)
 
-    for bs_ref in [1, 16]:
+    for bs in [1, 16]:
 
         @parameter
-        for type_idx in range(len(types)):
-            alias type = types[type_idx]
+        for dtype_idx in range(len(dtypes)):
+            alias dtype = dtypes[dtype_idx]
 
-            bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
@@ -282,14 +308,14 @@ def execute_flash_attention_suite(ctx: DeviceContext):
                 tg_cache_sizes.append(Int(random_ui64(512, 1024)))
                 ce_seq_lens.append(Int(random_ui64(512, 1024)))
                 ce_cache_sizes.append(0)
-            print("CE", bs, type)
+            print("CE", bs, dtype)
             execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
+                llama_num_q_heads, dtype, kv_params_llama3
             ](ce_seq_lens, 1024, ce_cache_sizes, 2, 1, ctx)
 
-            print("TG", bs, type)
+            print("TG", bs, dtype)
             execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
+                llama_num_q_heads, dtype, kv_params_llama3
             ](tg_seq_lens, 1024, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
@@ -300,7 +326,64 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     ](short_ce_seq_len, 1024, short_ce_cache_size, 2, 1, ctx)
 
 
+def test_flash_attention_with_sink_weights(ctx: DeviceContext):
+    var valid_lengths = List[Int](100, 200, 300)
+    var max_seq_len_cache = 1024
+    var cache_lengths = List[Int](100, 200, 300)
+    var num_layers = 1
+    var layer_idx = 0
+
+    execute_ragged_flash_attention[
+        llama_num_q_heads, DType.float32, kv_params_llama3, sink=True
+    ](
+        valid_lengths,
+        max_seq_len_cache,
+        cache_lengths,
+        num_layers,
+        layer_idx,
+        ctx,
+    )
+
+    execute_ragged_flash_attention[
+        llama_num_q_heads, DType.bfloat16, kv_params_llama3, sink=True
+    ](
+        valid_lengths,
+        max_seq_len_cache,
+        cache_lengths,
+        num_layers,
+        layer_idx,
+        ctx,
+    )
+
+    valid_lengths = List[Int](1, 1, 1)
+    print("Testing TG")
+    execute_ragged_flash_attention[
+        llama_num_q_heads, DType.float32, kv_params_llama3, sink=True
+    ](
+        valid_lengths,
+        max_seq_len_cache,
+        cache_lengths,
+        num_layers,
+        layer_idx,
+        ctx,
+    )
+    print("Testing TG BF16")
+    execute_ragged_flash_attention[
+        llama_num_q_heads, DType.bfloat16, kv_params_llama3, sink=True
+    ](
+        valid_lengths,
+        max_seq_len_cache,
+        cache_lengths,
+        num_layers,
+        layer_idx,
+        ctx,
+    )
+
+
 def main():
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)
+
+        # Test sink weights functionality
+        test_flash_attention_with_sink_weights(ctx)

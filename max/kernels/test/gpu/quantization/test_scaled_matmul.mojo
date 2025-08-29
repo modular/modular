@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -32,7 +30,7 @@ fn test_matmul_dynamic_scaled_fp8[
         n.dim, k.dim
     )
     alias static_c_shape = DimList(m.dim, n.dim)
-    alias static_a_scales_shape = DimList(m.dim, 1)
+    alias static_a_scales_shape = DimList(1, m.dim)
     alias static_b_scales_shape = DimList(n.dim, 1) if transpose_b else DimList(
         1, n.dim
     )
@@ -42,7 +40,7 @@ fn test_matmul_dynamic_scaled_fp8[
         n.value, k.value
     )
     var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(m.value, 1)
+    var dynamic_a_scales_shape = DimList(1, m.value)
     var dynamic_b_scales_shape = DimList(
         n.value, 1
     ) if transpose_b else DimList(1, n.value)
@@ -106,7 +104,7 @@ fn test_matmul_dynamic_scaled_fp8[
         for j in range(k.value):
             a_host_ref.tensor[i, j] = (
                 a_host.tensor[i, j].cast[DType.float32]()
-                * a_scales_host.tensor[i, 0].cast[DType.float32]()
+                * a_scales_host.tensor[0, i].cast[DType.float32]()
             )
 
     for i in range(k.value):
@@ -131,7 +129,12 @@ fn test_matmul_dynamic_scaled_fp8[
     ctx.enqueue_copy(a_device_ref.buffer, a_host_ref.tensor.data)
     ctx.enqueue_copy(b_device_ref.buffer, b_host_ref.tensor.data)
 
-    matmul_dynamic_scaled_fp8[transpose_b=transpose_b, target="gpu",](
+    matmul_dynamic_scaled_fp8[
+        input_scale_granularity="colwise",
+        weight_scale_granularity="rowwise",
+        transpose_b=transpose_b,
+        target="gpu",
+    ](
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,

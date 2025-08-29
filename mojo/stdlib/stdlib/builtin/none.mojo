@@ -19,11 +19,12 @@ These are Mojo built-ins, so you don't need to import them.
 @register_passable("trivial")
 struct NoneType(
     Copyable,
-    Movable,
+    Defaultable,
     ExplicitlyCopyable,
-    Writable,
+    Movable,
     Representable,
     Stringable,
+    Writable,
 ):
     """Represents the absence of a value."""
 
@@ -47,15 +48,6 @@ struct NoneType(
         """
         self._value = value
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicit copy constructor.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(None)
-
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of `None`.
@@ -75,11 +67,8 @@ struct NoneType(
         return "None"
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write `None` to a writer stream.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.

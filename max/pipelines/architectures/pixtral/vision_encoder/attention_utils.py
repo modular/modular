@@ -13,23 +13,26 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 from max.graph import TensorValue, ops
 
 
 def causal_attention_mask_2d_from_imgs(
-    imgs: list[np.ndarray],
+    imgs: list[npt.NDArray[Any]],
     patch_size: int,
     batch_size: int,
     fill_val: float = -10000.0,
-):
+) -> npt.NDArray[np.float32]:
     """Generates a 2D mask to ensure different blocks of patches (images) can only attend
     to patches within their respective block (image).
 
     Args:
 
-        num_patches_list: A list of images (blocks). Each image is of shape
-        (height, width, num_channels).
+        imgs: A list of images (blocks). Each image is of shape
+        (num_channels, height, width).
 
         patch_size: size of one dim of each patch in the image.
 
@@ -40,8 +43,9 @@ def causal_attention_mask_2d_from_imgs(
     attention mask for the blocks of patches attended to by the transformer.
     """
     # generate list of (num_patches_in_height * num_patches_in_width) for each image
+    # Images are now in CHW format, so height is shape[1] and width is shape[2]
     num_patches_list = [
-        img.shape[0] // patch_size * img.shape[1] // patch_size for img in imgs
+        img.shape[1] // patch_size * img.shape[2] // patch_size for img in imgs
     ]
 
     # seq_length is number of patches in all images
@@ -71,14 +75,14 @@ def causal_attention_mask_2d_from_imgs(
 
 def causal_attention_mask_2d(
     num_patches_list: list[int], patch_embeds: TensorValue
-):
+) -> npt.NDArray[np.float32]:
     """Generates a 2D mask to ensure different blocks of patches (images) can only attend
     to patches within their respective block (image).
 
     Args:
 
         num_patches_list: A list of integers, where each entry represents the number of patches
-        in a block (e.g., (num_patches_in_height × num_patches_in_width) patches per image block).
+        in a block (e.g., (num_patches_in_height x num_patches_in_width) patches per image block).
         It is list representing the sizes of different blocks in terms of patches.
 
         patch_embeds:A tensor of shape [batch_size, num_patches, hidden_size] representing the
@@ -110,13 +114,12 @@ def causal_attention_mask_2d(
     # Expand the mask dimensions to match the expected transformer input shape.
     fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # Add two new axes
     fill_matrix = np.broadcast_to(
-        fill_matrix,
-        (int(patch_embeds.shape[0]), 1, seq_len, seq_len),
+        fill_matrix, (int(patch_embeds.shape[0]), 1, seq_len, seq_len)
     )
     return fill_matrix
 
 
-def rotate_half(x: TensorValue):
+def rotate_half(x: TensorValue) -> TensorValue:
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]

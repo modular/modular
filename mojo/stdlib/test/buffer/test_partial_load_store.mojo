@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
-
-from math import exp
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
@@ -40,7 +37,7 @@ fn test_partial_load_store():
     )
 
     for idx in range(total_buffer_size):
-        # Fill read_bufer with 0->15
+        # Fill read_buffer with 0->15
         read_buffer[idx] = idx
         # Fill write_buffer with 0
         write_buffer[idx] = 0

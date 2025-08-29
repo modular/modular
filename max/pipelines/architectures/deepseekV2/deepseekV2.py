@@ -23,13 +23,16 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.nn.attention.attention_with_rope import LatentAttentionWithRope
+from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.kv_cache import FetchPagedKVCacheCollection
+from max.nn.moe import MoE
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
+from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
+    DeepSeekV2MoEGate,
+)
 
 from .model_config import DeepseekV2Config
 
@@ -37,7 +40,7 @@ from .model_config import DeepseekV2Config
 class DeepseekV2(Transformer):
     """Defines the DeepseekV2 transformer model."""
 
-    def __init__(self, config: DeepseekV2Config):
+    def __init__(self, config: DeepseekV2Config) -> None:
         assert len(config.devices) == 1
         assert config.rope_scaling is not None
         scaling_params = DeepseekYarnRopeScalingParams(
@@ -80,11 +83,13 @@ class DeepseekV2(Transformer):
                     config.hidden_size,
                     config.dtype,
                     config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
                 mlp_norm=RMSNorm(
                     config.hidden_size,
                     config.dtype,
                     config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
             )
             for i in range(config.num_hidden_layers)
@@ -113,6 +118,7 @@ class DeepseekV2(Transformer):
                 config.hidden_size,
                 config.dtype,
                 config.rms_norm_eps,
+                multiply_before_cast=False,
             ),
             output=lm_head,
             embedding=embedding_layer,
@@ -120,6 +126,7 @@ class DeepseekV2(Transformer):
             kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params
             ),
+            rope=rope,
         )
 
     def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:
@@ -140,14 +147,16 @@ class DeepseekV2(Transformer):
         ):
             assert len(config.devices) == 1, "Expect only one device"
             return MoE(
-                num_experts_per_tok=config.num_experts_per_tok,
-                ep_size=config.ep_size,
-                experts_per_rank=config.n_routed_experts // config.ep_size,
-                moe_intermediate_size=config.moe_intermediate_size,
-                hidden_size=config.hidden_size,
-                n_shared_experts=config.n_shared_experts,
+                devices=config.devices,
+                hidden_dim=config.hidden_size,
+                num_experts=config.n_routed_experts,
+                num_experts_per_token=config.num_experts_per_tok,
+                moe_dim=config.moe_intermediate_size,
+                gate_cls=DeepSeekV2MoEGate,
+                has_shared_experts=True,
+                shared_experts_dim=config.n_shared_experts
+                * config.moe_intermediate_size,
                 dtype=config.dtype,
-                device=config.devices[0],
             )
         else:
             return MLP(

@@ -34,7 +34,7 @@ optimizes memory access patterns for higher throughput.
 """
 
 from collections import OptionalReg
-from sys import is_compile_time, simdwidthof, sizeof
+from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -305,9 +305,8 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct Swizzle(LayoutTrait, Stringable, Writable):
+struct Swizzle(LayoutTrait, Movable, Stringable, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -449,14 +448,11 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         """
         return self.size()
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Write the swizzle parameters to a writer.
 
         Outputs the swizzle parameters (bits, base, shift) in a
         tuple format.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write to.
@@ -474,7 +470,7 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
 
 @always_inline
 fn make_ldmatrix_swizzle[
-    type: DType, row_size: Int, log2_vector_width: Int = 0
+    dtype: DType, row_size: Int, log2_vector_width: Int = 0
 ]() -> Swizzle:
     """Make swizzle to avoid bank conflict for ldmatrix ops.
 
@@ -483,7 +479,7 @@ fn make_ldmatrix_swizzle[
     Calculates swizzle parameters based on data type and row size.
 
     Parameters:
-        type: The data type of the elements.
+        dtype: The data type of the elements.
         row_size: Size of each row in elements.
         log2_vector_width: Log2 of the vector width (default: 0).
 
@@ -492,7 +488,7 @@ fn make_ldmatrix_swizzle[
     """
     # For Nvidia GPU, 32 banks of 4B each.
     alias bytes_32_banks = 128
-    alias type_size = sizeof[type]()
+    alias type_size = size_of[dtype]()
     alias bytes_row = row_size * type_size
 
     constrained[
@@ -512,7 +508,7 @@ fn make_ldmatrix_swizzle[
 
     # Apply one swizzle bit pattern (^01) to same row if row > 32 banks
     # or multiple rows fit in 32 banks.
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simd_width_of[dtype]()
     alias shifts = log2_floor(max(row_size // simd_size, 8))
 
     return Swizzle(bits, log2_vector_width, shifts)
@@ -543,20 +539,20 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
 
 
 @always_inline
-fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
+fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 
     Returns a swizzle pattern based on standard modes (32B, 64B,
     128B, none), adjusted for data type.
 
     Parameters:
-        type: The data type of the elements.
+        dtype: The data type of the elements.
         mode: The swizzle mode to use (TensorMapSwizzle enum).
 
     Returns:
         A `Swizzle` object configured by the specified mode.
     """
-    alias type_size = sizeof[type]()
+    alias type_size = size_of[dtype]()
 
     @parameter
     if mode in (
@@ -716,12 +712,12 @@ fn eval_composed[
             alias s = shape_a[i].value()
             alias st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))
-            b_idx += coord_i * st
+            b_idx += Int(coord_i * st)
     # swizzle
     else:
         b_idx = composed_layout.layout_a(b_idx)
 
-    b_idx += offset
+    b_idx += Int(offset)
 
     # !!! The following check must be commented out because layout_b is limited
     # to be a swizzle, which doesn't have shape or stride.

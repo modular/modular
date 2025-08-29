@@ -16,10 +16,6 @@ The module includes the `ConstantMemoryMapping` struct which represents a mappin
 constant memory that can be used for efficient data transfer between host and GPU device.
 """
 
-from collections.string import StaticString
-
-from memory import UnsafePointer
-
 
 @fieldwise_init
 @register_passable("trivial")
@@ -44,7 +40,7 @@ struct ConstantMemoryMapping(Copyable, Movable):
     kernel references to constant memory symbols.
     """
 
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
     """Pointer to the host memory location that will be mapped to device constant memory.
 
     This raw pointer represents the starting address of the memory region that will be

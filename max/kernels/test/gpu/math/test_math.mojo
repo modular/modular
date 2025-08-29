@@ -12,27 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import *
-from pathlib import Path
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
-from testing import assert_true
 
 
 fn run_func[
-    type: DType,
-    kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    dtype: DType,
+    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
-](ctx: DeviceContext, val: Scalar[type] = 0) raises:
+](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
-    fn kernel(out: UnsafePointer[Scalar[type]], input: Scalar[type]):
-        out[0] = kernel_fn(input)
+    fn kernel(output: UnsafePointer[Scalar[dtype]], input: Scalar[dtype]):
+        output[0] = kernel_fn(input)
 
-    var out = ctx.enqueue_create_buffer[type](1)
-    ctx.enqueue_function_checked[kernel, kernel](
-        out, val, grid_dim=1, block_dim=1
-    )
+    var out = ctx.enqueue_create_buffer[dtype](1)
+    ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
     _ = out
@@ -95,19 +90,11 @@ def main():
 
         @parameter
         fn test[
-            *kernel_fns: fn[type: DType, width: Int] (
-                SIMD[type, width]
-            ) -> SIMD[type, width]
+            *kernel_fns: fn[dtype: DType, width: Int] (
+                SIMD[dtype, width]
+            ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            @parameter
-            fn variadic_len[
-                *kernel_fns: fn[type: DType, width: Int] (
-                    SIMD[type, width]
-                ) -> SIMD[type, width]
-            ]() -> Int:
-                return __mlir_op.`pop.variadic.size`(kernel_fns)
-
-            alias ls = variadic_len[*kernel_fns]()
+            alias ls = stdlib.builtin.variadic_size(kernel_fns)
 
             @parameter
             for idx in range(ls):
@@ -125,8 +112,8 @@ def main():
             frexp_fn,
             log,
             log2,
-            # log10,
-            # log1p,
+            log10,
+            log1p,
             # logb,
             # cbrt,
             # hypot_fn,

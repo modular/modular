@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 @fieldwise_init("implicit")
@@ -32,7 +32,7 @@ struct Dim(Stringable, Writable):
     """
 
     @implicit
-    fn __init__[I: Indexer](out self, x: I):
+    fn __init__[I: Indexer, //](out self, x: I):
         """Initializes Dim with a single indexable value for x.
 
         y and z dimensions are set to 1.
@@ -45,7 +45,7 @@ struct Dim(Stringable, Writable):
         """
         self._value = IndexList[3](index(x), 1, 1)
 
-    fn __init__[I0: Indexer, I1: Indexer](out self, x: I0, y: I1):
+    fn __init__[I0: Indexer, I1: Indexer, //](out self, x: I0, y: I1):
         """Initializes Dim with indexable values for x and y.
 
         z dimension is set to 1.
@@ -61,7 +61,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), 1)
 
     fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer
+        I0: Indexer, I1: Indexer, I2: Indexer, //
     ](out self, x: I0, y: I1, z: I2):
         """Initializes Dim with indexable values for x, y, and z.
 
@@ -78,7 +78,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), index(z))
 
     @implicit
-    fn __init__[I: Indexer](out self, dims: (I,)):
+    fn __init__[I: Indexer & Copyable & Movable, //](out self, dims: (I,)):
         """Initializes Dim with a tuple containing a single indexable value.
 
         y and z dimensions are set to 1.
@@ -92,7 +92,9 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(dims[0]), 1, 1)
 
     @implicit
-    fn __init__[I0: Indexer, I1: Indexer](out self, dims: (I0, I1)):
+    fn __init__[
+        I0: Indexer & Copyable & Movable, I1: Indexer & Copyable & Movable, //
+    ](out self, dims: (I0, I1)):
         """Initializes Dim with a tuple of two indexable values.
 
         The z dimension is set to 1.
@@ -108,7 +110,9 @@ struct Dim(Stringable, Writable):
 
     @implicit
     fn __init__[
-        I0: Indexer, I1: Indexer, I2: Indexer
+        I0: Indexer & Copyable & Movable,
+        I1: Indexer & Copyable & Movable,
+        I2: Indexer & Copyable & Movable, //,
     ](out self, dims: (I0, I1, I2)):
         """Initializes Dim with a tuple of three indexable values.
 
@@ -152,11 +156,8 @@ struct Dim(Stringable, Writable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a formatted string representation of the Dim.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The Writer to write to.

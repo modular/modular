@@ -90,9 +90,9 @@ from .memory import (
     load,
     multimem_ld_reduce,
     multimem_st,
-    tma_store_fence,
+    fence_async_view_proxy,
 )
-from .semaphore import Semaphore
+from .semaphore import Semaphore, NamedBarrierSemaphore
 from .sync import (
     AMDScheduleBarrierMask,
     async_copy_arrive,

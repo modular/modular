@@ -7,7 +7,7 @@ early in the evolution of Mojo as a way to bring up the language, when
 memory-only types were added. Given other progress, it makes sense to rework
 this to generalize them.
 
-Here are some simple examples of both forms of `@register_passable` :
+Here are some simple examples of both forms of `@register_passable`:
 
 ```mojo
 @register_passable
@@ -86,9 +86,20 @@ This behavior has been very effective and valuable: both as a way to make it
 more convenient to define a common class of types (not having to write a
 moveinit explicitly) and as a performance optimization for very low level code.
 
+## What should "trivial" mean?
+
+There are currently three core operations relevant to this topic: destruction,
+copying and moving.  "Trivial" for destruction means that the destructor is a
+no-op, trivial for copying means that the value can be copied with a `memcpy`
+(no other side effects are required).  Trivial for moving means that a value can
+be moved by `memcpy`'ing its state and considering the original value.
+
+These are all each orthogonal axes: it is common for types to be trivially
+movable, but have a destructor (e.g. an Arc pointer).
+
 ## Desired improvements to `“trivial”`
 
-Trivial has worked well, but it can be better.  Three observations:
+Trivial has worked well, but it can be better.  Some observations:
 
 - The semantics of ”copyable with memcpy” and “no behavior in the destructor”
   really have nothing to do with register pass-ability, we would like for this
@@ -98,112 +109,202 @@ Trivial has worked well, but it can be better.  Three observations:
   able to notice when a generic type is trivial, and use bulk memory operations
   (`memcpy`) instead of a for loop or skip calling destructors for elements.
 
-- Some day, we would like to be able to define that a type is trivial if its
+- We would like to be able to define that a type is trivial if its
   elements are trivial, even if one of the element types is generic.
+
+- We want types like `InlineArray` to themselves be considered trivially
+  copyable when their element is trivially copyable, like conditional
+  conformance.
 
 For all these reasons, we need to upgrade “trivial” and decouple it from the
 `@register_passable` decorator.
 
-## Proposed approach: introduce a `Trivial` trait + type checking
+## Background: synthesized methods
 
-To up-level the design, let’s introduce a new (compiler-known) `Trivial` trait
-and type checking to enforce that it is used correctly.
+The Mojo compiler now [implicitly synthesizes
+conformances](upgrading-value-decorator.md) to `AnyType` (providing a
+destructor), to `Movable` (providing `__moveinit__`) and to `Copyable`
+(providing `__copyinit__`).  The compiler can know that each of these operations
+are trivial if all contained fields of the type are trivial according to the
+same operation: for example, a struct's destructor is trivial if its elements
+destructors are all trivial.
 
-### Defining the Semantics of “Trivial”
+## Proposed approach: introduce aliases to `AnyType`, `Movable`, and `Copyable`
 
-First, what does `Trivial` mean? We define it as two things:
-
-1. A destructor with no side effects, this allows calls to it to be completely
-   elided.
-
-2. The value can be copied and moved with `memcpy`.
-
-These two things cover a range of important types and enable the optimizations
-(e.g. bulk memcpy) that we are looking for.
-
-### Add the trait to the standard library
+The proposed approach is to extend each of these traits with a new alias
+indicating whether the operation is trivial:
 
 ```mojo
-trait Trivial(Copyable, Movable):
-    alias __trivial_trait_magic : ()
+trait AnyType:
+  # Existing
+  fn __del__(owned self, /): ...
+  # New
+  alias __del__is_trivial_unsafe: Bool = False
+
+trait Movable:
+   # Existing
+   fn __moveinit__(out self, owned existing: Self, /): ...
+   # New
+   alias __moveinit__is_trivial_unsafe: Bool = False
+
+trait Copyable:
+   # Existing
+   fn __copyinit__(out self, existing: Self, /): ...
+   # New
+   alias __copyinit__is_trivial_unsafe: Bool = False
 ```
 
-This says that all `Trivial` types are required to be both copyable and
-movable. It has a `__trivial_trait_magic` because Mojo has implicit
-conformance, and we don’t want “everything” `Copyable` and `Movable` to be
-inferred to be `Trivial` .
-
-When Mojo gets rid of implicit conformance to traits, this can be removed. This
-work is in flight.
-
-### Add type checking for types that conform to it
-
-We can now declare that types conform to the `Trivial` trait, some examples:
+These aliases allow containers to use custom logic with straight-forward
+`@parameter if`'s to conditionalize their behavior:
 
 ```mojo
-@register_passable
-struct RPTrivial(Trivial):
-  var x: Int
-  var y: Float64
-
-  # Can't define copyinit or moveinit
-
-
-struct MemTrivial(Trivial):
-  var x: Int
-  var y: Float64
-  var z: OtherMemTrivial
-
-  # Can't define copyinit or moveinit
-```
-
-In order to verify correctness, we should port over the existing semantic
-analysis for “trivial”:
-
-- Reject attempts to explicitly declare `__copyinit__`  `__moveinit__`  and
-  `__del__` methods, (synthesizing them instead).
-
-- Inject the special `alias __trivial_trait_magic : () = ()` alias. Optional,
-  but for correctness we should also change alias declarations to prevent
-  explicitly declared aliases with this name.
-
-- Verify that the members all conform to `Trivial` as well.
-
-- Depending on what happens with the `@value` decorator, we should look at its
-  intersection with this trait and make them orthogonal.
-
-## Optimizations made possible by Trivial
-
-Now that `Trivial` is a trait, it automatically participates in the type system
-in an expected way. Right now Mojo’s type system isn’t particularly powerful,
-but with the introduction of require’s clauses and correct conditional
-conformance and improvements to metatype representation, it will all dovetail
-correctly. For example, I would like to be able to write something like this
-someday:
-
-```mojo
-# No more hint_trivial_type!
-struct List[T: Copyable & Movable]:
-
+struct List[T: Copyable & Movable]: # Look, no hint_trivial_type!
+    ...
     fn __del__(owned self):
         @parameter
-        if not __instanceof(T, Trivial): # Pick concrete syntax sometime later
+        if not T.__del__is_trivial_unsafe:
             for i in range(len(self)):
                 (self.data + i).destroy_pointee()
         self.data.free()
 
-    fn _realloc(mut self, new_capacity: Int):
-        var new_data = UnsafePointer[T].alloc(new_capacity)
-
+    fn __copyinit__(out self, existing: Self):
+        self = Self(capacity=existing.capacity)
         @parameter
-        if not __instanceof(T, Trivial):  # Paint this later :-)
-            memcpy(new_data, self.data, len(self))
+        if T.__copyinit__is_trivial_unsafe:
+            # ... memcpy ...
         else:
-            for i in range(len(self)):
-                (self.data + i).move_pointee_into(new_data + i)
-        ...
+            # ... append copies...
 ```
 
-Implementing these features is out of scope for this proposal, but rearranging
-the deck chairs here will make them compose together properly, and eliminate
-some hacks like `hint_trivial_type`.
+These aliases impose no runtime overhead, and allow collections to express this
+sort of logic in a natural way. This also keeps each of these notions of
+"trivial" cleanly orthogonal.
+
+Let's explore some nuances of this.
+
+### Mojo compiler can synthesize the alias correctly
+
+When Mojo implicitly synthesizes a member, it can synthesize the alias as well.
+
+```mojo
+struct MyStruct(Copyable):
+  var x: Int
+  # Compiler already synthesizes:
+  # fn __copyinit__(out self, other: Self):
+  #    self.x = other.x
+
+  # Compiler newly synthesizes:
+  # alias __copyinit__is_trivial_unsafe = True.
+```
+
+However, the compiler doesn't have to know anything about the types, it actually
+just uses the alias to support more complex cases correctly:
+
+```mojo
+struct MyStruct2[EltTy: Copyable](Copyable):
+  var x: Int
+  var y: EltTy
+  # Compiler already synthesizes:
+  # fn __copyinit__(out self, other: Self):
+  #    self.x = other.x
+  #    self.y = other.y
+
+  # Compiler newly synthesizes:
+  # alias __copyinit__is_trivial_unsafe =
+  #     Int.__copyinit__is_trivial_unsafe & EltTy.__copyinit__is_trivial_unsafe
+```
+
+This builds on Mojo's powerful comptime metaprogramming features naturally.
+
+### Types implementing explicit operations default correctly
+
+Because these aliases have default values, types that implement their own
+method would be handled correctly by default:
+
+```mojo
+struct MyStruct:
+  # __del__is_trivial_unsafe defaults to false.
+  fn __del__(owned self):
+    print("hi")
+```
+
+### Types can implement custom conditional behavior
+
+Because these aliases are explicit, advanced library developers can define
+smart custom behavior:
+
+```mojo
+struct InlineArray[ElementType: Copyable & Movable]:
+    fn __copyinit__(out self, other: Self):
+        @parameter
+        if ElementType.__copyinit__is_trivial_unsafe:
+            # ... memcpy ...
+        else:
+            # ... append copies...
+
+    # InlineArray's copy is itself trivial if the element is.
+    alias __copyinit__is_trivial_unsafe = T.__copyinit__is_trivial_unsafe
+```
+
+Note that a type author getting this wrong could introduce memory unsafety
+problems, on both the definition and use-side of things. This is why the aliases
+have the word "unsafe" in them.
+
+### Removing `@register_passable("trivial")`
+
+It appears that this would allow us to remove `@register_passable("trivial")`,
+but keep `@register_passable`.  The former would be replaced with
+`@register_passable`+`Copyable`+`Movable` conformance.  If that causes too much
+boilerplate, then we can define a helper trait in the standard library that a
+type can conform to:
+
+```mojo
+@register_passable
+trait RPTrivial(Copyable, Movable):
+  pass
+```
+
+### Potential Design / Implementation Challenges
+
+Here are a couple design and implementation challenges that may come up:
+
+1) We need to decide on a final name for the aliases, e.g. do we want to include
+   the word "unsafe" in them.
+
+2) We might not be able to use `Bool` as the type of these properties, because
+   Bool itself conforms to these traits.  We may run into cycling resolution
+   problems.  Mitigation: we can use `i1` or some purpose built type if
+   required.
+
+3) We don't actually have defaulted aliases yet.  Mitigation: we can hack the
+   compiler to know about this, since these traits already have synthesis magic.
+
+## Alternatives Considered
+
+The chief alternative that was previously discussed was to introduce one or more
+subtraits like:
+
+```mojo
+trait TriviallyCopyable(Copyable): pass
+```
+
+There are a few reasons why the proposed approach is nicer than this one:
+
+1) Being "trivial" is a property of a copy constructor, so it seems like it
+   should be modeled as an aspect of its conformance (as proposed here), not
+   as a separate trait.
+2) That would require doubling the number of traits in the standard library.
+3) In the short term, we don't have conditional conformance or comptime trait
+   downcasting, so we couldn't implement the behavior we need to use these.
+4) Even if we did have those, we could do custom conditional implementation
+   like shown above for `InlinedArray`.
+
+As such, the proposed approach is more pragmatic in the short term, but also
+seems like the right approach in the long term.
+
+## Conclusion
+
+This proposal should expand the expressive capability of Mojo by building into
+other existing features in a nice orthogonal way.  It does so without
+introducing new language syntax, and indeed allows removing
+`@register_passable("trivial")`, which removes a concept from the language.

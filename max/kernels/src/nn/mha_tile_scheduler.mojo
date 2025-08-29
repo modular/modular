@@ -12,33 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv
 from os.atomic import Atomic
 
 import gpu.warp as warp
 from buffer import NDBuffer
 from builtin.device_passable import DevicePassable
-from gpu import WARP_SIZE
 from gpu.host.info import H100
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier, named_barrier
-from layout.int_tuple import IntTuple
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
-from linalg.fast_div import FastDiv
-from memory import UnsafePointer
-from nn.mha_mask import MHAMask, TileMaskStatus
-from tensor_internal import ManagedTensorSlice
-
-from utils.index import Index, IndexList
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Stringable, Writable):
+struct WorkInfo(Copyable, Movable, Stringable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -59,7 +46,7 @@ struct WorkInfo(Stringable, Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.prompt_offset,
@@ -73,9 +60,8 @@ struct WorkInfo(Stringable, Writable):
         )
 
 
-@value
 @register_passable("trivial")
-struct SeqInfo:
+struct SeqInfo(Copyable, Movable):
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -119,9 +105,9 @@ struct SeqInfo:
             return SeqInfo(seq_len, 0, work)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MHASchedulerSynchronization:
+struct MHASchedulerSynchronization(Copyable, Movable):
     var _value: Int32
 
     alias NONE = Self(0)  # use for TMA
@@ -167,9 +153,8 @@ struct MHATileState:
         return self.is_valid(self.idx)
 
 
-@value
 @register_passable("trivial")
-struct MHATileSummary:
+struct MHATileSummary(Copyable, Movable):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -207,7 +192,7 @@ struct MHATileSummary:
     fn _index_to_coords_default[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
-        # Frist dim, offset in prompt length
+        # First dim, offset in prompt length
         #
         # The goal is to keep kv in l2 cache.
         # As kv is constant with prompt_tile_idx,
@@ -395,9 +380,9 @@ trait MHATileScheduler:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MHASchedule:
+struct MHASchedule(Copyable, Movable):
     var _value: Int32
 
     alias DEFAULT = Self(0)
@@ -417,12 +402,11 @@ struct MHASchedule:
 # ===----------------------------------------------------------------------=== #
 
 
-@value
 @register_passable("trivial")
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](MHATileScheduler):
+](Copyable, Defaultable, MHATileScheduler, Movable):
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -486,7 +470,6 @@ struct TransientScheduler[
         )
 
 
-@value
 @register_passable("trivial")
 struct TileScheduler[
     tile_shape: UInt32,
@@ -494,7 +477,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler):
+](Copyable, Defaultable, MHATileScheduler, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
 
@@ -570,7 +553,6 @@ struct TileScheduler[
         )
 
 
-@value
 @register_passable("trivial")
 struct QueuedTileScheduler[
     tile_shape: UInt32,
@@ -579,7 +561,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler):
+](Copyable, DevicePassable, MHATileScheduler, Movable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.
@@ -662,7 +644,7 @@ struct QueuedTileScheduler[
             # producer needs to sync before loading
             @parameter
             if sync == MHASchedulerSynchronization.PRODUCER:
-                named_barrier[128, id=1]()
+                named_barrier[128,](id=1)
 
         @parameter
         if sync == MHASchedulerSynchronization.ALL:
@@ -711,3 +693,47 @@ struct QueuedTileScheduler[
         return ts.unsafe_seq_info[tile_shape, num_heads, ragged, Self.schedule](
             state.idx
         )
+
+    # `trait DevicePassable` implementation
+    alias device_type: AnyTrivialRegType = Self
+
+    fn _to_device_type(self, target: OpaquePointer):
+        """Convert the host type object to a device_type and store it at the
+        target address.
+
+        Args:
+            target: The target address to store the device type.
+        """
+        target.bitcast[Self.device_type]()[] = self
+
+    @no_inline
+    @staticmethod
+    fn get_type_name() -> String:
+        """Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            "QueuedTileScheduler[tile_shape = ",
+            String(tile_shape),
+            ", num_heads = ",
+            String(num_heads),
+            ", decoding = ",
+            String(decoding),
+            ", num_ctas = ",
+            String(num_ctas),
+            ", schedule = ",
+            String(schedule._value),
+            "]",
+        )
+
+    @no_inline
+    @staticmethod
+    fn get_device_type_name() -> String:
+        """Gets device_type's name.
+
+        Returns:
+            The device type's name.
+        """
+        return Self.get_type_name()

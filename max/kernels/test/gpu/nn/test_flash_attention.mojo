@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv, has_amd_gpu_accelerator
 
@@ -20,9 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100, Info, Vendor
-from internal_utils import assert_with_measure
-from memory import UnsafePointer
+from gpu.host.info import A100, H100, GPUInfo, Vendor
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -42,7 +39,7 @@ fn is_benchmark() -> Bool:
     return False
 
 
-fn is_sm8(info: Info) -> Bool:
+fn is_sm8(info: GPUInfo) -> Bool:
     return (
         info.vendor == Vendor.NVIDIA_GPU
         and info.compute >= 8
@@ -84,6 +81,8 @@ fn test[
         mask_type,
         "mask_rank:",
         mask_rank,
+        "depth:",
+        depth,
     )
 
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
@@ -102,8 +101,8 @@ fn test[
     var v_size = k_size
     var o_size = q_size
     var mask_size = (
-        num_heads if mask_rank == 4 else 1
-    ) * seq_len * num_keys * batch_size
+        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
+    )
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -151,7 +150,7 @@ fn test[
         rand[qkv_type](v_ptr, v_size)
         rand[mask_type](mask_ptr, mask_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -197,7 +196,7 @@ fn test[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
@@ -331,18 +330,7 @@ fn test[
 
     @parameter
     fn get_rtol() -> Float64:
-        @parameter
-        if has_amd_gpu_accelerator():
-            if num_partitions.value() >= 16:
-                return 4e-2
-            elif num_partitions.value() >= 4:
-                return 3e-2
-            elif num_partitions.value() >= 2:
-                return 2.5e-2
-            else:
-                return 1e-2
-        else:
-            return 2e-2 if num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions.value() >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
@@ -380,108 +368,112 @@ fn test[
 fn test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
-    # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-    test[
-        4,
-        DType.float32,
-        DType.float32,
-        128,
-        32,
-        against_gpu_naive=True,
-    ](1024, 1024, ctx, is_benchmark())
-    test[
-        3,
-        DType.float32,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](14, 14, ctx, is_benchmark())
-    test[
-        3,
-        DType.float32,
-        DType.float32,
-        128,
-        1,
-        against_gpu_naive=True,
-    ](178, 178, ctx, is_benchmark())
-    # bf16 depth == 128, bf16-fp32 mma
-    test[
-        4,
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=128,
-        num_heads=1,
-        against_gpu_naive=True,
-    ](128, 128, ctx)
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        depth=128,
-        num_heads=1,
-        against_gpu_naive=True,
-    ](384, 384, ctx)
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        against_gpu_naive=True,
-    ](256, 256, ctx)
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        32,
-        against_gpu_naive=True,
-    ](1024, 1024, ctx, is_benchmark())
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-    ](1024, 1024, ctx)
-    # BF16 with sequence length not multiple of 128
-    test[
-        4,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        3,
-        group=3,
-        against_gpu_naive=True,
-    ](64, 64, ctx)
-    test[
-        4,
-        DType.bfloat16,
-        DType.bfloat16,
-        128,
-        3,
-        group=3,
-        against_gpu_naive=True,
-    ](102, 102, ctx)
-    test[
-        3,
-        DType.bfloat16,
-        DType.float32,
-        128,
-        1,
-        against_gpu_naive=True,
-    ](14, 14, ctx)
-    test[
-        3,
-        DType.bfloat16,
-        DType.bfloat16,
-        128,
-        1,
-        against_gpu_naive=True,
-    ](528, 528, ctx)
+
+    @parameter
+    for d in range(2):
+        alias depth = 64 * (d + 1)
+        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+        test[
+            4,
+            DType.float32,
+            DType.float32,
+            depth,
+            32,
+            against_gpu_naive=True,
+        ](1024, 1024, ctx, is_benchmark())
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            depth,
+            3,
+            against_gpu_naive=True,
+        ](14, 14, ctx, is_benchmark())
+        test[
+            3,
+            DType.float32,
+            DType.float32,
+            depth,
+            1,
+            against_gpu_naive=True,
+        ](178, 178, ctx, is_benchmark())
+        # bf16 depth == 128, bf16-fp32 mma
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=1,
+            against_gpu_naive=True,
+        ](128, 128, ctx)
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            depth=depth,
+            num_heads=1,
+            against_gpu_naive=True,
+        ](384, 384, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            depth,
+            3,
+            against_gpu_naive=True,
+        ](256, 256, ctx)
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            depth,
+            32,
+            against_gpu_naive=True,
+        ](1024, 1024, ctx, is_benchmark())
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            depth,
+            24,
+            group=3,
+            against_gpu_naive=True,
+        ](1024, 1024, ctx)
+        # BF16 with sequence length not multiple of 128
+        test[
+            4,
+            DType.bfloat16,
+            DType.float32,
+            depth,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](64, 64, ctx)
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth,
+            3,
+            group=3,
+            against_gpu_naive=True,
+        ](102, 102, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.float32,
+            depth,
+            1,
+            against_gpu_naive=True,
+        ](14, 14, ctx)
+        test[
+            3,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth,
+            1,
+            against_gpu_naive=True,
+        ](528, 528, ctx)
 
 
 fn test_decoding[
@@ -490,45 +482,48 @@ fn test_decoding[
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    test[
-        3,
-        qkv_type,
-        DType.float32,
-        128,
-        1,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 11, ctx, use_index_input=use_index_input)
-    if (
-        not is_sm8(ctx.device_info)
-        or num_partitions
-        and num_partitions.value() == 1
-    ):
+    @parameter
+    for d in range(2):
+        alias depth = 64 * (d + 1)
         test[
-            4,
+            3,
             qkv_type,
-            DType.bfloat16,
-            128,
-            2,
+            DType.float32,
+            depth,
+            1,
             against_gpu_naive=True,
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
-        ](1, 523, ctx, use_index_input=use_index_input)
-    test[
-        4,
-        qkv_type,
-        DType.float32,
-        128,
-        24,
-        group=3,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 29, ctx, use_index_input=use_index_input)
+        ](1, 11, ctx, use_index_input=use_index_input)
+        if (
+            not is_sm8(ctx.default_device_info)
+            or num_partitions
+            and num_partitions.value() == 1
+        ):
+            test[
+                4,
+                qkv_type,
+                DType.bfloat16,
+                depth,
+                2,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+            ](1, 523, ctx, use_index_input=use_index_input)
+        test[
+            4,
+            qkv_type,
+            DType.float32,
+            depth,
+            24,
+            group=3,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](1, 29, ctx, use_index_input=use_index_input)
 
     # TODO(KERN-1674): enable these tests after fixing the bug
     # test[
@@ -563,18 +558,21 @@ fn test_decoding_large_group[
     split_k: Bool = False,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
-    test[
-        4,
-        qkv_type,
-        DType.float32,
-        128,
-        32,
-        group=16,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 2000, ctx, use_index_input=use_index_input)
+    @parameter
+    for d in range(2):
+        alias depth = 64 * (d + 1)
+        test[
+            4,
+            qkv_type,
+            DType.float32,
+            depth,
+            32,
+            group=16,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](1, 2000, ctx, use_index_input=use_index_input)
 
 
 fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
@@ -685,7 +683,10 @@ def main():
                     )
 
                 @parameter
-                if ctx.device_info is A100 or ctx.device_info is H100:
+                if (
+                    ctx.default_device_info is A100
+                    or ctx.default_device_info is H100
+                ):
                     test_decoding_large_group[batch_size, 1](ctx)
 
                 test_decoding[batch_size, 2, split_k](ctx, False)

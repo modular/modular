@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
-
 
 from os import Atomic
-from time import sleep, time_function
+from time import time_function
 
 from runtime.asyncrt import TaskGroup
 from testing import assert_equal

@@ -16,12 +16,16 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List, Set
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 
-from python import Python, PythonConvertible, PythonObject
-from python._bindings import ConvertibleFromPython
+from python import (
+    Python,
+    PythonObject,
+    ConvertibleFromPython,
+    ConvertibleToPython,
+)
 
-from utils._select import _select_register_value
+from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===----------------------------------------------------------------------=== #
@@ -101,20 +105,21 @@ trait ImplicitlyBoolable(Boolable):
 @register_passable("trivial")
 struct Bool(
     Comparable,
+    ConvertibleFromPython,
+    ConvertibleToPython,
     Copyable,
-    Movable,
     Defaultable,
     ExplicitlyCopyable,
     Floatable,
+    Hashable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
-    PythonConvertible,
-    ConvertibleFromPython,
+    Intable,
+    Movable,
     Representable,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """The primitive Bool scalar value used in Mojo."""
 
@@ -145,15 +150,14 @@ struct Bool(
 
     @doc_private
     @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<bool>`):
+    fn __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
         """Construct a Bool value given a `!pop.scalar<bool>` value.
 
         Args:
-            value: The initial value.
+            mlir_value: The initial value.
         """
         self.value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i1](
-            value
+            mlir_value
         )
 
     @always_inline("nodebug")
@@ -201,15 +205,6 @@ struct Bool(
         self = value.__bool__()
 
     @always_inline("builtin")
-    fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided value.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
-    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert to Bool.
 
@@ -253,12 +248,9 @@ struct Bool(
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this boolean to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -283,7 +275,7 @@ struct Bool(
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return Int(1) if self else Int(0)
+        return select[Int](self, 1, 0)
 
     @always_inline("builtin")
     fn __as_int__(self) -> Int:
@@ -311,7 +303,7 @@ struct Bool(
         Returns:
             1.0 if True else 0.0 otherwise.
         """
-        return _select_register_value(self, Float64(1.0), Float64(0.0))
+        return select[Float64](self, 1, 0)
 
     @always_inline("builtin")
     fn __eq__(self, rhs: Bool) -> Bool:
@@ -326,7 +318,7 @@ struct Bool(
         Returns:
             True if the two values match and False otherwise.
         """
-        return not self != rhs
+        return ~(self != rhs)
 
     @always_inline("builtin")
     fn __ne__(self, rhs: Bool) -> Bool:
@@ -355,7 +347,7 @@ struct Bool(
             True if self is False and rhs is True.
         """
 
-        return not self and rhs
+        return ~self & rhs
 
     @always_inline("builtin")
     fn __le__(self, rhs: Self) -> Bool:
@@ -368,7 +360,7 @@ struct Bool(
             True if self is False and rhs is True or False.
         """
 
-        return not self or rhs
+        return ~self | rhs
 
     @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
@@ -381,7 +373,7 @@ struct Bool(
             True if self is True and rhs is False.
         """
 
-        return self and not rhs
+        return rhs < self
 
     @always_inline("builtin")
     fn __ge__(self, rhs: Self) -> Bool:
@@ -394,7 +386,7 @@ struct Bool(
             True if self is True and rhs is True or False.
         """
 
-        return self or not rhs
+        return rhs <= self
 
     # ===-------------------------------------------------------------------===#
     # Bitwise operations
@@ -517,16 +509,7 @@ struct Bool(
         """
         return lhs ^ self
 
-    @always_inline("builtin")
-    fn __neg__(self) -> Int:
-        """Defines the unary `-` operation.
-
-        Returns:
-            0 for False and -1 for True.
-        """
-        return Int(-1) if self else Int(0)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -537,7 +520,7 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -580,7 +563,7 @@ fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
     for item in list:
-        if item[]:
+        if item:
             return True
     return False
 
@@ -598,7 +581,7 @@ fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
         `True` if **any** element in the set is truthy, `False` otherwise.
     """
     for item in set:
-        if item[]:
+        if item:
             return True
     return False
 
@@ -637,7 +620,7 @@ fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
         `True` if **all** elements in the list are truthy, `False` otherwise.
     """
     for item in list:
-        if not item[]:
+        if not item:
             return False
     return True
 
@@ -655,7 +638,7 @@ fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
         `True` if **all** elements in the set are truthy, `False` otherwise.
     """
     for item in set:
-        if not item[]:
+        if not item:
             return False
     return True
 

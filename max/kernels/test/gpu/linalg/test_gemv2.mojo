@@ -13,21 +13,17 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from math import ceildiv
 from random import random_si64
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 
 from utils import IndexList
-from utils.index import Index
 
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
     IndexList[2], IndexList[2], SIMD[type, width]
@@ -231,6 +227,13 @@ def main():
             transpose_b=True,
         ](bench, ctx, dynamic(1), static[4096](), static[4096]())
 
+        # M = 1, N % TILE_N != 0, K % simd_width == 0, transpose_b = True
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.float32,
+            transpose_b=True,
+        ](bench, ctx, dynamic(1), static[75837](), static[5120]())
+
         # GEMV_KERNEL_VECTOR
 
         # N = 1, K % simd_width == 0, transpose_b = False
@@ -239,6 +242,13 @@ def main():
             out_type = DType.float32,
             transpose_b=False,
         ](bench, ctx, dynamic(4096), static[1](), static[4096]())
+
+        # N = 1, K % simd_width == 0, transpose_b = True
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.bfloat16,
+            transpose_b=True,
+        ](bench, ctx, dynamic(5120), static[1](), static[13824]())
 
         # GEMV_KERNEL
 
@@ -255,15 +265,6 @@ def main():
             out_type = DType.float32,
             transpose_b=False,
         ](bench, ctx, dynamic(4096), static[1](), static[4095]())
-
-        # gevm_tc_kernel_vector_8x with Nvidia multistage_gemm with AMDGPU
-        # M = 1, K % WARP_SIZE == 0, transpose_b = False
-        # Need to add tolerance
-        # test[
-        #    in_type = DType.bfloat16,
-        #    out_type = DType.float32,
-        #    transpose_b=False,
-        # ](bench, ctx, dynamic(1), static[4096](), static[4096]())
 
         # matmaul_naive
         # M = 1, K % WARP_SIZE != 0, transpose_b = False

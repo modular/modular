@@ -12,29 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import ceildiv, exp
-from sys import alignof, bitwidthof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from math import ceildiv
+from sys import align_of, bit_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer import NDBuffer, DimList
 from builtin.dtype import _uint_type_of_width
-from builtin.io import _printf
 from gpu import (
-    WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
     grid_dim,
-    lane_id,
     thread_idx,
 )
 from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from memory import UnsafePointer, bitcast, stack_allocation
+from layout import Layout, LayoutTensor, RuntimeTuple
+from layout.int_tuple import fill_like, UNKNOWN_VALUE
+from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -88,7 +84,7 @@ fn topk_wrapper[
         in_buffer: UnsafePointer[Scalar[T]] - Input buffer containing the elements to process
         local_topk_vals: UnsafePointer[Scalar[T]] - Output buffer to store the local top-K values
         local_topk_idxs: UnsafePointer[Scalar[out_idx_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p cofficient
+        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
     tid = thread_idx.x
@@ -104,7 +100,7 @@ fn topk_wrapper[
     var topk_sram = external_memory[
         TopK_2[T, largest],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[TopK_2[T, largest]](),
+        alignment = align_of[TopK_2[T, largest]](),
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
@@ -169,7 +165,7 @@ fn normalize(value: BFloat16) -> Scalar[DType.uint16]:
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
     var bits = reinterpret(value)
-    alias sign_bit_mask = (0b1 << (bitwidthof[DType.bfloat16]() - 1))
+    alias sign_bit_mask = (0b1 << (bit_width_of[DType.bfloat16]() - 1))
     if bits & sign_bit_mask:
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -194,7 +190,7 @@ fn normalize(value: Int32) -> UInt32:
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    alias sign_bit_mask = (0b1 << (bitwidthof[DType.int32]() - 1))
+    alias sign_bit_mask = (0b1 << (bit_width_of[DType.int32]() - 1))
 
     return reinterpret(value) ^ sign_bit_mask
 
@@ -214,7 +210,7 @@ fn normalize(value: Float32) -> UInt32:
         return bitcast[DType.uint32, 1](value)
 
     var bits = reinterpret(value)
-    alias sign_bit = bitwidthof[DType.float32]() - 1
+    alias sign_bit = bit_width_of[DType.float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> sign_bit)) | (0b1 << sign_bit))
@@ -223,7 +219,7 @@ fn normalize(value: Float32) -> UInt32:
 @always_inline
 fn normalize(
     value: Scalar,
-    out result: Scalar[_uint_type_of_width[bitwidthof[value.dtype]()]()],
+    out result: Scalar[_uint_type_of_width[bit_width_of[value.dtype]()]()],
 ):
     """
     Normalize the value to the appropriate unsigned integer type. This is needed
@@ -333,11 +329,11 @@ fn radix_sort_pairs_kernel[
     ]()
 
     # Initialize counts[NUM_BUCKETS]
-    var counts_buf = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, DimList(NUM_BUCKETS)
-    ].stack_allocation()
-    var counts = counts_buf.data
-    counts_buf.fill(0)
+    var counts_stack = InlineArray[Int32, NUM_BUCKETS](uninitialized=True)
+    var counts_buf = LayoutTensor[DType.int32, Layout.row_major(NUM_BUCKETS)](
+        counts_stack
+    ).fill(0)
+    var counts = counts_buf.ptr
 
     # Process elements and compute counts for each thread
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
@@ -423,11 +419,13 @@ fn radix_sort_pairs_kernel[
         barrier()
 
     # Each thread initializes local_offsets[NUM_BUCKETS] = 0
-    var local_offsets_buf = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, DimList(NUM_BUCKETS)
-    ].stack_allocation()
-    local_offsets_buf.fill(0)
-    var local_offsets = local_offsets_buf.data
+    var local_offsets_stack = InlineArray[Int32, NUM_BUCKETS](
+        uninitialized=True
+    )
+    var local_offsets_buf = LayoutTensor[
+        DType.int32, Layout.row_major(NUM_BUCKETS)
+    ](local_offsets_stack).fill(0)
+    var local_offsets = local_offsets_buf.ptr
 
     # Now, each thread processes its elements, computes destination index, write to output
     for index in range(tid * elems_per_thread, (tid + 1) * elems_per_thread):
@@ -464,54 +462,70 @@ fn radix_sort_pairs_kernel[
             local_offsets[radix] += 1
 
 
+struct DoubleBuffer[T: AnyType](Copyable, Movable):
+    var _d_buffers: InlineArray[UnsafePointer[T], 2]
+    var _selection: Int32
+
+    fn __init__(out self):
+        self._d_buffers = [{}, {}]
+        self._selection = 0
+
+    fn __init__(
+        out self,
+        current: UnsafePointer[T],
+        alternate: UnsafePointer[T],
+    ):
+        self._d_buffers = [current, alternate]
+        self._selection = 0
+
+    @always_inline
+    fn current(self) -> UnsafePointer[T]:
+        return self._d_buffers[self._selection]
+
+    @always_inline
+    fn alternate(self) -> UnsafePointer[T]:
+        return self._d_buffers[self._selection ^ 1]
+
+    @always_inline
+    fn swap(mut self):
+        self._selection ^= 1
+
+
 @always_inline
 fn run_radix_sort_pairs_gpu[
     type: DType,
     out_idx_type: DType,
-    rank: Int,
     ascending: Bool = False,
     BLOCK_SIZE: Int = 256,  # found empirically
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut input_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies input
-    mut output_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies output
-    mut input_key_ids: NDBuffer[
-        out_idx_type, rank, MutableAnyOrigin
-    ],  # modifies input
-    mut output_key_ids: NDBuffer[
-        out_idx_type, rank, MutableAnyOrigin
-    ],  # modifies output
-    skip_sort: NDBuffer[DType.bool, rank],
+    mut keys: DoubleBuffer[Scalar[type], **_],
+    mut key_ids: DoubleBuffer[Scalar[out_idx_type], **_],
+    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    in_shape: IndexList,
 ) raises:
-    var in_shape = input_keys.get_shape()
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
 
     @parameter
-    for current_bit in range(0, bitwidthof[type](), NUM_BITS_PER_PASS):
+    for current_bit in range(0, bit_width_of[type](), NUM_BITS_PER_PASS):
         alias kernel = radix_sort_pairs_kernel[
             type, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
         ctx.enqueue_function[kernel](
-            input_keys.data,
-            output_keys.data,
-            input_key_ids.data,
-            output_key_ids.data,
+            keys.current(),
+            keys.alternate(),
+            key_ids.current(),
+            key_ids.alternate(),
             vocab_size,
-            skip_sort.data,
+            skip_sort,
             grid_dim=Dim(batch_size),
             block_dim=Dim(BLOCK_SIZE),
         )
-        input_keys.data, output_keys.data = output_keys.data, input_keys.data
-
-        var temp_key_ids = input_key_ids.data
-        input_key_ids.data = output_key_ids.data
-        output_key_ids.data = temp_key_ids
-
-    output_keys.data = input_keys.data
-    output_key_ids.data = input_key_ids.data
+        keys.swap()
+        key_ids.swap()
 
 
 @always_inline
@@ -622,15 +636,16 @@ fn _is_supported_type[type: DType]() -> Bool:
 @always_inline
 fn _topp_minp_sampling_gpu[
     type: DType,
-    rank: Int,
     out_idx_type: DType, //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    p_thresholds: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    p_thresholds: LayoutTensor[type, **_],
+    input_logits: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    out_token_ids: LayoutTensor[
+        out_idx_type, address_space = AddressSpace.GENERIC, **_
+    ],
     temperature: Scalar[type] = 1,
 ) raises:
     """
@@ -642,7 +657,6 @@ fn _topp_minp_sampling_gpu[
 
     Parameters:
         type: DType - The data type of the input logits, p_thresholds, and temperature.
-        rank: Int - The rank of the input tensor (must be 2).
         out_idx_type: DType - The data type for output token indices.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling. If Min-P, the
             p_thresholds are used as min-p coefficients that determine the minimum probability
@@ -677,14 +691,22 @@ fn _topp_minp_sampling_gpu[
     - TensorRT-LLM: https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopPKernels.cu#L199-L323
     - InternLM: https://github.com/InternLM/lmdeploy/
     """
-    constrained[rank == 2, "Only rank 2 tensors are supported"]()
-    constrained[_is_supported_type[type](), "Unsupported type"]()
+    constrained[p_thresholds.rank == 1, "p_thresholds must be rank 1"]()
+    constrained[
+        input_logits.rank == 2 and out_token_ids.rank == 2,
+        "Only rank 2 tensors are supported",
+    ]()
+    constrained[
+        _is_supported_type[type](), String("Unsupported type: ", type)
+    ]()
 
     alias BLOCK_SIZE = 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
-    var input_shape = input_logits.get_shape()
+    var input_shape = IndexList[input_logits.rank](
+        input_logits.dim[0](), input_logits.dim[1]()
+    )
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -693,34 +715,36 @@ fn _topp_minp_sampling_gpu[
     fn apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
-        var val = input_logits.load[width=_simd_width](
-            rebind[IndexList[rank]](coords)
+        var idx = input_logits.runtime_layout(
+            RuntimeTuple[fill_like(input_logits.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
         )
+        var val = input_logits.ptr.load[width=_simd_width](idx)
         return val / temperature
 
+    var input_size = input_logits.size()
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.enqueue_create_buffer[type](
-        input_shape.flattened_length()
+    var probs_buf = ctx.enqueue_create_buffer[type](input_size * 2)
+    var input_probs = NDBuffer[type, input_logits.rank](
+        probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
     )
-    var input_probs = NDBuffer[type, rank](probs_buf._unsafe_ptr(), input_shape)
 
     _softmax_gpu[
-        type, 1, rank, DimList.create_unknown[rank](), apply_temperature
-    ](input_shape, input_probs, rank - 1, ctx)
+        type,
+        1,
+        input_logits.rank,
+        DimList.create_unknown[input_logits.rank](),
+        apply_temperature,
+    ](input_shape, input_probs, input_logits.rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals_cache_buf = ctx.enqueue_create_buffer[type](Int(batch_size))
-    var max_vals = NDBuffer[type, rank](
-        max_vals_cache_buf._unsafe_ptr(), DimList(batch_size)
-    )
-    var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
-    var skip_sort = NDBuffer[DType.bool, rank](
-        skip_sort_buf._unsafe_ptr(), DimList(batch_size)
-    )
+    var max_vals = ctx.enqueue_create_buffer[type](Int(batch_size))
+    var skip_sort = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
 
     alias K = 1
     alias num_blocks_per_input = 1
@@ -731,10 +755,10 @@ fn _topp_minp_sampling_gpu[
         vocab_size,
         num_blocks_per_input,
         input_probs.data,
-        max_vals.data,
-        out_token_ids.data,  # out_token_ids will now store the argmax
-        p_thresholds.data,
-        skip_sort.data,
+        max_vals.unsafe_ptr(),
+        out_token_ids.ptr,  # out_token_ids will now store the argmax
+        p_thresholds.ptr,
+        skip_sort.unsafe_ptr(),
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
         shared_mem_bytes=_get_shmem_size_stg_1[type](BLOCK_SIZE),
@@ -742,32 +766,20 @@ fn _topp_minp_sampling_gpu[
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
-    var sorted_probs_buf = ctx.enqueue_create_buffer[type](
-        batch_size * vocab_size
+    var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
+    var probs_double_buffer = DoubleBuffer(
+        probs_buf.unsafe_ptr(), probs_buf.unsafe_ptr().offset(input_size)
     )
-    var sorted_probs = NDBuffer[type, rank](
-        sorted_probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
-    )
-    var input_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
-        batch_size * vocab_size
-    )
-    var input_ids = NDBuffer[out_idx_type, rank](
-        input_ids_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
-    )
-    var sorted_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
-        batch_size * vocab_size
-    )
-    var sorted_ids = NDBuffer[out_idx_type, rank](
-        sorted_ids_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
+    var keys_double_buffer = DoubleBuffer(
+        ids_buf.unsafe_ptr(), ids_buf.unsafe_ptr().offset(input_size)
     )
 
     run_radix_sort_pairs_gpu[BLOCK_SIZE=BLOCK_SIZE](
         ctx,
-        input_probs,
-        sorted_probs,
-        input_ids,
-        sorted_ids,
-        skip_sort,
+        probs_double_buffer,
+        keys_double_buffer,
+        skip_sort.unsafe_ptr(),
+        input_shape,
     )
 
     @parameter
@@ -775,41 +787,40 @@ fn _topp_minp_sampling_gpu[
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
         ctx.enqueue_copy(
-            input_logits.data, sorted_probs.data, input_shape.flattened_length()
+            input_logits.ptr,
+            probs_buf.unsafe_ptr(),
+            input_size,
         )
 
     # Step 4: Sample from the sorted probabilities by cumsumming
     ctx.enqueue_function[
         topp_minp_sampling_kernel[type, out_idx_type, is_top_p]
     ](
-        p_thresholds.data,
-        sorted_probs.data,
-        sorted_ids.data,
-        out_token_ids.data,
-        skip_sort.data,
+        p_thresholds.ptr,
+        probs_buf.unsafe_ptr(),
+        ids_buf.unsafe_ptr(),
+        out_token_ids.ptr,
+        skip_sort.unsafe_ptr(),
         vocab_size,
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
     )
-    _ = sorted_ids_buf^
-    _ = sorted_probs_buf^
-    _ = input_ids_buf^
-    _ = max_vals_cache_buf^
-    _ = skip_sort_buf^
     _ = probs_buf^
+    _ = ids_buf^
 
 
 @always_inline
 fn top_p_sampling_gpu[
     type: DType,
-    rank: Int,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    top_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    top_ps: LayoutTensor[type, **_],
+    input_logits: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    out_token_ids: LayoutTensor[
+        out_idx_type, address_space = AddressSpace.GENERIC, **_
+    ],
     temperature: Scalar[type] = 1,
 ) raises:
     """
@@ -818,7 +829,11 @@ fn top_p_sampling_gpu[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    constrained[rank == 2, "Only rank 2 tensors are supported"]()
+    constrained[top_ps.rank == 1, "top_ps must be of rank 1"]()
+    constrained[
+        input_logits.rank == 2 and out_token_ids.rank == 2,
+        "Only rank 2 tensors are supported",
+    ]()
     _topp_minp_sampling_gpu[is_top_p=True, _test_sort=_test_sort](
         ctx, top_ps, input_logits, out_token_ids, temperature
     )
@@ -827,14 +842,15 @@ fn top_p_sampling_gpu[
 @always_inline
 fn min_p_sampling_gpu[
     type: DType,
-    rank: Int,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    min_ps: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    input_logits: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    out_token_ids: LayoutTensor[
+        out_idx_type, address_space = AddressSpace.GENERIC, **_
+    ],
     temperature: Scalar[type] = 1,
 ) raises:
     """

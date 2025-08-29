@@ -19,74 +19,6 @@ from utils import StaticTuple
 ```
 """
 
-from memory import UnsafePointer
-
-# ===-----------------------------------------------------------------------===#
-# Utilities
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn _set_array_elem[
-    index: Int,
-    size: Int,
-    type: AnyTrivialRegType,
-](
-    val: type,
-    ref array: __mlir_type[`!pop.array<`, size.value, `, `, type, `>`],
-):
-    """Sets the array element at position `index` with the value `val`.
-
-    Parameters:
-        index: the position to replace the value at.
-        size: the size of the array.
-        type: the element type of the array
-
-    Args:
-        val: the value to set.
-        array: the array which is captured by reference.
-    """
-    var ptr = __mlir_op.`pop.array.gep`(
-        UnsafePointer(to=array).address, index.value
-    )
-    UnsafePointer(ptr)[] = val
-
-
-@always_inline
-fn _create_array[
-    size: Int, type: AnyTrivialRegType
-](lst: VariadicList[type]) -> __mlir_type[
-    `!pop.array<`, size.value, `, `, type, `>`
-]:
-    """Sets the array element at position `index` with the value `val`.
-
-    Parameters:
-        size: the size of the array.
-        type: the element type of the array
-
-    Args:
-        lst: the list of values to set.
-
-    Returns:
-        The array with values filled from the input list.
-    """
-
-    if len(lst) == 1:
-        return __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[`!pop.array<`, size.value, `, `, type, `>`]
-        ](lst[0])
-
-    debug_assert(size == len(lst), "mismatch in the number of elements")
-
-    var array: __mlir_type[`!pop.array<`, size.value, `, `, type, `>`]
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(array))
-
-    @parameter
-    for idx in range(size):
-        _set_array_elem[idx, size, type](lst[idx], array)
-
-    return array
-
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -104,9 +36,10 @@ fn _static_tuple_construction_checks[size: Int]():
     constrained[size >= 0, "number of elements in `StaticTuple` must be >= 0"]()
 
 
-@value
 @register_passable("trivial")
-struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
+struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
+    Copyable, Defaultable, Movable, Sized
+):
     """A statically sized tuple type which contains elements of homogeneous types.
 
     Parameters:
@@ -114,10 +47,11 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         size: The size of the tuple.
     """
 
-    alias type = __mlir_type[
+    alias _mlir_type = __mlir_type[
         `!pop.array<`, size.value, `, `, Self.element_type, `>`
     ]
-    var array: Self.type
+
+    var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
     @always_inline
@@ -127,17 +61,29 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    @implicit
-    fn __init__(out self, array: Self.type):
+    fn __init__(out self, *, mlir_value: Self._mlir_type):
         """Constructs from an array type.
 
         Args:
-            array: Underlying MLIR array type.
+            mlir_value: Underlying MLIR array type.
         """
-        self.array = array
+        self._mlir_value = mlir_value
 
     @always_inline
-    @implicit
+    fn __init__(out self, *, fill: Self.element_type):
+        """Constructs a static tuple given a fill value.
+
+        Args:
+            fill: The value to fill the tuple with.
+        """
+        _static_tuple_construction_checks[size]()
+        self._mlir_value = __mlir_op.`pop.array.repeat`[
+            _type = __mlir_type[
+                `!pop.array<`, size.value, `, `, Self.element_type, `>`
+            ]
+        ](fill)
+
+    @always_inline
     fn __init__(out self, *elems: Self.element_type):
         """Constructs a static tuple given a set of arguments.
 
@@ -145,10 +91,9 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
             elems: The element types.
         """
         _static_tuple_construction_checks[size]()
-        self.array = _create_array[size](elems)
+        self = Self(values=elems)
 
     @always_inline
-    @implicit
     fn __init__(out self, values: VariadicList[Self.element_type]):
         """Creates a tuple constant using the specified values.
 
@@ -156,15 +101,17 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
             values: The list of values.
         """
         _static_tuple_construction_checks[size]()
-        self.array = _create_array[size, Self.element_type](values)
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly copy the provided StaticTuple.
+        if len(values) == 1:
+            return Self(fill=values[0])
 
-        Args:
-            other: The StaticTuple to copy.
-        """
-        self.array = other.array
+        debug_assert(size == len(values), "mismatch in the number of elements")
+
+        self = Self()
+
+        @parameter
+        for idx in range(size):
+            self.__setitem__[idx](values[idx])
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -189,7 +136,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
             index = index.value,
-        ](self.array)
+        ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
@@ -206,10 +153,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
             The value at the specified position.
         """
         debug_assert(size > index(idx), "index must be within bounds")
-        var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self.array).address, index(idx)
-        )
-        return UnsafePointer(ptr)[]
+        return self._unsafe_ref(index(idx))
 
     @always_inline("nodebug")
     fn __setitem__[I: Indexer, //](mut self, idx: I, val: Self.element_type):
@@ -223,12 +167,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
             val: The value to store.
         """
         debug_assert(size > index(idx), "index must be within bounds")
-        var tmp = self
-        var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=tmp.array).address, index(idx)
-        )
-        UnsafePointer(ptr)[] = val
-        self = tmp
+        self._unsafe_ref(index(idx)) = val
 
     @always_inline("nodebug")
     fn __setitem__[idx: Int](mut self, val: Self.element_type):
@@ -241,4 +180,36 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
             val: The value to store.
         """
         constrained[idx < size]()
-        _set_array_elem[idx, size, Self.element_type](val, self.array)
+
+        self._unsafe_ref(idx) = val
+
+    @always_inline("nodebug")
+    fn _unsafe_ref(ref self, idx: Int) -> ref [self] Self.element_type:
+        var ptr = __mlir_op.`pop.array.gep`(
+            UnsafePointer(to=self._mlir_value).address, idx.value
+        )
+        return UnsafePointer(ptr)[]
+
+    @always_inline("nodebug")
+    fn _replace[idx: Int](self, val: Self.element_type) -> Self:
+        """Replaces the value at the specified index.
+
+        Parameters:
+            idx: The index into the tuple.
+
+        Args:
+            val: The value to store.
+
+        Returns:
+            A new tuple with the specified element value replaced.
+        """
+        constrained[idx < size]()
+
+        var array = __mlir_op.`pop.array.replace`[
+            _type = __mlir_type[
+                `!pop.array<`, size.value, `, `, Self.element_type, `>`
+            ],
+            index = idx.value,
+        ](val, self._mlir_value)
+
+        return Self(mlir_value=array)

@@ -1,0 +1,120 @@
+{#
+===----------------------------------------------------------------------===
+Copyright (c) 2025, Modular Inc. All rights reserved.
+
+Licensed under the Apache License v2.0 with LLVM Exceptions:
+https://llvm.org/LICENSE.txt
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+===----------------------------------------------------------------------===
+#}
+
+resources:
+# Main compute instance
+- name: {{ properties['instanceName'] }}
+  type: compute.v1.instance
+  properties:
+    zone: {{ properties['zone'] }}
+    machineType: zones/{{ properties['zone'] }}/machineTypes/{{ properties['machineType'] }}
+    guestAccelerators:
+    - acceleratorType: zones/{{ properties['zone'] }}/acceleratorTypes/{{ properties['acceleratorType'] }}
+      acceleratorCount: {{ properties['acceleratorCount'] }}
+    disks:
+    - deviceName: boot
+      boot: true
+      autoDelete: true
+      initializeParams:
+        sourceImage: projects/deeplearning-platform-release/global/images/{{ properties['sourceImage'] }}
+        diskSizeGb: 100 # disk space in GB
+    networkInterfaces:
+    - network: global/networks/default
+      accessConfigs:
+      - name: External NAT
+        type: ONE_TO_ONE_NAT
+    serviceAccounts:
+    - email: default
+      scopes:
+      - https://www.googleapis.com/auth/cloud-platform
+    scheduling:
+      preemptible: false
+      onHostMaintenance: TERMINATE  # Disables live migration for GPU instances
+      automaticRestart: true
+    metadata:
+      items:
+      - key: startup-script
+        value: |
+          #!/bin/bash
+          set -xe  # Enable detailed logging
+          curl -sSO https://dl.google.com/cloudagents/add-logging-agent-repo.sh
+          sudo bash add-logging-agent-repo.sh
+
+          # Update and install dependencies
+          sudo apt-get update
+          sudo apt-get install -y google-fluentd curl apt-transport-https ca-certificates gnupg lsb-release software-properties-common
+
+          # Configure Stackdriver logging
+          sudo service google-fluentd start
+          sudo systemctl enable google-fluentd
+
+          # Install the NVIDIA drivers if not installed
+          if [ ! -f /opt/google/cuda-installer ]; then
+            sudo /opt/deeplearning/install-driver.sh
+          fi
+
+          # Add Docker GPG key and Docker repository
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+            $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+          # Install Docker
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+          # Add NVIDIA Docker repository
+          distribution=$(. /etc/os-release;echo $ID$VERSION_ID) \
+          && curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - \
+          && curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+          # Install NVIDIA container runtime
+          sudo apt-get update
+          sudo apt-get install -y nvidia-container-toolkit
+          sudo systemctl restart docker
+
+          # Add user to docker group
+          sudo usermod -aG docker $(whoami)
+
+          docker run \
+            --env "HF_TOKEN={{ properties['huggingFaceHubToken'] }}" \
+            --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
+            -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+            --gpus 1 \
+            -p 80:8000 \
+            --ipc host \
+            modular/max-nvidia-full:latest \
+            --model-path {{ properties['huggingFaceRepoId'] }}
+
+# Add firewall rule directly in template
+- name: allow-http
+  type: compute.v1.firewall
+  properties:
+    network: global/networks/default
+    sourceRanges: ["0.0.0.0/0"]
+    targetTags: ["http-server"]
+    allowed:
+    - IPProtocol: tcp
+      ports: ["80"]
+
+# Outputs section to output public IP and instance details
+outputs:
+- name: instanceName
+  value: $(ref.{{ properties['instanceName'] }}.name)
+  description: Name of the GCP Compute instance.
+
+- name: instancePublicIP
+  value: $(ref.{{ properties['instanceName'] }}.networkInterfaces[0].accessConfigs[0].natIP)
+  description: Public IP address of the GCP Compute instance.

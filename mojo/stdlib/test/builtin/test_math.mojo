@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal
 
@@ -91,15 +90,15 @@ def test_max():
 
 
 def test_round():
-    assert_equal(0, round(0.0))
-    assert_equal(1, round(1.0))
-    assert_equal(1, round(1.1))
-    assert_equal(1, round(1.4))
-    assert_equal(2, round(1.5))
-    assert_equal(2, round(2.0))
-    assert_equal(1, round(1.4, 0))
-    assert_equal(2, round(2.5))
-    assert_equal(-2, round(-2.5))
+    assert_equal(0.0, round(0.0))
+    assert_equal(1.0, round(1.0))
+    assert_equal(1.0, round(1.1))
+    assert_equal(1.0, round(1.4))
+    assert_equal(2.0, round(1.5))
+    assert_equal(2.0, round(2.0))
+    assert_equal(1.0, round(1.4, 0))
+    assert_equal(2.0, round(2.5))
+    assert_equal(-2.0, round(-2.5))
 
     assert_equal(1.5, round(1.5, 1))
     assert_equal(1.61, round(1.613, 2))
@@ -127,10 +126,10 @@ def test_pow():
 def test_isnan():
     # Check that we can run llvm intrinsics returning bool at comptime.
     alias x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
-    assert_equal(x1, False)
+    assert_equal(x1, SIMD[DType.bool, 4](fill=False))
 
     alias x2 = isnan(SIMD[DType.float32, 4](FloatLiteral.nan))
-    assert_equal(x2, True)
+    assert_equal(x2, SIMD[DType.bool, 4](fill=True))
 
 
 def main():

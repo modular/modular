@@ -13,9 +13,11 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 import numpy as np
+import numpy.typing as npt
+from max.interfaces import GenerationStatus, RequestID
 
 
 @runtime_checkable
@@ -23,7 +25,19 @@ class KVCacheAwareContext(Protocol):
     """A Protocol identifying the minimum API necessary for interacting with a KV Cache."""
 
     @property
-    def ignore_eos(self) -> bool: ...
+    def request_id(self) -> RequestID: ...
+
+    @property
+    def status(self) -> GenerationStatus: ...
+
+    @status.setter
+    def status(self, status: GenerationStatus) -> None: ...
+
+    @property
+    def is_done(self) -> bool: ...
+
+    @property
+    def eos_token_ids(self) -> set[int]: ...
 
     @property
     def active_idx(self) -> int: ...
@@ -33,9 +47,6 @@ class KVCacheAwareContext(Protocol):
 
     @property
     def end_idx(self) -> int: ...
-
-    @property
-    def committed_idx(self) -> int: ...
 
     @property
     def current_length(self) -> int:
@@ -57,7 +68,7 @@ class KVCacheAwareContext(Protocol):
         ...
 
     @property
-    def next_tokens(self) -> np.ndarray:
+    def next_tokens(self) -> npt.NDArray[np.integer[Any]]:
         """The next prompt tokens to be input during this iteration.
 
         This should be a 1D array of tokens of length active_length.
@@ -65,7 +76,7 @@ class KVCacheAwareContext(Protocol):
         ...
 
     @property
-    def tokens(self) -> np.ndarray:
+    def tokens(self) -> npt.NDArray[np.integer[Any]]:
         """All tokens in the context."""
         ...
 
@@ -74,7 +85,6 @@ class KVCacheAwareContext(Protocol):
         start_idx: int = 0,
         active_idx: int = 0,
         end_idx: int = 0,
-        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         ...
@@ -84,14 +94,13 @@ class KVCacheAwareContext(Protocol):
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
         ...
 
     @property
-    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
-        """An optional xgr Grammar Matcher provided when using structured output."""
+    def matcher(self) -> Optional[llguidance.LLMatcher]:  # type: ignore
+        """An optional Grammar Matcher provided when using structured output."""
         ...
 
     @property
@@ -99,7 +108,7 @@ class KVCacheAwareContext(Protocol):
         """A json schema to use during constrained decoding."""
         ...
 
-    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
+    def set_matcher(self, matcher: llguidance.LLMatcher) -> None:  # type: ignore
         """Set a grammar matcher for use during constrained decoding."""
         ...
 
@@ -115,22 +124,4 @@ class KVCacheAwareContext(Protocol):
     ) -> int:
         """Compute the max number of steps we can execute for a given context
         without exceeding the max_seq_len."""
-        ...
-
-    @property
-    def cache_seq_id(self) -> int:
-        """Returns the cache slot assigned to the context, raising an error if not assigned."""
-        ...
-
-    def assign_to_cache(self, cache_seq_id: int) -> None:
-        """Assigns the context to a cache slot."""
-        ...
-
-    def unassign_from_cache(self) -> None:
-        """Unassigns the context from a cache slot."""
-        ...
-
-    @property
-    def is_assigned_to_cache(self) -> bool:
-        """Returns True if input is assigned to a cache slot, False otherwise."""
         ...

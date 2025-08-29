@@ -11,22 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, thread_idx
+from gpu import barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
-
-from utils import StaticTuple
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
@@ -151,7 +148,7 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
 fn cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int
 ](src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):
-    alias size_per_copy = 16 // sizeof[DType.float32]()
+    alias size_per_copy = 16 // size_of[DType.float32]()
     alias size_per_stage = size_per_copy * 128
 
     warpgroup_idx = thread_idx.x // 128
@@ -235,7 +232,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
 ](ctx: DeviceContext):
-    alias size_per_stage = 128 * (16 // sizeof[DType.float32]())
+    alias size_per_stage = 128 * (16 // size_of[DType.float32]())
     alias size = num_stages * size_per_stage
     alias shape1d = DimList(size)
 
@@ -248,7 +245,7 @@ def test_cpasync_producer_consumer_pipeline[
     dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
 
-    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[4]](
+    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[num_stages]](
         src_device.tensor.data,
         dst_device.tensor.data,
         grid_dim=(1),

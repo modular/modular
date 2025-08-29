@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv, iota
-from os import abort
 from random import random_float64
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -21,10 +20,9 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import UnsafePointer
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
-
+from algorithm.reduction import max as reduce_max
 from utils import IndexList
 
 alias DEBUG_BENCH = False
@@ -52,9 +50,9 @@ fn time_kernel[
 
 
 fn test_case_batched[
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     out_idx_type: DType = DType.index,
     rank: Int = 2,
@@ -71,8 +69,8 @@ fn test_case_batched[
     # Instantiate data in host memory
     var out_idx_len = 1 if sampling else K
 
-    var in_buffer = HostNDBuffer[type, rank](DimList(batch_size, N))
-    var topk_vals = HostNDBuffer[type, rank](DimList(batch_size, K))
+    var in_buffer = HostNDBuffer[dtype, rank](DimList(batch_size, N))
+    var topk_vals = HostNDBuffer[dtype, rank](DimList(batch_size, K))
     var topk_idxs = HostNDBuffer[out_idx_type, rank](
         DimList(batch_size, out_idx_len)
     )
@@ -81,8 +79,8 @@ fn test_case_batched[
     fill_fn(in_buffer.tensor)
 
     # Move data to device
-    var device_in = DeviceNDBuffer[type, rank](DimList(batch_size, N), ctx=ctx)
-    var device_out_vals = DeviceNDBuffer[type, rank](
+    var device_in = DeviceNDBuffer[dtype, rank](DimList(batch_size, N), ctx=ctx)
+    var device_out_vals = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, K), ctx=ctx
     )
     var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
@@ -92,7 +90,7 @@ fn test_case_batched[
     var num_blocks_per_input_: Int = ceildiv(
         N, block_size
     ) if not num_blocks_per_input else num_blocks_per_input.value()
-    var device_local_topk_vals = DeviceNDBuffer[type, rank](
+    var device_local_topk_vals = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
     var device_local_topk_idxs = DeviceNDBuffer[out_idx_type, rank](
@@ -100,6 +98,17 @@ fn test_case_batched[
     )
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+
+    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
+        DimList(batch_size), ctx=ctx
+    )
+    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    for i in range(batch_size):
+        K_host_buffer.tensor.data[i] = K
+
+    var max_k = Int(reduce_max(K_host_buffer.tensor))
+
+    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
     ctx.synchronize()
 
     @parameter
@@ -110,12 +119,13 @@ fn test_case_batched[
         fn run_func(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
-                K,
+                max_k,
                 device_in.tensor,
                 device_local_topk_vals.tensor,
                 device_local_topk_idxs.tensor,
                 device_out_vals.tensor,
                 device_out_idxs.tensor,
+                k=K_device_buffer.tensor,
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -123,17 +133,18 @@ fn test_case_batched[
             ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
             ctx.synchronize()
 
-        alias msg = "tk-smpl-gpu" if sampling else String("tk-gpu")
+        alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
         time_kernel[run_func](m, ctx, msg)
 
     _topk_gpu[sampling=sampling, largest=largest](
         ctx,
-        K,
+        max_k,  # max_k
         device_in.tensor,
         device_local_topk_vals.tensor,
         device_local_topk_idxs.tensor,
         device_out_vals.tensor,
         device_out_idxs.tensor,
+        k=K_device_buffer.tensor,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -159,7 +170,7 @@ fn test_case_batched[
     # ASSERT equality with CPU topk kernel reference
     @parameter
     if not sampling:
-        var topk_vals_cpu = HostNDBuffer[type, rank](DimList(batch_size, K))
+        var topk_vals_cpu = HostNDBuffer[dtype, rank](DimList(batch_size, K))
         var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](
             DimList(batch_size, K)
         )
@@ -170,26 +181,35 @@ fn test_case_batched[
             @always_inline
             @parameter
             fn run_func_cpu(ctx: DeviceContext) raises:
-                _top_k_cpu[rank=rank, type=type, largest=largest](
+                _top_k_cpu[
+                    rank=rank,
+                    dtype=dtype,
+                    out_idx_type = DType.int64,
+                    largest=largest,
+                ](
                     in_buffer.tensor,
-                    K,
+                    max_k,
                     rank - 1,
                     topk_vals_cpu.tensor,
                     topk_idxs_cpu.tensor,
                     1,
                     True,
+                    k=K_host_buffer.tensor,
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
-        _top_k_cpu[rank=rank, type=type, largest=largest](
+        _top_k_cpu[
+            rank=rank, dtype=dtype, out_idx_type = DType.int64, largest=largest
+        ](
             in_buffer.tensor,
-            K,
+            max_k,
             rank - 1,
             topk_vals_cpu.tensor,
             topk_idxs_cpu.tensor,
             1,
             True,
+            k=K_host_buffer.tensor,
         )
 
         for i in range(topk_vals.tensor.num_elements()):
@@ -199,7 +219,7 @@ fn test_case_batched[
             )
 
             @parameter
-            if type is DType.float32:
+            if dtype is DType.float32:
                 assert_equal(
                     topk_idxs.tensor.data[i],
                     topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
@@ -220,9 +240,9 @@ fn test_case_batched[
 
 
 fn test_case_multi_rank[
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     rank: Int,
     out_idx_type: DType = DType.index,
@@ -241,28 +261,50 @@ fn test_case_multi_rank[
     var out_idxs_shape = input_shape
     out_idxs_shape[rank - 1] = out_idx_len
 
-    var in_buffer = HostNDBuffer[type, rank](input_shape)
-    var topk_vals = HostNDBuffer[type, rank](out_vals_shape)
+    var in_buffer = HostNDBuffer[dtype, rank](input_shape)
+    var topk_vals = HostNDBuffer[dtype, rank](out_vals_shape)
     var topk_idxs = HostNDBuffer[out_idx_type, rank](out_idxs_shape)
 
     # Fill the buffer with consecutive values
     fill_fn(in_buffer.tensor)
 
     # Move data to device
-    var device_in = DeviceNDBuffer[type, rank](input_shape, ctx=ctx)
-    var device_out_vals = DeviceNDBuffer[type, rank](out_vals_shape, ctx=ctx)
+    var device_in = DeviceNDBuffer[dtype, rank](input_shape, ctx=ctx)
+    var device_out_vals = DeviceNDBuffer[dtype, rank](out_vals_shape, ctx=ctx)
     var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
         out_idxs_shape, ctx=ctx
     )
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    var batch_size: Int
+
+    @parameter
+    if rank == 1:
+        batch_size = 1
+    elif rank == 2:
+        batch_size = input_shape[0]
+    else:  # rank > 2
+        var last_dim = input_shape[rank - 1]
+        batch_size = Int(input_shape.flattened_length() / last_dim)
+
+    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    for i in range(batch_size):
+        K_host_buffer.tensor.data[i] = K
+
+    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
+        DimList(batch_size), ctx=ctx
+    )
+    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    ctx.synchronize()
+    var max_k = Int(reduce_max(K_host_buffer.tensor))
 
     topk_gpu[sampling=sampling, largest=largest](
         ctx,
-        K,
+        max_k,
         device_in.tensor,
         device_out_vals.tensor,
         device_out_idxs.tensor,
+        k=K_device_buffer.tensor,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -275,17 +317,20 @@ fn test_case_multi_rank[
     # ASSERT equality with CPU topk kernel reference
     @parameter
     if not sampling:
-        var topk_vals_cpu = HostNDBuffer[type, rank](out_vals_shape)
+        var topk_vals_cpu = HostNDBuffer[dtype, rank](out_vals_shape)
         var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
 
-        _top_k_cpu[rank=rank, type=type, largest=largest](
+        _top_k_cpu[
+            rank=rank, dtype=dtype, out_idx_type = DType.int64, largest=largest
+        ](
             in_buffer.tensor,
-            K,
+            max_k,
             rank - 1,
             topk_vals_cpu.tensor,
             topk_idxs_cpu.tensor,
             1,
             True,
+            k=K_host_buffer.tensor,
         )
 
         for i in range(topk_vals.tensor.num_elements()):
@@ -295,7 +340,7 @@ fn test_case_multi_rank[
             )
 
             @parameter
-            if type is DType.float32:
+            if dtype is DType.float32:
                 assert_equal(
                     topk_idxs.tensor.data[i],
                     topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
@@ -315,7 +360,19 @@ fn fill_random[
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[mut=True, type, rank]):
+fn fill_constant[
+    rank: Int, dtype: DType
+](mut buffer: NDBuffer[mut=True, dtype, rank]):
+    var total_elements = buffer.num_elements()
+    for i in range(total_elements):
+        if i % 3 == 1:
+            buffer.data[i] = 1.0
+        else:
+            buffer.data[i] = 0.0
+
+
+@parameter
+fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
@@ -367,7 +424,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
 
 
 fn print_test_case(test_case: TestCase):
-    var num_blocks_per_in_msg = String("auto")
+    var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
     print(
@@ -387,10 +444,10 @@ fn print_test_case(test_case: TestCase):
 
 
 fn print_test_case(test_case: TestCaseMultiRank):
-    var num_blocks_per_in_msg = String("auto")
+    var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
-    var block_size_msg = String("auto")
+    var block_size_msg = "auto"
     if test_case.block_size:
         block_size_msg = String(test_case.block_size.value())
     print(
@@ -407,7 +464,7 @@ fn print_test_case(test_case: TestCaseMultiRank):
     )
 
 
-fn test_min_topk[type: DType](ctx: DeviceContext) raises:
+fn test_min_topk[dtype: DType](ctx: DeviceContext) raises:
     alias llama3_vocab_size = 128256
 
     alias test_case0 = TestCase[_sampling=False, _largest=False](
@@ -418,7 +475,7 @@ fn test_min_topk[type: DType](ctx: DeviceContext) raises:
     )
     print_test_case(test_case0)
     test_case_batched[
-        type,
+        dtype,
         fill_iota,
         out_idx_type = DType.uint64,
     ](ctx, test_case0)
@@ -432,7 +489,7 @@ fn test_min_topk[type: DType](ctx: DeviceContext) raises:
     )
     print_test_case(test_case1)
     test_case_batched[
-        type,
+        dtype,
         fill_iota,
     ](ctx, test_case1)
 
@@ -445,12 +502,12 @@ fn test_min_topk[type: DType](ctx: DeviceContext) raises:
     )
     print_test_case(test_case2)
     test_case_batched[
-        type,
+        dtype,
         fill_random,
     ](ctx, test_case2)
 
 
-fn test_multi_rank[type: DType, sampling: Bool](ctx: DeviceContext) raises:
+fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     alias llama3_vocab_size = 128256
 
     alias test_case_multi_rank1 = TestCaseMultiRank[
@@ -461,7 +518,7 @@ fn test_multi_rank[type: DType, sampling: Bool](ctx: DeviceContext) raises:
         block_size=256,
     )
     print_test_case(test_case_multi_rank1)
-    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank1)
+    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank1)
 
     alias test_case_multi_rank2 = TestCaseMultiRank[
         _sampling=sampling, rank=2, _largest=True
@@ -471,7 +528,7 @@ fn test_multi_rank[type: DType, sampling: Bool](ctx: DeviceContext) raises:
         block_size=512,
     )
     print_test_case(test_case_multi_rank2)
-    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank2)
+    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank2)
 
     alias test_case_multi_rank3 = TestCaseMultiRank[
         _sampling=sampling, rank=3, _largest=True
@@ -481,13 +538,13 @@ fn test_multi_rank[type: DType, sampling: Bool](ctx: DeviceContext) raises:
         num_blocks_per_input=2,
     )
     print_test_case(test_case_multi_rank3)
-    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank3)
+    test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
 fn main() raises:
     alias llama3_vocab_size = 128256
     with DeviceContext() as ctx:
-        alias type = DType.float32
+        alias dtype = DType.float32
         alias bf16_type = DType.bfloat16
 
         # var test_cases: [TestCase] = []
@@ -497,6 +554,19 @@ fn main() raises:
         # var batch_size_values = [1, 16, 64, 256]
         # var _samplingvalues = [False, True]
 
+        alias test_case0 = TestCase[_sampling=False](
+            N=1024,
+            K=256,
+            block_size=256,
+            batch_size=1,
+        )
+        print_test_case(test_case0)
+        test_case_batched[
+            dtype,
+            fill_iota,
+            out_idx_type = DType.uint64,
+        ](ctx, test_case0)
+
         alias test_case1 = TestCase[_sampling=False](
             N=1024,
             K=1,
@@ -505,7 +575,7 @@ fn main() raises:
         )
         print_test_case(test_case1)
         test_case_batched[
-            type,
+            dtype,
             fill_iota,
             out_idx_type = DType.uint64,
         ](ctx, test_case1)
@@ -518,7 +588,7 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case2)
-        test_case_batched[type, fill_iota](ctx, test_case2)
+        test_case_batched[dtype, fill_iota](ctx, test_case2)
 
         alias test_case3 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -528,7 +598,7 @@ fn main() raises:
             num_blocks_per_input=6,
         )
         print_test_case(test_case3)
-        test_case_batched[type, fill_random](ctx, test_case3)
+        test_case_batched[dtype, fill_random](ctx, test_case3)
 
         alias test_case4 = TestCase[_sampling=True](
             N=1024,
@@ -538,7 +608,7 @@ fn main() raises:
         )
         print_test_case(test_case4)
         test_case_batched[
-            type,
+            dtype,
             fill_iota,
         ](ctx, test_case4)
 
@@ -550,7 +620,7 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case5)
-        test_case_batched[type, fill_iota](ctx, test_case5)
+        test_case_batched[dtype, fill_iota](ctx, test_case5)
 
         alias test_case6 = TestCase[_sampling=True](
             N=llama3_vocab_size,
@@ -561,7 +631,7 @@ fn main() raises:
         )
         print_test_case(test_case6)
         test_case_batched[
-            type,
+            dtype,
             fill_random,
             out_idx_type = DType.int32,
         ](ctx, test_case6)
@@ -573,7 +643,7 @@ fn main() raises:
             batch_size=16,
         )
         print_test_case(test_case7)
-        test_case_batched[type, fill_iota](ctx, test_case7)
+        test_case_batched[dtype, fill_iota](ctx, test_case7)
 
         alias test_case8 = TestCase[_sampling=False](
             N=32000,
@@ -583,7 +653,7 @@ fn main() raises:
             num_blocks_per_input=2,
         )
         print_test_case(test_case8)
-        test_case_batched[type, fill_iota](ctx, test_case8)
+        test_case_batched[dtype, fill_iota](ctx, test_case8)
 
         alias test_case9 = TestCase[_sampling=False](
             N=llama3_vocab_size,
@@ -593,7 +663,7 @@ fn main() raises:
             num_blocks_per_input=8,
         )
         print_test_case(test_case9)
-        test_case_batched[type, fill_iota](ctx, test_case9)
+        test_case_batched[dtype, fill_iota](ctx, test_case9)
 
         alias test_case10 = TestCase[_sampling=True](
             N=1024,
@@ -602,7 +672,7 @@ fn main() raises:
             batch_size=64,
         )
         print_test_case(test_case10)
-        test_case_batched[type, fill_iota](ctx, test_case10)
+        test_case_batched[dtype, fill_iota](ctx, test_case10)
 
         alias test_case11 = TestCase[_sampling=True](
             N=32000,
@@ -697,11 +767,21 @@ fn main() raises:
         print_test_case(test_case19)
         test_case_batched[bf16_type, fill_random](ctx, test_case19)
 
+        # Test with identical values
+        alias test_case20 = TestCase[_sampling=False](
+            N=50,
+            K=25,
+            block_size=256,
+            batch_size=2,
+        )
+        print_test_case(test_case20)
+        test_case_batched[dtype, fill_constant](ctx, test_case20)
+
         # Run minimum top-k tests
-        test_min_topk[type](ctx)
+        test_min_topk[dtype](ctx)
 
         # Run multi-rank tests
-        test_multi_rank[type, False](ctx)
-        test_multi_rank[type, True](ctx)
+        test_multi_rank[dtype, False](ctx)
+        test_multi_rank[dtype, True](ctx)
         test_multi_rank[bf16_type, False](ctx)
         test_multi_rank[bf16_type, True](ctx)

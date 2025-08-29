@@ -1,0 +1,152 @@
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+index 5cb5fdfb..9ae636c5 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+@@ -16,6 +16,7 @@
+ 
+ #include "opentelemetry/exporters/otlp/otlp_environment.h"
+ #include "opentelemetry/exporters/otlp/otlp_http.h"
++#include "opentelemetry/exporters/otlp/otlp_log_recordable.h"
+ #include "opentelemetry/ext/http/client/http_client.h"
+ #include "opentelemetry/nostd/string_view.h"
+ #include "opentelemetry/nostd/variant.h"
+@@ -316,6 +317,11 @@ class OtlpHttpClient
+   std::atomic<size_t> start_session_counter_;
+   std::atomic<size_t> finished_session_counter_;
+ };
++
++std::unique_ptr<opentelemetry::sdk::logs::Recordable> MakeOtlpLogRecordable() noexcept;
++
++std::vector<char> ConvertGenericMessageToProtoExported(
++    const nostd::span<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &logs);
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+index 8733a740..5ca2aced 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+@@ -86,6 +86,12 @@ class OtlpHttpMetricExporter final : public opentelemetry::sdk::metrics::PushMet
+    */
+   OtlpHttpMetricExporter(std::unique_ptr<OtlpHttpClient> http_client);
+ };
++// Utility function to convert a resource metrics object to serialized protobuf without exposing the
++// protobuf implementations. This allows custom exporters to take the serialized version and
++// transfer without having to link with pb.
++std::vector<char> ConvertGenericMessageToProtoExported(
++    const opentelemetry::sdk::metrics::ResourceMetrics &data);
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
+index a70d249f..2c9dd418 100644
+--- a/exporters/otlp/src/otlp_http_client.cc
++++ b/exporters/otlp/src/otlp_http_client.cc
+@@ -29,15 +29,19 @@
+ #include "opentelemetry/common/timestamp.h"
+ #include "opentelemetry/exporters/otlp/otlp_http.h"
+ #include "opentelemetry/exporters/otlp/otlp_http_client.h"
++#include "opentelemetry/exporters/otlp/otlp_log_recordable.h"
++#include "opentelemetry/exporters/otlp/otlp_recordable_utils.h"
+ #include "opentelemetry/ext/http/client/http_client.h"
+ #include "opentelemetry/ext/http/client/http_client_factory.h"
+ #include "opentelemetry/ext/http/common/url_parser.h"
+ #include "opentelemetry/nostd/function_ref.h"
+ #include "opentelemetry/nostd/string_view.h"
+ #include "opentelemetry/nostd/variant.h"
++#include "opentelemetry/proto/collector/logs/v1/logs_service.pb.h"
+ #include "opentelemetry/sdk/common/base64.h"
+ #include "opentelemetry/sdk/common/exporter_utils.h"
+ #include "opentelemetry/sdk/common/global_log_handler.h"
++#include "opentelemetry/sdk/metrics/export/metric_producer.h"
+ #include "opentelemetry/version.h"
+ 
+ // clang-format off
+@@ -1052,6 +1056,38 @@ bool OtlpHttpClient::IsShutdown() const noexcept
+   return is_shutdown_.load(std::memory_order_acquire);
+ }
+ 
++std::unique_ptr<opentelemetry::sdk::logs::Recordable> MakeOtlpLogRecordable() noexcept
++{
++  return std::unique_ptr<opentelemetry::sdk::logs::Recordable>(new OtlpLogRecordable());
++}
++
++std::vector<char> ConvertGenericMessageToProtoExported(
++    const nostd::span<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &logs)
++{
++  std::vector<char> data;
++  if (logs.empty())
++  {
++    return data;
++  }
++  google::protobuf::ArenaOptions arena_options;
++  // It's easy to allocate data larger than 1024 when we populate basic resource and attributes
++  arena_options.initial_block_size = 1024;
++  // When in batch mode, it's easy to export a large number of spans at once, we can alloc a lager
++  // block to reduce memory fragments.
++  arena_options.max_block_size = 65536;
++  google::protobuf::Arena arena{arena_options};
++
++  proto::collector::logs::v1::ExportLogsServiceRequest *service_request =
++      google::protobuf::Arena::Create<proto::collector::logs::v1::ExportLogsServiceRequest>(&arena);
++  OtlpRecordableUtils::PopulateRequest(logs, service_request);
++  auto body_size = service_request->ByteSizeLong();
++
++  data.resize(body_size);
++  service_request->SerializeToArray(data.data(), body_size);
++
++  return data;
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_metric_exporter.cc b/exporters/otlp/src/otlp_http_metric_exporter.cc
+index 5c2bc768..1452e515 100644
+--- a/exporters/otlp/src/otlp_http_metric_exporter.cc
++++ b/exporters/otlp/src/otlp_http_metric_exporter.cc
+@@ -222,6 +222,31 @@ bool OtlpHttpMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
+   return http_client_->Shutdown(timeout);
+ }
+ 
++std::vector<char> ConvertGenericMessageToProtoExported(
++    const opentelemetry::sdk::metrics::ResourceMetrics &data)
++{
++
++  google::protobuf::ArenaOptions arena_options;
++  // It's easy to allocate data larger than 1024 when we populate basic resource and attributes
++  arena_options.initial_block_size = 1024;
++  // When in batch mode, it's easy to export a large number of spans at once, we can alloc a lager
++  // block to reduce memory fragments.
++  arena_options.max_block_size = 65536;
++  google::protobuf::Arena arena{arena_options};
++
++  proto::collector::metrics::v1::ExportMetricsServiceRequest *service_request =
++      google::protobuf::Arena::Create<proto::collector::metrics::v1::ExportMetricsServiceRequest>(
++          &arena);
++
++  OtlpMetricUtils::PopulateRequest(data, service_request);
++  auto body_size = service_request->ByteSizeLong();
++  std::vector<char> buff;
++
++  buff.resize(body_size);
++  service_request->SerializeToArray(buff.data(), body_size);
++  return buff;
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/BUILD b/exporters/otlp/BUILD
+index cdaba37e..86609ba3 100644
+--- a/exporters/otlp/BUILD
++++ b/exporters/otlp/BUILD
+@@ -140,6 +140,7 @@ cc_library(
+         "@com_github_opentelemetry_proto//:common_proto_cc",
+         "@com_google_absl//absl/strings",
+         "@github_nlohmann_json//:json",
++        ":otlp_recordable",
+     ],
+ )
+ 

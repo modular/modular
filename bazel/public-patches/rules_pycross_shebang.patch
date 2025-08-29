@@ -1,0 +1,13 @@
+diff --git a/pycross/private/tools/wheel_installer.py b/pycross/private/tools/wheel_installer.py
+index 2b1f819..39e11a5 100644
+--- a/pycross/private/tools/wheel_installer.py
++++ b/pycross/private/tools/wheel_installer.py
+@@ -86,7 +86,7 @@ def main(args: Any) -> None:
+             "scripts": str(dest_dir / "bin"),
+             "data": str(dest_dir / "data"),
+         },
+-        interpreter="/usr/bin/env python3",  # Generic; it's not feasible to run these scripts directly.
++        interpreter="python",  # Generic; it's not feasible to run these scripts directly.
+         script_kind="posix",
+         bytecode_optimization_levels=[],  # Setting to empty list to disable generation of .pyc files.
+     )

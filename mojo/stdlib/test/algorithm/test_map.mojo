@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm import map
 from buffer import NDBuffer
 
+from testing import assert_equal
 
-# CHECK-LABEL: test_map
-fn test_map():
-    print("== test_map")
 
+def test_map():
     var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
     var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack)
 
@@ -30,16 +28,11 @@ fn test_map():
 
     map[add_two](len(vector))
 
-    # CHECK: 3.0
-    print(vector[0])
-    # CHECK: 4.0
-    print(vector[1])
-    # CHECK: 5.0
-    print(vector[2])
-    # CHECK: 6.0
-    print(vector[3])
-    # CHECK: 7.0
-    print(vector[4])
+    assert_equal(vector[0], 3.0)
+    assert_equal(vector[1], 4.0)
+    assert_equal(vector[2], 5.0)
+    assert_equal(vector[3], 6.0)
+    assert_equal(vector[4], 7.0)
 
     @parameter
     @__copy_capture(vector)
@@ -48,17 +41,12 @@ fn test_map():
 
     map[add](len(vector))
 
-    # CHECK: 6.0
-    print(vector[0])
-    # CHECK: 8.0
-    print(vector[1])
-    # CHECK: 10.0
-    print(vector[2])
-    # CHECK: 12.0
-    print(vector[3])
-    # CHECK: 14.0
-    print(vector[4])
+    assert_equal(vector[0], 6.0)
+    assert_equal(vector[1], 8.0)
+    assert_equal(vector[2], 10.0)
+    assert_equal(vector[3], 12.0)
+    assert_equal(vector[4], 14.0)
 
 
-fn main():
+def main():
     test_map()

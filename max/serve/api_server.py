@@ -19,32 +19,32 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from typing import Union
 
-import uvloop
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.pipelines.core import PipelinesFactory, PipelineTokenizer
+from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.nn.kv_cache import KVTransferEngineMetadata
+from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
-from max.serve.pipelines.echo_gen import (
-    EchoPipelineTokenizer,
-    EchoTokenGenerator,
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
+from max.serve.pipelines.kvcache_worker import start_kv_cache_service
+from max.serve.pipelines.llm import (
+    AudioGeneratorPipeline,
+    TokenGeneratorPipeline,
 )
-from max.serve.pipelines.kvcache_worker import start_kvcache_agent
-from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
-from max.serve.telemetry.common import (
-    configure_logging,
-    configure_metrics,
-    send_telemetry_log,
-)
+from max.serve.scheduler import PrefillRequest, PrefillResponse
+from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
-from uvicorn import Config, Server
+from uvicorn import Config
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -60,8 +60,9 @@ class ServingTokenGeneratorSettings:
     # Pipeline config
     model_name: str
     model_factory: PipelinesFactory
-    pipeline_config: TokenGeneratorSchedulerConfig
+    pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer
+    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
 
 
 @asynccontextmanager
@@ -84,12 +85,32 @@ async def lifespan(
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
-            if settings.experimental_enable_kvcache_agent:
-                kvcache_agent_queue = await exit_stack.enter_async_context(
-                    start_kvcache_agent(settings)
+            if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service:
+                # create dispatcher factory
+                dispatcher_factory = DispatcherFactory[
+                    Union[
+                        PrefillRequest,
+                        PrefillResponse,
+                        KVTransferEngineMetadata,
+                    ]
+                ](
+                    settings.dispatcher_config,
+                    transport_payload_type=TransportMessage[
+                        Union[
+                            PrefillRequest,
+                            PrefillResponse,
+                            KVTransferEngineMetadata,
+                        ]
+                    ],
                 )
+
+                logger.info("Starting Dispatch Service...")
+                await exit_stack.enter_async_context(
+                    start_kv_cache_service(settings, dispatcher_factory)
+                )
+                logger.info("KV Cache Agent started.")
             else:
-                kvcache_agent_queue = None
+                dispatcher_factory = None
 
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(
@@ -104,22 +125,54 @@ async def lifespan(
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
-                    kvcache_agent_queue,
+                    serving_settings.pipeline_task,
+                    dispatcher_factory=dispatcher_factory,
                 )
             )
 
-            METRICS.pipeline_load(serving_settings.model_name)
-            pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
-                model_name=serving_settings.model_name,
-                tokenizer=serving_settings.tokenizer,
-                engine_queue=engine_queue,
+            lora_queue: LoRAQueue | None = (
+                LoRAQueue(
+                    serving_settings.pipeline_config.lora_config.lora_request_endpoint,
+                    serving_settings.pipeline_config.lora_config.lora_response_endpoint,
+                )
+                if serving_settings.pipeline_config.lora_config
+                else None
             )
+
+            METRICS.pipeline_load(serving_settings.model_name)
+            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
+            if serving_settings.pipeline_task in (
+                PipelineTask.TEXT_GENERATION,
+                PipelineTask.EMBEDDINGS_GENERATION,
+            ):
+                pipeline = TokenGeneratorPipeline(
+                    model_name=serving_settings.model_name,
+                    tokenizer=serving_settings.tokenizer,
+                    engine_queue=engine_queue,
+                    lora_queue=lora_queue,
+                )
+            elif (
+                serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
+            ):
+                pipeline = AudioGeneratorPipeline(
+                    model_name=serving_settings.model_name,
+                    tokenizer=serving_settings.tokenizer,
+                    engine_queue=engine_queue,
+                    lora_queue=lora_queue,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported pipeline task: {serving_settings.pipeline_task}"
+                )
+
             app.state.pipeline = pipeline
+
             await exit_stack.enter_async_context(pipeline)
             logger.info(
                 f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
             )
             yield
+    # TODO: Will we ever get here? KeyboardInterrupt is handled in the serve.py entrypoint.
     except KeyboardInterrupt as e:
         # Exit gracefully if user used Ctrl+C
         logger.info("Workers have shut down successfully (keyboard interrupt)")
@@ -141,6 +194,11 @@ def version():
         return JSONResponse({"version": "unknown"})
 
 
+async def health() -> Response:
+    """Health check, tools like lm-eval use this to check for readiness."""
+    return Response(status_code=200)
+
+
 def make_metrics_app():
     from prometheus_client import disable_created_metrics, make_asgi_app
 
@@ -153,19 +211,18 @@ def fastapi_app(
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
     logger.info(f"Settings: {settings}")
+
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(
-            lifespan,
-            settings=settings,
-            serving_settings=serving_settings,
+            lifespan, settings=settings, serving_settings=serving_settings
         ),
     )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
-            RecorderMiddleware,
+            RecorderMiddleware,  # type: ignore
             recorder_factory=(
                 lambda: JSONLFileRecorder(transaction_recording_file)
             ),
@@ -179,6 +236,7 @@ def fastapi_app(
         app.mount("/metrics", make_metrics_app())
 
     app.add_api_route("/version", version)
+    app.add_api_route("/health", health)
 
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)
@@ -201,28 +259,3 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config
-
-
-async def main() -> None:
-    server_settings = Settings()
-    configure_logging(server_settings)
-    configure_metrics(server_settings)
-
-    pipeline_settings = ServingTokenGeneratorSettings(
-        model_name="echo",
-        model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
-            tg_batch_size=1, ce_batch_size=1
-        ),
-        tokenizer=EchoPipelineTokenizer(),
-    )
-
-    app = fastapi_app(server_settings, pipeline_settings)
-
-    config = fastapi_config(app=app, server_settings=server_settings)
-    server = Server(config)
-    await server.serve()
-
-
-if __name__ == "__main__":
-    uvloop.run(main())

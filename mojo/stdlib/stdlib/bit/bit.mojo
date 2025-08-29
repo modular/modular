@@ -19,8 +19,9 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, sizeof
-from sys.info import bitwidthof
+from bit._mask import is_negative
+from sys import llvm_intrinsic
+from sys.info import bit_width_of
 
 from utils._select import _select_register_value as select
 
@@ -63,9 +64,14 @@ fn count_leading_zeros[
         leading zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic["llvm.ctlz", __type_of(val), has_side_effect=False](
-        val, False
+
+    # HACK(#5003): remove this workaround
+    alias d = dtype if dtype is not DType.index else (
+        DType.int32 if dtype.size_of() == 4 else DType.int64
     )
+    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
+        val.cast[d](), False
+    ).cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -305,7 +311,7 @@ fn bit_width(val: Int) -> Int:
     Returns:
         The number of bits required to represent the integer.
     """
-    alias bitwidth = bitwidthof[Int]()
+    alias bitwidth = bit_width_of[Int]()
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
@@ -329,14 +335,14 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = bitwidthof[dtype]()
+    alias bitwidth = bit_width_of[dtype]()
 
     @parameter
     if dtype.is_unsigned():
         return bitwidth - count_leading_zeros(val)
     else:
         # For signed integers, handle positive and negative separately
-        var abs_val = (val < 0).select(bit_not(val), val)
+        var abs_val = val.lt(0).select(bit_not(val), val)
         return bitwidth - count_leading_zeros(abs_val)
 
 
@@ -354,15 +360,87 @@ fn log2_floor(val: Int) -> Int:
 
     Returns:
         The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns -1 if val is 0.
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
-    if val == 32:
-        return 5
-    if val == 64:
-        return 6
+    return Int(log2_floor(Scalar[DType.index](val)))
 
-    alias bitwidth = bitwidthof[Int]()
-    return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
+
+@always_inline
+fn log2_floor(val: UInt) -> UInt:
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns UInt.MAX if val is 0.
+    """
+    return UInt(bit_width_of[UInt]() - count_leading_zeros(val) - 1)
+
+
+@always_inline
+fn log2_floor[
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Returns the floor of the base-2 logarithm of an integer value.
+
+    Parameters:
+        dtype: The `dtype` of the input SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The floor of the base-2 logarithm of the input value, which is equal to
+        the position of the highest set bit. Returns -1 if val is 0 or negative.
+    """
+    constrained[dtype.is_integral(), "dtype must be integral"]()
+
+    alias bitwidth = bit_width_of[dtype]()
+    var res = bitwidth - count_leading_zeros(val) - 1
+
+    @parameter
+    if dtype.is_signed():
+        return res | is_negative(val)
+    else:
+        return res
+
+
+# ===-----------------------------------------------------------------------===#
+# log2_ceil
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn log2_ceil(val: Int) -> Int:
+    """Returns the ceiling of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The ceiling of the base-2 logarithm of the input value, which corresponds
+        to the smallest power of 2 greater than or equal to the input. Returns 0
+        if val is 0.
+    """
+    return select(val <= 1, 0, log2_floor(val - 1) + 1)
+
+
+@always_inline
+fn log2_ceil(val: Scalar) -> __type_of(val):
+    """Returns the ceiling of the base-2 logarithm of an integer value.
+
+    Args:
+        val: The input value.
+
+    Returns:
+        The smallest integer `n` such that `2^n` is greater than or equal to
+        the input value. Returns 0 if `val` is 0.
+    """
+    constrained[val.dtype.is_integral(), "the input dtype must be integral"]()
+    return select(val <= 1, __type_of(val)(0), log2_floor(val - 1) + 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -388,7 +466,7 @@ fn next_power_of_two(val: Int) -> Int:
         This operation is called `bit_ceil()` in C++.
     """
     return select(
-        val <= 1, 1, 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
+        val <= 1, 1, 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
     )
 
 
@@ -408,7 +486,9 @@ fn next_power_of_two(val: UInt) -> UInt:
         This operation is called `bit_ceil()` in C++.
     """
     return select(
-        val == 0, 1, 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+        val == 0,
+        UInt(1),
+        UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1)))),
     )
 
 
@@ -438,7 +518,7 @@ fn next_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return (val > 1).select(1 << bit_width(val - 1), 1)
+    return val.gt(1).select(1 << bit_width(val - 1), 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -489,7 +569,7 @@ fn prev_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral and unsigned"]()
-    return (val > 0).select(1 << (bit_width(val) - 1), 0)
+    return val.gt(0).select(1 << (bit_width(val) - 1), 0)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -516,8 +596,8 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
     constrained[
-        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
-        "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
+        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
+        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
     ]()
 
     @parameter
@@ -590,8 +670,8 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
     constrained[
-        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
-        "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
+        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
+        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
     ]()
 
     @parameter

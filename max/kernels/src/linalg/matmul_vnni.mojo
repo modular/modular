@@ -13,12 +13,10 @@
 
 from math import align_down
 from sys import prefetch
-from sys.info import alignof, has_avx512f, has_neon, has_neon_int8_dotprod
+from sys.info import CompilationTarget, align_of
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
-from memory import UnsafePointer, stack_allocation
+from buffer.buffer import NDBuffer, partial_simd_load
 from memory.unsafe import bitcast
 
 from utils.index import Index, IndexList
@@ -32,8 +30,8 @@ from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the VNNI microkernel.
-@value
-struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline
@@ -107,19 +105,21 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
         var a_ptr = a_local.data if (
             is_tail
-            and not has_avx512f()
+            and not CompilationTarget.has_avx512f()
             # This origin cast is not ideal since we give up
             # exclusivity checking, but it is safe in the sense that
             # `a` will be guaranteed to remain alive because
             # it is an argument to the function.
         ) else a_base_ptr.origin_cast[True, MutableAnyOrigin]()
-        var a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
+        var a_ptr_stride = 4 if (
+            is_tail and not CompilationTarget.has_avx512f()
+        ) else K
 
         var tail_length = tile_n_k[1] - kl
 
         # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
         @parameter
-        if is_tail and not has_avx512f():
+        if is_tail and not CompilationTarget.has_avx512f():
             for idx0 in range(kernel_rows):
                 for idx_k in range(tail_length):
                     a_local[4 * idx0 + idx_k] = a_base_ptr[idx0 * K + idx_k]
@@ -131,17 +131,21 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             @parameter
             for idx1 in range(kernel_cols // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                var a_val = bitcast[c_type, 1](
-                    partial_simd_load[4](
-                        a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                var a_val = (
+                    bitcast[c_type, 1](
+                        partial_simd_load[4](
+                            a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                        )
+                    ) if (
+                        is_tail and CompilationTarget.has_avx512f()
+                    ) else a_ptr.offset(
+                        idx0 * a_ptr_stride
                     )
-                ) if (is_tail and has_avx512f()) else a_ptr.offset(
-                    idx0 * a_ptr_stride
-                ).bitcast[
-                    Scalar[c_type]
-                ]().load()
+                    .bitcast[Scalar[c_type]]()
+                    .load()
+                )
 
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)
                 var c_val = c_local[idx0, idx1]
                 var b_val = b_ptr.offset(idx1 * simd_size).load[
@@ -149,7 +153,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 ]()
 
                 @parameter
-                if has_neon_int8_dotprod():
+                if CompilationTarget.has_neon_int8_dotprod():
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,

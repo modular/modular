@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 from random import randn, seed
@@ -22,7 +21,6 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul_gpu import matmul_kernel
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index
@@ -119,7 +117,7 @@ def run_matvec[
         print("Incorrect input shape [MNK]")
         return
     var flops = 2 * M * N * K
-    var sectime = ((nstime / iterations) / 1000000000)
+    var sectime = (nstime / iterations) / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -157,7 +155,7 @@ def run_matvec[
     ctx.synchronize()
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = ((nstime / iterations) / 1000000000)
+    var sectime2 = (nstime / iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -231,14 +229,19 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
+    var const_val = 4.0
+
     @parameter
     @always_inline
-    @__copy_capture(c_device_nd)
+    @__copy_capture(c_device_nd, const_val)
     fn epilogue_fn[
-        type: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[type, width]):
+        dtype: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
-            idx, rebind[SIMD[DType.float32, width]](val + 4.0)
+            idx,
+            rebind[SIMD[DType.float32, width]](
+                val + SIMD[dtype, width](const_val)
+            ),
         )
 
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
@@ -246,15 +249,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gemv_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            reduction_method=reduction_method,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -268,15 +272,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -306,7 +311,7 @@ fn run_matvec_with_epilogue_fn[
         return
 
     var flops = 2 * M * N * K
-    var sectime = ((nstime / iterations) / 1000000000)
+    var sectime = (nstime / iterations) / 1000000000
 
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
@@ -322,15 +327,16 @@ fn run_matvec_with_epilogue_fn[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-                elementwise_lambda_fn=epilogue_fn,
-            ]
-        ](
+        alias kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+            elementwise_lambda_fn=epilogue_fn,
+        ]
+        var func = ctx.compile_function_checked[kernel, kernel]()
+        ctx.enqueue_function_checked(
+            func,
             c_device,
             a_device,
             b_device,
@@ -345,7 +351,7 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(c_host_naive, c_device)
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = ((nstime / iterations) / 1000000000)
+    var sectime2 = (nstime / iterations) / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")

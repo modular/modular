@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal
 
@@ -30,7 +29,7 @@ def test_explicit_conformance():
 
 
 @fieldwise_init
-struct Cat:
+struct Cat(Representable):
     var name: String
     var age: Int
 

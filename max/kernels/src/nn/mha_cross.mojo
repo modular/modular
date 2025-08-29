@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
 from buffer import NDBuffer
@@ -20,7 +20,6 @@ from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheT
-from memory import UnsafePointer
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
@@ -57,13 +56,11 @@ fn _bmm0_bs[
     # prompt_length
     var y = global_idx.y
 
-    alias k_type = cache_t.type
+    alias k_type = cache_t.dtype
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int
@@ -99,12 +96,12 @@ fn _bmm0_bs[
 
     # Set total KV length: KV written previous to and during this forward.
     if x < num_keys and y < cur_query_len:
-        var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+        var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
         @parameter
         fn accum_fn[width: Int](offset: Int):
-            alias alignment = alignof[SIMD[p_type, width]]()
+            alias alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset
             ).cast[k_type]()
@@ -117,7 +114,7 @@ fn _bmm0_bs[
             else:
                 accum_vec += rebind[__type_of(accum_vec)](qk_val)
 
-        vectorize[accum_fn, simdwidthof[p_type]()](depth)
+        vectorize[accum_fn, simd_width_of[p_type]()](depth)
         accum += accum_vec.reduce_add()
 
     var score_row = y
@@ -151,7 +148,7 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    alias v_type = cache_t.type
+    alias v_type = cache_t.dtype
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     # head_size
@@ -160,9 +157,7 @@ fn _bmm1_bs[
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int
@@ -211,12 +206,12 @@ fn _bmm1_bs[
 fn mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     rank: Int,
 ](
     output: NDBuffer[_, rank, MutableAnyOrigin, *_],
-    q: NDBuffer[type, rank, MutableAnyOrigin, q_shape, *_],
+    q: NDBuffer[dtype, rank, MutableAnyOrigin, q_shape, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
     q_max_seq_len: Int,
     k: cache_t,
@@ -252,7 +247,7 @@ fn mha_cross_gpu_naive[
     """
     constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
     constrained[
-        q.type == cache_t.type == cache_t.type == output.type,
+        q.type == cache_t.dtype == cache_t.dtype == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -261,7 +256,7 @@ fn mha_cross_gpu_naive[
     ]()
 
     alias config = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     )
 
     alias num_heads = Int(config.num_heads)
@@ -273,8 +268,8 @@ fn mha_cross_gpu_naive[
     var max_cache_size = Int(k.max_context_length())
 
     alias q_type = q.type
-    alias k_type = cache_t.type
-    alias v_type = cache_t.type
+    alias k_type = cache_t.dtype
+    alias v_type = cache_t.dtype
 
     # Assume self attention if the query sequence length isn't passed.
     var num_keys = kv_max_seq_len + max_cache_size

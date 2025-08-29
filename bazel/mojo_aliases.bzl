@@ -40,6 +40,11 @@ alias(
 )
 
 alias(
+    name = "shmem",
+    actual = "@//{prefix}max/kernels/src/shmem",
+)
+
+alias(
     name = "quantization",
     actual = "@//{prefix}max/kernels/src/quantization",
 )
@@ -77,6 +82,11 @@ alias(
 alias(
     name = "internal_utils",
     actual = "@//{prefix}max/kernels/src/internal_utils",
+)
+
+alias(
+    name = "comm",
+    actual = "@//{prefix}max/kernels/src/comm",
 )
 
 alias(

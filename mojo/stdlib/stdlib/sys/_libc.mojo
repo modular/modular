@@ -17,10 +17,9 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
-from sys import os_is_windows
-from sys.ffi import OpaquePointer, c_char, c_int, c_size_t
+from sys import CompilationTarget
+from sys.ffi import c_char, c_int, c_size_t, get_errno
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -46,7 +45,7 @@ alias FILE_ptr = OpaquePointer
 
 @always_inline
 fn fdopen(fd: c_int, mode: UnsafePointer[c_char, **_]) -> FILE_ptr:
-    alias name = "_fdopen" if os_is_windows() else "fdopen"
+    alias name = "_fdopen" if CompilationTarget.is_windows() else "fdopen"
 
     return external_call[name, FILE_ptr](fd, mode)
 
@@ -101,7 +100,7 @@ struct BufferMode:
 
 @always_inline
 fn dup(oldfd: c_int) -> c_int:
-    alias name = "_dup" if os_is_windows() else "dup"
+    alias name = "_dup" if CompilationTarget.is_windows() else "dup"
 
     return external_call[name, c_int](oldfd)
 
@@ -220,3 +219,32 @@ fn dlsym[
     result_type
 ]:
     return external_call["dlsym", UnsafePointer[result_type]](handle, name)
+
+
+fn realpath(
+    path: UnsafePointer[c_char],
+    resolved_path: UnsafePointer[c_char] = UnsafePointer[c_char](),
+) raises -> UnsafePointer[c_char]:
+    """Expands all symbolic links and resolves references to /./, /../ and extra
+    '/' characters in the null-terminated string named by path to produce a
+    canonicalized absolute pathname.  The resulting pathname is stored as a
+    null-terminated string, up to a maximum of PATH_MAX bytes, in the buffer
+    pointed to by resolved_path.  The resulting path will have no symbolic link,
+    /./ or /../ components.
+
+    If resolved_path is a NULL pointer, then realpath() uses malloc(3) to
+    allocate a buffer of up to PATH_MAX bytes to hold the resolved pathname, and
+    returns a pointer to this buffer. The caller is responsible for deallocating
+    the buffer in this scenario.
+
+    Args:
+        path: The path to resolve.
+        resolved_path: The buffer to store the resolved path. If this is a NULL
+            pointer then libc will allocate a buffer of up to PATH_MAX bytes to
+            hold the resolved pathname. The caller is responsible for
+            deallocating the buffer in this scenario.
+
+    Returns:
+        A pointer to the resolved path.
+    """
+    return external_call["realpath", UnsafePointer[c_char]](path, resolved_path)

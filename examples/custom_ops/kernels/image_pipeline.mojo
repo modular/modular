@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
 
-from algorithm.functional import vectorize
 from builtin.simd import SIMD
 from compiler import register
-from gpu import global_idx
-from layout import Layout, LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor, foreach
 
@@ -31,8 +27,8 @@ struct Grayscale:
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[type = DType.uint8, rank=2],
-        img_in: InputTensor[type = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype = DType.uint8, rank=2],
+        img_in: InputTensor[dtype = DType.uint8, rank=3],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -64,8 +60,8 @@ struct Brightness:
     fn execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[type = DType.uint8, rank=2],
-        img_in: InputTensor[type = DType.uint8, rank=2],
+        img_out: OutputTensor[dtype = DType.uint8, rank=2],
+        img_in: InputTensor[dtype = DType.uint8, rank=2],
         brightness: Float32,
         ctx: DeviceContextPtr,
     ) raises:
@@ -89,8 +85,8 @@ struct Blur:
     fn execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[type = DType.uint8, rank=2],
-        img_in: InputTensor[type = DType.uint8, rank=2],
+        img_out: OutputTensor[dtype = DType.uint8, rank=2],
+        img_in: InputTensor[dtype = DType.uint8, rank=2],
         blur_size: Int64,
         ctx: DeviceContextPtr,
     ) raises:

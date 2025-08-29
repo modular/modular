@@ -1,0 +1,102 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+_DATA = [
+    "test_file_dummy_input.txt",
+]
+
+_FILECHECK_TESTS = [
+    "test_debug_assert.mojo",
+    "test_debug_assert_compile_time.mojo",
+    "test_debug_assert_default_error.mojo",
+    "test_debug_assert_mode_all.mojo",
+    "test_debug_assert_mode_all_error.mojo",
+    "test_debug_assert_mode_none.mojo",
+    "test_debug_assert_warning.mojo",
+    "test_range_out_of_bounds.mojo",
+    "test_range_uint_reverse_range_bad.mojo",
+    "test_rebind.mojo",
+    "test_sort_issue_1018.mojo",
+]
+
+_LIT_TESTS = [
+    "test_issue_3908.mojo",
+    "test_print_long_string.mojo",
+    "test_print_stderr.mojo",
+    "test_stdin.mojo",
+    "test_uint_error.mojo",
+]
+
+_MOJO_COMPILE_OPTS = {
+    "test_debug_assert_mode_none.mojo": [
+        "-D",
+        "ASSERT=none",
+    ],
+    "test_debug_assert_warning.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+}
+
+_DISABLED_ASSERTIONS = [
+    "test_debug_assert_mode_none.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+    "test_debug_assert_warning.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+]
+
+_EXPECT_CRASH = [
+    "test_range_out_of_bounds.mojo",
+    "test_debug_assert_default_error.mojo",
+    "test_range_uint_reverse_range_bad.mojo",
+    "test_debug_assert_mode_all_error.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        expect_crash = src in _EXPECT_CRASH,
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        data = _DATA + [src],  # NOTE: some tests attempt to read their source files
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS,
+    )
+]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "@mojo//:stdlib",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

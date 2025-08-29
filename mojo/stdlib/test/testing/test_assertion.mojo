@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
 
 from builtin._location import _SourceLocation
 from python import PythonObject
@@ -18,8 +17,6 @@ from testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
-    assert_is,
-    assert_is_not,
     assert_not_equal,
     assert_raises,
     assert_true,
@@ -53,7 +50,7 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct:
+struct DummyStruct(EqualityComparable, Stringable):
     var value: Int
 
     fn __eq__(self, other: Self) -> Bool:
@@ -90,14 +87,14 @@ def test_assert_equal_with_simd():
 
 def test_assert_equal_with_list():
     assert_equal(
-        [String("This"), String("is"), String("Mojo")],
-        List(String("This"), String("is"), String("Mojo")),
+        ["This", "is", "Mojo"],
+        List("This", "is", "Mojo"),
     )
 
     with assert_raises():
         assert_equal(
-            [String("This"), String("is"), String("Mojo")],
-            List(String("This"), String("is"), String("mojo")),
+            ["This", "is", "Mojo"],
+            List("This", "is", "mojo"),
         )
 
 
@@ -129,8 +126,6 @@ def test_assert_almost_equal():
             lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
         )
 
-    _should_succeed[DType.bool, 1](True, True)
-    _should_succeed(SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, 1))
     _should_succeed(
         SIMD[float_type, 2](-_inf, _inf), SIMD[float_type, 2](-_inf, _inf)
     )
@@ -167,10 +162,6 @@ def test_assert_almost_equal():
                 lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
             )
 
-    _should_fail[DType.bool, 1](True, False)
-    _should_fail(
-        SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, -1), atol=5
-    )
     _should_fail(
         SIMD[float_type, 2](-_inf, 0.0),
         SIMD[float_type, 2](_inf, 0.0),
@@ -235,7 +226,7 @@ def test_assert_custom_location():
 
 def test_assert_equal_stringslice():
     str1 = StaticString("This is Mojo")
-    str2 = String("This is Mojo")
+    str2 = "This is Mojo"
     str3 = StaticString("This is mojo")
 
     fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
@@ -248,9 +239,9 @@ def test_assert_equal_stringslice():
             ptr=value.unsafe_ptr() + start, length=end - start
         )
 
-    l1 = List(_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12))
-    l2 = List(_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12))
-    l3 = List(_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12))
+    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

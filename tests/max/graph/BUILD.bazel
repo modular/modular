@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["**/*.py"]),
+    data = ["//SDK/lib/API/python/tests/graph/testdata"],
+    env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
+    imports = ["pytests"],
+    tags = ["no-mypy"],  # TODO: fix and remove
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

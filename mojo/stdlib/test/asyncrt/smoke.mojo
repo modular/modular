@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext, DeviceStream
+from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 
 
 fn _ownership_helper(
-    owned ctx: DeviceContext,
+    var ctx: DeviceContext,
 ) raises -> DeviceContext:
     var ctx_copy = ctx
     print("local ctx_copy: " + ctx_copy.name())
@@ -24,8 +24,8 @@ fn _ownership_helper(
 
 
 fn _ownership_helper_buf[
-    type: DType
-](owned buf: DeviceBuffer[type]) raises -> DeviceBuffer[type]:
+    dtype: DType
+](var buf: DeviceBuffer[dtype]) raises -> DeviceBuffer[dtype]:
     var buf_copy = buf
     print("local buf_copy: ", len(buf))
     return buf_copy

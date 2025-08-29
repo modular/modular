@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string import StaticString
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -21,7 +19,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -34,9 +32,9 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
+def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[type is DType.float32, "goldens only for float32, currently"]()
+    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
     alias batch_size = 2
@@ -46,7 +44,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     alias max_seq_len = 16
     alias num_layers = 1
 
-    fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
+    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
         max_item = items[0]
         for i in range(1, len(items)):
@@ -72,14 +70,13 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     )
 
     # Construct backing buffer and the KV cache itself.
-    kv_cache_block_buffer = List[Scalar[type]]()
-    kv_cache_block_buffer.resize(
-        new_size=block_shape.flattened_length(), value=0
+    kv_cache_block_buffer = List[Scalar[dtype]](
+        length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = NDBuffer(kv_cache_block_buffer.data, block_shape)
+    kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
     # Initialize KV cache block buffer with golden values.
-    k_cache_input_buffer = k_cache_input[type]()
+    k_cache_input_buffer = k_cache_input[dtype]()
     max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
@@ -88,7 +85,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
                     batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
                 )
             ),
-            src=k_cache_input_buffer.data + (batch_idx * seq_len * dim),
+            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
         max_cache_len_in_batch = max(
@@ -96,16 +93,16 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
         )
 
     # Create the actual KV cache type.
-    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
-            start_positions.data,
+            start_positions.unsafe_ptr(),
             DimList(
                 len(start_positions),
             ),
         ),
         lookup_table=NDBuffer[DType.uint32, 1](
-            lookup_table.data,
+            lookup_table.unsafe_ptr(),
             DimList(
                 len(lookup_table),
             ),
@@ -115,56 +112,57 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     )
 
     # Create and initialize query buffer.
-    q_buffer = q_input[type]()
+    q_buffer = q_input[dtype]()
     debug_assert(
         len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
     )
 
     # Create query tensor as a view of the query buffer.
-    input_row_offsets = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    input_row_offsets = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
     for i in range(batch_size):
         input_row_offsets.tensor[i] = i * seq_len
     input_row_offsets.tensor[batch_size] = batch_size * seq_len
 
     q = NDBuffer[
-        type, rank=3, shape = DimList(batch_size * seq_len, num_heads, head_dim)
-    ](q_buffer.data)
+        dtype,
+        rank=3,
+        shape = DimList(batch_size * seq_len, num_heads, head_dim),
+    ](q_buffer.unsafe_ptr())
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
-    freqs_cis_table_buffer = freqs_cis_table_input[type]()
+    freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     debug_assert(
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
         "invalid freqs_cis_table init",
     )
     # Create a view into freqs_cis tensor that only includes the roped dimensions
     freqs_cis_table = NDBuffer[
-        type,
+        dtype,
         rank=2,
         shape = DimList(max_seq_len, rope_dim),
         strides = DimList(head_dim, 1),
     ](
-        freqs_cis_table_buffer.data + (head_dim - rope_dim)
+        freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim)
     )  # Offset to last rope_dim elements
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[type]()
+    expected_q_out_buffer = q_out_golden[dtype]()
     debug_assert(
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
     )
-    expected_q_out = NDBuffer[type, rank=3, shape = q.shape](
-        expected_q_out_buffer.data
+    expected_q_out = NDBuffer[dtype, rank=3, shape = q.shape](
+        expected_q_out_buffer.unsafe_ptr()
     )
-    expected_k_out_buffer = k_out_golden[type]()
+    expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
     # Create output buffer.
-    q_out_buffer = List[Scalar[type]]()
-    q_out_buffer.resize(new_size=len(q_buffer), value=0)
-    q_out = NDBuffer[type, rank=3](q_out_buffer.data, q.dynamic_shape)
+    q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
+    q_out = NDBuffer[dtype, rank=3](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
     fused_qk_rope_ragged[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
@@ -172,6 +170,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
         input_row_offsets=input_row_offsets.tensor,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
+        position_ids=None,
         output=q_out,
         layer_idx=UInt32(0),
         context=Optional[DeviceContext](),
@@ -223,7 +222,7 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
                 # Verify unroped region: Should match original input
                 assert_almost_equal(
                     cache_block_ptr,
-                    k_cache_input_buffer.data + input_offset,
+                    k_cache_input_buffer.unsafe_ptr() + input_offset,
                     head_dim - rope_dim,
                 )
 
@@ -231,7 +230,9 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
                 roped_offset = head_dim - rope_dim
                 assert_almost_equal(
                     cache_block_ptr + roped_offset,
-                    expected_k_out_buffer.data + input_offset + roped_offset,
+                    expected_k_out_buffer.unsafe_ptr()
+                    + input_offset
+                    + roped_offset,
                     rope_dim,
                 )
 

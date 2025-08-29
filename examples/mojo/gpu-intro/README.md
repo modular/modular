@@ -21,14 +21,14 @@ This directory contains the following files:
 - `vector_addition.mojo` is the only source file for the tutorial solution,
   containing the kernel function and the main program.
 
-- `mojoproject.toml` is a [Magic](https://docs.modular.com/magic/)
+- `pixi.toml` is a [Pixi](https://pixi.sh)
   project file containing the project dependencies and task definitions.
 
 ## Run the code
 
-If you have [`magic`](https://docs.modular.com/magic) installed, you can
+If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the example by running the following command:
 
 ```bash
-magic run mojo vector_addition.mojo
+pixi run mojo vector_addition.mojo
 ```

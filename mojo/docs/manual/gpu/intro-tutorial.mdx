@@ -1,12 +1,11 @@
 ---
 title: Get started with GPU programming
-sidebar_label: Get started with GPU programming
+sidebar_label: Get started with GPUs
 description: Learn the basics of GPU programming with Mojo
 github_url: https://github.com/modular/modular/tree/main/examples/mojo/gpu-intro
 image: /images/artwork/mojo-motorcycle.jpg
 ---
 
-import GetMagic from '@site/src/includes/get_magic.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '@site/docs/max/requirements';
 
@@ -28,49 +27,71 @@ for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/examples/mojo/gpu-intro).
 
+:::tip
+
+**Tip:** To use AI coding assistants with Mojo, see our guide for
+[using AI coding assistants](/max/coding-assistants/).
+
+:::
+
 System requirements:
 
 <Requirements requirementsData={requirementsWithGPU} />
 
-## 1. Create a Mojo project with `magic`
+## 1. Create a Mojo project
 
-We'll start by using the [`magic`](/magic) CLI to create a virtual environment
-and generate our initial project directory.
+To install Mojo, we recommend using [`pixi`](https://pixi.sh/latest/) (for
+other options, see the [packages guide](/max/packages)).
 
-1. <GetMagic />
+1. If you don't have `pixi`, you can install it with this command:
+
+    ```sh
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
 
 2. Navigate to the directory in which you want to create the project
     and execute:
 
     ```bash
-    magic init gpu-intro --format mojoproject
+    pixi init gpu-intro \
+      -c https://conda.modular.com/max-nightly/ -c conda-forge \
+      && cd gpu-intro
     ```
 
-    This creates a project directory named `gpu-intro`.
+    This creates a project directory named `gpu-intro`, adds the Modular conda
+    package channel, and enters the directory.
 
-3. Let's go into the directory and verify the project is configured
+    :::tip
+
+    **Tip:**
+    You can skip the `-c` options if you [add these channels as
+    defaults](/pixi#create-a-project-and-virtual-environment).
+
+    :::
+
+3. Install the `mojo` package:
+
+    ```bash
+    pixi add mojo
+    ```
+
+3. Let's verify the project is configured
     correctly by checking the version of Mojo that's installed within our
     project's virtual environment:
 
     ```bash
-    cd gpu-intro
-    ```
-
-    ```bash
-    magic run mojo --version
+    pixi run mojo --version
     ```
 
     You should see a version string indicating the version of Mojo installed,
-    which by default should be the latest nightly version. Because we used the
-    `--format mojoproject` option when creating the project, `magic`
-    automatically added the `max` package as a dependency, which includes Mojo
-    and the MAX libraries.
+    which by default should be the latest nightly version.
 
 4. Activate the project's virtual environment:
 
     ```bash
-    magic shell
+    pixi shell
     ```
+
     Later on, when you want to exit the virtual environment, just type `exit`.
 
 ## 2. Get a reference to the GPU device
@@ -266,15 +287,6 @@ information on Mojo function arguments and the
 [Parameters](/mojo/manual/parameters) section for more information on Mojo
 compile-time parameters and metaprogramming.)
 
-:::note
-
-Mojo currently doesn't typecheck the arguments to the compiled kernel function.
-This means that you can encounter obscure errors if the ordering, types, or
-argument count doesn't match. We're working to add more robust typechecking
-soon.
-
-:::
-
 We're invoking the compiled kernel function with `grid_dim=2` and
 `block_dim=64`, which means we're using a grid of 2 thread blocks, with 64
 threads each for a total of 128 threads in the grid.
@@ -289,11 +301,34 @@ execution of threads. The number of SMs and the number of cores on a GPU depends
 on its architecture. For example, the NVIDIA H100 PCIe contains 114 SMs, with
 128 32-bit floating point cores per SM.
 
+<figure>
+
+![](../images/gpu/sm-architecture.png#light)
+![](../images/gpu/sm-architecture-dark.png#dark)
+
+<figcaption><b>Figure 1.</b> High-level architecture of a streaming
+multiprocessor (SM). (Click to enlarge.)</figcaption>
+
+</figure>
+
 Additionally, when an SM is assigned a thread block, it divides the block into
 multiple *warps*, which are groups of 32 or 64 threads, depending on the GPU
 architecture. These threads execute the same instruction simultaneously in a
 *single instruction, multiple threads* (SIMT) model. The SM's *warp scheduler*
 coordinates the execution of warps on an SM's cores.
+
+<figure>
+
+![](../images/gpu/grid-hierarchy.png#light)
+![](../images/gpu/grid-hierarchy-dark.png#dark)
+
+<figcaption><b>Figure 2.</b> Hierarchy of threads running on a GPU, showing the
+relationship of the grid, thread blocks, warps, and individual threads, based
+on <cite><a
+href="https://rocm.docs.amd.com/projects/HIP/en/latest/understand/programming_model.html">HIP
+Programming Guide</a></cite></figcaption>
+
+</figure>
 
 Warps are used to efficiently utilize GPU hardware by maximizing throughput and
 minimizing control overhead. Since GPUs are designed for high-performance
@@ -322,6 +357,16 @@ dimensionality of the data to process. For example, you might choose a
 1-dimensional grid for processing large vectors, a 2-dimensional grid for
 processing matrices, and a 3-dimensional grid for processing the frames of a
 video.
+
+<figure>
+
+![](../images/gpu/multidimensional-grid.png#light)
+![](../images/gpu/multidimensional-grid-dark.png#dark)
+
+<figcaption><b>Figure 3.</b> Organization of thread blocks and threads within a
+grid. </figcaption>
+
+</figure>
 
 To better understand how grids, thread blocks, and threads work together, let's
 modify our `print_threads()` kernel function to print the `x`, `y`, and `z`
@@ -802,6 +847,40 @@ The `enqueue_function()` method enqueues the compilation and invocation of the
 arguments. The `grid_dim` and `block_dim` arguments use the `num_blocks` and
 `block_size` aliases we defined in the previous step.
 
+:::note
+
+The current implementation of `enqueue_function()` doesn't typecheck the
+arguments to the compiled kernel function, which can lead to obscure run-time
+errors if the argument ordering, types, or count doesn't match the kernel
+function's definition.
+
+For compile-time typechecking, you can use the
+[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
+and
+[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
+methods.
+
+Here's the typechecked equivalent of the `vector_addition()` kernel compilation
+and enqueuing shown above:
+
+```mojo
+ctx.enqueue_function_checked[vector_addition, vector_addition](
+    lhs_tensor,
+    rhs_tensor,
+    result_tensor,
+    grid_dim=num_blocks,
+    block_dim=block_size,
+)
+```
+
+Note that `enqueue_function_checked()` currently requires the kernel function to
+be provided *twice* as parameters when you use it to compile the kernel. This
+requirement will be removed in a future API update, when typechecking will
+become the default behavior for both `compile_function()` and
+`enqueue_function()`.
+
+:::
+
 After the kernel function has been compiled and enqueued, we create a
 `HostBuffer` to hold the result vector. Then we copy the result vector from the
 `DeviceBuffer` to the `HostBuffer`. Finally, we synchronize the `DeviceContext`
@@ -852,36 +931,28 @@ covered:
 Now that you understand the basics of GPU programming with Mojo, here are some
 suggested next steps:
 
-- Check out more
-  [examples](https://github.com/modular/modular/tree/main/examples/gpu_functions)
-  of GPU programming with Mojo in the public [Modular GitHub
-  repository](https://github.com/modular/modular).
+import MDXListing from '@site/src/components/Listing/MDXListing';
 
-- Learn more about GPU programming in Mojo and practice your skills by solving
-  the [Mojo GPU puzzles](https://builds.modular.com/puzzles).
+export const Puzzles ={
+  title: "GPU Puzzles",
+  description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
+  metadata: {
+    permalink: "https://puzzles.modular.com/introduction.html"
+  }
+};
 
-- Read the [GPU basics](/mojo/manual/gpu/basics) section of the Mojo Manual
-  to find out more about GPU programming in Mojo.
+export const Examples ={
+  title: "GPU code examples",
+  description: "Check out some more examples for programming GPUs with Mojo",
+  metadata: {
+    permalink: "https://github.com/modular/modular/tree/main/examples/mojo/gpu-functions"
+  }
+};
 
-- Read the [Introduction to layouts](/mojo/manual/layout/layouts) section of the
-  Mojo Manual to learn more about the `layout` package and managing layouts.
+export const nextSteps = [
+  '../../layout/layouts',
+  Puzzles,
+  Examples,
+]
 
-- Check out the [Mojo Manual](/mojo/manual) for more information on the Mojo
-  language.
-
-- Learn more about other features of the [Modular platform](/max/intro) for
-  building and deploying high-performance AI endpoints.
-
-import TutorialStack from '@site/src/components/TutorialStack';
-
-export const maxTutorials = [
-  'build-custom-ops',
-  'magic',
-];
-
-export const mojoTutorials = [
-  'get-started',
-];
-
-<TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}
-  analyticsName="Get started with GPU programming: Next steps" />
+<MDXListing mdxList={nextSteps} />

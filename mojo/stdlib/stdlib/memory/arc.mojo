@@ -21,17 +21,14 @@ from memory import ArcPointer
 
 from os.atomic import Atomic
 
-from memory import UnsafePointer
-
 
 struct _ArcPointerInner[T: Movable]:
     var refcount: Atomic[DType.uint64]
     var payload: T
 
-    @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Create an initialized instance of this with a refcount of 1."""
-        self.refcount = Scalar[DType.uint64](1)
+        self.refcount = Atomic(UInt64(1))
         self.payload = value^
 
     fn add_ref(mut self):
@@ -46,7 +43,7 @@ struct _ArcPointerInner[T: Movable]:
 
 @register_passable
 struct ArcPointer[T: Movable](
-    Copyable, Movable, ExplicitlyCopyable, Identifiable
+    Copyable, ExplicitlyCopyable, Identifiable, Movable
 ):
     """Atomic reference-counted pointer.
 
@@ -90,8 +87,7 @@ struct ArcPointer[T: Movable](
     alias _inner_type = _ArcPointerInner[T]
     var _inner: UnsafePointer[Self._inner_type]
 
-    @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Construct a new thread-safe, reference-counted smart pointer,
         and move the value into heap memory managed by the new pointer.
 
@@ -103,14 +99,6 @@ struct ArcPointer[T: Movable](
         __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
             value^
         )
-
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
 
     fn __copyinit__(out self, existing: Self):
         """Copy an existing reference. Increment the refcount to the object.
@@ -124,7 +112,7 @@ struct ArcPointer[T: Movable](
         self._inner = existing._inner
 
     @no_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
@@ -141,11 +129,7 @@ struct ArcPointer[T: Movable](
     # correctly.
     fn __getitem__[
         self_life: ImmutableOrigin
-    ](
-        ref [self_life]self,
-    ) -> ref [
-        MutableOrigin.cast_from[self_life].result
-    ] T:
+    ](ref [self_life]self) -> ref [MutableOrigin.cast_from[self_life]] T:
         """Returns a mutable reference to the managed value.
 
         Parameters:

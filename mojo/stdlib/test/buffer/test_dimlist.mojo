@@ -10,12 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer.dimlist import Dim, DimList
 from testing import *
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_dim_list

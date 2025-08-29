@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -23,7 +21,7 @@ def test_char_validity():
 
     assert_true(Codepoint.from_u32(0))
 
-    # For a visual intuition of what constitues a valid scalar value:
+    # For a visual intuition of what constitutes a valid scalar value:
     #   https://connorgray.com/ephemera/project-log#2025-01-09
 
     # Last valid code point in the smaller scalar value range.
@@ -177,7 +175,7 @@ alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
 )
 
 
-fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
+fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 
@@ -209,21 +207,17 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
 
 
 def test_char_utf8_encoding():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
-
+    for elements in SIGNIFICANT_CODEPOINTS:
+        var codepoint, expected_utf8 = elements
         assert_utf8_bytes(codepoint, expected_utf8)
 
 
 def test_char_utf8_byte_length():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
-
-        var computed_len = Codepoint.from_u32(
-            codepoint
-        ).value().utf8_byte_length()
+    for elements in SIGNIFICANT_CODEPOINTS:
+        var codepoint, expected_utf8 = elements
+        var computed_len = (
+            Codepoint.from_u32(codepoint).value().utf8_byte_length()
+        )
 
         assert_equal(computed_len, len(expected_utf8))
 

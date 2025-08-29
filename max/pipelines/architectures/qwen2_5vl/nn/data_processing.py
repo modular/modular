@@ -11,15 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 def mrope_pos_ids_3d(
-    grid_thw: np.ndarray, spatial_merge_size: int
-) -> np.ndarray:
+    grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
+) -> npt.NDArray[np.integer[Any]]:
     """Calculate the 3D rope index based on image and video's temporal, height, and width in LLM using NumPy."""
     pos_ids = []
 
@@ -51,19 +53,19 @@ def mrope_pos_ids_3d(
 
 
 def get_window_index(
-    grid_thw: np.ndarray,
+    grid_thw: npt.NDArray[np.integer[Any]],
     window_size: int,
     spatial_merge_size: int,
     patch_size: int,
     spatial_merge_unit: int,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
     """Computes the indices of patches within windows, handles padding for uneven divisions,
     and computes cumulative window sequence lengths for the attention mechanism.
 
     Args:
 
         grid_thw: spatial and temporal coordinated of patches in images.
-        window_size: Size of attention window. E.g.  window size of 112×112 corresponds to 8×8 patches of size 14.
+        window_size: Size of attention window. E.g.  window size of 112x112 corresponds to 8x8 patches of size 14.
         spatial_merge_size: number of patches to merge together.
         patch_size: Size of each patch in the image.
         spatial_merge_unit:
@@ -132,8 +134,10 @@ def get_window_index(
 
 
 def generate_attention_mask(
-    grid_thw: np.ndarray, seq_length: int, cu_win_seqlens: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+    grid_thw: npt.NDArray[np.integer[Any]],
+    seq_length: int,
+    cu_win_seqlens: npt.NDArray[np.integer[Any]],
+) -> tuple[npt.NDArray[np.floating[Any]], npt.NDArray[np.floating[Any]]]:
     """Generate attention masks for visual tokens using seq_length and cu_seqlens.
     cu_seqlens is used when the block is in fullatt_block_indexes.
 
@@ -188,12 +192,12 @@ def get_rope_index(
     video_token_id: int,
     vision_start_token_id: int,
     tokens_per_second: int,
-    input_ids: np.ndarray,
-    image_grid_thw: Optional[np.ndarray] = None,
-    video_grid_thw: Optional[np.ndarray] = None,
-    second_per_grid_ts: Optional[np.ndarray] = None,
-    attention_mask: Optional[np.ndarray] = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    input_ids: npt.NDArray[np.integer[Any]],
+    image_grid_thw: npt.NDArray[np.integer[Any]] | None = None,
+    video_grid_thw: npt.NDArray[np.integer[Any]] | None = None,
+    second_per_grid_ts: npt.NDArray[np.floating[Any]] | None = None,
+    attention_mask: npt.NDArray[np.floating[Any]] | None = None,
+) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
     """Calculates position ids for 3D rotary position embeddings (RoPE) for vLLM.
 
     It determines the temporal, height, and width position indices for vision tokens
@@ -351,7 +355,7 @@ def get_rope_index(
             max_position_ids = position_ids.max(axis=1, keepdims=True).max(
                 axis=-1, keepdims=True
             )
-            mrope_position_deltas = (
+            mrope_position_deltas_array = (
                 max_position_ids + 1 - attention_mask.shape[-1]
             )
         else:

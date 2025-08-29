@@ -25,13 +25,13 @@ Replacement fields can mapped to the arguments in one of two ways:
 - Automatic indexing by argument position:
 
   ```mojo
-  var s = String("{} is {}").format("Mojo", "🔥")
+  var s = "{} is {}".format("Mojo", "🔥")
   ```
 
 - Manual indexing by argument position:
 
   ```mojo
-  var s = String("{1} is {0}").format("hot", "🔥")
+  var s = "{1} is {0}".format("hot", "🔥")
   ```
 
 The replacement fields can also contain the `!r` or `!s` conversion flags, to
@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = String("{!r}").format(myComplicatedObject)
+var s = "{!r}".format(myComplicatedObject)
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -50,19 +50,17 @@ Note that the following features from Python's `str.format()` are
 - Accessing an indexed value from the argument (for example, `"{1[0]}"`).
 - Format specifiers for controlling output format (width, precision, and so on).
 
-Example:
+Examples:
 
 ```mojo
-from collections.string import String
-
 # Basic formatting
-var s1 = String("Hello {0}!").format("World")  # Hello World!
+var s1 = "Hello {0}!".format("World")  # Hello World!
 
 # Multiple arguments
-var s2 = String("{0} plus {1} equals {2}").format(1, 2, 3)  # 1 plus 2 equals 3
+var s2 = "{0} plus {1} equals {2}".format(1, 2, 3)  # 1 plus 2 equals 3
 
 # Conversion flags
-var s4 = String("{!r}").format("test")  # "'test'"
+var s4 = "{!r}".format("test")  # "'test'"
 ```
 
 This module has no public API; its functionality is available through the
@@ -71,10 +69,9 @@ This module has no public API; its functionality is available through the
 methods.
 """
 
-from collections import Optional
+
 from collections.string.string import _chr_ascii
 
-from memory import UnsafePointer
 
 from utils import Variant
 
@@ -90,11 +87,11 @@ from utils import Variant
 # NOTE(#3765): an interesting idea would be to allow custom start and end
 # characters for formatting (passed as parameters to Formatter), this would be
 # useful for people developing custom templating engines as it would allow
-# detemining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
+# determining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
+struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -125,10 +122,6 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
     more details."""
     alias _args_t = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
     """Args types that are formattable by curly entry."""
-
-    fn copy(self) -> Self:
-        """Construct a format entry by copying another."""
-        return self
 
     fn __init__(
         out self,
@@ -206,7 +199,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         entries, size_estimation = Self._create_entries(fmt_src, len_pos_args)
         var fmt_len = fmt_src.byte_length()
 
-        var res = String(capacity=fmt_len + size_estimation)
+        var res = String(capacity=UInt(fmt_len + size_estimation))
         var offset = 0
         var ptr = fmt_src.unsafe_ptr()
 
@@ -214,16 +207,14 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=UInt(end - start))
 
         var auto_arg_index = 0
         for e in entries:
             debug_assert(offset < fmt_len, "offset >= fmt_src.byte_length()")
-            res += _build_slice(ptr, offset, e[].first_curly)
-            e[]._format_entry[len_pos_args](res, args, auto_arg_index)
-            offset = e[].last_curly + 1
+            res += _build_slice(ptr, offset, e.first_curly)
+            e._format_entry[len_pos_args](res, args, auto_arg_index)
+            offset = e.last_curly + 1
 
         res += _build_slice(ptr, offset, fmt_len)
         return res^
@@ -333,9 +324,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=UInt(end - start))
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()
@@ -389,8 +378,12 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
                     return True
                 manual_indexing_count += 1
             except e:
-                alias unexp = "Not the expected error from atol"
-                debug_assert("not convertible to integer" in String(e), unexp)
+
+                @parameter
+                fn check_string() -> Bool:
+                    return "not convertible to integer" in String(e)
+
+                debug_assert[check_string]("Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})

@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
+import numpy.typing as npt
+from max._core_mojo import block_hasher
 from max.profiler import traced
 
 
@@ -49,36 +51,87 @@ class BlockHashType(NamedTuple):
         return f"BlockHashType({self.value}, [{token_ids_str}, ...])"
 
 
-ROOT_BLOCK_HASH = BlockHashType(hash("None"), -1, ())
+# Note that we use 'None' as a string here instead of None because
+# as of Python 3.12, hash(None) returns a constant predictable value.
+# This could possibly make it easier to find and exploit hash
+# collisions. 'None' as a string will be hashed differently per process,
+# but consistently within the same process. This is the same as the
+# behavior of None prior to Python 3.12.
+DEFAULT_PARENT_HASH = hash("None")
+
+ROOT_BLOCK_HASH = BlockHashType(DEFAULT_PARENT_HASH, -1, ())
+
+ENABLE_MOJO_BLOCK_HASHER = True
+
+
+@traced
+def _hash_block_tokens_mojo(
+    block_token_ids: npt.NDArray[np.integer[Any]],
+    parent_hash: int | None = None,
+) -> BlockHashType:
+    """Hash the tokens of a block using the Mojo implementation."""
+    block_size = len(block_token_ids)
+    if parent_hash is None:
+        parent_hash = DEFAULT_PARENT_HASH
+    hash_vals = block_hasher(block_token_ids, block_size, parent_hash)
+    assert len(hash_vals) == 1
+    return BlockHashType(hash_vals[0], parent_hash, tuple(block_token_ids))
+
+
+@traced
+def _hash_request_tokens_mojo(
+    token_ids: npt.NDArray[np.integer[Any]],
+    block_size: int,
+    parent_hash: int | None = None,
+) -> list[BlockHashType]:
+    """Hash the tokens of a request using the Mojo implementation."""
+    if parent_hash is None:
+        parent_hash = DEFAULT_PARENT_HASH
+
+    hash_vals = block_hasher(token_ids, block_size, parent_hash)
+    assert len(hash_vals) == len(token_ids) // block_size
+
+    prev_hash = parent_hash
+    ret = []
+    for i, hash_val in enumerate(hash_vals):
+        start = i * block_size
+        end = start + block_size
+        block_token_ids = token_ids[start:end]
+        ret.append(BlockHashType(hash_val, prev_hash, tuple(block_token_ids)))
+        prev_hash = hash_val
+
+    return ret
 
 
 @traced
 def hash_block_tokens(
-    parent_block_hash_value: int | None, token_ids: np.ndarray
+    token_ids: npt.NDArray[np.integer[Any]],
+    parent_hash: int | None = None,
 ) -> BlockHashType:
     """Compute the hash value of a block."""
-    if parent_block_hash_value is None:
-        # Note that we use 'None' as a string here instead of None because
-        # as of Python 3.12, hash(None) returns a constant predictable value.
-        # This could possibly make it easier to find and exploit hash
-        # collisions. 'None' as a string will be hashed differently per process,
-        # but consistently within the same process. This is the same as the
-        # behavior of None prior to Python 3.12.
-        parent_block_hash_value = hash("None")
+
+    if ENABLE_MOJO_BLOCK_HASHER:
+        return _hash_block_tokens_mojo(token_ids, parent_hash)
+
+    if parent_hash is None:
+        parent_hash = DEFAULT_PARENT_HASH
 
     token_ids_tuple = tuple(token_ids)
-    tuple_to_hash = (token_ids_tuple, parent_block_hash_value)
+    tuple_to_hash = (token_ids_tuple, parent_hash)
     hash_value = hash(tuple_to_hash)
-    return BlockHashType(hash_value, parent_block_hash_value, token_ids_tuple)
+    return BlockHashType(hash_value, parent_hash, token_ids_tuple)
 
 
 @traced
 def hash_request_tokens(
+    token_ids: npt.NDArray[np.integer[Any]],
     block_size: int,
-    token_ids: np.ndarray,
-    parent_block_hash_value: int | None,
+    parent_hash: int | None = None,
 ) -> list[BlockHashType]:
     """Hash the tokens of a request."""
+
+    if ENABLE_MOJO_BLOCK_HASHER:
+        return _hash_request_tokens_mojo(token_ids, block_size, parent_hash)
 
     ret = []
     for start in range(0, len(token_ids), block_size):
@@ -87,9 +140,9 @@ def hash_request_tokens(
         # Do not hash the block if it is not full.
         if len(block_token_ids) < block_size:
             break
-        block_hash = hash_block_tokens(parent_block_hash_value, block_token_ids)
+        block_hash = hash_block_tokens(block_token_ids, parent_hash)
         ret.append(block_hash)
-        parent_block_hash_value = block_hash.value
+        parent_hash = block_hash.value
     return ret
 
 

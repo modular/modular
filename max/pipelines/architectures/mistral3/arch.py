@@ -12,17 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from . import weight_adapters
 from .model import Mistral3Model
+from .tokenizer import Mistral3Tokenizer
 
 mistral3_arch = SupportedArchitecture(
     name="Mistral3ForConditionalGeneration",
@@ -35,8 +31,7 @@ mistral3_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,
-    tokenizer=TextTokenizer,
-    rope_type=RopeType.normal,
+    tokenizer=Mistral3Tokenizer,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

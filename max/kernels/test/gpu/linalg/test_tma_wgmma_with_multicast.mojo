@@ -12,45 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import size_of
 
-from gpu import WARP_SIZE, barrier
+from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from gpu.id import warp_id as get_warp_id
-from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace, fence_mbarrier_init
-from gpu.mma import (
-    WGMMADescriptor,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
     tile_layout_mn_major,
+    warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
-from memory import bitcast, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -130,8 +118,8 @@ fn multicast_tma_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -166,9 +154,9 @@ fn multicast_tma_wgmma_kernel[
 
                 @parameter
                 if partitioned_multicast:
-                    var a_gmem_slice_coord = block_idx.y * BM + Int(
-                        rank_n
-                    ) * a_tma_rows
+                    var a_gmem_slice_coord = (
+                        block_idx.y * BM + Int(rank_n) * a_tma_rows
+                    )
                     var a_smem_slice = __type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
                     )
@@ -202,9 +190,9 @@ fn multicast_tma_wgmma_kernel[
 
                 @parameter
                 if partitioned_multicast:
-                    var b_gmem_slice_coord = block_idx.x * BN + Int(
-                        rank_m
-                    ) * b_tma_rows
+                    var b_gmem_slice_coord = (
+                        block_idx.x * BN + Int(rank_m) * b_tma_rows
+                    )
                     var b_smem_slice = __type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
                     )
@@ -250,9 +238,11 @@ fn multicast_tma_wgmma_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
         wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()
@@ -309,18 +299,18 @@ def test_multicast_tma_wgmma[
 
     constrained[
         not partitioned_multicast
-        or a_swizzle.bytes() // sizeof[a_type]() == BK,
+        or a_swizzle.bytes() // size_of[a_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (a_swizzle.bytes // sizeof[a_type]"
+            " (a_swizzle.bytes // size_of[a_type]"
         ),
     ]()
     constrained[
         not partitioned_multicast
-        or b_swizzle.bytes() // sizeof[b_type]() == BK,
+        or b_swizzle.bytes() // size_of[b_type]() == BK,
         (
             "Currently partitioned multi-casting is only supported when BK =="
-            " (b_swizzle.bytes // sizeof[b_type]"
+            " (b_swizzle.bytes // size_of[b_type]"
         ),
     ]()
 

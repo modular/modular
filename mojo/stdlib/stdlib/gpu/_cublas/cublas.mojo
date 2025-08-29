@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -20,7 +18,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from .dtype import DataType, Property
 from .result import Result
@@ -443,9 +440,9 @@ fn cublasGetMatrix(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int16,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int16,
 ) -> Result:
     return _get_dylib_function[
@@ -454,9 +451,9 @@ fn cublasGetMatrix(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
@@ -556,13 +553,13 @@ fn cublasStrsm(
 fn cublasRotmEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
-    param: UnsafePointer[NoneType],
+    param: OpaquePointer,
     param_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -571,13 +568,13 @@ fn cublasRotmEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -691,15 +688,15 @@ fn cublasStrttp(
 
 fn cublasRotmgEx(
     handle: UnsafePointer[cublasContext],
-    d1: UnsafePointer[NoneType],
+    d1: OpaquePointer,
     d1_type: DataType,
-    d2: UnsafePointer[NoneType],
+    d2: OpaquePointer,
     d2_type: DataType,
-    x1: UnsafePointer[NoneType],
+    x1: OpaquePointer,
     x1_type: DataType,
-    y1: UnsafePointer[NoneType],
+    y1: OpaquePointer,
     y1_type: DataType,
-    param: UnsafePointer[NoneType],
+    param: OpaquePointer,
     param_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -707,15 +704,15 @@ fn cublasRotmgEx(
         "cublasRotmgEx",
         fn (
             UnsafePointer[cublasContext],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -769,7 +766,6 @@ struct cublasPointerMode_t:
     alias CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     alias CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -813,7 +809,7 @@ fn cublasDnrm2(
 fn cublasIaminEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
     result: UnsafePointer[Int16],
@@ -823,7 +819,7 @@ fn cublasIaminEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             UnsafePointer[Int16],
@@ -934,7 +930,6 @@ struct cublasMath_t:
     alias CUBLAS_TF32_TENSOR_OP_MATH = cublasMath_t(3)
     alias CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -989,9 +984,9 @@ fn cublasGetMatrixAsync(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int16,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int16,
     stream: CUstream,
 ) -> Result:
@@ -1001,9 +996,9 @@ fn cublasGetMatrixAsync(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
             CUstream,
         ) -> Result,
@@ -1013,9 +1008,9 @@ fn cublasGetMatrixAsync(
 fn cublasGetVector(
     n: Int64,
     elem_size: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     incy: Int64,
 ) -> Result:
     return _get_dylib_function[
@@ -1023,9 +1018,9 @@ fn cublasGetVector(
         fn (
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
         ) -> Result,
     ]()(n, elem_size, x, incx, y, incy)
@@ -1101,9 +1096,9 @@ fn cublasGetMatrixAsync(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int64,
     stream: CUstream,
 ) -> Result:
@@ -1113,9 +1108,9 @@ fn cublasGetMatrixAsync(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
             CUstream,
         ) -> Result,
@@ -1309,10 +1304,10 @@ fn cublasSdgmm(
 fn cublasSwapEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
 ) -> Result:
@@ -1321,10 +1316,10 @@ fn cublasSwapEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
         ) -> Result,
@@ -1334,13 +1329,13 @@ fn cublasSwapEx(
 fn cublasDotcEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -1349,13 +1344,13 @@ fn cublasDotcEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -1377,14 +1372,14 @@ fn cublasDotcEx(
 fn cublasRotEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
-    c: UnsafePointer[NoneType],
-    s: UnsafePointer[NoneType],
+    c: OpaquePointer,
+    s: OpaquePointer,
     cs_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -1393,14 +1388,14 @@ fn cublasRotEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -1542,9 +1537,9 @@ fn cublasSetMatrixAsync(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int16,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int16,
     stream: CUstream,
 ) -> Result:
@@ -1554,9 +1549,9 @@ fn cublasSetMatrixAsync(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
             CUstream,
         ) -> Result,
@@ -1624,10 +1619,10 @@ fn cublasDgeam(
 fn cublasCopyEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
 ) -> Result:
@@ -1636,10 +1631,10 @@ fn cublasCopyEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
         ) -> Result,
@@ -1824,7 +1819,7 @@ fn cublasDtpttr(
 fn cublasIamaxEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
     result: UnsafePointer[Int16],
@@ -1834,7 +1829,7 @@ fn cublasIamaxEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             UnsafePointer[Int16],
@@ -1909,17 +1904,17 @@ fn cublasGemmStridedBatchedEx(
     m: Int64,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int64,
     stride_a: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int64,
     stride_b: Int64,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int64,
     stride_c: Int64,
@@ -1936,17 +1931,17 @@ fn cublasGemmStridedBatchedEx(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int64,
             Int64,
@@ -1984,10 +1979,10 @@ fn cublasGemmStridedBatchedEx(
 fn cublasNrm2Ex(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -1996,10 +1991,10 @@ fn cublasNrm2Ex(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -2048,7 +2043,7 @@ struct Algorithm:
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
     # only useful algorithm options are default and algo0 - algo23.
-    # We never specify 0-23 in pratice.
+    # We never specify 0-23 in practice.
 
     alias DEFAULT = Self(-1)
     alias ALGO0 = Self(0)
@@ -2093,7 +2088,6 @@ struct Algorithm:
     alias ALGO14_TENSOR_OP = Self(114)
     alias ALGO15_TENSOR_OP = Self(115)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2520,9 +2514,9 @@ fn cublasDsyr(
 fn cublasSetVector(
     n: Int16,
     elem_size: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     incx: Int16,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incy: Int16,
 ) -> Result:
     return _get_dylib_function[
@@ -2530,9 +2524,9 @@ fn cublasSetVector(
         fn (
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
         ) -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
@@ -2542,9 +2536,9 @@ fn cublasSetMatrixAsync(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int64,
     stream: CUstream,
 ) -> Result:
@@ -2554,9 +2548,9 @@ fn cublasSetMatrixAsync(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
             CUstream,
         ) -> Result,
@@ -2590,11 +2584,11 @@ fn cublasSasum(
 
 fn cublasRotgEx(
     handle: UnsafePointer[cublasContext],
-    a: UnsafePointer[NoneType],
-    b: UnsafePointer[NoneType],
+    a: OpaquePointer,
+    b: OpaquePointer,
     ab_type: DataType,
-    c: UnsafePointer[NoneType],
-    s: UnsafePointer[NoneType],
+    c: OpaquePointer,
+    s: OpaquePointer,
     cs_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -2602,11 +2596,11 @@ fn cublasRotgEx(
         "cublasRotgEx",
         fn (
             UnsafePointer[cublasContext],
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -2620,7 +2614,6 @@ struct cublasDiagType_t:
     alias CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     alias CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2658,7 +2651,6 @@ struct ComputeType:
     alias COMPUTE_32I = Self(72)
     alias COMPUTE_32I_PEDANTIC = Self(73)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2778,9 +2770,9 @@ fn cublasIdamin(
 fn cublasGetVectorAsync(
     n: Int16,
     elem_size: Int16,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incx: Int16,
-    host_ptr: UnsafePointer[NoneType],
+    host_ptr: OpaquePointer,
     incy: Int16,
     stream: CUstream,
 ) -> Result:
@@ -2789,9 +2781,9 @@ fn cublasGetVectorAsync(
         fn (
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
             CUstream,
         ) -> Result,
@@ -2802,9 +2794,9 @@ fn cublasGetMatrix(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int64,
 ) -> Result:
     return _get_dylib_function[
@@ -2813,9 +2805,9 @@ fn cublasGetMatrix(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
@@ -3175,14 +3167,14 @@ fn cublasDasum(
 fn cublasRotEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
-    c: UnsafePointer[NoneType],
-    s: UnsafePointer[NoneType],
+    c: OpaquePointer,
+    s: OpaquePointer,
     cs_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -3191,14 +3183,14 @@ fn cublasRotEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -3244,12 +3236,12 @@ fn cublasDrotm(
 fn cublasAxpyEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    alpha: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
     alpha_type: DataType,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
     executiontype: DataType,
@@ -3259,12 +3251,12 @@ fn cublasAxpyEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             DataType,
@@ -3359,10 +3351,10 @@ fn cublasSsymm(
 fn cublasCopyEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
 ) -> Result:
@@ -3371,10 +3363,10 @@ fn cublasCopyEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
         ) -> Result,
@@ -3384,10 +3376,10 @@ fn cublasCopyEx(
 fn cublasSwapEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
 ) -> Result:
@@ -3396,10 +3388,10 @@ fn cublasSwapEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
         ) -> Result,
@@ -3434,9 +3426,9 @@ fn cublasSrot(
 fn cublasGetVector(
     n: Int16,
     elem_size: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     incy: Int16,
 ) -> Result:
     return _get_dylib_function[
@@ -3444,9 +3436,9 @@ fn cublasGetVector(
         fn (
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
         ) -> Result,
     ]()(n, elem_size, x, incx, y, incy)
@@ -3558,11 +3550,11 @@ fn cublasCherk3mEx(
     n: Int64,
     k: Int64,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int64,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int64,
 ) -> Result:
@@ -3575,11 +3567,11 @@ fn cublasCherk3mEx(
             Int64,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
         ) -> Result,
@@ -3814,15 +3806,15 @@ fn cublasGemmEx64(
     m: Int64,
     n: Int64,
     k: Int64,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int64,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int64,
     compute_type: ComputeType,
@@ -3837,15 +3829,15 @@ fn cublasGemmEx64(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int64,
             ComputeType,
@@ -3877,13 +3869,13 @@ fn cublasGemmEx64(
 fn cublasDotEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int16,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -3892,13 +3884,13 @@ fn cublasDotEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -3969,14 +3961,14 @@ fn cublasSgemmEx(
     n: Int64,
     k: Int64,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int64,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int64,
 ) -> Result:
@@ -3990,14 +3982,14 @@ fn cublasSgemmEx(
             Int64,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
         ) -> Result,
@@ -4166,13 +4158,13 @@ fn cublasDsyrkx(
 fn cublasRotmEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
-    param: UnsafePointer[NoneType],
+    param: OpaquePointer,
     param_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -4181,13 +4173,13 @@ fn cublasRotmEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -4262,9 +4254,9 @@ fn cublasSetMatrix(
     rows: Int64,
     cols: Int64,
     elem_size: Int64,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int64,
 ) -> Result:
     return _get_dylib_function[
@@ -4273,9 +4265,9 @@ fn cublasSetMatrix(
             Int64,
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
@@ -4344,12 +4336,12 @@ fn cublasStbmv(
 fn cublasAxpyEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    alpha: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
     alpha_type: DataType,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
     executiontype: DataType,
@@ -4359,12 +4351,12 @@ fn cublasAxpyEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             DataType,
@@ -4387,7 +4379,7 @@ fn cublasAxpyEx(
 fn cublasIaminEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
     result: UnsafePointer[Int64],
@@ -4397,7 +4389,7 @@ fn cublasIaminEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             UnsafePointer[Int64],
@@ -4435,13 +4427,13 @@ fn cublasDspr2(
 fn cublasDotEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -4450,13 +4442,13 @@ fn cublasDotEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -4536,9 +4528,9 @@ fn cublasDestroy(handle: UnsafePointer[cublasContext]) -> Result:
 fn cublasSetVectorAsync(
     n: Int16,
     elem_size: Int16,
-    host_ptr: UnsafePointer[NoneType],
+    host_ptr: OpaquePointer,
     incx: Int16,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incy: Int16,
     stream: CUstream,
 ) -> Result:
@@ -4547,9 +4539,9 @@ fn cublasSetVectorAsync(
         fn (
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
             CUstream,
         ) -> Result,
@@ -4559,7 +4551,7 @@ fn cublasSetVectorAsync(
 fn cublasIamaxEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
     result: UnsafePointer[Int64],
@@ -4569,7 +4561,7 @@ fn cublasIamaxEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             UnsafePointer[Int64],
@@ -4636,10 +4628,10 @@ fn cublasDswap(
 fn cublasAsumEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -4648,10 +4640,10 @@ fn cublasAsumEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -4666,7 +4658,6 @@ struct FillMode:
     alias UPPER = Self(1)
     alias FULL = Self(2)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -4756,10 +4747,10 @@ fn cublasSgbmv(
 fn cublasAsumEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     executiontype: DataType,
 ) -> Result:
@@ -4768,10 +4759,10 @@ fn cublasAsumEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -4790,9 +4781,9 @@ fn cublasGetVersion(
 fn cublasScalEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    alpha: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
     alpha_type: DataType,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
     execution_type: DataType,
@@ -4802,9 +4793,9 @@ fn cublasScalEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             DataType,
@@ -4973,9 +4964,9 @@ fn cublasDtpsv(
 fn cublasSetVector(
     n: Int64,
     elem_size: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     incx: Int64,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incy: Int64,
 ) -> Result:
     return _get_dylib_function[
@@ -4983,9 +4974,9 @@ fn cublasSetVector(
         fn (
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
         ) -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
@@ -5145,11 +5136,11 @@ fn cublasCherkEx(
     n: Int16,
     k: Int16,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int16,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int16,
 ) -> Result:
@@ -5162,11 +5153,11 @@ fn cublasCherkEx(
             Int16,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
         ) -> Result,
@@ -5246,14 +5237,12 @@ fn cublasSscal(
 
 fn cublasSetWorkspace(
     handle: UnsafePointer[cublasContext],
-    workspace: UnsafePointer[NoneType],
+    workspace: OpaquePointer,
     workspace_size_in_bytes: Int,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetWorkspace_v2",
-        fn (
-            UnsafePointer[cublasContext], UnsafePointer[NoneType], Int
-        ) -> Result,
+        fn (UnsafePointer[cublasContext], OpaquePointer, Int) -> Result,
     ]()(handle, workspace, workspace_size_in_bytes)
 
 
@@ -5312,15 +5301,15 @@ fn cublasGemmEx(
     m: Int32,
     n: Int32,
     k: Int32,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int32,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int32,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,
@@ -5335,15 +5324,15 @@ fn cublasGemmEx(
             Int32,
             Int32,
             Int32,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int32,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int32,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int32,
             ComputeType,
@@ -5671,9 +5660,9 @@ fn cublasDgeam(
 fn cublasGetVectorAsync(
     n: Int64,
     elem_size: Int64,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incx: Int64,
-    host_ptr: UnsafePointer[NoneType],
+    host_ptr: OpaquePointer,
     incy: Int64,
     stream: CUstream,
 ) -> Result:
@@ -5682,9 +5671,9 @@ fn cublasGetVectorAsync(
         fn (
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
             CUstream,
         ) -> Result,
@@ -5732,14 +5721,14 @@ fn cublasSgemmEx(
     n: Int16,
     k: Int16,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int16,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int16,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int16,
 ) -> Result:
@@ -5753,14 +5742,14 @@ fn cublasSgemmEx(
             Int16,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
         ) -> Result,
@@ -6056,10 +6045,10 @@ fn cublasSsyr(
 fn cublasNrm2Ex(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -6068,10 +6057,10 @@ fn cublasNrm2Ex(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -6114,7 +6103,6 @@ struct cublasAtomicsMode_t:
     alias CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     alias CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -6178,11 +6166,11 @@ fn cublasCherk3mEx(
     n: Int16,
     k: Int16,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int16,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int16,
 ) -> Result:
@@ -6195,11 +6183,11 @@ fn cublasCherk3mEx(
             Int16,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
         ) -> Result,
@@ -6211,9 +6199,9 @@ fn cublasCherk3mEx(
 fn cublasScalEx(
     handle: UnsafePointer[cublasContext],
     n: Int16,
-    alpha: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
     alpha_type: DataType,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int16,
     execution_type: DataType,
@@ -6223,9 +6211,9 @@ fn cublasScalEx(
         fn (
             UnsafePointer[cublasContext],
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             DataType,
@@ -6236,13 +6224,13 @@ fn cublasScalEx(
 fn cublasDotcEx(
     handle: UnsafePointer[cublasContext],
     n: Int64,
-    x: UnsafePointer[NoneType],
+    x: OpaquePointer,
     x_type: DataType,
     incx: Int64,
-    y: UnsafePointer[NoneType],
+    y: OpaquePointer,
     y_type: DataType,
     incy: Int64,
-    result: UnsafePointer[NoneType],
+    result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
 ) -> Result:
@@ -6251,13 +6239,13 @@ fn cublasDotcEx(
         fn (
             UnsafePointer[cublasContext],
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             DataType,
         ) -> Result,
@@ -6379,11 +6367,11 @@ fn cublasCherkEx(
     n: Int64,
     k: Int64,
     alpha: UnsafePointer[Float32],
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int64,
     beta: UnsafePointer[Float32],
-    _c: UnsafePointer[NoneType],
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int64,
 ) -> Result:
@@ -6396,11 +6384,11 @@ fn cublasCherkEx(
             Int64,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
             UnsafePointer[Float32],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int64,
         ) -> Result,
@@ -6416,7 +6404,6 @@ struct cublasSideMode_t:
     alias CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     alias CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -6442,9 +6429,9 @@ fn cublasSetMatrix(
     rows: Int16,
     cols: Int16,
     elem_size: Int16,
-    _a: UnsafePointer[NoneType],
+    _a: OpaquePointer,
     lda: Int16,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     ldb: Int16,
 ) -> Result:
     return _get_dylib_function[
@@ -6453,9 +6440,9 @@ fn cublasSetMatrix(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
@@ -6518,9 +6505,9 @@ fn cublasDcopy(
 fn cublasSetVectorAsync(
     n: Int64,
     elem_size: Int64,
-    host_ptr: UnsafePointer[NoneType],
+    host_ptr: OpaquePointer,
     incx: Int64,
-    device_ptr: UnsafePointer[NoneType],
+    device_ptr: OpaquePointer,
     incy: Int64,
     stream: CUstream,
 ) -> Result:
@@ -6529,9 +6516,9 @@ fn cublasSetVectorAsync(
         fn (
             Int64,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int64,
             CUstream,
         ) -> Result,
@@ -6645,17 +6632,17 @@ fn cublasGemmStridedBatchedEx(
     m: Int16,
     n: Int16,
     k: Int16,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _atype: DataType,
     lda: Int16,
     stride_a: Int64,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _btype: DataType,
     ldb: Int16,
     stride_b: Int64,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _ctype: DataType,
     ldc: Int16,
     stride_c: Int64,
@@ -6672,17 +6659,17 @@ fn cublasGemmStridedBatchedEx(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int16,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             DataType,
             Int16,
             Int64,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             DataType,
             Int16,
             Int64,
@@ -7047,7 +7034,6 @@ struct cublasOperation_t:
     alias CUBLAS_OP_HERMITAN = cublasOperation_t(2)
     alias CUBLAS_OP_CONJG = cublasOperation_t(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

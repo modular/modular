@@ -13,65 +13,62 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import Optional, OptionalReg
-from math import ceildiv
-from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
+from collections.optional import OptionalReg
+from sys import (
+    align_of,
+    bit_width_of,
+    has_nvidia_gpu_accelerator,
+    simd_width_of,
+)
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
-from gpu.host.info import DEFAULT_GPU_ARCH
+from buffer.dimlist import DimList
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     arange,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import UnsafePointer, memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from linalg.matmul_gpu import _matmul_gpu
+from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
-from testing import assert_almost_equal, assert_true
+from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import FPUtils
 
 alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    IndexList[2], IndexList[2], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
 
 
 @parameter
 @always_inline
 fn epilogue_test_fn[
-    type: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
-    val: SIMD[type, width],
+    val: SIMD[dtype, width],
 ) -> SIMD[
-    type, width
+    dtype, width
 ]:
-    var bias = SIMD[type, width](0)
+    var bias = SIMD[dtype, width](0)
 
     @parameter
     for i in range(width):
         bias[i] = (
             0.5
             + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                type
+                dtype
             ]()
         )
 
@@ -92,20 +89,20 @@ fn select_max_ulp_distance[
 
 
 fn test[
-    type: DType,
+    dtype: DType,
     /,
     *,
     transpose_b: Bool = False,
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
     lambda_fn: Optional[epilogue_func_type] = None,
-    config: OptionalReg[MatmulConfig[type, type, type, transpose_b]] = None,
+    config: OptionalReg[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    rtol: Float64 = 1e-3 if type is DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
     constrained[
@@ -129,21 +126,21 @@ fn test[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[type, 2, static_c_shape](dynamic_c_shape)
+    var a_host = HostNDBuffer[dtype, 2, static_a_shape](dynamic_a_shape)
+    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
+    var c_host = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
+    var c_host_ref = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
 
-    var a_device = DeviceNDBuffer[type, 2, static_a_shape](
+    var a_device = DeviceNDBuffer[dtype, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[type, 2, static_b_shape](
+    var b_device = DeviceNDBuffer[dtype, 2, static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
-    var c_device = DeviceNDBuffer[type, 2, static_c_shape](
+    var c_device = DeviceNDBuffer[dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
-    var c_device_ref = DeviceNDBuffer[type, 2, static_c_shape](
+    var c_device_ref = DeviceNDBuffer[dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
 
@@ -179,19 +176,19 @@ fn test[
     @always_inline
     @__copy_capture(c_tensor, M, N)
     fn epilogue_fn[
-        _type: DType,
+        _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_type, width]](),
-    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
-        var update_val: SIMD[_type, width] = val
+        alignment: Int = align_of[SIMD[_dtype, width]](),
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        var update_val: SIMD[_dtype, width] = val
 
         @parameter
         if lambda_fn:
             alias func = lambda_fn.value()
             update_val = func(idx, (M, N), update_val)
         c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[type, width]](update_val)
+            idx, rebind[SIMD[dtype, width]](update_val)
         )
 
     @parameter
@@ -231,12 +228,14 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
 
         var val = c_ref_tensor.load[width=simd_width](idx)
@@ -274,7 +273,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if bitwidthof[type]() <= 16:
+            if bit_width_of[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue
@@ -326,7 +325,7 @@ def main():
                 transpose_b=True,
             ](
                 block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=(16, 128, 64),
+                warp_tile_shape=Index(16, 128, 64),
                 num_pipeline_stages=3,
             ),
         ](ctx, dynamic(100), static[128](), static[128]())
@@ -390,7 +389,7 @@ def main():
 
         print("===> bfloat16-float32 mma with epilogue")
         # Our default split-k reduction precision is output precision. For
-        # bfloat16, we need a larger tolerance since the referece may reduce
+        # bfloat16, we need a larger tolerance since the reference may reduce
         # in float32.
         test[
             DType.bfloat16,

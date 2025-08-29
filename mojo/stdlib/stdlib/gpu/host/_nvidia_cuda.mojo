@@ -11,18 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call, sizeof
+from sys import external_call, size_of
+from sys.ffi import c_uint, c_int
 
 from gpu._utils import to_llvm_ptr
-from gpu.host import DeviceContext, DeviceStream
+from gpu.host import DeviceContext, DeviceStream, DeviceFunction
 from gpu.host.device_context import (
     _CharPtr,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceStreamPtr,
+    _DeviceFunctionPtr,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
@@ -36,8 +38,18 @@ struct _CUstream_st:
     pass
 
 
+struct _CUmod_st:
+    pass
+
+
+struct _CUevent_st:
+    pass
+
+
 alias CUcontext = UnsafePointer[_CUctx_st]
 alias CUstream = UnsafePointer[_CUstream_st]
+alias CUmodule = UnsafePointer[_CUmod_st]
+alias CUevent = UnsafePointer[_CUevent_st]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
@@ -75,6 +87,36 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
         ](
             UnsafePointer(to=result),
             stream._handle,
+        )
+    )
+    return result
+
+
+# Accessor function to get access to the underlying CUmodule from a DeviceFunction.
+@always_inline
+fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
+    var result = CUmodule()
+    # const char *AsyncRT_DeviceFunction_cuda_module(CUmodule *result, const DeviceFunction *func)
+    _checked(
+        external_call[
+            "AsyncRT_DeviceFunction_cuda_module",
+            _CharPtr,
+            UnsafePointer[CUmodule],
+            _DeviceFunctionPtr,
+        ](
+            UnsafePointer(to=result),
+            func._handle,
+        )
+    )
+    return result
+
+
+fn CUDA_get_current_context() raises -> CUcontext:
+    var result = CUcontext()
+    # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
+    _checked(
+        external_call["AsyncRT_DeviceContext_cuda_current_context", _CharPtr,](
+            UnsafePointer(to=result),
         )
     )
     return result
@@ -133,12 +175,7 @@ struct TensorMapInterleave:
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct TensorMapSwizzle(
-    Copyable,
-    Movable,
-    EqualityComparable,
-    Intable,
-    Stringable,
-    Writable,
+    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -163,12 +200,12 @@ struct TensorMapSwizzle(
     fn bytes(self) -> Int:
         return Int((2**self._value) * 16)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self._value == 1:
             writer.write("32B swizzle")
         elif self._value == 2:
@@ -207,11 +244,15 @@ struct TMADescriptor:
     var data: StaticTuple[UInt8, 128]
 
     @always_inline
+    fn __init__(out self):
+        self.data = StaticTuple[UInt8, 128]()
+
+    @always_inline
     fn __copyinit__(out self, other: Self):
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
     __mlir_op.`nvvm.prefetch.tensormap`(
         to_llvm_ptr(desc_ptr),
     )
@@ -230,33 +271,27 @@ fn create_tma_descriptor[
 ) raises -> TMADescriptor:
     """Create a tensor map descriptor object representing tiled memory region.
     """
-    # Enforces host-side aligment
+    # Enforces host-side alignment
     var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
     var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
 
-    var global_dim_arg = stack_allocation[5, Int64]()
-    var global_strides_arg = stack_allocation[5, Int64]()
-    var box_dim_arg = stack_allocation[5, Int32]()
-    var element_stride_arg = stack_allocation[5, Int32]()
-
-    @parameter
-    for i in range(5):
-        global_dim_arg[i] = 1
-        global_strides_arg[i] = 0
-        element_stride_arg[i] = 1
-        box_dim_arg[i] = 1
+    # NOTE: These are initialized in the comptime loop below.
+    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
+    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
+    var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
+    var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
     @parameter
     for i in range(rank):
         global_dim_arg[i] = global_shape[rank - i - 1]
+        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
         box_dim_arg[i] = shared_mem_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * sizeof[dtype]()
 
     debug_assert(
-        global_strides_arg[0] == sizeof[dtype](),
+        global_strides_arg[0] == size_of[dtype](),
         "TMA GMEM should be row-major, global stride",
-        " at dim 0 should be sizeof[dtype](): ",
-        sizeof[dtype](),
+        " at dim 0 should be size_of[dtype](): ",
+        size_of[dtype](),
         " but is: ",
         global_strides_arg[0],
     )
@@ -270,7 +305,7 @@ fn create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CharPtr,
-            UnsafePointer[NoneType],  # tensorMap
+            OpaquePointer,  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             _DeviceBufferPtr,  #  globalAddress
@@ -287,11 +322,11 @@ fn create_tma_descriptor[
             TensorMapDataType.from_dtype[dtype]()._value,
             rank,
             global_buf._handle,
-            global_dim_arg,
-            # global_strides_arg[0] is implicitly sizeof[dtype]()
-            global_strides_arg + 1,
-            box_dim_arg,
-            element_stride_arg,
+            global_dim_arg.unsafe_ptr(),
+            # global_strides_arg[0] is implicitly size_of[dtype]()
+            global_strides_arg.unsafe_ptr() + 1,
+            box_dim_arg.unsafe_ptr(),
+            element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
             TensorMapL2Promotion.NONE._value,

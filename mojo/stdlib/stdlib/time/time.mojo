@@ -22,16 +22,14 @@ from time import perf_counter_ns
 from math import floor
 from os import abort
 from sys import (
+    CompilationTarget,
     external_call,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    os_is_linux,
-    os_is_windows,
 )
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -39,9 +37,9 @@ from memory import UnsafePointer
 
 # Enums used in time.h 's glibc
 alias _CLOCK_REALTIME = 0
-alias _CLOCK_MONOTONIC = 1 if os_is_linux() else 6
-alias _CLOCK_PROCESS_CPUTIME_ID = 2 if os_is_linux() else 12
-alias _CLOCK_THREAD_CPUTIME_ID = 3 if os_is_linux() else 16
+alias _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
+alias _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
+alias _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
 alias _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
@@ -58,9 +56,9 @@ alias _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 alias _WINDOWS_LARGE_INTEGER = Int64
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(Stringable, Writable):
+struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -70,23 +68,25 @@ struct _CTimeSpec(Stringable, Writable):
 
     fn as_nanoseconds(self) -> UInt:
         @parameter
-        if os_is_linux():
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec
+        if CompilationTarget.is_linux():
+            return UInt(self.tv_sec * _NSEC_PER_SEC + self.tv_subsec)
         else:
-            return self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
+            return UInt(
+                self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
+            )
 
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_nanoseconds(), "ns")
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _FILETIME:
+struct _FILETIME(Copyable, Defaultable, Movable):
     var dw_low_date_time: UInt32
     var dw_high_date_time: UInt32
 
@@ -100,11 +100,11 @@ struct _FILETIME:
         # Taken from https://github.com/microsoft/STL/blob/c8d1efb6d504f6392acf8f6d01fd703f7c8826c0/stl/src/xtime.cpp#L50
         alias windows_to_unix_epoch_offset_ns: Int = 0x19DB1DED53E8000
         var interval_count: UInt64 = (
-            self.dw_high_date_time.cast[DType.uint64]() << 32
-        ) + self.dw_low_date_time.cast[
-            DType.uint64
-        ]() - windows_to_unix_epoch_offset_ns
-        return Int(interval_count * 100)
+            (self.dw_high_date_time.cast[DType.uint64]() << 32)
+            + self.dw_low_date_time.cast[DType.uint64]()
+            - windows_to_unix_epoch_offset_ns
+        )
+        return UInt(Int(interval_count * 100))
 
 
 @always_inline
@@ -120,22 +120,33 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
-    if os_is_linux():
+    if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()
     else:
-        return Int(
-            external_call["clock_gettime_nsec_np", Int64](Int32(clockid))
+        return UInt(
+            Int(external_call["clock_gettime_nsec_np", Int64](Int32(clockid)))
         )
 
 
 @always_inline
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = StaticString(
-        "llvm.nvvm.read.ptx.sreg.clock64"
-    ) if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
-    return Int(llvm_intrinsic[asm, Int64]())
+    alias asm = _gpu_clock_inst()
+    return UInt(Int(llvm_intrinsic[asm, Int64]()))
+
+
+fn _gpu_clock_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.read.ptx.sreg.clock64"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.s.memtime"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="_gpu_clock",
+        ]()
 
 
 @always_inline
@@ -151,7 +162,7 @@ fn _monotonic_nanoseconds() -> UInt:
     @parameter
     if is_gpu():
         return _gpu_clock()
-    elif os_is_windows():
+    elif CompilationTarget.is_windows():
         var ft = _FILETIME()
         external_call["GetSystemTimePreciseAsFileTime", NoneType](
             Pointer(to=ft)
@@ -272,7 +283,7 @@ fn _time_function_windows[
 
     # Note: Windows performance counter resolution is in µs.
     var elapsed_time_in_ns = (elapsed_ticks * 1_000_000_000) // ticks_per_sec
-    return Int(elapsed_time_in_ns)
+    return UInt(Int(elapsed_time_in_ns))
 
 
 @always_inline
@@ -288,7 +299,7 @@ fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
     """
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return _time_function_windows[func]()
 
     var tic = perf_counter_ns()
@@ -316,7 +327,7 @@ fn time_function[func: fn () capturing [_] -> None]() -> UInt:
     try:
         return time_function[raising_func]()
     except err:
-        return abort[UInt](err)
+        return abort[UInt](String(err))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -334,9 +345,7 @@ fn sleep(sec: Float64):
     @parameter
     if is_gpu():
         var nsec = sec * 1.0e9
-        alias intrinsic = StaticString(
-            "llvm.nvvm.nanosleep"
-        ) if is_nvidia_gpu() else "llvm.amdgcn.s.sleep"
+        alias intrinsic = _gpu_sleep_inst()
         llvm_intrinsic[intrinsic, NoneType](nsec.cast[DType.int32]())
         return
 
@@ -354,6 +363,19 @@ fn sleep(sec: Float64):
     _ = rem
 
 
+fn _gpu_sleep_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.nanosleep"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.s.sleep"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="sleep",
+        ]()
+
+
 fn sleep(sec: UInt):
     """Suspends the current thread for the seconds specified.
 
@@ -366,7 +388,7 @@ fn sleep(sec: UInt):
         return sleep(Float64(sec))
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         # In Windows the argument is in milliseconds.
         external_call["Sleep", NoneType](sec * 1000)
     else:

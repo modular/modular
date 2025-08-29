@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof, sizeof
+from sys.info import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from nn.gather_scatter import gather
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 # CHECK-LABEL: test_gather
@@ -41,9 +40,9 @@ fn test_gather(ctx: DeviceContext) raises:
         ](input_host_ptr)
         for i in range(num_rows):
             for j in range(row_size):
-                input_host[Index(i, j)] = Float32(i).value
+                input_host[Index(i, j)] = Float32(i)
         var input_device_ptr = ctx.enqueue_create_buffer[DType.float32](
-            input_host.size() * sizeof[DType.float32]()
+            input_host.size() * size_of[DType.float32]()
         )
         ctx.enqueue_copy(input_device_ptr, input_host.data)
         var input_device = NDBuffer[
@@ -64,7 +63,7 @@ fn test_gather(ctx: DeviceContext) raises:
             DimList(num_indices),
         ](indices_host_ptr)
         var indices_device_ptr = ctx.enqueue_create_buffer[indices_type](
-            indices_host.size() * sizeof[indices_type]()
+            indices_host.size() * size_of[indices_type]()
         )
         var indices_device = NDBuffer[
             indices_type,
@@ -91,7 +90,7 @@ fn test_gather(ctx: DeviceContext) raises:
             DimList(num_indices, row_size),
         ](output_host_ptr)
         var output_device_ptr = ctx.enqueue_create_buffer[DType.float32](
-            output_host.size() * sizeof[DType.float32]()
+            output_host.size() * size_of[DType.float32]()
         )
         var output_device = NDBuffer[
             DType.float32,

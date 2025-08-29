@@ -14,14 +14,13 @@
 from collections import Set
 from math import ceildiv, isqrt
 from random import random_ui64, seed
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
+from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -39,7 +38,7 @@ def flops(
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
@@ -50,10 +49,10 @@ fn _get_run_name[
     cache_len: Int,
     use_random_cache_lengths: Bool,
 ) -> String:
-    var name = String(
+    return String(
         "fused_qkv_ragged_flash_attention",
         "(",
-        type,
+        dtype,
         ") : ",
         # head_info
         "num_q_heads=",
@@ -74,8 +73,6 @@ fn _get_run_name[
         ", use_random_cache_lengths=",
         use_random_cache_lengths,
     )
-
-    return name
 
 
 def execute_kv_cache_ragged_flash_attention[
@@ -104,13 +101,11 @@ def execute_kv_cache_ragged_flash_attention[
 
     debug_assert(
         batch_size < num_pages,
-        String(
-            "batch_size passed to unit test (",
-            batch_size,
-            ") is larger than configured num_pages (",
-            num_pages,
-            ")",
-        ),
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured num_pages (",
+        num_pages,
+        ")",
     )
 
     var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](

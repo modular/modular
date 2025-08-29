@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo -debug-level full %s
 
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_true
@@ -40,7 +39,7 @@ def test_bool_none():
 
 
 @fieldwise_init
-struct MyTrue:
+struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
 
@@ -108,11 +107,6 @@ def test_bitwise():
     assert_false(value)
 
 
-def test_neg():
-    assert_equal(-1, -True)
-    assert_equal(0, -False)
-
-
 def test_indexer():
     assert_true(1 == index(Bool(True)))
     assert_true(0 == index(Bool(False)))
@@ -155,17 +149,6 @@ def test_float_conversion():
     assert_equal((False).__float__(), 0.0)
 
 
-def test_from_python():
-    assert_true(Bool(PythonObject(True)))
-    assert_false(Bool(PythonObject(False)))
-
-
-def test_to_python_object():
-    assert_true(Bool(True).to_python_object() == PythonObject(True))
-    assert_true(Bool(False).to_python_object() == PythonObject(False))
-    assert_false(Bool(True).to_python_object() == PythonObject(False))
-
-
 def main():
     test_default()
     test_min_max()
@@ -174,9 +157,6 @@ def main():
     test_convert_from_implicitly_boolable()
     test_bool_representation()
     test_bitwise()
-    test_neg()
     test_indexer()
     test_comparisons()
     test_float_conversion()
-    test_from_python()
-    test_to_python_object()

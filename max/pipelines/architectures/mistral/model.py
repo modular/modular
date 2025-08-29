@@ -17,18 +17,13 @@ import logging
 import math
 import time
 from collections.abc import Sequence
-from typing import Optional, cast
+from typing import Optional
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-)
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -130,9 +125,7 @@ class MistralModel(PipelineModel[TextContext]):
         self.signal_buffers = (
             [
                 Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
+                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
                 )
                 for dev in self.devices
             ]
@@ -156,15 +149,19 @@ class MistralModel(PipelineModel[TextContext]):
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[1]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -312,8 +309,7 @@ class MistralModel(PipelineModel[TextContext]):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=MistralConfig.get_num_layers(huggingface_config),
             available_cache_memory=available_cache_memory,
@@ -345,9 +341,7 @@ class MistralModel(PipelineModel[TextContext]):
 
         # Construct general input types
         return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
         kv_inputs = self.kv_manager.input_symbols()
@@ -435,8 +429,7 @@ class MistralModel(PipelineModel[TextContext]):
             head_dim=self.huggingface_config.head_dim,
             rope_theta=self.huggingface_config.rope_theta,
             max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config,
-                huggingface_config=self.huggingface_config,
+                self.pipeline_config, huggingface_config=self.huggingface_config
             ),
             rms_norm_eps=self.huggingface_config.rms_norm_eps,
             feed_forward_length=self.huggingface_config.intermediate_size,
@@ -450,13 +443,14 @@ class MistralModel(PipelineModel[TextContext]):
         nn_model: Module
         if len(self.devices) > 1:
             nn_model = DistributedMistral(model_config)
-            nn_model.load_state_dict(state_dict, weight_alignment=1)
+            nn_model.load_state_dict(
+                state_dict,
+                weight_alignment=1,
+                strict=False,  # TODO(MODELS-551) vision tower weights not used
+            )
             self.state_dict = nn_model.state_dict()
 
-            with Graph(
-                "mistral",
-                input_types=[*graph_inputs],
-            ) as graph:
+            with Graph("mistral", input_types=[*graph_inputs]) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
                 )
@@ -477,8 +471,8 @@ class MistralModel(PipelineModel[TextContext]):
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
 
                 graph.output(*outputs)
@@ -486,21 +480,22 @@ class MistralModel(PipelineModel[TextContext]):
 
         else:
             nn_model = Mistral(model_config)
-            nn_model.load_state_dict(state_dict, weight_alignment=1)
+            nn_model.load_state_dict(
+                state_dict,
+                weight_alignment=1,
+                strict=False,  # TODO(MODELS-551) vision tower weights not used
+            )
             self.state_dict = nn_model.state_dict()
 
-            with Graph(
-                "mistral",
-                input_types=graph_inputs,
-            ) as graph:
+            with Graph("mistral", input_types=graph_inputs) as graph:
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
                 outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
                 graph.output(*outputs)
                 return graph
@@ -530,9 +525,18 @@ class MistralModel(PipelineModel[TextContext]):
         logger.info("Building and compiling model...")
         before = time.perf_counter()
         graph = self._build_graph(self.weights, self.adapter)
+        after_build = time.perf_counter()
 
+        logger.info(f"Building graph took {after_build - before:.6f} seconds")
+
+        before_compile = time.perf_counter()
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )

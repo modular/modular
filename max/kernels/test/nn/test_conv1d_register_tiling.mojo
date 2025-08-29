@@ -13,21 +13,20 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
-from sys import simdwidthof
+from sys import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
-from testing import *
+from testing import assert_equal
 
 from utils.index import Index
 
 alias type = DType.float32
 alias micro_kernel_height = 2
 alias micro_kernel_width = 2
-alias simd_size = simdwidthof[type]()
+alias simd_size = simd_width_of[type]()
 alias micro_kernel_f_size = micro_kernel_width * simd_size
 
 alias N = 1
@@ -157,7 +156,7 @@ fn test_conv1d_register_tiling() raises:
         Index(0, wo + micro_kernel_height, f_tile_size)
     )
 
-    assert_equal(0, actual)
+    assert_equal(SIMD[type, simd_size](0), actual)
 
 
 fn main() raises:

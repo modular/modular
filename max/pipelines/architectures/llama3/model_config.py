@@ -16,24 +16,26 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+    DistributedGemmConfig,
     Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
     ReturnLogits,
+    RotaryEmbedding,
 )
+from max.nn.float8_config import Float8Config, parse_float8_config
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
     MAXModelConfig,
     MAXModelConfigBase,
     PipelineConfig,
@@ -43,101 +45,51 @@ from max.pipelines.lib import (
 from transformers import AutoConfig
 
 
-def _parse_float8_config_from_compressed_tensors(
-    huggingface_config: AutoConfig,
-    state_dict: dict[str, WeightData],
-    dtype: DType,
-) -> Float8Config | None:
-    """Parses Float8Config from HuggingFace config using 'compressed-tensors' format."""
-    if dtype != DType.float8_e4m3fn:
-        return None
+def create_rope_embedding(
+    hidden_size: int,
+    num_attention_heads: int,
+    rope_theta: float,
+    max_seq_len: int,
+    interleaved_rope_weights: bool,
+    rope_scaling_params: Llama3RopeScalingParams | None,
+    longrope_scaling_params: LongRoPEScalingParams | None,
+    device: DeviceRef,
+) -> RotaryEmbedding:
+    """Create appropriate RoPE embedding based on scaling parameters.
 
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if (
-        not hf_quant_config
-        # NOTE: only support the compressed-tensors format currently.
-        or hf_quant_config.get("quant_method") != "compressed-tensors"
-    ):
-        raise ValueError(
-            "FP8 dtype specified, but a compatible 'quantization_config' "
-            "with quant_method='compressed-tensors' was not found in the Hugging Face config."
+    Args:
+        hidden_size: Model hidden dimension
+        num_attention_heads: Number of attention heads
+        rope_theta: RoPE theta parameter (typically 10000.0)
+        max_seq_len: Maximum sequence length
+        interleaved_rope_weights: Whether to use interleaved RoPE weights
+        rope_scaling_params: Llama3 RoPE scaling parameters (if any)
+        longrope_scaling_params: LongRoPE scaling parameters (if any)
+        device: Device to place tensors on
+
+    Returns:
+        Configured RoPE embedding instance
+    """
+    if longrope_scaling_params is not None:
+        return LongRoPERotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=longrope_scaling_params,
+            device=device,
         )
-
-    # Extract group config.
-    # Assume only one group 'group_0' matters for now.
-    group_config = hf_quant_config["config_groups"]["group_0"]
-    input_act_config = group_config["input_activations"]
-    weight_config = group_config["weights"]
-
-    # Parse input scaling spec.
-    input_origin = (
-        Float8ScaleOrigin.DYNAMIC
-        if input_act_config["dynamic"]
-        else Float8ScaleOrigin.STATIC
-    )
-    input_strategy_str = input_act_config["strategy"]
-    if input_strategy_str == "tensor":
-        input_granularity = Float8ScaleGranularity.TENSOR
-    elif input_strategy_str == "channel":
-        input_granularity = Float8ScaleGranularity.ROWWISE
-    elif input_strategy_str == "token":
-        input_granularity = Float8ScaleGranularity.COLWISE
     else:
-        raise ValueError(
-            f"unsupported FP8 input activation strategy: {input_strategy_str}"
+        return Llama3RotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=rope_scaling_params,
+            device=device,
         )
-
-    input_scale_name = "layers.0.mlp.down_proj.input_scale"
-    has_input_scale = input_scale_name in state_dict
-    input_spec = Float8InputScaleSpec(
-        granularity=input_granularity,
-        origin=input_origin,
-        # Set reasonable defaults if the static input scale isn't present.
-        dtype=state_dict[input_scale_name].dtype if has_input_scale else dtype,
-        # Ignore activation_scale_ub, which is not present in compressed-tensors.
-    )
-
-    # Parse weight spec.
-    weight_strategy_str = weight_config["strategy"]
-    if weight_strategy_str == "tensor":
-        weight_granularity = Float8ScaleGranularity.TENSOR
-    elif weight_strategy_str == "channel":
-        weight_granularity = Float8ScaleGranularity.ROWWISE
-    elif weight_strategy_str == "token":
-        weight_granularity = Float8ScaleGranularity.COLWISE
-    else:
-        raise ValueError(
-            f"unsupported FP8 weight strategy: {weight_strategy_str}"
-        )
-
-    # Validate weight config, which shouldn't dynamically quantize.
-    if weight_config["dynamic"]:
-        # This method uses static weight scaling according to the examples provided.
-        raise ValueError(
-            "dynamic weight scaling is not supported for compressed-tensors FP8 method"
-        )
-
-    weight_scale = state_dict["layers.0.mlp.down_proj.weight_scale"]
-    weight_spec = Float8WeightScaleSpec(
-        granularity=weight_granularity, dtype=weight_scale.dtype
-    )
-
-    # Determine whether QKV proj is in float8.
-    attn_qkv_in_float8 = (
-        state_dict["layers.0.self_attn.k_proj.weight"].dtype
-        == DType.float8_e4m3fn
-    )
-
-    return Float8Config(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
-        attn_qkv_in_float8=attn_qkv_in_float8,
-        embedding_output_dtype=(
-            state_dict["lm_head.weight"].dtype
-            if "lm_head.weight" in state_dict
-            else None
-        ),
-    )
 
 
 @dataclass
@@ -150,20 +102,20 @@ class Llama3ConfigBase(MAXModelConfigBase):
     num_key_value_heads: int
     num_hidden_layers: int
     rope_theta: float
-    rope_scaling_params: Optional[Llama3RopeScalingParams]
+    rope_scaling_params: Llama3RopeScalingParams | None
     max_seq_len: int
     intermediate_size: int
     interleaved_rope_weights: bool
     vocab_size: int
     dtype: DType
-    model_quantization_encoding: Optional[QuantizationEncoding]
-    quantization_config: Optional[QuantizationConfig]
+    model_quantization_encoding: QuantizationEncoding | None
+    quantization_config: QuantizationConfig | None
     kv_params: KVCacheParams
     return_logits: ReturnLogits
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     norm_dtype: DType | None
     attention_bias: bool
-    rms_norm_eps: Optional[float]
+    rms_norm_eps: float | None
     tie_word_embeddings: bool
     stacked_mlp: bool
     stacked_qkv: bool
@@ -172,8 +124,13 @@ class Llama3ConfigBase(MAXModelConfigBase):
     embedding_multiplier: float
     residual_multiplier: float
     devices: list[DeviceRef]
-    clip_qkv: Optional[float]
+    clip_qkv: float | None
     float8_config: Float8Config | None
+    lora_config: LoRAConfig | None = None
+    pipeline_parallel_degree: int = 1
+    tensor_parallel_degree: int = 1
+    dist_gemm_config: DistributedGemmConfig | None = None
+    longrope_scaling_params: LongRoPEScalingParams | None = None
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -198,7 +155,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         huggingface config. If the attention multiplier is not set, it will be
         calculated as the square root of 1.0 divided by the head dimension.
         """
-        return getattr(
+        # Base attention multiplier
+        base_multiplier = getattr(
             huggingface_config,
             "attention_multiplier",
             math.sqrt(
@@ -213,6 +171,9 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 )
             ),
         )
+        # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
+
+        return base_multiplier
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
@@ -221,6 +182,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        pipeline_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
@@ -235,6 +197,11 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
+            # Pipeline parallel fields
+            pipeline_parallel_degree=pipeline_parallel_degree,
+            total_num_layers=huggingface_config.num_hidden_layers
+            if pipeline_parallel_degree > 1
+            else None,
         )
 
     @staticmethod
@@ -277,6 +244,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
+        pipeline_parallel_degree: int = 1,
+        tensor_parallel_degree: int = 1,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -294,12 +263,11 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model_config.device_specs
+            for spec in pipeline_config.model_config.device_specs[:n_devices]
         ]
 
-        # Parse the float8 config from compressed-tensors, which is currently
-        # the only supported format.
-        float8_config = _parse_float8_config_from_compressed_tensors(
+        # Parse the float8 config from compressed-tensors or FBGEMM.
+        float8_config = parse_float8_config(
             huggingface_config, state_dict, dtype
         )
 
@@ -313,17 +281,22 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "lm_head.weight" not in state_dict
-        )
+        if "tie_word_embeddings" in huggingface_config:
+            tie_word_embeddings = huggingface_config.tie_word_embeddings
+        else:
+            tie_word_embeddings = (
+                getattr(huggingface_config, "tie_word_embeddings", False)
+                or "lm_head.weight" not in state_dict
+            )
+
         embedding_multiplier = getattr(
             huggingface_config, "embedding_multiplier", 1.0
         )
         residual_multiplier = getattr(
             huggingface_config, "residual_multiplier", 1.0
         )
-        rope_scaling_params = None
+        rope_scaling_params: Llama3RopeScalingParams | None = None
+        longrope_scaling_params: LongRoPEScalingParams | None = None
         rope_scaling = huggingface_config.rope_scaling
 
         if rope_scaling is not None:
@@ -347,6 +320,37 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                         "original_max_position_embeddings"
                     ],
                 )
+            elif rope_type == "longrope" or rope_type_alt == "longrope":
+                longrope_scaling_params = LongRoPEScalingParams(
+                    short_factor=rope_scaling["short_factor"],
+                    long_factor=rope_scaling["long_factor"],
+                    original_max_position=huggingface_config.original_max_position_embeddings,
+                    max_position_embeddings=huggingface_config.max_position_embeddings,
+                )
+                rope_scaling_params = None
+
+        # Calculate base attention multiplier
+        base_attention_multiplier = Llama3Config.calculate_attention_multiplier(
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
+        )
+
+        # Apply LongRoPE attention scaling if needed
+        attention_multiplier = base_attention_multiplier
+        if longrope_scaling_params is not None:
+            # Create temporary RoPE embedding to get proper attention scale
+            rope_embedding = create_rope_embedding(
+                hidden_size=huggingface_config.hidden_size,
+                num_attention_heads=huggingface_config.num_attention_heads,
+                rope_theta=huggingface_config.rope_theta,
+                max_seq_len=Llama3Config.calculate_max_seq_len(
+                    pipeline_config, huggingface_config=huggingface_config
+                ),
+                interleaved_rope_weights=interleaved_rope_weights,
+                rope_scaling_params=rope_scaling_params,
+                longrope_scaling_params=longrope_scaling_params,
+                device=DeviceRef.CPU(),  # temporary device, not used for scale computation
+            )
+            attention_multiplier = rope_embedding.compute_scale()
 
         return Llama3Config(
             hidden_size=huggingface_config.hidden_size,
@@ -355,6 +359,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             num_hidden_layers=huggingface_config.num_hidden_layers,
             rope_theta=huggingface_config.rope_theta,
             rope_scaling_params=rope_scaling_params,
+            longrope_scaling_params=longrope_scaling_params,
             rms_norm_eps=rms_norm_eps,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
@@ -375,6 +380,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 n_devices=n_devices,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
+                pipeline_parallel_degree=pipeline_parallel_degree,
             ),
             norm_method=norm_method,
             norm_dtype=norm_dtype,
@@ -383,16 +389,21 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
             logits_postprocessor=logits_postprocessor,
-            attention_multiplier=Llama3Config.calculate_attention_multiplier(
-                huggingface_config,
-                n_devices,
-                kv_cache_config,
-                cache_dtype,
-            ),
+            attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
+            # Force-disable matmul-allreduce overlap for llama FP8.
+            # TODO: GEX-2388: Figure out the issue and re-enable this.
+            pipeline_parallel_degree=pipeline_parallel_degree,
+            tensor_parallel_degree=tensor_parallel_degree,
+            dist_gemm_config=DistributedGemmConfig(
+                enable_matmul_allreduce=False
+            )
+            if dtype.is_float8()
+            else DistributedGemmConfig.generate(),
+            lora_config=pipeline_config.lora_config,
         )

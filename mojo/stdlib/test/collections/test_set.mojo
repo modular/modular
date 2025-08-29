@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections import Set
 
@@ -34,8 +33,8 @@ def test_set_construction():
     var s1 = {1, 2, 3}
     assert_equal(s1, {1, 2, 3})
 
-    var s2 = {String("1"), String("2")}
-    assert_equal(s2, {String("1"), String("2")})
+    var s2 = {"1", "2"}
+    assert_equal(s2, {"1", "2"})
 
 
 def test_set_move():
@@ -211,13 +210,13 @@ def test_difference_update():
 def test_iter():
     var sum = 0
     for e in Set[Int]():
-        sum += e[]
+        sum += e
 
     assert_equal(sum, 0)
 
     sum = 0
     for e in {1, 2, 3}:
-        sum += e[]
+        sum += e
 
     assert_equal(sum, 6)
 
@@ -498,7 +497,7 @@ def test_set_str():
     var a = {1, 2, 3}
     AE(a.__str__(), "{1, 2, 3}")
     AE(a.__repr__(), "{1, 2, 3}")
-    var b = {String("a"), String("b")}
+    var b = {"a", "b"}
     AE(b.__str__(), "{'a', 'b'}")
     AE(Set[Int]().__str__(), "{}")
 
@@ -513,8 +512,29 @@ fn test[name: String, test_fn: fn () raises]() raises:
     print("PASS")
 
 
+def test_set_comprehension():
+    var s1 = {x * x for x in range(10) if x & 1}
+    assert_equal(s1, {1, 9, 25, 49, 81})
+
+    var s2 = {x * y for x in range(3) for y in s1}
+    assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
+
+
+def test_set_repr_wrap():
+    var tmp_set = Set[Float64]()
+    tmp_set.add(1.0)
+    tmp_set.add(8.0)
+
+    assert_equal(
+        repr(tmp_set),
+        "{SIMD[DType.float64, 1](1.0), SIMD[DType.float64, 1](8.0)}",
+    )
+
+
 def main():
     test["test_set_construction", test_set_construction]()
+    test["test_set_move", test_set_move]()
+    test_set_move()
     test["test_len", test_len]()
     test["test_in", test_in]()
     test["test_equal", test_equal]()
@@ -537,5 +557,5 @@ def main():
     test["test_discard", test_discard]()
     test["test_clear", test_clear]()
     test["test_set_str", test_set_str]()
-
-    test_set_move()
+    test["test_set_comprehension", test_set_comprehension]()
+    test["test_set_repr_wrapper", test_set_repr_wrap]()

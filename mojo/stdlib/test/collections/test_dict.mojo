@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import Dict, KeyElement, Optional
 from collections.dict import OwnedKwargsDict
-from os import abort
 
-from test_utils import AbortOnCopy, CopyCounter
+from test_utils import CopyCounter
+from hashlib import Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -26,7 +24,7 @@ def test_dict_construction():
 
 
 def test_dict_literals():
-    a = {String("foo"): 1, String("bar"): 2}
+    a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
     b = {1: 4, 2: 7, 3: 18}
@@ -37,7 +35,7 @@ def test_dict_literals():
 
 
 def test_dict_fromkeys():
-    alias keys = List[String]("a", "b")
+    alias keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -46,14 +44,14 @@ def test_dict_fromkeys():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v.key
+        var v = k_v.value
         assert_true(k in dict)
         assert_equal(dict[k], v)
 
 
 def test_dict_fromkeys_optional():
-    alias keys = List[String]("a", "b", "c")
+    alias keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,
@@ -64,8 +62,8 @@ def test_dict_fromkeys_optional():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v.key
+        var v = k_v.value
         assert_true(k in dict)
         assert_false(v)
 
@@ -189,7 +187,7 @@ def test_iter():
 
     var keys = String()
     for key in dict:
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -201,7 +199,7 @@ def test_iter_keys():
 
     var keys = String()
     for key in dict.keys():
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -213,7 +211,7 @@ def test_iter_values():
 
     var sum = 0
     for value in dict.values():
-        sum += value[]
+        sum += value
 
     assert_equal(sum, 3)
 
@@ -223,8 +221,8 @@ def test_iter_values_mut():
     dict["a"] = 1
     dict["b"] = 2
 
-    for value in dict.values():
-        value[] += 1
+    for ref value in dict.values():
+        value += 1
 
     assert_equal(2, dict["a"])
     assert_equal(3, dict["b"])
@@ -239,11 +237,20 @@ def test_iter_items():
     var keys = String()
     var sum = 0
     for entry in dict.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
+
+
+def test_dict_contains():
+    var dict: Dict[String, Int] = {}
+    dict["abc"] = 1
+    dict["def"] = 2
+    assert_true("abc" in dict)
+    assert_true("def" in dict)
+    assert_false("c" in dict)
 
 
 def test_dict_copy():
@@ -404,11 +411,11 @@ def test_dict_update_empty_new():
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __init__(out self, *, other: Self):
-        self = other
+    fn __copyinit__(out self, other: Self):
+        self.value = other.value
 
-    fn __hash__(self) -> UInt:
-        return self.value
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        return hasher.update(self.value)
 
     fn __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value
@@ -461,6 +468,7 @@ def test_dict():
     test["test_iter_values", test_iter_values]()
     test["test_iter_values_mut", test_iter_values_mut]()
     test["test_iter_items", test_iter_items]()
+    test["test_dict_contains", test_dict_contains]()
     test["test_dict_copy", test_dict_copy]()
     test["test_dict_copy_add_new_item", test_dict_copy_add_new_item]()
     test["test_dict_copy_delete_original", test_dict_copy_delete_original]()
@@ -476,7 +484,7 @@ def test_dict():
     test["test dict popitem", test_dict_popitem]()
 
 
-def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
+def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -489,12 +497,12 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
 
     var keys = String()
     for key in kwargs.keys():
-        keys += key[]
+        keys += key
     assert_equal(keys, "fruitdessert")
 
     var sum = 0
     for val in kwargs.values():
-        sum += val[]
+        sum += val
     assert_equal(sum, 17)
 
     assert_false(kwargs.find("salad").__bool__())
@@ -512,8 +520,8 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     keys = String()
     sum = 0
     for entry in kwargs.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
     assert_equal(keys, "dessertsalad")
     assert_equal(sum, 19)
 
@@ -614,8 +622,8 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict():
     alias N = 10
 
-    fn _get_dict() -> Dict[String, Int32]:
-        var res = Dict[String, Int32]()
+    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = i
         return res
@@ -626,6 +634,43 @@ def test_compile_time_dict():
     for i in range(N):
         alias val = my_dict.get(String(i)).value()
         assert_equal(val, i)
+
+
+# FIXME: Dictionaries should be equatable when their keys/values are.
+def is_equal[
+    K: KeyElement, V: EqualityComparable & Copyable & Movable
+](a: Dict[K, V], b: Dict[K, V]) -> Bool:
+    if len(a) != len(b):
+        return False
+    for k in a.keys():
+        if a[k] != b[k]:
+            return False
+    return True
+
+
+def test_dict_comprehension():
+    var d1 = {x: x * x for x in range(10) if x & 1}
+    assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
+
+    var s2 = {a * b: b for a in ["foo", "bar"] for b in [1, 2]}
+    var d1reference = {
+        "foo": 1,
+        "bar": 1,
+        "foofoo": 2,
+        "barbar": 2,
+    }
+    assert_true(is_equal(s2, d1reference))
+
+
+def test_dict_repr_wrap():
+    var tmp_dict = {"one": 1.0, "two": 2.0}
+    assert_equal(
+        repr(tmp_dict),
+        (
+            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
+            " 1](2.0)}"
+        ),
+    )
 
 
 def main():
@@ -643,3 +688,5 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_dict_comprehension()
+    test_dict_repr_wrap()

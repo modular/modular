@@ -33,7 +33,6 @@ _FILECHECK_TESTS = [
     "test_repeat_interleave.mojo",
     "test_resize.mojo",
     "test_scatter_elements.mojo",
-    "test_scatter_nd.mojo",
     "test_softmax.mojo",
     "test_static_conv.mojo",
     "test_static_conv_small_shapes.mojo",
@@ -65,6 +64,7 @@ _CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        target_compatible_with = _CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:nn",

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -33,6 +33,7 @@ deepseekV2_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
+    multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,

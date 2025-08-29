@@ -10,89 +10,117 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines a Variant type.
-
-You can use this type to implement variant/sum types. For example:
-
-```mojo
-from utils import Variant
-
-alias IntOrString = Variant[Int, String]
-fn to_string(mut x: IntOrString) -> String:
-  if x.isa[String]():
-    return x[String]
-  # x.isa[Int]()
-  return String(x[Int])
-
-# They have to be mutable for now, and implement Copyable & Movable
-var an_int = IntOrString(4)
-var a_string = IntOrString(String("I'm a string!"))
-var who_knows = IntOrString(0)
-import random
-if random.random_ui64(0, 1):
-    who_knows.set[String]("I'm actually a string too!")
-
-print(to_string(an_int))
-print(to_string(a_string))
-print(to_string(who_knows))
-```
-"""
+"""Defines a Variant type."""
 
 from os import abort
-from sys import alignof, sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # Variant
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Copyable & Movable](
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
+struct Variant[*Ts: ExplicitlyCopyable & Movable](
+    Copyable, ExplicitlyCopyable, Movable
 ):
-    """A runtime-variant type.
+    """A union that can hold a runtime-variant value from a set of predefined
+    types.
 
-    Data for this type is stored internally. Currently, its size is the
-    largest size of any of its variants plus a 16-bit discriminant.
+    `Variant` is a discriminated union type, similar to `std::variant` in C++
+    or `enum` in Rust. It can store exactly one value that can be any of the
+    specified types, determined at runtime.
 
-    You can
-        - use `isa[T]()` to check what type a variant is
-        - use `unsafe_take[T]()` to take a value from the variant
-        - use `[T]` to get a value out of a variant
-            - This currently does an extra copy/move until we have origins
-            - It also temporarily requires the value to be mutable
-        - use `set[T](owned new_value: T)` to reset the variant to a new value
-        - use `is_type_supported[T]` to check if the variant permits the type `T`
+    The key feature is that the actual type stored in a `Variant` is determined
+    at runtime, not compile time. This allows you to change what type a variant
+    holds during program execution. Memory-wise, a variant only uses the space
+    needed for the largest possible type plus a small discriminant field to
+    track which type is currently active.
+
+    Tips:
+
+    - use `isa[T]()` to check what type a variant is
+    - use `unsafe_take[T]()` to take a value from the variant
+    - use `[T]` to get a value out of a variant
+        - This currently does an extra copy/move until we have origins
+        - It also temporarily requires the value to be mutable
+    - use `set[T](var new_value: T)` to reset the variant to a new value
+    - use `is_type_supported[T]` to check if the variant permits the type `T`
+
+    **Note**: Currently, variant operations require the variant to be
+    mutable (`mut`), even for read operations.
 
     Example:
+
     ```mojo
     from utils import Variant
+    import random
+
     alias IntOrString = Variant[Int, String]
+
     fn to_string(mut x: IntOrString) -> String:
         if x.isa[String]():
             return x[String]
-        # x.isa[Int]()
         return String(x[Int])
 
-    # They have to be mutable for now, and implement Copyable & Movable
     var an_int = IntOrString(4)
-    var a_string = IntOrString(String("I'm a string!"))
+    var a_string = IntOrString("I'm a string!")
     var who_knows = IntOrString(0)
-    import random
+    # Randomly change who_knows to a string
+    random.seed()
     if random.random_ui64(0, 1):
-        who_knows.set[String]("I'm actually a string too!")
+        who_knows.set[String]("I'm also a string!")
 
-    print(to_string(an_int))
-    print(to_string(a_string))
-    print(to_string(who_knows))
+    print(a_string[String])      # => I'm a string!
+    print(an_int[Int])           # => 4
+    print(to_string(who_knows))  # Either 0 or "I'm also a string!"
+
+    if who_knows.isa[String]():
+        print("It's a String!")
+    ```
+
+    Example usage for error handling:
+
+    ```mojo
+    alias Result = Variant[String, Error]
+
+    fn process_data(data: String) -> Result:
+        if len(data) == 0:
+            return Result(Error("Empty data"))
+        return Result("Processed: " + data)
+
+    var result = process_data("Hello")
+    if result.isa[String]():
+        print("Success:", result[String])
+    else:
+        print("Error:", result[Error])
+    ```
+
+    Example usage in a `List` to create a heterogeneous list:
+
+    ```mojo
+    alias MixedType = Variant[Int, Float64, String, Bool]
+
+    var mixed_list = List[MixedType]()
+    mixed_list.append(MixedType(42))
+    mixed_list.append(MixedType(3.14))
+    mixed_list.append(MixedType("hello"))
+    mixed_list.append(MixedType(True))
+
+    for item in mixed_list:
+        if item.isa[String]():
+            print("String:", item[String])
+        elif item.isa[Int]():
+            print("Integer:", item[Int])
+        elif item.isa[Float64]():
+            print("Float:", item[Float64])
+        elif item.isa[Bool]():
+            print("Boolean:", item[Bool])
     ```
 
     Parameters:
-      Ts: The elements of the variadic.
+        Ts: The possible types that this variant can hold. All types must
+            implement `ExplicitlyCopyable` and `Movable`.
     """
 
     # Fields
@@ -115,7 +143,7 @@ struct Variant[*Ts: Copyable & Movable](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @implicit
-    fn __init__[T: Copyable & Movable](out self, owned value: T):
+    fn __init__[T: Movable](out self, var value: T):
         """Create a variant with one of the types.
 
         Parameters:
@@ -143,7 +171,9 @@ struct Variant[*Ts: Copyable & Movable](
         for i in range(len(VariadicList(Ts))):
             alias T = Ts[i]
             if copy._get_discr() == i:
-                copy._get_ptr[T]().init_pointee_move(self._get_ptr[T]()[])
+                copy._get_ptr[T]().init_pointee_move(
+                    self._get_ptr[T]()[].copy()
+                )
                 return
 
     fn __copyinit__(out self, other: Self):
@@ -156,7 +186,7 @@ struct Variant[*Ts: Copyable & Movable](
         # Delegate to explicit copy initializer.
         self = other.copy()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move initializer for the variant.
 
         Args:
@@ -173,7 +203,7 @@ struct Variant[*Ts: Copyable & Movable](
                 other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
                 return
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the variant."""
 
         @parameter
@@ -186,7 +216,7 @@ struct Variant[*Ts: Copyable & Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: Copyable & Movable](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -212,7 +242,7 @@ struct Variant[*Ts: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: Copyable & Movable](self) -> UnsafePointer[T]:
+    fn _get_ptr[T: AnyType](self) -> UnsafePointer[T]:
         alias idx = Self._check[T]()
         constrained[idx != Self._sentinel, "not a union element type"]()
         var ptr = UnsafePointer(to=self._impl).address
@@ -230,7 +260,7 @@ struct Variant[*Ts: Copyable & Movable](
         return UnsafePointer(discr_ptr).bitcast[UInt8]()[]
 
     @always_inline
-    fn take[T: Copyable & Movable](mut self) -> T:
+    fn take[T: Movable](mut self) -> T:
         """Take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -251,7 +281,7 @@ struct Variant[*Ts: Copyable & Movable](
         return self.unsafe_take[T]()
 
     @always_inline
-    fn unsafe_take[T: Copyable & Movable](mut self) -> T:
+    fn unsafe_take[T: Movable](mut self) -> T:
         """Unsafely take the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -273,9 +303,7 @@ struct Variant[*Ts: Copyable & Movable](
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
-    fn replace[
-        Tin: Copyable & Movable, Tout: Copyable & Movable
-    ](mut self, owned value: Tin) -> Tout:
+    fn replace[Tin: Movable, Tout: Movable](mut self, var value: Tin) -> Tout:
         """Replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -301,8 +329,8 @@ struct Variant[*Ts: Copyable & Movable](
 
     @always_inline
     fn unsafe_replace[
-        Tin: Copyable & Movable, Tout: Copyable & Movable
-    ](mut self, owned value: Tin) -> Tout:
+        Tin: Movable, Tout: Movable
+    ](mut self, var value: Tin) -> Tout:
         """Unsafely replace the current value of the variant with the provided type.
 
         The caller takes ownership of the underlying value.
@@ -328,7 +356,7 @@ struct Variant[*Ts: Copyable & Movable](
         self.set[Tin](value^)
         return x^
 
-    fn set[T: Copyable & Movable](mut self, owned value: T):
+    fn set[T: Movable](mut self, var value: T):
         """Set the variant value.
 
         This will call the destructor on the old value, and update the variant's
@@ -342,7 +370,7 @@ struct Variant[*Ts: Copyable & Movable](
         """
         self = Self(value^)
 
-    fn isa[T: Copyable & Movable](self) -> Bool:
+    fn isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.
 
         Parameters:
@@ -354,7 +382,7 @@ struct Variant[*Ts: Copyable & Movable](
         alias idx = Self._check[T]()
         return self._get_discr() == idx
 
-    fn unsafe_get[T: Copyable & Movable](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -375,7 +403,7 @@ struct Variant[*Ts: Copyable & Movable](
         return self._get_ptr[T]()[]
 
     @staticmethod
-    fn _check[T: Copyable & Movable]() -> Int:
+    fn _check[T: AnyType]() -> Int:
         @parameter
         for i in range(len(VariadicList(Ts))):
             if _type_is_eq[Ts[i], T]():
@@ -383,7 +411,7 @@ struct Variant[*Ts: Copyable & Movable](
         return Self._sentinel
 
     @staticmethod
-    fn is_type_supported[T: Copyable & Movable]() -> Bool:
+    fn is_type_supported[T: AnyType]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:

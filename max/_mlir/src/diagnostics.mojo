@@ -14,20 +14,13 @@
 
 from collections.optional import Optional
 
-from memory import UnsafePointer
-
-from utils.variant import Variant
 
 import ._c
-import ._c.Diagnostics
-import ._c.IR
-from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
 
 
-@value
 @register_passable("trivial")
-struct DiagnosticSeverity:
+struct DiagnosticSeverity(Copyable, Movable):
     """Severity level of a diagnostic."""
 
     alias cType = _c.Diagnostics.MlirDiagnosticSeverity
@@ -46,8 +39,7 @@ struct DiagnosticSeverity:
         return self.c.value == other.c.value
 
 
-@value
-struct Diagnostic(Stringable, Writable):
+struct Diagnostic(Copyable, Movable, Stringable, Writable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -61,7 +53,7 @@ struct Diagnostic(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.Diagnostics.mlirDiagnosticPrint(writer, self.c)
 
     fn get_severity(self) -> DiagnosticSeverity:
@@ -71,9 +63,9 @@ struct Diagnostic(Stringable, Writable):
 alias DiagnosticHandlerID = _c.Diagnostics.MlirDiagnosticHandlerID
 
 
-@value
-struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
-    """Deals with attaching and detaching diagnostic funcions to an MLIRContext.
+@fieldwise_init
+struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
+    """Deals with attaching and detaching diagnostic functions to an MLIRContext.
 
     Parameters:
         handler: A function that handles a given Diagnostic.
@@ -85,13 +77,13 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
     @staticmethod
     @always_inline
     fn attach(ctx: Context) -> Self:
-        fn delete_user_data(data: UnsafePointer[NoneType]):
+        fn delete_user_data(data: OpaquePointer):
             pass
 
         var id = _c.Diagnostics.mlirContextAttachDiagnosticHandler(
             ctx.c,
             Self.c_handler,
-            UnsafePointer[NoneType](),
+            OpaquePointer(),
             delete_user_data,
         )
 
@@ -102,19 +94,19 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
 
     @staticmethod
     fn c_handler(
-        diagnostic: Diagnostic.cType, user_data: UnsafePointer[NoneType]
+        diagnostic: Diagnostic.cType, user_data: OpaquePointer
     ) -> _c.Support.MlirLogicalResult:
         var result = handler(diagnostic)
         return MlirLogicalResult(1 if result else 0)
 
 
-@value
+@fieldwise_init
 struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
     handler: fn (Diagnostic, mut UserDataType) -> Bool,
     delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
 ](Copyable, Movable):
-    """Deals with attaching and detaching diagnostic funcions along with user data to an MLIRContext.
+    """Deals with attaching and detaching diagnostic functions along with user data to an MLIRContext.
 
     Parameters:
         UserDataType: The type of data being stored for use in the handler.
@@ -141,12 +133,12 @@ struct DiagnosticHandlerWithData[
         _c.Diagnostics.mlirContextDetachDiagnosticHandler(self.ctx.c, self.id)
 
     @staticmethod
-    fn c_delete_user_data(user_data: UnsafePointer[NoneType]):
+    fn c_delete_user_data(user_data: OpaquePointer):
         delete_user_data(user_data.bitcast[UserDataType]())
 
     @staticmethod
     fn c_handler(
-        diagnostic: Diagnostic.cType, user_data: UnsafePointer[NoneType]
+        diagnostic: Diagnostic.cType, user_data: OpaquePointer
     ) -> _c.Support.MlirLogicalResult:
         var ptr = user_data.bitcast[UserDataType]()
         var result = handler(diagnostic, ptr[])
@@ -154,7 +146,7 @@ struct DiagnosticHandlerWithData[
 
 
 struct ErrorCapturingDiagnosticHandler:
-    """Captures the errors craeted via a DiagnosticHandler and raises them as mojo exceptions.
+    """Captures the errors created via a DiagnosticHandler and raises them as mojo exceptions.
     """
 
     alias Handler = DiagnosticHandlerWithData[
@@ -186,9 +178,7 @@ struct ErrorCapturingDiagnosticHandler:
     fn __exit__(mut self, error: Error) raises -> Bool:
         self.handler.unsafe_take().detach()
         self.handler = None
-        raise String("MLIR Diagnostic: {}\nError: {}").format(
-            self.error, String(error)
-        )
+        raise Error("MLIR Diagnostic: ", self.error, "\nError: ", error)
 
     @staticmethod
     fn set_error(diagnostic: Diagnostic, mut error: String) -> Bool:

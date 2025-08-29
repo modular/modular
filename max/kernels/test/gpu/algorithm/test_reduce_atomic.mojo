@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 from os.atomic import Atomic
@@ -18,12 +17,11 @@ from os.atomic import Atomic
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_equal
 
 
-@value
-struct FillStrategy:
+@fieldwise_init
+struct FillStrategy(Copyable, Movable):
     var value: Int
 
     alias LINSPACE = Self(0)

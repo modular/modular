@@ -41,7 +41,12 @@ reference can have either mutable access or immutable access to that value.
 
 Mojo references are created when you call a function: function arguments can be
 passed as mutable or immutable references. A function can also return a
-reference instead of returning a value.
+reference instead of returning a value. To capture a returned reference, you
+can use a reference binding:
+
+```mojo
+ref value_ref = list[0]
+```
 
 ## Argument conventions
 
@@ -67,19 +72,18 @@ keyword at the beginning of an argument declaration:
 
 * `read`: The function receives an **immutable reference**. This means the
   function can read the original value (it is *not* a copy), but it cannot
-  mutate (modify) it. Functions defined with `def` treat this differently, as
-  described below in [Borrowed arguments](#borrowed-arguments-read).
+  mutate (modify) it.
 
 * `mut`: The function receives a **mutable reference**. This means the
   function can read and mutate the original value (it is *not* a copy).
 
-* `owned`: The function takes **ownership** of a value. This means the function
+* `var`: The function takes **ownership** of a value. This means the function
   has exclusive ownership of the argument. The caller might choose to transfer
   ownership of an existing value to this function, but that's not always what
   happens. The callee might receive a newly-created value, or a copy of an
   existing value.
 
-* `ref`: The function gets a reference with an parametric mutability: that is,
+* `ref`: The function gets a reference with a parametric mutability: that is,
   the reference can be either mutable or immutable. You can think of `ref`
   arguments as a generalization of the `read` and `mut` conventions.
   `ref` arguments are an advanced topic, and they're described in more detail in
@@ -92,12 +96,16 @@ keyword at the beginning of an argument declaration:
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
 
+* `deinit`: A special convention used in the destructor and consuming-move
+  lifecycle methods. A `deinit` argument is initialized at the beginning of the
+  function, and uninitialized when the function returns.
+
 For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
 ```mojo
 fn add(mut x: Int, read y: Int):
-    var x += y
+    x += y
 
 fn main():
     var a = 1
@@ -115,27 +123,10 @@ convention. By default, all arguments are `read`.
 In the following sections, we'll explain each of these argument conventions in
 more detail.
 
-## Borrowed arguments (`read`)
+## Immutable arguments (`read`)
 
-The `read` convention is the default for all arguments. But as is described in
-[`def` and `fn` comparison](/mojo/manual/functions#def-and-fn-comparison),
-functions treat `read` arguments somewhat differently depending on whether the
-function is defined with `def` or `fn`:
-
-* When using `def`, if you mutate the value in the body of the function, the
-  function receives a mutable copy of the argument. Otherwise, it receives an
-  immutable reference. This allows you to treat arguments as mutable, but avoid
-  the overhead of making extra copies when they're not needed.
-
-* When using `fn`, the function always receives an immutable reference. If you
-  want a mutable copy, you can assign it to a local variable:
-
-  ```mojo
-  var my_copy = read_arg
-  ```
-
-In both cases, the original value on the caller side can't be changed by the
-callee.
+The `read` convention is the default for all arguments. The callee receives an
+immutable reference to the argument value.
 
 For example:
 
@@ -144,7 +135,7 @@ def print_list(list: List[Int]):
     print(list.__str__())
 
 def main():
-    var values = List(1, 2, 3, 4)
+    var values = [1, 2, 3, 4]
     print_list(values)
 ```
 
@@ -152,9 +143,9 @@ def main():
 [1, 2, 3, 4]
 ```
 
-Here the `list` argument to `print_list()` is read and not mutated, so the
-`print_list()` function gets an immutable reference to the original `List`, and
-doesn't do any copying.
+Here the `print_list()` function can read from the `list` argument, but not
+mutate it. `list` is a reference to `values` in the `main()` function, not a
+copy.
 
 In general, passing an immutable reference is much more efficient
 when handling large or expensive-to-copy values, because the copy constructor
@@ -170,13 +161,12 @@ mutability in the callee. However, the read convention differs from
 * The Mojo compiler implements a lifetime checker that ensures that values are
   not destroyed when there are outstanding references to those values.
 
-* Small values like `Int`, `Float`, and `SIMD` are passed directly in machine
-  registers instead of through an extra indirection (this is because they are
-  declared with the `@register_passable` decorator). This is a [significant
-  performance
-  enhancement](https://www.forrestthewoods.com/blog/should-small-rust-structs-be-passed-by-copy-or-by-borrow/)
-  when compared to languages like C++ and Rust, and moves this optimization from
-  every call site to a declaration on the type definition.
+* Small values like `Int`, `Float`, and `SIMD` are always passed in machine
+  registers—instead of through an extra indirection or optimized at every call
+  site—because these types are declared with the
+  [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
+  This is a significant performance enhancement compared to languages
+  like C++ and Rust.
 
 The major difference between Rust and Mojo is that Mojo does not require a sigil
 on the caller side to pass by immutable reference. Also, Mojo is more efficient
@@ -201,7 +191,7 @@ def mutate(mut l: List[Int]):
     l.append(5)
 
 def main():
-    var values = List(1, 2, 3, 4)
+    var values = [1, 2, 3, 4]
 
     mutate(values)
     print_list(values)
@@ -223,7 +213,7 @@ def mutate_copy(l: List[Int]) -> List[Int]:
     return l
 
 def main():
-    var values = List(1, 2, 3, 4)
+    var values = [1, 2, 3, 4]
 
     values = mutate_copy(values)
     print_list(values)
@@ -265,7 +255,7 @@ fn append_twice(mut s: String, other: String):
    s += other
 
 fn invalid_access():
-  var my_string = String("o")  # Create a run-time String value
+  var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it is also passed
   # read.
@@ -283,8 +273,8 @@ reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
 fn valid_access():
-  var my_string = String("o")           # Create a run-time String value
-  var other_string = String(my_string)  # Create a copy of the String value
+  var my_string = "o"           # Create a run-time String value
+  var other_string = my_string  # Create a copy of the String value
   append_twice(my_string, other_string)
   print(my_string)
 ```
@@ -294,16 +284,16 @@ types (like `Int` and `Bool`), because they are always passed by copy. When
 passing the same value into two `Int` arguments, the callee will receive two
 copies of the value.
 
-## Transfer arguments (`owned` and `^`)
+## Transfer arguments (`var` and `^`)
 
 And finally, if you'd like your function to receive value **ownership**, add the
-`owned` keyword in front of the argument name.
+`var` keyword in front of the argument name.
 
 This convention is often combined with use of the postfixed `^` "transfer"
 sigil on the variable that is passed into the function, which ends the
 lifetime of that variable.
 
-Technically, the `owned` keyword does not guarantee that the received value is
+Technically, the `var` keyword does not guarantee that the received value is
 *the original value*—it guarantees only that the function
 gets unique ownership of a value. This happens in one of
 three ways:
@@ -320,23 +310,23 @@ three ways:
   transferred directly to the callee. For example:
 
   ```mojo
-  def take(owned s: String):
+  def take(var s: String):
       pass
 
   def main():
-      take(String("A brand-new String!"))
+      take("A brand-new String!")
   ```
 
 The following code works by making a copy of the string, because `take_text()`
-uses the `owned` convention, and the caller does not include the transfer sigil:
+uses the `var` convention, and the caller does not include the transfer sigil:
 
 ```mojo
-fn take_text(owned text: String):
+fn take_text(var text: String):
     text += "!"
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message)
     print(message)
 ```
@@ -352,7 +342,7 @@ variable is no longer initialized. That is, this version does not compile:
 
 ```mojo
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
     print(message)  # error: use of uninitialized value 'message'
 ```
@@ -360,15 +350,15 @@ fn main():
 This is a critical feature of Mojo's lifetime checker, because it ensures that no
 two variables can have ownership of the same value. To fix the error, you must
 not use the `message` variable after you end its lifetime with the `^` transfer
-operator. So here is the corrected code:
+sigil. So here is the corrected code:
 
 ```mojo
-fn take_text(owned text: String):
+fn take_text(var text: String):
     text += "!"
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
 ```
 
@@ -377,22 +367,22 @@ Hello!
 ```
 
 Regardless of how it receives the value, when the function declares an argument
-as `owned`, it can be certain that it has unique mutable access to that value.
+as `var`, it can be certain that it has unique mutable access to that value.
 Because the value is owned, the value is destroyed when the function
 exits—unless the function transfers the value elsewhere.
 
 For example, in the following example, `add_to_list()` takes a string and
 appends it to the list. Ownership of the string is transferred to the list, so
 it's not destroyed when the function exits. On the other hand,
-`consume_string()` doesn't transfer its `owned` value out, so the value is
+`consume_string()` doesn't transfer its `var` value out, so the value is
 destroyed at the end of the function.
 
 ```mojo
-def add_to_list(owned name: String, mut list: List[String]):
+def add_to_list(var name: String, mut list: List[String]):
     list.append(name^)
     # name is uninitialized, nothing to destroy
 
-def consume_string(owned s: String):
+def consume_string(var s: String):
     print(s)
     # s is destroyed here
 ```
@@ -407,7 +397,7 @@ There are multiple ways that Mojo can transfer ownership of a value:
 * If a type implements the [move
   constructor](/mojo/manual/lifecycle/life#move-constructor),
   `__moveinit__()`, Mojo may invoke this method *if* a value of that type is
-  transferred into a function as an `owned` argument, *and* the original
+  transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
   transfer sigil).
 
@@ -420,38 +410,5 @@ There are multiple ways that Mojo can transfer ownership of a value:
   a value can be transferred without invoking either the `__copyinit__()` or
   `__moveinit__()` constructors.
 
-In order for the `owned` convention to work *without* the transfer
+In order for the `var` convention to work *without* the transfer
 sigil, the value type must be copyable (via `__copyinit__()`).
-
-## Comparing `def` and `fn` argument conventions
-
-As mentioned in [Functions](/mojo/manual/functions), a function defined with
-`def` can treat a `read` argument as mutable, in which case it receives a
-mutable copy. An equivalent function defined with `fn` would need to make this
-copy explicit. For example, these two functions have the exact same behavior.
-
-```mojo
-def def_example(a: Int, mut b: Int):
-    pass
-
-fn fn_example(a_in: Int, mut b: Int):
-    var a = a_in
-    pass
-```
-
-This shadow copy typically adds little overhead, for small types. However,
-copying large types that allocate heap storage can be expensive. (For example,
-copying `List` or `Dict` types, or copying large numbers of strings.)
-
-### `read` versus `owned` in `def` functions
-
-The difference between `read` and `owned` in a `def` function may be a
-little subtle. In both cases, you can end up with a uniquely-owned value that's
-a copy of the original value.
-
-* The `read` argument always gets an immutable reference or a local copy.
-  You can't transfer a value into a `read` argument.
-
-* The `owned` argument always gets a uniquely owned value, which may have been
-  copied or transferred from the callee. Using `owned` arguments without the
-  transfer sigil (`^`) usually results in values being copied.

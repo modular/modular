@@ -31,9 +31,7 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import is_nvidia_gpu
-
-from memory import UnsafePointer
+from sys import is_amd_gpu, is_nvidia_gpu, CompilationTarget
 
 
 @always_inline
@@ -62,7 +60,7 @@ fn load_matrix_a[
         SIMD vector containing 4 TF32 values loaded from matrix A in the required order.
 
     Constraints:
-        The tile demensions must be m=16, n=8, k=8.
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -108,7 +106,7 @@ fn load_matrix_a[
         SIMD vector containing 4 FP16 values loaded from matrix A in the required order.
 
     Constraints:
-        The tile demensions must be m=16, n=8, k=8.
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -283,9 +281,9 @@ fn load_matrix_a_amd[
 
         @parameter
         for i in range(4):
-            var a_idx = ldm * (
-                tile_row + thread_x
-            ) + tile_col + i + 4 * thread_y
+            var a_idx = (
+                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -303,9 +301,11 @@ fn load_matrix_a_amd[
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
-            var a_idx = ldm * (tile_row + thread_x) + (
-                tile_col + i
-            ) + thread_y * batchStrideA
+            var a_idx = (
+                ldm * (tile_row + thread_x)
+                + (tile_col + i)
+                + thread_y * batchStrideA
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -350,9 +350,9 @@ fn load_matrix_a_amd[
 
         @parameter
         for i in range(4):
-            var a_idx = ldm * (
-                tile_row + thread_x
-            ) + tile_col + i + 4 * thread_y
+            var a_idx = (
+                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -370,9 +370,11 @@ fn load_matrix_a_amd[
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
-            var a_idx = ldm * (tile_row + thread_x) + (
-                tile_col + i
-            ) + thread_y * batchStrideA
+            var a_idx = (
+                ldm * (tile_row + thread_x)
+                + (tile_col + i)
+                + thread_y * batchStrideA
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -606,9 +608,9 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var b_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -623,9 +625,12 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideB
+            var b_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideB
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -680,9 +685,9 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var b_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -697,9 +702,12 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideB
+            var b_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideB
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -804,9 +812,12 @@ fn _store_matrix_d_amd[
             # consecutive threads cover 4 consecutive columns
             # consecutive registers take consecutive rows
             # groups of 4 lanes cover each matrix in batch
-            var d_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideD
+            var d_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideD
+            )
             d_ptr[d_idx] = d[i]
 
     else:
@@ -817,9 +828,9 @@ fn _store_matrix_d_amd[
 
         @parameter
         for i in range(4):
-            var d_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var d_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             d_ptr[d_idx] = d[i]
 
 
@@ -862,7 +873,11 @@ fn store_matrix_d[
     @parameter
     if is_nvidia_gpu():
         _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
-    else:
+    elif is_amd_gpu():
         _store_matrix_d_amd[m, n, k, n_blocks](
             d_ptr, d, tile_row, tile_col, ldm
         )
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="store_matrix_d"
+        ]()

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -19,7 +18,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -201,7 +199,6 @@ struct curandRngType(Writable):
     alias CURAND_RNG_QUASI_SOBOL64 = Self(10)
     alias CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -218,7 +215,7 @@ struct curandRngType(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_RNG_TEST:
             return writer.write("CURAND_RNG_TEST")
         if self is Self.CURAND_RNG_PSEUDO_DEFAULT:
@@ -285,7 +282,7 @@ fn curandGetScrambleConstants64(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged long longs in host memory.
+    reference an array of unsigned long longs in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned long long constant.
@@ -556,7 +553,6 @@ struct curandMethod(Writable):
     alias CURAND_DEFINITION = Self(12)
     alias CURAND_POISSON = Self(13)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -573,7 +569,7 @@ struct curandMethod(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_CHOOSE_BEST:
             return writer.write("CURAND_CHOOSE_BEST")
         if self is Self.CURAND_ITR:
@@ -720,7 +716,6 @@ struct curandStatus(Writable):
     alias CURAND_STATUS_ARCH_MISMATCH = Self(11)
     alias CURAND_STATUS_INTERNAL_ERROR = Self(12)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -737,7 +732,7 @@ struct curandStatus(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_STATUS_SUCCESS:
             return writer.write("CURAND_STATUS_SUCCESS")
         if self is Self.CURAND_STATUS_VERSION_MISMATCH:
@@ -791,7 +786,6 @@ struct curandDirectionVectorSet(Writable):
     alias CURAND_DIRECTION_VECTORS_64_JOEKUO6 = Self(2)
     alias CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -808,7 +802,7 @@ struct curandDirectionVectorSet(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_DIRECTION_VECTORS_32_JOEKUO6:
             return writer.write("CURAND_DIRECTION_VECTORS_32_JOEKUO6")
         if self is Self.CURAND_SCRAMBLED_DIRECTION_VECTORS_32_JOEKUO6:
@@ -1154,7 +1148,7 @@ fn curandGenerateNormalDouble(
 
 
 fn curandGetDirectionVectors32(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 32-bit quasirandom number generation.
@@ -1179,7 +1173,7 @@ fn curandGetDirectionVectors32(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors32",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)
 
 
@@ -1263,7 +1257,6 @@ struct curandOrdering(Writable):
     alias CURAND_ORDERING_PSEUDO_DYNAMIC = Self(4)
     alias CURAND_ORDERING_QUASI_DEFAULT = Self(5)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1280,7 +1273,7 @@ struct curandOrdering(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_ORDERING_PSEUDO_BEST:
             return writer.write("CURAND_ORDERING_PSEUDO_BEST")
         if self is Self.CURAND_ORDERING_PSEUDO_DEFAULT:
@@ -1503,7 +1496,7 @@ fn curandGetScrambleConstants32(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged ints in host memory.
+    reference an array of unsigned ints in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned int constant.
@@ -1520,7 +1513,7 @@ fn curandGetScrambleConstants32(
 
 
 fn curandGetDirectionVectors64(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 64-bit quasirandom number generation.
@@ -1545,5 +1538,5 @@ fn curandGetDirectionVectors64(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors64",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)

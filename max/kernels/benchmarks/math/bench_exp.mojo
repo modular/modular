@@ -14,7 +14,7 @@
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from math.polynomial import polynomial_evaluate
-from sys import external_call, llvm_intrinsic, simdwidthof, sizeof
+from sys import external_call, llvm_intrinsic, simd_width_of, size_of
 from sys.arg import argv
 
 from algorithm.functional import vectorize
@@ -28,43 +28,50 @@ from benchmark import (
 )
 from buffer import NDBuffer
 from builtin.range import _StridedRange
-from builtin.simd import _simd_apply
 from compile import compile_info
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 
 fn apply[
-    func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
-    type: DType,
-](input: NDBuffer[type, 1], output: NDBuffer[mut=True, type, 1]):
+    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
+    ],
+    dtype: DType,
+](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
     @parameter
     fn _func[width: Int](idx: Int):
         output.store(idx, func(input.load[width=width](idx)))
 
-    vectorize[_func, simdwidthof[type]()](len(input))
+    vectorize[_func, simd_width_of[dtype]()](len(input))
 
 
 def bench_unary[
-    func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
-    type: DType,
+    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
+    ],
+    dtype: DType,
 ](mut m: Bench, size_range: _StridedRange, op_name: String):
     for i in size_range:
-        bench_unary[func, type](m, i, op_name)
+        bench_unary[func, dtype](m, i, op_name)
 
 
 def bench_unary[
-    func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
-    type: DType,
+    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
+    ],
+    dtype: DType,
 ](mut m: Bench, size: Int, op_name: String):
     alias alignment = 64
-    var input_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(size)
-    var output_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(
+    var input_ptr = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(
+        size
+    )
+    var output_ptr = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(
         size
     )
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
-        var f = bitcast[type](UInt32(linspace[i % len(linspace)]))
+        var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
         input_ptr[i] = f
 
     @parameter
@@ -72,8 +79,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[type, 1](input_ptr, size),
-                NDBuffer[type, 1](output_ptr, size),
+                NDBuffer[dtype, 1](input_ptr, size),
+                NDBuffer[dtype, 1](output_ptr, size),
             )
             keep(output_ptr)
 
@@ -83,7 +90,7 @@ def bench_unary[
         BenchId(op_name, String(size)),
         size,
         # TODO: Pick relevant benchmetric.
-        ThroughputMeasure(BenchMetric.elements, size * sizeof[type]()),
+        ThroughputMeasure(BenchMetric.elements, size * size_of[dtype]()),
     )
 
     input_ptr.free()
@@ -112,8 +119,8 @@ fn ldexp2kf_opt[
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
     var xu = (
-        ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()) << 23
-    )
+        (q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()
+    ) << 23
     return x * xu.cast[dtype]()
 
 
@@ -137,7 +144,7 @@ fn ldexp2kf[
 
     var msb = y
     for _ in range(32):
-        if ((msb & 0x1) != 0).reduce_and():
+        if (msb & 0x1).ne(0).reduce_and():
             break
         msb = msb >> 1
 
@@ -151,27 +158,27 @@ fn ldexp2kf[
 
 @always_inline
 fn exp_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    var res = SIMD[type, simd_width]()
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    var res = SIMD[dtype, simd_width]()
 
     @parameter
     for i in range(simd_width):
-        res[i] = external_call["expf", Scalar[type]](arg[i])
+        res[i] = external_call["expf", Scalar[dtype]](arg[i])
     return res
 
 
 @always_inline
 fn ldexp_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype, simd_width
 ]:
-    var res = SIMD[type, simd_width]()
+    var res = SIMD[dtype, simd_width]()
 
     @parameter
     for i in range(simd_width):
-        res[i] = external_call["ldexpf", Scalar[type]](arg)
+        res[i] = external_call["ldexpf", Scalar[dtype]](arg)
     return res
 
 
@@ -198,14 +205,14 @@ fn exp_sleef[
     u = u.fma(s, 0.5)
     u = s * s * u + s
 
-    return (q == 0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
+    return q.eq(0).select(u, ldexp2kf(u + 1, q.cast[DType.int32]()) - 1)
 
 
 @always_inline
 fn _exp_taylor0[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    alias coefficients = List[SIMD[type, simd_width]](
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    alias coefficients = List[Scalar[dtype]](
         1.0,
         1.0,
         0.5,
@@ -220,9 +227,9 @@ fn _exp_taylor0[
 
 @always_inline
 fn exp_mojo_opt[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    constrained[type.is_floating_point(), "must be a floating point value"]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    constrained[dtype.is_floating_point(), "must be a floating point value"]()
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
     alias inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -230,8 +237,8 @@ fn exp_mojo_opt[
     alias L2Uf = 0.693145751953125
     alias L2Lf = 1.428606765330187045e-06
 
-    alias min_val = SIMD[type, simd_width](-88.3762626647949)
-    alias max_val = SIMD[type, simd_width](88.3762626647950)
+    alias min_val = SIMD[dtype, simd_width](-88.3762626647949)
+    alias max_val = SIMD[dtype, simd_width](88.3762626647950)
 
     alias im_type = DType.float64
     var xc = x.clamp(min_val, max_val).cast[im_type]()
@@ -239,26 +246,26 @@ fn exp_mojo_opt[
 
     var r = k.fma(neg_ln2, xc)
     # var r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
-    var taylor_result = _exp_taylor0(r.cast[im_type]()).cast[type]()
+    var taylor_result = _exp_taylor0(r.cast[im_type]()).cast[dtype]()
     var expr = ldexp(taylor_result, k.cast[DType.int32]())
     return expr
-    # var val1 = (expr > min_val).select(expr, SIMD[type,simd_width](0))
-    # return (val1 < max_val).select(val1, SIMD[type,simd_width](inf[type]()))
+    # var val1 = (expr > min_val).select(expr, SIMD[dtype,simd_width](0))
+    # return (val1 < max_val).select(val1, SIMD[dtype,simd_width](inf[dtype]()))
 
 
 @always_inline
 fn exp_mojo_opt2[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    constrained[type.is_floating_point(), "must be a floating point value"]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    constrained[dtype.is_floating_point(), "must be a floating point value"]()
     alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
     alias L2Uf = -0.693359375
     alias L2Lf = -2.12194440e-4
 
-    alias min_val = SIMD[type, simd_width](-87.3)
-    alias max_val = SIMD[type, simd_width](87.3)
+    alias min_val = SIMD[dtype, simd_width](-87.3)
+    alias max_val = SIMD[dtype, simd_width](87.3)
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
@@ -273,9 +280,9 @@ fn exp_mojo_opt2[
 
 @always_inline
 fn _exp_taylor3[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    alias coefficients = List[SIMD[type, simd_width]](
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    alias coefficients = List[Scalar[dtype]](
         0.5,
         0.16666666666666666667,
         0.041666666666666666667,
@@ -288,17 +295,17 @@ fn _exp_taylor3[
 
 @always_inline
 fn exp_mojo_opt3[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    constrained[type.is_floating_point(), "must be a floating point value"]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    constrained[dtype.is_floating_point(), "must be a floating point value"]()
     alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
     alias L2Uf = -0.693359375
     alias L2Lf = -2.12194440e-4
 
-    alias min_val = SIMD[type, simd_width](-87.3)
-    alias max_val = SIMD[type, simd_width](87.3)
+    alias min_val = SIMD[dtype, simd_width](-87.3)
+    alias max_val = SIMD[dtype, simd_width](87.3)
 
     var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
@@ -312,10 +319,10 @@ fn exp_mojo_opt3[
 
 @always_inline
 fn _exp_taylor_mlas[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
-        List[SIMD[type, simd_width]](
+        List[Scalar[dtype]](
             1.0,
             1.0,
             0.499999851,
@@ -329,9 +336,9 @@ fn _exp_taylor_mlas[
 
 @always_inline
 fn exp_mlas[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    constrained[type.is_floating_point(), "must be a floating point value"]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    constrained[dtype.is_floating_point(), "must be a floating point value"]()
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
     alias inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -350,18 +357,18 @@ fn exp_mlas[
 
 @always_inline
 fn llvm_ldexp[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype, simd_width
 ]:
     return llvm_intrinsic["llvm.ldexp", __type_of(x)](x, exp)
 
 
 @always_inline
 fn mlas_llvm_ldexp[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    constrained[type.is_floating_point(), "must be a floating point value"]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    constrained[dtype.is_floating_point(), "must be a floating point value"]()
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
     alias inv_lg2 = 1.442695040888963407359924681001892137426646
 

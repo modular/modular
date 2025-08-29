@@ -20,9 +20,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 from .AffineExpr import *
 from .ffi import MLIR_func
@@ -53,7 +52,7 @@ from .ffi import MLIR_func
 
 @register_passable("trivial")
 struct MlirIntegerSet:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirIntegerSetGetContext(set: MlirIntegerSet) -> MlirContext:
@@ -61,7 +60,7 @@ fn mlirIntegerSetGetContext(set: MlirIntegerSet) -> MlirContext:
     return MLIR_func["mlirIntegerSetGetContext", MlirContext](set)
 
 
-# FIXEME(codegen): static function mlirIntegerSetIsNull
+# FIXME(codegen): static function mlirIntegerSetIsNull
 
 
 fn mlirIntegerSetEqual(s1: MlirIntegerSet, s2: MlirIntegerSet) -> Bool:

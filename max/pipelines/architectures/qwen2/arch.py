@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -31,18 +31,13 @@ qwen2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

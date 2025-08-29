@@ -17,7 +17,7 @@
 # REQUIRES: neon_matmul
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import has_neon_int8_matmul
+from sys.info import CompilationTarget
 
 from linalg.neon_intrinsics import _neon_matmul
 
@@ -27,7 +27,7 @@ fn test_has_neon_int8_matmul():
     print("== test_has_neon_int8_matmul")
 
     # CHECK: True
-    print(has_neon_int8_matmul())
+    print(CompilationTarget.has_neon_int8_matmul())
 
 
 # CHECK-LABEL: test_s8s8_matmul

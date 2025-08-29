@@ -13,17 +13,16 @@
 
 from math import sqrt
 
-from memory import UnsafePointer
 
-
-@value
 @register_passable("trivial")
 struct Complex(
     Boolable,
+    Copyable,
     EqualityComparable,
-    Writable,
+    Movable,
     Representable,
     Stringable,
+    Writable,
 ):
     """Represents a complex value.
 
@@ -60,7 +59,7 @@ struct Complex(
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
             writer.write(" - ", -self.im)

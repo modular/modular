@@ -1,0 +1,77 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+_NVIDIA_ONLY_TESTS = [
+    "test_float8_e4m3fn.py",
+    "test_irfft.py",
+]
+
+modular_py_library(
+    name = "modular_graph_test",
+    testonly = True,
+    srcs = ["modular_graph_test.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/graph",
+        requirement("hypothesis"),
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "graph",
+    size = "large",
+    srcs = glob(
+        ["*.py"],
+        exclude = _NVIDIA_ONLY_TESTS + ["modular_graph_test.py"],
+    ),
+    data = [
+        "//SDK/integration-test:compile_config_ops",
+        "//SDK/integration-test:counter_ops",
+        "//SDK/integration-test:kernel_verification_ops",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //SDK/integration-test:kernel_verification_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    mojo_deps = [
+        "//SDK/integration-test:compile_config_ops",
+        "//SDK/integration-test:test_user_op",
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nvidia_tests",
+    size = "large",
+    srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
+    ],
+)

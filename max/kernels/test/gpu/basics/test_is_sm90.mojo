@@ -13,7 +13,8 @@
 
 from sys.info import _is_sm_9x
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code
+from gpu.host import get_gpu_target
 from testing import *
 
 
@@ -25,18 +26,18 @@ fn check_sm() -> Bool:
 def test_is_sm_9x():
     assert_true(
         "ret i1 true"
-        in _compile_code_asm[
+        in _compile_code[
             check_sm,
             emission_kind="llvm",
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
     assert_true(
         "ret i1 true"
-        in _compile_code_asm[
+        in _compile_code[
             check_sm,
             emission_kind="llvm",
-            target = _get_gpu_target["sm_90a"](),
+            target = get_gpu_target["sm_90a"](),
         ]()
     )
 

@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
+from sys import size_of
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor
@@ -25,10 +24,8 @@ from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-from testing import assert_equal
 
 from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
 
 
 # Test loading a single 2d tile.
@@ -44,7 +41,7 @@ fn tma_swizzle_load_kernel[
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * sizeof[dtype]()
+    alias expected_bytes = tile_layout.size() * size_of[dtype]()
 
     tile = LayoutTensor[
         dtype,

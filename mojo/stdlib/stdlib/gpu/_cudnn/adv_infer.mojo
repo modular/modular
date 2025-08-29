@@ -17,7 +17,6 @@ from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-from memory import UnsafePointer
 
 from .infer import (
     cudnnFilterStruct,
@@ -34,7 +33,10 @@ from .infer import (
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS = List[Path](
+    "libcudnn_adv_infer.so",
+    "libcudnn_adv_infer.so.9",
     "libcudnn_adv_infer.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.8",
 )
 
@@ -64,13 +66,13 @@ fn _get_dylib_function[
 # Bindings
 # ===-----------------------------------------------------------------------===#
 
-alias cudnnRNNStruct = UnsafePointer[NoneType]
-alias cudnnDropoutStruct = UnsafePointer[NoneType]
-alias cudnnAlgorithmStruct = UnsafePointer[NoneType]
-alias cudnnRNNDataStruct = UnsafePointer[NoneType]
-alias cudnnAttnStruct = UnsafePointer[NoneType]
-alias cudnnTensorStruct = UnsafePointer[NoneType]
-alias cudnnSeqDataStruct = UnsafePointer[NoneType]
+alias cudnnRNNStruct = OpaquePointer
+alias cudnnDropoutStruct = OpaquePointer
+alias cudnnAlgorithmStruct = OpaquePointer
+alias cudnnRNNDataStruct = OpaquePointer
+alias cudnnAttnStruct = OpaquePointer
+alias cudnnTensorStruct = OpaquePointer
+alias cudnnSeqDataStruct = OpaquePointer
 alias cudnnPersistentRNNPlan = NoneType
 
 
@@ -93,7 +95,7 @@ struct cudnnDirectionMode_t:
     alias UNIDIRECTIONAL = Self(0)
     """Single direction network."""
     alias BIDIRECTIONAL = Self(1)
-    """Output concatination at each layer."""
+    """Output concatenation at each layer."""
 
 
 @fieldwise_init
@@ -225,7 +227,6 @@ struct cudnnForwardMode_t(Writable):
     alias CUDNN_FWD_MODE_INFERENCE = Self(0)
     alias CUDNN_FWD_MODE_TRAINING = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -242,7 +243,7 @@ struct cudnnForwardMode_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_FWD_MODE_INFERENCE:
             return writer.write("CUDNN_FWD_MODE_INFERENCE")
         if self is Self.CUDNN_FWD_MODE_TRAINING:
@@ -353,12 +354,12 @@ fn cudnnGetSeqDataDescriptor(
     data_type: UnsafePointer[cudnnDataType_t],
     nb_dims: UnsafePointer[Int16],
     nb_dims_requested: Int16,
-    dim_a: UnsafePointer[NoneType],
-    axes: UnsafePointer[NoneType],
+    dim_a: OpaquePointer,
+    axes: OpaquePointer,
     seq_length_array_size: UnsafePointer[Int],
     seq_length_size_requested: Int,
-    seq_length_array: UnsafePointer[NoneType],
-    padding_fill: UnsafePointer[NoneType],
+    seq_length_array: OpaquePointer,
+    padding_fill: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetSeqDataDescriptor",
@@ -367,12 +368,12 @@ fn cudnnGetSeqDataDescriptor(
             UnsafePointer[cudnnDataType_t],
             UnsafePointer[Int16],
             Int16,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             UnsafePointer[Int],
             Int,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         seq_data_desc,
@@ -553,9 +554,9 @@ fn cudnnGetMultiHeadAttnWeights(
     attn_desc: UnsafePointer[cudnnAttnStruct],
     w_kind: cudnnMultiHeadAttnWeightKind_t,
     weight_size_in_bytes: Int,
-    weights: UnsafePointer[NoneType],
+    weights: OpaquePointer,
     w_desc: UnsafePointer[cudnnTensorStruct],
-    w_addr: UnsafePointer[UnsafePointer[NoneType]],
+    w_addr: UnsafePointer[OpaquePointer],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetMultiHeadAttnWeights",
@@ -564,9 +565,9 @@ fn cudnnGetMultiHeadAttnWeights(
             UnsafePointer[cudnnAttnStruct],
             cudnnMultiHeadAttnWeightKind_t,
             Int,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             UnsafePointer[cudnnTensorStruct],
-            UnsafePointer[UnsafePointer[NoneType]],
+            UnsafePointer[OpaquePointer],
         ) -> cudnnStatus_t,
     ]()(
         handle, attn_desc, w_kind, weight_size_in_bytes, weights, w_desc, w_addr
@@ -577,11 +578,11 @@ fn cudnnSetSeqDataDescriptor(
     seq_data_desc: UnsafePointer[cudnnSeqDataStruct],
     data_type: cudnnDataType_t,
     nb_dims: Int16,
-    dim_a: UnsafePointer[NoneType],
-    axes: UnsafePointer[NoneType],
+    dim_a: OpaquePointer,
+    axes: OpaquePointer,
     seq_length_array_size: Int,
-    seq_length_array: UnsafePointer[NoneType],
-    padding_fill: UnsafePointer[NoneType],
+    seq_length_array: OpaquePointer,
+    padding_fill: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetSeqDataDescriptor",
@@ -589,11 +590,11 @@ fn cudnnSetSeqDataDescriptor(
             UnsafePointer[cudnnSeqDataStruct],
             cudnnDataType_t,
             Int16,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             Int,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         seq_data_desc,
@@ -638,10 +639,10 @@ fn cudnnGetRNNLinLayerBiasParams(
     pseudo_layer: Int16,
     x_desc: UnsafePointer[cudnnTensorStruct],
     w_desc: UnsafePointer[cudnnFilterStruct],
-    w: UnsafePointer[NoneType],
+    w: OpaquePointer,
     lin_layer_id: Int16,
     lin_layer_bias_desc: UnsafePointer[cudnnFilterStruct],
-    lin_layer_bias: UnsafePointer[UnsafePointer[NoneType]],
+    lin_layer_bias: UnsafePointer[OpaquePointer],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNLinLayerBiasParams",
@@ -651,10 +652,10 @@ fn cudnnGetRNNLinLayerBiasParams(
             Int16,
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int16,
             UnsafePointer[cudnnFilterStruct],
-            UnsafePointer[UnsafePointer[NoneType]],
+            UnsafePointer[OpaquePointer],
         ) -> cudnnStatus_t,
     ]()(
         handle,
@@ -689,12 +690,12 @@ fn cudnnGetRNNWeightParams(
     rnn_desc: UnsafePointer[cudnnRNNStruct],
     pseudo_layer: Int32,
     weight_space_size: Int,
-    weight_space: UnsafePointer[NoneType],
+    weight_space: OpaquePointer,
     lin_layer_id: Int32,
     m_desc: UnsafePointer[cudnnTensorStruct],
-    m_addr: UnsafePointer[UnsafePointer[NoneType]],
+    m_addr: UnsafePointer[OpaquePointer],
     b_desc: UnsafePointer[cudnnTensorStruct],
-    b_addr: UnsafePointer[UnsafePointer[NoneType]],
+    b_addr: UnsafePointer[OpaquePointer],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNWeightParams",
@@ -703,12 +704,12 @@ fn cudnnGetRNNWeightParams(
             UnsafePointer[cudnnRNNStruct],
             Int32,
             Int,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int32,
             UnsafePointer[cudnnTensorStruct],
-            UnsafePointer[UnsafePointer[NoneType]],
+            UnsafePointer[OpaquePointer],
             UnsafePointer[cudnnTensorStruct],
-            UnsafePointer[UnsafePointer[NoneType]],
+            UnsafePointer[OpaquePointer],
         ) -> cudnnStatus_t,
     ]()(
         handle,
@@ -788,7 +789,6 @@ struct cudnnSeqDataAxis_t(Writable):
     alias CUDNN_SEQDATA_BEAM_DIM = Self(2)
     alias CUDNN_SEQDATA_VECT_DIM = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -805,7 +805,7 @@ struct cudnnSeqDataAxis_t(Writable):
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEQDATA_TIME_DIM:
             return writer.write("CUDNN_SEQDATA_TIME_DIM")
         if self is Self.CUDNN_SEQDATA_BATCH_DIM:
@@ -853,8 +853,8 @@ fn cudnnSetRNNDataDescriptor(
     max_seq_length: Int16,
     batch_size: Int16,
     vector_size: Int16,
-    seq_length_array: UnsafePointer[NoneType],
-    padding_fill: UnsafePointer[NoneType],
+    seq_length_array: OpaquePointer,
+    padding_fill: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNDataDescriptor",
@@ -865,8 +865,8 @@ fn cudnnSetRNNDataDescriptor(
             Int16,
             Int16,
             Int16,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         rnn_data_desc,

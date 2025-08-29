@@ -11,31 +11,50 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import simdwidthof
+# DOC: max/tutorials/custom-ops-matmul.mdx
 
-from gpu import WARP_SIZE, barrier, block_idx, thread_idx, warp_id
-from gpu.host import DeviceBuffer, DeviceContext
+import compiler
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx,
+    warp_id,
+    MAX_THREADS_PER_BLOCK_METADATA,
+)
+from gpu.host import DeviceBuffer
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
-    copy_dram_to_sram,
     copy_dram_to_sram_async,
 )
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from memory import UnsafePointer
+from math import ceildiv
 from runtime.asyncrt import DeviceContextPtr
+from sys.info import (
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    simd_width_of,
+)
 from tensor_internal import (
     InputTensor,
     ManagedTensorSlice,
     OutputTensor,
-    foreach,
 )
-
+from utils import StaticTuple
 from utils.index import Index
+
+# The number of threads per block to use for the optimized kernels.
+# Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA.
+# Not the most performant for all kernels, used sparingly on nvidia accelerators.
+alias OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
+
+# The block size to use for the optimized kernels.
+alias OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
 
 # ===-----------------------------------------------------------------------===#
 # Naive matrix multiplication (CPU)
@@ -43,9 +62,9 @@ from utils.index import Index
 
 
 fn naive_matrix_multiplication_cpu(
-    out: ManagedTensorSlice,
-    a: ManagedTensorSlice[type = out.type, rank = out.rank],
-    b: ManagedTensorSlice[type = out.type, rank = out.rank],
+    output: ManagedTensorSlice,
+    a: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
+    b: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
 ):
     """A naive matrix multiplication used as a fallback on CPU hardware."""
     var M = a.shape()[0]
@@ -55,7 +74,7 @@ fn naive_matrix_multiplication_cpu(
     for row in range(M):
         for col in range(N):
             for k in range(K):
-                out[row, col] = out[row, col] + a[row, k] * b[k, col]
+                output[row, col] = output[row, col] + a[row, k] * b[k, col]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -63,6 +82,7 @@ fn naive_matrix_multiplication_cpu(
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn naive_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -76,7 +96,7 @@ fn naive_matrix_multiplication[
     c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
-    Tiled GEMM kernel that performs matrix multiplication C = A * B.
+    GEMM kernel that performs matrix multiplication C = A * B.
 
     Parameters:
         dtype: The data type of the input and output tensors.
@@ -91,7 +111,7 @@ fn naive_matrix_multiplication[
         b: The input tensor B.
         c: The output tensor C.
 
-    This kernel uses a simple nested loop structure to compute the matrix
+    This kernel uses a simple for loop structure to compute the matrix
     multiplication. Each thread computes a single element of the output matrix
     C by accumulating the dot product of the corresponding row of A and column
     of B.
@@ -100,37 +120,36 @@ fn naive_matrix_multiplication[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    # Calculate the column and row indices for each thread.
-    var col = thread_idx.y
-    var row = thread_idx.x
-    var bidx = block_idx.x
-    var bidy = block_idx.y
 
-    # Get the tile of the output matrix C that this thread is
-    # responsible for computing.
-    var dst = c.tile[BM, BN](bidy, bidx)
+    var M = a.dim[0]()
+    var N = b.dim[1]()
+    var K = b.dim[0]()
+
+    # Calculate the column and row indices for each thread.
+    var row = block_dim.x * block_idx.x + thread_idx.x
+    var col = block_dim.y * block_idx.y + thread_idx.y
 
     # Initialize a register to accumulate the result for this thread.
     var dst_reg: c.element_type = 0
 
     # Iterate over the K dimension to compute the dot product.
-    for k in range(b.dim[0]()):
-        # Get the corresponding tiles from matrices A and B.
-        var a_tile = a.tile[BM, 1](bidy, k)
-        var b_tile = b.tile[1, BN](k, bidx)
-
-        # Multiply the elements and accumulate the result.
-        dst_reg += a_tile[row, 0] * b_tile[0, col]
+    if row < M and col < N:
+        for k_index in range(K):
+            # Multiply the elements and accumulate the result.
+            dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
     # Write the final accumulated result to the output matrix.
-    dst[row, col] += dst_reg
+    c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------===#
-# Matrix multiplication with tiling
+# Matrix multiplication with global memory coalescing
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+)
 fn coalescing_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -161,37 +180,33 @@ fn coalescing_matrix_multiplication[
         c: The output tensor C.
 
     This kernel optimizes memory access patterns by ensuring that
-    threads within a warp access contiguous memory locations. It
-    tiles the input matrices A and B and computes the matrix
-    multiplication using register tiling.
+    threads within a warp access contiguous memory locations.
 
     Each thread computes a single element of the output matrix C by
     accumulating the partial results in a register. The final result
     is then stored back to the output matrix.
     """
 
-    var col = thread_idx.x
-    var row = thread_idx.y
-    var bidx = block_idx.x
-    var bidy = block_idx.y
+    var M = a.dim[0]()
+    var N = b.dim[1]()
+    var K = b.dim[0]()
 
-    # Get the tile of the output matrix C
-    var dst = c.tile[BM, BN](bidy, bidx)
+    # Calculate the column and row indices for each thread.
+    # Have adjacent threads work on the same row to allow for memory coalescing
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
 
-    # Initialize the register to accumulate the result
+    # Initialize a register to accumulate the result for this thread.
     var dst_reg: c.element_type = 0
 
-    # Iterate over the K dimension
-    for k in range(b.dim[0]()):
-        # Get the tiles of input matrices A and B
-        var a_tile = a.tile[BM, 1](bidy, k)
-        var b_tile = b.tile[1, BN](k, bidx)
+    # Iterate over the K dimension to compute the dot product.
+    if row < M and col < N:
+        for k_index in range(K):
+            # Multiply the elements and accumulate the result.
+            dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-        # Compute the partial result and accumulate it in the register
-        dst_reg += a_tile[row, 0] * b_tile[0, col]
-
-    # Store the final result back to the output matrix
-    dst[row, col] += dst_reg
+    # Write the final accumulated result to the output matrix.
+    c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------===#
@@ -199,6 +214,9 @@ fn coalescing_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](OPTIMIZED_NUM_THREADS)
+)
 fn tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -292,6 +310,7 @@ fn tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tiled_register_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -309,7 +328,7 @@ fn tiled_register_matrix_multiplication[
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
-    shared memory.
+    shared memory and register tiling.
 
     Parameters:
         dtype: The data type of the input and output tensors.
@@ -340,12 +359,10 @@ fn tiled_register_matrix_multiplication[
     # Calculate the column and row indices for each thread.
     var col = thread_idx.x % BN
     var row = thread_idx.x // BN
-    var bidx = block_idx.x
-    var bidy = block_idx.y
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
+    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](row, col)
 
     # Allocate shared memory for tiles of A and B.
     var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
@@ -399,6 +416,7 @@ fn tiled_register_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -450,10 +468,8 @@ fn block_tiled_matrix_multiplication[
     """
     var partition_col = thread_idx.x % (BN // TN)
     var partition_row = thread_idx.x // (BN // TN)
-    var bidx = block_idx.x
-    var bidy = block_idx.y
 
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
+    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
         partition_row, partition_col
     )
 
@@ -495,6 +511,7 @@ fn block_tiled_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn block_tiled_vectorized_matrix_multiplication[
     dtype: DType,
     a_layout: Layout,
@@ -547,15 +564,13 @@ fn block_tiled_vectorized_matrix_multiplication[
     of rows in B.
     """
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var partition_col = thread_idx.x % (BN // TN)
     var partition_row = thread_idx.x // (BN // TN)
-    var bidx = block_idx.x
-    var bidy = block_idx.y
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
+    var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
         partition_row, partition_col
     )
     var dst_vec = dst.vectorize[1, simd_width]()
@@ -617,6 +632,7 @@ fn block_tiled_vectorized_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 fn tensor_core_matrix_multiplication[
     dtype: DType,
     layout_a: Layout,
@@ -785,9 +801,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
-        out: OutputTensor[rank=2],
-        a: InputTensor[type = out.type, rank = out.rank],
-        b: InputTensor[type = out.type, rank = out.rank],
+        output: OutputTensor[rank=2],
+        a: InputTensor[dtype = output.dtype, rank = output.rank],
+        b: InputTensor[dtype = output.dtype, rank = output.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -797,7 +813,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
         if target == "gpu":
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
-            out_layout = out.to_layout_tensor()
+            out_layout = output.to_layout_tensor()
 
             M = a_layout.shape[0]()
             N = b_layout.shape[1]()
@@ -806,9 +822,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(
-                DeviceBuffer[out.type](
+                DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[out.type]]](out_layout.ptr),
+                    rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),
                     M * N,
                     owning=False,
                 ),
@@ -832,11 +848,11 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # compiled and enqueued to run on the GPU.
             @parameter
             if algorithm == "naive":
-                alias BM = 32
-                alias BN = 32
+                alias BM = 16
+                alias BN = 16
                 gpu_ctx.enqueue_function[
                     naive_matrix_multiplication[
-                        out.type,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -851,11 +867,11 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif algorithm == "coalescing":
-                alias BM = 32
-                alias BN = 32
+                alias BM = OPTIMIZED_BLOCK_SIZE
+                alias BN = OPTIMIZED_BLOCK_SIZE
                 gpu_ctx.enqueue_function[
                     coalescing_matrix_multiplication[
-                        out.type,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -870,13 +886,13 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(BN, BM),
                 )
             elif algorithm == "tiled":
-                alias BM = 32
-                alias BN = 32
-                alias BK = 32
+                alias BM = OPTIMIZED_BLOCK_SIZE
+                alias BN = OPTIMIZED_BLOCK_SIZE
+                alias BK = OPTIMIZED_BLOCK_SIZE
                 alias NUM_THREADS = BM * BN
                 gpu_ctx.enqueue_function[
                     tiled_matrix_multiplication[
-                        out.type,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -896,11 +912,11 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BM = 64
                 alias BN = 64
                 alias BK = 8
-                alias TM = 8
+                alias TM = 16
                 alias NUM_THREADS = (BM * BN) // TM
                 gpu_ctx.enqueue_function[
                     tiled_register_matrix_multiplication[
-                        out.type,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -926,7 +942,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
                     block_tiled_matrix_multiplication[
-                        out.type,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -952,8 +968,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias TN = 8
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
-                    block_tiled_matrix_multiplication[
-                        out.type,
+                    block_tiled_vectorized_matrix_multiplication[
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -972,39 +988,46 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(NUM_THREADS),
                 )
             elif algorithm == "tensor_core":
-                alias BM = 64
-                alias BN = 64
-                alias BK = 32
-                alias WM = 32
-                alias WN = 32
-                alias MMA_M = 16
-                alias MMA_N = 8
-                alias MMA_K = 4
-                alias NUM_WARPS = (BM // WM) * (BN // WN)
-                gpu_ctx.enqueue_function[
-                    tensor_core_matrix_multiplication[
-                        out.type,
-                        a_layout.layout,
-                        b_layout.layout,
-                        out_layout.layout,
-                        BM,
-                        BN,
-                        BK,
-                        WM,
-                        WN,
-                        MMA_M,
-                        MMA_N,
-                        MMA_K,
-                    ]
-                ](
-                    a_layout,
-                    b_layout,
-                    out_layout,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(NUM_WARPS * WARP_SIZE),
-                )
+
+                @parameter
+                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                    alias BM = 64
+                    alias BN = 64
+                    alias BK = OPTIMIZED_BLOCK_SIZE
+                    alias WM = 32
+                    alias WN = WARP_SIZE
+                    # different MMA shapes for AMD and NVIDIA, see:
+                    # https://docs.modular.com/mojo/kernels/layout/tensor_core/TensorCore/
+                    alias MMA_M = 16
+                    alias MMA_N = 16 if has_amd_gpu_accelerator() else 8
+                    alias MMA_K = 4
+                    alias NUM_WARPS = (BM // WM) * (BN // WN)
+                    gpu_ctx.enqueue_function[
+                        tensor_core_matrix_multiplication[
+                            output.dtype,
+                            a_layout.layout,
+                            b_layout.layout,
+                            out_layout.layout,
+                            BM,
+                            BN,
+                            BK,
+                            WM,
+                            WN,
+                            MMA_M,
+                            MMA_N,
+                            MMA_K,
+                        ]
+                    ](
+                        a_layout,
+                        b_layout,
+                        out_layout,
+                        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                        block_dim=(NUM_WARPS * WARP_SIZE),
+                    )
+                else:
+                    raise Error("Tensor Cores are not available on this device")
             else:
                 raise Error("No known matmul algorithm:", algorithm)
 
         else:
-            naive_matrix_multiplication_cpu(out, a, b)
+            naive_matrix_multiplication_cpu(output, a, b)

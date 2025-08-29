@@ -13,11 +13,10 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
@@ -47,7 +46,7 @@ fn test[
     alias WO = (W + pad_w[0] + pad_w[1] - dilation[0] * (S - 1) - 1) // stride[1] + 1
     # fmt: on
     alias type = DType.float32
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simd_width_of[type]()
     alias num_groups = 1
 
     var conv_shape = ConvShape[2](
@@ -87,9 +86,9 @@ fn test[
     # Pre-packed filter for dynamic shapes.
     alias micro_kernel_width_default = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size_default = micro_kernel_width_default * simd_size
-    var rounded_F_dynamic = ceildiv(
-        F, micro_kernel_f_size_default
-    ) * micro_kernel_f_size_default
+    var rounded_F_dynamic = (
+        ceildiv(F, micro_kernel_f_size_default) * micro_kernel_f_size_default
+    )
     var packed_filter_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_dynamic
     )

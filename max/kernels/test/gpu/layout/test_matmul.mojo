@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
 from sys import has_nvidia_gpu_accelerator
 
 from benchmark import Bench
@@ -20,15 +19,12 @@ from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     HostNDBuffer,
     assert_almost_equal,
-    assert_equal,
     random,
     zero,
 )
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
 )
 from matmul_kernels import (
     run_cublas,
@@ -40,7 +36,6 @@ from matmul_kernels import (
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
 )
-from memory import UnsafePointer
 
 alias run_gemm_kernel_type = fn (
     mut m: Bench,

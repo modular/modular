@@ -13,20 +13,14 @@
 
 import time
 from collections import Dict, Optional
-from collections.string import StaticString, StringSlice
-from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
 from sys.arg import argv
 
 from gpu.host import DeviceContext
-from stdlib.builtin.file import FileHandle
-from stdlib.builtin.io import _snprintf
-from testing import assert_true
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
@@ -51,14 +45,6 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
     alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
     """Default set of benchmark metrics."""
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     fn __str__(self) -> String:
         """Gets a string representation of this metric.
 
@@ -66,11 +52,8 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             The string representation."""
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this BenchMetric to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -124,8 +107,8 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             The selected metric.
         """
         for m in metric_list:
-            if m[].check_name(name):
-                return m[]
+            if m.check_name(name):
+                return m
 
         alias sep = StaticString("-") * 80 + "\n"
         var err = String(
@@ -136,7 +119,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
         for m in metric_list:
-            err += String("    metric: [" + m[].name.lower(), "]\n")
+            err += String("    metric: [" + m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
         )
@@ -176,27 +159,16 @@ struct ThroughputMeasure(Copyable, Movable):
         self.metric = metric
         self.value = value
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     fn __str__(self) -> String:
         """Gets a string representation of this `ThroughputMeasure`.
 
         Returns:
-            The string represntation.
+            The string representation.
         """
         return String(self.metric)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this ThroughputMeasure to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -217,34 +189,33 @@ struct ThroughputMeasure(Copyable, Movable):
 
 
 @fieldwise_init
-struct Format(Writable, Stringable, Copyable, Movable):
+struct Format(Copyable, Movable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
 
-    alias csv = StaticString("csv")
+    alias csv = Format(StaticString("csv"))
     """Comma separated values with no alignment."""
-    alias tabular = StaticString("tabular")
+    alias tabular = Format(StaticString("tabular"))
     """Comma separated values with dynamically aligned columns."""
-    alias table = StaticString("table")
+    alias table = Format(StaticString("table"))
     """Table format with dynamically aligned columns."""
 
     var value: StaticString
     """The format to print results."""
 
-    @implicit
     fn __init__(out self, value: StringSlice):
         """Constructs a Format object from a string.
 
         Args:
             value: The format to print results.
         """
-        if value == Format.csv:
-            self.value = Format.csv
-        elif value == Format.tabular:
-            self.value = Format.tabular
-        elif value == Format.table:
-            self.value = Format.table
+        if value == Format.csv.value:
+            self.value = Format.csv.value
+        elif value == Format.tabular.value:
+            self.value = Format.tabular.value
+        elif value == Format.table.value:
+            self.value = Format.table.value
         else:
             self.value = ""
             var valid_formats = String(
@@ -255,7 +226,7 @@ struct Format(Writable, Stringable, Copyable, Movable):
                 ", ",
                 Format.table,
             )
-            abort("Invalid format option: ", value, valid_formats)
+            abort(String("Invalid format option: ", value, valid_formats))
 
     fn __str__(self) -> String:
         """Returns the string representation of the format.
@@ -265,11 +236,8 @@ struct Format(Writable, Stringable, Copyable, Movable):
         """
         return String(self.value)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The writer to write the `Format` to.
@@ -302,6 +270,8 @@ struct BenchConfig(Copyable, Movable):
     """Lower bound on benchmarking time in secs."""
     var min_warmuptime_secs: Float64
     """Lower bound on warmup time in secs."""
+    var num_warmup_iters: Int
+    """Number of warmup iterations."""
     var max_batch_size: Int
     """The maximum number of iterations to perform per time measurement."""
     var max_iters: Int
@@ -332,21 +302,23 @@ struct BenchConfig(Copyable, Movable):
         out_file: Optional[Path] = None,
         min_runtime_secs: Float64 = 1.0,
         max_runtime_secs: Float64 = 2.0,
-        min_warmuptime_secs: Float64 = 1.0,
+        min_warmuptime_secs: Float64 = 0.0,
+        num_warmup_iters: Int = 10,
         max_batch_size: Int = 0,
-        max_iters: Int = 1_000_000_000,
+        max_iters: Int = 1_000_000,
         num_repetitions: Int = 1,
         flush_denormals: Bool = True,
     ) raises:
-        """Constructs and initializes Benchmark config object with default and inputed values.
+        """Constructs and initializes Benchmark config object with default and inputted values.
 
         Args:
             out_file: Output file to write results to.
-            min_runtime_secs: Lower bound on benchmarking time in secs (default `0.1`).
-            max_runtime_secs: Upper bound on benchmarking time in secs (default `1`).
-            min_warmuptime_secs: Lower bound on warmup time in secs (default `1.0`).
+            min_runtime_secs: Lower bound on benchmarking time in secs (default `1.0`).
+            max_runtime_secs: Upper bound on benchmarking time in secs (default `2.0`).
+            min_warmuptime_secs: Lower bound on warmup time in secs (default `0.0`).
+            num_warmup_iters: Number of warmup iterations (default `10`).
             max_batch_size: The maximum number of iterations to perform per time measurement.
-            max_iters: Max number of iterations to run (default `1_000_000_000`).
+            max_iters: Max number of iterations to run (default `1_000_000`).
             num_repetitions: Number of times the benchmark has to be repeated.
             flush_denormals: Whether or not the denormal values are flushed.
         """
@@ -354,6 +326,7 @@ struct BenchConfig(Copyable, Movable):
         self.min_runtime_secs = min_runtime_secs
         self.max_runtime_secs = max_runtime_secs
         self.min_warmuptime_secs = min_warmuptime_secs
+        self.num_warmup_iters = num_warmup_iters
         self.max_batch_size = max_batch_size
         self.max_iters = max_iters
         self.out_file = out_file
@@ -399,14 +372,6 @@ struct BenchConfig(Copyable, Movable):
 
         argparse()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
 
 @fieldwise_init
 struct BenchId:
@@ -429,7 +394,6 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = input_id
 
-    @implicit
     fn __init__(out self, func_name: String):
         """Constructs a Benchmark Id object from input function name.
 
@@ -438,6 +402,16 @@ struct BenchId:
         """
 
         self.func_name = func_name
+        self.input_id = None
+
+    fn __init__(out self, func_name: StringLiteral):
+        """Constructs a Benchmark Id object from input function name.
+
+        Args:
+            func_name: The target function name.
+        """
+
+        self.func_name = String(func_name)
         self.input_id = None
 
 
@@ -476,14 +450,6 @@ struct BenchmarkInfo(Copyable, Movable):
         self.measures = measures
         self.verbose_timing = verbose_timing
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
 
 @fieldwise_init
 struct Mode(Copyable, Movable):
@@ -508,7 +474,7 @@ struct Mode(Copyable, Movable):
         return self.value == other.value
 
 
-struct Bench(Writable, Stringable):
+struct Bench(Stringable, Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
@@ -670,7 +636,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_with_input[
@@ -680,7 +646,7 @@ struct Bench(Writable, Stringable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyTrivialRegType.
 
@@ -728,15 +694,78 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
+
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () raises capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                try:
+                    bench_fn()
+                except e:
+                    abort(String(e))
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
+
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                bench_fn()
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
         bench_fn: fn (mut Bencher) capturing [_] -> None
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -768,7 +797,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     # TODO (#31795): overload should not be needed
@@ -777,7 +806,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -802,7 +831,7 @@ struct Bench(Writable, Stringable):
             try:
                 bench_fn(b)
             except e:
-                abort(e)
+                abort(String(e))
 
         self.bench_function[abort_on_err](bench_id, measures)
 
@@ -820,7 +849,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
@@ -838,7 +867,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function.
 
@@ -893,6 +922,7 @@ struct Bench(Writable, Stringable):
                 min_runtime_secs=self.config.min_runtime_secs,
                 max_runtime_secs=self.config.max_runtime_secs,
                 min_warmuptime_secs=self.config.min_warmuptime_secs,
+                num_warmup_iters=self.config.num_warmup_iters,
             )
         )
 
@@ -918,19 +948,26 @@ struct Bench(Writable, Stringable):
                 f.write(self)
             self.config.format = orig_format
 
-    fn pad(self, width: Int, string: String) -> String:
+    fn pad[
+        pad_str: StaticString = " "
+    ](self, width: Int, string: String) -> String:
         """Pads a string to a given width.
 
         Args:
             width: The width to pad the string to.
             string: The string to pad.
 
+        Parameters:
+            pad_str: The length 1 string to use for the padding.
+
         Returns:
             A string padded to the given width.
         """
+        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+
         if self.config.format == Format.csv:
             return ""
-        return " " * (width - len(string))
+        return pad_str * (width - len(string))
 
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
@@ -940,11 +977,8 @@ struct Bench(Writable, Stringable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the benchmark results to a writer.
-
-        Parameters:
-            W: A type conforming to the Writer trait.
 
         Args:
             writer: The writer to write to.
@@ -966,12 +1000,12 @@ struct Bench(Writable, Stringable):
         if self.config.format == Format.table and len(self.info_vec) > 0:
             for metric in metrics:
                 try:
-                    total_width += metrics[metric[]].max_width + 3
+                    total_width += metrics[metric].max_width + 3
                 except e:
-                    abort(e)
+                    abort(String(e))
             if self.config.verbose_timing:
                 for timing_width in timing_widths:
-                    total_width += timing_width[] + 3
+                    total_width += timing_width + 3
             else:
                 total_width += timing_widths[0] + 3
 
@@ -983,13 +1017,9 @@ struct Bench(Writable, Stringable):
         else:
             sep = ","
 
-        var first_sep = "| " if self.config.format == Format.table else StaticString(
-            ""
+        var first_sep = (
+            "| " if self.config.format == Format.table else StaticString("")
         )
-        var line_sep = "-" * total_width
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
         writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
         writer.write(sep, MET_LABEL, self.pad(timing_widths[0], MET_LABEL))
@@ -998,20 +1028,19 @@ struct Bench(Writable, Stringable):
         # Return early if no runs were benchmarked
         if len(self.info_vec) == 0:
             if self.config.format == Format.table:
-                writer.write(" |\n", line_sep, "\nNo benchmarks recorded...")
+                writer.write("No benchmarks recorded...")
             writer.write("\n")
             return
 
         # Write the metrics labels
-        for metric in metrics:
-            name = metric[]
+        for name in metrics:
             writer.write(sep, name)
             try:
                 writer.write(self.pad(metrics[name].max_width, name))
             except e:
-                abort(e)
+                abort(String(e))
 
-        # Write the timeing labels
+        # Write the timing labels
         if self.config.verbose_timing:
             var labels = self.config.VERBOSE_TIMING_LABELS
             # skip the met label
@@ -1019,8 +1048,31 @@ struct Bench(Writable, Stringable):
                 writer.write(sep, labels[i])
                 writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
+        # Write the sep line between the header and the data in MD format.
         if self.config.format == Format.table:
-            writer.write(" |\n", line_sep)
+            writer.write(" |\n| ")  # , line_sep)
+            # name, met, iters
+            writer.write(self.pad["-"](name_width, ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](timing_widths[0], ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](iters_width, ""))
+
+            for name in metrics:
+                writer.write(sep)
+                try:
+                    writer.write(self.pad["-"](metrics[name].max_width, ""))
+                except e:
+                    abort(String(e))
+
+            if self.config.verbose_timing:
+                var labels = self.config.VERBOSE_TIMING_LABELS
+                # skip the met label
+                for i in range(len(labels)):
+                    writer.write(sep)
+                    writer.write(self.pad["-"](timing_widths[i + 1], ""))
+            writer.write(" |")
+
         writer.write("\n")
 
         # Loop through the runs and write out the table rows
@@ -1046,8 +1098,7 @@ struct Bench(Writable, Stringable):
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
-            for metric in metrics:
-                var name = metric[]
+            for name in metrics:
                 try:
                     var rates = metrics[name].rates
                     var max_width = metrics[name].max_width
@@ -1059,7 +1110,7 @@ struct Bench(Writable, Stringable):
                             sep, rate, self.pad(max_width, String(rate))
                         )
                 except e:
-                    abort(e)
+                    abort(String(e))
 
             if self.config.verbose_timing:
                 var min = result.min(unit=Unit.ms)
@@ -1074,9 +1125,6 @@ struct Bench(Writable, Stringable):
                 writer.write(" |")
 
             writer.write("\n")
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)
@@ -1111,7 +1159,7 @@ struct Bench(Writable, Stringable):
                     try:
                         metrics[name].rates[i] = rate
                     except e:
-                        abort(e)
+                        abort(String(e))
                 else:
                     try:
                         metrics[name].max_width = max(
@@ -1119,7 +1167,7 @@ struct Bench(Writable, Stringable):
                         )
                         metrics[name].rates[i] = rate
                     except e:
-                        abort(e)
+                        abort(String(e))
         return metrics
 
     fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
@@ -1162,9 +1210,8 @@ struct Bencher:
     """ Number of iterations to run the target function."""
 
     var elapsed: Int
-    """ The total time elpased when running the target function."""
+    """ The total time elapsed when running the target function."""
 
-    @implicit
     fn __init__(out self, num_iters: Int):
         """Constructs a Bencher object to run and time a function.
 
@@ -1187,7 +1234,7 @@ struct Bencher:
         for _ in range(self.num_iters):
             iter_fn()
         var stop = time.perf_counter_ns()
-        self.elapsed = stop - start
+        self.elapsed = Int(stop - start)
 
     fn iter_preproc[
         iter_fn: fn () capturing [_] -> None,
@@ -1206,7 +1253,7 @@ struct Bencher:
             var start = time.perf_counter_ns()
             iter_fn()
             var stop = time.perf_counter_ns()
-            self.elapsed += stop - start
+            self.elapsed += Int(stop - start)
 
     fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](mut self):
         """Times a target function with custom number of iterations.
@@ -1231,7 +1278,7 @@ struct Bencher:
         try:
             self.elapsed = ctx.execution_time[kernel_launch_fn](self.num_iters)
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
@@ -1249,7 +1296,7 @@ struct Bencher:
                 self.num_iters
             )
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter_custom_multicontext[
         kernel_launch_fn: fn () raises capturing [_] -> None
@@ -1271,7 +1318,7 @@ struct Bencher:
                     ctxs[i].execution_time[kernel_launch_fn](self.num_iters),
                 )
         except e:
-            abort(e)
+            abort(String(e))
 
     fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
@@ -1285,7 +1332,7 @@ struct Bencher:
         for _ in range(self.num_iters):
             iter_fn()
         var stop = time.perf_counter_ns()
-        self.elapsed = stop - start
+        self.elapsed = Int(stop - start)
 
     # TODO (#31795):  overload should not be needed
     fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](mut self):
@@ -1298,4 +1345,4 @@ struct Bencher:
         try:
             self.elapsed = iter_fn(self.num_iters)
         except e:
-            abort(e)
+            abort(String(e))

@@ -28,7 +28,7 @@ repos:
         stages: [pre-commit]
       - id: check-license
         name: check-license
-        entry: mojo mojo/stdlib/scripts/check_licenses.mojo
+        entry: mojo bazel/lint/check_licenses.mojo
         language: system
         files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
         stages: [pre-commit]
@@ -38,7 +38,7 @@ repos:
       - id: markdownlint
         args: ["--config", "mojo/stdlib/scripts/.markdownlint.yaml", "--fix"]
   - repo: https://github.com/keith/pre-commit-buildifier
-    rev: 8.0.3
+    rev: 8.2.0
     hooks:
     -   id: buildifier
     -   id: buildifier-lint

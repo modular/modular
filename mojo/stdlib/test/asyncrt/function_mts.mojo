@@ -14,7 +14,6 @@
 from math import ceildiv
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from buffer.dimlist import DimList
 from gpu.id import global_idx
 from layout import Layout, LayoutTensor
 from tensor_internal import InputTensor, OutputTensor, StaticTensorSpec
@@ -93,7 +92,7 @@ fn main() raises:
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function_checked[color_to_grayscale, color_to_grayscale](
+    ctx.enqueue_function_experimental[color_to_grayscale](
         rgb_tensor,
         gray_tensor,
         grid_dim=(num_col_blocks, num_row_blocks),

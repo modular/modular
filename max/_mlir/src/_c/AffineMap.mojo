@@ -20,9 +20,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 
-from utils.write import _WriteBufferStack
+from io.write import _WriteBufferStack
 
 from .AffineExpr import *
 from .ffi import MLIR_func
@@ -54,7 +53,7 @@ from .IR import *
 
 @register_passable("trivial")
 struct MlirAffineMap:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirAffineMapGetContext(affine_map: MlirAffineMap) -> MlirContext:
@@ -62,7 +61,7 @@ fn mlirAffineMapGetContext(affine_map: MlirAffineMap) -> MlirContext:
     return MLIR_func["mlirAffineMapGetContext", MlirContext](affine_map)
 
 
-# FIXEME(codegen): static function mlirAffineMapIsNull
+# FIXME(codegen): static function mlirAffineMapIsNull
 
 
 fn mlirAffineMapEqual(a1: MlirAffineMap, a2: MlirAffineMap) -> Bool:
@@ -282,8 +281,8 @@ fn mlirAffineMapReplace(
 fn mlirAffineMapCompressUnusedSymbols(
     affine_maps: UnsafePointer[MlirAffineMap],
     size: Int,
-    result: UnsafePointer[NoneType],
-    populate_result: fn (UnsafePointer[NoneType], Int32, MlirAffineMap) -> None,
+    result: OpaquePointer,
+    populate_result: fn (OpaquePointer, Int32, MlirAffineMap) -> None,
 ) -> None:
     """Returns the simplified affine map resulting from dropping the symbols that
     do not appear in any of the individual maps in `affineMaps`.

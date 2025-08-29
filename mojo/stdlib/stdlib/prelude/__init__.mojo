@@ -34,7 +34,7 @@ from collections.string import (
 )
 from hashlib.hash import Hashable, hash
 
-from builtin.anytype import AnyType, UnknownDestructibility
+from builtin.anytype import AnyType, UnknownDestructibility, Some
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any
 from builtin.breakpoint import breakpoint
 from builtin.builtin_slice import Slice, slice
@@ -47,17 +47,12 @@ from builtin.comparable import (
 )
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
-from builtin.debug_assert import (
-    WRITE_MODE,
-    WRITE_MODE_MEM,
-    WRITE_MODE_REG,
-    debug_assert,
-)
+from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
 from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
-from builtin.file import FileHandle, open
-from builtin.file_descriptor import FileDescriptor
+from io.file import FileHandle, open
+from io.file_descriptor import FileDescriptor
 from builtin.float_literal import FloatLiteral
 from builtin.floatable import Floatable, FloatableRaising
 from builtin.format_int import bin, hex, oct
@@ -71,7 +66,7 @@ from builtin.int import (
     index,
 )
 from builtin.int_literal import IntLiteral
-from builtin.io import input, print
+from io.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
 from builtin.math import (
     Absable,
@@ -130,9 +125,15 @@ from builtin.type_aliases import (
     StaticConstantOrigin,
 )
 from builtin.uint import UInt
-from builtin.value import Copyable, Defaultable, ExplicitlyCopyable, Movable
+from builtin.value import (
+    Copyable,
+    Defaultable,
+    ExplicitlyCopyable,
+    Iterator,
+    Movable,
+)
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
-from memory import AddressSpace, Pointer, Span
+from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
 
-from utils import Writable, Writer
+from io import Writable, Writer

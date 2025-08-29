@@ -15,12 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List
 from math import ceil
-from sys import bitwidthof
+from sys import bit_width_of
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer
+from memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # sort
@@ -32,9 +31,6 @@ alias insertion_sort_threshold = 32
 @fieldwise_init("implicit")
 struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
     var data: T
-
-    fn __init__(out self, *, other: Self):
-        self.data = other.data
 
 
 @always_inline
@@ -160,7 +156,7 @@ fn _heap_sort[
 fn _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
     var log2 = Int(
-        (bitwidthof[DType.index]() - 1) ^ count_leading_zeros(size | 1)
+        (bit_width_of[DType.index]() - 1) ^ count_leading_zeros(size | 1)
     )
     # The number 1.3 was chosen by experimenting the max stack size for random
     # input. This also depends on insertion_sort_threshold
@@ -220,7 +216,7 @@ fn _quicksort[
         var imm_ptr = imm_interval.unsafe_ptr()
         var mut_ptr = imm_ptr.origin_cast[mut=True, origin=MutableAnyOrigin]()
         var len = len(imm_interval)
-        var interval = Span[T, MutableAnyOrigin](ptr=mut_ptr, length=len)
+        var interval = Span[T, MutableAnyOrigin](ptr=mut_ptr, length=UInt(len))
 
         if len <= 5:
             _delegate_small_sort[cmp_fn](interval)
@@ -240,7 +236,9 @@ fn _quicksort[
             var pivot = _quicksort_partition_left[cmp_fn](interval)
             if len > pivot + 2:
                 stack.append(
-                    ImmSpan(ptr=imm_ptr + pivot + 1, length=len - pivot - 1)
+                    ImmSpan(
+                        ptr=imm_ptr + pivot + 1, length=UInt(len - pivot - 1)
+                    )
                 )
             continue
 
@@ -248,11 +246,11 @@ fn _quicksort[
 
         if len > pivot + 2:
             stack.append(
-                ImmSpan(ptr=imm_ptr + pivot + 1, length=len - pivot - 1)
+                ImmSpan(ptr=imm_ptr + pivot + 1, length=UInt(len - pivot - 1))
             )
 
         if pivot > 1:
-            stack.append(ImmSpan(ptr=imm_ptr, length=pivot))
+            stack.append(ImmSpan(ptr=imm_ptr, length=UInt(pivot)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -352,9 +350,7 @@ fn _stable_sort[
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var temp_buff = UnsafePointer[T].alloc(len(span))
-    var temp_buff_span = Span[T, __origin_of(temp_buff)](
-        ptr=temp_buff, length=len(span)
-    )
+    var temp_buff_span = Span(ptr=temp_buff, length=UInt(len(span)))
     _stable_sort_impl[cmp_fn](span, temp_buff_span)
     temp_buff.free()
 
@@ -402,7 +398,7 @@ fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](owned span: Span[T, origin], owned k: Int):
+](var span: Span[T, origin], var k: Int):
     while True:
         var pivot = _partition[cmp_fn](span)
         if pivot == k:
@@ -544,31 +540,6 @@ fn sort[
 
     @parameter
     fn _cmp_fn(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    sort[_cmp_fn, stable=stable](span)
-
-
-fn sort[
-    dtype: DType,
-    origin: MutableOrigin, //,
-    *,
-    stable: Bool = False,
-](span: Span[Scalar[dtype], origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
-
-    Parameters:
-        dtype: Copyable & Movable type of the underlying data.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-
-    @parameter
-    fn _cmp_fn(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
     sort[_cmp_fn, stable=stable](span)

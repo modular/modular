@@ -14,16 +14,14 @@
 """
 
 import os
-from collections import InlineArray, List
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from os import PathLike, listdir, stat_result
-from sys import external_call, os_is_windows
+from sys import CompilationTarget, external_call
 from sys.ffi import c_char
 
-from builtin._location import __call_location, _SourceLocation
-from memory import UnsafePointer
+from builtin._location import __call_location
 
-alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
+alias DIR_SEPARATOR = "\\" if CompilationTarget.is_windows() else "/"
 
 
 fn cwd() raises -> Path:
@@ -62,17 +60,17 @@ fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     return Path(file_name[0:i])
 
 
-@value
 struct Path(
-    Stringable,
     Boolable,
-    Writable,
     Copyable,
-    Movable,
+    EqualityComparable,
     ExplicitlyCopyable,
-    PathLike,
+    Hashable,
     KeyElement,
-    _HashableWithHasher,
+    Movable,
+    PathLike,
+    Stringable,
+    Writable,
 ):
     """The Path object."""
 
@@ -93,7 +91,7 @@ struct Path(
         self.path = String(path)
 
     @implicit
-    fn __init__(out self, owned path: String):
+    fn __init__(out self, var path: String):
         """Initializes a path with the provided path.
 
         Args:
@@ -109,14 +107,6 @@ struct Path(
           path: The file system path.
         """
         self.path = path
-
-    fn copy(self) -> Self:
-        """Copy the object.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(self.path)
 
     fn __truediv__(self, suffix: Self) -> Self:
         """Joins two paths using the system-defined path separator.
@@ -172,12 +162,9 @@ struct Path(
         """
         return self.path.byte_length() > 0
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this path to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -224,27 +211,7 @@ struct Path(
         """
         return self.path.as_string_slice() == other
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Returns True if the two paths are not equal.
-
-        Args:
-          other: The other path to compare against.
-
-        Returns:
-          True if the paths are not equal and False otherwise.
-        """
-        return not self == other
-
-    fn __hash__(self) -> UInt:
-        """Hash the underlying path string using builtin hash.
-
-        Returns:
-            An integer value containing the hash of the path string.
-        """
-
-        return hash(self.path)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the path string value.
 
         Parameters:
@@ -412,3 +379,17 @@ struct Path(
             res.append(ls[i])
 
         return res
+
+    fn name(self) -> String:
+        """Returns the name of the path.
+
+        ```mojo
+        from pathlib import Path
+
+        Path("a/path/foo.txt").name()  # returns "foo.txt"
+        ```
+
+        Returns:
+            The name of the path.
+        """
+        return os.path.basename(self)

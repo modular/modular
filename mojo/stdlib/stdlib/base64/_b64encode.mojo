@@ -24,11 +24,10 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from collections import InlineArray
 from math import iota
 from sys import llvm_intrinsic
 
-from memory import Span, UnsafePointer, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 
 from utils import IndexList
 
@@ -39,7 +38,7 @@ fn _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
     alias mask = iota[DType.uint8, simd_width]()
-    return mask < UInt8(nb_value_to_load)
+    return mask.lt(UInt8(nb_value_to_load))
 
 
 # |                |---- byte 2 ----|---- byte 1 ----|---- byte 0 ----|
@@ -113,7 +112,7 @@ alias END_SECOND_RANGE = 51
 fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
-    var offset_indices = (abcd <= END_FIRST_RANGE).select(13, target_indices)
+    var offset_indices = abcd.le(END_FIRST_RANGE).select(13, target_indices)
     return abcd + OFFSETS._dynamic_shuffle(offset_indices)
 
 
@@ -197,7 +196,7 @@ fn load_incomplete_simd[
 
 @no_inline
 fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
-    alias simd_width = sys.simdbytewidth()
+    alias simd_width = sys.simd_byte_width()
     alias input_simd_width = simd_width * 3 // 4
     alias equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
@@ -248,10 +247,10 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
             result_vector, equal_vector
         )
 
-        var nb_of_elements_to_store = _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
-            simd_width
-        ](
-            nb_of_elements_to_load
+        var nb_of_elements_to_store = (
+            _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
+                simd_width
+            ](nb_of_elements_to_load)
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
@@ -270,7 +269,7 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
     @parameter
     if width == v.size:
-        return rebind[SIMD[v.dtype, width]](v)
+        return v._refine[size=width]()
     return _repeat_until[width](v.join(v))
 
 

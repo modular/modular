@@ -58,6 +58,26 @@ case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
 
+## Running linters
+
+A few linters and formatters can be run easily from bazel.
+
+To just see the output of the linters, you can run:
+
+```sh
+./bazelw run //:lint
+```
+
+To automatically apply the fixes (where possible), you can run:
+
+```sh
+./bazelw run //:format
+```
+
+See the `lint` and `format` targets defined in
+[bazel/lint/BUILD.bazel](https://github.com/modular/modular/blob/main/bazel/lint/BUILD.bazel)
+to see what the current tools being run are.
+
 ## Using a different Mojo version
 
 The Mojo version in
@@ -191,4 +211,31 @@ added to make sure tests are run correctly internally.
 
 ```bzl
 tags = ["gpu"],
+```
+
+### Adding support for a new GPU
+
+In order to run GPU tests in this repo, Mojo must support the GPU
+architecture, and bazel must be configured to detect the GPU. To add a
+new GPU to bazel, update the `mojo.gpu_toolchains` section of the
+[`common.MODULE.bazel`](https://github.com/modular/modular/blob/main/bazel/common.MODULE.bazel)
+file.
+
+First update `gpu_mapping` to map from the output of `nvidia-smi` to a
+human readable name of the GPU. For example:
+
+```sh
+% nvidia-smi --query-gpu=gpu_name --format=csv,noheader
+NVIDIA A100-SXM4-80GB
+```
+
+In this case when the output contains `A100` we map it to `a100`. Then
+update the `supported_gpus` dictionary where the key is the human
+readable name, and the value is the `--target-accelerator` value passed
+to Mojo compiles. You can fetch this value with `gpu-query` which ships
+as part of `pip install modular`:
+
+```sh
+% gpu-query --target-accelerator
+nvidia:80
 ```

@@ -1,0 +1,250 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to deploy MAX on an EC2 instance.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: g5.4xlarge
+    AllowedValues:
+      - g5.4xlarge
+    Description: EC2 instance type for the MAX deployment.
+
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-02769e6d1f6a88067
+    Description: AMI ID for Deep Learning Base OSS Nvidia Driver AMI (Amazon Linux 2) in us-east-1.
+
+  HuggingFaceHubToken:
+    Type: String
+    NoEcho: true
+    Description: HuggingFace Hub API Token for accessing models.
+
+  HuggingFaceRepoId:
+    Type: String
+    Default: modularai/Llama-3.1-8B-Instruct-GGUF
+    Description: Hugging Face Repository ID for the Model.
+
+Resources:
+  MaxServeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref MaxServeInstanceRole
+
+  MaxServeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ec2/${AWS::StackName}-logs:*'
+
+  MaxServeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/ec2/${AWS::StackName}-logs'
+      RetentionInDays: 1
+
+  MaxServeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access on port 80 and SSH on port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  MaxServeInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SecurityGroupIds:
+        - !Ref MaxServeSecurityGroup
+      IamInstanceProfile: !Ref MaxServeInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 100
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        'Fn::Base64': !Sub |
+          #!/bin/bash
+          set -xe  # Enable detailed logging
+          # Redirect all output to a log file for debugging
+          exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+          echo "Starting user data script execution..."
+
+          # Install CloudWatch agent first
+          echo "Installing CloudWatch agent..."
+          sudo yum install -y amazon-cloudwatch-agent
+
+          # Create log files and directory with proper permissions
+          sudo mkdir -p /var/log/max-serve
+          sudo touch /var/log/max-serve/container.log
+          sudo chmod 644 /var/log/max-serve/container.log
+          sudo chown root:root /var/log/max-serve/container.log
+
+          # Configure CloudWatch agent early
+          cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+          {
+            "agent": {
+              "metrics_collection_interval": 60,
+              "run_as_user": "root"
+            },
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    {
+                      "file_path": "/var/log/messages",
+                      "log_group_name": "/aws/ec2/${AWS::StackName}-logs",
+                      "log_stream_name": "instance-logs",
+                      "timestamp_format": "%b %d %H:%M:%S",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/max-serve/container.log",
+                      "log_group_name": "/aws/ec2/${AWS::StackName}-logs",
+                      "log_stream_name": "instance-logs",
+                      "timestamp_format": "%Y-%m-%d %H:%M:%S",
+                      "timezone": "UTC"
+                    },
+                    {
+                      "file_path": "/var/log/user-data.log",
+                      "log_group_name": "/aws/ec2/${AWS::StackName}-logs",
+                      "log_stream_name": "instance-logs",
+                      "timestamp_format": "%Y-%m-%d %H:%M:%S",
+                      "timezone": "UTC"
+                    }
+                  ]
+                }
+              },
+              "force_flush_interval": 15
+            }
+          }
+          EOF
+
+          # Start the CloudWatch agent
+          sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+          sudo systemctl enable amazon-cloudwatch-agent
+          sudo systemctl start amazon-cloudwatch-agent
+
+          # Verify CloudWatch agent is running
+          sudo systemctl status amazon-cloudwatch-agent
+
+          # Continue with Docker installation and rest of the setup
+          echo "Installing docker..."
+          sudo yum update -y
+          sudo yum install -y docker aws-cfn-bootstrap
+          sudo systemctl enable docker
+          sudo systemctl start docker
+          sudo usermod -a -G docker ec2-user
+
+          # Verify docker is running
+          echo "Checking docker status..."
+          sudo systemctl status docker
+          docker --version
+
+          # Install NVIDIA Container Toolkit
+          echo "Installing NVIDIA Container Toolkit..."
+          distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+          curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.repo | sudo tee /etc/yum.repos.d/nvidia-docker.repo
+          sudo yum clean expire-cache
+          sudo yum install -y nvidia-docker2
+          sudo systemctl restart docker
+
+          # Verify NVIDIA docker installation
+          echo "Checking NVIDIA docker installation..."
+          nvidia-smi
+          docker info | grep -i nvidia
+
+          # Pull and run the MAX Serve container
+          echo "Pulling and running MAX Serve container..."
+          # Add error checking for docker pull
+          if ! sudo docker pull modular/max-nvidia-full:latest; then
+            echo "Failed to pull container image"
+            /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
+            exit 1
+          fi
+
+          sudo docker images
+
+          # Start the container and capture logs
+          CONTAINER_ID=$(sudo docker run -d \
+            --env "HF_TOKEN=${HuggingFaceHubToken}" \
+            --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
+            -v /home/ec2-user/.cache/huggingface:/root/.cache/huggingface \
+            --gpus 1 \
+            -p 80:8000 \
+            --ipc=host \
+            modular/max-nvidia-full:latest \
+            --model-path ${HuggingFaceRepoId})
+
+          if [ $? -ne 0 ]; then
+            echo "Failed to start container"
+            /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
+            exit 1
+          fi
+
+          # Start following container logs in the background
+          sudo docker logs -f $CONTAINER_ID > /var/log/max-serve/container.log 2>&1 &
+
+          # Verify container is running
+          echo "Checking container status..."
+          if ! sudo docker ps | grep max-nvidia-full; then
+            echo "Container is not running"
+            /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
+            exit 1
+          fi
+
+Outputs:
+  InstanceId:
+    Description: Instance ID of the EC2 instance
+    Value: !Ref MaxServeInstance
+
+  PublicDNS:
+    Description: Public DNS of the EC2 instance
+    Value: !GetAtt MaxServeInstance.PublicDnsName

@@ -147,7 +147,7 @@ def run_repository(repo_name: str) -> None:
     return
 
 
-def main():
+def main() -> None:
     repos = list_repositories()
     console = Console()
     if not repos:

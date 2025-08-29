@@ -1,9 +1,0 @@
-[client]
-showSidebarNavigation = false
-
-[server]
-runOnSave = true
-
-[theme]
-base = "dark"
-primaryColor = "#8799ff"

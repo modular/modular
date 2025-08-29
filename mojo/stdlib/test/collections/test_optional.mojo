@@ -10,32 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 
 from testing import *
 
 
 def test_basic():
+    # Assign to vars to remove compiler warnings.
+    var false = False
+    var true = True
+
     var a = Optional(1)
     var b = Optional[Int](None)
 
     assert_true(a)
     assert_false(b)
 
-    assert_true(a and True)
-    assert_true(True and a)
-    assert_false(a and False)
+    assert_true(a and true)
+    assert_true(true and a)
+    assert_false(a and false)
 
-    assert_false(b and True)
-    assert_false(b and False)
+    assert_false(b and true)
+    assert_false(b and false)
 
-    assert_true(a or True)
-    assert_true(a or False)
+    assert_true(a or true)
+    assert_true(a or false)
 
-    assert_true(b or True)
-    assert_false(b or False)
+    assert_true(b or true)
+    assert_false(b or false)
 
     assert_equal(1, a.value())
 
@@ -61,6 +64,10 @@ def test_basic():
 
 
 def test_optional_reg_basic():
+    # Assign to vars to remove compiler warnings
+    var false = False
+    var true = True
+
     var val: OptionalReg[Int] = None
     assert_false(val.__bool__())
 
@@ -72,8 +79,8 @@ def test_optional_reg_basic():
     assert_true(val or False)
     assert_true(val and True)
 
-    assert_true(False or val)
-    assert_true(True and val)
+    assert_true(false or val)
+    assert_true(true and val)
 
     assert_equal(OptionalReg[Int]().or_else(33), 33)
     assert_equal(OptionalReg[Int](42).or_else(33), 42)
@@ -124,7 +131,7 @@ def test_optional_take_mutates():
 
 
 def test_optional_explicit_copy():
-    var v1 = Optional[String](String("test"))
+    var v1 = Optional[String]("test")
 
     var v2 = v1.copy()
 
@@ -158,7 +165,7 @@ def test_optional_equality():
 
 
 def test_optional_copied():
-    var data = String("foo")
+    var data = "foo"
 
     var opt_ref: Optional[Pointer[String, __origin_of(data)]] = Optional(
         Pointer(to=data)
@@ -167,7 +174,7 @@ def test_optional_copied():
     # Copy the optional Pointer value.
     var opt_owned: Optional[String] = opt_ref.copied()
 
-    assert_equal(opt_owned.value(), String("foo"))
+    assert_equal(opt_owned.value(), "foo")
 
 
 def test_optional_unwrap():
@@ -177,6 +184,13 @@ def test_optional_unwrap():
     a = Optional[Int](None)
     with assert_raises(contains="on empty Optional"):
         _ = a[]
+
+
+def test_optional_repr_wrap():
+    var o = Optional(10)
+    assert_equal(repr(o), "Optional(10)")
+    o = None
+    assert_equal(repr(o), "Optional(None)")
 
 
 def main():
@@ -192,3 +206,4 @@ def main():
     test_optional_equality()
     test_optional_copied()
     test_optional_unwrap()
+    test_optional_repr_wrap()

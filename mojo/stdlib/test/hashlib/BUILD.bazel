@@ -1,0 +1,31 @@
+load("//bazel:api.bzl", "mojo_test")
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]
+
+# Issue #31111 -- run this test with -O0 also.
+mojo_test(
+    name = "test_hash_O0",
+    srcs = ["test_hash.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+        "-O0",
+    ],
+    deps = [
+        "@mojo//:stdlib",
+    ],
+)

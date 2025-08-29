@@ -21,21 +21,16 @@ from collections import Deque
 ```
 """
 
-from collections import Optional
 
 from bit import next_power_of_two
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Deque
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable & Movable](
-    Boolable,
-    ExplicitlyCopyable,
-    Movable,
-    Sized,
+struct Deque[ElementType: ExplicitlyCopyable & Movable](
+    Boolable, ExplicitlyCopyable, Movable, Sized
 ):
     """Implements a double-ended queue.
 
@@ -90,7 +85,7 @@ struct Deque[ElementType: Copyable & Movable](
     fn __init__(
         out self,
         *,
-        owned elements: Optional[List[ElementType]] = None,
+        var elements: Optional[List[ElementType]] = None,
         capacity: Int = Self.default_capacity,
         min_capacity: Int = Self.default_capacity,
         maxlen: Int = -1,
@@ -135,15 +130,16 @@ struct Deque[ElementType: Copyable & Movable](
         if elements is not None:
             self.extend(elements.value())
 
-    fn __init__(out self, owned *values: ElementType):
+    fn __init__(out self, var *values: ElementType, __list_literal__: () = ()):
         """Constructs a deque from the given values.
 
         Args:
             values: The values to populate the deque with.
+            __list_literal__: Tell Mojo to use this method for list literals.
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, owned elements: VariadicListMem[ElementType, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:
@@ -158,13 +154,14 @@ struct Deque[ElementType: Copyable & Movable](
 
         self = Self(capacity=capacity)
 
-        for i in range(args_length):
-            dst = self._data + i
-            UnsafePointer(to=elements[i]).move_pointee_into(dst)
+        # Transfer all of the elements into the deque.
+        @parameter
+        fn init_elt(idx: Int, var elt: ElementType):
+            (self._data + idx).init_pointee_move(elt^)
 
-        # Do not destroy the elements when their backing storage goes away.
-        __disable_del elements
+        elements^.consume_elements[init_elt]()
 
+        # Remember how many elements we have.
         self._tail = args_length
 
     fn copy(self) -> Self:
@@ -187,7 +184,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         return copy^
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves data of an existing deque into a new one.
 
         Args:
@@ -201,7 +198,7 @@ struct Deque[ElementType: Copyable & Movable](
         self._maxlen = existing._maxlen
         self._shrink = existing._shrink
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
@@ -223,7 +220,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         new = self.copy()
         for element in other:
-            new.append(element[])
+            new.append(element.copy())
         return new^
 
     fn __iadd__(mut self, other: Self):
@@ -233,7 +230,7 @@ struct Deque[ElementType: Copyable & Movable](
             other: Deque whose elements will be appended to self.
         """
         for element in other:
-            self.append(element[])
+            self.append(element.copy())
 
     fn __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
@@ -254,7 +251,7 @@ struct Deque[ElementType: Copyable & Movable](
         new = self.copy()
         for _ in range(n - 1):
             for element in self:
-                new.append(element[])
+                new.append(element.copy())
         return new^
 
     fn __imul__(mut self, n: Int):
@@ -270,10 +267,10 @@ struct Deque[ElementType: Copyable & Movable](
         orig = self.copy()
         for _ in range(n - 1):
             for element in orig:
-                self.append(element[])
+                self.append(element.copy())
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are equal.
 
@@ -298,7 +295,7 @@ struct Deque[ElementType: Copyable & Movable](
         return True
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], other: Deque[T]) -> Bool:
         """Checks if two deques are not equal.
 
@@ -315,7 +312,7 @@ struct Deque[ElementType: Copyable & Movable](
         return not (self == other)
 
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], value: T) -> Bool:
         """Verify if a given value is present in the deque.
 
@@ -404,15 +401,13 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn write_to[
-        T: Representable & Copyable & Movable,
-        WriterType: Writer,
-    ](self: Deque[T], mut writer: WriterType):
+        T: Representable & ExplicitlyCopyable & Movable,
+    ](self: Deque[T], mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
         Parameters:
             T: The type of the Deque elements.
                 Must implement the trait `Representable`.
-            WriterType: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -427,7 +422,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn __str__[
-        T: Representable & Copyable & Movable, //
+        T: Representable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -455,7 +450,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     @no_inline
     fn __repr__[
-        T: Representable & Copyable & Movable, //
+        T: Representable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T]) -> String:
         """Returns a string representation of a `Deque`.
 
@@ -483,7 +478,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn append(mut self, owned value: ElementType):
+    fn append(mut self, var value: ElementType):
         """Appends a value to the right side of the deque.
 
         Args:
@@ -500,7 +495,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn appendleft(mut self, owned value: ElementType):
+    fn appendleft(mut self, var value: ElementType):
         """Appends a value to the left side of the deque.
 
         Args:
@@ -532,7 +527,7 @@ struct Deque[ElementType: Copyable & Movable](
         self._tail = 0
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](self: Deque[T], value: T) -> Int:
         """Counts the number of occurrences of a `value` in the deque.
 
@@ -553,14 +548,14 @@ struct Deque[ElementType: Copyable & Movable](
                 count += 1
         return count
 
-    fn extend(mut self, owned values: List[ElementType]):
+    fn extend(mut self, var values: List[ElementType]):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
             values: List whose elements will be added at the right side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements
@@ -585,7 +580,7 @@ struct Deque[ElementType: Copyable & Movable](
             (src + i).move_pointee_into(self._data + self._tail)
             self._tail = self._physical_index(self._tail + 1)
 
-    fn extendleft(mut self, owned values: List[ElementType]):
+    fn extendleft(mut self, var values: List[ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -593,8 +588,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             values: List whose elements will be added at the left side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements
@@ -620,7 +615,7 @@ struct Deque[ElementType: Copyable & Movable](
             (src + i).move_pointee_into(self._data + self._head)
 
     fn index[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](
         self: Deque[T],
         value: T,
@@ -668,7 +663,7 @@ struct Deque[ElementType: Copyable & Movable](
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    fn insert(mut self, idx: Int, owned value: ElementType) raises:
+    fn insert(mut self, idx: Int, var value: ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -714,7 +709,7 @@ struct Deque[ElementType: Copyable & Movable](
             self._realloc(self._capacity << 1)
 
     fn remove[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ExplicitlyCopyable & Movable, //
     ](mut self: Deque[T], value: T) raises:
         """Removes the first occurrence of the `value`.
 
@@ -770,7 +765,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._physical_index(self._tail - 1))[]
+        return (self._data + self._physical_index(self._tail - 1))[].copy()
 
     fn peekleft(self) raises -> ElementType:
         """Inspect the first (leftmost) element of the deque without removing it.
@@ -784,7 +779,7 @@ struct Deque[ElementType: Copyable & Movable](
         if self._head == self._tail:
             raise "IndexError: Deque is empty"
 
-        return (self._data + self._head)[]
+        return (self._data + self._head)[].copy()
 
     fn pop(mut self) raises -> ElementType:
         """Removes and returns the element from the right side of the deque.
@@ -808,7 +803,7 @@ struct Deque[ElementType: Copyable & Movable](
         ):
             self._realloc(self._capacity >> 1)
 
-        return element
+        return element^
 
     fn popleft(mut self) raises -> ElementType:
         """Removes and returns the element from the left side of the deque.
@@ -832,7 +827,7 @@ struct Deque[ElementType: Copyable & Movable](
         ):
             self._realloc(self._capacity >> 1)
 
-        return element
+        return element^
 
     fn reverse(mut self):
         """Reverses the elements of the deque in-place."""
@@ -985,44 +980,45 @@ struct Deque[ElementType: Copyable & Movable](
 
 @fieldwise_init
 struct _DequeIter[
-    deque_mutability: Bool, //,
-    ElementType: Copyable & Movable,
-    deque_lifetime: Origin[deque_mutability],
+    mut: Bool, //,
+    T: ExplicitlyCopyable & Movable,
+    origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
-        deque_mutability: Whether the reference to the deque is mutable.
-        ElementType: The type of the elements in the deque.
-        deque_lifetime: The lifetime of the Deque.
+        mut: Whether the reference to the deque is mutable.
+        T: The type of the elements in the deque.
+        origin: The lifetime of the Deque.
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias deque_type = Deque[ElementType]
+    alias Element = T
 
     var index: Int
-    var src: Pointer[Self.deque_type, deque_lifetime]
+    var src: Pointer[Deque[T], origin]
 
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[ElementType, deque_lifetime]):
-        @parameter
-        if forward:
-            p = Pointer(to=self.src[][self.index])
-            self.index += 1
-        else:
-            self.index -= 1
-            p = Pointer(to=self.src[][self.index])
-
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src[]) - self.index
-        else:
-            return self.index
-
     @always_inline
     fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
+        @parameter
+        if forward:
+            return self.index < len(self.src[])
+        else:
+            return self.index > 0
+
+    fn __next_ref__(mut self) -> ref [origin] Self.Element:
+        @parameter
+        if forward:
+            var idx = self.index
+            self.index += 1
+            return self.src[][idx]
+        else:
+            self.index -= 1
+            return self.src[][self.index]
+
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__().copy()

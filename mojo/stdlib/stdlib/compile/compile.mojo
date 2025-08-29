@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Provides utilities for compiling and inspecting Mojo code.
 
-This module contains functionality for compiling Mojo functions and examining their
-assembly, LLVM IR, or object code output. It is particularly useful for kernel
-engineers who want to inspect the low-level implementation details of specific
-functions without dealing with entire files or manual invocation of compilation
-tools.
+This module contains functionality for compiling Mojo functions and examining
+their assembly, LLVM IR, or object code output. It is particularly useful for
+kernel engineers who want to inspect the low-level implementation details of
+specific functions without dealing with entire files or manual invocation of
+compilation tools.
 
 Key features:
 - Compile individual functions to assembly, LLVM IR, or object code
@@ -38,14 +38,10 @@ print(info)
 ```
 """
 
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 from os import PathLike
 from pathlib import Path
-from sys.info import _current_target
-
-from memory import UnsafePointer
-
-from utils import Writer
+from sys.info import _current_target, _TargetType, CompilationTarget
 
 from .reflection import get_linkage_name
 
@@ -86,10 +82,10 @@ struct _PopulateInfo:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Info[
+struct CompiledFunctionInfo[
     func_type: AnyTrivialRegType,
     func: func_type,
-    target: __mlir_type.`!kgen.target`,
+    target: _TargetType,
 ](Stringable, Writable):
     """Contains compilation information and results for a function.
 
@@ -117,9 +113,9 @@ struct Info[
     var num_captures: Int
     """Number of variables captured by the function closure."""
 
-    alias populate = rebind[fn (UnsafePointer[NoneType]) capturing -> None](
+    alias populate = rebind[fn (OpaquePointer) capturing -> None](
         __mlir_attr[
-            `#kgen.param.expr<compile_offload_closure,`,
+            `#kgen.compile_offload_closure<`,
             target,
             `,`,
             func,
@@ -127,14 +123,12 @@ struct Info[
             _PopulateInfo,
         ].populate
     )
-    """Function pointer to populate captured variables in the function closure."""
+    """Function pointer to populate captured variables in the function closure.
+    """
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the assembly/IR to a writer.
-
-        Parameters:
-            W: Type that implements the Writer interface for writing data.
 
         Args:
             writer: Writer object to write the assembly to.
@@ -154,7 +148,8 @@ struct Info[
         """Writes the assembly/IR to a file.
 
         Parameters:
-            path_like: Type that implements the `PathLike` interface for file path representation.
+            path_like: Type that implements the `PathLike` interface for file
+                path representation.
 
         Args:
             path: Path to write the file to.
@@ -212,14 +207,17 @@ fn compile_info[
     /,
     *,
     emission_kind: StaticString = "asm",
-    compile_options: StaticString = "",
-    target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> Info[func_type, func, target]:
+    target: _TargetType = _current_target(),
+    compile_options: StaticString = CompilationTarget[
+        target
+    ].default_compile_options(),
+]() -> CompiledFunctionInfo[func_type, func, target]:
     """Compiles a function and returns detailed compilation information.
 
     This function takes a Mojo function and compiles it, providing access to the
-    generated assembly code, linkage information, and other compilation artifacts.
-    It can be used for inspection, debugging, and low-level optimization.
+    generated assembly code, linkage information, and other compilation
+    artifacts. It can be used for inspection, debugging, and low-level
+    optimization.
 
     Parameters:
         func_type: Type of the function to compile. Must be a trivially-copyable
@@ -230,12 +228,12 @@ fn compile_info[
             - "llvm": Unoptimized LLVM IR.
             - "llvm-opt": Optimized LLVM IR.
             - "object": Object code.
-        compile_options: Additional compiler flags and options as a string.
         target: The target architecture to compile for. Defaults to current
             architecture.
+        compile_options: Additional compiler flags and options as a string.
 
     Returns:
-        An `Info` struct containing:
+        A `CompiledFunctionInfo` struct containing:
         - asm: The generated code in the requested format
         - linkage_name: The mangled function name for linking
         - module_hash: A unique hash of the compiled module
@@ -268,10 +266,9 @@ fn compile_info[
         _type=_Info,
     ]()
 
-    var result = Info[func_type, func, target](
-        asm=offload.asm,
+    return CompiledFunctionInfo[func_type, func, target](
+        asm=StaticString(offload.asm),
         function_name=get_linkage_name[target, func](),
-        module_name=offload.module_name,
+        module_name=StaticString(offload.module_name),
         num_captures=offload.num_captures,
     )
-    return result

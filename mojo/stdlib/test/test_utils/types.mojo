@@ -29,7 +29,6 @@
 
 from os import abort
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly
@@ -47,7 +46,7 @@ struct MoveOnly[T: Movable](Movable):
     """Test data payload."""
 
     @implicit
-    fn __init__(out self, owned i: T):
+    fn __init__(out self, var i: T):
         """Construct a MoveOnly providing the payload data.
 
         Args:
@@ -55,7 +54,7 @@ struct MoveOnly[T: Movable](Movable):
         """
         self.data = i^
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         """Move construct a MoveOnly from an existing variable.
 
         Args:
@@ -80,12 +79,12 @@ struct ObservableMoveOnly(Movable):
         self.value = value
         self.actions[0].append("__init__")
 
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.actions = existing.actions
         self.value = existing.value
         self.actions[0].append("__moveinit__")
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.actions[0].append("__del__")
 
 
@@ -122,7 +121,7 @@ struct ImplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, *, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.value = other.value
         self.copy_count = other.copy_count + 1
 
@@ -132,7 +131,7 @@ struct ImplicitCopyOnly(Copyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
+struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -140,19 +139,13 @@ struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
     fn __init__(out self):
         self.copy_count = 0
 
-    fn __init__(out self, *, other: Self):
-        self.copy_count = other.copy_count + 1
-
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.copy_count = existing.copy_count
 
     fn __copyinit__(out self, existing: Self):
         self.copy_count = existing.copy_count + 1
 
-    fn copy(self) -> Self:
-        return self
-
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("CopyCounter(")
         writer.write(String(self.copy_count))
         writer.write(")")
@@ -164,9 +157,7 @@ struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
 
 
 struct MoveCounter[T: ExplicitlyCopyable & Movable](
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
+    Copyable, ExplicitlyCopyable, Movable
 ):
     """Counts the number of moves performed on a value."""
 
@@ -174,24 +165,13 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
     var move_count: Int
 
     @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Construct a new instance of this type. This initial move is not counted.
         """
         self.value = value^
         self.move_count = 0
 
-    # TODO: This type should not be ExplicitlyCopyable, but has to be to satisfy
-    #       CollectionElementNew at the moment.
-    fn __init__(out self, *, other: Self):
-        """Explicitly copy the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self.value = other.value.copy()
-        self.move_count = other.move_count
-
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         self.value = existing.value^
         self.move_count = existing.move_count + 1
 
@@ -200,10 +180,6 @@ struct MoveCounter[T: ExplicitlyCopyable & Movable](
     fn __copyinit__(out self, existing: Self):
         self.value = existing.value.copy()
         self.move_count = existing.move_count
-
-    fn copy(self, out existing: Self):
-        existing = Self(self.value.copy())
-        existing.move_count = self.move_count
 
 
 # ===----------------------------------------------------------------------=== #
@@ -223,10 +199,7 @@ struct MoveCopyCounter(Copyable, Movable):
         self.copied = other.copied + 1
         self.moved = other.moved
 
-    fn copy(self) -> Self:
-        return self
-
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
 
@@ -237,19 +210,12 @@ struct MoveCopyCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder(ExplicitlyCopyable, Copyable, Movable):
+struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
-    fn __init__(out self, *, other: Self):
-        self.value = other.value
-        self.destructor_counter = other.destructor_counter
-
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.destructor_counter[].append(self.value)
-
-    fn copy(self) -> Self:
-        return DelRecorder(other=self)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -263,10 +229,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 ):
     var target: UnsafePointer[Bool, origin=origin]
 
-    fn __init__(out self, *, other: Self):
-        self = other
-
-    fn __del__(owned self):
+    fn __del__(deinit self):
         self.target.init_pointee_move(True)
 
 
@@ -274,32 +237,17 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
-var g_dtor_count: Int = 0
 
-
+@fieldwise_init
 struct DelCounter(Copyable, Movable, Writable):
-    # NOTE: payload is required because LinkedList does not support zero sized structs.
-    var payload: Int
+    var counter: UnsafePointer[Int]
 
-    fn __init__(out self):
-        self.payload = 0
+    fn __del__(deinit self):
+        self.counter[] += 1
 
-    fn __init__(out self, *, other: Self):
-        self.payload = other.payload
-
-    fn __copyinit__(out self, existing: Self, /):
-        self.payload = existing.payload
-
-    fn __moveinit__(out self, owned existing: Self, /):
-        self.payload = existing.payload
-        existing.payload = 0
-
-    fn __del__(owned self):
-        g_dtor_count += 1
-
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("DelCounter(")
-        writer.write(String(g_dtor_count))
+        writer.write(String(self.counter[]))
         writer.write(")")
 
 
@@ -312,7 +260,7 @@ struct DelCounter(Copyable, Movable, Writable):
 struct AbortOnDel(Copyable, Movable):
     var value: Int
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         abort("We should never call the destructor of AbortOnDel")
 
 
@@ -325,10 +273,6 @@ struct AbortOnDel(Copyable, Movable):
 struct CopyCountedStruct(Copyable, Movable):
     var counter: CopyCounter
     var value: String
-
-    fn __init__(out self, *, other: Self):
-        self.counter = other.counter.copy()
-        self.value = other.value.copy()
 
     @implicit
     fn __init__(out self, value: String):
@@ -345,7 +289,3 @@ struct CopyCountedStruct(Copyable, Movable):
 struct AbortOnCopy(Copyable, ExplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         abort("We should never implicitly copy AbortOnCopy")
-
-    fn copy(self) -> Self:
-        abort("We should never explicitly copy AbortOnCopy")
-        return self

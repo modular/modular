@@ -11,28 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
 from sys import env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
-from internal_utils import update_bench_config
-from memory import UnsafePointer
+from internal_utils import update_bench_config_args
 from testing import assert_equal
 
 
 fn vec_func(
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid]
+    output[tid] = in0[tid] + in1[tid]
 
 
 @no_inline
@@ -58,7 +56,7 @@ fn bench_vec_add(
     @always_inline
     @parameter
     fn run_func() raises:
-        context.enqueue_function[vec_func](
+        context.enqueue_function_checked[vec_func, vec_func](
             in0_device,
             in1_device,
             out_device,
@@ -85,7 +83,7 @@ fn bench_vec_add(
     context.enqueue_copy(out_host, out_device)
 
     for i in range(length):
-        assert_equal(i + 2, out_host[i])
+        assert_equal(Scalar[dtype](i + 2), out_host[i])
 
     __ownership_keepalive(in0_device, in1_device, out_device)
 
@@ -97,7 +95,7 @@ fn bench_vec_add(
 def main():
     alias block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
-    update_bench_config(m)
+    update_bench_config_args(m)
 
     with DeviceContext() as ctx:
         bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)

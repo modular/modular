@@ -29,4 +29,5 @@ from .path import (
     split,
     split_extension,
     splitroot,
+    realpath,
 )

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections import Deque
 
@@ -291,7 +290,7 @@ fn test_impl_appendleft_with_maxlen() raises:
 
 fn test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
-    lst = List[Int](0, 1, 2)
+    lst = [0, 1, 2]
 
     q.extend(lst)
     assert_equal(q._head, 0)
@@ -973,14 +972,14 @@ fn test_iter() raises:
 
     i = 0
     for e in q:
-        assert_equal(e[], q[i])
+        assert_equal(e, q[i])
         i += 1
     assert_equal(i, len(q))
 
-    for e in q:
-        if e[] == 1:
-            e[] = 4
-            assert_equal(e[], 4)
+    for ref e in q:
+        if e == 1:
+            e = 4
+            assert_equal(e, 4)
     assert_equal(q[0], 4)
 
 
@@ -994,20 +993,20 @@ fn test_iter_with_list() raises:
 
     i = 0
     for e in q:
-        assert_equal(e[], q[i])
+        assert_equal(e, q[i])
         i += 1
     assert_equal(i, len(q))
 
-    for e in q:
-        if e[] == lst1:
-            e[][0] = 7
-            assert_equal(e[], [7, 2, 3])
+    for ref e in q:
+        if e == lst1:
+            e[0] = 7
+            assert_equal(e, [7, 2, 3])
     assert_equal(q[0], [7, 2, 3])
 
-    for e in q:
-        if e[] == lst2:
-            e[] = [1, 2, 3]
-            assert_equal(e[], [1, 2, 3])
+    for ref e in q:
+        if e == lst2:
+            e = [1, 2, 3]
+            assert_equal(e, [1, 2, 3])
     assert_equal(q[1], [1, 2, 3])
 
 
@@ -1017,7 +1016,7 @@ fn test_reversed_iter() raises:
     i = 0
     for e in reversed(q):
         i -= 1
-        assert_equal(e[], q[i])
+        assert_equal(e, q[i])
     assert_equal(-i, len(q))
 
 
@@ -1031,6 +1030,27 @@ fn test_str_and_repr() raises:
 
     assert_equal(s.__str__(), "Deque('a', 'b', 'c')")
     assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")
+
+
+def test_deque_literal():
+    var q: Deque[Int] = [1, 2, 3]
+    assert_equal(3, len(q))
+    assert_equal(1, q[0])
+    assert_equal(2, q[1])
+    assert_equal(3, q[2])
+
+    var q2: Deque[Float64] = [1, 2.5]
+    assert_equal(2, len(q2))
+    assert_equal(1.0, q2[0])
+    assert_equal(2.5, q2[1])
+
+    var q3: Deque[Int] = []
+    assert_equal(0, len(q3))
+
+
+def test_repr_wrap():
+    var s = Deque[StaticString]("a", "b", "c")
+    assert_equal(repr(s), "Deque('a', 'b', 'c')")
 
 
 # ===-------------------------------------------------------------------===#
@@ -1083,3 +1103,5 @@ def main():
     test_iter_with_list()
     test_reversed_iter()
     test_str_and_repr()
+    test_deque_literal()
+    test_repr_wrap()

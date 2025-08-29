@@ -13,11 +13,15 @@
 # mypy: disable-error-code="import-not-found"
 """Speculative Decoding Text Generation Pipeline"""
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Tensor, load_devices, scan_available_devices
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -28,15 +32,16 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import (
-    InputContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
+from max.interfaces import (
+    GenerationStatus,
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -48,14 +53,89 @@ from .pipeline import (
     PipelineModel,
     upper_bounded_default,
 )
-from .sampling import rejection_sampler, token_sampler
-
-T = TypeVar("T", bound=InputContext)
+from .ragged_token_merger import ragged_token_merger
+from .sampling import rejection_sampler_with_residuals, token_sampler
 
 logger = logging.getLogger("max.pipelines")
 
 
-class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
+class SpeculativeDecodingMetrics:
+    """Metrics tracker for speculative decoding performance."""
+
+    def __init__(self) -> None:
+        """Initialize metrics counters."""
+        self.bonus_tokens_used = 0
+        self.draft_tokens_accepted = 0
+        self.draft_tokens_generated = 0
+        self.total_acceptance_lengths = 0
+        self.num_generations = 0
+
+    def update(
+        self,
+        draft_tokens_generated: int,
+        draft_tokens_accepted: int,
+        bonus_tokens_used: int,
+        acceptance_lengths: list[int],
+    ) -> None:
+        """Update metrics with results from a batch.
+
+        Args:
+            draft_tokens_generated: Total draft tokens generated in this batch
+            draft_tokens_accepted: Total draft tokens accepted in this batch
+            bonus_tokens_used: Number of bonus tokens used in this batch
+            acceptance_lengths: List of acceptance lengths for each sequence in batch
+        """
+        self.draft_tokens_generated += draft_tokens_generated
+        self.draft_tokens_accepted += draft_tokens_accepted
+        self.bonus_tokens_used += bonus_tokens_used
+        self.total_acceptance_lengths += sum(acceptance_lengths)
+        self.num_generations += len(acceptance_lengths)
+
+    def get_stats(self) -> dict[str, float]:
+        """Get current statistics.
+
+        Returns:
+            Dictionary with acceptance rate and total counts
+        """
+        if self.draft_tokens_generated == 0:
+            return {
+                "acceptance_rate": 0.0,
+                "bonus_tokens_used": 0,
+                "draft_tokens_accepted": 0,
+                "draft_tokens_generated": 0,
+                "avg_acceptance_length": 0.0,
+            }
+
+        return {
+            "acceptance_rate": self.draft_tokens_accepted
+            / self.draft_tokens_generated,
+            "bonus_tokens_used": self.bonus_tokens_used,
+            "draft_tokens_accepted": self.draft_tokens_accepted,
+            "draft_tokens_generated": self.draft_tokens_generated,
+            "avg_acceptance_length": self.total_acceptance_lengths
+            / self.num_generations
+            if self.num_generations > 0
+            else 0.0,
+        }
+
+    def __str__(self) -> str:
+        """String representation of current metrics."""
+        stats = self.get_stats()
+        return (
+            f"SpeculativeDecodingMetrics("
+            f"acceptance_rate={stats['acceptance_rate']:.2%}, "
+            f"avg_acceptance_length={stats['avg_acceptance_length']:.2f}, "
+            f"bonus_tokens_used={stats['bonus_tokens_used']}, "
+            f"draft_tokens_accepted={stats['draft_tokens_accepted']}/{stats['draft_tokens_generated']})"
+        )
+
+
+class SpeculativeDecodingTextGenerationPipeline(
+    Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ]
+):
     """Generalized token generator pipeline with speculative decoding."""
 
     def __init__(
@@ -83,9 +163,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         )
 
         # Expand EOS
-        if pipeline_config.ignore_eos:
-            self._eos_token_id = set([])
-        elif "eos_token_id" in target_config:
+        if "eos_token_id" in target_config:
             eos_tokens = target_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
@@ -102,6 +180,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
                 logger.warning(msg)
                 self._eos_token_id = set([eos_token_id])
+        else:
+            self._eos_token_id = set([eos_token_id])
 
         target_hf_repo = (
             self.pipeline_config.model_config.huggingface_weight_repo
@@ -145,7 +225,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.target_devices,
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
-            adapter=weight_adapters.get(_target_weights_format, None),
+            adapter=weight_adapters.get(_target_weights_format),
             return_logits=ReturnLogits.VARIABLE,
         )
 
@@ -166,6 +246,30 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_config = (
             self.pipeline_config.draft_model_config.huggingface_config
         )
+
+        if hasattr(
+            self.pipeline_config.model_config.huggingface_config, "vocab_size"
+        ):
+            self.vocab_size = (
+                self.pipeline_config.model_config.huggingface_config.vocab_size
+            )
+        elif hasattr(
+            self.pipeline_config.model_config.huggingface_config, "text_config"
+        ):
+            if hasattr(
+                self.pipeline_config.model_config.huggingface_config.text_config,
+                "vocab_size",
+            ):
+                self.vocab_size = self.pipeline_config.model_config.huggingface_config.text_config.vocab_size
+            else:
+                raise ValueError(
+                    "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+                )
+
+        else:
+            raise ValueError(
+                "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+            )
 
         # Retrieve Encoding, and Files for Draft Model
         if self.pipeline_config.draft_model_config is None:
@@ -188,9 +292,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
 
         # Get weight files
-        weight_files = draft_hf_repo.files_for_encoding(
-            encoding=encodings[0],
-        )
+        weight_files = draft_hf_repo.files_for_encoding(encoding=encodings[0])
 
         if not weight_files:
             raise ValueError("could not identify weight_files for draft model.")
@@ -226,7 +328,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             devices=self.draft_devices,
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
-            adapter=weight_adapters.get(_draft_weights_format, None),
+            adapter=weight_adapters.get(_draft_weights_format),
             return_logits=ReturnLogits.LAST_TOKEN,
         )
 
@@ -243,11 +345,13 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Load rejection sampler
         self._rejection_sampler = target_session.load(
-            rejection_sampler(
-                top_k=self.pipeline_config.sampling_config.top_k,
-                device=DeviceRef.from_device(self.target_devices[0]),
+            rejection_sampler_with_residuals(
+                device=DeviceRef.from_device(self.target_devices[0])
             )
         )
+
+        # Initialize metrics tracker
+        self._metrics = SpeculativeDecodingMetrics()
 
         # Check that the max length for both models are the same
         draft_seq_len = self._draft_model.calculate_max_seq_len(
@@ -260,18 +364,23 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
             raise ValueError(msg)
 
+        self._ragged_token_merger = target_session.load(
+            ragged_token_merger(
+                device=DeviceRef.from_device(self.target_devices[0])
+            )
+        )
+
     @traced
     def calculate_num_steps(
         self,
         model: PipelineModel,
         huggingface_config: AutoConfig,
         num_steps: int,
-        context: T,
+        context: Union[TextContext, TextAndVisionContext],
         is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
-            self.pipeline_config,
-            huggingface_config=huggingface_config,
+            self.pipeline_config, huggingface_config=huggingface_config
         )
         if is_draft:
             max_seq_len -= 1
@@ -279,61 +388,92 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         if num_available_steps <= 0:
             raise ValueError(
-                f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
+                f"Request {context.request_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
             )
 
-        return (
-            num_steps
-            if num_available_steps > num_steps
-            else num_available_steps
-        )
+        return min(num_available_steps, num_steps)
 
     @traced
     def prepare_batch(
         self,
         model: PipelineModel,
-        batch: list[T],
+        batch: list[Union[TextContext, TextAndVisionContext]],
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
+        draft_inputs: Optional[ModelInputs] = None,
+        merged_draft_tokens: Optional[Tensor] = None,
+        merged_draft_offsets: Optional[Tensor] = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
-        for i, context in enumerate(batch):
-            if not model.kv_manager.contains(context.cache_seq_id):
-                model.kv_manager.external_claim([context.cache_seq_id])
+        for i, context in enumerate(batch):  # noqa: B007
+            if not model.kv_manager.contains(context.request_id):
+                model.kv_manager.external_claim(context.request_id)
 
             # Calculate num_steps.
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
 
-        kv_cache_inputs = model.kv_manager.fetch(
-            cast(list[InputContext], batch), num_steps
-        )
-
-        return (
-            model.prepare_initial_token_inputs(
-                context_batch=batch,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
+        kv_cache_inputs = model.kv_manager.fetch(batch, num_steps)
+        if is_draft:
+            return (
+                model.prepare_initial_token_inputs(
+                    context_batch=batch,
+                    kv_cache_inputs=KVCacheInputsSequence(
+                        kv_cache_inputs=kv_cache_inputs
+                    ),
+                    return_n_logits=return_n_logits,
                 ),
-                return_n_logits=return_n_logits,
-            ),
-            num_steps,
-        )
+                num_steps,
+            )
+        else:
+            assert merged_draft_tokens is not None
+            assert merged_draft_offsets is not None
+            assert draft_inputs is not None
+            kv_cache_updated_inputs: KVCacheInputs
+            if isinstance(kv_cache_inputs, Sequence):
+                kv_cache_updated_inputs = KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs,
+                )
+            else:
+                kv_cache_updated_inputs = kv_cache_inputs
+            draft_inputs.update(
+                tokens=merged_draft_tokens,
+                input_row_offsets=merged_draft_offsets,
+                signal_buffers=getattr(
+                    self._target_model, "signal_buffers", []
+                ),
+                kv_cache_inputs=kv_cache_updated_inputs,
+                return_n_logits=Tensor.from_numpy(
+                    np.array([return_n_logits], dtype=np.int64)
+                ),
+            )
+            return (draft_inputs, num_steps)
 
     @traced
     def sample_draft_logits(
         self,
+        batch: list[Union[TextContext, TextAndVisionContext]],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
+        top_k: Tensor,
+        max_k: Tensor,
+        temperature: Tensor,
+        top_p: Tensor,
+        seed: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        graph_inputs = [model_outputs.logits, prev_tokens, prev_logits]
-
-        if model_outputs.logit_offsets:
-            graph_inputs.append(model_outputs.logit_offsets)
-
+        graph_inputs = [
+            model_outputs.logits,
+            prev_tokens,
+            top_k,
+            max_k,
+            temperature,
+            top_p,
+            seed,
+            prev_logits,
+        ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
         assert isinstance(a, Tensor)
         assert isinstance(b, Tensor)
@@ -342,52 +482,78 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def generate_draft_tokens(
-        self, batch: list[T], num_steps: int
-    ) -> tuple[int, np.ndarray, Tensor]:
-        # Prepare the Batch
-        model_inputs, num_steps = self.prepare_batch(
-            self._draft_model,
-            batch,
-            num_steps,
-            return_n_logits=1,
-            is_draft=True,
+        self,
+        batch: list[Union[TextContext, TextAndVisionContext]],
+        num_steps: int,
+        model_inputs: ModelInputs,
+    ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
+        # Create sampling parameters once for the entire batch
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
+        top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+        temperature_np = np.array(
+            [context.sampling_params.temperature for context in batch],
+            dtype=np.float32,
+        )
+        temperature = Tensor.from_numpy(temperature_np).to(
+            self.draft_devices[0]
+        )
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in batch],
+            dtype=np.float32,
+        )
+        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        seed_np = np.array(
+            [context.sampling_params.seed for context in batch], dtype=np.uint64
+        )
+        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
 
         # Generate tensor for generated tokens.
         generated_tokens = Tensor.zeros(
-            (len(batch), 0),
-            dtype=DType.int64,
-            device=self.draft_devices[0],
+            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
 
         generated_logits = Tensor.zeros(
-            (len(batch), 0),
-            dtype=DType.float32,
-            device=self.draft_devices[0],
+            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
         )
 
         # Multi-step execution
         curr_step_inputs = model_inputs
+
+        # num_steps first so that slice indexing is contiguous
+        all_draft_logits = Tensor.zeros(
+            (num_steps, len(batch), self.vocab_size),
+            dtype=DType.float32,
+            device=self.draft_devices[0],
+        )
+
         for i in range(num_steps):
             # Execute the model and get next tokens.
             model_outputs = self._draft_model.execute(
-                model_inputs=curr_step_inputs,
+                model_inputs=curr_step_inputs
             )
+
+            all_draft_logits[i, :, :].inplace_copy_from(model_outputs.logits)
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
+                    batch,
                     model_outputs,
                     generated_tokens,
                     generated_logits,
+                    top_k,
+                    max_k,
+                    temperature,
+                    top_p,
+                    seed,
                 )
             )
             generated_tokens = new_generated_tokens
             generated_logits = new_generated_logits
-
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
 
             # Increment cache lengths.
             assert isinstance(
@@ -410,42 +576,29 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 new_tokens, curr_step_inputs
             )
 
-        # TODO: E2EOPT-129
-        # Copy to HOST
-        generated_tokens_host = generated_tokens.to_numpy()
-
-        # Ignore EOS, and update the Context objects via Jump Ahead
-        # This will require us to manage the context element pointers
-        # manually, at the end once we've accepted/rejected the
-        # necessary tokens.
-        for i, context in enumerate(batch):
-            for step in range(num_steps):
-                new_token = int(generated_tokens_host[i, step])
-                if context.ignore_eos:
-                    is_eos = False
-                elif new_token in self._eos_token_id:
-                    is_eos = True
-                else:
-                    is_eos = False
-
-                context.jump_ahead(
-                    new_token=int(generated_tokens_host[i, step]),
-                    is_eos=is_eos,
-                )
-
-        return num_steps, generated_tokens_host, generated_logits
+        # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
+        for i, context in enumerate(batch):  # noqa: B007
+            context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
+        return (
+            num_steps,
+            generated_tokens,
+            generated_logits,
+            model_inputs,
+            all_draft_logits,
+        )
 
     @traced
     def verify_draft_tokens_with_target_model(
         self,
-        context_batch: list[T],
+        draft_inputs: ModelInputs,
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
         num_draft_tokens_generated: int,
-        draft_tokens: np.ndarray,
+        draft_tokens: Tensor,
         draft_logits: Tensor,
-    ) -> tuple[Tensor, Tensor]:
-        for context in context_batch:
-            context.bump_token_indices(start_idx=-context._draft_offset)  # type: ignore
-
+        merged_draft_tokens: Tensor,
+        merged_draft_offsets: Tensor,
+        all_draft_logits: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
         # Prepare next token inputs for target model
         target_inputs, target_num_steps = self.prepare_batch(
             self._target_model,
@@ -453,150 +606,218 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             # I believe, num steps in this scenario is 1, as we are only
             # generating one token beyond the draft tokens.
             num_steps=1,
+            draft_inputs=draft_inputs,
             return_n_logits=num_draft_tokens_generated + 1,
+            is_draft=False,
+            merged_draft_tokens=merged_draft_tokens,
+            merged_draft_offsets=merged_draft_offsets,
         )
 
         # Generate target tokens.
-        target_outputs = self._target_model.execute(
-            model_inputs=target_inputs,
-        )
+        target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
-        first_rejected_tokens, sampled_target_tokens = self._rejection_sampler(
-            Tensor.from_numpy(draft_tokens).to(self.target_devices[0]),
-            draft_logits,
-            target_outputs.logits,
-            target_outputs.logit_offsets,
+        first_rejected_tokens, recovered_tokens, bonus_tokens = (
+            self._rejection_sampler(
+                draft_tokens,
+                draft_logits,
+                target_outputs.logits,
+                target_outputs.logit_offsets,
+                all_draft_logits,
+            )
         )
         assert isinstance(first_rejected_tokens, Tensor)
-        assert isinstance(sampled_target_tokens, Tensor)
+        assert isinstance(recovered_tokens, Tensor)
+        assert isinstance(bonus_tokens, Tensor)
 
-        return first_rejected_tokens, sampled_target_tokens
+        return first_rejected_tokens, recovered_tokens, bonus_tokens
 
     @traced
-    def next_token(
-        self, batch: dict[str, T], num_steps: int
-    ) -> dict[str, TextGenerationResponse]:
+    def execute(
+        self,
+        inputs: TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+    ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
-
-        # This is a bit of a hack, we should work out a better API for this.
-        # The draft offset tracks how far behind the draft model should be.
-        # We should bump the start_idx back up by this amount, to get back
-        # to where the target model should start.
-        for context in context_batch:
-            context.bump_token_indices(start_idx=+context._draft_offset)  # type: ignore
+        context_batch = list(inputs.batch.values())
 
         # Generate draft tokens.
-        # This updates the context_batch object in place.
-        num_draft_tokens_generated, draft_tokens, draft_logits = (
-            self.generate_draft_tokens(context_batch, num_steps)
+        draft_inputs, draft_num_steps = self.prepare_batch(
+            self._draft_model,
+            context_batch,
+            inputs.num_steps,
+            return_n_logits=1,
+            is_draft=True,
+        )
+        (
+            num_draft_tokens_generated,
+            draft_tokens,
+            draft_logits,
+            model_inputs,
+            all_draft_logits,
+        ) = self.generate_draft_tokens(
+            context_batch, draft_num_steps, draft_inputs
         )
 
+        # Merge draft tokens with target tokens
+        merged_tokens, merged_offsets = self._ragged_token_merger(
+            model_inputs.tokens,  # type: ignore
+            model_inputs.input_row_offsets,  # type: ignore
+            draft_tokens,
+        )
+
+        assert isinstance(merged_tokens, Tensor)
+        assert isinstance(merged_offsets, Tensor)
         # Verify draft tokens with target model
-        first_rejected_tokens, sampled_target_tokens = (
+        first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self.verify_draft_tokens_with_target_model(
+                draft_inputs,
                 context_batch,
                 num_draft_tokens_generated,
                 draft_tokens,
                 draft_logits,
+                merged_tokens,
+                merged_offsets,
+                all_draft_logits,
             )
         )
 
-        sampled_target_tokens_host = sampled_target_tokens.to_numpy()
-        res: dict[str, TextGenerationResponse] = {}
-        request_ids = list(batch.keys())
-        for idx, rejected_token_idx in enumerate(
-            first_rejected_tokens.to_numpy()[0]
-        ):
-            context = context_batch[idx]
+        self.update_contexts(
+            context_batch=context_batch,
+            first_rejected_tokens=first_rejected_tokens.to_numpy(),
+            recovered_tokens=recovered_tokens.to_numpy(),
+            bonus_tokens=bonus_tokens.to_numpy(),
+            draft_tokens=draft_tokens.to_numpy(),
+            num_draft_tokens_generated=num_draft_tokens_generated,
+        )
 
-            res[request_ids[idx]] = TextGenerationResponse(
-                [],
-                context.active_status,  # type: ignore
-            )
-
-            context = context_batch[idx]
-            rollback_count = num_draft_tokens_generated - rejected_token_idx
-
-            # Check if the new token is EOS
-            new_token = sampled_target_tokens_host[0][idx]
-            if context.ignore_eos:
-                is_eos = False
-            elif new_token in self._eos_token_id:
-                is_eos = True
-            else:
-                is_eos = False
-
-            # If we are rolling back
-            if rollback_count > 0:
-                # This should return the start_idx by rollback_count
-                context.rollback(rollback_count)
-
-                # Update the context with the new target token.
-                context.update(new_token, is_eos=is_eos)
-
-                # Reset Draft Offset to 0
-                context.set_draft_offset(idx=0)
-
-            # If we are not rolling back
-            else:
-                # Update the new token
-                context.update(new_token, is_eos=is_eos)
-
-                # Bump the start_idx back by 1
-                # This ensures the draft model picks up the last item in the sequence.
-                context.set_draft_offset(idx=-1)
-
-            res[request_ids[idx]].update_status(context.active_status)  # type: ignore
-
-            # Identify the Max Length
-            context_max_length = upper_bounded_default(
-                upper_bound=self._max_length,
-                default=context.max_length,
-            )
-
-            # TODO: This resets the context object for a new sequence.
-            # We may want to make this more explicit
-            for i, (token, log_probs) in enumerate(
-                context.outstanding_completion_tokens()
-            ):
-                # Break early if beyond max length
-                current_length = context.start_idx + 1
-
-                if current_length >= context_max_length:
-                    context.active_status = TextGenerationStatus.MAXIMUM_LENGTH  # type: ignore
-                    res[request_ids[idx]].update_status(context.active_status)  # type: ignore
-
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
-                    break
-                else:
-                    res[request_ids[idx]].append_token(
-                        TextResponse(token, log_probs)
-                    )
+        res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
+        self._target_model.kv_manager.step(context_batch)
+        self._draft_model.kv_manager.step(context_batch)
+
+        return res
+
+    @property
+    def metrics(self) -> SpeculativeDecodingMetrics:
+        """Get the current speculative decoding metrics.
+
+        Returns:
+            The SpeculativeDecodingMetrics instance with current statistics
+        """
+        return self._metrics
+
+    def __del__(self) -> None:
+        """Log metrics when the pipeline is destroyed."""
+        if (
+            hasattr(self, "_metrics")
+            and self._metrics.draft_tokens_generated > 0
+        ):
+            logger.info(f"Speculative decoding metrics: {self._metrics}")
+
+    def update_contexts(
+        self,
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
+        first_rejected_tokens: npt.NDArray[np.integer[Any]],
+        recovered_tokens: npt.NDArray[np.integer[Any]],
+        bonus_tokens: npt.NDArray[np.integer[Any]],
+        draft_tokens: npt.NDArray[np.integer[Any]],
+        num_draft_tokens_generated: int,
+    ) -> None:
+        """Update contexts with the results of token generation.
+
+        Args:
+            context_batch: The list of context objects
+            first_rejected_tokens: Array indicating the indices of first rejected tokens
+            sampled_target_tokens: Array of sampled tokens from the target model
+            draft_tokens: Array of draft tokens
+            num_draft_tokens_generated: Number of tokens generated by the draft model
+        """
+        total_draft_generated = num_draft_tokens_generated * len(context_batch)
+        total_draft_accepted = 0
+        total_bonus_used = 0
+        acceptance_lengths = []
+
+        for idx, rejected_token_idx in enumerate(first_rejected_tokens):
+            context = context_batch[idx]
+            rejected_token_idx = rejected_token_idx.item()
+
+            context.bump_token_indices(
+                active_idx=-num_draft_tokens_generated,
+                end_idx=-num_draft_tokens_generated,
+            )
+
+            for token_idx in range(rejected_token_idx):
+                token = int(draft_tokens[idx, token_idx])
+                context.update(token)
+
+            if rejected_token_idx == num_draft_tokens_generated:
+                context.update(bonus_tokens[idx, 0].item())
+                total_bonus_used += 1
+            else:
+                context.update(recovered_tokens[idx, rejected_token_idx].item())
+
+            total_draft_accepted += rejected_token_idx
+            acceptance_lengths.append(rejected_token_idx)
+
+            # When some or all draft tokens are rejected, we apply a token from
+            # the residual distribution. The draft and target models have not
+            # processed this token so the context goes back one step for both
+            # of the models to process that token.
+            # If all draft tokens are accepted, then the draft model has not
+            # processed the bonus token. In this case only the draft needs to
+            # go one step back. At the moment we do this for all cases.
+            context.bump_token_indices(start_idx=-1)
+
+        # Update metrics
+        self._metrics.update(
+            total_draft_generated,
+            total_draft_accepted,
+            total_bonus_used,
+            acceptance_lengths,
         )
-        self._draft_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
+
+    def build_response(
+        self,
+        context_batch: list[Union[TextContext, TextAndVisionContext]],
+    ) -> dict[RequestID, TextGenerationOutput]:
+        """Build response from updated contexts.
+
+        Args:
+            batch: The input batch dictionary mapping request IDs to contexts
+            context_batch: The list of context objects
+
+        Returns:
+            Dictionary mapping request IDs to TextGenerationOutput objects
+        """
+        res: dict[RequestID, TextGenerationOutput] = {}
+
+        for context in context_batch:
+            # Identify the Max Length
+            context_max_length = upper_bounded_default(
+                upper_bound=self._max_length, default=context.max_length
+            )
+
+            # Break early if beyond max length
+            current_length = context.start_idx + 1
+            if current_length >= context_max_length:
+                context.status = GenerationStatus.MAXIMUM_LENGTH
+
+            # Construct generation output
+            res[context.request_id] = context.to_generation_output()
 
         return res
 
     @traced
-    def release(self, context: T) -> None:
-        """Releases resources associated with this context.
+    def release(self, request_id: RequestID) -> None:
+        """Releases resources associated with this request ID.
 
         Args:
-            context (TokenGeneratorContext): Finished context.
+            request_id: Unique identifier for the finished request.
 
         """
-        self._draft_model.kv_manager.release(context.cache_seq_id)
-        self._target_model.kv_manager.release(context.cache_seq_id)
+        self._draft_model.kv_manager.release(request_id)
+        self._target_model.kv_manager.release(request_id)

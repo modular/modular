@@ -12,40 +12,42 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import log, log2, log10
-from sys import simdwidthof
+from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
 
 
 def run_elementwise[
-    type: DType, log_fn: fn (x: SIMD) -> __type_of(x)
+    dtype: DType, log_fn: fn (x: SIMD) -> __type_of(x)
 ](ctx: DeviceContext):
     alias length = 8192
 
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 
-    var in_device = ctx.enqueue_create_buffer[type](length)
-    var out_device = ctx.enqueue_create_buffer[type](length)
+    var in_device = ctx.enqueue_create_buffer[dtype](length)
+    var out_device = ctx.enqueue_create_buffer[dtype](length)
 
     alias epsilon = 0.001
     with in_device.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = Scalar[type](i) + epsilon
+            in_host[i] = Scalar[dtype](i) + epsilon
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    fn func[simd_width: Int, rank: Int](idx0: IndexList[rank]):
+    fn func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
         var val = in_buffer.load[width=simd_width](idx)
         var result = log_fn(val)
@@ -57,8 +59,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = log_fn(in_host[i])
 
-            alias atol = 1e-07 if type is DType.float32 else 1e-4
-            alias rtol = 2e-07 if type is DType.float32 else 2e-2
+            alias atol = 1e-07 if dtype is DType.float32 else 1e-4
+            alias rtol = 2e-07 if dtype is DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,

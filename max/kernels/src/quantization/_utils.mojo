@@ -10,21 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.info import has_avx512f, has_neon, simdwidthof
+from sys.info import CompilationTarget, simd_width_of
 from sys.intrinsics import llvm_intrinsic
 
 
 @always_inline
 fn roundeven_to_int32[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[DType.int32, simd_width]:
-    alias native_width = simdwidthof[type]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[DType.int32, simd_width]:
+    alias native_width = simd_width_of[dtype]()
 
     # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
     # set to do rounding to nearest with ties to even (roundeven). This
     # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
     @parameter
-    if has_avx512f() and type is DType.float32 and simd_width >= native_width:
+    if (
+        CompilationTarget.has_avx512f()
+        and dtype is DType.float32
+        and simd_width >= native_width
+    ):
         var x_i32 = SIMD[DType.int32, simd_width]()
 
         @parameter
@@ -47,7 +51,11 @@ fn roundeven_to_int32[
     # with rounding to nearest with ties to even (roundeven). This
     # replaces a `frintn` and `fcvtzs` instruction pair.
     @parameter
-    if has_neon() and type is DType.float32 and simd_width >= native_width:
+    if (
+        CompilationTarget.has_neon()
+        and dtype is DType.float32
+        and simd_width >= native_width
+    ):
         var x_i32 = SIMD[DType.int32, simd_width]()
 
         @parameter

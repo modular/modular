@@ -16,7 +16,6 @@ from math import ceildiv
 
 from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx
-from gpu.host import DeviceContext
 from gpu.host.info import is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.asyncrt import DeviceContextPtr
@@ -50,7 +49,7 @@ fn moe_create_indices_kernel[
         mut=True, DType.uint32, restore_token_order_layout, MutableAnyOrigin
     ],
     expert_ids: LayoutTensor[
-        mut=True, DType.uint32, expert_ids_layout, MutableAnyOrigin
+        mut=True, DType.int32, expert_ids_layout, MutableAnyOrigin
     ],
     expert_usage_stats: LayoutTensor[
         mut=True, DType.uint32, expert_usage_stats_layout, MutableAnyOrigin
@@ -184,9 +183,9 @@ fn moe_create_indices_kernel[
 
         # this is the token length for the last expert
         expert_start_indices[num_experts_used] = num_tokens
-        var last_expert_token_length = num_tokens - expert_start_indices[
-            num_experts_used - 1
-        ]
+        var last_expert_token_length = (
+            num_tokens - expert_start_indices[num_experts_used - 1]
+        )
         max_M = max(
             max_M, rebind[Scalar[indices_type]](last_expert_token_length)
         )
@@ -203,7 +202,7 @@ fn moe_create_indices[
     token_expert_order: LayoutTensor[mut=True, DType.uint32, **_],
     expert_start_indices: LayoutTensor[mut=True, DType.uint32, **_],
     restore_token_order: LayoutTensor[mut=True, DType.uint32, **_],
-    expert_ids: LayoutTensor[mut=True, DType.uint32, **_],
+    expert_ids: LayoutTensor[mut=True, DType.int32, **_],
     expert_usage_stats: LayoutTensor[mut=True, DType.uint32, **_],
     topk_ids: LayoutTensor[input_type, **_],
     context: DeviceContextPtr,
@@ -238,7 +237,7 @@ fn moe_create_indices[
             RuntimeLayout[unknown_layout].row_major(IndexList[1](pow_2_length)),
         )
 
-        alias hw_info = cuda_ctx.device_info
+        alias hw_info = cuda_ctx.default_device_info
         alias registers_per_thread = 255
         alias registers_per_block = hw_info.max_registers_per_block
         alias block_size_unrounded = registers_per_block // registers_per_thread
@@ -259,7 +258,7 @@ fn moe_create_indices[
             topk_ids.layout,
         ]
 
-        cuda_ctx.enqueue_function[kernel](
+        cuda_ctx.enqueue_function_checked[kernel, kernel](
             token_expert_order,
             expert_start_indices,
             restore_token_order,

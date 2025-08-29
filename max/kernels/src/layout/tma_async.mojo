@@ -32,8 +32,7 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from collections import Optional
-from sys import alignof, llvm_intrinsic, simdwidthof, sizeof
+from sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from sys._assembly import inlined_assembly
 
 from gpu.host import DeviceBuffer, DeviceContext
@@ -43,7 +42,6 @@ from gpu.host._nvidia_cuda import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
-from gpu.id import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
     ReduceOp,
@@ -58,15 +56,15 @@ from gpu.sync import (
     cp_async_bulk_wait_group,
     mbarrier_arrive,
     mbarrier_arrive_expect_tx_shared,
+    mbarrier_arrive_expect_tx_relaxed,
     mbarrier_init,
-    mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import UnsafePointer, stack_allocation
+from layout.int_tuple import product
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from memory.pointer import _GPUAddressSpace
-
+from gpu.intrinsics import Scope
 from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
 
 
 # Returns an IntTuple of variadic Int values.
@@ -74,12 +72,10 @@ from utils.static_tuple import StaticTuple
 fn _to_int_tuple[*vals: Int]() -> IntTuple:
     res = IntTuple()
 
-    @parameter
-    fn length() -> Int:
-        return __mlir_op.`pop.variadic.size`(vals)
+    alias num_vals = stdlib.builtin.variadic_size(vals)
 
     @parameter
-    for i in range(length()):
+    for i in range(num_vals):
         res.append(vals[i])
     return res
 
@@ -92,7 +88,7 @@ fn _tma_desc_tile_layout[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
     constrained[
-        sizeof[type]() >= 1, "Don't support sub-byte type in TMA yet."
+        size_of[type]() >= 1, "Don't support sub-byte type in TMA yet."
     ]()
 
     constrained[
@@ -108,7 +104,7 @@ fn _tma_desc_tile_layout[
         if is_k_major:
             # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
             return Layout.row_major(
-                dim0, swizzle_mode.bytes() // sizeof[type]()
+                dim0, swizzle_mode.bytes() // size_of[type]()
             )
 
         constrained[
@@ -123,7 +119,7 @@ fn _tma_desc_tile_layout[
         # dimensions are also ordered by (K, MN).
         alias core_matrix_num_rows = 8
         return Layout.row_major(
-            core_matrix_num_rows, swizzle_mode.bytes() // sizeof[type]()
+            core_matrix_num_rows, swizzle_mode.bytes() // size_of[type]()
         )
 
     else:
@@ -134,12 +130,11 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            [dim0, dim1, swizzle_mode.bytes() // sizeof[type]()],
+            [dim0, dim1, swizzle_mode.bytes() // size_of[type]()],
             [1, 1, 1],
         )
 
 
-@value
 @register_passable("trivial")
 struct SharedMemBarrier(Copyable, Movable):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
@@ -168,7 +163,7 @@ struct SharedMemBarrier(Copyable, Movable):
     space to be accessible by all threads in a block.
     """
 
-    @always_inline
+    @always_inline("nodebug")
     fn init(ref [AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
@@ -194,6 +189,56 @@ struct SharedMemBarrier(Copyable, Movable):
             bytes: Number of bytes expected to be transferred.
         """
         mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
+
+    @always_inline
+    fn expect_bytes_relaxed(
+        ref [AddressSpace.SHARED]self, bytes: Int32
+    ) -> UInt64:
+        """Configure the barrier to expect a specific number of bytes to be transferred.
+
+        Used with TMA operations to indicate the expected size of data transfer.
+        The barrier will be satisfied when the specified number of bytes has been
+        transferred, enabling efficient coordination of memory operations.
+
+        Args:
+            bytes: Number of bytes expected to be transferred.
+
+        Returns:
+            The state.
+        """
+        return mbarrier_arrive_expect_tx_relaxed(self.unsafe_ptr(), bytes)
+
+    @always_inline
+    fn arrive_and_expect_bytes(
+        ref [AddressSpace.SHARED]self,
+        bytes: Int32,
+        cta_id: UInt32,
+        pred: UInt32,
+    ):
+        """Configure the barrier to expect a specific number to bytes to be transferred
+        at a remote CTA.
+
+         Used with TMA operations to indicate the expected size of data transfer.
+         The barrier will be satisfied when the specified number of bytes has been
+         transferred at the specified CTA in the cluster.
+
+        Args:
+            bytes: Number of bytes expected to be transferred.
+            cta_id: The CTA ID in a cluster to configure an arrival.
+            pred: Predication on the arrival configuration instruction. Use UInt32 to match `selp.u32` in ptx.
+        """
+
+        alias asm = """
+        .reg .pred p;
+        .reg .b32 remAddr32;
+        setp.eq.u32 p, $2, 1;
+        @p mapa.shared::cluster.u32  remAddr32, $0, $1;
+        @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
+        """
+
+        inlined_assembly[asm, NoneType, constraints="r,r,r,r"](
+            Int32(Int(self.unsafe_ptr())), cta_id, pred, bytes
+        )
 
     @always_inline("nodebug")
     fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
@@ -222,6 +267,96 @@ struct SharedMemBarrier(Copyable, Movable):
             bra LAB_WAIT;
             DONE:
         }"""
+        inlined_assembly[asm, NoneType, constraints="r,r"](
+            Int32(Int(self.unsafe_ptr())), phase
+        )
+
+    @always_inline("nodebug")
+    fn wait_acquire[
+        scope: Scope
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+        """Acquire and wait until the barrier is satisfied.
+
+        Blocks the calling thread until the barrier is satisfied, either by
+        the expected number of threads arriving or the expected data transfer
+        completing. This method implements an efficient spin-wait mechanism
+        optimized for GPU execution.
+
+        Parameters:
+            scope: The scope of the barrier.
+
+        Args:
+            phase: The phase value to check against. Defaults to 0.
+
+        Note:
+            Minimizes thread divergence during synchronization by using
+            hardware-accelerated barrier instructions.
+        """
+        # Based on cccl
+        # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L94
+
+        constrained[
+            scope == Scope.CLUSTER or scope == Scope.BLOCK,
+            "wait_acquire is only supported for cluster or block/CTA scope.",
+        ]()
+
+        alias asm = (
+            """{
+            .reg .pred P1;
+            LAB_WAIT:
+            mbarrier.try_wait.parity.acquire."""
+            + scope.mnemonic()
+            + """.shared::cta.b64 P1, [$0], $1;
+            @P1 bra DONE;
+            bra LAB_WAIT;
+            DONE:
+            }"""
+        )
+        inlined_assembly[asm, NoneType, constraints="r,r"](
+            Int32(Int(self.unsafe_ptr())), phase
+        )
+
+    @always_inline("nodebug")
+    fn wait_relaxed[
+        scope: Scope
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+        """Wait until the barrier is satisfied with relaxed ordering.
+
+        Blocks the calling thread until the barrier is satisfied, either by
+        the expected number of threads arriving or the expected data transfer
+        completing. This method implements an efficient spin-wait mechanism
+        optimized for GPU execution.
+
+        Parameters:
+            scope: The scope of the barrier.
+
+        Args:
+            phase: The phase value to check against. Defaults to 0.
+
+        Note:
+            Minimizes thread divergence during synchronization by using
+            hardware-accelerated barrier instructions.
+        """
+        # Based on cccl
+        # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L104
+
+        constrained[
+            scope == Scope.CLUSTER or scope == Scope.BLOCK,
+            "wait_relaxed is only supported for cluster or block/CTA scope.",
+        ]()
+
+        alias asm = (
+            """{
+            .reg .pred P1;
+            LAB_WAIT:
+            mbarrier.try_wait.parity.relaxed."""
+            + scope.mnemonic()
+            + """.shared::cta.b64 P1, [$0], $1;
+            @P1 bra DONE;
+            bra LAB_WAIT;
+            DONE:
+            }"""
+        )
         inlined_assembly[asm, NoneType, constraints="r,r"](
             Int32(Int(self.unsafe_ptr())), phase
         )
@@ -286,9 +421,8 @@ struct SharedMemBarrier(Copyable, Movable):
         return mbarrier_arrive(self.unsafe_ptr())
 
 
-@value
 @register_passable("trivial")
-struct PipelineState[num_stages: Int]:
+struct PipelineState[num_stages: Int](Copyable, Defaultable, Movable):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a
@@ -392,16 +526,29 @@ struct PipelineState[num_stages: Int]:
                 self._index = 0
                 self._phase ^= 1
 
+    @always_inline
+    fn next(mut self) -> Self:
+        """Advance the pipeline state to the next stage and return the new state.
+
+        This function is used to move to the next buffer in a multi-buffer
+        pipeline, implementing circular buffer semantics.
+
+        Returns:
+            The new pipeline state after advancing to the next stage.
+        """
+        self.step()
+        return self
+
 
 # TMATensorTile is created on the host with specific memory and tile sizes.
 # Each TMATensorTile provides an asynchronous load of a specific tile at specified tile coordinates.
 #
-@value
 struct TMATensorTile[
     dtype: DType,
     layout: Layout,
     desc_layout: Layout = layout,
-]:
+    is_k_major: Bool = True,
+](Copyable, Movable):
     """
     A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
 
@@ -417,6 +564,8 @@ struct TMATensorTile[
         desc_layout: Layout = layout
             The layout of the descriptor, which can be different from the shared memory layout
             to accommodate hardware requirements like WGMMA.
+        is_k_major: Bool = True
+            Whether the shared memory is k-major.
 
     Performance:
 
@@ -470,11 +619,11 @@ struct TMATensorTile[
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
-    fn async_copy(
+    fn async_copy[
+        cta_group: Int = 1
+    ](
         self,
-        dst: LayoutTensor[
-            dtype, _, address_space = AddressSpace.SHARED, *_, **_
-        ],
+        dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -484,6 +633,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to the specified destination in shared memory. The transfer is tracked by the provided memory
         barrier.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -503,6 +657,11 @@ struct TMATensorTile[
             "TMA requires 128B alignment in shared memory",
         ]()
 
+        constrained[
+            __type_of(dst).dtype == dtype,
+            "Input tensor has a different type than the TMA op",
+        ]()
+
         # The descriptor layout i.e. data per copy can be smaller than the shared memory
         # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
         # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
@@ -514,8 +673,10 @@ struct TMATensorTile[
         alias copy_dim0 = desc_layout.shape[0].value()
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+        alias num_copies_dim0 = product(
+            layout.shape[not is_k_major]
+        ) // copy_dim0
+        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -524,7 +685,18 @@ struct TMATensorTile[
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
-                cp_async_bulk_tensor_shared_cluster_global(
+                constrained[
+                    (copy_offset * size_of[dtype]()) % 128 == 0,
+                    "copy_offset="
+                    + String(copy_offset)
+                    + ", size_of[dtype]()="
+                    + String(size_of[dtype]())
+                    + "\nlayout="
+                    + String(layout)
+                    + "\ndesc_layout="
+                    + String(desc_layout),
+                ]()
+                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
@@ -605,7 +777,9 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_multicast_load(
+    fn async_multicast_load[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -620,6 +794,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
         as specified by the multicast mask.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: LayoutTensor
@@ -654,7 +833,9 @@ struct TMATensorTile[
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
-                cp_async_bulk_tensor_shared_cluster_global_multicast(
+                cp_async_bulk_tensor_shared_cluster_global_multicast[
+                    cta_group=cta_group
+                ](
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
@@ -665,9 +846,7 @@ struct TMATensorTile[
     @always_inline
     fn async_store(
         self,
-        src: LayoutTensor[
-            dtype, layout, address_space = AddressSpace.SHARED, **_
-        ],
+        src: LayoutTensor[dtype, _, address_space = AddressSpace.SHARED, **_],
         coords: Tuple[UInt, UInt],
     ):
         """
@@ -695,8 +874,10 @@ struct TMATensorTile[
         alias copy_dim0 = desc_layout.shape[0].value()
         alias copy_dim1 = desc_layout.shape[1].value()
         alias copy_size = desc_layout.size()
-        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
-        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+        alias num_copies_dim0 = product(
+            layout.shape[not is_k_major]
+        ) // copy_dim0
+        alias num_copies_dim1 = product(layout.shape[is_k_major]) // copy_dim1
 
         @parameter
         for i in range(num_copies_dim0):
@@ -704,6 +885,7 @@ struct TMATensorTile[
             @parameter
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
+
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -798,14 +980,16 @@ struct TMATensorTile[
         """
         # NOTE: Only one thread should call this
 
-        var src_desc = UnsafePointer(to=self.descriptor).bitcast[
-            UInt8
-        ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
+        var src_desc = (
+            UnsafePointer(to=self.descriptor)
+            .bitcast[UInt8]()
+            .address_space_cast[_GPUAddressSpace.GLOBAL]()
+        )
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
-        alias simd_width = simdwidthof[DType.uint8]()
-        alias src_align = alignof[SIMD[DType.uint8, simd_width]]()
-        alias dst_align = alignof[SIMD[DType.uint8, simd_width]]()
+        alias simd_width = simd_width_of[DType.uint8]()
+        alias src_align = align_of[SIMD[DType.uint8, simd_width]]()
+        alias dst_align = align_of[SIMD[DType.uint8, simd_width]]()
 
         alias descriptor_bytes = 128
 
@@ -1080,7 +1264,7 @@ struct TMATensorTile[
                     NoneType,
                     constraints="l,l",
                     has_side_effect=True,
-                ](desc_ptr, gmem_strides[rank - i - 1] * sizeof[dtype]())
+                ](desc_ptr, gmem_strides[rank - i - 1] * size_of[dtype]())
 
     @always_inline
     fn replace_tensormap_global_dim_strides_in_shared_mem[
@@ -1193,7 +1377,7 @@ def create_tma_tile[
     """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
-    alias swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * sizeof[
+    alias swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * size_of[
         tensor.dtype
     ]()
 
@@ -1215,8 +1399,8 @@ def create_tma_tile[
             1,
             owning=False,
         ),
-        (tensor.dim[0](), tensor.dim[1]()),
-        (tensor.stride[0](), tensor.stride[1]()),
+        (tensor.dim(0), tensor.dim(1)),
+        (tensor.stride(0), tensor.stride(1)),
         (tile_sizes[0], tile_sizes[1]),
     )
 
@@ -1285,8 +1469,8 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
-    alias desc_bytes_size = __desc_layout.size() * sizeof[type]()
-    alias layout_size = __tile_layout.size() * sizeof[type]()
+    alias desc_bytes_size = __desc_layout.size() * size_of[type]()
+    alias layout_size = __tile_layout.size() * size_of[type]()
 
     @parameter
     if desc_bytes_size < layout_size:
@@ -1312,12 +1496,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[1] * sizeof[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[1] * size_of[type]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[1] * sizeof[type]()),
+                String(tile_shape[1] * size_of[type]()),
                 " bytes.",
             ]()
 
@@ -1328,8 +1512,8 @@ def create_tma_tile[
                 1,
                 owning=False,
             ),
-            (tensor.dim[0](), tensor.dim[1]()),
-            (tensor.stride[0](), tensor.stride[1]()),
+            (tensor.dim(0), tensor.dim(1)),
+            (tensor.stride(0), tensor.stride(1)),
             (__desc_layout.shape[0].value(), __desc_layout.shape[1].value()),
         )
 
@@ -1338,12 +1522,12 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[2] * sizeof[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[2] * size_of[type]()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[2] * sizeof[type]()),
+                String(tile_shape[2] * size_of[type]()),
                 "bytes.",
             ]()
 
@@ -1354,9 +1538,9 @@ def create_tma_tile[
                 1,
                 owning=False,
             ),
-            (tensor.dim[0](), tensor.dim[1](), tensor.dim[2]()),
-            (tensor.stride[0](), tensor.stride[1](), tensor.stride[2]()),
-            (
+            IndexList[3](tensor.dim(0), tensor.dim(1), tensor.dim(2)),
+            IndexList[3](tensor.stride(0), tensor.stride(1), tensor.stride(2)),
+            IndexList[3](
                 __desc_layout.shape[0].value(),
                 __desc_layout.shape[1].value(),
                 __desc_layout.shape[2].value(),
@@ -1364,14 +1548,175 @@ def create_tma_tile[
         )
 
 
-@value
+alias TMANestedTensorTile[
+    dtype: DType,
+    tile_m: Int,
+    tile_n: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+] = TMATensorTile[
+    dtype,
+    tile_layout_k_major[
+        dtype, tile_m, tile_n, swizzle_mode=swizzle_mode
+    ]() if is_k_major else tile_layout_mn_major[
+        dtype, tile_n, tile_m, swizzle_mode=swizzle_mode
+    ](),
+    _tma_desc_tile_layout[
+        dtype, 2, IndexList[2](tile_m, tile_n), is_k_major, swizzle_mode
+    ](),
+    is_k_major,
+]
+
+
+fn create_nested_tma_tile[
+    dtype: DType, //,
+    tile_m: Int,
+    tile_n: Int,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    is_k_major: Bool,
+](
+    ctx: DeviceContext,
+    tensor: LayoutTensor[dtype, *_, **_],
+    out res: TMANestedTensorTile[
+        dtype, tile_m, tile_n, swizzle_mode, is_k_major
+    ],
+) raises:
+    """
+    Creates a rank 2 `TMATensorTile` with a nested layout using
+    `tile_layout_k_major` is `is_k_major` or `tile_layout_mn_major` otherwise.
+
+    Parameters:
+        dtype: DType
+            The data type of the tensor elements.
+        tile_m: The number of rows of a global memory tile.
+        tile_n: The number of columns of a global memory tile.
+        swizzle_mode: The swizzle_mode used by the TMA operation.
+        is_k_major: Whether the shared memory is to be k-major
+            or mn-major. If mn-major, it is transposed.
+
+    Args:
+        ctx: DeviceContext
+            The CUDA device context used to create the TMA descriptor.
+        tensor: LayoutTensor[type, *_, **_]
+            The source tensor from which data will be transferred. This defines the
+            global memory layout and must match the specified data type.
+
+    Returns:
+        The `TMATensorTile` configured with the specified tile dimensions and
+        swizzle mode, ready for use in asynchronous data transfer operations.
+    """
+    alias ResultType = __type_of(res)
+    alias desc_layout = ResultType.desc_layout
+    alias desc_bytes_size = desc_layout.size() * size_of[dtype]()
+    alias layout_size = ResultType.layout.size() * size_of[dtype]()
+
+    # When we do multiple TMA copy, every address has to be align to 128.
+    constrained[
+        desc_bytes_size == layout_size or desc_bytes_size % 128 == 0,
+        (
+            "desc layout byte size has to be  align to 128 bytes for"
+            " multiple TMA copies. desc_layout: "
+            + String(desc_layout.shape[0].value())
+            + " "
+            + String(desc_layout.shape[1].value())
+            + " tile_layout: "
+            + String(tile_m)
+            + " "
+            + String(tile_n)
+        ),
+    ]()
+
+    @parameter
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        constrained[
+            (tile_n * size_of[dtype]()) % swizzle_mode.bytes() == 0,
+            String(swizzle_mode),
+            " mode requires K dim multiple of ",
+            String(swizzle_mode.bytes()),
+            "B. K dim is now ",
+            String(tile_n * size_of[dtype]()),
+            " bytes.",
+        ]()
+
+    res = create_tma_descriptor[dtype, 2, swizzle_mode](
+        DeviceBuffer(
+            ctx,
+            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+            1,
+            owning=False,
+        ),
+        IndexList[2](tensor.dim(0), tensor.dim(1)),
+        IndexList[2](tensor.stride(0), tensor.stride(1)),
+        IndexList[2](
+            desc_layout.shape[0].value(),
+            desc_layout.shape[1].value(),
+        ),
+    )
+
+
+@always_inline
+def create_tma_tile_template[
+    type: DType,
+    rank: Int,
+    tile_shape: IndexList[rank],
+    /,
+    is_k_major: Bool = True,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    *,
+    __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
+    __desc_layout: Layout = _tma_desc_tile_layout[
+        type, rank, tile_shape, is_k_major, swizzle_mode
+    ](),
+]() -> TMATensorTile[type, __tile_layout, __desc_layout]:
+    """
+    Same as create_tma_tile expect the descriptor is only a placeholder or a template for later replacement.
+
+    specification of data type, rank, and layout orientation. It supports both 2D and 3D
+    tensors and provides fine-grained control over the memory access patterns.
+
+    Parameters:
+        type: DType
+            The data type of the tensor elements.
+        rank: Int
+            The dimensionality of the tensor (must be 2 or 3).
+        tile_shape: IndexList[rank]
+            The shape of the tile to be transferred.
+        is_k_major: Bool = True
+            Whether the tensor layout is K-major (True) or MN-major (False).
+            K-major is typically used for weight matrices, while MN-major is used for
+            activation matrices in matrix multiplication operations.
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE
+            The swizzling mode to use for memory access optimization.
+        __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1])
+            Internal parameter for the tile layout in shared memory.
+        __desc_layout: Layout = _tma_desc_tile_layout[...]
+            Internal parameter for the descriptor layout, which may differ from the
+            tile layout to accommodate hardware requirements.
+
+    Returns:
+        A `TMATensorTile` configured with the specified parameters, ready for use in
+        asynchronous data transfer operations.
+
+    Constraints:
+
+        - Only supports 2D and 3D tensors (rank must be 2 or 3).
+        - For non-SWIZZLE_NONE modes, the K dimension size in bytes must be a multiple
+          of the swizzle mode's byte size.
+        - For MN-major layout, only SWIZZLE_128B is supported.
+        - For 3D tensors, only K-major layout is supported.
+    """
+
+    return TMATensorTile[type, __tile_layout, __desc_layout](TMADescriptor())
+
+
 @register_passable("trivial")
 struct TMATensorTileArray[
     num_of_tensormaps: Int,
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-]:
+](Copyable, Movable):
     """An array of TMA descripotr.
 
     Parameters:

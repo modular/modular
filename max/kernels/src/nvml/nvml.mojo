@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections import List
-from collections.string import StaticString
+from collections.string.string_slice import _to_string_list
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -41,8 +40,8 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     )
     paths.append(common_path)
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
-        var path = CUDA_NVML_LIBRARY_DIR / fd[]
-        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
+        var path = CUDA_NVML_LIBRARY_DIR / fd
+        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
             paths.append(path)
     return paths
 
@@ -55,10 +54,14 @@ alias CUDA_NVML_LIBRARY = _Global[
 fn _init_dylib() -> _OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
-        _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        _check_error(
+            dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        )
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](String("CUDA NVML library not found: ", e))
+        return abort[_OwnedDLHandle](
+            String("CUDA NVML library initialization failed: ", e)
+        )
 
 
 @always_inline
@@ -77,11 +80,9 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct DriverVersion:
+struct DriverVersion(Copyable, Movable, StringableRaising):
     var _value: List[String]
 
-    @implicit
     fn __init__(out self, value: List[String]):
         self._value = value
 
@@ -92,7 +93,7 @@ struct DriverVersion:
         return Int(self._value[1])
 
     fn patch(self) raises -> Int:
-        return Int(self._value[2])
+        return Int(self._value[2]) if len(self._value) > 2 else 0
 
     fn __str__(self) raises -> String:
         return String(self.major(), ".", self.minor(), ".", self.patch())
@@ -103,9 +104,9 @@ struct DriverVersion:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable):
+struct Result(Copyable, EqualityComparable, Movable, Stringable, Writable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -176,7 +177,7 @@ struct Result(Stringable, EqualityComparable):
     """No data"""
 
     alias VGPU_ECC_NOT_SUPPORTED = Self(22)
-    """The requested vgpu operation is not available on target device, becasue
+    """The requested vgpu operation is not available on target device, because
     ECC is enabled"""
 
     alias INSUFFICIENT_RESOURCES = Self(23)
@@ -204,106 +205,76 @@ struct Result(Stringable, EqualityComparable):
     fn __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
-    @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
-    @no_inline
-    fn __str__(self) -> String:
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Result.SUCCESS:
-            return "SUCCESS"
+            writer.write("SUCCESS")
+        elif self == Result.UNINITIALIZED:
+            writer.write("NVML_UNINITIALIZED")
+        elif self == Result.INVALID_ARGUMENT:
+            writer.write("NVML_INVALID_ARGUMENT")
+        elif self == Result.NOT_SUPPORTED:
+            writer.write("NVML_NOT_SUPPORTED")
+        elif self == Result.NO_PERMISSION:
+            writer.write("NVML_NO_PERMISSION")
+        elif self == Result.ALREADY_INITIALIZED:
+            writer.write("NVML_ALREADY_INITIALIZED")
+        elif self == Result.NOT_FOUND:
+            writer.write("NVML_NOT_FOUND")
+        elif self == Result.INSUFFICIENT_SIZE:
+            writer.write("NVML_INSUFFICIENT_SIZE")
+        elif self == Result.INSUFFICIENT_POWER:
+            writer.write("NVML_INSUFFICIENT_POWER")
+        elif self == Result.DRIVER_NOT_LOADED:
+            writer.write("NVML_DRIVER_NOT_LOADED")
+        elif self == Result.TIMEOUT:
+            writer.write("NVML_TIMEOUT")
+        elif self == Result.IRQ_ISSUE:
+            writer.write("NVML_IRQ_ISSUE")
+        elif self == Result.LIBRARY_NOT_FOUND:
+            writer.write("NVML_LIBRARY_NOT_FOUND")
+        elif self == Result.FUNCTION_NOT_FOUND:
+            writer.write("NVML_FUNCTION_NOT_FOUND")
+        elif self == Result.CORRUPTED_INFOROM:
+            writer.write("NVML_CORRUPTED_INFOROM")
+        elif self == Result.GPU_IS_LOST:
+            writer.write("NVML_GPU_IS_LOST")
+        elif self == Result.RESET_REQUIRED:
+            writer.write("NVML_RESET_REQUIRED")
+        elif self == Result.OPERATING_SYSTEM:
+            writer.write("NVML_OPERATING_SYSTEM")
+        elif self == Result.LIB_RM_VERSION_MISMATCH:
+            writer.write("NVML_LIB_RM_VERSION_MISMATCH")
+        elif self == Result.IN_USE:
+            writer.write("NVML_IN_USE")
+        elif self == Result.MEMORY:
+            writer.write("NVML_MEMORY")
+        elif self == Result.NO_DATA:
+            writer.write("NVML_NO_DATA")
+        elif self == Result.VGPU_ECC_NOT_SUPPORTED:
+            writer.write("NVML_VGPU_ECC_NOT_SUPPORTED")
+        elif self == Result.INSUFFICIENT_RESOURCES:
+            writer.write("NVML_INSUFFICIENT_RESOURCES")
+        elif self == Result.FREQ_NOT_SUPPORTED:
+            writer.write("NVML_FREQ_NOT_SUPPORTED")
+        elif self == Result.ARGUMENT_VERSION_MISMATCH:
+            writer.write("NVML_ARGUMENT_VERSION_MISMATCH")
+        elif self == Result.DEPRECATED:
+            writer.write("NVML_DEPRECATED")
+        elif self == Result.NOT_READY:
+            writer.write("NVML_NOT_READY")
+        elif self == Result.GPU_NOT_FOUND:
+            writer.write("NVML_GPU_NOT_FOUND")
+        else:
+            writer.write("NVML_UNKNOWN")
 
-        if self == Result.UNINITIALIZED:
-            return "NVML_UNINITIALIZED"
-
-        if self == Result.INVALID_ARGUMENT:
-            return "NVML_INVALID_ARGUMENT"
-
-        if self == Result.NOT_SUPPORTED:
-            return "NVML_NOT_SUPPORTED"
-
-        if self == Result.NO_PERMISSION:
-            return "NVML_NO_PERMISSION"
-
-        if self == Result.ALREADY_INITIALIZED:
-            return "NVML_ALREADY_INITIALIZED"
-
-        if self == Result.NOT_FOUND:
-            return "NVML_NOT_FOUND"
-
-        if self == Result.INSUFFICIENT_SIZE:
-            return "NVML_INSUFFICIENT_SIZE"
-
-        if self == Result.INSUFFICIENT_POWER:
-            return "NVML_INSUFFICIENT_POWER"
-
-        if self == Result.DRIVER_NOT_LOADED:
-            return "NVML_DRIVER_NOT_LOADED"
-
-        if self == Result.TIMEOUT:
-            return "NVML_TIMEOUT"
-
-        if self == Result.IRQ_ISSUE:
-            return "NVML_IRQ_ISSUE"
-
-        if self == Result.LIBRARY_NOT_FOUND:
-            return "NVML_LIBRARY_NOT_FOUND"
-
-        if self == Result.FUNCTION_NOT_FOUND:
-            return "NVML_FUNCTION_NOT_FOUND"
-
-        if self == Result.CORRUPTED_INFOROM:
-            return "NVML_CORRUPTED_INFOROM"
-
-        if self == Result.GPU_IS_LOST:
-            return "NVML_GPU_IS_LOST"
-
-        if self == Result.RESET_REQUIRED:
-            return "NVML_RESET_REQUIRED"
-
-        if self == Result.OPERATING_SYSTEM:
-            return "NVML_OPERATING_SYSTEM"
-
-        if self == Result.LIB_RM_VERSION_MISMATCH:
-            return "NVML_LIB_RM_VERSION_MISMATCH"
-
-        if self == Result.IN_USE:
-            return "NVML_IN_USE"
-
-        if self == Result.MEMORY:
-            return "NVML_MEMORY"
-
-        if self == Result.NO_DATA:
-            return "NVML_NO_DATA"
-
-        if self == Result.VGPU_ECC_NOT_SUPPORTED:
-            return "NVML_VGPU_ECC_NOT_SUPPORTED"
-
-        if self == Result.INSUFFICIENT_RESOURCES:
-            return "NVML_INSUFFICIENT_RESOURCES"
-
-        if self == Result.FREQ_NOT_SUPPORTED:
-            return "NVML_FREQ_NOT_SUPPORTED"
-
-        if self == Result.ARGUMENT_VERSION_MISMATCH:
-            return "NVML_ARGUMENT_VERSION_MISMATCH"
-
-        if self == Result.DEPRECATED:
-            return "NVML_DEPRECATED"
-
-        if self == Result.NOT_READY:
-            return "NVML_NOT_READY"
-
-        if self == Result.GPU_NOT_FOUND:
-            return "NVML_GPU_NOT_FOUND"
-
-        return "NVML_UNKNOWN"
+    fn __str__(self) -> String:
+        return String(self)
 
 
 @always_inline
 fn _check_error(err: Result) raises:
     if err != Result.SUCCESS:
-        raise String(err)
+        raise Error(err)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -311,9 +282,9 @@ fn _check_error(err: Result) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable):
+struct EnableState(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -326,19 +297,15 @@ struct EnableState(EqualityComparable):
     fn __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
-    @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
 
 # ===-----------------------------------------------------------------------===#
 # ClockType
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable):
+struct ClockType(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -357,24 +324,20 @@ struct ClockType(EqualityComparable):
     fn __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
-    @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
 
 # ===-----------------------------------------------------------------------===#
 # Device
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl:
-    var handle: UnsafePointer[NoneType]
+struct _DeviceImpl(Copyable, Defaultable, Movable):
+    var handle: OpaquePointer
 
     @always_inline
     fn __init__(out self):
-        self.handle = UnsafePointer[NoneType]()
+        self.handle = OpaquePointer()
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -411,11 +374,10 @@ struct Device(Writable):
                 fn (UnsafePointer[c_char], UInt32) -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
-        var driver_version_list = String(
-            StaticString(unsafe_from_utf8_ptr=driver_version_buffer)
+        var driver_version_list = StaticString(
+            unsafe_from_utf8_ptr=driver_version_buffer
         ).split(".")
-        var driver_version = DriverVersion(driver_version_list)
-        return driver_version
+        return DriverVersion(_to_string_list(driver_version_list))
 
     fn _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()
@@ -449,8 +411,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -458,12 +419,12 @@ struct Device(Writable):
                 fn (
                     _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
                 ) -> Result,
-            ]()(self.device, UnsafePointer(to=num_clocks), clocks.data)
+            ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 
@@ -493,8 +454,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -509,13 +469,13 @@ struct Device(Writable):
                 self.device,
                 UInt32(memory_clock_mhz),
                 UnsafePointer(to=num_clocks),
-                clocks.data,
+                clocks.unsafe_ptr(),
             )
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 
@@ -615,7 +575,7 @@ struct Device(Writable):
         return self.__repr__()
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write("Device(", self.idx, ")")
 
     @no_inline
@@ -623,9 +583,9 @@ struct Device(Writable):
         return String.write(self)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _EnableState:
+struct _EnableState(Copyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

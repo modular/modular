@@ -13,16 +13,14 @@
 
 from os import abort
 
-from memory import UnsafePointer
-
 
 @fieldwise_init
 @register_passable("trivial")
-struct Handle:
-    var _value: UnsafePointer[NoneType]
+struct Handle(Defaultable):
+    var _value: OpaquePointer
 
     fn __init__(out self):
-        self._value = UnsafePointer[NoneType]()
+        self._value = OpaquePointer()
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -37,7 +35,6 @@ struct Operation:
     alias TRANSPOSE = Self(112)
     alias CONJUGATE_TRANSPOSE = Self(113)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -60,7 +57,6 @@ struct Fill:
     alias LOWER = Self(122)
     alias FULL = Self(123)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -82,7 +78,6 @@ struct Diagonal:
     alias NON_UNIT = Self(131)
     alias DIAGONAL_UNIT = Self(132)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -105,7 +100,6 @@ struct Side:
     alias RIGHT = Self(142)
     alias BOTH = Self(143)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -148,7 +142,6 @@ struct DataType:
 
     alias INVALID = Self(255)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -162,7 +155,7 @@ struct DataType:
         elif dtype is DType.float64:
             self = Self.F64_R
         else:
-            raise String(
+            raise Error(
                 "the dtype '", dtype, "' is not currently handled by rocBLAS"
             )
 
@@ -187,7 +180,6 @@ struct ComputeType:
     alias BF8_BF8_F32 = Self(304)
     alias INVALID = Self(455)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -223,7 +215,6 @@ struct Status(Writable):
     alias EXCLUDED_FROM_BUILD = Self(14)
     alias ARCH_MISMATCH = Self(15)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -241,7 +232,7 @@ struct Status(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write("SUCCESS")
         if self == Self.INVALID_HANDLE:
@@ -286,7 +277,6 @@ struct PointerMode:
     alias HOST = Self(0)
     alias DEVICE = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -314,7 +304,6 @@ struct Algorithm:
     alias STANDARD = Self(0)
     alias SOLUTION_INDEX = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -336,7 +325,6 @@ struct GEAMExOp:
     alias MIN_PLUS = Self(0)
     alias PLUS_MIN = Self(1)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

@@ -11,124 +11,203 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import InlineArray
-from math import floor
-from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.comm.allgather import allgather
+from comm.allgather import allgather
+from comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
-from testing import assert_almost_equal, assert_equal
-
-from utils import IndexList, StaticTuple
+from sys import size_of
+from testing import assert_equal, assert_true
 
 
-fn all_gather_test[
-    type: DType, rank: Int, ngpus: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises:
-    # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var out_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
-    var host_output_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
+def all_gather_test[
+    dtype: DType, rank: Int, ngpus: Int
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) -> None:
+    """Test allgather with new variadic output semantics.
 
-    var total_length = 0
+    Each device should receive individual copies of all inputs,
+    not a single concatenated buffer.
+    """
 
-    @parameter
+    # Create device buffers for all GPUs.
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
+
+    # Create signal buffers for synchronization
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
+
+    # Calculate temp buffer size for signals.
+    var max_length = 0
     for i in range(ngpus):
-        total_length += lengths[i]
+        max_length = max(max_length, lengths[i])
+    var temp_buffer_num_bytes = ngpus * size_of[dtype]() * max_length
 
-    var expected_output = UnsafePointer[Scalar[type]].alloc(total_length)
-    var start_index = 0
-
-    # Initialize buffers for each GPU
-    @parameter
+    # Initialize input buffers and signal buffers.
     for i in range(ngpus):
         var length = lengths[i]
 
-        # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[type](length))
-        out_bufs_list.append(
-            list_of_ctx[i].create_buffer_sync[type](total_length)
-        )
+        # Create device buffer.
+        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
 
-        # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
+        # Create host buffer with test data.
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
-        var host_output_buffer = UnsafePointer[Scalar[type]].alloc(total_length)
-        host_output_buffers.append(host_output_buffer)
 
-        # Initialize host buffer with values so that the expected allgather
-        # output is range(total_length).
-        var host_nd_buf = NDBuffer[type, rank](host_buffer, DimList(length))
+        # Initialize with unique values per device.
+        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
         for j in range(length):
-            var element = Scalar[type](start_index + j)
-            host_nd_buf[j] = element
-            expected_output[start_index + j] = element
-        start_index += length
+            host_nd_buf[j] = Scalar[dtype](
+                i * 1000 + j
+            )  # Device i has values i*1000 + index
 
-        # Copy data to device
+        # Create and initialize signal buffers.
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](
+                size_of[Signal]() + temp_buffer_num_bytes
+            )
+        )
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+
+        # Copy to device.
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
-    # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
-    )
-    var out_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    # Create output buffers - each device needs ngpus output buffers.
+    for device_idx in range(ngpus):
+        var device_outputs = List[DeviceBuffer[dtype]](capacity=ngpus)
+        for input_idx in range(ngpus):
+            var length = lengths[input_idx]
+            device_outputs.append(
+                list_of_ctx[device_idx].create_buffer_sync[dtype](length)
+            )
+        out_bufs_list.append(device_outputs)
+
+    # Create input NDBuffers.
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        fill={}
     )
 
-    @parameter
     for i in range(ngpus):
-        var length = lengths[i]
-        in_bufs[i] = NDBuffer[type, rank](
-            in_bufs_list[i]._unsafe_ptr(), DimList(length)
-        )
-        out_bufs[i] = NDBuffer[type, rank](
-            out_bufs_list[i]._unsafe_ptr(), DimList(total_length)
+        in_bufs[i] = NDBuffer[dtype, rank](
+            in_bufs_list[i]._unsafe_ptr(), DimList(lengths[i])
         )
 
-    # Perform allgather
+    # Create flat output buffer array (ngpus * ngpus).
+    var out_bufs = InlineArray[
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+    ](fill={})
+
+    for device_idx in range(ngpus):
+        for input_idx in range(ngpus):
+            var output_idx = device_idx * ngpus + input_idx
+            out_bufs[output_idx] = NDBuffer[dtype, rank](
+                out_bufs_list[device_idx][input_idx]._unsafe_ptr(),
+                DimList(lengths[input_idx]),
+            )
+
+    # Test the naive implementation explicitly.
+    print("  Testing backward compatible implementation (naive path)")
     allgather(in_bufs, out_bufs, list_of_ctx)
 
-    # Synchronize all devices
-    @parameter
+    # Synchronize all devices.
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    @parameter
-    for i in range(ngpus):
-        list_of_ctx[i].enqueue_copy(host_output_buffers[i], out_bufs_list[i])
+    # Verify results for old implementation.
+    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
 
-    # Verify results
-    @parameter
-    for i in range(ngpus):
-        for j in range(total_length):
-            try:
-                assert_equal(host_output_buffers[i][j], expected_output[j])
-            except e:
-                print("Verification failed at GPU", i, "index", j)
-                print("Value:", host_output_buffers[i][j])
-                print("Expected:", expected_output[j])
-                raise e
+    # Reset output buffers for second test.
+    for device_idx in range(ngpus):
+        for input_idx in range(ngpus):
+            list_of_ctx[device_idx].enqueue_memset[dtype](
+                out_bufs_list[device_idx][input_idx], val=0
+            )
 
-    # Cleanup
+    # Test the implementation with rank_sigs (P2P-capable).
+    print("  Testing new implementation with rank_sigs (P2P-capable)")
+    allgather(in_bufs, out_bufs, rank_sigs, list_of_ctx)
+
+    # Synchronize all devices.
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # Verify results for new implementation.
+    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
+
+    # Clean up.
     for i in range(ngpus):
         host_buffers[i].free()
-        host_output_buffers[i].free()
+    _ = signal_buffers^
 
 
-def main():
-    # Test configurations
+fn _verify_results[
+    dtype: DType
+](
+    out_bufs_list: List[List[DeviceBuffer[dtype]]],
+    list_of_ctx: List[DeviceContext],
+    lengths: List[Int],
+    ngpus: Int,
+) raises:
+    """Helper function to verify allgather results."""
+
+    # Verify results - each device should have copies of all inputs.
+    for device_idx in range(ngpus):
+        for input_idx in range(ngpus):
+            var length = lengths[input_idx]
+            var host_output = UnsafePointer[Scalar[dtype]].alloc(length)
+
+            # Copy output back to host.
+            list_of_ctx[device_idx].enqueue_copy(
+                host_output, out_bufs_list[device_idx][input_idx]
+            )
+            list_of_ctx[device_idx].synchronize()
+
+            # Verify this matches the original input from device input_idx.
+            for j in range(length):
+                var expected = Scalar[dtype](input_idx * 1000 + j)
+                try:
+                    assert_equal(host_output[j], expected)
+                except e:
+                    print(
+                        "Verification failed: device",
+                        device_idx,
+                        "should have copy of input",
+                        input_idx,
+                    )
+                    print(
+                        "Index",
+                        j,
+                        "value:",
+                        host_output[j],
+                        "expected:",
+                        expected,
+                    )
+                    raise e
+
+            host_output.free()
+
+
+def main() -> None:
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
+
+    # Test configurations.
     alias test_lengths = (
         List[Int](8 * 1024, 8 * 1024),
         List[Int](128 * 1024, 8 * 1024),
         List[Int](8 * 1024, 256 * 1024),
         List[Int](8 * 1024, 8 * 1024, 8 * 1024, 8 * 1024),
         List[Int](128 * 1024, 256 * 1024, 8 * 1024, 64 * 1024),
+        # Test uneven shapes.
+        List[Int](37919, 37919, 37918, 37918),
+        # Simple uneven case.
+        List[Int](4, 3, 3),
+        # Another uneven case with 2 GPUs.
+        List[Int](1025, 1024),
     )
 
     @parameter
@@ -143,4 +222,5 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
+        print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
         all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](ctx, lengths)

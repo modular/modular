@@ -11,27 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
 from random import rand
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from gpu.semaphore import Semaphore
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 from testing import assert_equal
-
-from utils.index import Index
 
 
 fn semaphore_vector_reduce[
-    type: DType,
+    dtype: DType,
     N: Int,
     num_parts: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[type]],
-    a_ptr: UnsafePointer[Scalar[type]],
+    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype]],
     locks: UnsafePointer[Int32],
 ):
     var tid = thread_idx.x
@@ -53,35 +48,35 @@ fn semaphore_vector_reduce[
 
 
 fn run_vector_reduction[
-    type: DType,
+    dtype: DType,
     N: Int,
     num_parts: Int,
 ](ctx: DeviceContext,) raises:
     print(
         "== run_semaphore vector reduction kernel => ",
-        String(type),
+        String(dtype),
         N,
         num_parts,
     )
 
     alias PN = N * num_parts
-    var a_host = UnsafePointer[Scalar[type]].alloc(PN)
-    var c_host = UnsafePointer[Scalar[type]].alloc(N)
-    var c_host_ref = UnsafePointer[Scalar[type]].alloc(N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(PN)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(N)
+    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(N)
 
-    rand[type](a_host, PN)
+    rand[dtype](a_host, PN)
     memset_zero(c_host, N)
     memset_zero(c_host_ref, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](PN)
-    var c_device = ctx.enqueue_create_buffer[type](N)
-    var lock_dev = ctx.enqueue_create_buffer[type](1)
+    var a_device = ctx.enqueue_create_buffer[dtype](PN)
+    var c_device = ctx.enqueue_create_buffer[dtype](N)
+    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    ctx.enqueue_function[semaphore_vector_reduce[type, N, num_parts]](
+    ctx.enqueue_function[semaphore_vector_reduce[dtype, N, num_parts]](
         c_device,
         a_device,
         lock_dev,
@@ -109,10 +104,10 @@ fn run_vector_reduction[
 
 
 fn semaphore_matrix_reduce[
-    type: DType, M: Int, N: Int, num_parts: Int
+    dtype: DType, M: Int, N: Int, num_parts: Int
 ](
-    c_ptr: UnsafePointer[Scalar[type]],
-    a_ptr: UnsafePointer[Scalar[type]],
+    c_ptr: UnsafePointer[Scalar[dtype]],
+    a_ptr: UnsafePointer[Scalar[dtype]],
     locks: UnsafePointer[Int32],
 ):
     var tid = thread_idx.x
@@ -138,31 +133,31 @@ fn semaphore_matrix_reduce[
 
 
 fn run_matrix_reduction[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     num_parts: Int,
 ](ctx: DeviceContext,) raises:
     print(
         "== run_semaphore matrix reduction kernel => ",
-        String(type),
+        String(dtype),
         M,
         N,
         num_parts,
     )
 
     alias PX = M * N * num_parts
-    var a_host = UnsafePointer[Scalar[type]].alloc(PX)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(PX)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
-    rand[type](a_host, PX)
+    rand[dtype](a_host, PX)
     memset_zero(c_host, M * N)
     memset_zero(c_host_ref, M * N)
 
-    var a_device = ctx.enqueue_create_buffer[type](PX)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[type](1)
+    var a_device = ctx.enqueue_create_buffer[dtype](PX)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -170,7 +165,7 @@ fn run_matrix_reduction[
 
     var block_size = 1024
 
-    ctx.enqueue_function[semaphore_matrix_reduce[type, M, N, num_parts]](
+    ctx.enqueue_function[semaphore_matrix_reduce[dtype, M, N, num_parts]](
         c_device,
         a_device,
         lock_dev,

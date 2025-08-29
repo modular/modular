@@ -15,17 +15,26 @@ def _binary_test_impl(ctx):
             {},
         )
 
+    env_inherit = ctx.attr.env_inherit + ctx.attr.binary[RunEnvironmentInfo].inherited_environment
+
+    extra_providers = []
+    transitive_files = depset()
+    if InstrumentedFilesInfo in ctx.attr.binary:
+        provider = ctx.attr.binary[InstrumentedFilesInfo]
+        transitive_files = provider.instrumented_files
+        extra_providers.append(provider)
+
     return [
         DefaultInfo(
             executable = output,
-            runfiles = ctx.runfiles(ctx.files.data)
+            runfiles = ctx.runfiles(ctx.files.data, transitive_files = transitive_files)
                 .merge(ctx.attr.binary[DefaultInfo].default_runfiles),
         ),
         RunEnvironmentInfo(
             environment = ctx.attr.binary[RunEnvironmentInfo].environment | processed_env,
-            inherited_environment = ctx.attr.binary[RunEnvironmentInfo].inherited_environment,
+            inherited_environment = env_inherit,
         ),
-    ]
+    ] + extra_providers
 
 binary_test = rule(
     implementation = _binary_test_impl,
@@ -36,6 +45,7 @@ binary_test = rule(
         ),
         "env": attr.string_dict(),
         "data": attr.label_list(allow_files = True),
+        "env_inherit": attr.string_list(),
     },
     test = True,
 )

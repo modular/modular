@@ -10,19 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
-from sys import (
-    alignof,
-    has_avx2,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
-    has_vnni,
-    is_apple_silicon,
-    simdwidthof,
-    sizeof,
-)
+from sys import CompilationTarget, align_of, simd_width_of, size_of
 
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
@@ -32,7 +22,7 @@ from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -47,8 +37,8 @@ def matmul_qint4_pack_b[
     group_size: Int
 ](b: NDBuffer[DType.uint8, 2], b_rot: NDBuffer[DType.uint8, 2]):
     alias n_tiles = 2
-    alias n_groups = n_tiles * simdwidthof[DType.float32]()
-    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
+    alias n_groups = n_tiles * simd_width_of[DType.float32]()
+    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = b.dim[1]() // bytes_per_group_int4 * group_size
@@ -67,14 +57,14 @@ def matmul_qint4_pack_b[
             for _ in range(0, K, group_size):
                 var scale = src_ptr.bitcast[Float16]().load()
                 dst_k_ptr.bitcast[Float16]().store(nn, scale)
-                src_ptr += sizeof[DType.float16]()
-                dst_k_ptr += sizeof[DType.float16]() * n_groups
+                src_ptr += size_of[DType.float16]()
+                dst_k_ptr += size_of[DType.float16]() * n_groups
 
                 var b_data_i4 = src_ptr.load[width = group_size // 2]()
                 src_ptr += group_size // 2
 
-                var b_data_i8_lo = (b_data_i4 & 15)
-                var b_data_i8_hi = (b_data_i4 >> 4)
+                var b_data_i8_lo = b_data_i4 & 15
+                var b_data_i8_hi = b_data_i4 >> 4
                 var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
 
                 @parameter
@@ -89,8 +79,8 @@ def matmul_qint4_pack_b[
 
 
 fn _quantize_a_block[
-    group_size: Int, aq_type: DType, type: DType
-](a_ptr: UnsafePointer[Scalar[type]]) -> (SIMD[aq_type, group_size], Float32):
+    group_size: Int, aq_type: DType, dtype: DType
+](a_ptr: UnsafePointer[Scalar[dtype]]) -> (SIMD[aq_type, group_size], Float32):
     alias a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()
@@ -108,12 +98,12 @@ fn _quantize_a_block[
 
 fn _quantize_a_buffer[
     group_size: Int,
-    type: DType,
+    dtype: DType,
     aq_type: DType,
     *,
     aq_interleave: Int = group_size,
 ](
-    a: NDBuffer[type, 2],
+    a: NDBuffer[dtype, 2],
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
 ):
@@ -204,16 +194,18 @@ fn _unpack_weights[
 
         @parameter
         for col in range(tile_n):
-            var b_scale = b_packed_ptr.bitcast[Float16]().load[
-                width=simd_width
-            ](col * simd_width).cast[DType.float32]()
+            var b_scale = (
+                b_packed_ptr.bitcast[Float16]()
+                .load[width=simd_width](col * simd_width)
+                .cast[DType.float32]()
+            )
             b_scale_ptr.store(col * simd_width, b_scale)
 
         b_scale_ptr += tile_n * simd_width
-        b_packed_ptr += sizeof[DType.float16]() * tile_n * simd_width
+        b_packed_ptr += size_of[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            0
+            fill=0
         )
 
         for k in range(0, group_size, 8):
@@ -234,7 +226,7 @@ fn _unpack_weights[
                     var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
 
                     @parameter
-                    if has_vnni():
+                    if CompilationTarget.has_vnni():
                         b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                             b_column_sums[col], a_zp, b_lo
                         )
@@ -296,7 +288,9 @@ fn _unpack_weights[
             for col in range(tile_n):
                 b_correction_ptr.store(
                     simd_width * col,
-                    -b_column_sums[col] if has_vnni() else b_column_sums[col],
+                    -b_column_sums[
+                        col
+                    ] if CompilationTarget.has_vnni() else b_column_sums[col],
                 )
 
             b_correction_ptr += tile_n * simd_width
@@ -315,7 +309,9 @@ fn _scale_and_accumulate[
     mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](0)
+    var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](
+        uninitialized=True
+    )
 
     # Load the per-column scale values for the B matrix.
     @parameter
@@ -331,11 +327,14 @@ fn _scale_and_accumulate[
         for col in range(tile_n):
             var dot = c_int32[row, col]
 
-            # Withtout VNNI on x86 the 2-wide 8-bit to 16-bit dot
-            # product was calculed in process_group_packed.
+            # Without VNNI on x86 the 2-wide 8-bit to 16-bit dot
+            # product was calculated in process_group_packed.
             # Now complete the 4-wide 8-bit to 32-bit dot product.
             @parameter
-            if has_avx2() and not has_vnni():
+            if (
+                CompilationTarget.has_avx2()
+                and not CompilationTarget.has_vnni()
+            ):
                 dot = pmaddw(
                     dot,
                     bitcast[DType.int32, simd_width](
@@ -350,7 +349,7 @@ fn _scale_and_accumulate[
     # Convert and rescale the integer accumulators and accumulate to the output
     # float accumulators.
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # NEON supports a multiply instruction that can broadcast from a
         # vector element, so help the compiler produce that by doing a vector
         # load.
@@ -381,9 +380,9 @@ trait _MatmulQInt4Kernel:
 
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -428,9 +427,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -450,10 +449,10 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
+        var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            0
+            fill=0
         )
 
         @parameter
@@ -572,9 +571,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -594,10 +593,10 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
+        var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
         var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            0
+            fill=0
         )
 
         @parameter
@@ -741,9 +740,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -763,7 +762,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         c_int32.init()
 
         # Skip over the float16 scales.
-        var b_offset = sizeof[DType.float16]() * tile_n * simd_width
+        var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
         @parameter
         for k in range(0, group_size, 16):
@@ -819,7 +818,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
         @parameter
         for k in range(0, group_size, 16):
-            var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](0)
+            var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](
+                uninitialized=True
+            )
 
             @parameter
             for row in range(tile_m):
@@ -857,9 +858,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -909,7 +910,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         @parameter
         for k in range(0, group_size, 8):
             var a_tile = InlineArray[SIMD[DType.int8, simd_width * 4], block_m](
-                0
+                fill=0
             )
 
             @parameter
@@ -976,8 +977,8 @@ fn _matmul_qint4_m_1[
     b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
-    alias simd_width = simdwidthof[DType.float32]()
-    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
+    alias simd_width = simd_width_of[DType.float32]()
+    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var N = b.dim[0]()
     var K = a_quant.dim[1]()
@@ -1051,9 +1052,9 @@ fn _matmul_qint4_m_any[
     b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
-    alias simd_width = simdwidthof[DType.float32]()
-    alias alignment = alignof[SIMD[DType.float32, simd_width]]()
-    alias bytes_per_group_int4 = sizeof[DType.float16]() + (group_size // 2)
+    alias simd_width = simd_width_of[DType.float32]()
+    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
+    alias bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
 
     var M = a_quant.dim[0]()
     var N = b.dim[0]()
@@ -1205,8 +1206,8 @@ fn _matmul_qint4[
     b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
-    alias simd_width = simdwidthof[DType.float32]()
-    alias alignment = alignof[SIMD[DType.float32, simd_width]]()
+    alias simd_width = simd_width_of[DType.float32]()
+    alias alignment = align_of[SIMD[DType.float32, simd_width]]()
 
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -1259,13 +1260,16 @@ fn matmul_qint4[
         ](a, b, c)
 
     @parameter
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         kernel_dispatch[_MatmulQInt4Kernel_x86_avx]()
-    elif has_neon_int8_matmul() and not is_apple_silicon():
+    elif (
+        CompilationTarget.has_neon_int8_matmul()
+        and not CompilationTarget.is_apple_silicon()
+    ):
         kernel_dispatch[_MatmulQInt4Kernel_neon_i8mm]()
-    elif has_neon_int8_dotprod():
+    elif CompilationTarget.has_neon_int8_dotprod():
         kernel_dispatch[_MatmulQInt4Kernel_neon_dotprod]()
     else:
         constrained[False, "unsupported architecture"]()

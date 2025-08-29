@@ -11,14 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import functools
 import logging
 import os
+from typing import Any, Callable, TypeVar
 
 import click
+from max.entrypoints.workers import start_workers
+from max.serve.config import Settings
+from max.serve.telemetry.common import configure_logging
+from typing_extensions import ParamSpec
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -30,11 +39,11 @@ class WithLazyPipelineOptions(click.Command):
     and should be removed when the pipeline_config_options decorator is fast.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self._options_loaded = False
         super().__init__(*args, **kwargs)
 
-    def _ensure_options_loaded(self):
+    def _ensure_options_loaded(self) -> None:
         if not self._options_loaded:
             # Lazily load and apply pipeline_config_options decorator
             from max.entrypoints.cli import pipeline_config_options
@@ -43,6 +52,7 @@ class WithLazyPipelineOptions(click.Command):
             # The callback contains the actual implementation of the command.
             # Here, we're applying the pipeline_config_options decorator to add CLI parameters
             # to our callback function dynamically, rather than statically at import time.
+            assert self.callback is not None
             self.callback = pipeline_config_options(self.callback)
             self._options_loaded = True
 
@@ -55,29 +65,33 @@ class WithLazyPipelineOptions(click.Command):
             for param in getattr(self.callback, "__click_params__", []):
                 self.params.append(param)
 
-    def get_help(self, ctx):
+    def get_help(self, ctx: click.Context) -> str:
         self._ensure_options_loaded()
         return super().get_help(ctx)
 
-    def invoke(self, ctx):
+    def invoke(self, ctx: click.Context) -> Any:
         self._ensure_options_loaded()
         return super().invoke(ctx)
 
-    def parse_args(self, ctx, args):
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         self._ensure_options_loaded()
         return super().parse_args(ctx, args)
 
-    def get_params(self, ctx):
+    def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()
         return super().get_params(ctx)
 
-    def shell_complete(self, ctx, incomplete):
+    def shell_complete(
+        self, ctx: click.Context, incomplete: str
+    ) -> list[click.shell_completion.CompletionItem]:
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
-    def get_command(self, ctx, cmd_name):
+    def get_command(
+        self, ctx: click.Context, cmd_name: str
+    ) -> click.Command | None:
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
             return rv
@@ -97,16 +111,19 @@ class ModelGroup(click.Group):
     is_eager=True,  # Eager ensures this runs before other options/commands
     help="Show the MAX version and exit.",
 )
-def main():
+def main() -> None:
+    configure_telemetry()
+
+
+def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
-    from max.serve.telemetry.common import configure_logging, configure_metrics
+    from max.serve.telemetry.common import configure_metrics
 
     settings = Settings()
-    configure_logging(settings)
     configure_metrics(settings)
 
 
-def common_server_options(func):
+def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @click.option(
         "--profile-serve",
         is_flag=True,
@@ -117,85 +134,109 @@ def common_server_options(func):
         ),
     )
     @click.option(
-        "--performance-fake",
-        type=click.Choice(["none", "no-op", "speed-of-light", "vllm"]),
-        default="none",
-        help="Fake the engine performance (for benchmarking)",
-    )
-    @click.option(
-        "--batch-timeout",
-        type=float,
-        default=0.0,
-        help="Custom timeout for any particular batch.",
-    )
-    @click.option(
-        "--model-name",
-        type=str,
-        help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
-    )
-    @click.option(
         "--sim-failure",
         type=int,
         default=0,
         help="Simulate fake-perf with failure percentage",
     )
+    @click.option("--port", type=int, help="Port to run the server on.")
     @click.option(
-        "--experimental-enable-kvcache-agent",
+        "--headless",
         is_flag=True,
         show_default=True,
         default=False,
-        help="Experimental: Enable KV Cache Agent support.",
+        help="Run only the dispatcher service and model worker without the API server.",
+    )
+    @click.option(
+        "--log-prefix",
+        type=str,
+        help="Optional prefix to add to all log messages for this server instance.",
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         return func(*args, **kwargs)
 
     return wrapper
 
 
-@main.command(
-    name="serve",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
+@click.option(
+    "--task", type=str, default="text_generation", help="The task to run."
+)
+@click.option(
+    "--task-arg",
+    multiple=True,
+    type=str,  # Take them all in as strings
+    help="Task-specific arguments to pass to the underlying model (can be used multiple times).",
+)
 def cli_serve(
-    profile_serve,
-    performance_fake,
-    batch_timeout,
-    model_name,
-    sim_failure,
-    experimental_enable_kvcache_agent,
-    **config_kwargs,
-):
+    profile_serve: bool,
+    sim_failure: int,
+    port: int,
+    headless: bool,
+    log_prefix: str | None,
+    task: str,
+    task_arg: tuple[str, ...],
+    **config_kwargs: Any,
+) -> None:
     """Start a model serving endpoint for inference.
 
     This command launches a server that can handle inference requests for the
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
-    from max.entrypoints.cli import serve_pipeline
-    from max.pipelines import PipelineConfig
+    from max.entrypoints.cli import serve_api_server_and_model_worker
+    from max.entrypoints.cli.config import parse_task_flags
+    from max.interfaces import PipelineTask
+    from max.pipelines import AudioGenerationConfig, PipelineConfig
 
     # Initialize config, and serve.
-    pipeline_config = PipelineConfig(**config_kwargs)
+    # Load tokenizer & pipeline.
+    pipeline_config: PipelineConfig
+    if task == PipelineTask.AUDIO_GENERATION:
+        pipeline_config = AudioGenerationConfig.from_flags(
+            parse_task_flags(task_arg), **config_kwargs
+        )
+    else:
+        pipeline_config = PipelineConfig(**config_kwargs)
+
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
-    serve_pipeline(
-        pipeline_config=pipeline_config,
-        profile=profile_serve,
-        performance_fake=performance_fake,
-        batch_timeout=batch_timeout,
-        model_name=model_name,
-        failure_percentage=failure_percentage,
-        experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
-    )
+
+    # Initialize Settings
+    settings = Settings()
+
+    if port is not None:
+        settings.port = port
+
+    if log_prefix is not None:
+        settings.log_prefix = log_prefix
+
+    if headless is not None:
+        settings.headless = headless
+
+    # Configure Logging Globally
+    configure_logging(settings)
+
+    if headless:
+        start_workers(
+            settings=settings,
+            pipeline_config=pipeline_config,
+        )
+    else:
+        serve_api_server_and_model_worker(
+            settings=settings,
+            pipeline_config=pipeline_config,
+            profile=profile_serve,
+            failure_percentage=failure_percentage,
+            port=port,
+            pipeline_task=PipelineTask(task),
+        )
 
 
-@main.command(
-    name="generate",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="generate", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -220,7 +261,12 @@ def cli_serve(
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
+def cli_pipeline(
+    prompt: str,
+    image_url: list[str],
+    num_warmups: int,
+    **config_kwargs: Any,
+) -> None:
     """Generate text using the specified model.
 
     This command runs text generation using the loaded model, optionally
@@ -243,10 +289,7 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     )
 
 
-@main.command(
-    name="encode",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="encode", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -260,7 +303,7 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def encode(prompt, num_warmups, **config_kwargs):
+def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     """Encode text input into model embeddings.
 
     This command processes the input text through the model's encoder, producing
@@ -271,17 +314,10 @@ def encode(prompt, num_warmups, **config_kwargs):
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    pipeline_encode(
-        pipeline_config,
-        prompt=prompt,
-        num_warmups=num_warmups,
-    )
+    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
-@main.command(
-    name="warm-cache",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
 def cli_warm_cache(**config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
@@ -298,7 +334,7 @@ def cli_warm_cache(**config_kwargs) -> None:
     default=False,
     help="Print the list of pipelines options in JSON format.",
 )
-def cli_list(json):
+def cli_list(json: bool) -> None:
     """List available pipeline configurations and models.
 
     This command displays information about all registered pipelines and their
@@ -315,12 +351,14 @@ def cli_list(json):
         list_pipelines_to_console()
 
 
-def print_version(ctx, param, value):
+def print_version(
+    ctx: click.Context, param: click.Parameter, value: bool
+) -> None:
     if not value or ctx.resilient_parsing:
         return
     from max import _core
 
-    click.echo(f"\nMAX version {_core.__version__}\n")
+    click.echo(f"MAX {_core.__version__}")
     ctx.exit()
 
 

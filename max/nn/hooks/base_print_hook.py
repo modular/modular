@@ -17,10 +17,12 @@ import dataclasses
 import os
 from abc import ABC, abstractmethod
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from max.nn._identity import IdentityMap
+from max.nn.layer import Layer
 
 
 @dataclass
@@ -51,8 +53,8 @@ class BasePrintHook(ABC):
     - summarize(): Summarize the total number of tensors printed at each step.
     """
 
-    def __init__(self, export_path: str | None = None):
-        self._known_layers = IdentityMap()  # Maps layer -> LayerInfo
+    def __init__(self, export_path: str | None = None) -> None:
+        self._known_layers = IdentityMap[Layer, LayerInfo]()
         self._export_path = export_path
         self._current_step = 0
         # Keep a counter for creating unique layer names.
@@ -61,7 +63,7 @@ class BasePrintHook(ABC):
         # Maps step number -> [list of printed tensors]
         self._recorded_prints: dict[int, list[str]] = {}
 
-    def add_layer(self, layer, name):
+    def add_layer(self, layer: Any, name: str) -> None:
         self._known_layers[layer] = LayerInfo(name)
 
     @property
@@ -70,7 +72,7 @@ class BasePrintHook(ABC):
             return None
         return os.path.join(self._export_path, str(self._current_step))
 
-    def step(self):
+    def step(self) -> None:
         self._current_step += 1
 
         # Update export path.
@@ -81,7 +83,15 @@ class BasePrintHook(ABC):
             for info in self._known_layers.values():
                 info.call_count = 0
 
-    def __call__(self, layer, args, kwargs, outputs):
+        self.write_keys_file()
+
+    def __call__(
+        self,
+        layer: Any,
+        args: Sequence[Any],
+        kwargs: Mapping[str, Any],
+        outputs: Any,
+    ) -> None:
         """Print all TensorValues."""
         if layer not in self._known_layers:
             # If layer is not yet named, use the class name.
@@ -123,6 +133,7 @@ class BasePrintHook(ABC):
                 f"Was not able to write outputs from {debug_name} (output type"
                 f" was {type(outputs)})"
             )
+        self.write_keys_file()
 
     def print_and_record(self, name: str, value: Any) -> bool:
         """Runs self.print_value and records the tensor if printed."""
@@ -131,14 +142,25 @@ class BasePrintHook(ABC):
             if self._current_step not in self._recorded_prints:
                 self._recorded_prints[self._current_step] = []
             self._recorded_prints[self._current_step].append(name)
+
         return print_success
+
+    def write_keys_file(self) -> None:
+        """Write the list of tensor file names, in the order of execution, to tensor_names.txt ."""
+
+        if self.export_path and self._current_step in self._recorded_prints:
+            keys_file = os.path.join(self.export_path, "tensor_names.txt")
+
+            with open(keys_file, "w") as f:
+                for name in self._recorded_prints[self._current_step]:
+                    f.write(f"{name}\n")
 
     @abstractmethod
     def print_value(self, name: str, value: Any) -> bool:
         """Prints a value, and returns whether the print is successful."""
         raise NotImplementedError
 
-    def summarize(self):
+    def summarize(self) -> None:
         action = "Printed"
         if self.export_path:
             action = "Saved"
@@ -153,7 +175,7 @@ class BasePrintHook(ABC):
         elif self._export_path:
             print(f"Tensors exported to {self._export_path}")
 
-    def remove(self):
+    def remove(self) -> None:
         # Clean up export_path if it's empty.
         if (export_path := self.export_path) and not os.listdir(export_path):
             os.rmdir(export_path)

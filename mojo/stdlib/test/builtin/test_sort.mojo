@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from pathlib import Path, _dir_of_current_file
+from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
 
 from builtin.sort import _quicksort, _small_sort, _SortWrapper
+from collections.string.string_slice import _to_string_list
 from testing import assert_equal, assert_false, assert_true
 
 
@@ -70,9 +70,9 @@ fn test_sort_small_3() raises:
     fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
         return lhs.data < rhs.data
 
-    _small_sort[length, Int, _less_than](list.data)
+    _small_sort[length, Int, _less_than](list.unsafe_ptr())
 
-    var expected = List[Int](1, 2, 9)
+    var expected = [1, 2, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -92,9 +92,9 @@ fn test_sort_small_5() raises:
     fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
         return lhs.data < rhs.data
 
-    _small_sort[length, Int, _less_than](list.data)
+    _small_sort[length, Int, _less_than](list.unsafe_ptr())
 
-    var expected = List[Int](1, 2, 3, 4, 9)
+    var expected = [1, 2, 3, 4, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -114,7 +114,7 @@ fn test_sort2() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0)
+    var expected = [-1, 0]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -123,7 +123,7 @@ fn test_sort2() raises:
 
     sort(list)
 
-    expected = List[Int](-2, 2)
+    expected = [-2, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -138,7 +138,7 @@ fn test_sort3() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0, 1)
+    var expected = [-1, 0, 1]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -148,7 +148,7 @@ fn test_sort3() raises:
 
     sort(list)
 
-    expected = List[Int](-2, 0, 2)
+    expected = [-2, 0, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -166,7 +166,7 @@ fn test_sort3_dupe_elements() raises:
 
         _quicksort[cmp_fn](list)
 
-        var expected = List[Int](3, 3, 5)
+        var expected = [3, 3, 5]
         for i in range(length):
             assert_equal(expected[i], list[i])
 
@@ -188,7 +188,7 @@ fn test_sort4() raises:
 
     sort(list)
 
-    var expected = List[Int](-1, 0, 1, 2)
+    var expected = [-1, 0, 1, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -199,7 +199,7 @@ fn test_sort4() raises:
 
     sort(list)
 
-    expected = List[Int](-4, -2, 0, 2)
+    expected = [-4, -2, 0, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -213,7 +213,7 @@ fn test_sort5() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4)
+    var expected = [0, 1, 2, 3, 4]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -225,7 +225,7 @@ fn test_sort5() raises:
 
     sort(list)
 
-    expected = List[Int](-4, -2, 0, 1, 2)
+    expected = [-4, -2, 0, 1, 2]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -239,7 +239,7 @@ fn test_sort_reverse() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4)
+    var expected = [0, 1, 2, 3, 4]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -256,7 +256,7 @@ fn test_sort_semi_random() raises:
 
     sort(list)
 
-    var expected = List[Int](-7, -5, -3, -1, 0, 2, 4, 6)
+    var expected = [-7, -5, -3, -1, 0, 2, 4, 6]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -270,7 +270,7 @@ fn test_sort9() raises:
 
     sort(list)
 
-    var expected = List[Int](0, 1, 2, 3, 4, 5, 6, 7, 8)
+    var expected = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
@@ -436,7 +436,7 @@ fn test_partition_top_k(length: Int, k: Int) raises:
 
 
 fn test_sort_stress() raises:
-    var lens = List[Int](3, 100, 117, 223, 500, 1000, 1500, 2000, 3000)
+    var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 
@@ -487,12 +487,10 @@ fn test_sort_stress() raises:
 struct MyStruct(Copyable, Movable):
     var val: Int
 
-    fn __init__(out self, *, other: Self):
-        self.val = other.val
-
 
 fn test_sort_custom() raises:
     alias length = 103
+
     var list = List[MyStruct](capacity=length)
 
     for i in range(length):
@@ -512,7 +510,7 @@ def test_sort_string_small_list():
     var list = random_numbers[DType.int32](10)
     var string_list = List[String]()
     for n in list:
-        string_list.append(String(Int(n[])))
+        string_list.append(String(Int(n)))
     sort(string_list)
     assert_sorted_string(string_list)
 
@@ -521,7 +519,7 @@ def test_sort_string_big_list():
     var list = random_numbers[DType.int32](1000)
     var string_list = List[String]()
     for n in list:
-        string_list.append(String(Int(n[])))
+        string_list.append(String(Int(n)))
     sort(string_list)
     assert_sorted_string(string_list)
 
@@ -530,19 +528,15 @@ def test_sort_strings():
     var text = (
         _dir_of_current_file() / "test_file_dummy_input.txt"
     ).read_text()
-    var strings = text.split(" ")
+    var strings = _to_string_list(text.split(" "))
     sort(strings)
     assert_sorted_string(strings)
 
 
 @fieldwise_init
-struct Person(Copyable, Movable, Comparable):
+struct Person(Comparable, Copyable, Movable):
     var name: String
     var age: Int
-
-    fn __init__(out self, *, other: Self):
-        self.name = other.name.copy()
-        self.age = other.age
 
     fn __lt__(self, other: Self) -> Bool:
         if self.age < other.age:
@@ -574,10 +568,10 @@ def test_sort_comparamble_elements_list():
     fn gen_list(count: Int):
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
-        var names = List[String]("Maxim", "Max", "Alex", "Bob", "Joe")
+        var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]
         for age in ages:
-            var name = names[Int(age[]) % len(names)]
-            list.append(Person(name, Int(age[])))
+            var name = names[Int(age) % len(names)]
+            list.append(Person(name, Int(age)))
 
     gen_list(10)
     sort(list)
@@ -606,7 +600,7 @@ struct IntPair:
 
 
 def test_stable_sort_stress():
-    var lens = List[Int](3, 100, 117, 223, 500, 1000, 1500, 2000, 3000)
+    var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 

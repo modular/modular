@@ -22,25 +22,63 @@ gemv-commons: &gemv-commons
 params:
 
 - <<: *gemv-commons
-  $N: 3072
-  $K: [3072, 5120, 12288, 32768]
+  N: 3072
+  K: [3072, 5120, 12288, 32768]
 
 - <<: *gemv-commons
-  $N: 4096
-  $K: 32000
+  N: 4096
+  K: 32000
 
 - <<: *gemv-commons
-  $N: 5120
-  $K: [3072, 5120]
+  N: 5120
+  K: [3072, 5120]
 
 - <<: *gemv-commons
-  $N: 12288
-  $K: 3072
+  N: 12288
+  K: 3072
 
 - <<: *gemv-commons
-  $N: 32000
-  $K: 4096
+  N: 32000
+  K: 4096
 
 - <<: *gemv-commons
-  $N: 32768
-  $K: 3072
+  N: 32768
+  K: 3072
+
+- $M: 1
+  N: 4096
+  K: 4096
+  $mode: "transpose"
+  output_type: "float32"
+
+- $M: 1
+  N: 75837
+  K: 5120
+  $mode: "transpose"
+  output_type: "float32"
+
+- $M: 4096
+  N: 1
+  K: 4096
+  output_type: "float32"
+
+- $M: 5120
+  N: 1
+  K: 13824
+  $mode: "transpose"
+
+- $M: 1
+  N: 4096
+  K: 4095
+  $mode: "transpose"
+  output_type: "float32"
+
+- $M: 4096
+  N: 1
+  K: 4095
+  output_type: "float32"
+
+- $M: 1
+  N: 4096
+  K: 4095
+  output_type: "float32"

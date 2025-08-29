@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "mojo_test")
+
+# All SM100 tests require B200 GPU
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        enable_assertions = True,
+        exec_properties = {
+            "test.resources:gpu-memory": "2",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "@mojo//:internal_utils",
+            "@mojo//:linalg",
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(["*.mojo"])
+]

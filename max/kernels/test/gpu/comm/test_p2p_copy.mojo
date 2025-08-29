@@ -14,10 +14,9 @@
 from math import ceildiv
 from sys import env_get_int
 
-from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_true
 
 
 fn p2p_copy_kernel(
@@ -57,10 +56,9 @@ def main():
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 
-    var num_devices = DeviceContext.number_of_devices()
-    if num_devices == 1:
-        print("Only one device found, skipping peer-to-peer copy")
-        return
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
 
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)

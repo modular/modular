@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: MAX Serve API reference
+  title: MAX REST API reference
   description: |
 
-    MAX Serve is a high-performance, Python-based inference server for
+    MAX is a high-performance, Python-based inference server for
     deploying large language models (LLMs) locally or in the cloud. It provides
     efficient request handling through advanced batching and scheduling, and
     an OpenAI-compatible REST endpoint.
@@ -16,18 +16,18 @@ info:
 
     When you want to deploy your model to a cloud-hosted endpoint, you can use
     our [MAX container](/max/container)—see our [Get started with
-    MAX](/max/get-started) and then see our tutorials on using MAX Serve:
+    MAX](/max/get-started) and then see our tutorials on using MAX:
 
     - [Start a chat endpoint](/max/tutorials/start-a-chat-endpoint)
-    - [Run embeddings with MAX Serve](/max/tutorials/run-embeddings-with-max-serve)
+    - [Serve an embedding model with MAX](/max/tutorials/run-embeddings-with-max-serve)
     - [Generate image descriptions with Llama 3.2 Vision](/max/tutorials/deploy-llama-vision)
     - [Deploy Llama 3 on GPU-powered Kubernetes clusters](/max/tutorials/max-serve-local-to-cloud)
 
     ## OpenAI API compatibility
 
-    MAX Serve is compatible with a subset of the [OpenAI REST
+    The MAX REST API is compatible with a subset of the [OpenAI REST
     API](https://platform.openai.com/docs/api-reference/introduction). This
-    allows you to use many existing OpenAI client applications with MAX Serve
+    allows you to use many existing OpenAI client applications with MAX
     endpoints.
 
     - **Supported endpoints:**
@@ -35,15 +35,17 @@ info:
         - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
         - [Completions](#operation/createCompletion) (`/v1/completions`)
         - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
+        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available to users in the [Mammoth](/mammoth/) public preview.
         - [List models](#operation/listModels) (`/v1/models`)
+        - [Health check](#operation/health) (`/health`)
 
     - **Parameter handling:** While aiming for high compatibility, not all
     OpenAI body parameters are implemented. Some may be accepted as no-ops
     (ignored but won't cause errors) to maintain client compatibility. The
     specific endpoint documentation below details only the parameters that
-    actively affect behavior in MAX Serve.
+    actively affect behavior in MAX.
 
-    In addition to the OpenAI APIs, MAX Serve provides a Prometheus-formatted
+    In addition to the OpenAI APIs, MAX provides a Prometheus-formatted
     [metrics endpoint](/max/container#metrics) to help track your model's
     performance.
 
@@ -53,7 +55,7 @@ paths:
       operationId: createChatCompletion
       summary: Create chat completion
       description: |
-        Creates a completion for the chat message. MAX Serve supports a subset of
+        Creates a completion for the chat message. MAX supports a subset of
         OpenAI's chat completion parameters.
         Streaming is supported, but
         [chat-object](https://platform.openai.com/docs/api-reference/chat-streaming/streaming)
@@ -78,9 +80,24 @@ paths:
                       "content": "Who won the world series in 2020?"
                     },
                 ],
+                max_tokens=100
             )
 
             print(completion.choices[0].message.content)
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "modularai/Llama-3.1-8B-Instruct-GGUF",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Who won the world series in 2020?"
+                  }
+                ],
+                "max_tokens": 100
+              }'
       requestBody:
         required: true
         content:
@@ -223,7 +240,33 @@ paths:
       summary: Create completion
       description: |
         Creates a completion for the provided prompt.
-        MAX Serve supports a subset of OpenAI's completion parameters.
+        MAX supports a subset of OpenAI's completion parameters.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            completion = client.completions.create(
+                model="modularai/Llama-3.1-8B-Instruct-GGUF",
+                prompt="Once upon a time",
+                max_tokens=50
+            )
+
+            print(completion.choices[0].text)
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/completions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "modularai/Llama-3.1-8B-Instruct-GGUF",
+                "prompt": "Once upon a time",
+                "max_tokens": 50
+              }'
       requestBody:
         required: true
         content:
@@ -275,7 +318,7 @@ paths:
                     model: "modularai/Llama-3.1-8B-Instruct-GGUF"
                     choices:
                       - index: 0
-                        text: " The story of a young girl who was born with a rare condition that made her skin extremely sensitive to the sun. She had to stay indoors during the day and only go out at night. She was a bit of an outcast among her peers,"
+                        text: ", there was a brave knight who lived in a small village at the edge of a great forest. The knight was known throughout the land for his kindness and courage."
                         finish_reason: "stop"
                         logprobs:
                           text_offset: null
@@ -312,11 +355,35 @@ paths:
       operationId: createEmbedding
       summary: Create embeddings
       description: |
-        Creates an embedding vector representing the input text. MAX Serve
-        supports
+        Creates an embedding vector representing the input text. MAX supports
         [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
         model. Only string and list of strings are supported for the
         input parameter.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            response = client.embeddings.create(
+                model="sentence-transformers/all-mpnet-base-v2",
+                input="The food was delicious and the service was excellent."
+            )
+
+            print(f"Embedding vector length: {len(response.data[0].embedding)}")
+            print(f"First 5 values: {response.data[0].embedding[:5]}")
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/embeddings \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "sentence-transformers/all-mpnet-base-v2",
+                "input": "The food was delicious and the service was excellent."
+              }'
       requestBody:
         required: true
         content:
@@ -380,13 +447,134 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/batches:
+    post:
+      operationId: createBatch
+      summary: Create batch
+      description: |
+        Creates and executes a batch from an uploaded file of requests.
+
+        **Note:** The `v1/batches` API is only available to users in the [Mammoth](/mammoth/) public preview.
+        If you create a batch and get the response `{"detail":"Not Found"}`, then you don't have access.
+        [Get in touch](https://www.modular.com/company/talk-to-us) to learn about early access for enterprise teams.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            client.batches.create(
+                input_file_id=input_path,
+                output_file_id=output_path,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+                metadata={
+                    "model": "model-provider/model-ID"
+                }
+            )
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/batches \
+              -H "Content-Type: application/json" \
+              -d '{
+                "input_file_id": "input_path",
+                "output_file_id": "output_path",
+                "endpoint": "/v1/chat/completions",
+                "completion_window": "24h",
+                "metadata": {
+                    "model": "model_provider/model_ID"
+                }
+              }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Batch'
+            examples:
+              singleString:
+                summary: Batch request example for chat completions
+                value:
+                  completion_window: "24h"
+                  endpoint: "/v1/chat/completions"
+                  input_file_id: "input_path"
+                  metadata:
+                    model: "model_provider/model_ID"
+                    metadata_key: "metadata_value"
+                  output_file_id: "output_path"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+              examples:
+                basic:
+                  summary: Basic batch completion response
+                  value:
+                    id: "batch_ID"
+                    object: "batch"
+                    endpoint: "/v1/chat/completions"
+                    errors: null
+                    input_file_id: "input_path"
+                    completion_window: "24h"
+                    status: "validating"
+                    output_file_id: "output_path"
+                    error_file_id: null
+                    created_at: 1711471533
+                    in_progress_at: null
+                    expires_at: null
+                    finalizing_at: null
+                    completed_at: null
+                    failed_at: null
+                    expired_at: null
+                    cancelling_at: null
+                    cancelled_at: null
+                    request_counts:
+                      total: 0
+                      completed: 0
+                      failed: 0
+                    metadata:
+                      model: "model_provider/model_ID"
+                      metadata_key: "metadata_value"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/models:
     get:
       operationId: listModels
       summary: List models
       description: |
         Lists the currently available models.
-        MAX Serve only returns the one model that it is currently serving.
+        MAX returns only the one model that it's currently serving.
+      x-codeSamples:
+        - lang: Python
+          source: |
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            models = client.models.list()
+
+            for model in models.data:
+                print(f"Model ID: {model.id}")
+                print(f"Object Type: {model.object}")
+                print(f"Owned By: {model.owned_by}")
+        - lang: curl
+          source: |
+            curl -X GET http://0.0.0.0:8000/v1/models \
+              -H "Content-Type: application/json"
       responses:
         '200':
           description: OK
@@ -413,6 +601,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      description: |
+        Returns the health status of the service. Used by tools like lm-eval
+        to determine when the service is ready to accept requests.
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X GET http://0.0.0.0:8000/health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                healthy:
+                  summary: Healthy response
+                  value:
+                    status: "ok"
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                unhealthy:
+                  summary: Unhealthy response
+                  value:
+                    status: "unavailable"
 components:
   schemas:
     CreateChatCompletionRequest:
@@ -425,14 +647,14 @@ components:
           type: string
           description: |
             ID of the model to use.
-            Supported by MAX Serve but handled by frontend load balancer to route traffic to nodes.
+            Supported by MAX but handled by frontend load balancer to route traffic to nodes.
         messages:
           type: array
           items:
             $ref: '#/components/schemas/ChatCompletionMessage'
           description: |
             A list of messages comprising the conversation so far.
-            MAX Serve supports content and role parameters.
+            MAX supports content and role parameters.
         max_tokens:
           type: integer
           minimum: 1
@@ -495,7 +717,6 @@ components:
           enum: [system, user, assistant, function]
           description: |
             The role of the message author.
-
         content:
           oneOf:
             - type: string
@@ -566,6 +787,7 @@ components:
         parameters:
           type: object
           description: The parameters the function accepts, described as a JSON Schema object
+
     CreateChatCompletionResponse:
       type: object
       required:
@@ -594,11 +816,12 @@ components:
             $ref: '#/components/schemas/ChatCompletionChoice'
           description: |
             A list of chat completion choices.
-            MAX Serve does not support `finish_reason` and `logprobs` in choices.
+            MAX does not support `finish_reason` and `logprobs` in choices.
         usage:
           $ref: '#/components/schemas/Usage'
           description: |
             Usage statistics for the completion request.
+
     ChatCompletionChoice:
       type: object
       required:
@@ -611,6 +834,7 @@ components:
         message:
           $ref: '#/components/schemas/ChatCompletionMessage'
           description: The chat completion message
+
     CreateCompletionRequest:
       type: object
       required:
@@ -621,7 +845,6 @@ components:
           type: string
           description: |
             ID of the model to use.
-
         prompt:
           oneOf:
             - type: string
@@ -630,25 +853,21 @@ components:
                 type: string
           description: |
             The prompt to generate completions for.
-
         echo:
           type: boolean
           default: false
           description: |
             Echo back the prompt in addition to the completion.
-
         max_tokens:
           type: integer
           minimum: 1
           description: |
             The maximum number of tokens to generate in the completion.
-
         stream:
           type: boolean
           default: false
           description: |
             Whether to stream back partial progress.
-
         logprobs:
           type: integer
           minimum: 0
@@ -686,6 +905,7 @@ components:
           $ref: '#/components/schemas/Usage'
           description: |
             Usage statistics for the completion request.
+
     CompletionChoice:
       type: object
       required:
@@ -702,6 +922,7 @@ components:
           type: string
           enum: [stop, length, content_filter, null]
           description: The reason the completion finished
+
     CreateEmbeddingRequest:
       type: object
       required:
@@ -711,7 +932,7 @@ components:
         model:
           type: string
           description: |
-            ID of the model to use. MAX Serve supports
+            ID of the model to use. MAX supports
             [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2).
         input:
           oneOf:
@@ -721,19 +942,17 @@ components:
                 type: string
           description: |
             The text to embed.
-            MAX Serve supports strings and list of strings.
+            MAX supports strings and list of strings.
         encoding_format:
           type: string
           enum: [float, base64]
           default: float
           description: |
             The format to return the embeddings in.
-
         dimensions:
           type: integer
           description: |
             The number of dimensions the resulting output embeddings should have.
-
         user:
           type: string
           description: |
@@ -761,6 +980,7 @@ components:
         usage:
           $ref: '#/components/schemas/Usage'
           description: Usage statistics for the embedding request
+
     Embedding:
       type: object
       required:
@@ -781,6 +1001,135 @@ components:
         index:
           type: integer
           description: The index of the embedding in the list of embeddings
+
+    Batch:
+      type: object
+      required:
+        - completion_window
+        - endpoint
+        - input_file_id
+        - output_file_id
+        - metadata
+      properties:
+        completion_window:
+          type: string
+          description: |
+            The time frame within which the batch should be processed.
+            Supported completion windows include: `6h`, `12h`, `24h`, or `7d`.
+        endpoint:
+          type: string
+          description: |
+            The endpoint to be used for all requests in the batch.
+            Currently only the `/v1/chat/completions` endpoint is supported.
+        input_file_id:
+          type: string
+          description: |
+            The path to an uploaded file that contains requests for the new
+            batch.
+        metadata:
+          type: map
+          description: |
+            A set of key-value pairs that can be attached to an object. The
+            `metadata["model"]` field is required.
+        output_file_id:
+          type: string
+          description: |
+            The path to the batch output file.
+
+    BatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: |
+            Unique identifier for the batch.
+        object:
+          type: string
+          description: |
+            Object type `"batch"`.
+        endpoint:
+          type: string
+          description: |
+            Target endpoint for the batch request.
+        errors:
+          type: string
+          description: |
+            List of errors if any.
+        input_file_id:
+          type: string
+          description: |
+            File ID containing batch input data.
+        completion_window:
+          type: string
+          description: |
+            Allowed processing window for the batch.
+        status:
+          type: string
+          description: |
+            Status of batch job creation.
+        output_file_id:
+          type: string
+          description: |
+            File ID containing the batch output results.
+        error_file_id:
+          type: string
+          description: |
+            File ID containing errors for failed batch items.
+        created_at:
+          type: integer
+          description: |
+            Unix timestamp for when the batch was created.
+        in_progress_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch started processing.
+        expires_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch will expire if not processed.
+        completed_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch was completed.
+        failed_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch failed.
+        expired_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch expired based on completion window.
+        cancelling_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch began cancelling.
+        cancelled_at:
+          type: integer
+          description: |
+            Unix timestamp when the batch was cancelled.
+        request_counts:
+          type: object
+          description: |
+            Count of requests in various states, including total number of
+            requests, number of successfully completed requests, and number of
+            failed requests.
+          properties:
+            total:
+              type: integer
+            completed:
+              type: integer
+            failed:
+              type: integer
+        metadata:
+          type: object
+          description: |
+            Set of key-value pairs that can be attached to an object. This can
+            be useful for specifying model, defining the batch output path, or
+            storing additional information about the object in a structured
+            format.
+          additionalProperties:
+            type: string
+
     ListModelsResponse:
       type: object
       required:
@@ -795,7 +1144,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Model'
-          description: A list of model objects. MAX Serve only returns one model.
+          description: A list of model objects. MAX returns only one model.
     Model:
       type: object
       required:
@@ -833,10 +1182,11 @@ components:
         total_tokens:
           type: integer
           description: Total number of tokens used in the request (prompt + completion)
+
     ErrorResponse:
       type: object
       description: |
-        An error response from the MAX Serve API.
+        An error response from the MAX REST API.
       required:
         - error
       properties:
@@ -861,3 +1211,14 @@ components:
             param:
               type: string
               description: The parameter that caused the error
+    HealthResponse:
+      type: object
+      description: |
+        Health check response from the MAX REST API.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+          description: The health status of the service

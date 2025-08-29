@@ -40,11 +40,11 @@ var s = String(c)  # "A"
 ```
 """
 
-from collections import Optional
+
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import UnsafePointer
+from bit._mask import splat
 
 
 @always_inline
@@ -62,13 +62,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Copyable,
-    Movable,
-    EqualityComparable,
-    Intable,
-    Stringable,
-):
+struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -95,7 +89,7 @@ struct Codepoint(
     validly appear in UTF-16 encoded text.
 
     The difference between codepoints and scalar values is a technical
-    distiction related to the backwards-compatible workaround chosen to enable
+    distinction related to the backwards-compatible workaround chosen to enable
     UTF-16 to encode the full range of the Unicode codespace. For simplicities
     sake, and to avoid a confusing clash with the Mojo `Scalar` type, this type
     is pragmatically named `Codepoint`, even though it is restricted to valid
@@ -165,7 +159,7 @@ struct Codepoint(
             return None
 
     @staticmethod
-    fn ord(string: StringSlice) -> Codepoint:
+    fn ord(string: StringSlice[mut=False]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -187,7 +181,9 @@ struct Codepoint(
         # SAFETY:
         #   This is safe because `StringSlice` is guaranteed to point to valid
         #   UTF-8.
-        char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(string._slice)
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.as_bytes()
+        )
 
         debug_assert(
             string.byte_length() == Int(num_bytes),
@@ -196,6 +192,7 @@ struct Codepoint(
 
         return char
 
+    # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
@@ -232,8 +229,8 @@ struct Codepoint(
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
             return Codepoint(b1), 1
 
-        # TODO: Use _utf8_first_byte_sequence_length() here instead for
-        #   consistency.
+        # NOTE: _utf8_first_byte_sequence_length does the same + an op to check
+        # if it is ascii
         var num_bytes = count_leading_zeros(~b1)
         debug_assert(
             1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
@@ -307,7 +304,7 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
-    @always_inline
+    @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
 
@@ -398,7 +395,7 @@ struct Codepoint(
         Check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from testing import assert_true
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())
@@ -410,7 +407,6 @@ struct Codepoint(
         # Letters are not space characters
         assert_fales(Codepoint.ord("a").is_python_space())
         ```
-        .
         """
 
         alias next_line = Codepoint.from_u32(0x85).value()
@@ -482,12 +478,13 @@ struct Codepoint(
 
     @always_inline
     fn unsafe_write_utf8[
-        optimize_ascii: Bool = True
+        optimize_ascii: Bool = True, branchless: Bool = False
     ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
         """Shift unicode to utf8 representation.
 
         Parameters:
             optimize_ascii: Optimize for languages with mostly ASCII characters.
+            branchless: Use a branchless algorithm.
 
         Args:
             ptr: Pointer value to write the encoded UTF-8 bytes. Must validly
@@ -520,39 +517,67 @@ struct Codepoint(
         var num_bytes = self.utf8_byte_length()
 
         @parameter
-        if optimize_ascii:
-            # FIXME(#933): can't run LLVM intrinsic at compile time
-            # if likely(num_bytes == 1):
-            if num_bytes == 1:
-                ptr[0] = UInt8(c)
-                return 1
-            var shift = 6 * (num_bytes - 1)
-            var mask = UInt8(0xFF) >> (num_bytes + 1)
-            var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-            ptr[0] = ((c >> shift) & mask) | num_bytes_marker
-            for i in range(1, num_bytes):
-                shift -= 6
-                ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+        if not branchless:
+            var is_ascii: Bool
+
+            @parameter
+            if optimize_ascii:
+                is_ascii = likely(num_bytes == 1)
+            else:
+                is_ascii = num_bytes == 1
+
+            alias cont_mask = 0b11_1111  # 6 set bits
+            alias cont_marker = 0b1000_0000  # marker for continuation bytes
+
+            if is_ascii:
+                ptr[0] = c
+            elif num_bytes == 2:
+                ptr[0] = (c >> 6) | 0b1100_0000  # marker for 2 byte sequence
+                ptr[1] = (c & cont_mask) | cont_marker
+            elif num_bytes == 3:
+                ptr[0] = (c >> 12) | 0b1110_0000  # marker for 3 byte sequence
+                ptr[1] = ((c >> 6) & cont_mask) | cont_marker
+                ptr[2] = (c & cont_mask) | cont_marker
+            else:
+                ptr[0] = (c >> 18) | 0b1111_0000  # marker for 4 byte sequence
+                ptr[1] = ((c >> 12) & cont_mask) | cont_marker
+                ptr[2] = ((c >> 6) & cont_mask) | cont_marker
+                ptr[3] = (c & cont_mask) | cont_marker
         else:
-            var shift = 6 * (num_bytes - 1)
-            var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
-            var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-            ptr[0] = ((c >> shift) & mask) | (
-                num_bytes_marker & -Int(num_bytes != 1)
-            )
-            for i in range(1, num_bytes):
-                shift -= 6
-                ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+
+            @parameter
+            if optimize_ascii:
+                if likely(num_bytes == 1):
+                    ptr[0] = UInt8(c)
+                    return 1
+                var shift = 6 * (num_bytes - 1)
+                var mask = UInt8(0xFF) >> (num_bytes + 1)
+                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
+                ptr[0] = ((c >> shift) & mask) | num_bytes_marker
+                for i in range(1, num_bytes):
+                    shift -= 6
+                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+            else:
+                var shift = 6 * (num_bytes - 1)
+                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
+                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
+                ptr[0] = ((c >> shift) & mask) | (
+                    num_bytes_marker & splat(num_bytes != 1)
+                )
+                for i in range(1, num_bytes):
+                    shift -= 6
+                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
         return num_bytes
 
     @always_inline
     fn utf8_byte_length(self) -> UInt:
         """Returns the number of UTF-8 bytes required to encode this character.
 
-        The returned value is always between 1 and 4 bytes.
-
         Returns:
             Byte count of UTF-8 bytes required to encode this character.
+
+        Notes:
+            The returned value is always between 1 and 4 bytes.
         """
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
@@ -561,12 +586,4 @@ struct Codepoint(
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        var lt = (sizes <= self.to_u32()).cast[DType.uint8]()
-
-        # TODO(MOCO-1537): Support `reduce_add()` at compile time.
-        #   var count = Int(lt.reduce_add())
-        var count = 0
-        for i in range(len(lt)):
-            count += Int(lt[i])
-
-        return UInt(count)
+        return UInt(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())

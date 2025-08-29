@@ -16,7 +16,6 @@ _EXTRA_COPTS = {
 }
 
 _H100_TESTS = [
-    "test_cublaslt_matmul.mojo",
     "test_stmatrix.mojo",
     "test_tensor_core_sm90.mojo",
     "test_tensormap_replace_insts.mojo",
@@ -26,11 +25,13 @@ _H100_TESTS = [
     "test_tma_mc_swizzle.mojo",
     "test_tma_swizzle.mojo",
     "test_wgmma.mojo",
-    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    "test_wgmma_e4m3_e5m2_layouts_f16.mojo",
+    "test_wgmma_e4m3_e5m2_layouts_f32.mojo",
     "test_wgmma_int8_uint8_layouts.mojo",
     "test_wgmma_layouts.mojo",
     "test_wgmma_with_static_tuple_output_bf16.mojo",
     "test_wgmma_with_static_tuple_output_fp8.mojo",
+    "test_naive_blockwise_fp8_matmul.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -44,6 +45,13 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_vendor_blas_matmul.mojo": select({
+        "//:h100_gpu": [],
+        "//:mi300x_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
+    "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
 }
 
 _FILECHECK_TESTS = [
@@ -57,7 +65,8 @@ _FILECHECK_TESTS = [
     "test_tensor_core_nvidia.mojo",
     "test_tensor_core_sm90.mojo",
     "test_tiled_matmul_gpu.mojo",
-    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    "test_wgmma_e4m3_e5m2_layouts_f16.mojo",
+    "test_wgmma_e4m3_e5m2_layouts_f32.mojo",
     "test_wgmma_int8_uint8_layouts.mojo",
     "test_wgmma_layouts.mojo",
 ]
@@ -70,12 +79,16 @@ _FILECHECK_TESTS = [
             src,
             "matmul_kernels.mojo",
         ],
+        exec_properties = {
+            "test.resources:gpu-memory": "1.5",
+        },
         main = src,
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:kv_cache",
+            "@mojo//:layout",
             "@mojo//:linalg",
             "@mojo//:nn",
             "@mojo//:quantization",

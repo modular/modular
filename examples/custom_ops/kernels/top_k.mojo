@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import alignof, num_physical_cores, sizeof
+from sys import align_of, size_of
 
 from algorithm import parallelize_over_rows
 from bit import log2_floor
@@ -23,13 +23,12 @@ from memory import Span
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
 
-from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TopKElement[T: DType](Copyable & GreaterThanComparable):
+struct TopKElement[T: DType](Copyable & GreaterThanComparable & Movable):
     """Stores the value with it's index."""
 
     var idx: Int32
@@ -56,9 +55,9 @@ struct TopK:
         K: Int,
         target: StaticString,
     ](
-        out_vals: OutputTensor[type=dtype, rank=rank],
-        out_idxs: OutputTensor[type = DType.int32, rank=rank],
-        in_vals: InputTensor[type=dtype, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank],
+        out_idxs: OutputTensor[dtype = DType.int32, rank=rank],
+        in_vals: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -86,7 +85,7 @@ struct TopK:
             var top_k_sram = external_memory[
                 TopKElement[dtype],
                 address_space = AddressSpace.SHARED,
-                alignment = alignof[TopKElement[dtype]](),
+                alignment = align_of[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
@@ -133,14 +132,14 @@ struct TopK:
                 in_vals,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=K,  # One thread per K
-                shared_mem_bytes=K * sizeof[TopKElement[dtype]](),
+                shared_mem_bytes=K * size_of[TopKElement[dtype]](),
             )
         else:
 
             @parameter
             fn top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
-                    var offset = (row_idx * K)
+                    var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter

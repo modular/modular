@@ -14,16 +14,15 @@
 from math import fma, isclose
 from os import abort
 from random import rand
-from sys import CompilationTarget, argv, has_avx512f, simdwidthof, sizeof
+from sys import CompilationTarget, argv, simd_width_of, size_of
 
 import benchmark
 from algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
-from layout.layout import coalesce, expand_modes_alike, flatten
+from layout import Layout, RuntimeLayout
+from layout.int_tuple import IntTuple, size
+from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from layout.math import outer_product_acc
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from memory import stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple
@@ -58,7 +57,7 @@ alias cacheline_size: Int = 64
 
 
 # We should be able to support 1-access per cacheline
-# even when nr * width < cacheline_size // sizeof[elt]()
+# even when nr * width < cacheline_size // size_of[elt]()
 # For Apple Silicon, the values for `float32` would be
 # 4 * 4 < 128 // 4
 # Firestorm core's l1 caches are so large, that we wouldn't
@@ -66,8 +65,8 @@ alias cacheline_size: Int = 64
 # Also: cacheline_size of 64 is currently hard coded.
 @always_inline
 fn stride[elt: DType](nrw: Int) -> Int:
-    if nrw * sizeof[elt]() >= cacheline_size:
-        return cacheline_size // sizeof[elt]()
+    if nrw * size_of[elt]() >= cacheline_size:
+        return cacheline_size // size_of[elt]()
     else:
         return nrw
 
@@ -90,7 +89,7 @@ fn matmul_ukern[
     B: UnsafePointer[Scalar[elt], alignment=64],
     inc: Bool,
 ):
-    alias Align: Int = sizeof[elt]() * width
+    alias Align: Int = size_of[elt]() * width
     alias Astride: Int = stride[elt](nr * width)
     alias CstoreReps: Int = nr * width // Astride
     constrained[CstoreReps * Astride == nr * width]()
@@ -139,7 +138,7 @@ fn matmul_ukern[
                 @parameter
                 for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment = sizeof[elt]()](
+                        Atmp.load[width=1, alignment = size_of[elt]()](
                             m * Astride
                         )
                     )
@@ -189,8 +188,8 @@ fn matmul_ukern[
 # i.e., make it easier to chain matrix multiplies.
 # A's shape is (W*Mr, Mc/(W*Mr), M/Mc), (Kc, K/Kc)
 # A's strides are (1, W*Mr*Kc, Mc*K), (W*Mr, Mc*Kc)
-# B's shape is (Kc*sizeof(elt)/64, 64/sizeof(elt), K/Kc), (nr,Nc/nr,N/Nc)
-# B's strides are ((nr*64/sizeof(elt), 1, Nc*Kc), (64/sizeof(elt), nr*Kc, Nc*K)
+# B's shape is (Kc*size_of(elt)/64, 64/size_of(elt), K/Kc), (nr,Nc/nr,N/Nc)
+# B's strides are ((nr*64/size_of(elt), 1, Nc*Kc), (64/size_of(elt), nr*Kc, Nc*K)
 #
 fn matmul[
     elt: DType,
@@ -445,7 +444,7 @@ fn vectorize_layout_tensor[
     f: fn[width: Int, stride_a: Int, stride_b: Int] (
         UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
     ) capturing -> None,
-    simd_width: Int = max(simdwidthof[elt_a](), simdwidthof[elt_b]()),
+    simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
 ](
     a: LayoutTensor[elt_a, layout_a, MutableAnyOrigin],
@@ -467,7 +466,7 @@ fn copy_to[
     layout_dst: Layout,
     elt_src: DType,
     layout_src: Layout, //,
-    simd_width: Int = max(simdwidthof[elt_dst](), simdwidthof[elt_src]()),
+    simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     unroll_factor: Int = 4,
 ](
     dst: LayoutTensor[elt_dst, layout_dst, MutableAnyOrigin],
@@ -494,7 +493,7 @@ fn check_approx_equal[
     elt_src: DType,
     layout_src: Layout, //,
     cmp_elt: DType,
-    simd_width: Int = max(simdwidthof[elt_dst](), simdwidthof[elt_src]()),
+    simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     *,
     unroll_factor: Int = 4,
     atol: Float64 = 1e-08,
@@ -681,7 +680,7 @@ fn matmulb2b[
                     # B[Kc, Nc]   - held
                     #
                     # If we use nontemporal prefetches (i.e. `prefetchnta`
-                    # on x86) on `A`, then it won't necessarilly be stored in the
+                    # on x86) on `A`, then it won't necessarily be stored in the
                     # L2 cache, or it might be stored but not in a recently used
                     # position, so that it would be quickly evicted, and unlikely
                     # to use more than 1-way from each set it occupies.
@@ -693,7 +692,7 @@ fn matmulb2b[
                         # A[Mr, Kc]   - held
                         # B[Kc, WNr]  - replaced
                         #
-                        # These sizes roughly indicate how mcuh data is needed at
+                        # These sizes roughly indicate how much data is needed at
                         # a cache level. Here, bbecause `A` is the only array that
                         # can be held, `matmul_ukern` strides across it, touching
                         # only one element per cacheline at a time, while streaming
@@ -701,7 +700,7 @@ fn matmulb2b[
                         # This means that each cacheline of `B` is touched in
                         # sequence, and thus never retouched during the `ukern`
                         # call, while `A` is retouched a total of
-                        # `cacheline_size / sizeof[elt]()`
+                        # `cacheline_size / size_of[elt]()`
                         # times. Each cacheline of `A` has thus been touched much more
                         # recently than most cachelines of `B`, allowing us to
                         # keep `A` in the L1 cache while using much larger
@@ -746,7 +745,7 @@ fn matmulb2b[
                 # checks of the arrays vs the actual cache size, since you wouldn't
                 # want to forcefully flush it for smaller arrays, when everything
                 # would have actually fit. Having not tried it, I don't know if it's
-                # likely to help perforamnce.
+                # likely to help performance.
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.
@@ -949,14 +948,14 @@ fn bench_b2b[
 
 fn getMr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 9
     return 6
 
 
 fn getNr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 3
         else:
             return 2
@@ -965,7 +964,7 @@ fn getNr() -> Int:
 
 fn main() raises -> None:
     alias elt = DType.float32
-    alias W = simdwidthof[elt]()
+    alias W = simd_width_of[elt]()
     alias Mr = getMr()
     alias Nr = getNr()
     alias Kr = 2

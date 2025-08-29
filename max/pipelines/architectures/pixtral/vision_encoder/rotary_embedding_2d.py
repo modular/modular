@@ -17,10 +17,12 @@ from functools import cached_property
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, TensorValue, TensorValueLike, ops
-from max.nn.layer import Layer
+from max.nn import Module
 
 
-def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
+def meshgrid(
+    height: DimLike, width: DimLike, indexing: str = "ij"
+) -> TensorValue:
     """Returns row indices and col indices of each point on the grid."""
     height = Dim(height)
     width = Dim(width)
@@ -64,7 +66,7 @@ def patch_position_ids(
     positions = []
     for patch in patch_embeds:
         height, width = patch.shape[
-            1:3
+            2:4
         ]  # img_height/patch_size, img_width/patch_size
         # TODO(MSDK-1194): replace with ops.meshgrid()
         mesh = meshgrid(height, width, indexing="ij")
@@ -81,7 +83,7 @@ def patch_position_ids(
 
 
 @dataclass
-class RotaryEmbedding2D(Layer):
+class RotaryEmbedding2D(Module):
     """
     RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
     """
@@ -92,6 +94,20 @@ class RotaryEmbedding2D(Layer):
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_patches_per_side: int
     """The maximum number of patches per side for model's input (images)."""
+
+    def __init__(
+        self,
+        dim: DimLike,
+        n_heads: int,
+        theta: float,
+        max_patches_per_side: int,
+    ) -> None:
+        super().__init__()
+
+        self.dim = dim
+        self.n_heads = n_heads
+        self.theta = theta
+        self.max_patches_per_side = max_patches_per_side
 
     def freqs_cis_base(self) -> TensorValue:
         """
@@ -150,12 +166,10 @@ class RotaryEmbedding2D(Layer):
         _inv_freq = ops.concat(
             [
                 ops.tile(
-                    ops.unsqueeze(freqs_h, 1),
-                    (1, self.max_patches_per_side, 1),
+                    ops.unsqueeze(freqs_h, 1), (1, self.max_patches_per_side, 1)
                 ),
                 ops.tile(
-                    ops.unsqueeze(freqs_w, 0),
-                    (self.max_patches_per_side, 1, 1),
+                    ops.unsqueeze(freqs_w, 0), (self.max_patches_per_side, 1, 1)
                 ),
             ],
             axis=-1,

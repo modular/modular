@@ -144,7 +144,7 @@ following requirements:
   For more information, see the [Return values](#return-values) section of this
   page.
 
-Where `def` and `fn` differ is error handling and argument mutability defaults.
+Where `def` and `fn` differ is error handling.
 
 * The compiler doesn't allow a function declared with `fn` to raise an error
   condition unless it explicitly includes a `raises` declaration. In contrast,
@@ -153,23 +153,6 @@ Where `def` and `fn` differ is error handling and argument mutability defaults.
   functions](#raising-and-non-raising-functions) section of this page for more
   information.
 
-* All arguments to a function declared with `fn` are immutable references by
-  default (that is, values are read-only, using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)). This
-  prevents accidental mutations, and permits the use of non-copyable types as
-  arguments.
-
-  All arguments to a function declared with `def` are mutable. Arguments default
-  to using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions) like an `fn`
-  function, with a special addition: if the function mutates the argument, it
-  makes a mutable copy.
-
-  You can override the default behavior for both `def` and `fn` functions by
-  providing an explicit [argument
-  convention](/mojo/manual/values/ownership#argument-conventions) when declaring
-  the argument.
-
 As far as a function caller is concerned, there is no difference between
 invoking a function declared with `def` vs a function declared with `fn`. You
 could reimplement a `def` function as an `fn` function without making any
@@ -177,15 +160,10 @@ changes to code that calls the function.
 
 ## Function arguments
 
-As noted in the previous section, there is a difference between how `def`
-and `fn` functions handle default *argument conventions*.
-Argument conventions are discussed in much more detail in the page on
-[Ownership](/mojo/manual/values/ownership#argument-conventions).
-
-The remaining rules for arguments described in this section apply to both `def`
+The rules for arguments described in this section apply to both `def`
 and `fn` functions.
 
-:::note Functions with \`/\` and \`*\` in the argument list
+:::note Functions with / and * in the argument list
 
 You might see the following characters in
 place of arguments: slash (`/`) and/or star (`*`). For example:
@@ -292,7 +270,8 @@ see [variadic parameters](/mojo/manual/parameters/#variadic-parameters).
 
 #### Homogeneous variadic arguments
 
-When defining a homogeneous variadic argument, use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
+When defining a homogeneous variadic argument (all arguments must be the same
+type), use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
 
 ```mojo
 def greet(*names: String):
@@ -311,7 +290,7 @@ We hope to remove these differences in the future.
 :::
 
 Register-passable types, such as `Int`, are available as a
-[`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) type. As
+[`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) type. As
 shown in the previous example, you can iterate over the values using a `for..in`
 loop.
 
@@ -324,38 +303,38 @@ fn sum(*values: Int) -> Int:
 ```
 
 Memory-only types, such as `String`, are available as a
-[`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
+[`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
-[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each value instead
-of the value itself. You must add an empty subscript operator `[]` to
-dereference the pointer and retrieve the value:
+reference to the element, which can be mutable with a `mut` variadic list. Use
+the `ref` binding pattern to capture a mutable reference if you
+want to mutate the elements of the list:
 
 ```mojo
 def make_worldly(mut *strs: String):
-    # Requires extra [] to dereference the pointer for now.
-    for i in strs:
-        i[] += " world"
-
+    for ref i in strs:
+        i += " world"
 ```
 
-Alternately, subscripting into a `VariadicListMem` returns the argument value,
-and doesn't require any dereferencing:
+You can also directly index the list with integers as well:
 
 ```mojo
 fn make_worldly(mut *strs: String):
-    # This "just works" as you'd expect!
     for i in range(len(strs)):
         strs[i] += " world"
 ```
 
 #### Heterogeneous variadic arguments
 
-Implementing heterogeneous variadic arguments is somewhat more complicated than
-homogeneous variadic arguments. Writing generic code to handle multiple argument
-types requires [traits](/mojo/manual/traits) and
-[parameters](/mojo/manual/parameters/). So the syntax may look a little
-unfamiliar if you haven't worked with those features. The signature for a
-function with a heterogeneous variadic argument looks like this:
+Implementing heterogeneous variadic arguments (each argument type may be
+different) is somewhat more complicated than homogeneous variadic arguments. To
+handle multiple argument types, the function must be
+[generic](/mojo/manual/functions/#variadic-arguments), which requires using
+[traits](/mojo/manual/traits) and [parameters](/mojo/manual/parameters/). So
+the syntax may look a little unfamiliar if you haven't worked with those
+features.
+
+The signature for a function with a heterogeneous variadic argument looks like
+this:
 
 ```mojo
 def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
@@ -364,74 +343,48 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
 
 The parameter list, `[*ArgTypes: Intable]` specifies that the function takes an
 `ArgTypes` parameter, which is a list of types, all of which conform to the
-[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The argument list,
-`(*args: *ArgTypes)` has the familiar `*args` for the variadic argument, but
-instead of a single type, its type is defined as *list* of types, `*ArgTypes`.
+[`Intable`](/mojo/stdlib/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
+indicates that `ArgTypes` is a **variadic type parameter** (a list of types).
+
+The argument list, `(*args: *ArgTypes)` has the familiar `*args` for the
+variadic argument, but instead of a single type, its type is defined as the
+variadic type list `*ArgTypes`. The asterisk in `*args` indicates a
+**variadic argument**, and the asterisk in `*ArgTypes` refers to the
+variadic type parameter.
 
 This means that each argument in `args` has a corresponding type in `ArgTypes`,
 so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code>.
 
-Inside the function, `args` is available as a
-[`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack). The easiest
-way to work with the arguments is to use the `each()` method to iterate through
-the `VariadicPack`:
+Inside the function, `args` becomes a
+[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) because the
+syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
+each element in `args` can be a different type that requires a different amount
+of memory. To iterate through the `VariadicPack`, the compiler must know each
+element's type (its memory size), so you must use a [parametric `for`
+loop](/mojo/manual/decorators/parameter/#parametric-for-statement):
 
 ```mojo
 fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
     @parameter
-    fn add[Type: Intable](value: Type):
-        total += Int(value)
+    for i in range(args.__len__()):
+        total += Int(args[i])
 
-    args.each[add]()
     return total
 
-print(count_many_things(5, 11.7, 12))
+def main():
+    print(count_many_things(5, 11.7, 12))
 ```
 
 ```output
 28
 ```
 
-In the example above, the `add()` function is called for each argument in turn,
-with the appropriate `value` and `Type` values. For instance, `add()` is first
-called with `value=5` and `Type=Int`, then with `value=11.7` and `Type=Float64`.
-
-Also, note that when calling `count_many_things()`, you don't actually pass in
+Notice that when calling `count_many_things()`, you don't actually pass in
 a list of argument types. You only need to pass in the arguments, and Mojo
 generates the `ArgTypes` list itself.
 
-As a small optimization, if your function is likely to be called with a single
-argument frequently, you can define your function with a single argument
-followed by a variadic argument. This lets the simple case bypass populating and
-iterating through the `VariadicPack`.
-
-For example, given a `print_string()` function that prints a single string, you
-could re-implement the variadic `print()` function with code like this:
-
-```mojo
-fn print_string(s: String):
-    print(s, end="")
-
-fn print_many[T: Stringable, *Ts: Stringable](first: T, *rest: *Ts):
-    print_string(String(first))
-
-    @parameter
-    fn print_elt[T: Stringable](a: T):
-        print_string(" ")
-        print_string(String(a))
-    rest.each[print_elt]()
-print_many("Bob")
-```
-
-```output
-Bob
-```
-
-If you call `print_many()` with a single argument, it calls `print_string()`
-directly. The `VariadicPack` is empty, so `each()` returns immediately without
-calling the `print_elt()` function.
 
 #### Variadic keyword arguments
 
@@ -443,7 +396,7 @@ variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 ```mojo
 fn print_nicely(**kwargs: Int) raises:
   for key in kwargs.keys():
-      print(key[], "=", kwargs[key[]])
+      print(key, "=", kwargs[key])
 
  # prints:
  # `a = 7`
@@ -613,7 +566,6 @@ compiler error. You can fix this by casting the value to the type you really
 want:
 
 ```mojo
-@value
 struct MyString:
     @implicit
     fn __init__(out self, string: StringLiteral):
@@ -748,7 +700,7 @@ copied. Named result syntax lets you specify a named, uninitialized variable to
 return to the caller using the `out` argument convention:
 
 ```mojo
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     name_tag = NameTag(name^)
 ```
 
@@ -772,9 +724,9 @@ The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
 ```mojo
-def get_name_tag(owned name: String) -> NameTag:
+def get_name_tag(var name: String) -> NameTag:
     ...
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     ...
 ```
 
@@ -793,22 +745,22 @@ which takes several steps to initialize:
 struct ImmovableObject:
     var name: String
 
-    fn __init__(out self, owned name: String):
+    fn __init__(out self, var name: String):
         self.name = name^
 
-def create_immovable_object(owned name: String, out obj: ImmovableObject):
+def create_immovable_object(var name: String, out obj: ImmovableObject):
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
 
 def main():
-    my_obj = create_immutable_object("Blob")
+    my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
-def create_immovable_object2(owned name: String) -> ImmovableObject:
+def create_immovable_object2(var name: String) -> ImmovableObject:
     obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
@@ -820,7 +772,7 @@ or copied to the callee. This isn't an issue if the newly-created value is
 returned immediately:
 
 ```mojo
-def create_immovable_object3(owned name: String) -> ImmovableObject:
+def create_immovable_object3(var name: String) -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
 

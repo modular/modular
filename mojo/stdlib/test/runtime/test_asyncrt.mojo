@@ -10,12 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
-
-from os.atomic import Atomic
 
 from runtime.asyncrt import create_task
-from testing import assert_true
 
 
 # CHECK-LABEL: test_runtime_task

@@ -10,13 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
 from random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId
 from stdlib.builtin.sort import (
     _heap_sort,
     _insertion_sort,
@@ -36,7 +33,7 @@ fn randomize_list[
 ](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
     @parameter
     if dt.is_integral():
-        randint(list.data, size, 0, Int(max))
+        randint(list.unsafe_ptr(), size, 0, Int(max))
     else:
         for i in range(size):
             var res = random_float64()
@@ -63,7 +60,7 @@ fn small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
     ) -> Bool:
         return lhs.data < rhs.data
 
-    _small_sort[size, Scalar[dtype], _less_than](list.data)
+    _small_sort[size, Scalar[dtype], _less_than](list.unsafe_ptr())
 
 
 @always_inline
@@ -333,17 +330,17 @@ def main():
     @parameter
     for i in range(len(dtypes)):
         alias dtype = dtypes[i]
-        for count in small_counts:
-            bench_small_list_sort[dtype](m, count[])
+        for count1 in small_counts:
+            bench_small_list_sort[dtype](m, count1)
 
     @parameter
     for i in range(len(dtypes)):
         alias dtype = dtypes[i]
-        for count in large_counts:
-            bench_large_list_sort[dtype](m, count[])
+        for count2 in large_counts:
+            bench_large_list_sort[dtype](m, count2)
 
-    for count in large_counts:
-        for delta in deltas:
-            bench_low_cardinality_list_sort(m, count[], delta[])
+    for count3 in large_counts:
+        for delta2 in deltas:
+            bench_low_cardinality_list_sort(m, count3, delta2)
 
     m.dump_report()

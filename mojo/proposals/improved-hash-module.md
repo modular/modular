@@ -252,7 +252,7 @@ struct DJBX33A_Hasher[custom_secret: UInt64 = 0](Hasher):
     @always_inline
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """The algorithm is not optimal."""
-        alias size_in_bytes = size * dt.sizeof()
+        alias size_in_bytes = size * dt.size_of()
         var bytes = bitcast[DType.uint8, size_in_bytes](value)
         @parameter
         for i in range(size_in_bytes):
@@ -288,7 +288,7 @@ fn main() raises:
 ## Compiler limitations
 
 Current compiler does not allow parameters on trait definition.
-A parametrization on Hasher trait for for hash value dtype would be
+A parameterization on Hasher trait for for hash value dtype would be
 beneficial as a hashing algorithm might differ.
 For example in [Fowler–Noll–Vo hash function](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV_hash_parameters)
 parameters prime and offset basis depend on hash value width.

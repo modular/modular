@@ -11,21 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from os.atomic import Atomic
-from random import random_float64
-from sys import _RegisterPackType, bitwidthof, sizeof
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import Semaphore, barrier, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace
+from gpu import Semaphore, block_dim, block_idx, thread_idx
+from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer, bitcast, stack_allocation
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 fn swizzle_tile(
@@ -175,7 +171,7 @@ fn first_wave_kernel[
     )
 
     while start_iter < last_iter:
-        var remainder = (iters_per_tile - (start_iter % iters_per_tile))
+        var remainder = iters_per_tile - (start_iter % iters_per_tile)
         var boundary = start_iter + remainder
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
@@ -463,14 +459,12 @@ fn run_matmul_stream_k[
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
     var c_device_n = ctx.enqueue_create_buffer[type](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias sm_count = ctx.device_info.sm_count
+    alias sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
         rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
@@ -485,15 +479,28 @@ fn run_matmul_stream_k[
     ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
-    ctx.enqueue_copy(a_device_n, a_host)
-    ctx.enqueue_copy(b_device_n, b_host)
-
     alias BLOCK_DIM = 16
 
-    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
-        c_device_n,
-        a_device_n,
-        b_device_n,
+    var c_buf_n = NDBuffer[type, 2](c_device_n._unsafe_ptr(), Index(M, N))
+
+    var c_tensor = from_ndbuffer_row_major(c_buf_n)
+    var a_tensor = from_ndbuffer_row_major(a_buf)
+    var b_tensor = from_ndbuffer_row_major(b_buf)
+
+    ctx.enqueue_function[
+        matmul_kernel_naive[
+            type,
+            type,
+            type,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,
@@ -515,8 +522,6 @@ fn run_matmul_stream_k[
     _ = b_device
     _ = c_device
 
-    _ = a_device_n
-    _ = b_device_n
     _ = c_device_n
 
     _ = a_host

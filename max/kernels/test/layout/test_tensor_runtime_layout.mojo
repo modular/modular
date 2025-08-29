@@ -17,7 +17,6 @@ from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
-from memory import UnsafePointer
 
 from utils import IndexList
 
@@ -561,9 +560,14 @@ fn test_random_fill():
     print("== test_random_fill")
     alias layout = Layout(8 * 8 * 8 * 8)
 
-    var dynamic_layout = RuntimeLayout[
+    alias RuntimeLayoutType = RuntimeLayout[
         layout, element_type = DType.int32, linear_idx_type = DType.int32
-    ](layout.size(), 1)
+    ]
+
+    var dynamic_layout = RuntimeLayoutType(
+        RuntimeLayoutType.ShapeType(layout.size()),
+        RuntimeLayoutType.StrideType(1),
+    )
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
@@ -578,7 +582,7 @@ fn test_random_fill():
 
     var variance: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
-        var diff = (rebind[Float32](src_tensor[i]) - mean)
+        var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
     variance = sqrt(variance / src_tensor.runtime_layout.size())
 

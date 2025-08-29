@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from collections.string.string_slice import get_static_string
-from sys.info import alignof, sizeof
+from sys.info import size_of
 
-from memory import Span, UnsafePointer
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_false, assert_true
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -56,7 +54,7 @@ fn test_string_slice_layout() raises:
     # `llvm::StringRef`
 
     # StringSlice should be two words in size.
-    assert_equal(sizeof[StringSlice[MutableAnyOrigin]](), 2 * sizeof[Int]())
+    assert_equal(size_of[StringSlice[MutableAnyOrigin]](), 2 * size_of[Int]())
 
     var str_slice = StringSlice("")
 
@@ -67,7 +65,19 @@ fn test_string_slice_layout() raises:
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
     # 2nd field should at 1-word offset from base ptr
-    assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
+    assert_equal(second_word_ptr - base_ptr, size_of[Int]())
+
+
+def test_constructors():
+    def some_func_immut(b: StringSlice[mut=False]):
+        assert_false(b.mut)
+
+    def some_func_mut(b: StringSlice[mut=True]):
+        assert_true(b.mut)
+
+    var a = "123"
+    some_func_immut(a)
+    some_func_mut(StringSlice(a))
 
 
 fn test_string_literal_byte_span() raises:
@@ -82,7 +92,7 @@ fn test_string_literal_byte_span() raises:
 
 
 fn test_string_byte_span() raises:
-    var string = String("Hello")
+    var string = "Hello"
     var str_slice = string.as_bytes_mut()
 
     assert_equal(len(str_slice), 5)
@@ -229,7 +239,7 @@ fn test_heap_string_from_string_slice() raises:
 
 
 fn test_string_substring() raises:
-    var string = String("Hello")
+    var string = "Hello"
     var str_slice = string.as_string_slice()
 
     assert_equal(len(str_slice), 5)
@@ -288,12 +298,12 @@ fn test_slice_len() raises:
     assert_equal(0, len(StringSlice("")))
 
     # String length is in bytes, not codepoints.
-    var s0 = String("ನಮಸ್ಕಾರ")
+    var s0 = "ನಮಸ್ಕಾರ"
     assert_equal(len(s0), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
-    var s1 = String("abc")
+    var s1 = "abc"
     assert_equal(len(s1), 3)
     assert_equal(len(s1.codepoints()), 3)
 
@@ -386,67 +396,51 @@ def test_slice_repr():
 
 
 def test_find():
-    haystack = String("abcdefg").as_string_slice()
-    haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
-    haystack_repeated_chars = String(
-        "aaaaaaaaaaaaaaaaaaaaaaaa"
-    ).as_string_slice()
+    haystack = "abcdefg".as_string_slice()
+    haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    assert_equal(haystack.find(String("a").as_string_slice()), 0)
-    assert_equal(haystack.find(String("ab").as_string_slice()), 0)
-    assert_equal(haystack.find(String("abc").as_string_slice()), 0)
-    assert_equal(haystack.find(String("bcd").as_string_slice()), 1)
-    assert_equal(haystack.find(String("de").as_string_slice()), 3)
-    assert_equal(haystack.find(String("fg").as_string_slice()), 5)
-    assert_equal(haystack.find(String("g").as_string_slice()), 6)
-    assert_equal(haystack.find(String("z").as_string_slice()), -1)
-    assert_equal(haystack.find(String("zzz").as_string_slice()), -1)
+    assert_equal(haystack.find("a".as_string_slice()), 0)
+    assert_equal(haystack.find("ab".as_string_slice()), 0)
+    assert_equal(haystack.find("abc".as_string_slice()), 0)
+    assert_equal(haystack.find("bcd".as_string_slice()), 1)
+    assert_equal(haystack.find("de".as_string_slice()), 3)
+    assert_equal(haystack.find("fg".as_string_slice()), 5)
+    assert_equal(haystack.find("g".as_string_slice()), 6)
+    assert_equal(haystack.find("z".as_string_slice()), -1)
+    assert_equal(haystack.find("zzz".as_string_slice()), -1)
 
-    assert_equal(haystack.find(String("@#$").as_string_slice()), -1)
-    assert_equal(
-        haystack_with_special_chars.find(String("@#$").as_string_slice()), 7
-    )
+    assert_equal(haystack.find("@#$".as_string_slice()), -1)
+    assert_equal(haystack_with_special_chars.find("@#$".as_string_slice()), 7)
 
-    assert_equal(
-        haystack_repeated_chars.find(String("aaa").as_string_slice()), 0
-    )
-    assert_equal(
-        haystack_repeated_chars.find(String("AAa").as_string_slice()), -1
-    )
+    assert_equal(haystack_repeated_chars.find("aaa".as_string_slice()), 0)
+    assert_equal(haystack_repeated_chars.find("AAa".as_string_slice()), -1)
 
-    assert_equal(
-        haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice()), -1
-    )
+    assert_equal(haystack.find("hijklmnopqrstuvwxyz".as_string_slice()), -1)
 
-    assert_equal(
-        String().as_string_slice().find(String("abc").as_string_slice()), -1
-    )
+    assert_equal(String().as_string_slice().find("abc".as_string_slice()), -1)
 
 
 def test_find_compile_time():
-    alias haystack = String("abcdefg").as_string_slice()
-    alias haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
-    alias haystack_repeated_chars = String(
-        "aaaaaaaaaaaaaaaaaaaaaaaa"
-    ).as_string_slice()
+    alias haystack = "abcdefg".as_string_slice()
+    alias haystack_with_special_chars = "abcdefg@#$".as_string_slice()
+    alias haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
 
-    alias c1 = haystack.find(String("a").as_string_slice())
-    alias c2 = haystack.find(String("ab").as_string_slice())
-    alias c3 = haystack.find(String("abc").as_string_slice())
-    alias c4 = haystack.find(String("bcd").as_string_slice())
-    alias c5 = haystack.find(String("de").as_string_slice())
-    alias c6 = haystack.find(String("fg").as_string_slice())
-    alias c7 = haystack.find(String("g").as_string_slice())
-    alias c8 = haystack.find(String("z").as_string_slice())
-    alias c9 = haystack.find(String("zzz").as_string_slice())
-    alias c10 = haystack.find(String("@#$").as_string_slice())
-    alias c11 = haystack_with_special_chars.find(
-        String("@#$").as_string_slice()
-    )
-    alias c12 = haystack_repeated_chars.find(String("aaa").as_string_slice())
-    alias c13 = haystack_repeated_chars.find(String("AAa").as_string_slice())
-    alias c14 = haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice())
-    alias c15 = String().as_string_slice().find(String("abc").as_string_slice())
+    alias c1 = haystack.find("a".as_string_slice())
+    alias c2 = haystack.find("ab".as_string_slice())
+    alias c3 = haystack.find("abc".as_string_slice())
+    alias c4 = haystack.find("bcd".as_string_slice())
+    alias c5 = haystack.find("de".as_string_slice())
+    alias c6 = haystack.find("fg".as_string_slice())
+    alias c7 = haystack.find("g".as_string_slice())
+    alias c8 = haystack.find("z".as_string_slice())
+    alias c9 = haystack.find("zzz".as_string_slice())
+    alias c10 = haystack.find("@#$".as_string_slice())
+    alias c11 = haystack_with_special_chars.find("@#$".as_string_slice())
+    alias c12 = haystack_repeated_chars.find("aaa".as_string_slice())
+    alias c13 = haystack_repeated_chars.find("AAa".as_string_slice())
+    alias c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
+    alias c15 = String().as_string_slice().find("abc".as_string_slice())
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -498,22 +492,20 @@ def test_split():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
-    # escape secuences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(bytes=next_line),
-            String(bytes=unicode_line_sep),
-            String(bytes=unicode_paragraph_sep),
-        )
+    # escape sequences are accepted
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     assert_equal(StringSlice(s).split(), L("hello", "world"))
@@ -528,17 +520,13 @@ def test_split():
     assert_true(len(S("").split(" ")) == 1)
     assert_true(len(S(",").split(",")) == 2)
     assert_true(len(S(" ").split(" ")) == 2)
-    # assert_true(len(S("").split("")) == 2) # TODO(#3528)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(S("  ").split(" ")) == 3)
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
     assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
     assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
-
-    # TODO(#3528): delete this test
-    with assert_raises():
-        _ = S("").split("")
 
     # Split in middle
     assert_equal(S("faang").split("n"), L("faa", "g"))
@@ -568,11 +556,10 @@ def test_split():
     s3 = S("Лорем ипсум долор сит амет").split("м")
     assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    # TODO(#3528)
-    # assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
-    # assert_equal(S("").join(S("123").split("")), "123")
-    # assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    # assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
@@ -627,8 +614,7 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for i in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = i[]
+    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)
         assert_equal(s.splitlines(), hello_mojo)
@@ -937,7 +923,7 @@ def test_string_slice_from_pointer():
     )
     assert_equal(3, len(a))
     assert_equal(3, len(b))
-    var c = String("ABCD")
+    var c = "ABCD"
     var d = StringSlice[__origin_of(c)](
         unsafe_from_utf8_ptr=c.unsafe_cstr_ptr()
     )
@@ -982,7 +968,7 @@ def test_join():
     assert_equal(StaticString(" ").join("a", "b", "c", " "), "a b c  ")
 
     var sep = StaticString(",")
-    var s = String("abc")
+    var s = "abc"
     assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
     assert_equal(sep.join(1, 2, 3), "1,2,3")
     assert_equal(sep.join(1, "abc", 3), "1,abc,3")
@@ -1014,7 +1000,7 @@ def test_string_slice_intern():
 # it does not need to be run
 def test_merge():
     var a = ""
-    var b = String("hi")
+    var b = "hi"
 
     fn cond(
         pred: Bool, a: StringSlice, b: StringSlice
@@ -1026,6 +1012,7 @@ def test_merge():
 
 def main():
     test_string_slice_layout()
+    test_constructors()
     test_string_literal_byte_span()
     test_string_byte_span()
     test_heap_string_from_string_slice()

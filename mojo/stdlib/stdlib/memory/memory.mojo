@@ -20,19 +20,18 @@ from memory import memcmp
 """
 
 
-from collections import Optional
 from collections.string.string_slice import _get_kgen_string
-from math import align_down, iota
+from math import iota
 from sys import _libc as libc
 from sys import (
-    alignof,
+    align_of,
     external_call,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
-    simdbitwidth,
-    simdwidthof,
-    sizeof,
+    simd_bit_width,
+    simd_width_of,
+    size_of,
 )
 
 from algorithm import vectorize
@@ -67,7 +66,7 @@ fn _memcmp_opt_impl_unconstrained[
     s2: UnsafePointer[Scalar[dtype], **_],
     count: Int,
 ) -> Int:
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     if count < simd_width:
         for i in range(count):
             var s1i = s1[i]
@@ -81,7 +80,7 @@ fn _memcmp_opt_impl_unconstrained[
     for i in range(0, last, simd_width):
         var s1i = s1.load[width=simd_width](i)
         var s2i = s2.load[width=simd_width](i)
-        var diff = s1i != s2i
+        var diff = s1i.ne(s2i)
         if any(diff):
             var index = Int(
                 diff.select(
@@ -93,7 +92,7 @@ fn _memcmp_opt_impl_unconstrained[
 
     var s1i = s1.load[width=simd_width](last)
     var s2i = s2.load[width=simd_width](last)
-    var diff = s1i != s2i
+    var diff = s1i.ne(s2i)
     if any(diff):
         var index = Int(
             diff.select(
@@ -144,14 +143,14 @@ fn memcmp[
         s1 < s2. The comparison is performed by the first different byte in the
         byte strings.
     """
-    var byte_count = count * sizeof[type]()
+    var byte_count = count * size_of[type]()
 
     @parameter
-    if sizeof[type]() >= sizeof[DType.int32]():
+    if size_of[type]() % size_of[DType.int32]() == 0:
         return _memcmp_impl(
             s1.bitcast[Int32](),
             s2.bitcast[Int32](),
-            byte_count // sizeof[DType.int32](),
+            byte_count // size_of[DType.int32](),
         )
 
     return _memcmp_impl(s1.bitcast[Byte](), s2.bitcast[Byte](), byte_count)
@@ -182,7 +181,7 @@ fn _memcpy_impl(
 
     @parameter
     if is_gpu():
-        vectorize[copy, simdbitwidth()](n)
+        vectorize[copy, simd_bit_width()](n)
 
         return
 
@@ -199,7 +198,7 @@ fn _memcpy_impl(
 
     if n <= 16:
         if n >= 8:
-            var ui64_size = sizeof[UInt64]()
+            var ui64_size = size_of[UInt64]()
             dest_data.bitcast[UInt64]().store[alignment=1](
                 0, src_data.bitcast[UInt64]().load[alignment=1](0)
             )
@@ -213,7 +212,7 @@ fn _memcpy_impl(
             )
             return
 
-        var ui32_size = sizeof[UInt32]()
+        var ui32_size = size_of[UInt32]()
         dest_data.bitcast[UInt32]().store[alignment=1](
             0, src_data.bitcast[UInt32]().load[alignment=1](0)
         )
@@ -228,7 +227,7 @@ fn _memcpy_impl(
     # TODO (#10566): This branch appears to cause a 12% regression in BERT by
     # slowing down broadcast ops
     # if n <= 32:
-    #    alias simd_16xui8_size = 16 * sizeof[Int8]()
+    #    alias simd_16xui8_size = 16 * size_of[Int8]()
     #    dest_data.store[width=16](src_data.load[width=16]())
     #    # note that some of these bytes may have already been written by the
     #    # previous simd_store
@@ -259,7 +258,7 @@ fn memcpy[
         src: The source pointer.
         count: The number of elements to copy.
     """
-    var n = count * sizeof[dest.type]()
+    var n = count * size_of[dest.type]()
 
     if is_compile_time():
         # A fast version for the interpreter to evaluate
@@ -294,7 +293,7 @@ fn _memset_impl[
     fn fill[width: Int](offset: Int):
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
-    alias simd_width = simdwidthof[Byte]()
+    alias simd_width = simd_width_of[Byte]()
     vectorize[fill, simd_width](count)
 
 
@@ -317,7 +316,7 @@ fn memset[
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * sizeof[type]())
+    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[type]())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -365,7 +364,7 @@ fn memset_zero[
     fn fill[width: Int](offset: Int):
         ptr.store(offset, SIMD[dtype, width](0))
 
-    vectorize[fill, simdwidthof[dtype](), size=count]()
+    vectorize[fill, simd_width_of[dtype](), size=count]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -378,7 +377,7 @@ fn stack_allocation[
     count: Int,
     dtype: DType,
     /,
-    alignment: Int = alignof[dtype]() if is_gpu() else 1,
+    alignment: Int = align_of[dtype]() if is_gpu() else 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[Scalar[dtype], address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
@@ -405,7 +404,7 @@ fn stack_allocation[
     type: AnyType,
     /,
     name: Optional[StaticString] = None,
-    alignment: Int = alignof[type]() if is_gpu() else 1,
+    alignment: Int = align_of[type]() if is_gpu() else 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[type, address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
@@ -487,7 +486,7 @@ fn _malloc[
     type: AnyType,
     /,
     *,
-    alignment: Int = alignof[type]() if is_gpu() else 1,
+    alignment: Int = align_of[type]() if is_gpu() else 1,
 ](size: Int, /) -> UnsafePointer[
     type, address_space = AddressSpace.GENERIC, alignment=alignment
 ]:

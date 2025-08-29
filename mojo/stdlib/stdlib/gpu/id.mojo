@@ -21,8 +21,6 @@ Most functionality is architecture-agnostic, with some NVIDIA-specific features 
 The module is designed to work seamlessly across different GPU architectures while providing
 optimal performance through hardware-specific optimizations where applicable."""
 
-from math import fma
-from os import abort
 from sys import is_nvidia_gpu, llvm_intrinsic
 from sys.intrinsics import block_dim as _block_dim
 from sys.intrinsics import block_id_in_cluster as _block_id_in_cluster
@@ -33,6 +31,7 @@ from sys.intrinsics import global_idx as _global_idx
 from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
+from sys.info import CompilationTarget
 
 from .globals import WARP_SIZE
 from .warp import broadcast
@@ -106,7 +105,7 @@ fn warp_id() -> UInt:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
 
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     @parameter
     if is_nvidia_gpu():
@@ -149,5 +148,8 @@ fn sm_id() -> UInt:
             )
         )
     else:
-        constrained[False, "The sm_id function is not supported by AMD GPUs."]()
-        return abort[Int]("function not available")
+        return CompilationTarget.unsupported_target_error[
+            UInt,
+            operation="sm_id",
+            note="sm_id() is only supported when targeting NVIDIA GPUs.",
+        ]()

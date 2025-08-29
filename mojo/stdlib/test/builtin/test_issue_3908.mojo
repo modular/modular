@@ -14,16 +14,14 @@
 
 import sys
 
-from builtin.io import _fdopen
+from io.io import _fdopen
 from testing import testing
 
 
 fn test_read_until_delimiter_raises_eof() raises:
     var stdin = _fdopen["r"](sys.stdin)
     with testing.assert_raises(contains="EOF"):
-        # Assign to a variable to silence a warning about unused String value
-        # if an error wasn't raised.
-        var unused = stdin.read_until_delimiter("\n")
+        _ = stdin.read_until_delimiter("\n")
 
 
 fn main() raises:

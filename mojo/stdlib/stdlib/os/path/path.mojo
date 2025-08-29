@@ -20,12 +20,12 @@ from os.path import isdir
 ```
 """
 
-from collections import InlineArray, List
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
-
-from memory import Span
+from sys import CompilationTarget, external_call
+from sys.ffi import c_char, get_errno, MAX_PATH
+from sys._libc import realpath as libc_realpath
+from collections.string.string_slice import _unsafe_strlen
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -44,27 +44,28 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 fn _constrain_unix():
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
 
 @always_inline
-fn _get_stat_st_mode(owned path: String) raises -> Int:
+fn _get_stat_st_mode(var path: String) raises -> Int:
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
     else:
         return Int(_stat_linux_x86(path^).st_mode)
 
 
 @always_inline
-fn _get_lstat_st_mode(owned path: String) raises -> Int:
+fn _get_lstat_st_mode(var path: String) raises -> Int:
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
     else:
         return Int(_lstat_linux_x86(path^).st_mode)
@@ -77,7 +78,7 @@ fn _get_lstat_st_mode(owned path: String) raises -> Int:
 
 fn _user_home_path(path: String) -> String:
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return getenv("USERPROFILE")
     else:
         var user_end = path.find(sep, 1)
@@ -128,7 +129,7 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     var path_split = fspath.split(os.sep, 1)
     # If there is a properly formatted separator, return expanded fspath.
     if len(path_split) == 2:
-        return os.path.join(userhome, path_split[1])
+        return os.path.join(userhome, String(path_split[1]))
     # Path was a single `~` character, return home path
     return userhome
 
@@ -238,6 +239,75 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 
 # ===----------------------------------------------------------------------=== #
+# realpath
+# ===----------------------------------------------------------------------=== #
+
+
+fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+    """Expands all symbolic links and resolves references to /./, /../ and extra
+    '/' characters in the null-terminated string named by path to produce a
+    canonicalized absolute pathname.The resulting path will have no symbolic
+    link, /./ or /../ components.
+
+    Args:
+        path: The path to resolve.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Raises:
+       - Read or search permission was denied for a component of the path
+       prefix.
+
+       - path is NULL.
+
+       - An I/O error occurred while reading from the filesystem.
+
+       - Too many symbolic links were encountered in translating the pathname.
+
+       - A component of a pathname exceeded NAME_MAX characters, or an entire
+       pathname exceeded PATH_MAX characters.
+
+       - The named file does not exist.
+
+       - Out of memory.
+
+       - A component of the path prefix is not a directory.
+
+    Returns:
+        A String of the resolved path.
+    """
+    # Leave room for initializing the refcount into the header.
+    alias capacity = MAX_PATH + String.REF_COUNT_SIZE
+    var ptr = UnsafePointer[c_char].alloc(capacity)
+
+    # Initialize the Atomic refcount into the header.
+    __get_address_as_uninit_lvalue(
+        ptr.bitcast[Atomic[DType.index]]().address
+    ) = Atomic[DType.index](1)
+
+    # Offset the pointer to after the refcount.
+    var returned_path_ptr = libc_realpath(
+        path.__fspath__().unsafe_ptr().bitcast[c_char](),
+        ptr + String.REF_COUNT_SIZE,
+    )
+    if not returned_path_ptr:
+        raise Error("realpath failed to resolve: ", get_errno())
+
+    # Caller is responsible for freeing the pointer, safe to store in String.
+    var string = String()
+    # Store the already offset pointer, pointing the the first char.
+    var byte_ptr = returned_path_ptr.bitcast[Byte]()
+    string._ptr_or_data = byte_ptr
+    string._len_or_data = _unsafe_strlen(byte_ptr)
+    # capacity >> 3 can only be lower, so will realloc safely if required
+    string._capacity_or_data = UInt(capacity >> 3)
+    string._set_ref_counted()
+
+    return string
+
+
+# ===----------------------------------------------------------------------=== #
 # exists
 # ===----------------------------------------------------------------------=== #
 
@@ -337,7 +407,7 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # TODO(MOCO-1532):
 #   Use StringSlice here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
-fn join(owned path: String, *paths: String) -> String:
+fn join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
     If any component is an absolute path, all previous path components
     will be discarded.  An empty last part will result in a path that
@@ -353,12 +423,12 @@ fn join(owned path: String, *paths: String) -> String:
     var joined_path = path
 
     for cur_path in paths:
-        if cur_path[].startswith(sep):
-            joined_path = cur_path[]
+        if cur_path.startswith(sep):
+            joined_path = cur_path
         elif not joined_path or path.endswith(sep):
-            joined_path += cur_path[]
+            joined_path += cur_path
         else:
-            joined_path += sep + cur_path[]
+            joined_path += sep + cur_path
 
     return joined_path^
 
@@ -386,9 +456,9 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     Returns:
         A tuple containing two strings: (head, tail).
     """
-    fspath = path.__fspath__()
-    i = fspath.rfind(os.sep) + 1
-    head, tail = fspath[:i], fspath[i:]
+    var fspath = path.__fspath__()
+    var i = fspath.rfind(os.sep) + 1
+    var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
         head = String(head.rstrip(sep))
     return head, tail
@@ -482,7 +552,7 @@ fn _split_extension(
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
-    return String(path), String("")
+    return String(path), ""
 
 
 fn split_extension[
@@ -501,7 +571,7 @@ fn split_extension[
     """
 
     @parameter
-    if os_is_windows():
+    if CompilationTarget.is_windows():
         return _split_extension(path.__fspath__(), "\\", "/", ".")
     return _split_extension(path.__fspath__(), sep, "", ".")
 
@@ -526,7 +596,7 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = String("")
+    alias empty = ""
 
     # Relative path, e.g.: 'foo'
     if p[:1] != sep:
@@ -660,10 +730,10 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf.reserve(new_capacity=2 * len(bytes))
+                buf.reserve(new_capacity=UInt(2 * len(bytes)))
             buf.write_bytes(bytes[i:j])
 
-            name, length = _parse_variable_name(bytes[j + 1 :])
+            var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":

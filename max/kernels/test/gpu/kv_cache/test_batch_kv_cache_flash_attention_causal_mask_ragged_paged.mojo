@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isclose, isqrt
+from math import ceildiv, isqrt
 from random import random_ui64, seed
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy, memset_zero
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -31,14 +31,14 @@ from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
-from utils import Index, IndexList
+from utils import IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
@@ -49,7 +49,7 @@ def execute_ragged_flash_attention[
     alias page_size = 512
 
     var batch_size = len(valid_lengths)
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )
@@ -78,28 +78,28 @@ def execute_ragged_flash_attention[
     cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     random(q_ragged_host.tensor)
     q_ragged_device = q_ragged_host.copy_to_device(ctx)
 
     # initialize reference output
     test_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     test_output_device = test_output_host.copy_to_device(ctx)
     ref_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     var num_continuous_blocks = batch_size + 2
-    var num_paged_blocks = ceildiv(
-        max_full_context_length, page_size
-    ) * batch_size
+    var num_paged_blocks = (
+        ceildiv(max_full_context_length, page_size) * batch_size
+    )
 
     # initialize our KVCache
-    kv_block_continuous_host = HostNDBuffer[type, 6](
+    kv_block_continuous_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_continuous_blocks,
             2,
@@ -130,7 +130,7 @@ def execute_ragged_flash_attention[
     var lookup_table_device = lookup_table_continuous_host.copy_to_device(ctx)
 
     kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
+        dtype, kv_params
     ](
         kv_block_continuous_device.tensor,
         cache_lengths_device.tensor,
@@ -139,7 +139,12 @@ def execute_ragged_flash_attention[
         max_full_context_length,
     )
 
-    kv_block_paged_host = HostNDBuffer[type, 6](
+    # num_paged_blocks = 1,
+    # num_layers = 2
+    # page_size = 512
+    # (total_blocks - 1) * self._stride() + Self.page_size
+    # Self.page_size
+    kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -165,12 +170,15 @@ def execute_ragged_flash_attention[
 
             paged_lut_set.add(randval)
             paged_lut_host.tensor[bs, block_idx] = randval
+            block_sz = min(page_size, seq_len - block_idx * page_size)
 
             for kv_idx in range(2):
+                paged_ptr = kv_block_paged_host.tensor._offset(
+                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                )
+                n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 memcpy(
-                    kv_block_paged_host.tensor._offset(
-                        IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
-                    ),
+                    paged_ptr,
                     kv_block_continuous_host.tensor._offset(
                         IndexList[6](
                             continuous_idx,
@@ -181,13 +189,21 @@ def execute_ragged_flash_attention[
                             0,
                         )
                     ),
-                    page_size * kv_params.num_heads * kv_params.head_size,
+                    n_cpy,
                 )
+                if block_sz < page_size:
+                    memset_zero(
+                        paged_ptr + n_cpy,
+                        (page_size - block_sz)
+                        * kv_params.num_heads
+                        * kv_params.head_size,
+                    )
+
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_paged_device = PagedKVCacheCollection[
-        type, kv_params, page_size, WRITE_MODE_MEM
+        dtype, kv_params, page_size
     ](
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,
@@ -233,6 +249,7 @@ def execute_ragged_flash_attention[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
+
     for bs in range(batch_size):
         prompt_len = valid_lengths[bs]
         ragged_offset = Int(input_row_offsets_host.tensor[bs])
@@ -278,12 +295,11 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
 
-    for bs_ref in [1, 4]:
+    for bs in [1, 4]:
 
         @parameter
         for type_idx in range(len(types)):
             alias type = types[type_idx]
-            bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
@@ -306,15 +322,15 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     # edge cases
     print("CE", 1, DType.bfloat16)
-    var short_ce_seq_len = List[Int](2)
-    var short_ce_cache_size = List[Int](0)
+    var short_ce_seq_len = [2]
+    var short_ce_cache_size = [0]
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
     ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
 
     print("TG", 2, DType.bfloat16)
-    tg_seq_lens = List[Int](1, 1)
-    tg_variable_cache_lens = List[Int](1024, 11)
+    tg_seq_lens = [1, 1]
+    tg_variable_cache_lens = [1024, 11]
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
     ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)

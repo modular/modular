@@ -18,9 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from max.driver import (
-    DeviceSpec,
-)
+from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 
@@ -53,11 +51,8 @@ class RopeType(str, Enum):
     none = "none"
     normal = "normal"
     neox = "neox"
-
-
-class PipelineEngine(str, Enum):
-    MAX = "max"
-    HUGGINGFACE = "huggingface"
+    longrope = "longrope"
+    yarn = "yarn"
 
 
 class PipelineRole(str, Enum):
@@ -66,6 +61,30 @@ class PipelineRole(str, Enum):
     PrefillAndDecode = "prefill_and_decode"
     PrefillOnly = "prefill_only"
     DecodeOnly = "decode_only"
+
+    @property
+    def uses_dispatch_service(self) -> bool:
+        """Whether the scheduler needs a dispatcher client to be started.
+
+        The dispatcher is a message routing system that enables communication between
+        components across instances. It handles:
+        - Request forwarding between schedulers on different instances
+        - Reply routing for request-response patterns
+
+        Schedulers that operate in isolation don't need the dispatcher client.
+        However, schedulers that are part of a distributed pipeline require the
+        dispatcher client to communicate with their counterparts.
+
+        When this method returns True, the ModelWorker will start the dispatcher client
+        before running the scheduler, enabling distributed message passing.
+
+        Returns:
+            bool: True if the scheduler requires dispatcher client startup, False otherwise.
+        """
+        return self in (
+            PipelineRole.PrefillOnly,
+            PipelineRole.DecodeOnly,
+        )
 
 
 class SupportedEncoding(str, Enum):

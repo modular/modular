@@ -12,27 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, ceildiv, erf, exp, fma, isqrt, log, sin, sqrt, tanh
+from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
 from sys import (
-    alignof,
+    align_of,
     env_get_int,
     env_get_string,
-    is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
 )
 from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from buffer.dimlist import _make_tuple
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
-from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
-from memory import UnsafePointer
-from testing import assert_equal
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
+from internal_utils import arg_parse, parse_shape
 
 from utils import IndexList
 from utils.index import product
@@ -109,9 +105,9 @@ fn simd_store[
 @no_inline
 fn run_elementwise[
     rank: Int, //,
-    type: DType,
-    kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    dtype: DType,
+    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
     *,
     emulate_graph_compiler: Bool,
@@ -124,34 +120,35 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
-    alias align = alignof[
-        SIMD[type, pack_size], target = _get_gpu_target()
+    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    alias align = align_of[
+        SIMD[dtype, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     var stride = align_up(N, pack_size)
-    var N_cache = align_up(
-        128 * 1024 * 1024, stride * sizeof[type]()
-    ) // sizeof[type]()
-
-    var in_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(
-        N_cache
-    )
-    var out_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(
-        N_cache
+    var N_cache = (
+        align_up(128 * 1024 * 1024, stride * size_of[dtype]())
+        // size_of[dtype]()
     )
 
-    var in_host = NDBuffer[type, rank](in_host_ptr, dims)
-    var out_host = NDBuffer[type, rank](out_host_ptr, dims)
+    var in_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
+        N_cache
+    )
+    var out_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
+        N_cache
+    )
+
+    var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
+    var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
 
     for i in range(N_cache):
         in_host_ptr[i] = i
 
-    var in_buffer = ctx.enqueue_create_buffer[type](N_cache)
-    var out_buffer = ctx.enqueue_create_buffer[type](N_cache)
+    var in_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
+    var out_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
 
     ctx.enqueue_copy(in_buffer, in_host.data)
 
@@ -165,17 +162,19 @@ fn run_elementwise[
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
             var offset = (iteration * stride) % N_cache
-            var in_tensor = NDBuffer[type, rank](
+            var in_tensor = NDBuffer[dtype, rank](
                 in_buffer.unsafe_ptr() + offset, dims
             )
-            var out_tensor = NDBuffer[type, rank](
+            var out_tensor = NDBuffer[dtype, rank](
                 out_buffer.unsafe_ptr() + offset, dims
             )
 
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            fn func[simd_width: Int, rank_: Int](idx0: IndexList[rank_]):
+            fn func[
+                simd_width: Int, rank_: Int, alignment: Int = 1
+            ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
 
                 @parameter
@@ -205,7 +204,7 @@ fn run_elementwise[
 
         b.iter_custom[kernel_launch](ctx)
 
-    var num_bytes = 2 * N * sizeof[type]()
+    var num_bytes = 2 * N * size_of[dtype]()
     m.bench_function[bench_func](
         BenchId(
             "elementwise",
@@ -216,7 +215,7 @@ fn run_elementwise[
                 "/",
                 fn_name,
                 "/",
-                type,
+                dtype,
                 "/",
                 name,
             ),

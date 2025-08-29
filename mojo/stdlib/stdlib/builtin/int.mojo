@@ -19,18 +19,21 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from hashlib.hash import _hash_simd
-from math import CeilDivable
-from sys import bitwidthof
+from collections.interval import IntervalElement
+from hashlib.hasher import Hasher
+from math import CeilDivable, Ceilable, Floorable, Truncable
+from sys import bit_width_of
+from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
-from builtin.math import Absable, Powable
-from memory import UnsafePointer
-from python import Python, PythonConvertible, PythonObject
-from python._bindings import ConvertibleFromPython
+from builtin.math import Absable, DivModable, Powable
+from python import (
+    Python,
+    PythonObject,
+    ConvertibleFromPython,
+    ConvertibleToPython,
+)
 
-from utils import Writable, Writer
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -39,13 +42,11 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer(Intable):
+trait Indexer:
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
-    types like `UInt` to not have to be converted to an `Int` first. This type
-    is implicitly convertable to an `Int`, so can be used anywhere an `Int` can
-    e.g. for comparisons.
+    types like `UInt` to not have to be converted to an `Int` first.
     """
 
     fn __index__(self) -> __mlir_type.index:
@@ -83,7 +84,7 @@ fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable(Copyable, Movable):
+trait Intable:
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
@@ -206,32 +207,37 @@ trait ImplicitlyIntable(Intable):
 @register_passable("trivial")
 struct Int(
     Absable,
-    Defaultable,
     CeilDivable,
-    Copyable,
-    Movable,
+    Ceilable,
     Comparable,
+    ConvertibleFromPython,
+    ConvertibleToPython,
+    Copyable,
+    Defaultable,
     DevicePassable,
+    DivModable,
     ExplicitlyCopyable,
+    Floorable,
     Hashable,
-    _HashableWithHasher,
     ImplicitlyBoolable,
     Indexer,
+    Intable,
+    IntervalElement,
     KeyElement,
+    Movable,
     Powable,
-    PythonConvertible,
     Representable,
     Roundable,
     Stringable,
+    Truncable,
     Writable,
-    ConvertibleFromPython,
 ):
     """This type represents an integer value."""
 
     alias device_type: AnyTrivialRegType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 
@@ -261,7 +267,7 @@ struct Int(
         """
         return Self.get_type_name()
 
-    alias BITWIDTH = Int(bitwidthof[DType.index]())
+    alias BITWIDTH = Int(bit_width_of[DType.index]())
     """The bit width of the integer type."""
 
     alias MAX = Int(Scalar[DType.index].MAX)
@@ -295,7 +301,6 @@ struct Int(
 
     @doc_private
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct Int from the given Index value.
 
@@ -356,10 +361,10 @@ struct Int(
     @always_inline("nodebug")
     @implicit
     fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertable type.
+        """Construct Int from implicitly convertible type.
 
         Parameters:
-            I: The type that is implicitly convertable to an `Int`.
+            I: The type that is implicitly convertible to an `Int`.
 
         Args:
             value: The init value.
@@ -399,7 +404,7 @@ struct Int(
             This follows [Python's integer literals](
             https://docs.python.org/3/reference/lexical_analysis.html#integers).
         """
-        self = atol(value, base)
+        self = atol(value, Int(base))
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -1076,11 +1081,8 @@ struct Int(
         """
         return (self & (self - 1) == 0) & (self > 0)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats this integer to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -1126,18 +1128,7 @@ struct Int(
         """
         return String(self)
 
-    fn __hash__(self) -> UInt:
-        """Hash the int using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        # TODO(MOCO-636): switch to DType.index
-        return _hash_simd(Scalar[DType.int64](self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this int value.
 
         Parameters:
@@ -1164,7 +1155,7 @@ struct Int(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1215,15 +1206,12 @@ struct Int(
         assert_equal(Int(10)._decimal_digit_count(), 2)
         assert_equal(Int(-10)._decimal_digit_count(), 2)
         ```
-        .
         """
 
         var n = abs(self)
 
-        alias is_32bit_system = bitwidthof[DType.index]() == 32
-
         @parameter
-        if is_32bit_system:
+        if is_32bit():
             return _calc_initial_buffer_size_int32(n)
 
         # The value only has low-bits.

@@ -14,17 +14,16 @@
 from collections import Set
 from math import isqrt
 from random import random_ui64, seed
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
+from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -35,7 +34,7 @@ from utils import IndexList
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
@@ -48,7 +47,7 @@ fn _get_run_name[
 ) -> String:
     # fmt: off
     return String(
-        "fused_qkv_ragged_flash_attention(", type, ") : "
+        "fused_qkv_ragged_flash_attention(", dtype, ") : "
 
         # head_info
         "num_q_heads=", num_q_heads, ", ",

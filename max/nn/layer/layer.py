@@ -17,22 +17,65 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
-from typing import Any, Callable, Union, get_args
+from itertools import islice
+from typing import Any, Callable, Protocol
 
 import numpy as np
-from max._core_types.driver import DLPackArray
-from max.driver import Tensor
+from max.driver import DLPackArray, Tensor
 from max.dtype import DType
-from max.graph import Shape, ShapeLike, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    Shape,
+    ShapeLike,
+    ShardingStrategy,
+    StaticDim,
+    Type,
+    Value,
+    Weight,
+)
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from typing_extensions import Self
 
 from .._identity import IdentitySet
 
-DLPackCompatible = Union[DLPackArray, np.ndarray]
+
+class Shardable(Protocol):
+    """Protocol for objects that support sharding across multiple devices.
+
+    This protocol defines the interface that all shardable components
+    (like Linear layers and Weight objects) must implement to participate
+    in distributed computation.
+    """
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the weight sharding strategy."""
+        ...
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the weight sharding strategy.
+
+        Args:
+            strategy: A ShardingStrategy that defines how to shard the weight.
+        """
+        ...
+
+    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Self]:
+        """Creates a sharded view of this object for a specific device.
+
+        Args:
+            device: The devices where this shard should reside.
+
+        Returns:
+            A sequence of sharded instances of this object.
+        """
+        ...
 
 
 class Layer:
@@ -54,7 +97,7 @@ class Layer:
         # Check `__dict__` instead of `hasattr` because `hasattr` passes on
         # subclasses that don't implement the method.
         if "__call__" in cls.__dict__:
-            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))
+            setattr(cls, "__call__", _call_with_hooks(cls.__dict__["__call__"]))  # noqa: B010
 
     def __call__(self, *args, **kwargs):
         """Defines the forward function of this layer.
@@ -106,17 +149,17 @@ class Module(Layer, ABC):
     the weight names to be unique within the model.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # `__init__` may be called if `__setattr__` is called before
         # `super().__init__()`. So, to avoid resetting the values, first
         # check to see if the layer has been initialized before.
         if not hasattr(self, "_sublayers"):
             self._sublayers: dict[str, Module] = {}
             self._layer_weights: dict[str, Weight] = {}
-            self._weight_values: dict[str, DLPackCompatible] = {}
+            self._weight_values: dict[str, DLPackArray] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         try:
             if isinstance(value, Module):
                 self._sublayers[name] = value
@@ -138,7 +181,7 @@ class Module(Layer, ABC):
             return
         super().__setattr__(name, value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         # TODO: Make this pretty
         return f"{type(self).__name__}({len(self.sublayers)} layers, {len(self.layer_weights)} weights)"
 
@@ -146,15 +189,86 @@ class Module(Layer, ABC):
     def layer_weights(self) -> dict[str, Weight]:
         return self._layer_weights
 
-    def __delattr__(self, name: str):
+    def __delattr__(self, name: str) -> None:
         self._sublayers.pop(name, None)
         self._layer_weights.pop(name, None)
         self._shared_weights.pop(name, None)
         super().__delattr__(name)
 
-    def set_shared_weight(self, name: str, weight: Weight):
+    def set_shared_weight(self, name: str, weight: Weight) -> None:
         setattr(self, name, weight)
         self._shared_weights[name] = weight
+
+    def build_subgraph(
+        self,
+        name: str,
+        input_types: Sequence[Type[Any] | list[Type[Any]]],
+        weight_prefix: str = "",
+    ) -> Graph:
+        """Builds a subgraph for this module.
+
+        This method creates a subgraph that encapsulates the module's logic,
+        handling input types, weights, and creating a graph with the module's
+        computation.
+
+        Once the subgraph is built, it can be called using the :obj:`ops.call`
+        op.
+
+        Args:
+            name: The name of the subgraph to create.
+            input_types: A list of input types for the subgraph. Each element can be
+                either a single :obj:`Type` or a list of :obj:`Type` objects.
+            weight_prefix: Optional prefix for weight names in the subgraph. If provided,
+                weights with names starting with this prefix will have their names
+                modified by removing the prefix and will be marked as placeholders.
+
+        Returns:
+            :obj:`Graph`: The created subgraph containing the module's computation.
+
+        Note:
+            - Placeholder weights will require the :obj:`prefix` attribute of :obj:`ops.call` to be set.
+        """
+        layer_weights = list(self.raw_state_dict().values())
+        subgraph_input_types: list[Type[Any]] = []
+
+        def flatten(t: Any, result: list[Any]) -> None:
+            if isinstance(t, (list, tuple)):
+                for item in t:
+                    flatten(item, result)
+            else:
+                result.append(t)
+
+        def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
+            """Return the next *n* items from *it* as a list."""
+            return list(islice(it, n))
+
+        flatten(input_types, subgraph_input_types)
+        with Graph.current.add_subgraph(
+            name, input_types=subgraph_input_types
+        ) as subgraph:
+            subgraph_inputs = []
+            inputs = iter(subgraph.inputs)
+
+            for input_type in input_types:
+                if isinstance(input_type, list):
+                    subgraph_inputs.append(take(inputs, len(input_type)))
+                else:
+                    subgraph_inputs.append(next(inputs))
+
+            if weight_prefix:
+                for weight in filter(
+                    lambda w: w.name.startswith(weight_prefix), layer_weights
+                ):
+                    weight._placeholder = True
+                    weight.name = weight.name.removeprefix(weight_prefix)
+
+            result = self(*subgraph_inputs)
+            if isinstance(result, (list, tuple)):
+                subgraph.output(*result)
+            else:
+                subgraph.output(result)
+
+        return subgraph
 
     @property
     def sublayers(self) -> dict[str, Module]:
@@ -162,10 +276,11 @@ class Module(Layer, ABC):
 
     def load_state_dict(
         self,
-        state_dict: Mapping[str, DLPackCompatible | WeightData],
+        state_dict: Mapping[str, DLPackArray | WeightData],
         *,
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
+        strict: bool = True,
     ) -> None:
         """Sets the values of all weights in this model.
 
@@ -177,19 +292,31 @@ class Module(Layer, ABC):
             weight_alignment: If specified, overrides the alignment for each
                 weight in the `Module`. If left as `None`, each value in
                 state_dict must be aligned by the default dtype alignment.
+            strict: If True, raises an error if any weights required by the
+                `Module` are missing from `state_dict`, or if any keys in
+                `state_dict` were not used by the `Module`. If False, both
+                missing and unexpected keys are tolerated and reported only
+                via return values/logging by callers.
 
         Raises:
-            Error if any weight in the model is not present in the state dict.
+            ValueError: If `strict` is True and any required weight is missing
+                from `state_dict`, or if `state_dict` contains keys not used by
+                the `Module`.
         """
+        loaded_keys = set()
+        missing_keys = set()
+
         for name, layer in recursive_named_layers(self):
             weight_prefix = f"{name}." if name else ""
             for weight_name, weight in layer.layer_weights.items():
-                # Skip the shared weights, since their values are loaded with
-                # the original layers.
+                # Skip shared weights, as they are loaded with the original layers.
                 if weight_name in layer._shared_weights:
                     continue
+
                 full_weight_name = f"{weight_prefix}{weight_name}"
+
                 if (data := state_dict.get(full_weight_name)) is not None:
+                    loaded_keys.add(full_weight_name)
                     if isinstance(data, WeightData):
                         data = _array_from_weight_loader(
                             weight,
@@ -199,8 +326,10 @@ class Module(Layer, ABC):
                         ).data
                     else:
                         _validate_weight_value(weight, data, full_weight_name)
+
                     if weight_alignment:
                         weight.align = weight_alignment
+
                     _check_alignment(
                         data,
                         weight.align or weight.dtype.align,
@@ -209,16 +338,43 @@ class Module(Layer, ABC):
                     self._weight_values[full_weight_name] = data
                     weight.name = full_weight_name
                 else:
-                    msg = f"Could not find weight '{full_weight_name}'. "
-                    if possible_match := difflib.get_close_matches(
-                        full_weight_name, state_dict.keys(), n=1
-                    ):
-                        msg += f" Did you mean '{possible_match[0]}'?"
-                    raise ValueError(msg)
+                    # If a key is missing, just add it to the set for later.
+                    missing_keys.add(full_weight_name)
+
+        # After the loop, check for all errors at once if in strict mode.
+        unused_keys = state_dict.keys() - loaded_keys
+
+        if strict and (missing_keys or unused_keys):
+            parts = []
+            if missing_keys:
+                sorted_missing = sorted(list(missing_keys))
+                parts.append(
+                    f"Missing required weights: {', '.join(sorted_missing)}"
+                )
+
+                # Add a helpful "Did you mean?" suggestion for the first missing key.
+                first_missing_key = sorted_missing[0]
+                if possible_match := difflib.get_close_matches(
+                    first_missing_key, state_dict.keys(), n=1
+                ):
+                    parts.append(
+                        f"For '{first_missing_key}', did you mean '{possible_match[0]}'?"
+                    )
+
+            if unused_keys:
+                parts.append(
+                    f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
+                )
+
+            msg = (
+                "load_state_dict() strict=True validation failed. "
+                + "; ".join(parts)
+            )
+            raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True
-    ) -> dict[str, DLPackCompatible]:
+    ) -> dict[str, DLPackArray]:
         """Returns values of all weights in the model.
 
         The values returned are the same as the values set in :obj:`load_state_dict`.
@@ -244,8 +400,7 @@ class Module(Layer, ABC):
                     )
                 # Contents of weights should be filled with zeros.
                 data = self._weight_values[full_weight_name] = Tensor.zeros(
-                    shape=weight.shape.static_dims,
-                    dtype=weight.dtype,
+                    shape=weight.shape.static_dims, dtype=weight.dtype
                 )
             state_dict[full_weight_name] = data
             weight.name = full_weight_name
@@ -300,7 +455,7 @@ def _array_from_weight_loader(
         # Store the original shape and dtype of the weight (used in layers like
         # GPTLinear).
         weight.original_dtype_and_shape = (data.dtype, data.shape)
-        data = data.view(DType.uint8)
+        data.data = Tensor.from_dlpack(data.data).view(DType.uint8)
 
     if weight.quantization_encoding:
         # TODO: Set the quantized weight shape correctly when initializing the
@@ -341,7 +496,7 @@ def _array_from_weight_loader(
     return data
 
 
-def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
+def _get_value_shape_dtype(value: DLPackArray) -> tuple[ShapeLike, DType]:
     if isinstance(value, Tensor):
         shape = value.shape
         dtype = value.dtype
@@ -357,19 +512,37 @@ def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
     return shape, dtype
 
 
-def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
-    tensor = Tensor.from_dlpack(value)
-    if not tensor._aligned(align):
-        raise ValueError(
-            f"Found unaligned weight '{name}' (expected alignment={align})."
-            "If you are using a Safetensor checkpoint, it is recommended that "
-            "you copy the weight to correct the alignment, or pass "
-            "`weight_alignment=1` to `Module.load_state_dict()`."
-        )
+def _check_alignment(value: DLPackArray, align: int, name: str) -> None:
+    # Fast path for ndarray.
+    # The use of Tensor.from_dlpack always copies if the numpy array is not
+    # writeable, which is very common for weight values.
+    #
+    # This logic special cases the two code paths that potentially could copy
+    # and performs the alignment check manually.
+    if isinstance(value, np.ndarray):
+        data = value.ctypes.data
+        if data % align == 0:
+            return
+    elif isinstance(value, Tensor):
+        if value._aligned(align):
+            return
+    else:
+        tensor = Tensor.from_dlpack(value)
+        if tensor._aligned(align):
+            return
+
+    raise ValueError(
+        f"Found unaligned weight '{name}' (expected alignment={align})."
+        "If you are using a Safetensor checkpoint, it is recommended that "
+        "you copy the weight to correct the alignment, or pass "
+        "`weight_alignment=1` to `Module.load_state_dict()`."
+    )
 
 
-def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
-    if not isinstance(value, get_args(DLPackCompatible)):
+def _validate_weight_value(
+    weight: Weight, value: DLPackArray, name: str
+) -> None:
+    if not isinstance(value, DLPackArray):
         raise ValueError(
             f"The class type of '{name}' value ({type(value)}) is not an array "
             "type that we understand. Please use a numpy array or max.driver.Tensor."
@@ -378,9 +551,49 @@ def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
     shape, dtype = _get_value_shape_dtype(value)
 
     diffs = []
-    weight_shape = tuple(weight.shape.static_dims)
-    if shape != weight_shape:
-        diffs.append(f"shape (expected={weight_shape}, actual={shape})")
+
+    # Check if weight has symbolic dimensions
+    # Convert weight.shape to list to ensure it's sized
+    weight_shape_dims = list(weight.shape)
+    weight_has_symbolic_dims = len(weight_shape_dims) != len(
+        weight.shape.static_dims
+    )
+
+    # Convert shape to tuple to ensure it's sized
+    shape_tuple = tuple(shape)
+
+    if weight_has_symbolic_dims:
+        # For weights with symbolic dimensions, validate by comparing static dimensions
+        # at their correct positions, allowing symbolic dimensions to vary
+        if len(shape_tuple) != len(weight_shape_dims):
+            # Shape rank must match
+            diffs.append(
+                f"shape rank (expected={len(weight_shape_dims)}, actual={len(shape_tuple)})"
+            )
+        else:
+            # Check each dimension: static dims must match, symbolic dims can vary
+            mismatches = []
+            for i, (weight_dim, value_dim) in enumerate(
+                zip(weight_shape_dims, shape_tuple)
+            ):
+                if isinstance(weight_dim, StaticDim):
+                    # This is a static dimension - must match exactly
+                    if int(weight_dim) != value_dim:
+                        mismatches.append(
+                            f"dim[{i}]: expected {int(weight_dim)}, got {value_dim}"
+                        )
+                # Symbolic dimensions are allowed to vary, so no check needed
+
+            if mismatches:
+                diffs.append(f"shape ({', '.join(mismatches)})")
+    else:
+        # For fully static weights, use the original validation
+        weight_shape = tuple(weight.shape.static_dims)
+        if shape_tuple != weight_shape:
+            diffs.append(
+                f"shape (expected={weight_shape}, actual={shape_tuple})"
+            )
+
     if dtype != weight.dtype:
         diffs.append(f"dtype (expected={weight.dtype}, actual={dtype})")
     if diffs:
@@ -394,7 +607,7 @@ def recursive_named_layers(
     parent: Module, prefix: str = ""
 ) -> Iterable[tuple[str, Module]]:
     """Recursively walks through the layers and generates names."""
-    seen = IdentitySet()
+    seen = IdentitySet[Module]()
     queue: deque[tuple[str, Module]] = deque()
     queue.append((prefix, parent))
 
@@ -406,7 +619,7 @@ def recursive_named_layers(
 
         yield (name, layer)
         prefix = f"{name}." if name else ""
-        for local_name, layer in layer.sublayers.items():
+        for local_name, layer in layer.sublayers.items():  # noqa: B020
             queue.append((f"{prefix}{local_name}", layer))
 
 
@@ -448,14 +661,14 @@ def add_layer_hook(
     _LAYER_HOOKS.append(fn)
 
 
-def clear_hooks():
+def clear_hooks() -> None:
     """Remove all hooks."""
     _LAYER_HOOKS.clear()
 
 
-def _call_with_hooks(call_fn):
+def _call_with_hooks(call_fn: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(call_fn)
-    def __call_with_hooks(layer, *args, **kwargs):
+    def __call_with_hooks(layer: Layer, *args, **kwargs) -> Any:
         # Hide this wrapper from rich traceback.
         _rich_traceback_omit = True
 

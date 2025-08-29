@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -19,14 +18,13 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
-alias hipblasLtHandle_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]
-alias hipblasLtMatrixLayout_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulPreference_t = UnsafePointer[NoneType]
+alias hipblasLtHandle_t = OpaquePointer
+alias hipblasLtMatmulDesc_t = OpaquePointer
+alias hipblasLtMatrixLayout_t = OpaquePointer
+alias hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
@@ -45,7 +43,6 @@ struct Status(Writable):
     alias HANDLE_IS_NULLPTR = Self(9)
     alias INVALID_ENUM = Self(10)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -60,7 +57,7 @@ struct Status(Writable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write("SUCCESS")
         if self == Self.NOT_INITIALIZED:
@@ -99,8 +96,11 @@ struct hipDataType_t:
     alias R_16F = Self(2)
     alias R_8I = Self(3)
     alias R_16BF = Self(14)
+    alias R_8F_E4M3 = Self(28)
+    alias R_8F_E5M2 = Self(29)
+    alias R_8F_E4M3_FNUZ = Self(1000)
+    alias R_8F_E5M2_FNUZ = Self(1001)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -120,7 +120,6 @@ struct hipblasComputeType_t:
     alias COMPUTE_32F = Self(2)
     alias COMPUTE_32F_PEDANTIC = Self(3)
 
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -139,7 +138,27 @@ struct hipblasOperation_t:
     alias OP_T = Self(112)
     alias OP_C = Self(113)
 
-    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct hipblasLtOrder_t:
+    var _value: Int32
+    alias COL = Self(0)
+    alias ROW = Self(1)
+    alias COL16_4R16 = Self(100)
+    alias COL16_4R8 = Self(101)
+    alias COL16_4R4 = Self(102)
+    alias COL16_4R2 = Self(103)
+
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -157,7 +176,28 @@ struct hipblasLtMatmulDescAttributes_t:
     alias TRANSA = Self(0)
     alias TRANSB = Self(1)
 
-    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct hipblasLtMatmulLayoutAttribute_t:
+    var _value: Int32
+    alias BATCH_COUNT = Self(0)
+    alias STRIDED_BATCH_COUNT = Self(1)
+    alias TYPE = Self(2)
+    alias ORDER = Self(3)
+    alias ROWS = Self(4)
+    alias COLS = Self(5)
+    alias LD = Self(6)
+
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -169,7 +209,7 @@ struct hipblasLtMatmulDescAttributes_t:
 
 
 @register_passable("trivial")
-struct hipblasLtMatmulAlgo_t:
+struct hipblasLtMatmulAlgo_t(Defaultable):
     var data: StaticTuple[UInt8, 16]
     var maxWorkspaceBytes: Int
 
@@ -179,7 +219,7 @@ struct hipblasLtMatmulAlgo_t:
 
 
 @register_passable("trivial")
-struct hipblasLtMatmulHeuristicResult_t:
+struct hipblasLtMatmulHeuristicResult_t(Defaultable):
     var algo: hipblasLtMatmulAlgo_t
     var workspaceSize: Int
     var state: Status
@@ -199,7 +239,9 @@ struct hipblasLtMatmulHeuristicResult_t:
 # ===-----------------------------------------------------------------------===#
 
 alias HIPBLASLT_LIBRARY_PATHS = List[Path](
+    "libhipblaslt.so",
     "libhipblaslt.so.0",
+    "/opt/rocm/lib/libhipblaslt.so",
     "/opt/rocm/lib/libhipblaslt.so.0",
 )
 
@@ -259,7 +301,7 @@ fn hipblasLtMatmulDescCreate(
 fn hipblasLtMatmulDescSetAttribute(
     matmul_desc: hipblasLtMatmulDesc_t,
     attr: hipblasLtMatmulDescAttributes_t,
-    buf: UnsafePointer[NoneType],
+    buf: OpaquePointer,
     size_in_bytes: Int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -267,7 +309,7 @@ fn hipblasLtMatmulDescSetAttribute(
         fn (
             hipblasLtMatmulDesc_t,
             hipblasLtMatmulDescAttributes_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
         ) -> Status,
     ]()(matmul_desc, attr, buf, size_in_bytes)
@@ -298,6 +340,23 @@ fn hipblasLtMatrixLayoutCreate(
             Int64,
         ) -> Status,
     ]()(mat_layout, type, rows, cols, ld)
+
+
+fn hipblasLtMatrixLayoutSetAttribute(
+    mat_layout: hipblasLtMatrixLayout_t,
+    attr: hipblasLtMatmulLayoutAttribute_t,
+    buf: OpaquePointer,
+    size_in_bytes: Int,
+) raises -> Status:
+    return _get_dylib_function[
+        "hipblasLtMatrixLayoutSetAttribute",
+        fn (
+            hipblasLtMatrixLayout_t,
+            hipblasLtMatmulLayoutAttribute_t,
+            OpaquePointer,
+            Int,
+        ) -> Status,
+    ]()(mat_layout, attr, buf, size_in_bytes)
 
 
 fn hipblasLtMatrixLayoutDestroy(
@@ -369,18 +428,18 @@ fn hipblasLtMatmulPreferenceDestroy(
 fn hipblasLtMatmul(
     light_handle: hipblasLtHandle_t,
     compute_desc: hipblasLtMatmulDesc_t,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _adesc: hipblasLtMatrixLayout_t,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _bdesc: hipblasLtMatrixLayout_t,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _cdesc: hipblasLtMatrixLayout_t,
-    _d: UnsafePointer[NoneType],
+    _d: OpaquePointer,
     _ddesc: hipblasLtMatrixLayout_t,
     algo: UnsafePointer[hipblasLtMatmulAlgo_t],
-    workspace: UnsafePointer[NoneType],
+    workspace: OpaquePointer,
     workspace_size_in_bytes: Int,
     stream: hipStream_t,
 ) raises -> Status:
@@ -389,18 +448,18 @@ fn hipblasLtMatmul(
         fn (
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
             UnsafePointer[hipblasLtMatmulAlgo_t],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
             hipStream_t,
         ) -> Status,
@@ -436,18 +495,26 @@ fn _check_hipblas_error(status: Status) raises:
 
 
 @always_inline
-fn _convert_to_hip_datatype[type: DType]() -> hipDataType_t:
+fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     @parameter
-    if type is DType.float32:
+    if dtype is DType.float32:
         return hipDataType_t.R_32F
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return hipDataType_t.R_16F
+    elif dtype is DType.float8_e4m3fn:
+        return hipDataType_t.R_8F_E4M3
+    elif dtype is DType.float8_e5m2:
+        return hipDataType_t.R_8F_E5M2
+    elif dtype is DType.float8_e4m3fnuz:
+        return hipDataType_t.R_8F_E4M3_FNUZ
+    elif dtype is DType.float8_e5m2fnuz:
+        return hipDataType_t.R_8F_E5M2_FNUZ
     else:
         constrained[
-            type is DType.bfloat16,
+            dtype is DType.bfloat16,
             (
-                "Only support FP32, FP16, BF16. Please extend"
-                " it if more types are needed."
+                "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
+                " Please extend it if more dtypes are needed."
             ),
         ]()
         return hipDataType_t.R_16BF

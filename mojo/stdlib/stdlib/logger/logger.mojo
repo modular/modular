@@ -40,8 +40,7 @@ stdout). Messages below the configured level will be silently ignored.
 import sys
 from os import abort
 from sys.param_env import env_get_string
-
-from utils import write_args
+from io.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
@@ -56,8 +55,8 @@ alias DEFAULT_LEVEL = Level._from_str(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct Level(Stringable, Writable):
+@fieldwise_init
+struct Level(Copyable, Movable, Stringable, Writable):
     """Represents logging severity levels.
 
     Defines the available logging levels in ascending order of severity.
@@ -196,11 +195,8 @@ struct Level(Stringable, Writable):
             return Self.CRITICAL
         return Self.NOTSET
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of this level to a writer.
-
-        Parameters:
-            W: The writer type that implements the Writer trait.
 
         Args:
             writer: The writer to write to.
@@ -251,7 +247,6 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
     var _fd: FileDescriptor
 
-    @implicit
     fn __init__(out self, fd: FileDescriptor = sys.stdout):
         """Initializes a new Logger.
 
@@ -272,7 +267,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
             True if logging at the target level is disabled, False otherwise.
         """
         if level == Level.NOTSET:
-            return False
+            return True
         return level > target_level
 
     fn debug[*Ts: Writable](self, *values: *Ts):
@@ -287,13 +282,8 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.DEBUG
 
         @parameter
-        if Self._is_disabled[target_level]():
-            return
-
-        var writer = self._fd
-
-        writer.write(String(target_level), "::: ")
-        write_args(writer, values, sep=" ", end="\n")
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
     fn info[*Ts: Writable](self, *values: *Ts):
         """Logs an info message.
@@ -307,13 +297,8 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.INFO
 
         @parameter
-        if Self._is_disabled[target_level]():
-            return
-
-        var writer = self._fd
-
-        writer.write(String(target_level), "::: ")
-        write_args(writer, values, sep=" ", end="\n")
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
     fn warning[*Ts: Writable](self, *values: *Ts):
         """Logs a warning message.
@@ -327,13 +312,8 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.WARNING
 
         @parameter
-        if Self._is_disabled[target_level]():
-            return
-
-        var writer = self._fd
-
-        writer.write(String(target_level), "::: ")
-        write_args(writer, values, sep=" ", end="\n")
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
     fn error[*Ts: Writable](self, *values: *Ts):
         """Logs an error message.
@@ -347,13 +327,8 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.ERROR
 
         @parameter
-        if Self._is_disabled[target_level]():
-            return
-
-        var writer = self._fd
-
-        writer.write(String(target_level), "::: ")
-        write_args(writer, values, sep=" ", end="\n")
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
     fn critical[*Ts: Writable](self, *values: *Ts):
         """Logs a critical message and aborts execution.
@@ -367,37 +342,27 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         alias target_level = Level.CRITICAL
 
         @parameter
-        if Self._is_disabled[target_level]():
-            return
-
-        var writer = self._fd
-
-        writer.write(String(target_level), "::: ")
-        write_args(writer, values, sep=" ", end="\n")
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
         abort()
 
-    # Ideally we can remove the duplication and have something like, but
-    # forwarding variadics does not work with mojo atm so we are forced to
-    # copy/paste code :(
-    # fn _log[
-    #     target_level: Level, *Ts: Writable
-    # ](self, *values: VariadicPack[_, _, Writable, Ts]):
-    #     @parameter
-    #     fn get_length() -> Int:
-    #         return len(values)
+    fn _write_out[
+        level: Level
+    ](self, values: VariadicPack[element_trait=Writable]):
+        var file = self._fd
+        var buffer = _WriteBufferStack(file)
 
-    #     alias variadic_length = get_length()
+        buffer.write(String(level))
+        buffer.write("::: ")
 
-    #     var writer = sys.stdout
+        alias length = values.__len__()
 
-    #     writer.write(target_level, "::: ")
+        @parameter
+        for i in range(length):
+            values[i].write_to(buffer)
+            if i < length - 1:
+                buffer.write(" ")
 
-    #     @parameter
-    #     for i in range(variadic_length):
-    #         var elem = values[i]
-    #         elem.write(writer)
-
-    #         @parameter
-    #         if i < variadic_length - 1:
-    #             writer.write(" ")
+        buffer.write("\n")
+        buffer.flush()

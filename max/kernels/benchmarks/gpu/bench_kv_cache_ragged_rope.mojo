@@ -13,31 +13,30 @@
 
 from collections import Set
 from random import random_ui64, seed
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
 from utils.index import IndexList
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
 ](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool,) -> String:
     # fmt: off
     return String(
-        "fused_qkv_ragged_rope(", type, ") : ",
+        "fused_qkv_ragged_rope(", dtype, ") : ",
 
         # head_info
         "num_q_heads=", num_q_heads, ", ",
@@ -176,6 +175,7 @@ def execute_kv_cache_ragged_rope[
                 input_row_offsets_device.tensor,
                 kv_collection_device,
                 freqs_cis_table_device.tensor,
+                None,
                 0,
                 output_device.tensor,
                 ctx,

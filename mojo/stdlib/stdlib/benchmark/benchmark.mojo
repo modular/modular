@@ -138,10 +138,10 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
-from collections import List
 from time import time_function
 
 from utils.numerics import max_finite, min_finite
+from testing import assert_equal
 
 
 # ===-----------------------------------------------------------------------===#
@@ -162,14 +162,6 @@ struct Batch(Copyable, Movable):
     """Total iterations in the batch."""
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     fn _mark_as_significant(mut self):
         self._is_significant = True
@@ -214,7 +206,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Copyable, Movable):
+struct Report(Copyable, Defaultable, Movable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """
@@ -232,14 +224,6 @@ struct Report(Copyable, Movable):
         """
         self.warmup_duration = 0
         self.runs = List[Batch]()
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     fn __copyinit__(out self, existing: Self):
         """
@@ -339,11 +323,11 @@ struct Report(Copyable, Movable):
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
         var divisor = Unit._divisor(unit)
-        print(String("-") * 80)
+        print("-" * 80)
         print("Benchmark Report (", end="")
         print(unit, end="")
         print(")")
-        print(String("-") * 80)
+        print("-" * 80)
         print("Mean:", self.mean(unit))
         print("Total:", self.duration(unit))
         print("Iters:", self.iters())
@@ -387,20 +371,23 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
     var min_runtime_secs: Float64
     var max_runtime_secs: Float64
     var min_warmuptime_secs: Float64
+    var num_warmup_iters: Int
 
     fn __init__(
         out self,
         max_batch_size: Int = 0,
-        max_iters: Int = 1_000_000_000,
-        min_runtime_secs: Float64 = 2,
+        max_iters: Int = 1_000_000,
+        min_runtime_secs: Float64 = 1,
         max_runtime_secs: Float64 = 60,
-        min_warmuptime_secs: Float64 = 1,
+        min_warmuptime_secs: Float64 = 0,
+        num_warmup_iters: Int = 1,
     ):
         self.max_batch_size = max_batch_size
         self.max_iters = max_iters
         self.min_runtime_secs = min_runtime_secs
         self.max_runtime_secs = max_runtime_secs
         self.min_warmuptime_secs = min_warmuptime_secs
+        self.num_warmup_iters = num_warmup_iters
 
 
 # ===-----------------------------------------------------------------------===#
@@ -445,7 +432,7 @@ fn run[
             for _ in range(num_iters):
                 func()
 
-        return time_function[iter_fn]()
+        return Int(time_function[iter_fn]())
 
     return _run_impl(
         _RunOptions[benchmark_fn](
@@ -531,7 +518,7 @@ fn run[
             for _ in range(num_iters):
                 func()
 
-        return time_function[iter_fn]()
+        return Int(time_function[iter_fn]())
 
     return _run_impl(
         _RunOptions[benchmark_fn](
@@ -587,6 +574,14 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
     var prev_dur: Int = 0
     var prev_iters: Int = 0
     var min_warmup_time_ns = Int(opts.min_warmuptime_secs * 1_000_000_000)
+    assert_equal(
+        min_warmup_time_ns,
+        0,
+        (
+            "ERROR: min_warmup_time will be removed in near future. Consider"
+            " using num_warmup_iters"
+        ),
+    )
     if min_warmup_time_ns > 0:
         # Make sure to warm up the function and use one iteration to compute
         # the previous duration.
@@ -602,6 +597,12 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
         report.warmup_duration = prev_dur
     else:
         report.warmup_duration = 0
+
+    var num_warmup_iters = Int(opts.num_warmup_iters)
+    if num_warmup_iters:
+        prev_dur += opts.timing_fn(num_warmup_iters)
+        prev_iters += num_warmup_iters
+        report.warmup_duration += prev_dur
 
     var total_iters: Int = 0
     var time_elapsed: Int = 0

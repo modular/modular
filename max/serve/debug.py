@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import functools
 import logging
@@ -18,7 +19,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Callable, ClassVar, Union
+from typing import Any, Callable, ClassVar, Union
 
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -58,7 +59,7 @@ class ProfileFormat(ProfileFormatMetadata, Enum):
         return {member.label: member for member in ProfileFormat}
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: Any) -> ProfileFormat:
         members = cls.members()
         if isinstance(value, str) and value in members:
             return members[value]
@@ -85,14 +86,14 @@ class ProfileSession:
         )
 
 
-PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())
+PROFILE_SESSION_VAR = ContextVar("profile_session", default=ProfileSession())  # noqa: B039
 
 
 def profile_in_session():
-    return PROFILE_SESSION_VAR.get().request_id != None
+    return PROFILE_SESSION_VAR.get().request_id is not None
 
 
-def write_profile(profiler: Profiler, session: ProfileSession):
+def write_profile(profiler: Profiler, session: ProfileSession) -> None:
     request_id = session.request_id
     profile_format = session.profile_format
 
@@ -117,7 +118,7 @@ async def profile_call(profiler: Profiler, call: Callable):
     return result
 
 
-def register_debug(app: FastAPI, settings: DebugSettings):
+def register_debug(app: FastAPI, settings: DebugSettings) -> None:
     if settings.profiling_enabled:
         profiler = ProfileSession.default_profiler()
 

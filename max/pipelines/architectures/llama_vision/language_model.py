@@ -26,14 +26,11 @@ from max.nn import (
     AttentionWithRopeQKV,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
     TransformerBlock,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheParams
 from max.nn.layer import Layer
 
 from .cross_attention_decoder import (
@@ -55,7 +52,7 @@ class TextModel(Layer):
     layers: list[CrossAttentionDecoderLayer | SelfAttentionDecoderLayer]
     norm: RMSNormV1
     cross_attention_layers: list[int]
-    rotary_emb: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
 
     def __call__(
         self,
@@ -90,6 +87,7 @@ class TextModel(Layer):
             *vision_kv_cache_inputs
         )
 
+        freqs_cis = self.rope.freqs_cis
         for decoder_layer in self.layers:
             # For text-only path we should skip cross attention layers.
             # We expect cross_attention_states to be zeroes if it's a text-only path.
@@ -109,6 +107,7 @@ class TextModel(Layer):
                 hidden_states = decoder_layer(
                     hidden_states,
                     text_kv_collection,
+                    freqs_cis=freqs_cis,
                     input_row_offsets=hidden_input_row_offsets,
                 )
 
@@ -282,7 +281,9 @@ def cross_attention_decoder_layer(
 
 
 class SelfAttentionDecoderLayer(Layer):
-    def __init__(self, layer_idx: int, transformer_block: TransformerBlock):
+    def __init__(
+        self, layer_idx: int, transformer_block: TransformerBlock
+    ) -> None:
         self.layer_idx = layer_idx
         self.transformer_block = transformer_block
 
@@ -304,7 +305,7 @@ def self_attention_decoder_layer(
     kv_params: KVCacheParams,
     weights: Weights,
     layer_idx: int,
-    rotary_embedding: OptimizedRotaryEmbedding,
+    rotary_embedding: RotaryEmbedding,
     device: DeviceRef,
 ) -> SelfAttentionDecoderLayer:
     head_dim = hidden_size // num_attention_heads
@@ -405,7 +406,7 @@ def instantiate_language_model(
     # We don't really have a rotary embedding layer within the graph as it's largely
     # folded into the custom kernel, but leaving this here for now.
     # TODO: this should be Llama3RotaryEmbedding with rope scaling params.
-    rotary_embedding = OptimizedRotaryEmbedding(
+    rotary_embedding = RotaryEmbedding(
         dim=hidden_size,
         n_heads=n_heads,
         theta=rope_theta,
@@ -417,9 +418,7 @@ def instantiate_language_model(
     # Track the cross attention KV cache layer index to compute the self
     # attention KV layer index.
     cross_kv_layer_idx = -1
-    for layer_idx in range(
-        num_hidden_layers,
-    ):
+    for layer_idx in range(num_hidden_layers):
         curr_layer_weight = weights.language_model.model.layers[layer_idx]
 
         if layer_idx in cross_attention_layers:
@@ -480,8 +479,8 @@ def instantiate_language_model(
         ),
         layers=layers,
         cross_attention_layers=cross_attention_layers,
+        rope=rotary_embedding,
         # TODO: Verify if these values passed are even correct.
-        rotary_emb=rotary_embedding,
     )
 
     return CausalLanguageModel(

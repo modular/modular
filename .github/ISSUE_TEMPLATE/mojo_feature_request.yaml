@@ -15,7 +15,7 @@ name: Mojo feature request
 description: Suggest an enhancement for Mojo
 title: "[Feature Request]"
 labels:
-  - "enhancement,mojo,modular-repo"
+  - "enhancement,mojo,Needs Triage"
 body:
   - type: markdown
     attributes:

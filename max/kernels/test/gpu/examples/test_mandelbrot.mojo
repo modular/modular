@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import vectorize
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils.index import Index
@@ -47,11 +46,11 @@ fn mandelbrot_kernel[
     var z = ComplexSIMD[float_type, simd_width](0, 0)
     var iters = SIMD[int_type, simd_width](0)
 
-    var in_set_mask: SIMD[DType.bool, simd_width] = True
+    var in_set_mask = SIMD[DType.bool, simd_width](fill=True)
     for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break
-        in_set_mask = z.squared_norm() <= 4
+        in_set_mask = z.squared_norm().le(4)
         iters = in_set_mask.select(iters + 1, iters)
         z = z.squared_add(c)
 
@@ -84,7 +83,7 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
-    vectorize[compute_vector, simdwidthof[float_type]()](width)
+    vectorize[compute_vector, simd_width_of[float_type]()](width)
 
 
 fn run_mandelbrot(ctx: DeviceContext) raises:
@@ -111,11 +110,11 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var accum = SIMD[int_type, 1](0)
+    var accum = Scalar[int_type](0)
     for i in range(width):
         for j in range(height):
             accum += out_host[i * width + j]
-    assert_equal(4687767697, accum)
+    assert_equal(Scalar[int_type](4687767697), accum)
 
     _ = out_device
 

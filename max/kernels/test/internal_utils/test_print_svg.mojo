@@ -15,6 +15,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
 from layout.swizzle import Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
+from pathlib import Path
 
 
 fn test_svg_nvidia_shape() raises:
@@ -46,35 +47,56 @@ fn test_svg_nvidia_shape() raises:
         ]
         return String(colors[t // 4])
 
-    print_svg(tensor, tensor_list, color_map)
+    print_svg(
+        tensor,
+        tensor_list,
+        color_map,
+        file_path=Path("./test_svg_nvidia_shape.svg"),
+    )
 
 
 fn test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
-    print_svg(tensor, [tensor_dist])
+    print_svg(
+        tensor,
+        [tensor_dist],
+        file_path=Path("./test_svg_nvidia_tile.svg"),
+    )
 
 
 fn test_svg_nvidia_tile_memory_bank() raises:
     # nvidia tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
-    print_svg[memory_bank= (4, 32)](tensor, [tensor_dist])
+    print_svg[memory_bank= (4, 32)](
+        tensor,
+        [tensor_dist],
+        file_path=Path("./test_svg_nvidia_tile_memory_bank.svg"),
+    )
 
 
 fn test_svg_amd_shape_a() raises:
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.col_major(16, 4)](0)
-    print_svg(tensor, [tensor_dist])
+    print_svg(
+        tensor,
+        [tensor_dist],
+        file_path=Path("./test_svg_amd_shape_a.svg"),
+    )
 
 
 fn test_svg_amd_shape_b() raises:
     # amd tensor core a matrix fragment
     var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
     var tensor_dist = tensor.distribute[Layout.row_major(4, 16)](0)
-    print_svg(tensor, [tensor_dist])
+    print_svg(
+        tensor,
+        [tensor_dist],
+        file_path=Path("./test_svg_amd_shape_b.svg"),
+    )
 
 
 fn test_svg_amd_shape_d() raises:
@@ -86,7 +108,11 @@ fn test_svg_amd_shape_d() raises:
     var tensor_dist2 = tensor.vectorize[4, 1]().distribute[
         Layout.row_major(4, 16)
     ](11)
-    print_svg(tensor, [tensor_dist, tensor_dist2])
+    print_svg(
+        tensor,
+        [tensor_dist, tensor_dist2],
+        file_path=Path("./test_svg_amd_shape_d.svg"),
+    )
 
 
 fn test_svg_wgmma_shape() raises:
@@ -126,6 +152,7 @@ fn test_svg_wgmma_shape() raises:
         tensor,
         List[__type_of(tensor_dist)](tensor_dist, tensor_dist2),
         color_map,
+        file_path=Path("./test_svg_wgmma_shape.svg"),
     )
 
 
@@ -155,6 +182,7 @@ fn test_svg_swizzle() raises:
         tensor,
         List[__type_of(tensor)](),
         color_map=color_map,
+        file_path=Path("./test_svg_swizzle.svg"),
     )
 
 

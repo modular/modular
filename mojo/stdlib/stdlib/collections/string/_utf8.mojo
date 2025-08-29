@@ -14,11 +14,11 @@
 """Implement UTF-8 utils."""
 
 from base64._b64encode import _sub_with_saturation
-from sys import is_compile_time, simdwidthof
-from sys.intrinsics import likely, llvm_intrinsic
+from sys import simd_width_of
+from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer
+from memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -136,7 +136,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
 
     ptr = span.unsafe_ptr()
     length = len(span)
-    alias simd_size = sys.simdbytewidth()
+    alias simd_size = sys.simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
 
@@ -144,7 +144,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
         var current_bytes = (ptr + i).load[width=simd_size]()
         var has_error = validate_chunk(current_bytes, previous)
         previous = current_bytes
-        if any(has_error != 0):
+        if any(has_error.ne(0)):
             return False
         i += simd_size
 
@@ -159,7 +159,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
         # Add a chunk of 0s to the end to validate continuations bytes
         has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
 
-    return all(has_error == 0)
+    return all(has_error.eq(0))
 
 
 fn _is_valid_utf8(span: Span[Byte]) -> Bool:
@@ -195,41 +195,21 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
+@parameter
 @always_inline
 fn _is_utf8_continuation_byte[
     w: Int
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
-
-
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
-    alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
-    var amnt: Int = 0
-    var processed = 0
-
-    @parameter
-    for i in range(len(sizes)):
-        alias s = sizes[i]
-
-        @parameter
-        if simdwidthof[DType.uint8]() >= s:
-            var rest = num_bytes - processed
-            for _ in range(rest // s):
-                var vec = (ptr + processed).load[width=s]()
-                var comp = _is_utf8_continuation_byte(vec)
-                amnt += Int(comp.cast[DType.uint8]().reduce_add())
-                processed += s
-
-    for i in range(num_bytes - processed):
-        amnt += Int(_is_utf8_continuation_byte(ptr[processed + i]))
-
-    return amnt
+    return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
 
 @always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
+fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
+    return span.count[func=_is_utf8_continuation_byte]()
+
+
+@always_inline
+fn _utf8_first_byte_sequence_length(b: Byte) -> UInt:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
@@ -237,7 +217,9 @@ fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
         not _is_utf8_continuation_byte(b),
         "Function does not work correctly if given a continuation byte.",
     )
-    return Int(count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]())
+    return UInt(
+        Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    )
 
 
 fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
@@ -262,9 +244,9 @@ fn _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
     p: UnsafePointer[Byte, mut=False, **_],
-    eol_start: Int,
+    eol_start: UInt,
     b0: Byte,
-    char_len: Int,
+    char_len: UInt,
 ) -> Bool:
     """Returns whether the char is a newline char.
 
@@ -278,14 +260,19 @@ fn _is_newline_char_utf8[
     alias `\x1c` = UInt8(ord("\x1c"))
     alias `\x1e` = UInt8(ord("\x1e"))
 
-    # here it's actually faster to have branching due to the branch predictor
-    # "realizing" that the char_len == 1 path is often taken. Using the likely
-    # intrinsic is to make the machine code be ordered to optimize machine
-    # instruction fetching, which is an optimization for the CPU front-end.
+    # Since line-breaks are a relatively uncommon occurrence it is best to
+    # branch here because the algorithm that calls this needs low latency rather
+    # than high throughput, which is what a branchless algorithm with SIMD would
+    # provide. So we do branching and add the likely intrinsic to reorder the
+    # machine instructions optimally. Also memory reads are expensive and the
+    # "happy path" of char_len == 1 is cheaper because it has none.
     if likely(char_len == 1):
         return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
-    elif char_len == 2:
-        var b1 = p[eol_start + 1]
+    elif char_len == 4:
+        return False
+
+    var b1 = p[eol_start + 1]
+    if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
         @parameter
@@ -293,8 +280,7 @@ fn _is_newline_char_utf8[
             return is_next_line or (b0 == `\r` and b1 == `\n`)
         else:
             return is_next_line
-    elif char_len == 3:  # unicode line sep or paragraph sep: \u2028 , \u2029
-        var b1 = p[eol_start + 1]
+    else:  # unicode line sep or paragraph sep: \u2028 , \u2029
+        debug_assert(char_len == 3, "invalid UTF-8 byte length")
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
-    return False

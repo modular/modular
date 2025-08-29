@@ -10,293 +10,296 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 import logging
-import queue
-from dataclasses import dataclass
-from typing import Optional
+import time
+import uuid
+from typing import Union
 
-import zmq
-from max.nn.kv_cache import PagedKVCacheManager
-from max.pipelines.core import InputContext, TokenGenerator
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
+from max.nn.kv_cache import (
+    KVTransferEngine,
+    KVTransferEngineMetadata,
+    PagedKVCacheManager,
+    XferReqData,
+)
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.serve.config import Settings
-from max.serve.process_control import ProcessControl
+from max.profiler import Tracer, traced
+from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
+from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
+from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.text_batch_constructor import (
+    SchedulerOutput,
+    TextBatchConstructor,
+    TokenGenerationSchedulerConfig,
+)
 
 from .base import Scheduler
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
+from .utils import SchedulerLogger, maybe_restore_chunked_request
 
 logger = logging.getLogger("max.serve")
-
-
-@dataclass
-class PrefillSchedulerConfig:
-    """Prefill Specific Scheduler Config."""
-
-    max_batch_size_ce: int
-    """The maximum number of requests that can be in the context encoding batch."""
-
-    batch_timeout: Optional[float]
-    """The maximum amount of time to wait before creating a context encoding batch."""
-
-    enable_chunked_prefill: bool = True
-    """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
-    each batch contains exactly `target_tokens_per_batch_ce` tokens."""
-
-    target_tokens_per_batch_ce: int = 4096
-    """The target total number of tokens to encode in the context encoding batch."""
 
 
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
-        pipeline: TokenGenerator,
-        scheduler_config: PrefillSchedulerConfig,
-        paged_manager: PagedKVCacheManager,
+        pipeline: Pipeline[
+            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationOutput,
+        ],
+        scheduler_config: TokenGenerationSchedulerConfig,
+        paged_cache: PagedKVCacheManager,
         *,
-        zmq_ctx: zmq.Context,
-        prefill_zmq_endpoint: str,
-        decode_zmq_endpoint: str,
+        dispatcher_client: DispatcherClient,
     ):
-        self.pc = process_control
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
-        self.paged_manager = paged_manager
-
-        # Initialize Queues for Disaggregation
-        logger.info(f"starting prefill queue on: {prefill_zmq_endpoint}")
-        logger.info(f"starting decode queue on: {decode_zmq_endpoint}")
-        self.prefill_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
-            zmq_ctx, prefill_zmq_endpoint
-        )
-        self.decode_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-            zmq_ctx, decode_zmq_endpoint
-        )
-
+        self.paged_cache = paged_cache
         # Initialize Scheduler state.
-        self.active_batch: dict[str, InputContext] = {}
-        self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_ce)
+        self.active_transfers: dict[
+            str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
+        ] = {}
+        self.request_id_to_reply_context: dict[
+            str, tuple[ReplyContext, str, list[int]]
+        ] = {}
+
+        self.dispatcher_client = dispatcher_client
+        self.dispatcher_client.register_request_handler(
+            MessageType.PREFILL_REQUEST, self.handle_prefill_request
         )
-        self.preempted_requests: queue.Queue[tuple[str, InputContext]] = (
-            queue.Queue()
+        self.dispatcher_client.register_request_handler(
+            MessageType.TRANSFER_ENGINE_REQUEST,
+            self.handle_transfer_engine_request,
+        )
+        self.dispatcher_client.register_request_handler(
+            MessageType.CANCEL_REQUEST,
+            self.handle_cancel_request,
         )
 
-    def push_to_decode_socket(
-        self, request_id: str, data: InputContext
+        # Create Transfer Engine
+        self.transfer_engine = KVTransferEngine(
+            name=f"prefill_agent_{uuid.uuid4()}",
+            tensors=paged_cache.device_tensors,
+            total_num_pages=paged_cache.total_num_pages,
+        )
+
+        self.outstanding_cancelled_requests: set[RequestID] = set()
+
+        self.batch_constructor = TextBatchConstructor(
+            scheduler_config=scheduler_config,
+            pipeline=pipeline,
+            paged_cache=paged_cache,
+        )
+        self.scheduler_logger = SchedulerLogger()
+
+    @traced
+    def handle_cancel_request(
+        self, message: RequestID, _: ReplyContext
     ) -> None:
-        self.decode_push_socket.put_nowait((request_id, data))
+        """Handles a cancel request by adding the request ID to the set of outstanding cancelled requests."""
+        self.outstanding_cancelled_requests.add(message)
 
-    def pull_from_prefill_socket(self) -> tuple[str, InputContext]:
-        """Pulls a request from the prefill socket, checking preempted requests first.
-
-        Returns:
-            tuple[str, InputContext]: A tuple containing the request ID and input context.
-
-        Raises:
-            queue.Empty: If no requests are available.
-            zmq.ZMQError: If there is an error receiving from the socket.
-        """
-        # First try and return from pre-empted requests queue.
-        if not self.preempted_requests.empty():
-            return self.preempted_requests.get()
-
-        return self.prefill_pull_socket.get_nowait()
-
-    def return_to_prefill_queue(self, req_id: str, data: InputContext) -> None:
-        """Releases the cache index back to the available pool and cleans up pipeline
-        resources before returning the request to the preempted queue.
-
-        Args:
-            req_id: The ID of the request to return
-            data: The InputContext containing the request data
-        """
-        self.available_cache_indices.add(data.cache_seq_id)
-        self.pipeline.release(data)
-        data.reset()
-        self.preempted_requests.put((req_id, data))
-
-    def update_batch(self) -> None:
-        """Updates the active batch by pulling requests from the prefill queue.
-
-        Processes requests up to max_batch_size_ce, handling cache assignment and chunking.
-        For each request:
-        - Assigns cache if needed
-        - Attempts to schedule via paged manager
-        - Chunks inputs if enabled and batch token length exceeds target
-        - Tracks total batch token length
-        """
-        batch_token_length = 0
-        while self.available_cache_indices:
-            try:
-                req_id, data = self.pull_from_prefill_socket()
-                logger.info("received from decode node!")
-
-                if data.start_idx == 0:
-                    data.unassign_from_cache()
-
-                if not data.is_assigned_to_cache:
-                    data.assign_to_cache(self.available_cache_indices.pop())
-                    self.paged_manager.external_claim([data.cache_seq_id])
-
-            except queue.Empty:
-                break
-
-            scheduled = self.paged_manager.prefetch(data, 1)
-
-            if not scheduled:
-                self.return_to_prefill_queue(req_id, data)
-                break
-
-            if self.scheduler_config.enable_chunked_prefill:
-                if (
-                    batch_token_length + data.active_length
-                    >= self.scheduler_config.target_tokens_per_batch_ce
-                ):
-                    trimmed_tokens = (
-                        batch_token_length
-                        + data.active_length
-                        - self.scheduler_config.target_tokens_per_batch_ce
-                    )
-                    data.bump_token_indices(active_idx=-trimmed_tokens)
-
-            batch_token_length += data.active_length
-            self.active_batch[req_id] = data
-
-    def _handle_chunked_requests(
-        self,
+    @traced
+    def handle_transfer_engine_request(
+        self, message: KVTransferEngineMetadata, reply_context: ReplyContext
     ) -> None:
-        """Handles chunked requests by either sending them back to the preempted queue or to decode.
+        """Handles a engine registration request from the dispatcher."""
+        logger.debug(f"connecting to remote transfer_engine: {message.name}")
+        if message.name in self.transfer_engine.remote_connections:
+            logger.info(f"Transfer engine {message.name} already connected")
+            return
 
-        For the last request in the active batch:
-        - If it was chunked (active_idx - start_idx > 1), sends it back to preempted queue
-        - If not chunked, resets indices and sends to decode socket
+        self.transfer_engine.connect(message)
+
+        self.dispatcher_client.send_reply(
+            MessageType.TRANSFER_ENGINE_RESPONSE,
+            self.transfer_engine.metadata,
+            reply_context,
+        )
+
+    def handle_prefill_request(
+        self, message: PrefillRequest, reply_context: ReplyContext
+    ) -> None:
+        """Handles a prefill request from the dispatcher."""
+        logger.debug("received request from decode node.")
+        context = message.context
+        assert context.needs_ce, (
+            f"Expected needs_ce to be True. Invalid context: {context}"
+        )
+        # It is possible for the context to have a non-zero start_idx due to
+        # decode using prefix caching.
+        context.reset()
+        self.batch_constructor.ce_reqs[message.id] = context
+        self.request_id_to_reply_context[message.id] = (
+            reply_context,
+            message.transfer_engine_name,
+            message.block_ids,
+        )
+
+    def cleanup_active_transfers(self) -> None:
+        """Cleans up completed transfers from the active transfers dictionary.
+
+        Checks the status of all active transfers. For any transfer that is no longer in progress:
+        - Releases pipeline resources
+        - Removes the transfer from active_transfers
         """
+        to_be_deleted = []
+        for req_id, (context, transfer) in self.active_transfers.items():
+            if self.transfer_engine.is_complete(transfer):
+                self.transfer_engine.cleanup_transfer(transfer)
+                self.pipeline.release(context.request_id)
+                to_be_deleted.append(req_id)
 
-        # Always pop the last item.
-        # If its chunked, we should response the associated item from the responses dict.
-        # If not, we simple add it back into the dictionary.
-        # Both popitem, and putting the same value in a dictionary are O(1)
-        # Which should be faster than creating a list to retrieve the last dictionary item
-        # and then conditionally popping which is O(n).
-        last_request_id, last_request = self.active_batch.popitem()
+        for id in to_be_deleted:
+            del self.active_transfers[id]
 
-        # Check if its chunked.
-        if last_request.active_idx - last_request.start_idx > 1:
-            # If its chunked, add it back to the start of the request queue.
-            self.preempted_requests.put((last_request_id, last_request))
-        else:
-            # Send to decode if not chunked
-            last_request.bump_token_indices(start_idx=-last_request.start_idx)
-            self.push_to_decode_socket(last_request_id, last_request)
-
-    def schedule(self) -> None:
+    @traced
+    def schedule(self, sch_output: SchedulerOutput) -> None:
         """Executes the current batch of requests and sends completed requests to decode.
 
         Processes the active batch through the pipeline, handles any chunked prefill requests,
         and sends completed requests to the decode queue while resetting their token indices.
         """
         # Execute the Batch
-        _ = self.pipeline.next_token(
-            self.active_batch,
-            num_steps=1,
+        assert sch_output.batch_size > 0
+        batch = sch_output.batch_inputs
+        inputs = TextGenerationInputs(batches=[batch], num_steps=1)
+        responses = self.pipeline.execute(inputs)
+
+        maybe_restore_chunked_request(
+            batch,
+            responses,
+            self.batch_constructor.ce_reqs,
         )
 
-        if self.scheduler_config.enable_chunked_prefill:
-            self._handle_chunked_requests()
-
         # Send completed requests to decode queue.
-        while self.active_batch:
-            req_id, input_context = self.active_batch.popitem()
-            # Reset this - This is a workaround until we successfully transfer the KV Cache.
-            input_context.bump_token_indices(start_idx=-input_context.start_idx)
-            # TODO: E2EOPT-231
-            input_context._completion_start_idx -= 1  # type: ignore
-            self.push_to_decode_socket(req_id, input_context)
+        for req_id, context in batch.items():
+            reply_context, transfer_engine_name, dst_idxs = (
+                self.request_id_to_reply_context.pop(req_id)
+            )
 
-    def run(self) -> None:
+            # If cancelled, throw away result.
+            if req_id in self.outstanding_cancelled_requests:
+                self.outstanding_cancelled_requests.remove(req_id)
+                continue
+
+            # Get Remote Metadata.
+            remote_metadata = self.transfer_engine.remote_connections[
+                transfer_engine_name
+            ]
+
+            # Retrieve source block ids.
+            src_idxs = self.paged_cache.block_manager.get_req_blocks(
+                context.request_id,
+            )
+            assert len(src_idxs) == len(dst_idxs)
+
+            # Bump this back, so the token is returned.
+            context._completion_start_idx -= 1
+
+            # Transfer only the blocks that are not already on decode node.
+            num_already_cached_blocks = dst_idxs.count(-1)
+            src_idxs = src_idxs[num_already_cached_blocks:]
+            dst_idxs = dst_idxs[num_already_cached_blocks:]
+            assert dst_idxs.count(-1) == 0
+
+            # Initiate the KV transfer
+            logger.debug("initiating transfer from prefill worker.")
+            xfer_data = self.transfer_engine.initiate_send_xfer(
+                remote_metadata,
+                src_idxs,
+                dst_idxs,
+            )
+            self.active_transfers[req_id] = (context, xfer_data)
+
+            # Increment the number of terminated requests.
+            sch_output.num_terminated += 1
+
+            assert not context.needs_ce, (
+                f"Invalid Context: Expected needs_ce to be False. Found: {context}"
+            )
+            assert context.start_idx > 0, (
+                f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
+            )
+            self.dispatcher_client.send_reply(
+                MessageType.PREFILL_RESPONSE,
+                PrefillResponse(
+                    id=req_id, context=context, transfer_metadata=xfer_data
+                ),
+                reply_context,
+            )
+
+    def run_iteration(self) -> None:
         """Main scheduling loop that processes prefill requests.
 
-        Continuously receives requests, creates batches, and schedules them for processing
-        while handling errors and cancelled requests. The loop continues until the process
-        is cancelled.
+        Receives requests, creates batches, and schedules them for processing
+        while handling errors and cancelled requests.
         """
-        i = 0
-        while not self.pc.is_canceled():
-            # Indicate that the process is still alive.
-            self.pc.beat()
-            i += 1
+        # Cleanup active transfers.
+        self.cleanup_active_transfers()
 
-            # Try and receive any request from the prefill node.
-            try:
-                # Create a new batch
-                self.update_batch()
+        # Construct the batch to execute
+        t0 = time.monotonic()
+        batch_to_execute = self.batch_constructor.construct_batch()
+        t1 = time.monotonic()
+        batch_creation_time_s = t1 - t0
 
-                # Break out of loop if batch is empty.
-                if not self.active_batch:
-                    continue
+        # If the batch is empty, skip
+        batch_size = batch_to_execute.batch_size
+        if batch_size == 0:
+            return
 
-                self.schedule()
+        # Schedule the batch
+        t0 = time.monotonic()
+        with Tracer(f"_schedule({batch_to_execute})"):
+            self.schedule(batch_to_execute)
+        t1 = time.monotonic()
+        batch_execution_time_s = t1 - t0
 
-                # Occasionally handle cancelled requests.
-                if i % 20 == 0:
-                    # TODO: E2EOPT-225 Handle Cancelled Requests
-                    pass
-
-            except Exception as e:
-                logger.exception("An error occurred during scheduling.")
-                raise e
+        # Log batch metrics
+        self.scheduler_logger.log_metrics(
+            sch_config=self.scheduler_config,
+            sch_output=batch_to_execute,
+            paged_cache=self.paged_cache,
+            batch_creation_time_s=batch_creation_time_s,
+            batch_execution_time_s=batch_execution_time_s,
+            num_pending_reqs=len(self.batch_constructor.ce_reqs),
+            total_preemption_count=self.batch_constructor.total_preemption_count,
+        )
 
 
 def load_prefill_scheduler(
-    zmq_ctx: zmq.Context,
-    settings: Settings,
-    pipeline: TokenGenerator,
-    pc: ProcessControl,
-    max_batch_size_ce: int,
-    target_tokens_per_batch_ce: Optional[int],
-    batch_timeout: Optional[float],
-    enable_chunked_prefill: bool,
+    pipeline: Pipeline[
+        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationOutput,
+    ],
+    pipeline_config: PipelineConfig,
+    dispatcher_client: DispatcherClient,
 ) -> PrefillScheduler:
-    if enable_chunked_prefill == True and target_tokens_per_batch_ce is None:
-        raise RuntimeError(
-            "if enable_chunked_prefill=True, target_tokens_per_batch_ce must be provided"
-        )
-
-    if target_tokens_per_batch_ce is None:
-        target_tokens_per_batch_ce = -1
-
     # Create Scheduler Config.
-    scheduler_config = PrefillSchedulerConfig(
-        max_batch_size_ce=max_batch_size_ce,
-        batch_timeout=batch_timeout,
-        enable_chunked_prefill=enable_chunked_prefill,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+    scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config
     )
 
     # Get Paged Manager
-    paged_manager = get_paged_manager(pipeline)
+    paged_cache = get_paged_manager(pipeline)
 
-    if paged_manager is None:
+    if paged_cache is None:
         raise RuntimeError(
-            "A paged KV cache manager must be present to use the DecodeScheduler"
-        )
-
-    if (
-        settings.prefill_zmq_endpoint is None
-        or settings.decode_zmq_endpoint is None
-    ):
-        raise ValueError(
-            "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+            "A paged KV cache manager must be present to use the PrefillScheduler"
         )
 
     return PrefillScheduler(
-        process_control=pc,
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        paged_manager=paged_manager,
-        zmq_ctx=zmq_ctx,
-        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
-        decode_zmq_endpoint=settings.decode_zmq_endpoint,
+        paged_cache=paged_cache,
+        dispatcher_client=dispatcher_client,
     )

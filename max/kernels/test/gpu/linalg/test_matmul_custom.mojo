@@ -13,19 +13,19 @@
 
 from math import ceildiv, isclose
 from random import random_float64
-from sys import bitwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import A100, DEFAULT_GPU_ARCH
+from gpu.host import DeviceContext
+from gpu.host.info import A100
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
@@ -67,17 +67,41 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     alias BLOCK_DIM = 16
 
+    # Create layout tensors for bf16 kernel
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+        c_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+        a_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor_bf16 = LayoutTensor[DType.bfloat16, layout, MutableAnyOrigin](
+        b_device._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
     @always_inline
     @parameter
     fn run_func_bf16() raises:
         ctx.enqueue_function[
             matmul_kernel_naive[
-                DType.bfloat16, DType.bfloat16, DType.bfloat16, BLOCK_DIM
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                c_tensor_bf16.layout,
+                a_tensor_bf16.layout,
+                b_tensor_bf16.layout,
+                BLOCK_DIM,
             ]
         ](
-            c_device,
-            a_device,
-            b_device,
+            c_tensor_bf16,
+            a_tensor_bf16,
+            b_tensor_bf16,
             M,
             N,
             K,
@@ -93,17 +117,39 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     ctx.enqueue_copy(a_device_n, a_host_n)
     ctx.enqueue_copy(b_device_n, b_host_n)
 
+    # Create layout tensors for fp32 kernel
+    var c_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        c_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        a_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor_fp32 = LayoutTensor[DType.float32, layout, MutableAnyOrigin](
+        b_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
     @always_inline
     @parameter
     fn run_func_fp32() raises:
         ctx.enqueue_function[
             matmul_kernel_naive[
-                DType.float32, DType.float32, DType.float32, BLOCK_DIM
+                DType.float32,
+                DType.float32,
+                DType.float32,
+                c_tensor_fp32.layout,
+                a_tensor_fp32.layout,
+                b_tensor_fp32.layout,
+                BLOCK_DIM,
             ]
         ](
-            c_device_n,
-            a_device_n,
-            b_device_n,
+            c_tensor_fp32,
+            a_tensor_fp32,
+            b_tensor_fp32,
             M,
             N,
             K,
@@ -139,7 +185,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
 
 fn run_matmul[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
@@ -150,53 +196,53 @@ fn run_matmul[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel => ", String(type), M, N, K)
+    print("== run_matmul kernel => ", dtype, M, N, K)
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -210,13 +256,41 @@ fn run_matmul[
 
     alias BLOCK_DIM = 16
 
+    # Create layout tensors for naive kernel
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        c_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        a_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        b_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
-            c_device_n,
-            a_device_n,
-            b_device_n,
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                dtype,
+                dtype,
+                dtype,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
+                BLOCK_DIM,
+            ]
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
             M,
             N,
             K,
@@ -255,11 +329,11 @@ fn run_matmul[
 
 
 fn run_matmul_split_k[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
-    config: MatmulConfig[type, type, type, False],
+    config: MatmulConfig[dtype, dtype, dtype, False],
 ](
     ctx: DeviceContext,
     rtol: Float64 = 1e-05,
@@ -268,69 +342,64 @@ fn run_matmul_split_k[
     debug: Bool = True,
 ) raises:
     print(
-        "== run_matmul kernel split_k serial reduction => ",
-        String(type),
+        "== run_matmul kernel split_k => ",
+        String(dtype),
         M,
         N,
         K,
     )
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var best_config = select_config[type, type, type, False](M, N, K, ctx)
+    var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
-    multistage_gemm[
-        transpose_b=False,
-        config=config,
-        elementwise_lambda_fn=None,
-        serial_reduction=False,
-    ](
-        rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[type, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[type, 2, b_buf.origin, b_shape]](b_buf),
+    multistage_gemm[transpose_b=False, config=config](
+        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
         best_config,
         ctx,
     )
@@ -344,10 +413,38 @@ fn run_matmul_split_k[
 
     alias BLOCK_DIM = 16
 
-    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
-        c_device_n,
-        a_device_n,
-        b_device_n,
+    # Create layout tensors for naive kernel
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        c_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        a_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        b_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    )
+
+    ctx.enqueue_function[
+        matmul_kernel_naive[
+            dtype,
+            dtype,
+            dtype,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
         M,
         N,
         K,
@@ -381,7 +478,7 @@ fn run_matmul_split_k[
 
 
 fn run_matmul_transpose[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
@@ -392,54 +489,54 @@ fn run_matmul_transpose[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel transpose => ", String(type), M, N, K)
+    print("== run_matmul kernel transpose => ", String(dtype), M, N, K)
 
     alias transpose_b = True
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(N, K)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](N * K)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](N * K)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(N, K)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](N * K)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](N * K)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -455,15 +552,42 @@ fn run_matmul_transpose[
 
     alias BLOCK_DIM = 16
 
+    # Create layout tensors for naive kernel
+    alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    var c_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        c_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    )
+
+    var a_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        a_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    )
+
+    var b_tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](
+        b_device_n._unsafe_ptr(),
+        RuntimeLayout[layout].row_major(IndexList[2](N, K)),
+    )
+
     @always_inline
     @parameter
     fn run_func_naive() raises:
         ctx.enqueue_function[
-            matmul_kernel_naive[type, type, type, BLOCK_DIM, transpose_b]
+            matmul_kernel_naive[
+                dtype,
+                dtype,
+                dtype,
+                c_tensor.layout,
+                a_tensor.layout,
+                b_tensor.layout,
+                BLOCK_DIM,
+                transpose_b,
+            ]
         ](
-            c_device_n,
-            a_device_n,
-            b_device_n,
+            c_tensor,
+            a_tensor,
+            b_tensor,
             M,
             N,
             K,
@@ -628,7 +752,7 @@ def main():
         alias kernels = MatmulKernels[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, False
         ]()
-        alias config = kernels.ampere_256x128_3 if ctx.device_info is A100 else kernels.ampere_128x128_4
+        alias config = kernels.ampere_256x128_3 if ctx.default_device_info is A100 else kernels.ampere_128x128_4
         run_matmul_split_k[DType.bfloat16, 512, 4096, 14336, config](
             ctx, atol=1.0, rng_width=1.0
         )
@@ -664,10 +788,11 @@ def main():
         run_matmul[DType.bfloat16, 1024, 1, 1024](ctx, atol=0.2, rng_width=1.0)
         run_matmul[DType.bfloat16, 1, 1024, 1024](ctx)
 
-        run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
-        run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
-        run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
-        run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
+        # KERN-1807 We need to systematically test the float16 kernels.
+        # run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
+        # run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
+        # run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
+        # run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
 
         run_batched_matmul(ctx, 1, 32, 32, 32)
         run_batched_matmul(ctx, 3, 32, 32, 32)

@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s -r 2 -o %t.csv | FileCheck %s
+# RUN: %mojo %s -r 2 -o %t.csv | FileCheck %s
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
-# RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
+# RUN: %mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
 from benchmark import (
     Bench,
@@ -21,7 +21,6 @@ from benchmark import (
     BenchId,
     BenchMetric,
     Format,
-    Mode,
     ThroughputMeasure,
 )
 
@@ -66,13 +65,11 @@ def main():
     m.config.verbose_timing = True
 
     # Check default print format
-    # CHECK: -----------------------
     # CHECK: | name     | met (ms)
-    # CHECK: -----------------------
+    # CHECK: | -------- | -
     # CHECK: | bench1   |
     # CHECK: | bench2/0 |
     # CHECK: | bench2/1 |
-    # CHECK: -----------------------
     print(m)
 
     # CHECK: name,met (ms),iters,throughput (GElems/s),Arithmetic (GFLOPS/s),min (ms),mean (ms),max (ms),duration (ms)

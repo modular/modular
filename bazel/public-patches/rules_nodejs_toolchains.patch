@@ -1,0 +1,296 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 84f6790d..3e098a37 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -19,37 +19,37 @@ use_repo(node, "nodejs_toolchains")
+ 
+ # Toolchain registration under bzlmod should match the order of WORKSPACE registration
+ # which is the order specified in the PLATFORMS dict https://github.com/bazel-contrib/rules_nodejs/blob/4c373209b058d46f2a5f9ab9f8abf11b161ae459/nodejs/private/nodejs_toolchains_repo.bzl#L20.
+-# For each platform, `:<PLATFORM>_toolchain_target` should be registered before `:<PLATFORM>_toolchain`,
++# For each platform, `:<PLATFORM>_runtime_toolchain` should be registered before `:<PLATFORM>_toolchain`,
+ # https://github.com/bazel-contrib/rules_nodejs/blob/4c373209b058d46f2a5f9ab9f8abf11b161ae459/nodejs/repositories.bzl#L461/.
+ # See https://github.com/bazelbuild/bazel/issues/19645 and https://github.com/bazel-contrib/rules_nodejs/pull/3750 for more context.
+-register_toolchains("@nodejs_toolchains//:linux_amd64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:linux_amd64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:linux_amd64_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:linux_arm64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:linux_arm64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:linux_arm64_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:linux_s390x_toolchain_target")
++register_toolchains("@nodejs_toolchains//:linux_s390x_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:linux_s390x_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:linux_ppc64le_toolchain_target")
++register_toolchains("@nodejs_toolchains//:linux_ppc64le_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:linux_ppc64le_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:darwin_amd64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:darwin_amd64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:darwin_amd64_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:darwin_arm64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:darwin_arm64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:darwin_arm64_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:windows_amd64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:windows_amd64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:windows_amd64_toolchain")
+ 
+-register_toolchains("@nodejs_toolchains//:windows_arm64_toolchain_target")
++register_toolchains("@nodejs_toolchains//:windows_arm64_runtime_toolchain")
+ 
+ register_toolchains("@nodejs_toolchains//:windows_arm64_toolchain")
+diff --git a/nodejs/BUILD.bazel b/nodejs/BUILD.bazel
+index e66eda2d..6eb94856 100644
+--- a/nodejs/BUILD.bazel
++++ b/nodejs/BUILD.bazel
+@@ -1,6 +1,7 @@
+ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+ load("//nodejs/private:nodejs_toolchains_repo.bzl", "PLATFORMS")
+ load("//nodejs/private:user_build_settings.bzl", "user_args")
++load(":node_toolchain_alias.bzl", "node_runtime_alias", "node_toolchain_alias")
+ 
+ package(default_visibility = ["//visibility:public"])
+ 
+@@ -19,12 +20,39 @@ bzl_library(
+     ],
+ )
+ 
+-# This is the target rule authors should put in their "toolchains"
+-# attribute in order to get a node interpreter for the correct
+-# platform.
+-# See https://docs.bazel.build/versions/main/toolchains.html#writing-rules-that-use-toolchains
++# A single binary distribution of a Node provides two different types of toolchains from the
++# perspective of Bazel:
++
++# (1) The transpilation toolchain, which provides the Node runtime used to execute the transpiler
++# (and type checker), as well as various helper tools and settings.
++#
++# Toolchains of this type typically have constraints on the execution platform so that their Node
++# runtime can run the transpiler, but not on the target platform as Node transpilation outputs are
++# platform independent.
++#
++# Obtain the associated NodeInfo via:
++#   ctx.toolchains["@bazel_tools//tools/jdk:toolchain_type"].nodeinfo
+ toolchain_type(name = "toolchain_type")
+ 
++# (2) The Node runtime that executable Node outputs (e.g., js_binary) will run on.
++#
++# Toolchains of this type typically have constraints on the target platform so that the runtime's
++# native 'node' binary can be run there, but not on the execution platform as building an executable
++# Node target only requires copying or symlinking the runtime, which can be done on any platform.
++#
++# Obtain the associated NodeRuntimeInfo via:
++#   ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].nodeinfo
++toolchain_type(name = "runtime_toolchain_type")
++
++# Points to toolchain[":runtime_toolchain_type"]
++# Use this for executing and packaging Node applications for target platform (eg., js_binary, js_test or js_image_oci).
++node_runtime_alias(name = "current_node_runtime")
++
++# Points to toolchain[":toolchain_type"]
++# Use this for tools (eg., when action execution is needed).
++node_toolchain_alias(name = "current_node_toolchain")
++
++# The platforms that are supported by the Node toolchains.
+ [
+     platform(
+         name = key,
+diff --git a/nodejs/node_toolchain_alias.bzl b/nodejs/node_toolchain_alias.bzl
+new file mode 100644
+index 00000000..a4170a89
+--- /dev/null
++++ b/nodejs/node_toolchain_alias.bzl
+@@ -0,0 +1,53 @@
++# Copyright 2019 The Bazel Authors. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Node toolchain aliases using toolchain resolution."""
++
++load(":semantics.bzl", "semantics")
++
++def _node_runtime_alias(ctx):
++    """Implementation of node_runtime_alias using toolchain resolution."""
++    toolchain_info = ctx.toolchains[semantics.NODE_RUNTIME_TOOLCHAIN_TYPE]
++    toolchain = toolchain_info.nodeinfo
++    template_variable_info = toolchain_info.template_variables
++    default_info = toolchain_info.default
++    return [
++        toolchain_info,
++        toolchain,
++        template_variable_info,
++        default_info,
++    ]
++
++node_runtime_alias = rule(
++    implementation = _node_runtime_alias,
++    toolchains = [semantics.NODE_RUNTIME_TOOLCHAIN],
++)
++
++def _node_toolchain_alias(ctx):
++    """An implementation of node_toolchain_alias using toolchain resolution."""
++    toolchain_info = ctx.toolchains[semantics.NODE_TOOLCHAIN_TYPE]
++    toolchain = toolchain_info.nodeinfo
++    template_variable_info = toolchain_info.template_variables
++    default_info = toolchain_info.default
++    return [
++        toolchain_info,
++        toolchain,
++        template_variable_info,
++        default_info,
++    ]
++
++node_toolchain_alias = rule(
++    implementation = _node_toolchain_alias,
++    toolchains = [semantics.NODE_TOOLCHAIN],
++)
+diff --git a/nodejs/private/nodejs_toolchains_repo.bzl b/nodejs/private/nodejs_toolchains_repo.bzl
+index 7758f3ed..1550cab7 100644
+--- a/nodejs/private/nodejs_toolchains_repo.bzl
++++ b/nodejs/private/nodejs_toolchains_repo.bzl
+@@ -69,55 +69,42 @@ PLATFORMS = {
+ }
+ 
+ def _nodejs_toolchains_repo_impl(repository_ctx):
+-    # Expose a concrete toolchain which is the result of Bazel resolving the toolchain
+-    # for the execution or target platform.
+-    # Workaround for https://github.com/bazelbuild/bazel/issues/14009
+-    starlark_content = """# Generated by nodejs_toolchains_repo.bzl
+-
+-# Forward all the providers
+-def _resolved_toolchain_impl(ctx):
+-    toolchain_info = ctx.toolchains["@rules_nodejs//nodejs:toolchain_type"]
+-    return [
+-        toolchain_info,
+-        toolchain_info.default,
+-        toolchain_info.nodeinfo,
+-        toolchain_info.template_variables,
+-    ]
+-
+-# Copied from java_toolchain_alias
+-# https://cs.opensource.google/bazel/bazel/+/master:tools/jdk/java_toolchain_alias.bzl
+-resolved_toolchain = rule(
+-    implementation = _resolved_toolchain_impl,
+-    toolchains = ["@rules_nodejs//nodejs:toolchain_type"],
+-)
+-"""
+-    repository_ctx.file("defs.bzl", starlark_content)
+-
+-    build_content = """# Generated by nodejs_toolchains_repo.bzl
++    # TODO(7.0) Drop support for deprecated alias
++    build_content = '''# Generated by nodejs_toolchains_repo.bzl
+ #
+ # These can be registered in the workspace file or passed to --extra_toolchains flag.
+ # By default all these toolchains are registered by the nodejs_register_toolchains macro
+ # so you don't normally need to interact with these targets.
+ 
+-load(":defs.bzl", "resolved_toolchain")
++alias(
++    name = "resolved_toolchain",
++    actual = "@rules_nodejs//nodejs:current_node_runtime",
++    deprecation = """
++Use one of the following instead:
++- @rules_nodejs//nodejs:current_node_runtime
++- @rules_nodejs//nodejs:current_host_node_runtime
++- @rules_nodejs//nodejs:current_node_toolchain
++See https://github.com/bazel-contrib/rules_nodejs/issues/3795.
++""",
++    visibility = ["//visibility:public"],
++)
+ 
+-resolved_toolchain(name = "resolved_toolchain", visibility = ["//visibility:public"])
+-
+-"""
++'''
+ 
+     for [platform, meta] in PLATFORMS.items():
+         build_content += """
+ toolchain(
+     name = "{platform}_toolchain",
+     exec_compatible_with = {compatible_with},
++    target_compatible_with = {compatible_with}, # prevent Node from this toolchain being bundled by js_image_oci to incompatible target platforms (https://github.com/bazel-contrib/rules_nodejs/issues/3854)
+     toolchain = "@{user_node_repository_name}_{platform}//:toolchain",
+     toolchain_type = "@rules_nodejs//nodejs:toolchain_type",
+ )
+ toolchain(
+-    name = "{platform}_toolchain_target",
++    name = "{platform}_runtime_toolchain",
+     target_compatible_with = {compatible_with},
+     toolchain = "@{user_node_repository_name}_{platform}//:toolchain",
+-    toolchain_type = "@rules_nodejs//nodejs:toolchain_type",
++    toolchain_type = "@rules_nodejs//nodejs:runtime_toolchain_type",
+ )
+ """.format(
+             platform = platform,
+diff --git a/nodejs/repositories.bzl b/nodejs/repositories.bzl
+index 7d0cfbb7..ac927a6a 100644
+--- a/nodejs/repositories.bzl
++++ b/nodejs/repositories.bzl
+@@ -476,7 +476,7 @@ def nodejs_register_toolchains(name = DEFAULT_NODE_REPOSITORY, register = True,
+         )
+         if register:
+             native.register_toolchains(
+-                "@%s_toolchains//:%s_toolchain_target" % (name, platform),
++                "@%s_toolchains//:%s_runtime_toolchain" % (name, platform),
+                 "@%s_toolchains//:%s_toolchain" % (name, platform),
+             )
+ 
+diff --git a/nodejs/semantics.bzl b/nodejs/semantics.bzl
+new file mode 100644
+index 00000000..830f84c6
+--- /dev/null
++++ b/nodejs/semantics.bzl
+@@ -0,0 +1,33 @@
++# Copyright 2021 The Bazel Authors. All rights reserved.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++"""Rules NodeJS Semantics"""
++
++_NODE_TOOLCHAIN_TYPE = Label("//nodejs:toolchain_type")
++_NODE_RUNTIME_TOOLCHAIN_TYPE = Label("//nodejs:runtime_toolchain_type")
++
++def _find_node_toolchain(ctx):
++    return ctx.toolchains[_NODE_TOOLCHAIN_TYPE].nodeinfo
++
++def _find_node_runtime_toolchain(ctx):
++    return ctx.toolchains[_NODE_RUNTIME_TOOLCHAIN_TYPE].nodeinfo
++
++semantics = struct(
++    NODE_TOOLCHAIN_LABEL = Label("//nodejs:current_node_toolchain"),
++    NODE_TOOLCHAIN_TYPE = _NODE_TOOLCHAIN_TYPE,
++    NODE_TOOLCHAIN = config_common.toolchain_type(_NODE_TOOLCHAIN_TYPE, mandatory = True),
++    find_node_toolchain = _find_node_toolchain,
++    NODE_RUNTIME_TOOLCHAIN_TYPE = _NODE_RUNTIME_TOOLCHAIN_TYPE,
++    NODE_RUNTIME_TOOLCHAIN = config_common.toolchain_type(_NODE_RUNTIME_TOOLCHAIN_TYPE, mandatory = True),
++    find_node_runtime_toolchain = _find_node_runtime_toolchain,
++)

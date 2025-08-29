@@ -18,9 +18,9 @@ from utils.index import IndexList
 
 
 # Padding handling method.
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct PadHandling:
+struct PadHandling(Copyable, Movable):
     var value: Int
     alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     alias INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -35,9 +35,9 @@ struct PadHandling:
 
 
 # Data layout encoding.
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Image2DLayout:
+struct Image2DLayout(Copyable, Movable):
     var value: Int
     alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     alias NHWC = Image2DLayout(0)  # channels last layout.
@@ -57,18 +57,18 @@ struct Image2DLayout:
 @register_passable("trivial")
 struct ImageData[
     shape: DimList,
-    type: DType,
+    dtype: DType,
     static_layout: Image2DLayout,
     origin: MutableOrigin,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: NDBuffer[type, 4, origin, shape]
+    var data: NDBuffer[dtype, 4, origin, shape]
     var dynamic_layout: Image2DLayout
 
     fn __init__(
-        out self, data: NDBuffer[type, 4, origin, shape], layout: Image2DLayout
+        out self, data: NDBuffer[dtype, 4, origin, shape], layout: Image2DLayout
     ):
         """Construct of an image data instance with dynamic layout param.
 
@@ -80,15 +80,14 @@ struct ImageData[
         self.data = data
         self.dynamic_layout = layout
 
-    @implicit
-    fn __init__(out self, data: NDBuffer[type, 4, origin, shape]):
+    fn __init__(out self, data: NDBuffer[dtype, 4, origin, shape]):
         constrained[static_layout != Image2DLayout.UNKNOWN]()
         self.data = data
         self.dynamic_layout = static_layout
 
     fn to_static_layout[
         new_static_layout: Image2DLayout
-    ](self) -> ImageData[shape, type, new_static_layout, origin]:
+    ](self) -> ImageData[shape, dtype, new_static_layout, origin]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
 
@@ -96,7 +95,7 @@ struct ImageData[
             The image data with static data layout.
         """
         constrained[static_layout == Image2DLayout.UNKNOWN]()
-        return ImageData[shape, type, new_static_layout](self.data)
+        return ImageData[shape, dtype, new_static_layout](self.data)
 
     fn get_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
@@ -229,7 +228,7 @@ struct ImageData[
         debug_assert(False, "Invalid layout")
         return 0
 
-    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[type]:
+    fn __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[dtype]:
         """Reads the underlying data buffer based on the tensor index and under-
         lying data layout.
 
@@ -244,7 +243,7 @@ struct ImageData[
         """
         return self.data[self._get_index(n, c, h, w)]
 
-    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: Scalar[type]):
+    fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: Scalar[dtype]):
         """Writes the underlying data buffer based on the tensor index and under-
         lying data layout.
 
@@ -261,9 +260,8 @@ struct ImageData[
         return self.data.size()
 
 
-@value
 @register_passable("trivial")
-struct ImageShape:
+struct ImageShape(Copyable, Movable):
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
     var N: Int
@@ -273,9 +271,9 @@ struct ImageShape:
 
     fn __init__[
         shape: DimList,
-        type: DType,
+        dtype: DType,
         layout: Image2DLayout,
-    ](out self, image_data: ImageData[shape, type, layout]):
+    ](out self, image_data: ImageData[shape, dtype, layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:

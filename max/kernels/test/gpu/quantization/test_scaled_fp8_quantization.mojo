@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
@@ -20,10 +19,9 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
 )
-from memory.unsafe import bitcast
 from testing import assert_equal
 
-from utils.numerics import FPUtils, max_finite, min_finite
+from utils.numerics import max_finite, min_finite
 
 
 fn test_scaled_fp8_quant[
@@ -87,9 +85,9 @@ fn test_dynamic_fp8_quant[
     alias group_size = n.dim if group_size_or_per_token == -1 else group_size_or_per_token
 
     alias static_shape = DimList(m.dim, n.dim)
-    alias static_scales_shape = DimList(m.dim, n.dim // group_size)
+    alias static_scales_shape = DimList(n.dim // group_size, m.dim)
     var dynamic_shape = DimList(m.value, n.value)
-    var dynamic_scales_shape = DimList(m.value, n.value // group_size)
+    var dynamic_scales_shape = DimList(n.value // group_size, m.value)
 
     var in_host = HostNDBuffer[in_dtype, 2, static_shape](dynamic_shape)
     var out_host = HostNDBuffer[out_dtype, 2, static_shape](dynamic_shape)
@@ -128,12 +126,13 @@ fn test_dynamic_fp8_quant[
                     abs(in_host.tensor[i, j + group_idx * Int(group_size)]),
                 )
 
-            var scale_factor = min(group_max, 1200.0) / Scalar[
-                out_dtype
-            ].MAX_FINITE.cast[in_dtype]()
+            var scale_factor = (
+                min(group_max, 1200.0)
+                / Scalar[out_dtype].MAX_FINITE.cast[in_dtype]()
+            )
 
             assert_equal(
-                scales_host.tensor[i, group_idx].cast[DType.float64](),
+                scales_host.tensor[group_idx, i].cast[DType.float64](),
                 scale_factor.cast[DType.float64](),
             )
 
@@ -178,5 +177,5 @@ fn main() raises:
             ctx, dynamic(1), static[16384]()
         )
         test_dynamic_fp8_quant[DType.float8_e4m3fn, DType.bfloat16, 128](
-            ctx, dynamic(1), static[16384]()
+            ctx, dynamic(4), static[16384]()
         )

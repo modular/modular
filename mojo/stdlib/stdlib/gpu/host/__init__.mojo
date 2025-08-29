@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the gpu host package."""
 
+from .compile import get_gpu_target
 from .constant_memory_mapping import ConstantMemoryMapping
 from .device_attribute import DeviceAttribute
 from .device_context import (
     DeviceBuffer,
     DeviceContext,
+    DeviceEvent,
     DeviceFunction,
     DeviceMulticastBuffer,
     DeviceStream,

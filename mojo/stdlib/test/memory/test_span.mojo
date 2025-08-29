@@ -10,16 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import InlineArray, List
-
-from memory import Span, UnsafePointer
 from testing import assert_equal, assert_raises, assert_true
 
 
 def test_span_list_int():
-    var l = List[Int](1, 2, 3, 4, 5, 6, 7)
+    var l = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(list=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -43,7 +39,7 @@ def test_span_list_int():
 
 
 def test_span_list_str():
-    var l = List[String]("a", "b", "c", "d", "e", "f", "g")
+    var l = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -162,12 +158,12 @@ def test_contains():
     assert_true(0 not in span)
     assert_true(16 not in span)
     for item in items:
-        assert_true(item[] in span)
+        assert_true(item in span)
 
 
 def test_equality():
     var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
-    var l2 = List[String]("a", "b", "c", "d", "e", "f", "g")
+    var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span[String](l)
     var sp2 = Span[String](l)
     var sp3 = Span(l2)
@@ -182,7 +178,7 @@ def test_equality():
 
 
 def test_fill():
-    var a = List[Int](0, 1, 2, 3, 4, 5, 6, 7, 8)
+    var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     var s = Span(a)
 
     s.fill(2)
@@ -204,14 +200,14 @@ def test_reversed():
     var s = Span[Int](forward)
     var i = 0
     for num in reversed(s):
-        assert_equal(num[], backward[i])
+        assert_equal(num, backward[i])
         i += 1
 
 
 # We don't actually need to call this test
 # but we want to make sure it compiles
 def test_span_coerce():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     var a = InlineArray[Int, 3](1, 2, 3)
 
     fn takes_span(s: Span[Int]):
@@ -224,20 +220,20 @@ def test_span_coerce():
 # We don't actually need to call this test
 # but we want to make sure it compiles
 def test_conditional_conformance():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     var s = Span[Int, alignment=2](l)
     s.fill(0)
     _ = s == s
 
 
 def test_swap_elements():
-    var l = List[Int](1, 2, 3, 4, 5)
+    var l = [1, 2, 3, 4, 5]
     var s = Span(l)
     s.swap_elements(1, 4)
     assert_equal(l[1], 5)
     assert_equal(l[4], 2)
 
-    var l2 = List[String]("hi", "hello", "hey")
+    var l2 = ["hi", "hello", "hey"]
     var s2 = Span(l2)
     s2.swap_elements(0, 2)
     assert_equal(l2[0], "hey")
@@ -248,8 +244,8 @@ def test_swap_elements():
 
 
 def test_merge():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
 
     fn inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
@@ -259,8 +255,97 @@ def test_merge():
     inner(True, a, b)
     inner(False, a, b)
 
-    assert_equal(a, List[Int](0, 2, 10))
-    assert_equal(b, List[Int](0, 5, 10))
+    assert_equal(a, [0, 2, 10])
+    assert_equal(b, [0, 5, 10])
+
+
+def test_span_to_string():
+    var l = [1, 2, 3]
+    var s = Span(l)[:2]
+    assert_equal(s.__str__(), "[1, 2]")
+
+
+def test_span_repr():
+    var l = [1, 2, 3]
+    var s = Span(l)[:2]
+    assert_equal(s.__repr__(), "[1, 2]")
+
+
+def test_reverse():
+    def _test_dtype[D: DType]():
+        forward = InlineArray[Scalar[D], 11](1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+        backward = InlineArray[Scalar[D], 11](11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+        s = Span(forward)
+        s.reverse()
+        i = 0
+        for num in s:
+            assert_equal(num, backward[i])
+            i += 1
+
+    _test_dtype[DType.uint8]()
+    _test_dtype[DType.uint16]()
+    _test_dtype[DType.uint32]()
+    _test_dtype[DType.uint64]()
+    _test_dtype[DType.int8]()
+    _test_dtype[DType.int16]()
+    _test_dtype[DType.int32]()
+    _test_dtype[DType.int64]()
+    _test_dtype[DType.float16]()
+    _test_dtype[DType.float32]()
+    _test_dtype[DType.float64]()
+
+
+def test_apply():
+    @parameter
+    fn _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
+        return x * 2
+
+    @parameter
+    fn _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+        return (x % 2).eq(0)
+
+    def _test[D: DType]():
+        items = List[Scalar[D]](
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+        )
+        twice = items
+        span = Span(twice)
+        span.apply[func = _twice[D]]()
+        for i in range(len(items)):
+            assert_true(span[i] == items[i] * 2)
+
+        # twice only even numbers
+        twice = items
+        span = Span(twice)
+        span.apply[func = _twice[D], where = _where[D]]()
+        for i in range(len(items)):
+            if items[i] % 2 == 0:
+                assert_true(span[i] == items[i] * 2)
+            else:
+                assert_true(span[i] == items[i])
+
+    _test[DType.uint8]()
+    _test[DType.uint16]()
+    _test[DType.uint32]()
+    _test[DType.uint64]()
+    _test[DType.int8]()
+    _test[DType.int16]()
+    _test[DType.int32]()
+    _test[DType.int64]()
+    _test[DType.float16]()
+    _test[DType.float32]()
+    _test[DType.float64]()
+
+
+def test_count_func():
+    @parameter
+    fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+        return v.eq(2)
+
+    var data = Span(List[Byte](0, 1, 2, 1, 2, 1, 2))
+    assert_equal(3, data.count[func=is_2]())
+    assert_equal(2, data[:-1].count[func=is_2]())
+    assert_equal(1, data[:3].count[func=is_2]())
 
 
 def main():
@@ -278,3 +363,8 @@ def main():
     test_reversed()
     test_swap_elements()
     test_merge()
+    test_span_to_string()
+    test_span_repr()
+    test_reverse()
+    test_apply()
+    test_count_func()

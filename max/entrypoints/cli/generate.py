@@ -22,25 +22,23 @@ from collections.abc import Iterable
 from typing import Optional
 
 import requests
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
-from max.pipelines.core import (
+from max.interfaces import (
+    Pipeline,
     PipelineTokenizer,
-    TokenGenerator,
-    TokenGeneratorRequest,
+    TextGenerationInputs,
+    TextGenerationRequest,
 )
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
 from .metrics import TextGenerationMetrics
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 MODEL_NAME = "model"
 
 
 async def stream_text_to_console(
-    pipeline: TokenGenerator,
+    pipeline: Pipeline,
     tokenizer: PipelineTokenizer,
     prompt: str,
     images: Optional[list[bytes]],
@@ -50,9 +48,8 @@ async def stream_text_to_console(
 ) -> None:
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
-        TokenGeneratorRequest(
-            id=req_id,
-            index=0,
+        TextGenerationRequest(
+            request_id=req_id,
             prompt=prompt,
             images=images,
             model_name=MODEL_NAME,
@@ -71,20 +68,16 @@ async def stream_text_to_console(
         first_token = True
         generate_again = True
         while generate_again:
-            responses = pipeline.next_token(
-                pipeline_request,
-                num_steps=num_steps,
+            responses = pipeline.execute(
+                TextGenerationInputs([pipeline_request], num_steps=num_steps)
             )
 
-            for request_idx, response in responses.items():
+            for request_idx, response in responses.items():  # noqa: B007
                 if response.is_done:
                     generate_again = False
 
-                for text_response in response.tokens:
-                    encoded_text = text_response.next_token
-                    response_text = await tokenizer.decode(
-                        context, encoded_text
-                    )
+                for encoded_token in response.tokens:
+                    response_text = await tokenizer.decode(encoded_token)
                     if metrics:
                         if first_token:
                             first_token = False
@@ -104,7 +97,7 @@ async def stream_text_to_console(
         if metrics:
             metrics.signpost("end_generation")
 
-        pipeline.release(context)
+        pipeline.release(context.request_id)
 
     if print_tokens:
         print()
@@ -119,7 +112,7 @@ def generate_text_for_pipeline(
     # Run timed run & print results.
     with TextGenerationMetrics(print_report=True) as metrics:
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-        assert isinstance(pipeline, TokenGenerator)
+        assert isinstance(pipeline, Pipeline)
         if image_urls:
             logger.info("Downloading images")
             images = [requests.get(url).content for url in image_urls]

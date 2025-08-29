@@ -77,7 +77,6 @@ struct Progress:
     var _term_dims: Tuple[Int, Int]
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, end: Int):
         self = Self(0, end)
 
@@ -94,8 +93,8 @@ struct Progress:
         self._term_dims = (other._term_dims[0], other._term_dims[1])
 
     fn advance(mut self, steps: Int = 1):
-        alias BLOCK = String("▇")
-        alias PLACE_HOLDER = String(" ")
+        alias BLOCK = "▇"
+        alias PLACE_HOLDER = " "
 
         if len(self._range) <= 0 or steps <= 0:
             return

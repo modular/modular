@@ -13,12 +13,10 @@
 """Implements functionality to start a mojo execution."""
 
 from sys import external_call
-from sys.ffi import OpaquePointer, _get_global
-
-from memory import UnsafePointer
+from sys.ffi import _get_global
 
 
-fn _init_global_runtime(ignored: OpaquePointer) -> OpaquePointer:
+fn _init_global_runtime() -> OpaquePointer:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_CreateRuntime",
         OpaquePointer,
@@ -31,15 +29,13 @@ fn _destroy_global_runtime(ptr: OpaquePointer):
 
 
 @always_inline
-fn _get_current_or_global_runtime() -> OpaquePointer:
+fn _ensure_current_or_global_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer
     ]()
     if current_runtime:
-        return current_runtime
-    return _get_global[
-        "Runtime", _init_global_runtime, _destroy_global_runtime
-    ]()
+        return
+    _ = _get_global["Runtime", _init_global_runtime, _destroy_global_runtime]()
 
 
 fn __wrap_and_execute_main[
@@ -51,10 +47,17 @@ fn __wrap_and_execute_main[
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
-    _ = _get_current_or_global_runtime()
+    _ensure_current_or_global_runtime_init()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
+
+    # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
+    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
+    # Such functionality needs to be explicitly hidden under the env var,
+    # because otherwise extra signal handler will be registered if user runs
+    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.
     main_func()
@@ -75,15 +78,23 @@ fn __wrap_and_execute_raising_main[
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
-    _ = _get_current_or_global_runtime()
+    _ensure_current_or_global_runtime_init()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
+
+    # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
+    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
+    # Such functionality needs to be explicitly hidden under the env var,
+    # because otherwise extra signal handler will be registered if user runs
+    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.
     try:
         main_func()
     except e:
+        print(String(e.get_stack_trace()))
         print("Unhandled exception caught during execution:", e)
         return 1
 

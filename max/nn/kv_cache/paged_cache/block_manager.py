@@ -31,6 +31,7 @@ from enum import Enum
 from typing import Generic, TypeVar
 
 import numpy as np
+from max.interfaces.request import RequestID
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -77,7 +78,7 @@ class BlockManager(Generic[T]):
         block_copy_engine: BlockCopyEngine | None,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
-    ):
+    ) -> None:
         # The number of tokens in a single page.
         self.block_size = block_size
 
@@ -130,12 +131,21 @@ class BlockManager(Generic[T]):
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
         # is finished.
-        self.req_to_blocks: dict[int, list[KVCacheBlock]] = defaultdict(list)
+        self.current_blocks_per_request: dict[RequestID, list[KVCacheBlock]] = (
+            defaultdict(list)
+        )
 
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
-        self.req_to_hashes: dict[int, list[BlockHashType]] = defaultdict(list)
+        self.req_to_hashes: dict[RequestID, list[BlockHashType]] = defaultdict(
+            list
+        )
+
+        # Mapping from request ID to committed index (number of tokens
+        # committed into the prefix cache). This replaces reliance on
+        # the context's committed_idx.
+        self.req_to_committed_idx: dict[RequestID, int] = defaultdict(int)
 
         # Cache hit rate metrics.
         self.prompt_tokens = 0
@@ -170,11 +180,10 @@ class BlockManager(Generic[T]):
     def compute_hashes_for_request(
         self,
         ctx: T,
-    ):
+    ) -> None:
         """Compute the block hashes for the request."""
 
-        seq_id = ctx.cache_seq_id
-        hashes = self.req_to_hashes[seq_id]
+        hashes = self.req_to_hashes[ctx.request_id]
 
         num_unhashed_tokens = ctx.current_length - (
             len(hashes) * self.block_size
@@ -190,24 +199,9 @@ class BlockManager(Generic[T]):
             len(hashes) * self.block_size : ctx.current_length
         ]
         new_hashes = hash_request_tokens(
-            self.block_size, unhashed_tokens, parent_hash_value
+            unhashed_tokens, self.block_size, parent_hash_value
         )
         hashes.extend(new_hashes)
-
-    @traced
-    def prefetch(self, data: T, num_steps: int = 1) -> bool:
-        """Reuses blocks from prefix cache and allocates new blocks for a request.
-
-        Returns `True` if the request was prefetched, `False` otherwise.
-        """
-        self.reuse_blocks_from_prefix_cache(data)
-
-        # Allocating new blocks can fail if there are insufficient blocks.
-        try:
-            self.allocate_new_blocks(data, num_steps)
-        except RuntimeError:
-            return False
-        return True
 
     @traced
     def reuse_blocks_from_prefix_cache(self, ctx: T) -> None:
@@ -224,8 +218,7 @@ class BlockManager(Generic[T]):
         if not self.enable_prefix_caching or ctx.active_length == 1:
             return
 
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
 
         # Update cache hit rate metrics.
         orig_prompt_len = ctx.active_length
@@ -244,14 +237,14 @@ class BlockManager(Generic[T]):
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
+            prev_committed_idx = self.req_to_committed_idx[ctx.request_id]
             new_committed_idx = (
-                ctx.committed_idx + len(prefix_cache_blocks) * self.block_size
+                prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            ctx.set_token_indices(
-                committed_idx=new_committed_idx,
-                start_idx=new_committed_idx,
-            )
-            assert ctx.committed_idx == ctx.start_idx
+            # Update BlockManager's committed index and advance context start.
+            self.req_to_committed_idx[ctx.request_id] = new_committed_idx
+            ctx.set_token_indices(start_idx=new_committed_idx)
+            assert ctx.start_idx == new_committed_idx
 
             # Check that the cached_idx has increased.
             assert ctx.start_idx > orig_start_idx
@@ -278,9 +271,7 @@ class BlockManager(Generic[T]):
 
                 fresh_block = self.allocate_device_block()
                 req_blocks.append(fresh_block)
-                ctx.bump_token_indices(
-                    start_idx=tokens_matched,
-                )
+                ctx.bump_token_indices(start_idx=tokens_matched)
 
                 # Enqueue a D2D block copy operation.
                 assert self.block_copy_engine is not None
@@ -370,9 +361,10 @@ class BlockManager(Generic[T]):
 
         assert self.enable_prefix_caching
 
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
-        num_committed_blocks = ctx.committed_idx // self.block_size
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
         num_inflight_blocks = (ctx.current_length - 1) // self.block_size
@@ -410,9 +402,10 @@ class BlockManager(Generic[T]):
         if self.block_size == 1:
             return None, 0
 
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
-        num_committed_blocks = ctx.committed_idx // self.block_size
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
 
         parent_hash = ROOT_BLOCK_HASH
         if num_committed_blocks > 0:
@@ -442,8 +435,7 @@ class BlockManager(Generic[T]):
             return None, 0
 
         child_hash = hash_block_tokens(
-            parent_hash.value,
-            np.array(best_child_tokens),
+            np.array(best_child_tokens), parent_hash.value
         )
         child_block = self.device_block_pool.hash_to_committed_block[
             child_hash.value
@@ -460,14 +452,14 @@ class BlockManager(Generic[T]):
         This increments the committed_idx.
 
         Args:
-            seq_id: The ID of the request.
-            data: The data of the request.
+            ctx: Request InputContext.
         """
 
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
-        req_hashes = self.req_to_hashes[seq_id]
-        num_committed_blocks = ctx.committed_idx // self.block_size
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
 
         # Count the number of tokens for which we know the values of and align
         # to the block size.
@@ -493,14 +485,15 @@ class BlockManager(Generic[T]):
             ):
                 self.recently_committed_device_blocks.append(block)
 
-        ctx.set_token_indices(
-            committed_idx=num_computed_blocks * self.block_size,
+        # Update committed index managed by BlockManager.
+        self.req_to_committed_idx[ctx.request_id] = (
+            num_computed_blocks * self.block_size
         )
 
-    def release(self, seq_id: int) -> None:
+    def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
 
-        blocks = self.req_to_blocks[seq_id]
+        blocks = self.current_blocks_per_request[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
             # Free blocks in reverse order so that the tail blocks are
@@ -510,30 +503,56 @@ class BlockManager(Generic[T]):
         for block in ordered_blocks:
             self.device_block_pool.free_block(block)
 
-        self.req_to_blocks[seq_id] = []
-        self.req_to_hashes[seq_id] = []
+        self.current_blocks_per_request[request_id] = []
+        self.req_to_hashes[request_id] = []
+
+        # Committed idx is only used with the prefix cache
+        # therefore this may not always be in the dict.
+        if request_id in self.req_to_committed_idx:
+            del self.req_to_committed_idx[request_id]
 
     @traced
     def allocate_new_blocks(self, ctx: T, num_steps: int = 1) -> None:
+        """Allocate new blocks for a request to accommodate additional tokens.
+
+        Calculates the number of additional blocks needed based on the current sequence
+        length and number of steps, then allocates them from the device block pool.
+        Validates that there are sufficient free blocks available and that the current
+        blocks can accommodate the completed tokens.
+
+        Args:
+            ctx: The request context containing sequence information and token indices.
+            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+
+        Raises:
+            RuntimeError: If there are insufficient free blocks to satisfy the allocation.
+            AssertionError: If the current blocks cannot accommodate the completed tokens.
+        """
         # Determine number of new blocks to allocate.
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
-        seq_len = ctx.current_length + num_steps - 1
-        num_required_blocks = ceildiv(seq_len, self.block_size)
-        num_new_blocks = num_required_blocks - len(req_blocks)
+        current_blocks = self.current_blocks_per_request[ctx.request_id]
+        num_current_blocks = len(current_blocks)
+        current_seq_len = ctx.current_length + num_steps - 1
+        num_required_blocks = ceildiv(current_seq_len, self.block_size)
+        num_new_blocks = num_required_blocks - num_current_blocks
         num_new_blocks = max(num_new_blocks, 0)
 
-        # Check that there are enough blocks to store the existing cached tokens.
-        assert ctx.start_idx <= len(req_blocks) * self.block_size
+        # Check that the number of completed tokens is less than or equal to the number of tokens we can
+        # currently store in the reserved blocks.
+        num_completed_tokens = ctx.current_length - ctx.active_length
+        assert num_completed_tokens <= (num_current_blocks * self.block_size), (
+            f"the current blocks reserved, have space for {num_current_blocks * self.block_size} tokens, but {num_completed_tokens} are already completed. This should never happen."
+        )
 
-        # Allocate new blocks.
+        # Check that we have enough free blocks to allocate the new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):
             raise RuntimeError(
-                f"Cannot get {num_new_blocks} free blocks from the free block queue"
+                f"Cannot get {num_new_blocks} free blocks from the free block queue (only {len(self.device_block_pool.free_block_queue)} available)"
             )
+
+        # Allocate new blocks.
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block()
-            req_blocks.append(new_block)
+            current_blocks.append(new_block)
 
     @traced
     def eagerly_offload_recently_committed_blocks(self) -> None:
@@ -587,22 +606,25 @@ class BlockManager(Generic[T]):
 
     def release_uncommitted_blocks(self, ctx: T) -> None:
         """Release the uncommitted blocks for the request."""
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
-        num_committed_blocks = ctx.committed_idx // self.block_size
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
         assert len(req_blocks) >= num_committed_blocks
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
         ctx.set_token_indices(
-            start_idx=ctx.committed_idx,
+            start_idx=self.req_to_committed_idx[ctx.request_id]
         )
 
     @traced
-    def get_req_blocks(self, seq_id: int) -> list[int]:
+    def get_req_blocks(self, request_id: RequestID) -> list[int]:
         """Get the block ids for a request."""
-        return [block.bid for block in self.req_to_blocks[seq_id]]
+        return [
+            block.bid for block in self.current_blocks_per_request[request_id]
+        ]
 
     @traced
     def assert_runtime_invariants(self, ctx: T) -> None:
@@ -614,7 +636,7 @@ class BlockManager(Generic[T]):
 
         # Get the active block ids
         active_block_ids = []
-        for blocks in self.req_to_blocks.values():
+        for blocks in self.current_blocks_per_request.values():
             for block in blocks:
                 active_block_ids.append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
@@ -624,12 +646,13 @@ class BlockManager(Generic[T]):
         self.device_block_pool.assert_runtime_invariants(active_block_ids)
 
         # Get the request hashes and blocks
-        seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_hashes[seq_id]
-        req_blocks = self.req_to_blocks[seq_id]
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        req_blocks = self.current_blocks_per_request[ctx.request_id]
 
         # Check that the number of committed blocks for request is correct
-        num_committed_blocks = ctx.committed_idx // self.block_size
+        num_committed_blocks = (
+            self.req_to_committed_idx[ctx.request_id] // self.block_size
+        )
         num_committed = 0
         for block in req_blocks:
             if block.block_hash is None:
@@ -656,6 +679,5 @@ class BlockManager(Generic[T]):
             prev_hash = req_hashes[hash_idx - 1]
             assert curr_hash.parent_hash_value == prev_hash.value
             assert curr_hash == hash_block_tokens(
-                prev_hash.value,
-                np.array(curr_hash.token_ids),
+                np.array(curr_hash.token_ids), prev_hash.value
             )

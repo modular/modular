@@ -10,15 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from sys.ffi import c_char
 
-from memory import UnsafePointer
 from testing import (
     assert_equal,
     assert_false,
-    assert_not_equal,
     assert_raises,
     assert_true,
 )
@@ -39,7 +36,7 @@ def test_mul():
     assert_equal(static_concat_0, static_concat_1)
     assert_equal(static_concat_1, static_concat_2)
     assert_equal("mojomojomojo", static_concat_0)
-    assert_equal(static_concat_0, String("mojo") * 3)
+    assert_equal(static_concat_0, "mojo" * 3)
     var dynamic_concat = "mojo" * 3
     assert_equal("mojomojomojo", dynamic_concat)
     assert_equal(static_concat_0, dynamic_concat)
@@ -52,7 +49,7 @@ def test_equality():
     assert_true(StringLiteral.__ne__("five", "six"))
     assert_false(StringLiteral.__ne__("six", "six"))
 
-    var hello = String("hello")
+    var hello = "hello"
     var hello_ref = hello.as_string_slice()
 
     assert_false(StringLiteral.__eq__("goodbye", hello))
@@ -237,7 +234,7 @@ def test_iter():
     # Test iterating over a string
     var s = "one"
     var i = 0
-    for c in s:
+    for c in s.codepoints():
         if i == 0:
             assert_equal(String(c), "o")
         elif i == 1:

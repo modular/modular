@@ -14,13 +14,14 @@
 
 
 from buffer.dimlist import DimList, _make_tuple
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 
 from utils.index import IndexList
 
 
-@value
-struct IntList[static_values: DimList = DimList()](Sized):
+struct IntList[static_values: DimList = DimList()](
+    Copyable, Defaultable, Movable, Sized
+):
     # Array must be >= 1 length, so we clamp to that if we have unknown
     # length shape. DimList of size 0 represents a dynamically ranked list.
     alias _length = static_values.__len__()
@@ -43,7 +44,6 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
-    @implicit
     fn __init__(out self, other: IntList):
         var num_elements = len(other)
         self.length = Self._length
@@ -71,7 +71,6 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
-    @implicit
     fn __init__(out self, *elems: Int):
         var num_elements = len(elems)
 
@@ -259,7 +258,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         return self.length
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         @parameter
         if not Self.has_static_length():
             if self.data != UnsafePointer[Int]():

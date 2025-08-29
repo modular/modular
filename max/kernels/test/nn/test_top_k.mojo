@@ -11,51 +11,49 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
+from collections import OptionalReg
 from math import iota
-from random import seed
+from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from internal_utils import HostNDBuffer
-from memory import UnsafePointer
-from nn.arange import arange
-from nn.topk import _top_k_cpu, _top_k_sampling, top_k_fused_sampling_cpu
+from nn.topk import _top_k_cpu, _top_k_sampling
 
 from utils import IndexList
 
 
-struct TestTensor[rank: Int, type: DType](Movable):
-    var storage: List[Scalar[type]]
+struct TestTensor[rank: Int, dtype: DType](Movable):
+    var storage: List[Scalar[dtype]]
     var shape: IndexList[rank]
 
-    @implicit
     fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[type]](capacity=shape.flattened_length())
-        self.storage.resize(shape.flattened_length(), 0)
+        self.storage = List[Scalar[dtype]](
+            length=shape.flattened_length(), fill=0
+        )
         self.shape = shape
 
     fn to_ndbuffer(
         self,
-    ) -> NDBuffer[type, rank, MutableAnyOrigin]:
-        return NDBuffer[type, rank](
-            rebind[UnsafePointer[Scalar[type]]](self.storage.data), self.shape
+    ) -> NDBuffer[dtype, rank, MutableAnyOrigin]:
+        return NDBuffer[dtype, rank](
+            rebind[UnsafePointer[Scalar[dtype]]](self.storage.unsafe_ptr()),
+            self.shape,
         )
 
 
 fn test_case_sampling[
     rank: Int,
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
 ](
-    K: Int, axis: Int, input_shape: DimList, temperature: Scalar[type] = 1
+    K: Int, axis: Int, input_shape: DimList, temperature: Scalar[dtype] = 1
 ) raises:
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(input_shape.product())
     )
-    var input = NDBuffer[type, rank](input_ptr, input_shape)
+    var input = NDBuffer[dtype, rank](input_ptr, input_shape)
 
     var output_shape: DimList
     var output_idxs_shape: DimList
@@ -73,21 +71,56 @@ fn test_case_sampling[
             input_shape.get[0](), input_shape.get[1](), 1
         )
 
-    var output_vals_ptr = UnsafePointer[Scalar[type]].alloc(
+    var output_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
     var output_idxs_ptr = UnsafePointer[Int64].alloc(
         Int(output_idxs_shape.product())
     )
-    var out_vals = NDBuffer[type, rank](output_vals_ptr, output_shape)
+    var out_vals = NDBuffer[dtype, rank](output_vals_ptr, output_shape)
     var out_idxs = NDBuffer[DType.int64, rank](
         output_idxs_ptr, output_idxs_shape
     )
 
-    fill_fn[rank, type](input)
-    # input.fill(4)
+    fill_fn[rank, dtype](input)
 
-    _top_k_sampling(K, input, out_vals, out_idxs, temperature=temperature)
+    var max_k = K
+
+    @parameter
+    if rank == 1:
+        batch_size = 1
+    elif rank == 2:
+        batch_size = input_shape.get[0]()
+    else:
+        batch_size = input_shape.get[0]() * input_shape.get[1]()
+    var temperature_ptr = UnsafePointer[Scalar[DType.float32]].alloc(batch_size)
+    for i in range(batch_size):
+        temperature_ptr[i] = temperature.cast[DType.float32]()
+    var temperature_buf = OptionalReg[
+        NDBuffer[DType.float32, 1, MutableAnyOrigin]
+    ](
+        NDBuffer[DType.float32, 1, MutableAnyOrigin](
+            temperature_ptr, DimList(batch_size)
+        )
+    )
+
+    var seed_ptr = UnsafePointer[Scalar[DType.uint64]].alloc(batch_size)
+    for i in range(batch_size):
+        seed_ptr[i] = 12
+    var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
+        NDBuffer[DType.uint64, 1, MutableAnyOrigin](
+            seed_ptr, DimList(batch_size)
+        )
+    )
+
+    _top_k_sampling(
+        max_k,
+        input,
+        out_vals,
+        out_idxs,
+        temperature=temperature_buf,
+        seed=seed_buf,
+    )
 
     var _xxx_no_lifetimes = input  # intentionally bad name
     var _xx_no_lifetimes = out_vals
@@ -101,21 +134,21 @@ fn test_case_sampling[
 
 fn test_case[
     rank: Int,
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
-    var input = TestTensor[rank, type](input_shape)
+    var input = TestTensor[rank, dtype](input_shape)
 
     var output_shape = input_shape
     output_shape[axis] = K
-    var out_vals = TestTensor[rank, type](output_shape)
+    var out_vals = TestTensor[rank, dtype](output_shape)
     var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
     var input_buf = input.to_ndbuffer()
-    fill_fn[rank, type](input_buf)
+    fill_fn[rank, dtype](input_buf)
 
     _top_k_cpu[largest=largest](
         input.to_ndbuffer(),
@@ -143,8 +176,12 @@ fn main() raises:
     seed(1)
 
     @parameter
-    fn fill_iota[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn fill_iota[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
         iota(buf.data, buf.get_shape().flattened_length())
+
+    @parameter
+    fn fill_rand[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
+        rand(buf.data, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
         print("== test_1d_sorted")
@@ -212,8 +249,8 @@ fn main() raises:
 
     @parameter
     fn fill_identical[
-        rank: Int, type: DType
-    ](buf: NDBuffer[mut=True, type, rank]):
+        rank: Int, dtype: DType
+    ](buf: NDBuffer[mut=True, dtype, rank]):
         buf.fill(1)
 
     fn test_identical():
@@ -244,7 +281,9 @@ fn main() raises:
     test_max_k()
 
     @parameter
-    fn fill_custom[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn fill_custom[
+        rank: Int, dtype: DType
+    ](buf: NDBuffer[mut=True, dtype, rank]):
         var flat_buf = buf.flatten()
         for i in range(len(flat_buf)):
             flat_buf[i] = len(flat_buf) - i - 1
@@ -276,47 +315,47 @@ fn main() raises:
 
     fn test_2d_sorted_sampling() raises:
         print("== test_2d_sorted_sampling")
-        test_case_sampling[2, DType.float32, fill_iota](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(5, 10),
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
-    # CHECK: 9,9,8,7,9,
+    # CHECK: 4,1,0,6,4,
     test_2d_sorted_sampling()
 
     fn test_3d_sorted_sampling() raises:
         print("== test_3d_sorted_sampling")
-        test_case_sampling[3, DType.float32, fill_iota](
+        test_case_sampling[3, DType.float32, fill_rand](
             5,
             2,
             DimList(3, 5, 10),
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
-    # 9,9,9,9,8,7,9,8,8,8,9,9,8,9,6,
+    # 6,9,5,2,3,1,7,9,5,1,9,0,2,3,4,
     test_3d_sorted_sampling()
 
     @parameter
-    fn ones[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn ones[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
         for i in range(buf.get_shape().flattened_length()):
             buf.data[i] = 1
 
     fn test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
         alias rank = 1
-        test_case_sampling[1, DType.float32, ones](
+        test_case_sampling[1, DType.float32, fill_rand](
             5, 0, DimList(10), temperature=0.7
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 3,
+    # CHECK: 6,
     test_1d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp() raises:
         print("== test_2d_sorted_sampling_temp")
-        test_case_sampling[2, DType.float32, ones](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(50, 10),
@@ -324,12 +363,12 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 0,4,2,2,1,0,4,0,2,1,2,0,0,1,4,2,0,3,0,3,3,3,4,1,2,4,4,2,2,0,2,0,2,3,4,4,1,0,1,2,3,1,1,3,3,1,0,4,4,0,
+    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,5,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
         print("== test_2d_sorted_sampling_temp_zero")
-        test_case_sampling[2, DType.float32, ones](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(50, 10),
@@ -337,5 +376,17 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp_zero
-    # CHECK: 2,2,2,4,0,3,3,4,2,1,4,0,2,4,0,1,0,2,2,4,1,4,4,2,4,2,3,4,3,4,1,2,2,4,3,3,3,0,2,0,2,3,4,4,0,4,2,2,2,4,
+    # CHECK: 7,7,2,9,8,4,3,2,4,0,8,0,5,5,4,6,0,3,0,6,2,5,8,3,4,0,7,4,1,3,1,6,7,2,8,8,3,4,1,0,9,8,2,6,2,3,2,8,2,3,
     test_2d_sorted_sampling_temp_zero()
+
+    fn test_deterministic_sampling() raises:
+        print("== test_deterministic_sampling")
+        test_case_sampling[2, DType.float32, ones](
+            5,
+            1,
+            DimList(50, 10),
+        )
+
+    # CHECK-LABEL: test_deterministic_sampling
+    # CHECK: 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    test_deterministic_sampling()

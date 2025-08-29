@@ -1,0 +1,19 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+modular_py_binary(
+    name = "addition",
+    srcs = ["addition.py"],
+    imports = ["."],
+    deps = [
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/engine",
+        # FIXME: Hack, not used directly. Nightly tests fail without this dep.
+        "//open-source/max/mojo/python/mojo",
+        requirement("numpy"),
+    ],
+)
+
+modular_run_binary_test(
+    name = "addition_test",
+    binary = "addition",
+)

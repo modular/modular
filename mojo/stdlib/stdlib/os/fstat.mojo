@@ -19,7 +19,7 @@ from os import stat
 ```
 """
 
-from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget
 from time.time import _CTimeSpec
 
 from . import PathLike
@@ -36,7 +36,8 @@ from ._macos import _stat as _stat_macos
 # ===----------------------------------------------------------------------=== #
 fn _constrain_unix():
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
 
 
@@ -149,12 +150,9 @@ struct stat_result(Copyable, Movable, Stringable, Writable):
         self.st_flags = st_flags
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this path to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -216,9 +214,9 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     var fspath = path.__fspath__()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _stat_macos(fspath^)._to_stat_result()
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _stat_linux_arm(fspath^)._to_stat_result()
     else:
         return _stat_linux_x86(fspath^)._to_stat_result()
@@ -244,9 +242,9 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     var fspath = path.__fspath__()
 
     @parameter
-    if os_is_macos():
+    if CompilationTarget.is_macos():
         return _lstat_macos(fspath^)._to_stat_result()
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _lstat_linux_arm(fspath^)._to_stat_result()
     else:
         return _lstat_linux_x86(fspath^)._to_stat_result()

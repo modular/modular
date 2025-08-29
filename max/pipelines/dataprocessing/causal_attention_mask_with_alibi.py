@@ -13,14 +13,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 
 from .causal_attention_mask import causal_attention_mask
 
 
 def _alibi_bias(
     max_seq_len: int, alibi_bias_max: int, n_heads: int
-) -> np.ndarray:
+) -> npt.NDArray[np.floating[Any]]:
     # This bias has to be calculated in fp32, as numpy does not have support for bf16.
     bias = np.arange(1 - max_seq_len, 1, 1).reshape((1, 1, 1, max_seq_len))
     rounded_n_heads = int(
@@ -56,12 +59,9 @@ def causal_attention_mask_with_alibi(
     original_seq_len: list[int],
     alibi_bias_max: int,
     n_heads: int,
-    pad_to_multiple_of: int = 1,
-) -> np.ndarray:
+) -> npt.NDArray[np.floating[Any]]:
     # Get original causal mask
-    causal_mask = causal_attention_mask(
-        original_start_pos, original_seq_len, pad_to_multiple_of
-    )
+    causal_mask = causal_attention_mask(original_start_pos, original_seq_len)
 
     max_seq_len = causal_mask.shape[2]
 

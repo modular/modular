@@ -12,20 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, sizeof
+from sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.id import thread_idx
-from gpu.memory import CacheEviction, Fill, async_copy
+from gpu.memory import CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth
 from layout.layout import make_layout
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 
-alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
+alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 # TileMask holds information collected by composed tile operations to
@@ -33,12 +33,11 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 # Note: The reason we want per-dim mask is because vectorized `non-scalar`
 # elements are n-d, and it can be OOB only with respect to a specific axis.
 #
-@value
 struct TileMask[
     rank: Int,
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
-]:
+](Copyable, Movable):
     var max_dim: IndexList[rank]
     var offset: IndexList[rank]
 
@@ -87,9 +86,10 @@ struct TileMask[
             if dim_mask[i]:
                 size[i] = element_size[i]
             else:
-                var start_index = self.offset[i] + point[i] * element_size[
-                    i
-                ] * element_stride[i]
+                var start_index = (
+                    self.offset[i]
+                    + point[i] * element_size[i] * element_stride[i]
+                )
                 size[i] = max(0, self.max_dim[i] - start_index)
 
         return size
@@ -267,17 +267,9 @@ fn distribute[
     return res
 
 
-# FIXME: Move to a shared utility.
-# Returns the size of variadic integer parameters.
-#
-@always_inline("nodebug")
-fn _get_len[*var_int: Int]() -> Int:
-    return __mlir_op.`pop.variadic.size`(var_int)
-
-
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
-    alias rank = _get_len[*sizes]()
+    alias rank = stdlib.builtin.variadic_size(sizes)
 
     constrained[
         rank <= 3,
@@ -318,32 +310,20 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 
 # Stores the layout of the vectorized buffer element.
 #
-@value
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Copyable,
-    Movable,
-    Stringable,
-    Writable,
+    Copyable, Defaultable, Movable, Stringable, Writable
 ):
     var stride: IndexList[rank]
 
     fn __init__(out self):
         self.stride = IndexList[rank]()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(shape, ":", self.stride)
 
 
@@ -506,7 +486,7 @@ fn _copy_nd_buffer_to_layout_tensor[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[dst.element_type]()
+        alias alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -519,7 +499,7 @@ fn _copy_nd_buffer_to_layout_tensor[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * sizeof[dtype]()
+                alias element_size_bytes = vec_size * size_of[dtype]()
                 var src_ptr = src.data.address_space_cast[
                     _GPUAddressSpace.GLOBAL
                 ]()
@@ -559,7 +539,7 @@ fn _copy_nd_buffer_to_layout_tensor[
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * sizeof[dtype]()
+                    alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
                         _GPUAddressSpace.GLOBAL
                     ]()
@@ -574,11 +554,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -658,7 +638,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[dst.element_type]()
+        alias alignment = align_of[dst.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -671,7 +651,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                alias element_size_bytes = vec_size * sizeof[dtype]()
+                alias element_size_bytes = vec_size * size_of[dtype]()
                 var src_ptr = src.data.address_space_cast[
                     _GPUAddressSpace.GLOBAL
                 ]()
@@ -711,7 +691,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
                 @parameter
                 if is_async:
-                    alias element_size_bytes = vec_width * sizeof[dtype]()
+                    alias element_size_bytes = vec_width * size_of[dtype]()
                     var src_ptr = src.data.address_space_cast[
                         _GPUAddressSpace.GLOBAL
                     ]()
@@ -726,11 +706,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 else:
                     var src_vec = src.data.load[
                         width=vec_width,
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
                     dst.ptr.store[
-                        alignment = alignof[SIMD[dtype, vec_width]](),
+                        alignment = align_of[SIMD[dtype, vec_width]](),
                     ](dst_idx, src_vec)
 
     # Scalar case.
@@ -800,7 +780,7 @@ fn _copy_layout_tensor_to_nd_buffer[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[src.element_type]()
+        alias alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -840,10 +820,10 @@ fn _copy_layout_tensor_to_nd_buffer[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
+                    alignment = align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 
@@ -907,7 +887,7 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
         constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
 
         alias vec_size = Int(tensor_element_layout.shape[0])
-        alias alignment = alignof[src.element_type]()
+        alias alignment = align_of[src.element_type]()
 
         @parameter
         for i in range(num_elements):
@@ -947,10 +927,10 @@ fn _copy_layout_tensor_to_nd_buffer_masked[
 
                 var src_vec = src.ptr.load[
                     width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
+                    alignment = align_of[SIMD[dtype, vec_width]](),
                 ](src_idx).cast[dtype]()
 
-                dst.data.store[alignment = alignof[SIMD[dtype, vec_width]]()](
+                dst.data.store[alignment = align_of[SIMD[dtype, vec_width]]()](
                     dst_idx, src_vec
                 )
 

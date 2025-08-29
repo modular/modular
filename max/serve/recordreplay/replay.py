@@ -105,7 +105,7 @@ class _IncrementalDistributionComputer:
 def _tnmean(a: float) -> float:
     """Mean of the standard normal distribution, truncated to (a, +∞)."""
     # Implementation ported from https://github.com/cossio/TruncatedNormal.jl.
-    return math.sqrt(2 / math.pi) * scipy.special.erfcx(a / math.sqrt(2))
+    return math.sqrt(2 / math.pi) / scipy.special.erfcx(a / math.sqrt(2))
 
 
 def _low_truncated_expectation(
@@ -217,7 +217,7 @@ def _format_big_duration(seconds: float) -> str:
         pieces.append(f"{minutes:02d}m")
     elif minutes:
         pieces.append(f"{minutes}m")
-    pieces.append(f"{int(math.floor(seconds)):02d}s")
+    pieces.append(f"{math.floor(seconds):02d}s")
     return "".join(pieces)
 
 
@@ -404,7 +404,7 @@ class TerminalProgressNotifier(TrackingProgressNotifier):
 
     __stream: TextIO
     __tty: bool
-    __printer_task: asyncio.Task | None
+    __printer_task: asyncio.Task[object] | None
     __major_update_event: asyncio.Event
 
     def __init__(self, stream: TextIO | None = None) -> None:
@@ -539,7 +539,7 @@ async def replay_recording(
     notifier.adjust_total_tasks(len(recording))
     try:
         async with TaskGroup() as task_group:
-            for i in range(concurrency):
+            for i in range(concurrency):  # noqa: B007
                 task_group.create_task(worker())
     finally:
         if unwind_on_error:

@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code
 
 
 fn outer[y: Int]():
@@ -20,7 +19,7 @@ fn outer[y: Int]():
     fn param[x: Int](y: SIMD[DType.float32, y], /):
         pass
 
-    print(_compile_code_asm[param[y]]())
+    print(_compile_code[param[y]]())
 
 
 fn main():

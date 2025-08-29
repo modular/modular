@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.id import thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -103,13 +101,15 @@ fn wgmma_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     c0 = bitcast[DType.int32, 4](c_reg)
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_s8_s8_s32_64x8x32

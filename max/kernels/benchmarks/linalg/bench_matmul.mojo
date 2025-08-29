@@ -20,7 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -54,7 +53,9 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
             try:
                 assert_almost_equal(c[i, j], c_ref[i, j])
             except e:
-                abort(e)  # this function should raise, blocked by #31795
+                abort(
+                    String(e)
+                )  # this function should raise, blocked by #31795
     c_ref_ptr.free()
 
 
@@ -143,16 +144,16 @@ fn bench_matmul[
     c_ptr.free()
 
 
-@value
-struct MatmulSpecStatic:
+@fieldwise_init
+struct MatmulSpecStatic(Copyable, Movable):
     var b_packed: Bool
     var a_type: DType
     var b_type: DType
     var c_type: DType
 
 
-@value
-struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
+@fieldwise_init
+struct MatmulSpec[static_info: MatmulSpecStatic](Copyable, Movable, Stringable):
     var m: Int
     var n: Int
     var k: Int

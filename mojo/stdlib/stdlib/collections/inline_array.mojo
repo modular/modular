@@ -30,20 +30,11 @@ print(arr[0])  # Prints 1
 # Fill with a value
 var filled = InlineArray[Int, 5](fill=42)
 ```
-
-Notes:
-
-- For historical reasons, destructors are not run by default on the elements of
-an `InlineArray`. This can be controlled with the `run_destructors` parameter.
-In the future, this will default to `True` and the `run_destructors` parameter
-will be removed.
 """
 
 import math
 from collections._index_normalization import normalize_index
-from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#
@@ -59,15 +50,13 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    constrained[size > 0, "number of elements in `InlineArray` must be > 0"]()
+    constrained[size >= 0, "number of elements in `InlineArray` must be >= 0"]()
 
 
 struct InlineArray[
-    ElementType: Copyable & Movable,
+    ElementType: ExplicitlyCopyable & Movable,
     size: Int,
-    *,
-    run_destructors: Bool = False,
-](Sized, Movable, Copyable, ExplicitlyCopyable):
+](Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -79,9 +68,6 @@ struct InlineArray[
         ElementType: The type of the elements in the array. Must implement
             `Copyable` and `Movable`.
         size: The size of the array. Must be a positive integer constant.
-        run_destructors: Whether to run destructors on the elements. Defaults to
-            `False` for backwards compatibility. Will default to `True` in the
-            future.
 
     Examples:
 
@@ -118,7 +104,7 @@ struct InlineArray[
             (
                 "Initialize with either a variadic list of arguments, a default"
                 " fill element or pass the keyword argument"
-                " 'unsafe_uninitialized'."
+                " 'uninitialized=True'."
             ),
         ]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -149,7 +135,7 @@ struct InlineArray[
     fn __init__(
         out self,
         *,
-        owned unsafe_assume_initialized: InlineArray[
+        var unsafe_assume_initialized: InlineArray[
             UnsafeMaybeUninitialized[Self.ElementType], Self.size
         ],
     ):
@@ -178,8 +164,7 @@ struct InlineArray[
             )
 
     @always_inline
-    @implicit
-    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
+    fn __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -239,9 +224,8 @@ struct InlineArray[
         )
 
     @always_inline
-    @implicit
     fn __init__(
-        out self, owned *elems: Self.ElementType, __list_literal__: () = ()
+        out self, var *elems: Self.ElementType, __list_literal__: () = ()
     ):
         """Constructs an array from a variadic list of elements.
 
@@ -257,14 +241,14 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
         ```
         """
-
+        debug_assert(len(elems) == size, "No. of elems must match array size")
         self = Self(storage=elems^)
 
     @always_inline
     fn __init__(
         out self,
         *,
-        owned storage: VariadicListMem[Self.ElementType, _],
+        var storage: VariadicListMem[Self.ElementType, _],
     ):
         """Construct an array from a low-level internal representation.
 
@@ -292,9 +276,10 @@ struct InlineArray[
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
-        __disable_del storage
+        # FIXME: Why doesn't consume_elements work here?
+        storage^._anihilate()
 
-    fn copy(self) -> Self:
+    fn copy(self, out copy: Self):
         """Creates a deep copy of the array.
 
         Returns:
@@ -308,13 +293,11 @@ struct InlineArray[
         ```
         """
 
-        var copy = Self(uninitialized=True)
+        copy = Self(uninitialized=True)
 
         for idx in range(size):
             var ptr = copy.unsafe_ptr() + idx
-            ptr.init_pointee_copy(self[idx])
-
-        return copy^
+            ptr.init_pointee_copy(self.unsafe_get(idx))
 
     fn __copyinit__(out self, other: Self):
         """Copy constructs the array from another array.
@@ -328,7 +311,23 @@ struct InlineArray[
 
         self = other.copy()
 
-    fn __del__(owned self):
+    fn __moveinit__(out self, deinit other: Self):
+        """Move constructs the array from another array.
+
+        Args:
+            other: The array to move from.
+
+        Notes:
+            Moves the elements from the source array into this array.
+        """
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        for idx in range(size):
+            var other_ptr = other.unsafe_ptr() + idx
+            other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
+
+    fn __del__(deinit self):
         """Deallocates the array and destroys its elements.
 
         Examples:
@@ -337,16 +336,10 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)
         # arr's destructor is called automatically when it goes out of scope
         ```
-
-        Notes:
-            This destructor is called automatically when the array goes out of
-            scope. If the array's `run_destructors` parameter is `True`, it will
-            call the destructor on each element in the array before deallocating
-            the array's memory.
         """
 
         @parameter
-        if Self.run_destructors:
+        if not Bool(ElementType.__del__is_trivial):
 
             @parameter
             for idx in range(size):
@@ -421,7 +414,9 @@ struct InlineArray[
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
+        constrained[
+            -size <= Int(index(idx)) < size, "Index must be within bounds."
+        ]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
         return self.unsafe_get(normalized_index)
 
@@ -488,8 +483,8 @@ struct InlineArray[
         debug_assert(
             0 <= Int(i) < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            Int(idx),
-            " should be less than: ",
+            Int(i),
+            " should be greater than or equal to 0 and less than ",
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
@@ -499,12 +494,13 @@ struct InlineArray[
         return UnsafePointer(ptr)[]
 
     @always_inline
-    fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
         Self.ElementType,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut = origin.mut,
+        origin=origin,
+        address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
@@ -534,9 +530,8 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[
-                mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-            ]()
+            .origin_cast[origin.mut, origin]()
+            .address_space_cast[address_space]()
         )
 
     @always_inline

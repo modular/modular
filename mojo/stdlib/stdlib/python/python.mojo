@@ -19,13 +19,9 @@ from python import Python
 ```
 """
 
-from collections import Dict
 from collections.dict import OwnedKwargsDict
-from os import abort, getenv
-from sys import external_call, sizeof
 from sys.ffi import _Global
 
-from memory import UnsafePointer
 
 from ._cpython import (
     CPython,
@@ -35,7 +31,7 @@ from ._cpython import (
     PyMethodDef,
     PyObjectPtr,
 )
-from .python_object import PythonModule, PythonObject, TypedPythonObject
+from .python_object import PythonObject
 
 alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
 
@@ -44,17 +40,17 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal(Movable):
+struct _PythonGlobal(Defaultable, Movable):
     var cpython: CPython
 
     fn __init__(out self):
         self.cpython = CPython()
 
-    fn __moveinit__(out self, owned other: Self):
+    fn __moveinit__(out self, deinit other: Self):
         self.cpython = other.cpython^
 
-    fn __del__(owned self):
-        CPython.destroy(self.cpython)
+    fn __del__(deinit self):
+        self.cpython.destroy()
 
 
 fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
@@ -63,14 +59,15 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     The returned pointer is immutable to prevent invalid shared mutation of
     this global variable. Once it is initialized, it may not be mutated.
     """
-    var global_ptr: UnsafePointer[
-        _PythonGlobal
-    ] = _PYTHON_GLOBAL.get_or_create_ptr()
 
-    return Pointer[CPython, StaticConstantOrigin](to=global_ptr[].cpython)
+    var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
+    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
+        False, StaticConstantOrigin
+    ]()
+    return Pointer(to=ptr2[])
 
 
-struct Python:
+struct Python(Copyable, Defaultable):
     """Provides methods that help you use Python code in Mojo."""
 
     var _impl: Pointer[CPython, StaticConstantOrigin]
@@ -81,17 +78,16 @@ struct Python:
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        """Default constructor."""
-
         self._impl = _get_python_interface()
 
-    fn __copyinit__(out self, existing: Self):
-        """Copy constructor.
+    fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
+        """Construct a `Python` instance from an existing reference
+        to the lower-level singleton `CPython` instance.
 
         Args:
-            existing: The existing instance to copy from.
+            cpython: Reference to the `CPython` singleton.
         """
-        self._impl = existing._impl
+        self._impl = Pointer(to=cpython)
 
     @always_inline
     fn cpython(self) -> ref [StaticConstantOrigin] CPython:
@@ -101,13 +97,9 @@ struct Python:
         Returns:
             Handle to the CPython interpreter instance in the current process.
         """
-        return self._cpython_ptr()[]
+        return self._impl[]
 
-    @always_inline
-    fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
-        return self._impl
-
-    fn eval(self, owned code: String) -> Bool:
+    fn eval(self, var code: String) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -117,12 +109,13 @@ struct Python:
             `True` if the code executed successfully or `False` if the code
             raised an exception.
         """
-        var cpython = self.cpython()
-        return cpython.PyRun_SimpleString(code^)
+        ref cpython = self.cpython()
+        # return 0 if the code executed successfully, -1 if it raised an exception.
+        return cpython.PyRun_SimpleString(code^) == 0
 
     @staticmethod
     fn evaluate(
-        owned expr: String,
+        var expr: String,
         file: Bool = False,
         name: StringSlice[StaticConstantOrigin] = "__main__",
     ) raises -> PythonObject:
@@ -136,13 +129,13 @@ struct Python:
         Returns:
             `PythonObject` containing the result of the evaluation.
         """
-        var cpython = Self().cpython()
+        ref cpython = Self().cpython()
         # PyImport_AddModule returns a read-only reference.
         var module = PythonObject(
-            from_borrowed_ptr=cpython.PyImport_AddModule(name)
+            from_borrowed=cpython.PyImport_AddModule(name)
         )
         var dict_obj = PythonObject(
-            from_borrowed_ptr=cpython.PyModule_GetDict(module.py_object)
+            from_borrowed=cpython.PyModule_GetDict(module._obj_ptr)
         )
         if file:
             # We compile the code as provided and execute in the module
@@ -156,9 +149,9 @@ struct Python:
             var code_obj_ptr = cpython.Py_CompileString(
                 expr^, "<evaluate>", Py_file_input
             )
-            if code_obj_ptr.is_null():
+            if not code_obj_ptr:
                 raise cpython.get_error()
-            var code = PythonObject(from_owned_ptr=code_obj_ptr)
+            var code = PythonObject(from_owned=code_obj_ptr)
 
             # For this evaluation, we pass the dictionary both as the globals
             # and the locals. This is because the globals is defined as the
@@ -166,12 +159,12 @@ struct Python:
             # dictionary for the *current* scope. Since we are executing at
             # the module scope for this eval, they should be the same object.
             var result_ptr = cpython.PyEval_EvalCode(
-                code.py_object, dict_obj.py_object, dict_obj.py_object
+                code._obj_ptr, dict_obj._obj_ptr, dict_obj._obj_ptr
             )
-            if result_ptr.is_null():
+            if not result_ptr:
                 raise cpython.get_error()
 
-            var result = PythonObject(from_owned_ptr=result_ptr)
+            var result = PythonObject(from_owned=result_ptr)
             _ = result^
             _ = code^
             return module
@@ -180,11 +173,11 @@ struct Python:
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
             var result = cpython.PyRun_String(
-                expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
+                expr^, Py_eval_input, dict_obj._obj_ptr, dict_obj._obj_ptr
             )
-            if result.is_null():
+            if not result:
                 raise cpython.get_error()
-            return PythonObject(from_owned_ptr=result)
+            return PythonObject(from_owned=result)
 
     @staticmethod
     fn add_to_path(dir_path: StringSlice) raises:
@@ -214,9 +207,8 @@ struct Python:
     # PythonObject "Module" Operations
     # ===-------------------------------------------------------------------===#
 
-    # TODO(MSTDL-880): Change this to return `PythonModule`
     @staticmethod
-    fn import_module(owned module: String) raises -> PythonObject:
+    fn import_module(var module: String) raises -> PythonObject:
         """Imports a Python module.
 
         This provides you with a module object you can use just like you would
@@ -238,16 +230,16 @@ struct Python:
         Returns:
             The Python module.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         # Throw error if it occurred during initialization
         cpython.check_init_error()
         var module_ptr = cpython.PyImport_ImportModule(module^)
-        if module_ptr.is_null():
+        if not module_ptr:
             raise cpython.get_error()
-        return PythonObject(from_owned_ptr=module_ptr)
+        return PythonObject(from_owned=module_ptr)
 
     @staticmethod
-    fn create_module(name: StaticString) raises -> PythonModule:
+    fn create_module(name: StaticString) raises -> PythonObject:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -263,28 +255,26 @@ struct Python:
         # Initialize the global instance to the Python interpreter
         # in case this is our first time.
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         # This will throw an error if there are any errors during initialization.
         cpython.check_init_error()
 
         var module_ptr = cpython.PyModule_Create(name)
-        if module_ptr.is_null():
+        if not module_ptr:
             raise cpython.get_error()
 
-        return PythonModule(
-            unsafe_unchecked_from=PythonObject(from_owned_ptr=module_ptr)
-        )
+        return PythonObject(from_owned=module_ptr)
 
     @staticmethod
     fn add_functions(
-        module: PythonModule,
-        owned functions: List[PyMethodDef],
+        module: PythonObject,
+        var functions: List[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: List of function data.
 
         Raises:
@@ -303,28 +293,28 @@ struct Python:
 
     @staticmethod
     fn _unsafe_add_functions(
-        module: PythonModule,
+        module: PythonObject,
         functions: UnsafePointer[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Safety:
             The provided `functions` pointer must point to data that lives
             for the duration of the associated Python interpreter session.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: A null terminated pointer to function data.
 
         Raises:
             If we fail to add the functions to the module.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         var result = cpython.PyModule_AddFunctions(
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
-            module.unsafe_as_py_object_ptr(),
+            module._obj_ptr,
             functions,
         )
 
@@ -333,8 +323,8 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        module: PythonModule,
-        owned name: String,
+        module: PythonObject,
+        var name: String,
         value: PythonObject,
     ) raises:
         """Add a new object to `module` with the given name and value.
@@ -351,12 +341,12 @@ struct Python:
             value: The python object value.
         """
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
 
         var result = cpython.PyModule_AddObjectRef(
-            module.unsafe_as_py_object_ptr(),
+            module._obj_ptr,
             name.unsafe_cstr_ptr(),
-            value.unsafe_as_py_object_ptr(),
+            value._obj_ptr,
         )
 
         if result != 0:
@@ -369,38 +359,37 @@ struct Python:
     @doc_private
     @staticmethod
     fn _dict[
-        V: PythonConvertible & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable & Movable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
-        var cpython = Python().cpython()
-        var dict_obj_ptr = cpython.PyDict_New()
-        if dict_obj_ptr.is_null():
-            raise Error("internal error: PyDict_New failed")
+        """Construct a Python dictionary from keyword arguments.
+
+        Return value: New reference.
+        """
+        ref cpy = Python().cpython()
+        var dict_obj = cpy.PyDict_New()
 
         for entry in kwargs.items():
-            var key_ptr = cpython.PyUnicode_DecodeUTF8(
-                entry[].key.as_string_slice()
-            )
-            if key_ptr.is_null():
-                raise Error("internal error: PyUnicode_DecodeUTF8 failed")
+            var key = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
+            if not key:
+                raise cpy.unsafe_get_error()
 
-            var val_obj = entry[].value.to_python_object()
-            var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_ptr, val_obj.py_object
-            )
-            if result == -1:
-                raise cpython.get_error()
+            var val = entry.value.to_python_object()
+            var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
+            cpy.Py_DecRef(key)
+            if errno == -1:
+                raise cpy.unsafe_get_error()
 
-        return dict_obj_ptr
+        return dict_obj
 
     @staticmethod
     fn dict[
-        V: PythonConvertible & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable & Movable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Parameters:
             V: The type of the values in the dictionary. Must implement the
-                `PythonConvertible`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -412,20 +401,20 @@ struct Python:
             On failure to construct the dictionary or convert the values to
             Python objects.
         """
-        return PythonObject(from_owned_ptr=Self._dict(kwargs))
+        return PythonObject(from_owned=Self._dict(kwargs))
 
     @staticmethod
     fn dict[
-        K: PythonConvertible & Copyable & Movable = PythonObject,
-        V: PythonConvertible & Copyable & Movable = PythonObject,
+        K: ConvertibleToPython & Copyable & Movable = PythonObject,
+        V: ConvertibleToPython & Copyable & Movable = PythonObject,
     ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
             K: The type of the keys in the dictionary. Must implement the
-                `PythonConvertible`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
             V: The type of the values in the dictionary. Must implement the
-                `PythonConvertible`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -439,26 +428,26 @@ struct Python:
             to Python objects.
         """
 
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if dict_obj_ptr.is_null():
+        if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
             var key_obj = tuples[i][0].to_python_object()
             var val_obj = tuples[i][1].to_python_object()
             var result = cpython.PyDict_SetItem(
-                dict_obj_ptr, key_obj.py_object, val_obj.py_object
+                dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
             )
             if result == -1:
                 raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=dict_obj_ptr)
+        return PythonObject(from_owned=dict_obj_ptr)
 
     @staticmethod
     fn list[
-        T: PythonConvertible & Copyable & Movable
-    ](values: Span[T]) -> PythonObject:
+        T: ConvertibleToPython & Copyable & Movable
+    ](values: Span[T]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
         Parameters:
@@ -470,19 +459,21 @@ struct Python:
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyList_New(len(values))
 
         for i in range(len(values)):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
-        return PythonObject(from_owned_ptr=obj_ptr)
+            cpython.Py_IncRef(obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn _list[
-        *Ts: PythonConvertible
-    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        *Ts: ConvertibleToPython & Copyable
+    ](
+        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+    ) raises -> PythonObject:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -494,19 +485,21 @@ struct Python:
         Returns:
             A PythonObject representing the list.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyList_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyList_SetItem(obj_ptr, i, obj.py_object)
-        return PythonObject(from_owned_ptr=obj_ptr)
+            cpython.Py_IncRef(obj._obj_ptr)
+            _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @always_inline
     @staticmethod
-    fn list[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
+    fn list[
+        *Ts: ConvertibleToPython & Copyable
+    ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
 
         Parameters:
@@ -522,8 +515,10 @@ struct Python:
 
     @staticmethod
     fn _tuple[
-        *Ts: PythonConvertible
-    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        *Ts: ConvertibleToPython & Copyable
+    ](
+        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+    ) raises -> PythonObject:
         """Initialize the object from a tuple literal.
 
         Parameters:
@@ -535,19 +530,21 @@ struct Python:
         Returns:
             A PythonObject representing the tuple.
         """
-        var cpython = Python().cpython()
+        ref cpython = Python().cpython()
         var obj_ptr = cpython.PyTuple_New(len(values))
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             var obj = values[i].to_python_object()
-            cpython.Py_IncRef(obj.py_object)
-            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj.py_object)
-        return PythonObject(from_owned_ptr=obj_ptr)
+            cpython.Py_IncRef(obj._obj_ptr)
+            _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
+        return PythonObject(from_owned=obj_ptr)
 
     @always_inline
     @staticmethod
-    fn tuple[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
+    fn tuple[
+        *Ts: ConvertibleToPython & Copyable
+    ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
 
         Parameters:
@@ -564,7 +561,7 @@ struct Python:
     @no_inline
     fn as_string_slice(
         self, str_obj: PythonObject
-    ) -> StringSlice[__origin_of(str_obj.py_object.unsized_obj_ptr.origin)]:
+    ) -> StringSlice[MutableAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:
@@ -573,23 +570,8 @@ struct Python:
         Returns:
             Mojo string representing the given Python object.
         """
-        var cpython = self.cpython()
-        return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
-
-    @staticmethod
-    fn is_type(x: PythonObject, y: PythonObject) -> Bool:
-        """Test if the `x` object is the `y` object, the same as `x is y` in
-        Python.
-
-        Args:
-            x: The left-hand-side value in the comparison.
-            y: The right-hand-side type value in the comparison.
-
-        Returns:
-            True if `x` and `y` are the same object and False otherwise.
-        """
-        var cpython = Python().cpython()
-        return cpython.Py_Is(x.py_object, y.py_object)
+        ref cpython = self.cpython()
+        return cpython.PyUnicode_AsUTF8AndSize(str_obj._obj_ptr)
 
     @staticmethod
     fn type(obj: PythonObject) -> PythonObject:
@@ -601,8 +583,8 @@ struct Python:
         Returns:
             A PythonObject that holds the type object.
         """
-        var cpython = Python().cpython()
-        return PythonObject(from_owned_ptr=cpython.PyObject_Type(obj.py_object))
+        ref cpython = Python().cpython()
+        return PythonObject(from_owned=cpython.PyObject_Type(obj._obj_ptr))
 
     @staticmethod
     fn none() -> PythonObject:
@@ -626,17 +608,17 @@ struct Python:
         Raises:
             An error if the conversion failed.
         """
-        var cpython = Python().cpython()
-        var py_str_ptr = cpython.PyObject_Str(obj.py_object)
-        if py_str_ptr.is_null():
+        ref cpython = Python().cpython()
+        var py_str_ptr = cpython.PyObject_Str(obj._obj_ptr)
+        if not py_str_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=py_str_ptr)
+        return PythonObject(from_owned=py_str_ptr)
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
-        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
-        precision integer).
+        """Convert a PythonObject to a Python `int` (i.e. arbitrary precision
+        integer).
 
         Args:
             obj: The PythonObject to convert.
@@ -647,12 +629,33 @@ struct Python:
         Returns:
             A PythonObject representing the result of the conversion to `int`.
         """
-        var cpython = Python().cpython()
-        var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
-        if py_obj_ptr.is_null():
+        ref cpython = Python().cpython()
+        var py_obj_ptr = cpython.PyNumber_Long(obj._obj_ptr)
+        if not py_obj_ptr:
             raise cpython.get_error()
 
-        return PythonObject(from_owned_ptr=py_obj_ptr)
+        return PythonObject(from_owned=py_obj_ptr)
+
+    @staticmethod
+    fn float(obj: PythonObject) raises -> PythonObject:
+        """Convert a PythonObject to a Python `float` object.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Returns:
+            A Python `float` object.
+
+        Raises:
+            If the conversion fails.
+        """
+        ref cpython = Python().cpython()
+
+        var float_obj = cpython.PyNumber_Float(obj._obj_ptr)
+        if not float_obj:
+            raise cpython.get_error()
+
+        return PythonObject(from_owned=float_obj)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
@@ -672,14 +675,12 @@ struct Python:
         Returns:
             The value of the `long` object as a `Py_ssize_t`.
         """
-        var cpython = Python().cpython()
-        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
-
-        if long == -1:
+        ref cpython = Python().cpython()
+        var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj._obj_ptr)
+        if long == -1 and cpython.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
-            if cpython.PyErr_Occurred():
-                raise cpython.unsafe_get_error()
+            raise cpython.unsafe_get_error()
 
         return long
 
@@ -698,8 +699,8 @@ struct Python:
         """
         # TODO: decide if this method should be actually exposed as public,
         # and add tests if so.
-        var cpython = Python().cpython()
-        var result = cpython.PyObject_IsTrue(obj.py_object)
+        ref cpython = Python().cpython()
+        var result = cpython.PyObject_IsTrue(obj._obj_ptr)
         if result == -1:
             raise cpython.get_error()
 

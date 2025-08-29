@@ -19,7 +19,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
+def draw_mandelbrot(
+    tensor: Tensor, width: int, height: int, iterations: int
+) -> None:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     sr = "....,c8M@jawrpogOQEPGJ"
     for row in range(height):
@@ -31,7 +33,7 @@ def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
                 print(p, end="")
             else:
                 print(" ", end="")
-        print("")
+        print()
 
 
 def create_mandelbrot_graph(
@@ -56,6 +58,7 @@ def create_mandelbrot_graph(
         # need to provide inputs as a list as well as expected output types.
         result = ops.custom(
             name="mandelbrot",
+            device=device,
             values=[
                 ops.constant(
                     min_x, dtype=DType.float32, device=DeviceRef.CPU()

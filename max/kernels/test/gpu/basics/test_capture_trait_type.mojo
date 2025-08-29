@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer
-
-from utils.index import IndexList
 
 
 @register_passable("trivial")
@@ -25,9 +23,9 @@ trait BaseT:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ImplT(BaseT):
+struct ImplT(BaseT, Copyable, Movable):
     alias rank = 1
     var values: NDBuffer[DType.float32, Self.rank, MutableAnyOrigin]
 
@@ -50,7 +48,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
 
 def trait_repro(ctx: DeviceContext):
     var size = 5
-    var host_buf = HostNDBuffer[DType.float32, 1]((size,))
+    var host_buf = HostNDBuffer[DType.float32, 1](DimList(size))
     for i in range(size):
         host_buf.tensor[i] = i
 

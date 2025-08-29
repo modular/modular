@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.id import thread_idx
-from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -28,7 +25,6 @@ from gpu.mma import (
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout import print_layout
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
@@ -36,8 +32,6 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 from memory import bitcast
-
-from utils.index import Index
 
 
 # We have a hard code 2D path in `arange` and it's row-major.
@@ -98,9 +92,7 @@ fn wgmma_tf32_tf32_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
         var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
 
         wgmma_fence_aligned()
@@ -109,8 +101,8 @@ fn wgmma_tf32_tf32_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.tensor_float32,
-            b_type = DType.tensor_float32,
+            a_type = DType.float32,
+            b_type = DType.float32,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -122,13 +114,15 @@ fn wgmma_tf32_tf32_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_tf32_tf32_f32_64x8x8
@@ -405,12 +399,8 @@ fn wgmma_bf16_bf16_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
-            b_smem_tile
-        )
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transposed=False](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -432,13 +422,15 @@ fn wgmma_bf16_bf16_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16
@@ -707,12 +699,8 @@ fn wgmma_f16_f16_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
-            b_smem_tile
-        )
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transposed=False](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -734,13 +722,15 @@ fn wgmma_f16_f16_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_f16_f16_f32_64x8x16
@@ -1009,9 +999,7 @@ fn wgmma_f16_f16_f16_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
         var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
 
         wgmma_fence_aligned()
@@ -1035,13 +1023,15 @@ fn wgmma_f16_f16_f16_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_f16_f16_f16_64x8x16
@@ -1323,10 +1313,8 @@ fn wgmma_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -1342,13 +1330,15 @@ fn wgmma_kernel[
 
     var warp_id = thread_idx.x // 32
     var lan_id = thread_idx.x % 32
-    var th_local_res = c_gmem.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
-    th_local_res[0][0] = c_reg[0].cast[c_gmem.dtype]()
-    th_local_res[0][1] = c_reg[1].cast[c_gmem.dtype]()
-    th_local_res[1][0] = c_reg[2].cast[c_gmem.dtype]()
-    th_local_res[1][1] = c_reg[3].cast[c_gmem.dtype]()
+    var th_local_res = (
+        c_gmem.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
+    th_local_res[0, 0][0] = c_reg[0].cast[c_gmem.dtype]()
+    th_local_res[0, 0][1] = c_reg[1].cast[c_gmem.dtype]()
+    th_local_res[1, 0][0] = c_reg[2].cast[c_gmem.dtype]()
+    th_local_res[1, 0][1] = c_reg[3].cast[c_gmem.dtype]()
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32

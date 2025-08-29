@@ -34,6 +34,7 @@ if __name__ == "__main__":
         # need to provide inputs as a list as well as expected output types.
         forward=lambda x: ops.custom(
             name="histogram",
+            device=DeviceRef.from_device(device),
             values=[x],
             out_types=[
                 TensorType(

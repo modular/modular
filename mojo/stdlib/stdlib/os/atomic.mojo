@@ -24,7 +24,7 @@ from sys import is_compile_time
 from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # Consistency
@@ -32,7 +32,9 @@ from memory import UnsafePointer, bitcast
 
 
 @register_passable("trivial")
-struct Consistency:
+struct Consistency(
+    Copyable, EqualityComparable, Movable, Representable, Stringable
+):
     """Represents the consistency model for atomic operations.
 
     The class provides a set of constants that represent different consistency
@@ -125,6 +127,48 @@ struct Consistency:
         """
         return self != other
 
+    fn __repr__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+        return self.as_string_slice()
+
+    fn __str__(self) -> String:
+        """Returns a string representation of a `Consistency`.
+
+        Returns:
+            A string representation of this consistency.
+        """
+
+        alias prefix_len = len("Consistency.")
+        return self.as_string_slice()[prefix_len:]
+
+    fn as_string_slice(self) -> StaticString:
+        """Returns a string slice representation of a `Consistency`.
+
+        Returns:
+            A string slice representation of this consistency.
+        """
+
+        if self is Self.NOT_ATOMIC:
+            return "Consistency.NOT_ATOMIC"
+        if self is Self.UNORDERED:
+            return "Consistency.UNORDERED"
+        if self is Self.MONOTONIC:
+            return "Consistency.MONOTONIC"
+        if self is Self.ACQUIRE:
+            return "Consistency.ACQUIRE"
+        if self is Self.RELEASE:
+            return "Consistency.RELEASE"
+        if self is Self.ACQUIRE_RELEASE:
+            return "Consistency.ACQUIRE_RELEASE"
+        if self is Self.SEQUENTIAL:
+            return "Consistency.SEQUENTIAL"
+
+        return "Consistency.UNKNOWN"
+
     @always_inline("nodebug")
     fn __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR attribute representation of the Consistency object.
@@ -151,6 +195,37 @@ struct Consistency:
 
 
 # ===-----------------------------------------------------------------------===#
+# fence
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn fence[
+    ordering: Consistency = Consistency.SEQUENTIAL, *, scope: StaticString = ""
+]():
+    """Creates an atomic fence.
+
+    Parameters:
+        ordering: The memory ordering for the fence.
+        scope: The memory synchronization scope.
+
+    Fences create synchronization between themselves and atomic operations or
+    fences in other thread without an explicit load or store to an atomic
+    variable. The fence prevents reordering of certain types of memory
+    operations around it as specified by the ordering parameter.
+    """
+
+    if is_compile_time():
+        return
+
+    __mlir_op.`pop.fence`[
+        ordering = ordering.__mlir_attr(),
+        syncscope = _get_kgen_string[scope](),
+        _type=None,
+    ]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Atomic
 # ===-----------------------------------------------------------------------===#
 
@@ -173,7 +248,6 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """
 
     @always_inline
-    @implicit
     fn __init__(out self, value: Scalar[dtype]):
         """Constructs a new atomic value.
 
@@ -224,7 +298,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr[] += rhs
             return res
 
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
@@ -233,6 +307,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             rhs.value,
         )
+        return Scalar[dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
@@ -262,7 +337,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr[] = value
             return res
 
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op xchg>`,
             ordering = ordering.__mlir_attr(),
             _type = Scalar[dtype]._mlir_type,
@@ -270,6 +345,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
             value.value,
         )
+        return Scalar[dtype](mlir_value=res)
 
     @staticmethod
     @always_inline
@@ -369,12 +445,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             return res
 
         var value_addr = UnsafePointer(to=self.value.value)
-        return __mlir_op.`pop.atomic.rmw`[
+        var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
             _type = Scalar[dtype]._mlir_type,
         ](value_addr.address, rhs.value)
+        return Scalar[dtype](mlir_value=res)
 
     @always_inline
     fn __isub__(mut self, rhs: Scalar[dtype]):
@@ -391,15 +468,78 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         _ = self.fetch_sub(rhs)
 
-    @always_inline
-    fn compare_exchange_weak[
+    @staticmethod
+    @always_inline("nodebug")
+    fn compare_exchange[
+        *,
+        failure_ordering: Consistency = Consistency.SEQUENTIAL,
+        success_ordering: Consistency = Consistency.SEQUENTIAL,
+    ](
+        ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
+        mut expected: Scalar[dtype],
+        desired: Scalar[dtype],
+    ) -> Bool:
+        """Atomically compares the value in ptr with that of the expected value.
+        If the values are equal, then the ptr value is replaced with the
+        desired value and True is returned. Otherwise, False is returned and
+        the expected value is rewritten with the ptr value.
+
+        Parameters:
+            failure_ordering: The memory ordering for the failure case.
+            success_ordering: The memory ordering for the success case.
+
+        Args:
+          ptr: The source pointer.
+          expected: The expected value.
+          desired: The desired value.
+
+        Returns:
+          True if ptr == expected and ptr was updated to desired. False otherwise.
+        """
+        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
+
+        if is_compile_time():
+            if ptr[] == expected:
+                ptr[] = desired
+                return True
+            expected = ptr[]
+            return False
+
+        @parameter
+        if dtype.is_integral():
+            return _compare_exchange_integral_impl[
+                scope=scope,
+                failure_ordering=failure_ordering,
+                success_ordering=success_ordering,
+            ](ptr, UnsafePointer(to=expected), desired)
+
+        # For the floating point case, we need to bitcast the floating point
+        # values to their integral representation and perform the atomic
+        # operation on that.
+
+        alias integral_type = _integral_type_of[dtype]()
+
+        var atomic_integral_ptr = ptr.bitcast[Scalar[integral_type]]()
+        var expected_integral_ptr = UnsafePointer(to=expected).bitcast[
+            Scalar[integral_type]
+        ]()
+        var desired_integral = bitcast[integral_type](desired)
+
+        return _compare_exchange_integral_impl[
+            scope=scope,
+            failure_ordering=failure_ordering,
+            success_ordering=success_ordering,
+        ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
+
+    @always_inline("nodebug")
+    fn compare_exchange[
         *,
         failure_ordering: Consistency = Consistency.SEQUENTIAL,
         success_ordering: Consistency = Consistency.SEQUENTIAL,
     ](self, mut expected: Scalar[dtype], desired: Scalar[dtype]) -> Bool:
         """Atomically compares the self value with that of the expected value.
         If the values are equal, then the self value is replaced with the
-        desired value and True is returned. Otherwise, False is returned the
+        desired value and True is returned. Otherwise, False is returned and
         the expected value is rewritten with the self value.
 
         Parameters:
@@ -411,33 +551,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
           desired: The desired value.
 
         Returns:
-          True if self == expected and False otherwise.
+          True if self == expected and self was updated to desired. False otherwise.
         """
-        constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
 
-        @parameter
-        if dtype.is_integral():
-            return _compare_exchange_weak_integral_impl[
-                scope=scope,
-                failure_ordering=failure_ordering,
-                success_ordering=success_ordering,
-            ](UnsafePointer(to=self.value), expected, desired)
-
-        # For the floating point case, we need to bitcast the floating point
-        # values to their integral representation and perform the atomic
-        # operation on that.
-
-        alias integral_type = _integral_type_of[dtype]()
-        var value_integral_addr = UnsafePointer(to=self.value).bitcast[
-            Scalar[integral_type]
-        ]()
-        var expected_integral = bitcast[integral_type](expected)
-        var desired_integral = bitcast[integral_type](desired)
-        return _compare_exchange_weak_integral_impl[
-            scope=scope,
+        return Self.compare_exchange[
             failure_ordering=failure_ordering,
             success_ordering=success_ordering,
-        ](value_integral_addr, expected_integral, desired_integral)
+        ](UnsafePointer(to=self.value), expected, desired)
 
     @staticmethod
     @always_inline
@@ -546,35 +666,44 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
 
 @always_inline
-fn _compare_exchange_weak_integral_impl[
+fn _compare_exchange_integral_impl[
     dtype: DType, //,
     *,
     scope: StaticString,
     failure_ordering: Consistency,
     success_ordering: Consistency,
 ](
-    value_addr: UnsafePointer[Scalar[dtype], **_],
-    mut expected: Scalar[dtype],
+    atomic_ptr: UnsafePointer[Scalar[dtype], **_],
+    expected_ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
     desired: Scalar[dtype],
 ) -> Bool:
     constrained[dtype.is_integral(), "the input type must be integral"]()
+
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = failure_ordering.__mlir_attr(),
         success_ordering = success_ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
     ](
-        value_addr.bitcast[Scalar[dtype]._mlir_type]().address,
-        expected.value,
+        atomic_ptr.bitcast[Scalar[dtype]._mlir_type]().address,
+        expected_ptr[].value,
         desired.value,
     )
-    var ok = Bool(
-        __mlir_op.`kgen.struct.extract`[index = __mlir_attr.`1:index`](
-            cmpxchg_res
-        )
+
+    var loaded_value = Scalar[dtype](
+        mlir_value=__mlir_op.`kgen.struct.extract`[
+            index = __mlir_attr.`0:index`
+        ](cmpxchg_res)
     )
-    if not ok:
-        expected = value_addr[]
-    return ok
+
+    expected_ptr[] = loaded_value
+
+    var success = Bool(
+        mlir_value=__mlir_op.`kgen.struct.extract`[
+            index = __mlir_attr.`1:index`
+        ](cmpxchg_res)
+    )
+
+    return success
 
 
 @always_inline

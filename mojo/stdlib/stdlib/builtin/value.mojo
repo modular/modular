@@ -27,7 +27,7 @@ trait Movable:
         fn __init__(out self):
             pass
 
-        fn __moveinit__(out self, owned existing: Self):
+        fn __moveinit__(out self, deinit existing: Self):
             print("moving")
     ```
 
@@ -35,7 +35,7 @@ trait Movable:
     it inside generic functions:
 
     ```mojo
-    fn return_foo[T: Movable](owned foo: T) -> T:
+    fn return_foo[T: Movable](var foo: T) -> T:
         return foo^
 
     var foo = Foo()
@@ -47,7 +47,7 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, owned existing: Self, /):
+    fn __moveinit__(out self, deinit existing: Self, /):
         """Create a new instance of the value by moving the value of another.
 
         Args:
@@ -55,8 +55,20 @@ trait Movable:
         """
         ...
 
+    alias __moveinit__is_trivial: Bool
+    """A flag (often compiler generated) to indicate whether the implementation
+    of `__moveinit__` is trivial.
 
-trait Copyable:
+    The implementation of `__moveinit__` is considered to be trivial if:
+    - The struct has a compiler-generated `__moveinit__` and all its fields
+      have a trivial `__moveinit__` method.
+
+    In practice, it means the value can be moved by moving the bits from
+    one location to another without side effects.
+    """
+
+
+trait Copyable(ExplicitlyCopyable):
     """The Copyable trait denotes a type whose value can be copied.
 
     Example implementing the `Copyable` trait on `Foo` which requires the `__copyinit__`
@@ -66,7 +78,6 @@ trait Copyable:
     struct Foo(Copyable):
         var s: String
 
-        @implicit
         fn __init__(out self, s: String):
             self.s = s
 
@@ -99,6 +110,18 @@ trait Copyable:
         """
         ...
 
+    alias __copyinit__is_trivial: Bool
+    """A flag (often compiler generated) to indicate whether the implementation
+    of `__copyinit__` is trivial.
+
+    The implementation of `__copyinit__` is considered to be trivial if:
+    - The struct has a compiler-generated trivial `__copyinit__` and all its fields
+      have a trivial `__copyinit__` method.
+
+    In practice, it means the value can be copied by copying the bits from
+    one location to another without side effects.
+    """
+
 
 trait ExplicitlyCopyable:
     """The ExplicitlyCopyable trait denotes a type whose value can be copied
@@ -118,7 +141,6 @@ trait ExplicitlyCopyable:
     struct Foo(ExplicitlyCopyable):
         var s: String
 
-        @implicit
         fn __init__(out self, s: String):
             self.s = s
 
@@ -183,4 +205,18 @@ trait Defaultable:
 
     fn __init__(out self):
         """Create a default instance of the value."""
+        ...
+
+
+trait Iterator(Movable):
+    """The `Iterator` trait describes a type that can be used as an
+    iterator, e.g. in a `for` loop.
+    """
+
+    alias Element: AnyType
+
+    fn __has_next__(self) -> Bool:
+        ...
+
+    fn __next__(mut self) -> Element:
         ...

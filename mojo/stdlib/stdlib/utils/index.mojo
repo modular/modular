@@ -20,12 +20,10 @@ from utils import IndexList
 ```
 """
 
-from collections.string.string import _calc_initial_buffer_size
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from sys import bitwidthof
+from hashlib.hasher import Hasher
+from sys import bit_width_of
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
-from builtin.io import _get_dtype_printf_format, _snprintf
 
 from .static_tuple import StaticTuple
 
@@ -160,20 +158,16 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-fn _is_unsigned[dtype: DType]() -> Bool:
-    return dtype in (DType.uint8, DType.uint16, DType.uint32, DType.uint64)
-
-
-@value
 @register_passable("trivial")
 struct IndexList[size: Int, *, element_type: DType = DType.int64](
+    Comparable,
+    Copyable,
+    Defaultable,
+    Hashable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    Comparable,
-    Copyable,
-    Movable,
-    _HashableWithHasher,
 ):
     """A base struct that implements size agnostic index functions.
 
@@ -208,7 +202,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @doc_private
     @always_inline
-    @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Constructs a sized 1 static int tuple of given the element value.
 
@@ -248,7 +241,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    @implicit
     fn __init__(out self, elems: (Int, Int, Int)):
         """Constructs a static int tuple given a tuple of integers.
 
@@ -274,7 +266,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    @implicit
     fn __init__(out self, elems: (Int, Int, Int, Int)):
         """Constructs a static int tuple given a tuple of integers.
 
@@ -300,7 +291,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    @implicit
     fn __init__(out self, *elems: Int, __list_literal__: () = ()):
         """Constructs a static int tuple given a set of arguments.
 
@@ -312,51 +302,23 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        var num_elements = len(elems)
 
-        debug_assert(
-            size == num_elements,
-            "[IndexList] mismatch in the number of elements",
-        )
-
-        var tup = Self()
-
-        @parameter
-        for idx in range(size):
-            tup[idx] = elems[idx]
-
-        self = tup
+        self = Self(values=elems)
 
     @always_inline
     @implicit
-    fn __init__(out self, elem: Int):
+    fn __init__(out self, fill: Int):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
-            elem: The elem to splat into the tuple.
+            fill: The elem to splat into the tuple.
         """
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        self.data = __mlir_op.`pop.array.repeat`[
-            _type = __mlir_type[
-                `!pop.array<`, size.value, `, `, Self._int_type, `>`
-            ]
-        ](Self._int_type(elem))
-
-    fn __init__(out self, *, other: Self):
-        """Copy constructor.
-
-        Args:
-            other: The other tuple to copy from.
-        """
-        constrained[
-            element_type.is_integral(), "Element type must be of integral type."
-        ]()
-        self.data = other.data
+        self.data = StaticTuple[_, size](fill=Self._int_type(fill))
 
     @always_inline
-    @implicit
     fn __init__(out self, values: VariadicList[Int]):
         """Creates a tuple constant using the specified values.
 
@@ -621,21 +583,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
-        """Compares this tuple to another tuple for non-equality.
-
-        The tuples are non-equal if at least one element of LHS isn't equal to
-        the corresponding element from RHS.
-
-        Args:
-            rhs: The other tuple.
-
-        Returns:
-            The comparison result.
-        """
-        return not (self == rhs)
-
-    @always_inline
     fn __lt__(self, rhs: Self) -> Bool:
         """Compares this tuple to another tuple using LT comparison.
 
@@ -732,12 +679,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         )
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this IndexList value to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -752,7 +696,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             var element = self[i]
 
             @parameter
-            if bitwidthof[element_type]() == 32:
+            if bit_width_of[element_type]() == 32:
                 writer.write(Int32(element))
             else:
                 writer.write(Int64(element))
@@ -786,24 +730,18 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             The list casted to the target type.
         """
         constrained[dtype.is_integral(), "the target type must be integral"]()
-
-        var res = __type_of(result)()
+        result = {}
 
         @parameter
         for i in range(size):
-            res.data[i] = rebind[__type_of(result.data).element_type](
-                rebind[Scalar[Self.element_type]](
-                    self.data.__getitem__[i]()
-                ).cast[result.element_type]()
-            )
-        return res
+            result.data[i] = self.data.__getitem__[i]().cast[
+                result.element_type
+            ]()
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
-
         Parameters:
             H: The hasher type.
-
         Args:
             hasher: The hasher instance.
         """

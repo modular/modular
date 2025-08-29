@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
     TextAndVisionTokenizer,
 )
 
-from .pixtral import PixtralModel
+from . import weight_adapters
+from .model import PixtralModel
 
 pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration",
@@ -28,12 +29,12 @@ pixtral_arch = SupportedArchitecture(
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
 )

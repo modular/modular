@@ -36,6 +36,7 @@ from gpu.random import Random
 ```
 """
 
+from math import sqrt, cos, sin, log
 from memory import bitcast
 
 from .intrinsics import mulwide
@@ -152,3 +153,54 @@ struct Random[rounds: Int = 6]:
             res0[1] ^ counter[3] ^ key[1],
             res0[0],
         )
+
+
+struct NormalRandom[rounds: Int = 6]:
+    """A high-performance random number generator using the Box-Muller transform.
+
+    The Box-Muller transform is a method for generating pairs of independent standard normal random variables.
+
+    Parameters:
+        rounds: Number of mixing rounds to perform for the underlying random uniform generator that serves as
+               input to the Box-Muller transform. Higher values provide better statistical quality at the cost of
+               performance. Default is 6.
+    """
+
+    var _rng: Random[rounds]
+
+    fn __init__(
+        out self,
+        *,
+        seed: UInt64 = 0,
+        subsequence: UInt64 = 0,
+        offset: UInt64 = 0,
+    ):
+        self._rng = Random[rounds](
+            seed=seed, subsequence=subsequence, offset=offset
+        )
+
+    fn step_normal(
+        mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
+    ) -> SIMD[DType.float32, 8]:
+        """Generate 8 normally distributed random numbers using Box-Muller transform.
+
+        Returns:
+            SIMD vector containing 8 random float32 values from a normal distribution with mean `mean` and standard deviation `stddev`.
+        """
+        var u1 = self._rng.step_uniform()
+        var u2 = self._rng.step_uniform()
+
+        var epsilon = SIMD[DType.float32, 4](1e-7)
+        var safe_u1 = max(u1, epsilon)
+
+        var r = sqrt(-2.0 * log(safe_u1))
+        var theta = 2.0 * math.pi * u2
+        var z0 = r * cos(theta)
+        var z1 = r * sin(theta)
+
+        # Scale and shift both sets.
+        z0 = z0 * stddev + mean
+        z1 = z1 * stddev + mean
+
+        # Combine z0 and z1 into a single SIMD[DType.float32, 8]
+        return z0.join(z1)

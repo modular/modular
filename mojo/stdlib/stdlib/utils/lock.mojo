@@ -13,17 +13,14 @@
 
 from os import Atomic
 from sys import external_call
-from sys.ffi import OpaquePointer
-from time import sleep
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter
 # ===-----------------------------------------------------------------------===#
 
 
-struct SpinWaiter:
+struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
     var storage: OpaquePointer
@@ -36,7 +33,7 @@ struct SpinWaiter:
             OpaquePointer,
         ]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
             self.storage
@@ -50,7 +47,7 @@ struct SpinWaiter:
         )
 
 
-struct BlockingSpinLock:
+struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 
@@ -74,7 +71,7 @@ struct BlockingSpinLock:
 
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
-        while not self.counter.compare_exchange_weak(expected, owner):
+        while not self.counter.compare_exchange(expected, owner):
             # this should be yield
             waiter.wait()
             expected = Self.UNLOCKED
@@ -93,7 +90,7 @@ struct BlockingSpinLock:
         if self.counter.load() != owner:
             # No one else can modify other than owner
             return False
-        while not self.counter.compare_exchange_weak(expected, Self.UNLOCKED):
+        while not self.counter.compare_exchange(expected, Self.UNLOCKED):
             expected = owner
         return True
 

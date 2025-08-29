@@ -11,13 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import stack_allocation
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
-from testing import assert_equal, assert_true
 
 from utils import IndexList
 
@@ -32,13 +29,13 @@ def execute_gather_nd_test[
 ):
     # create device-side buffers and copy data to them
     var data_device = DeviceNDBuffer[
-        data_host.type, data_host.rank, data_host.shape
+        data_host.dtype, data_host.rank, data_host.shape
     ](
         data_host.tensor.get_shape(),
         ctx=ctx,
     )
     var indices_device = DeviceNDBuffer[
-        indices_host.type, indices_host.rank, indices_host.shape
+        indices_host.dtype, indices_host.rank, indices_host.shape
     ](
         indices_host.tensor.get_shape(),
         ctx=ctx,
@@ -50,7 +47,7 @@ def execute_gather_nd_test[
         indices_host.rank,
         output_rank,
         data_type,
-        indices_host.type,
+        indices_host.dtype,
         batch_dims,
     ](
         data_host.tensor.make_dims_unknown(),
@@ -58,7 +55,7 @@ def execute_gather_nd_test[
     )
 
     var actual_output_device = DeviceNDBuffer[
-        data_host.type,
+        data_host.dtype,
         output_shape.size,
     ](
         output_shape,
@@ -74,6 +71,8 @@ def execute_gather_nd_test[
         actual_output_device.tensor.make_dims_unknown(),
         ctx,
     )
+    # Give the kernel an opportunity to raise the error before finishing the test.
+    ctx.synchronize()
 
     _ = data_device^
     _ = indices_device^
@@ -105,6 +104,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices.tensor[IndexList[indices_rank](1, 1)] = 100  # wildly out of bounds
 
     execute_gather_nd_test[batch_dims](data, indices, ctx)
+    ctx.synchronize()
 
 
 def main():

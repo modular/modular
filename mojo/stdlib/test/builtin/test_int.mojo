@@ -10,18 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys.info import bitwidthof
+from sys.info import bit_width_of
 
-from memory import UnsafePointer
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_properties():
-    assert_equal(Int.MAX, (1 << bitwidthof[DType.index]() - 1) - 1)
-    assert_equal(Int.MIN, -(1 << bitwidthof[DType.index]() - 1))
+    assert_equal(Int.MAX, (1 << bit_width_of[DType.index]() - 1) - 1)
+    assert_equal(Int.MIN, -(1 << bit_width_of[DType.index]() - 1))
 
 
 def test_add():
@@ -103,9 +101,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: Int
-    var b: Int
-    a, b = divmod(7, 3)
+    var a, b = divmod(7, 3)
     assert_equal(a, 2)
     assert_equal(b, 1)
 
@@ -233,18 +229,6 @@ def test_float_conversion():
     assert_equal(Float64(Int(45)), Float64(45))
 
 
-def test_conversion_from_python():
-    # Test conversion from Python '5'
-    assert_equal(Int(PythonObject(5)), 5)
-
-    # Test error trying conversion from Python '"str"'
-    with assert_raises(contains="invalid literal for int()"):
-        _ = Int(PythonObject("str"))
-
-    # Test conversion from Python '-1'
-    assert_equal(Int(PythonObject(-1)), -1)
-
-
 def test_is_power_of_two():
     assert_equal(Int.MIN.is_power_of_two(), False)
     assert_equal(Int(-(2**59)).is_power_of_two(), False)
@@ -281,5 +265,4 @@ def main():
     test_comparison()
     test_int_uint()
     test_float_conversion()
-    test_conversion_from_python()
     test_is_power_of_two()

@@ -19,16 +19,14 @@ from memory import Pointer
 ```
 """
 
-from sys import is_nvidia_gpu
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct _GPUAddressSpace(EqualityComparable):
+struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
     var _value: Int
 
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
@@ -68,7 +66,7 @@ struct _GPUAddressSpace(EqualityComparable):
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
-        """The True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Returns:
           True if the two address spaces are equal and False otherwise.
@@ -77,7 +75,7 @@ struct _GPUAddressSpace(EqualityComparable):
 
     @always_inline("nodebug")
     fn __eq__(self, other: AddressSpace) -> Bool:
-        """The True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Returns:
           True if the two address spaces are equal and False otherwise.
@@ -85,20 +83,8 @@ struct _GPUAddressSpace(EqualityComparable):
         return self is other
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
-
-    @always_inline("nodebug")
     fn __ne__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
@@ -110,7 +96,7 @@ struct _GPUAddressSpace(EqualityComparable):
 
     @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -122,7 +108,7 @@ struct _GPUAddressSpace(EqualityComparable):
 
     @always_inline("nodebug")
     fn __is__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -134,37 +120,32 @@ struct _GPUAddressSpace(EqualityComparable):
 
     @always_inline("nodebug")
     fn __isnot__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
     @always_inline("nodebug")
     fn __isnot__(self, other: AddressSpace) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
 
-@value
 @register_passable("trivial")
 struct AddressSpace(
-    EqualityComparable,
-    Stringable,
-    Writable,
-    Copyable,
-    Movable,
+    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
 ):
     """Address space of the pointer."""
 
@@ -220,7 +201,7 @@ struct AddressSpace(
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
@@ -231,38 +212,26 @@ struct AddressSpace(
         return self is other
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
-        """True if the two address spaces are inequal and False otherwise.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are inequal and False otherwise.
-        """
-        return self is not other
-
-    @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() == other.value()
 
     @always_inline("nodebug")
     fn __isnot__(self, other: Self) -> Bool:
-        """True if the two address spaces are equal and False otherwise.
+        """Checks if the two address spaces are not equal.
 
         Args:
           other: The other address space value.
 
         Returns:
-          True if the two address spaces are equal and False otherwise.
+          True if the two address spaces are not equal and False otherwise.
         """
         return self.value() != other.value()
 
@@ -276,12 +245,8 @@ struct AddressSpace(
         return String.write(self)
 
     @always_inline("nodebug")
-    fn write_to[W: Writer](self, mut writer: W):
-        """
-        Formats the address space to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats the address space to the provided Writer.
 
         Args:
             writer: The object to write to.
@@ -297,14 +262,13 @@ struct AddressSpace(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct Pointer[
     mut: Bool, //,
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ExplicitlyCopyable, Stringable, Copyable, Movable):
+](Copyable, ExplicitlyCopyable, Movable, Stringable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -328,11 +292,10 @@ struct Pointer[
         `>`,
     ]
     alias _with_origin = Pointer[type, _, address_space]
-    alias _immutable_cast = ImmutableOrigin.cast_from[_]
 
-    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin].result]
+    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[Self._immutable_cast[origin].result]
+    alias Immutable = Self._with_origin[ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -347,7 +310,7 @@ struct Pointer[
     @always_inline("nodebug")
     fn __init__(
         other: Self._with_origin[_],
-        out self: Self._with_origin[Self._immutable_cast[other.origin].result],
+        out self: Self._with_origin[ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -374,30 +337,6 @@ struct Pointer[
             to: The value to construct a pointer to.
         """
         self = Self(_mlir_value=__get_mvalue_as_litref(to))
-
-    @staticmethod
-    @always_inline("nodebug")
-    @deprecated("Use Pointer(to=...) constructor instead.")
-    fn address_of(ref [origin, address_space]value: type) -> Self:
-        """Constructs a Pointer from a reference to a value.
-
-        Args:
-            value: The value to get the address of.
-
-        Returns:
-            The result Pointer.
-        """
-        return Pointer(_mlir_value=__get_mvalue_as_litref(value))
-
-    fn copy(self) -> Self:
-        """Constructs a copy from another Pointer.
-
-        Note that this does **not** copy the underlying data.
-
-        Returns:
-            A copy of the value.
-        """
-        return Self(_mlir_value=self._value)
 
     @always_inline
     fn get_immutable(self) -> Self.Immutable:

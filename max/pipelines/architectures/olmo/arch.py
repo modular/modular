@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     RopeType,
     SupportedArchitecture,
@@ -31,14 +31,8 @@ olmo_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=OlmoModel,
     tokenizer=TextTokenizer,

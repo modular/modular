@@ -10,9 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from sys import bitwidthof
+from sys import bit_width_of
 
 from bit import count_trailing_zeros
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -90,7 +89,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if bitwidthof[DType.index]() == 32:
+    if bit_width_of[DType.index]() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)
@@ -174,9 +173,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: UInt
-    var b: UInt
-    a, b = divmod(UInt(7), UInt(3))
+    var a, b = divmod(UInt(7), UInt(3))
     assert_equal(a, UInt(2))
     assert_equal(b, UInt(1))
 
@@ -245,9 +242,9 @@ def test_pos():
 
 
 def test_hash():
-    assert_not_equal(UInt.__hash__(123), UInt.__hash__(456))
-    assert_equal(UInt.__hash__(123), UInt.__hash__(123))
-    assert_equal(UInt.__hash__(456), UInt.__hash__(456))
+    assert_not_equal(hash(UInt(123)), hash(UInt(456)))
+    assert_equal(hash(UInt(123)), hash(UInt(123)))
+    assert_equal(hash(UInt(456)), hash(UInt(456)))
 
 
 def test_comptime():

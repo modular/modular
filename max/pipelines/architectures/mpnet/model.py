@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
-from typing import Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -83,7 +82,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         super().__init__(
@@ -137,14 +136,13 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             raise ValueError(msg) from e
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(MPNetInputs, model_inputs)
+        assert isinstance(model_inputs, MPNetInputs)
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
+        assert isinstance(model_outputs[0], Tensor)
 
-        return ModelOutputs(
-            logits=cast(Tensor, model_outputs[0]),
-        )
+        return ModelOutputs(logits=model_outputs[0])
 
     def prepare_initial_token_inputs(
         self,
@@ -161,7 +159,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             tokens,
             pad_value=pad_value,
             batch_size=len(tokens),
-            pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
         )
 
         # Compute attention mask.
@@ -177,32 +174,40 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         )
 
     def prepare_next_token_inputs(
-        self,
-        next_tokens: Tensor,
-        prev_model_inputs: ModelInputs,
+        self, next_tokens: Tensor, prev_model_inputs: ModelInputs
     ) -> MPNetInputs:
         raise NotImplementedError(
             "MPNet does not support preparing next tokens inputs."
         )
 
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
+    def load_model(self, session: InferenceSession) -> Model:
         logger.info("Building and compiling model...")
         before = time.perf_counter()
+        if self.adapter:
+            state_dict = self.adapter(dict(self.weights.items()))
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
         graph = build_graph(
             self.pipeline_config,
-            self.weights,
+            state_dict,
             self.huggingface_config,
             self.dtype,
             DeviceRef.from_device(self.devices[0]),
         )
-        model = session.load(
-            graph,
-            weights_registry=self.weights.allocated_weights,
-        )
+        after_build = time.perf_counter()
+
+        logger.info(f"Building graph took {after_build - before:.6f} seconds")
+
+        before_compile = time.perf_counter()
+        model = session.load(graph, weights_registry=state_dict)
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )

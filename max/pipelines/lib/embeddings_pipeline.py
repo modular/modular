@@ -20,13 +20,14 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from max.driver import load_devices
 from max.engine import InferenceSession
-from max.graph.weights import load_weights
-from max.nn import ReturnLogits
-from max.pipelines.core import (
-    EmbeddingsGenerator,
-    EmbeddingsResponse,
-    InputContext,
+from max.graph.weights import (
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
 )
+from max.interfaces import EmbeddingsGenerator, EmbeddingsOutput, InputContext
+from max.nn import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -45,9 +46,11 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel],
-        **unused_kwargs,
+        eos_token_id: int,
+        weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         self._pipeline_config = pipeline_config
+        self._weight_adapters = weight_adapters
         # Initialize Session.
         devices = load_devices(self._pipeline_config.model_config.device_specs)
         session = InferenceSession(devices=devices)
@@ -56,6 +59,8 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Download weight files if not existent
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id
@@ -82,12 +87,14 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             devices=devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
-            adapter=None,
+            adapter=self._weight_adapters.get(
+                weights_format(weight_paths), None
+            ),
             return_logits=ReturnLogits.ALL,
         )
 
     @traced
-    def encode(self, batch: dict[str, T]) -> dict[str, EmbeddingsResponse]:
+    def encode(self, batch: dict[str, T]) -> dict[str, EmbeddingsOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
@@ -99,8 +106,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         tracer.next("prepare_initial_token_inputs")
         # Prepare inputs for the first token in multistep execution.
         model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-            context_batch=context_batch,
-            kv_cache_inputs=None,
+            context_batch=context_batch, kv_cache_inputs=None
         )
 
         tracer.next("execute")
@@ -121,5 +127,5 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
                 request_embeddings = request_embeddings[
                     : context_batch[batch_index].active_length, :
                 ]
-            res[request_id] = EmbeddingsResponse(request_embeddings)
+            res[request_id] = EmbeddingsOutput(request_embeddings)
         return res

@@ -81,7 +81,7 @@ trait AnyType:
         fn __init__(out self, size: Int):
             self.ptr = UnsafePointer[Int].alloc(size)
 
-        fn __del__(owned self):
+        fn __del__(deinit self):
             # Clean up owned resources
             self.ptr.free()
     ```
@@ -94,7 +94,7 @@ trait AnyType:
     - Use composition to automatically handle nested resource cleanup
     """
 
-    fn __del__(owned self, /):
+    fn __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
         This method is called automatically when an instance's lifetime ends. It receives
@@ -109,7 +109,39 @@ trait AnyType:
         """
         ...
 
+    alias __del__is_trivial: Bool
+    """A flag (often compiler generated) to indicate whether the implementation of `__del__` is trivial.
+
+    The implementation of `__del__` is considered to be trivial if:
+    - The struct has a compiler-generated trivial destructor and all its fields
+      have a trivial `__del__` method.
+
+    In practice, it means that the `__del__` can be considered as no-op.
+    """
+
 
 # A temporary alias to help with the linear types transition, see
 # https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
 alias ImplicitlyDestructible = AnyType
+
+
+alias __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
+
+alias Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
+"""An alias allowing users to tersely express that a function argument is an
+instance of a type that implements a trait or trait composition.
+
+For example, instead of writing
+
+```mojo
+fn foo[T: Intable, //](x: T) -> Int:
+    return x.__int__()
+```
+
+one can write:
+
+```mojo
+fn foo(x: Some[Intable]) -> Int:
+    return x.__int__()
+```
+"""

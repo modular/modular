@@ -31,21 +31,21 @@ from opentelemetry.sdk.metrics._internal import measurement
 
 """!! Jank alert !!
 
-We want to use OTEL for propagating telemetry. It is the best vendor-agnositc
-metrics system, but that doens't mean that it is _good_.  OTEL is _slow_. If we
+We want to use OTEL for propagating telemetry. It is the best vendor-agnostic
+metrics system, but that doesn't mean that it is _good_.  OTEL is _slow_. If we
 use it directly, it significally degrades the perf of Max Serve. Consequently,
 we have all this machinery to observe some metric (MaxMeasurement) and record
 the observation async.
 
 OTEL actively obscures its machinery, uses bunch of proxy classes, has an baroque inheritance tree, and is generally awful.
 To record an observation at a specific point in time you do the following:
-`meter.create_{foo}._real_instrument._measurement_consumer(Measurement(value, timestamp, instument, ...))`
+`meter.create_{foo}._real_instrument._measurement_consumer(Measurement(value, timestamp, instrument, ...))`
 
 Here is how you work with metrics (Instruments) observations (Measurements) and recording them (Consumers):
 Lets unpack:
 1. meter.create_{foo} gives you a proxy instrument with an obscured type eg _internal.instrument._ProxyCounter.
 2. `._real_instrument` The proxy can't do anything, you need to grab the _real_ instrument to record.
-3. `._measurement_consuemr` The _real_ instrument doesn't expose a way to set the time of the observation, so you have to directly talk to the consumer.
+3. `._measurement_consumer` The _real_ instrument doesn't expose a way to set the time of the observation, so you have to directly talk to the consumer.
 4. `Measurement(...)` now we can create a measurement with a timestamp & pass it down.
 """
 logger = logging.getLogger("max.serve")
@@ -55,7 +55,7 @@ _meter = get_meter_provider().get_meter("modular")
 NumberType = Union[float, int]
 OtelAttributes = Optional[dict[str, str]]
 
-# API_PROXIES the "types" of measurments we make from a meter
+# API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
 API_PROXIES = Union[
     api_instrument._ProxyCounter,
@@ -122,8 +122,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         description="Count of pipelines loaded for each model",
     ),  # type: ignore
     "maxserve.batch_size": _meter.create_histogram(
-        "maxserve.batch_size",
-        description="Distribution of batch sizes",
+        "maxserve.batch_size", description="Distribution of batch sizes"
     ),  # type: ignore
     # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
     "maxserve.cache.num_used_blocks": _meter.create_counter(
@@ -175,7 +174,7 @@ class MaxMeasurement:
     attributes: Optional[OtelAttributes] = None
     time_unix_nano: int = field(default_factory=time.time_ns)
 
-    def commit(self):
+    def commit(self) -> None:
         # find the instrument
         try:
             instrument = SERVE_METRICS[self.instrument_name]
@@ -226,6 +225,7 @@ class MetricClient(abc.ABC):
     @abc.abstractmethod
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         """Get a copier for use of this client in another process.
 
@@ -253,12 +253,13 @@ class NoopClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class SyncClient(MetricClient):
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings) -> None:
         self.level = settings.metric_level
 
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
@@ -268,6 +269,7 @@ class SyncClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
@@ -278,7 +280,7 @@ class _AsyncMetrics:
     Produce metric measurements to be consumed elsewhere
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client: MetricClient = NoopClient()
 
     def configure(self, client: MetricClient) -> None:
@@ -344,8 +346,7 @@ class _AsyncMetrics:
 
     def model_load_time(self, ms: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.model_load_time", ms),
-            MetricLevel.BASIC,
+            MaxMeasurement("maxserve.model_load_time", ms), MetricLevel.BASIC
         )
 
     def itl(self, ms: float) -> None:
@@ -356,20 +357,14 @@ class _AsyncMetrics:
     def pipeline_load(self, name: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.pipeline_load",
-                1,
-                attributes={"model": name},
+                "maxserve.pipeline_load", 1, attributes={"model": name}
             ),
             MetricLevel.BASIC,
         )
 
     def batch_size(self, size: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.batch_size",
-                size,
-            ),
-            MetricLevel.DETAILED,
+            MaxMeasurement("maxserve.batch_size", size), MetricLevel.DETAILED
         )
 
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
@@ -392,8 +387,7 @@ class _AsyncMetrics:
 
     def cache_hits(self, hits: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.hits", hits),
-            MetricLevel.DETAILED,
+            MaxMeasurement("maxserve.cache.hits", hits), MetricLevel.DETAILED
         )
 
     def cache_misses(self, cache_misses: int) -> None:

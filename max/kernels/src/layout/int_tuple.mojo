@@ -56,14 +56,12 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-import sys
-from collections import InlineArray, List
 from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
-from memory import UnsafePointer, memcpy
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory import memcpy
+from memory.pointer import _GPUAddressSpace
 
 from utils.numerics import max_finite
 
@@ -183,7 +181,7 @@ struct IntArray:
             self._data = existing._data
 
     @always_inline("nodebug")
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destroy the `IntArray` and free its memory if owned.
 
         Only frees memory for owned arrays (positive _size) to prevent
@@ -288,8 +286,12 @@ that are not known at compile time or have not been specified.
 
 
 @register_passable("trivial")
-struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
+struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
+    Iterator
+):
     """Iterator for traversing elements of an IntTuple."""
+
+    alias Element = IntTuple[origin]
 
     var src: Pointer[IntTuple[tuple_origin], origin]
     """Pointer to the source IntTuple being iterated."""
@@ -306,31 +308,26 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
         self.idx = idx
 
     @always_inline("nodebug")
+    fn __has_next__(self) -> Bool:
+        return self.idx < len(self.src[])
+
+    @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
         """Get the next element and advance the iterator."""
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
 
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate."""
-        return self.__len__() > 0
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the number of remaining elements in the iteration."""
-        return len(self.src[]) - self.idx
-
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Copyable,
+    Defaultable,
+    EqualityComparable,
+    Intable,
     Movable,
     Sized,
     Stringable,
     Writable,
-    EqualityComparable,
-    Intable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
 
@@ -380,7 +377,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var size = 0
         for v in elements:
             # the size of the sub tuple plus the element
-            size += v[].size() + 1
+            size += v.size() + 1
         return size
 
     @staticmethod
@@ -448,13 +445,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, *elements: Int):
         """Initialize an `IntTuple` with a variadic list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: Variable number of integer values to store in the tuple.
@@ -466,7 +461,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
-        This constructor is implicit, allowing direct conversion from integer lists.
 
         Args:
             elements: List of integer values to store in the tuple.
@@ -557,6 +551,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """
         self._store = IntArray(non_owned=non_owned)
 
+    @always_inline("nodebug")
+    fn __init__(out self, *, var _owned: IntArray):
+        """Initialize an `IntTuple` taking the values of an `IntArray`.
+
+        Args:
+            _owned: The `IntArray` to use as storage.
+        """
+        self._store = _owned^
+
     @always_inline
     fn __init__(out self, existing: Self, rng: _StridedRange):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
@@ -631,13 +634,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if INT_TUPLE_VALIDATION:
             self.validate_structure()
 
-    @implicit
     @always_inline("nodebug")
     fn __init__(out self, zipper: _zip[_, 2]):
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
-        This constructor is implicit, allowing direct conversion from zip iterators.
 
         Args:
             zipper: A zip iterator containing pairs of elements to append.
@@ -725,7 +726,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             var copy = original.owned_copy()
             # Modifying copy will not affect original
             ```
-            .
         """
         var copy = IntTuple(non_owned=IntArray())
         var size = self.size()
@@ -811,7 +811,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 count += self[i].count_values()
         return count
 
-    fn _fill(mut self, src: IntTuple, owned i: Int = 1) -> Int:
+    fn _fill(mut self, src: IntTuple, var i: Int = 1) -> Int:
         for j in range(len(src)):
             if src.is_value(j):
                 self._store[i] = src.value(j)
@@ -1127,10 +1127,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             A new `IntTuple` containing the specified elements.
         """
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = span.indices(len(self))
+        var start, end, step = span.indices(len(self))
         return Self(self, range(start, end, step))
 
     @always_inline("nodebug")
@@ -1239,12 +1236,9 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return self
 
     @always_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Writes a string representation of this `IntTuple` to the provided writer.
-
-        Parameters:
-            W: A type that conforms to the Writer trait.
 
         Args:
             writer: The writer to output the string representation to.
@@ -1254,17 +1248,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             For tuples, writes a comma-separated list of elements enclosed in parentheses.
         """
         if self.is_value():
-            return writer.write(self.value())
-        writer.write("(")
-        var len = len(self)
-        for i in range(len):
-            if self.is_value(i):
-                writer.write(self.value(i))
-            else:
-                writer.write(String(self[i]))
-            if i < len - 1:
-                writer.write(", ")
-        writer.write(")")
+            writer.write(self.value())
+        else:
+            writer.write("(")
+            var len = len(self)
+            for i in range(len):
+                if self.is_value(i):
+                    writer.write(self.value(i))
+                else:
+                    writer.write(String(self[i]))
+                if i < len - 1:
+                    writer.write(", ")
+            writer.write(")")
 
     fn __str__(self) -> String:
         """
@@ -1364,6 +1359,23 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """
         return self.value()
 
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(IntTuple[_]),
+    ](var self) -> IntTuple[__origin_of(origin, other_type.origin)]:
+        """Returns an IntTuple with merged origins.  Used for if/then and
+        list literals.
+
+        Parameters:
+            other_type: The type of the IntTuple to merge with.
+
+        Returns:
+            An IntTuple that will work.
+        """
+        return IntTuple[__origin_of(origin, other_type.origin)](
+            _owned=self._store
+        )
+
 
 @always_inline("nodebug")
 fn signum(a: Int) -> Int:
@@ -1387,7 +1399,6 @@ fn signum(a: Int) -> Int:
         var result2 = signum(-10)  # Returns -1
         var result3 = signum(0)    # Returns 0
         ```
-        .
     """
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
@@ -1417,7 +1428,6 @@ fn is_int(t: IntTuple) -> Bool:
         var result1 = is_int(single_value)  # Returns True
         var result2 = is_int(nested_tuple)  # Returns False
         ```
-        .
     """
     return t.is_value()
 
@@ -1447,14 +1457,14 @@ fn is_tuple(t: IntTuple) -> Bool:
         var result1 = is_tuple(single_value)  # Returns False
         var result2 = is_tuple(nested_tuple)  # Returns True
         ```
-        .
     """
     return t.is_tuple()
 
 
-@value
-struct _ZipIter[origin: ImmutableOrigin, n: Int]:
+struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
     """Iterator for zipped `IntTuple` collections."""
+
+    alias Element = IntTuple[origin]
 
     var index: Int
     var ts: InlineArray[Pointer[IntTuple, origin], n]
@@ -1474,6 +1484,10 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
         for i in range(1, n):
             min_len = min(min_len, len(self.ts[i][]))
         self.len = min_len
+
+    @always_inline("nodebug")
+    fn __has_next__(self) -> Bool:
+        return self.index < self.len
 
     @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
@@ -1501,19 +1515,9 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
                 result.append(self.ts[i][][idx])
             return result
 
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate over."""
-        return self.__len__() > 0
 
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the number of remaining elements."""
-        return self.len - self.index
-
-
-@value
-struct _zip[origin: ImmutableOrigin, n: Int]:
+@fieldwise_init
+struct _zip[origin: ImmutableOrigin, n: Int](Copyable, Movable):
     """Container for zipped `IntTuple` collections."""
 
     var ts: InlineArray[Pointer[IntTuple, origin], n]
@@ -1704,7 +1708,6 @@ fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
         var result = to_nest(IntTuple(2, IntTuple(3, 4), 5), IntTuple(1, 2, 3, 4))
         # returns IntTuple(1, (2, 3), 4)
         ```
-        .
     """
     var result = IntTuple()
     var flat_idx = 0
@@ -2046,7 +2049,7 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     @parameter
     if INT_TUPLE_VALIDATION:
         if len(a) != len(b):
-            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
     if is_int(a):
         if UNKNOWN_VALUE in (Int(a), Int(b)):
             return UNKNOWN_VALUE
@@ -2074,7 +2077,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     @parameter
     if INT_TUPLE_VALIDATION:
         if len(a) != len(b):
-            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+            abort(String("Tuple sizes don't match: ", len(a), " != ", len(b)))
     if is_int(a):
         return Int(a) * Int(b)
     var r: Int = 0
@@ -2419,7 +2422,11 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             @parameter
             if INT_TUPLE_VALIDATION:
                 if len(a) != len(b):
-                    abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+                    abort(
+                        String(
+                            "Tuple sizes don't match: ", len(a), " != ", len(b)
+                        )
+                    )
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
             var vb = Int(b)
@@ -2441,7 +2448,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             @parameter
             if INT_TUPLE_VALIDATION:
                 if not (va % vb == 0 or vb % va == 0):
-                    abort("Incompatible shape values: ", va, " ", vb)
+                    abort(String("Incompatible shape values: ", va, " ", vb))
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
@@ -2797,7 +2804,6 @@ fn reverse(src: IntTuple) -> IntTuple:
         var t = IntTuple(1, 2, IntTuple(3, 4))
         var reversed = reverse(t) # returns ((4, 3), 2, 1)
         ```
-        .
     """
     if src.is_value():
         return IntTuple(src.value())
@@ -2834,7 +2840,6 @@ fn depth(src: IntTuple) -> Int:
         print(depth(IntTuple(1, 2))) # prints 1
         print(depth((IntTuple(1, 2)))) # prints 2
         ````
-        .
     """
     if is_int(src):
         return 0
@@ -2943,7 +2948,6 @@ fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
         # Create a compact layout with nested dimensions and corresponding ordering
         var y = compact_order(IntTuple(2,IntTuple(3,4),5), IntTuple(1,IntTuple(2,3),4))  # returns (1,(2,6),24)
         ```
-        .
     """
     # Flatten both shape and order
     var flat_shape = flatten(shape)

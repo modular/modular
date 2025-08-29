@@ -20,7 +20,6 @@ from layout.layout import (
     coalesce,
     complement,
     composition,
-    cosize,
     expand_modes_alike,
     format_layout,
     is_row_major,
@@ -34,7 +33,9 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
+from utils import IndexList
+from buffer import DimList, Dim
 
 
 # CHECK-LABEL: test_layout_basic
@@ -78,6 +79,52 @@ fn test_layout_basic() raises:
     # Check if layout is row_major
     assert_equal(is_row_major[3](Layout.row_major(3, 2, 3)), True)
     assert_equal(is_row_major[2](Layout.col_major(3, 3)), False)
+
+    # test dynamic layout
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[3](),
+    )
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[2](),
+    )
+
+    # test index list construction
+    assert_equal(
+        Layout.row_major(IndexList[2](2, 3)),
+        Layout.row_major(2, 3),
+    )
+
+    # testing col major
+    var dl = DimList(3, 64, 128)
+
+    assert_equal(
+        Layout.col_major[3](dl),
+        Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
+    )
+
+    assert_equal(
+        Layout.col_major[3](DimList(Dim(), 64, 128)),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, 64, 128),
+            IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        ),
+    )
+
+    var idx_list = IndexList[3](32, 8, 16)
+    assert_equal(
+        Layout.col_major[3](idx_list),
+        Layout(IntTuple(32, 8, 16), IntTuple(1, 32, 256)),
+    )
+
+    assert_equal(
+        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, 8, 16),
+            IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        ),
+    )
 
 
 fn test_unknowns() raises:
@@ -451,6 +498,18 @@ fn test_blocked_product() raises:
     )
     assert_equal(bp1, reference_bp1)
 
+    alias bp2 = blocked_product(
+        Layout.row_major(128, 8), Layout.row_major(1, 4)
+    )
+    assert_equal(String(bp2), "(((128, 1), (8, 4)):((8, 0), (1, 1024)))")
+
+    alias bp3 = blocked_product(
+        Layout.row_major(128, 8),
+        Layout.row_major(1, 4),
+        coalesce_output=True,
+    )
+    assert_equal(String(bp3), "((128, (8, 4)):(8, (1, 1024)))")
+
 
 fn test_tile_to_shape() raises:
     print("== test_tile_to_shape")
@@ -566,7 +625,7 @@ def test_sublayout():
     )
 
 
-# CEHCK-LABEL: test_crd2idx
+# CHECK-LABEL: test_crd2idx
 def test_crd2idx():
     print("== test_crd2idx")
     alias l_4x4_row_major = Layout.row_major(4, 4)
@@ -591,7 +650,7 @@ def test_crd2idx():
         print(i, l_4x4_row_major.idx2crd(i), l_4x4_col_major.idx2crd(i))
 
 
-# CEHCK-LABEL: test_expand_modes_alike
+# CHECK-LABEL: test_expand_modes_alike
 def test_expand_modes_alike():
     print("== test_expand_modes_alike")
     alias layout_0 = Layout(
@@ -682,6 +741,99 @@ fn test_right_inverse() raises:
     ]()
 
 
+# CHECK-LABEL: test_transpose
+fn test_transpose() raises:
+    print("== test_transpose")
+
+    # Test 2D transpose - row-major to column-major
+    alias row_major = Layout.row_major(3, 4)
+    alias transposed = row_major.transpose()
+    assert_equal(transposed, Layout.col_major(4, 3))
+
+    # Test column-major to row-major
+    alias col_major = Layout.col_major(3, 4)
+    alias trans_col = col_major.transpose()
+    assert_equal(trans_col, Layout.row_major(4, 3))
+
+    # Test custom 2D strides
+    alias custom = Layout(IntTuple(3, 5), IntTuple(7, 2))
+    alias trans_custom = custom.transpose()
+    assert_equal(trans_custom.shape, IntTuple(5, 3))
+    assert_equal(trans_custom.stride, IntTuple(2, 7))
+
+    # Test 4D layout
+    alias layout4d = Layout.row_major(2, 3, 4, 5)
+    alias trans4d = layout4d.transpose()
+    assert_equal(trans4d.shape, IntTuple(5, 4, 3, 2))
+    assert_equal(trans4d.stride, IntTuple(1, 5, 20, 60))
+
+    # Test nested layout - only top level transposed
+    alias nested = Layout(
+        IntTuple(IntTuple(2, 3), 4), IntTuple(IntTuple(12, 4), 1)
+    )
+    alias trans_nested = nested.transpose()
+    assert_equal(trans_nested.shape, IntTuple(4, IntTuple(2, 3)))
+    assert_equal(trans_nested.stride, IntTuple(1, IntTuple(12, 4)))
+
+    # Test 3-level nested layout
+    alias deep_nested = Layout(
+        IntTuple(IntTuple(2, 3), IntTuple(4, 5), 6),
+        IntTuple(IntTuple(30, 10), IntTuple(6, 1), 120),
+    )
+    alias trans_deep = deep_nested.transpose()
+    assert_equal(trans_deep.shape, IntTuple(6, IntTuple(4, 5), IntTuple(2, 3)))
+    assert_equal(
+        trans_deep.stride, IntTuple(120, IntTuple(6, 1), IntTuple(30, 10))
+    )
+
+    # Test 1D layout (should be unchanged)
+    alias layout1d = Layout(IntTuple(10), IntTuple(1))
+    alias trans1d = layout1d.transpose()
+    assert_equal(trans1d, layout1d)
+
+    # Test layout with zero strides
+    alias zero_stride = Layout(IntTuple(3, 4), IntTuple(0, 1))
+    alias trans_zero = zero_stride.transpose()
+    assert_equal(trans_zero.shape, IntTuple(4, 3))
+    assert_equal(trans_zero.stride, IntTuple(1, 0))
+
+    # Test layout with unknown values
+    alias unknown_shape = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
+    alias trans_unknown = unknown_shape.transpose()
+    assert_equal(trans_unknown.shape, IntTuple(4, UNKNOWN_VALUE))
+    assert_equal(trans_unknown.stride, IntTuple(1, 4))
+
+    # Test empty layout
+    alias empty = Layout()
+    alias trans_empty = empty.transpose()
+    assert_equal(trans_empty.shape, IntTuple())
+    assert_equal(trans_empty.stride, IntTuple())
+
+    # Test double transpose (idempotence)
+    assert_equal(transposed.transpose(), row_major)
+    assert_equal(trans4d.transpose(), layout4d)
+    assert_equal(trans_nested.transpose(), nested)
+
+    # Test memory mapping preservation for 2D
+    @parameter
+    for i in range(3):
+
+        @parameter
+        for j in range(4):
+            alias original_idx = row_major(IntTuple(i, j))
+            alias transposed_idx = transposed(IntTuple(j, i))
+            assert_equal(original_idx, transposed_idx)
+
+    # Test size preservation
+    assert_equal(row_major.size(), transposed.size())
+    assert_equal(layout4d.size(), trans4d.size())
+    assert_equal(nested.size(), trans_nested.size())
+
+    # Test cosize preservation for compact layouts
+    assert_equal(row_major.cosize(), transposed.cosize())
+    assert_equal(col_major.cosize(), trans_col.cosize())
+
+
 def main():
     test_layout_basic()
     test_unknowns()
@@ -701,3 +853,4 @@ def main():
     test_expand_modes_alike()
     test_upcast()
     test_right_inverse()
+    test_transpose()

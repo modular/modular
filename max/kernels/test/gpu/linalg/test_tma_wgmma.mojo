@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import size_of
 
-from gpu import WARP_SIZE, barrier
+from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -29,6 +29,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
+    warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
@@ -38,7 +39,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 
 fn _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:
@@ -54,7 +54,7 @@ fn _load_a_reg_tile[
 ](
     out ret: LayoutTensor[
         dtype,
-        _compute_reg_tile_layout(layout, 16 // sizeof[dtype]()),
+        _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ],
@@ -81,7 +81,7 @@ fn _load_a_reg_tile[
     alias num_wgmma_k = ceildiv(cols, WGMMA_K)
     constrained[num_wgmma_m * num_wgmma_k == ret.layout[0].shape[0].value()]()
 
-    alias simd_size = 4 // sizeof[dtype]()
+    alias simd_size = 4 // size_of[dtype]()
     var vret = ret.vectorize[1, simd_size]()
 
     @parameter
@@ -90,12 +90,11 @@ fn _load_a_reg_tile[
         @parameter
         for k_mma in range(num_wgmma_k):
             alias r_id = m_mma + k_mma * num_wgmma_m
-            var smem_wg = smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma).tile[
-                WGMMA_M // 4, WGMMA_K
-            ](wgid, 0).vectorize[1, simd_size]().distribute[
-                Layout.row_major(8, 4)
-            ](
-                lane
+            var smem_wg = (
+                smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
+                .tile[WGMMA_M // 4, WGMMA_K](wgid, 0)
+                .vectorize[1, simd_size]()
+                .distribute[Layout.row_major(8, 4)](lane)
             )
             vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
 
@@ -175,8 +174,8 @@ fn tma_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
+    alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
+    alias b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
     mbar = stack_allocation[
@@ -211,6 +210,7 @@ fn tma_wgmma_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
 
         @parameter
@@ -220,6 +220,7 @@ fn tma_wgmma_kernel[
             var a_reg_tile = _load_a_reg_tile[wgmma_shape](a_smem_tile)
             wgmma_op.wgmma(a_reg_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()

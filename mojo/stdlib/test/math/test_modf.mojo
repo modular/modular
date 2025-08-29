@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from math import modf
 
-from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal
 
 

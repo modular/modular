@@ -10,18 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import List
-from sys.info import sizeof
+from sys.info import size_of
 
-from memory import Span, UnsafePointer
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
-    g_dtor_count,
 )
 from testing import (
     assert_equal,
@@ -51,7 +47,7 @@ def test_list():
         list.append(i)
 
     assert_equal(5, len(list))
-    assert_equal(5 * sizeof[Int](), list.byte_length())
+    assert_equal(5 * size_of[Int](), list.byte_length())
     assert_equal(0, list[0])
     assert_equal(1, list[1])
     assert_equal(2, list[2])
@@ -74,7 +70,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, owned *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: T, __list_literal__: ()):
         pass
 
 
@@ -144,7 +140,7 @@ def test_list_unsafe_set():
 
 
 def test_list_clear():
-    var list = List[Int](1, 2, 3)
+    var list = [1, 2, 3]
     assert_equal(len(list), 3)
     assert_equal(list.capacity, 3)
     list.clear()
@@ -190,7 +186,7 @@ def test_list_pop():
 
 
 def test_list_variadic_constructor():
-    var l = List[Int](2, 4, 6)
+    var l = [2, 4, 6]
     assert_equal(3, len(l))
     assert_equal(2, l[0])
     assert_equal(4, l[1])
@@ -239,7 +235,7 @@ def test_list_reverse():
     # Test reversing the list [123]
     #
 
-    vec = List[Int]()
+    vec = []
 
     vec.append(123)
 
@@ -255,7 +251,7 @@ def test_list_reverse():
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2 = List[String]("one", "two", "three")
+    vec2 = ["one", "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -273,7 +269,7 @@ def test_list_reverse():
     # Test reversing the list [5, 10]
     #
 
-    vec = List[Int]()
+    vec = []
     vec.append(5)
     vec.append(10)
 
@@ -298,26 +294,26 @@ def test_list_reverse_move_count():
     vec.append(MoveCounter(5))
 
     assert_equal(len(vec), 5)
-    assert_equal(vec.data[0].value, 1)
-    assert_equal(vec.data[1].value, 2)
-    assert_equal(vec.data[2].value, 3)
-    assert_equal(vec.data[3].value, 4)
-    assert_equal(vec.data[4].value, 5)
+    assert_equal(vec[0].value, 1)
+    assert_equal(vec[1].value, 2)
+    assert_equal(vec[2].value, 3)
+    assert_equal(vec[3].value, 4)
+    assert_equal(vec[4].value, 5)
 
-    assert_equal(vec.data[0].move_count, 1)
-    assert_equal(vec.data[1].move_count, 1)
-    assert_equal(vec.data[2].move_count, 1)
-    assert_equal(vec.data[3].move_count, 1)
-    assert_equal(vec.data[4].move_count, 1)
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 1)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 1)
+    assert_equal(vec[4].move_count, 1)
 
     vec.reverse()
 
     assert_equal(len(vec), 5)
-    assert_equal(vec.data[0].value, 5)
-    assert_equal(vec.data[1].value, 4)
-    assert_equal(vec.data[2].value, 3)
-    assert_equal(vec.data[3].value, 2)
-    assert_equal(vec.data[4].value, 1)
+    assert_equal(vec[0].value, 5)
+    assert_equal(vec[1].value, 4)
+    assert_equal(vec[2].value, 3)
+    assert_equal(vec[3].value, 2)
+    assert_equal(vec[4].value, 1)
 
     # NOTE:
     # Earlier elements went through 2 moves and later elements went through 3
@@ -326,11 +322,11 @@ def test_list_reverse_move_count():
     # earlier element to a temporary (+1 move), directly move the later element
     # into the position the earlier element was in, and then move from the
     # temporary into the later position (+1 move).
-    assert_equal(vec.data[0].move_count, 2)
-    assert_equal(vec.data[1].move_count, 2)
-    assert_equal(vec.data[2].move_count, 1)
-    assert_equal(vec.data[3].move_count, 3)
-    assert_equal(vec.data[4].move_count, 3)
+    assert_equal(vec[0].move_count, 2)
+    assert_equal(vec[1].move_count, 2)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 3)
+    assert_equal(vec[4].move_count, 3)
 
 
 def test_list_insert():
@@ -396,7 +392,7 @@ def test_list_insert():
 
 
 def test_list_index():
-    var test_list_a = List[Int](10, 20, 30, 40, 50)
+    var test_list_a = [10, 20, 30, 40, 50]
 
     # Basic Functionality Tests
     assert_equal(test_list_a.index(10), 0)
@@ -455,7 +451,7 @@ def test_list_index():
     with assert_raises(contains="ValueError: Given element is not in list"):
         _ = test_list_a.index(10, start=0, stop=0)
 
-    var test_list_b = List[Int](10, 20, 30, 20, 10)
+    var test_list_b = [10, 20, 30, 20, 10]
 
     # Test finding the first occurrence of an item
     assert_equal(test_list_b.index(10), 0)
@@ -490,8 +486,8 @@ def test_list_extend():
     items.extend(copy)
     assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
 
-    items = List[UInt32](1, 2, 3)
-    copy = List[UInt32](1, 2, 3)
+    items = [1, 2, 3]
+    copy = [1, 2, 3]
 
     # Extend with span
     items.extend(Span(copy))
@@ -533,11 +529,11 @@ def test_list_extend_non_trivial():
     assert_equal(v1[3].value, "Bar")
     assert_equal(v1[4].value, "Baz")
 
-    assert_equal(v1.data[0].move_count, 1)
-    assert_equal(v1.data[1].move_count, 1)
-    assert_equal(v1.data[2].move_count, 2)
-    assert_equal(v1.data[3].move_count, 2)
-    assert_equal(v1.data[4].move_count, 2)
+    assert_equal(v1[0].move_count, 1)
+    assert_equal(v1[1].move_count, 1)
+    assert_equal(v1[2].move_count, 2)
+    assert_equal(v1[3].move_count, 2)
+    assert_equal(v1[4].move_count, 2)
 
 
 def test_2d_dynamic_list():
@@ -625,27 +621,27 @@ def test_list_iter():
     fn sum(vs: List[Int]) -> Int:
         var sum = 0
         for v in vs:
-            sum += v[]
+            sum += v
         return sum
 
     assert_equal(6, sum(vs))
 
 
 def test_list_iter_mutable():
-    var vs = List[Int](1, 2, 3)
+    var vs = [1, 2, 3]
 
-    for v in vs:
-        v[] += 1
+    for ref v in vs:
+        v += 1
 
     var sum = 0
     for v in vs:
-        sum += v[]
+        sum += v
 
     assert_equal(9, sum)
 
 
 def test_list_span():
-    var vs = List[Int](1, 2, 3)
+    var vs = [1, 2, 3]
 
     var es = vs[1:]
     assert_equal(es[0], 2)
@@ -741,15 +737,15 @@ def test_converting_list_to_string():
     # essentially, `List.__str__()` just creates a String and applies `to_format` to it.
     # If we were to write unit tests for `to_format`, we would essentially copy-paste the code
     # of `List.__str__()`
-    var my_list = List[Int](1, 2, 3)
+    var my_list = [1, 2, 3]
     assert_equal(my_list.__str__(), "[1, 2, 3]")
 
-    var my_list4 = List[String]("a", "b", "c", "foo")
+    var my_list4 = ["a", "b", "c", "foo"]
     assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
 
 
 def test_list_count():
-    var list = List[Int](1, 2, 3, 2, 5, 6, 7, 8, 9, 10)
+    var list = [1, 2, 3, 2, 5, 6, 7, 8, 9, 10]
     assert_equal(1, list.count(1))
     assert_equal(2, list.count(2))
     assert_equal(0, list.count(4))
@@ -759,8 +755,8 @@ def test_list_count():
 
 
 def test_list_add():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
     var c = a + b
     assert_equal(len(c), 6)
     # check that original values aren't modified
@@ -773,24 +769,24 @@ def test_list_add():
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
 
-    a = List[Int](1, 2, 3)
+    a = [1, 2, 3]
     a += b^
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
 
-    var d = List[Int](1, 2, 3)
-    var e = List[Int](4, 5, 6)
+    var d = [1, 2, 3]
+    var e = [4, 5, 6]
     var f = d + e^
     assert_equal(len(f), 6)
     assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
 
-    var l = List[Int](1, 2, 3)
-    l += List[Int]()
+    var l = [1, 2, 3]
+    l += []
     assert_equal(len(l), 3)
 
 
 def test_list_mult():
-    var a = List[Int](1, 2, 3)
+    var a = [1, 2, 3]
     var b = a * 2
     assert_equal(len(b), 6)
     assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3]")
@@ -801,7 +797,7 @@ def test_list_mult():
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 1, 2, 3]")
 
-    var l = List[Int](1, 2)
+    var l = [1, 2]
     l *= 1
     assert_equal(len(l), 2)
 
@@ -811,7 +807,7 @@ def test_list_mult():
 
 
 def test_list_contains():
-    var x = List[Int](1, 2, 3)
+    var x = [1, 2, 3]
     assert_false(0 in x)
     assert_true(1 in x)
     assert_false(4 in x)
@@ -824,12 +820,12 @@ def test_list_contains():
 
 
 def test_list_eq_ne():
-    var l1 = List[Int](1, 2, 3)
-    var l2 = List[Int](1, 2, 3)
+    var l1 = [1, 2, 3]
+    var l2 = [1, 2, 3]
     assert_true(l1 == l2)
     assert_false(l1 != l2)
 
-    var l3 = List[Int](1, 2, 3, 4)
+    var l3 = [1, 2, 3, 4]
     assert_false(l1 == l3)
     assert_true(l1 != l3)
 
@@ -838,16 +834,16 @@ def test_list_eq_ne():
     assert_true(l4 == l5)
     assert_true(l1 != l4)
 
-    var l6 = List[String]("a", "b", "c")
-    var l7 = List[String]("a", "b", "c")
-    var l8 = List[String]("a", "b")
+    var l6 = ["a", "b", "c"]
+    var l7 = ["a", "b", "c"]
+    var l8 = ["a", "b"]
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)
 
 
 def test_list_init_span():
-    var l = List[String]("a", "bb", "cc", "def")
+    var l = [String("a"), "bb", "cc", "def"]
     var sp = Span(l)
     var l2 = List[String](sp)
     for i in range(len(l)):
@@ -855,7 +851,7 @@ def test_list_init_span():
 
 
 def test_indexing():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
     assert_equal(l[False], 1)
     assert_equal(l[True], 2)
@@ -867,39 +863,29 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
     var l = List[DelCounter]()
-    assert_equal(g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(g_dtor_count, 0)
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 # Verify we skip calling destructors for the trivial elements
 def test_destructor_trivial_elements():
-    # explicitly reset global counter
-    g_dtor_count = 0
+    var dtor_count = 0
 
     var l = List[DelCounter, hint_trivial_type=True]()
-    l.append(DelCounter())
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
 
     l^.__del__()
 
-    assert_equal(g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
 
 def test_list_repr():
@@ -954,9 +940,9 @@ def _test_copyinit_trivial_types[dt: DType, hint_trivial_type: Bool]():
         y = x
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
-        assert_not_equal(x.data, y.data)
+        assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))
         for i in range(current_size):
-            assert_equal(i, x[i])
+            assert_equal(Scalar[dt](i), x[i])
             assert_equal(y[i], x[i])
         test_current_size *= 2
     assert_equal(test_current_size, 1024)
@@ -980,6 +966,27 @@ def test_copyinit_trivial_types_dtypes():
         _test_copyinit_trivial_types[dtypes[index_dtype], False]()
         test_index_dtype += 1
     assert_equal(test_index_dtype, 7)
+
+
+def test_list_comprehension():
+    var l1 = [x * x for x in range(10) if x & 1]
+    assert_equal(l1, [1, 9, 25, 49, 81])
+
+    var l2 = [x * y for x in range(3) for y in l1]
+    assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
+
+
+def test_list_repr_wrap():
+    assert_equal(repr(List("Hello", "World")), "['Hello', 'World']")
+    assert_equal(
+        repr(List[UInt8](0, 1)),
+        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
+    )
+    var l = List(DType.int8, DType.int16)
+    assert_equal(
+        repr(l),
+        "[DType.int8, DType.int16]",
+    )
 
 
 # ===-------------------------------------------------------------------===#
@@ -1024,3 +1031,5 @@ def main():
     test_list_fill_constructor()
     test_uninit_ctor()
     test_copyinit_trivial_types_dtypes()
+    test_list_comprehension()
+    test_list_repr_wrap()

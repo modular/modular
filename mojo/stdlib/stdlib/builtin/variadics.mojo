@@ -15,7 +15,40 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import Pointer, UnsafePointer
+from memory import Pointer
+
+alias Variadic[type: AnyType] = __mlir_type[`!kgen.variadic<`, type, `>`]
+"""Represents a raw variadic sequence of values of the specified type."""
+
+alias VariadicOf[T: _AnyTypeMetaType] = __mlir_type[`!kgen.variadic<`, T, `>`]
+"""Represents a raw variadic sequence of types that satisfy the specified trait."""
+
+
+@always_inline("nodebug")
+fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
+    """Returns the length of a variadic sequence.
+
+    Parameters:
+        T: The type of values in the sequence.
+
+    Returns:
+        The length of the variadic sequence.
+    """
+    return __mlir_op.`pop.variadic.size`(seq)
+
+
+@always_inline("nodebug")
+fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
+    """Returns the length of a variadic sequence.
+
+    Parameters:
+        T: The trait that types in the sequence must conform to.
+
+    Returns:
+        The length of the variadic sequence.
+    """
+    return __mlir_op.`pop.variadic.size`(seq)
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
@@ -23,39 +56,70 @@ from memory import Pointer, UnsafePointer
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     """Const Iterator for VariadicList.
 
     Parameters:
         type: The type of the elements in the list.
     """
 
+    alias Element = type
+
     var index: Int
     var src: VariadicList[type]
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.index < len(self.src)
 
     fn __next__(mut self) -> type:
         self.index += 1
         return self.src[self.index - 1]
 
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    fn __len__(self) -> Int:
-        return len(self.src) - self.index
-
 
 @register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType](Sized):
-    """A utility class to access variadic function arguments. Provides a "list"
-    view of the function argument so that the size of the argument list and each
-    individual argument can be accessed.
+    """A utility class to access homogeneous variadic function arguments.
+
+    `VariadicList` is used when you need to accept variadic arguments where all
+    arguments have the same type. Unlike `VariadicPack` (which is heterogeneous),
+    `VariadicList` requires all elements to have the same concrete type.
+
+    At runtime, `VariadicList` is treated as a homogeneous array. Because all
+    the elements have the same type, each element has the same size and memory
+    layout, so the compiler can generate code that works to access any index
+    at runtime.
+
+    Therefore, indexing into `VariadicList` can use runtime indices with regular
+    `for` loops, whereas indexing into `VariadicPack` requires compile-time
+    indices using `@parameter for` loops.
+
+    For example, in the following function signature, `*args: Int` creates a
+    `VariadicList` because it uses a single type `Int` instead of a variadic type
+    parameter. The `*` before `args` indicates that `args` is a variadic argument,
+    which means that the function can accept any number of arguments, but all
+    arguments must have the same type `Int`.
+
+    ```mojo
+    fn sum_values(*args: Int) -> Int:
+        var total = 0
+
+        # Can use regular for loop because args is a VariadicList
+        for i in range(len(args)):
+            total += args[i]  # All elements are Int, so uniform access
+
+        return total
+
+    def main():
+        print(sum_values(1, 2, 3, 4, 5))
+    ```
 
     Parameters:
         type: The type of the elements in the list.
     """
 
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
+    alias _mlir_type = Variadic[type]
+
     var value: Self._mlir_type
     """The underlying storage for the variadic list."""
 
@@ -133,12 +197,15 @@ struct _VariadicListMemIter[
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
         list_origin: The origin of the VariadicListMem.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias variadic_list_type = VariadicListMem[
         elt_type, elt_origin._mlir_origin, is_owned
     ]
+
+    alias Element = elt_type
 
     var index: Int
     var src: Pointer[
@@ -152,20 +219,15 @@ struct _VariadicListMemIter[
         self.index = index
         self.src = Pointer(to=list)
 
-    fn __next__(mut self) -> Self.variadic_list_type.reference_type:
-        self.index += 1
-        # TODO: Need to make this return a dereferenced reference, not a
-        # reference that must be deref'd by the user.
-        return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][self.index - 1])
-        )
-
     @always_inline
     fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
+        return self.index < len(self.src[])
 
-    fn __len__(self) -> Int:
-        return len(self.src[]) - self.index
+    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
+        self.index += 1
+        return rebind[Self.variadic_list_type.reference_type](
+            Pointer(to=self.src[][self.index - 1])
+        )[]
 
 
 struct VariadicListMem[
@@ -183,12 +245,12 @@ struct VariadicListMem[
                         mut or owned argument.
         element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias reference_type = Pointer[element_type, origin]
-    alias _mlir_ref_type = Self.reference_type._mlir_type
-    alias _mlir_type = __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `>`]
+    alias _mlir_type = Variadic[Self.reference_type._mlir_type]
 
     var value: Self._mlir_type
     """The underlying storage, a variadic list of references to elements of the
@@ -211,7 +273,7 @@ struct VariadicListMem[
         self.value = value
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Moves constructor.
 
         Args:
@@ -220,7 +282,7 @@ struct VariadicListMem[
         self.value = existing.value
 
     @always_inline
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         # Destroy each element if this variadic has owned elements, destroy
@@ -230,6 +292,33 @@ struct VariadicListMem[
         if is_owned:
             for i in reversed(range(len(self))):
                 UnsafePointer(to=self[i]).destroy_pointee()
+
+    fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](deinit self):
+        """Consume the variadic list by transfering ownership of each element
+        into the provided closure one at a time.  This is only valid on 'owned'
+        variadic lists.
+
+        Parameters:
+            elt_handler: A function that will be called for each element of the
+                         list.
+        """
+
+        constrained[
+            is_owned,
+            "consume_elements may only be called on owned variadic lists",
+        ]()
+
+        for i in range(len(self)):
+            var ptr = UnsafePointer(to=self[i])
+            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # the element to be Movable, which is not required here.
+            elt_handler(i, __get_address_as_owned_value(ptr.address))
+
+    # FIXME: This is a hack to work around a miscompile, do not use.
+    fn _anihilate(deinit self):
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -255,9 +344,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[elt_is_mutable]
-        .cast_from[__origin_of(origin, self)]
-        .result
+        Origin[elt_is_mutable].cast_from[__origin_of(origin, self)]
     ] element_type:
         """Gets a single element on the variadic list.
 
@@ -302,8 +389,47 @@ struct VariadicPack[
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
 ](Sized):
-    """A utility class to access variadic pack  arguments and provide an API for
-    doing things with them.
+    """A utility class to access heterogeneous variadic function arguments.
+
+    `VariadicPack` is used when you need to accept variadic arguments where each
+    argument can have a different type, but all types conform to a common trait.
+    Unlike `VariadicList` (which is homogeneous), `VariadicPack` allows each
+    element to have a different concrete type.
+
+    `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
+    struct at runtime. Because `VariadicPack` is a heterogeneous tuple (not an
+    array), each element can have a different size and memory layout, which
+    means the compiler needs to know the exact type of each element at compile
+    time to generate the correct memory layout and access code.
+
+    Therefore, indexing into `VariadicPack` requires compile-time indices using
+    `@parameter for` loops, whereas indexing into `VariadicList` uses runtime
+    indices.
+
+    For example, in the following function signature, `*args: *ArgTypes` creates a
+    `VariadicPack` because it uses a variadic type parameter `*ArgTypes` instead
+    of a single type. The `*` before `ArgTypes` indicates that `ArgTypes` is a
+    variadic type parameter, which means that the function can accept any number
+    of arguments, and each argument can have a different type. This allows each
+    argument to have a different type while all types must conform to the
+    `Intable` trait.
+
+    ```mojo
+    fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
+        var total = 0
+
+        # Must use @parameter for loop because args is a VariadicPack
+        @parameter
+        for i in range(args.__len__()):
+            # Each args[i] has a different concrete type from *ArgTypes
+            # The compiler generates specific code for each iteration
+            total += Int(args[i])
+
+        return total
+
+    def main():
+        print(count_many_things(5, 11.7, 12))  # Prints: 28
+    ```
 
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
@@ -333,6 +459,10 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
+    # This disables nested origin exclusivity checking because it is taking a
+    # raw variadic pack which can have nested origins in it (which this does not
+    # dereference).
+    @__unsafe_disable_nested_origin_exclusivity
     fn __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 
@@ -342,7 +472,7 @@ struct VariadicPack[
         self._value = value
 
     @always_inline("nodebug")
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that releases elements if owned."""
 
         @parameter
@@ -351,6 +481,30 @@ struct VariadicPack[
             @parameter
             for i in reversed(range(Self.__len__())):
                 UnsafePointer(to=self[i]).destroy_pointee()
+
+    fn consume_elements[
+        elt_handler: fn[idx: Int] (var elt: element_types[idx]) capturing
+    ](deinit self):
+        """Consume the variadic pack by transfering ownership of each element
+        into the provided closure one at a time.  This is only valid on 'owned'
+        variadic packs.
+
+        Parameters:
+            elt_handler: A function that will be called for each element of the
+                         pack.
+        """
+
+        constrained[
+            is_owned,
+            "consume_elements may only be called on owned variadic packs",
+        ]()
+
+        @parameter
+        for i in range(Self.__len__()):
+            var ptr = UnsafePointer(to=self[i])
+            # TODO: Cannot use UnsafePointer.take_pointee because it requires
+            # the element to be Movable, which is not required here.
+            elt_handler[i](__get_address_as_owned_value(ptr.address))
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -364,12 +518,6 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-
-        @parameter
-        fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, element_trait, `>`]
-        ) -> Int:
-            return __mlir_op.`pop.variadic.size`(x)
 
         alias result = variadic_size(element_types)
         return result
@@ -406,54 +554,19 @@ struct VariadicPack[
         return __get_litref_as_mvalue(litref_elt)
 
     # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn each[func: fn[T: element_trait] (T) capturing -> None](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func(self[i])
-
-    @always_inline
-    fn each_idx[
-        func: fn[idx: Int, T: element_trait] (T) capturing -> None
-    ](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func[i](self[i])
-
-    # ===-------------------------------------------------------------------===#
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 
-    alias _kgen_element_types = rebind[
-        __mlir_type.`!kgen.variadic<!kgen.type>`
-    ](Self.element_types)
+    alias _kgen_element_types = rebind[Variadic[AnyTrivialRegType]](
+        Self.element_types
+    )
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
     alias _variadic_pointer_types = __mlir_attr[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
-        `, 0: index>: !kgen.variadic<!kgen.type>`,
+        `, 0: index>: `,
+        Variadic[AnyTrivialRegType],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -474,7 +587,8 @@ struct VariadicPack[
     alias _variadic_with_pointers_removed = __mlir_attr[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
-        `>: !kgen.variadic<!kgen.type>`,
+        `>: `,
+        Variadic[AnyTrivialRegType],
     ]
     alias _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`

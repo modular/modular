@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof, bitwidthof
+from sys import align_of
 
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
-from memory import UnsafePointer
 
 from utils import IndexList
 
@@ -28,7 +27,7 @@ fn test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+    ].stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 
     # CHECK: vector_1x4
@@ -85,7 +84,7 @@ fn test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
         DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+    ].stack_allocation[alignment = align_of[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 
     # CHECK: vector_1x4

@@ -10,27 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
 from testing import assert_equal, assert_raises, assert_true
 
 
 fn test_assert_raises_catches_error() raises:
     with assert_raises():
-        raise "SomeError"
+        raise Error("SomeError")
     # The assert_raises should catch the error and not propagate it.
     # Hence the test will succeed.
 
 
 fn test_assert_raises_catches_matched_error() raises:
     with assert_raises(contains="Some"):
-        raise "SomeError"
+        raise Error("SomeError")
 
     with assert_raises(contains="Error"):
-        raise "SomeError"
+        raise Error("SomeError")
 
     with assert_raises(contains="eE"):
-        raise "SomeError"
+        raise Error("SomeError")
 
 
 fn test_assert_raises_no_error() raises:
@@ -47,7 +46,7 @@ fn test_assert_raises_no_error() raises:
 fn test_assert_raises_no_match() raises:
     try:
         with assert_raises(contains="Some"):
-            raise "OtherError"
+            raise Error("OtherError")
         raise Error("This should not be reachable.")
     except e:
         assert_equal(String(e), "OtherError")

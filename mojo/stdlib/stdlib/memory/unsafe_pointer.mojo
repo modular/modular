@@ -12,17 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implement a generic unsafe pointer type.
 
-You can import these APIs from the `memory` package. For example:
-
-```mojo
-from memory import UnsafePointer
-```
+These APIs are imported automatically, just like builtins.
 """
 
-from sys import alignof, is_gpu, is_nvidia_gpu, sizeof
+from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import (
-    _mlirtype_is_eq,
-    _type_is_eq,
     gather,
     scatter,
     strided_load,
@@ -32,19 +26,11 @@ from sys.intrinsics import (
 from builtin.simd import _simd_construction_checks
 from memory.memory import _free, _malloc
 
+from python import PythonObject
+
 # ===----------------------------------------------------------------------=== #
 # UnsafePointer
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn _default_alignment[type: AnyType]() -> Int:
-    return alignof[type]() if is_gpu() else 1
-
-
-@always_inline
-fn _default_alignment[dtype: DType, width: Int = 1]() -> Int:
-    return _default_alignment[Scalar[dtype]]()
 
 
 @always_inline
@@ -60,9 +46,9 @@ struct UnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[type](),
+    alignment: Int = align_of[type](),
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
     ImplicitlyBoolable,
     Copyable,
@@ -72,18 +58,97 @@ struct UnsafePointer[
     Writable,
     Intable,
     Comparable,
+    Defaultable,
 ):
-    """UnsafePointer[T] represents an indirect reference to one or more values of
-    type T consecutively in memory, and can refer to uninitialized memory.
+    """`UnsafePointer[T]` represents an indirect reference to one or more values
+    of type `T` consecutively in memory, and can refer to uninitialized memory.
 
     Because it supports referring to uninitialized memory, it provides unsafe
-    methods for initializing and destroying instances of T, as well as methods
-    for accessing the values once they are initialized.
+    methods for initializing and destroying instances of `T`, as well as methods
+    for accessing the values once they are initialized. You should instead use
+    safer pointers when possible.
+
+    Important things to know:
+
+    - This pointer is unsafe and nullable. No bounds checks; reading before
+      writing is undefined.
+    - It does not own existing memory. When memory is heap-allocated with
+      `alloc()`, you must call `free()`.
+    - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
+      is the offset size.
+    - For SIMD operations on numeric data, use `UnsafePointer[Scalar[DType.xxx]]`
+      with `load[dtype=DType.xxx]()` and `store[dtype=DType.xxx]()`.
+
+    Key APIs:
+
+    - `alloc()`: Allocates heap space for the specified number of
+      elements (contiguous). Must be paired with `free()`.
+    - `free()`: Frees memory previously allocated by `alloc()`. Do not call on
+      pointers that were not allocated by `alloc()`.
+    - `offset(i)` / `+ i` / `- i`: Pointer arithmetic. Returns a new pointer
+      shifted by `i` elements. No bounds checking.
+    - `[]` or `[i]`: Dereference to a reference of the pointee (or at
+      offset `i`). Only valid if the memory at that location is initialized.
+    - `load()`: Loads `width` elements starting at `offset` (default 0) as
+      `SIMD[dtype, width]` from `UnsafePointer[Scalar[dtype]]`. Pass
+      `alignment` when data is not naturally aligned.
+    - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
+      `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
+    - `destroy_pointee()` / `take_pointee()` / `move_pointee_into(dst)`:
+      Explicitly end the lifetime of the current pointee or move it out and
+      into another pointer without running an extra copy. Use these to manage
+      lifecycles when working with uninitialized memory patterns.
 
     For more information see [Unsafe
     pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
     comparison with other pointer types, see [Intro to
     pointers](/mojo/manual/pointers/).
+
+    Examples:
+
+    Element-wise store and load (width = 1):
+
+    ```mojo
+    var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+    for i in range(4):
+        p.store(i, Scalar[DType.float32](Float32(i)))
+    var v = p.load(2)
+    print(v[0])  # => 2.0
+    p.free()
+    ```
+
+    Vectorized store and load (width = 4):
+
+    ```mojo
+    var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+    var vec = SIMD[DType.int32, 4](1, 2, 3, 4)
+    p.store(0, vec)
+    var out = p.load[width=4](0)
+    print(out)  # => [1, 2, 3, 4]
+    p.free()
+    ```
+
+    Pointer arithmetic and dereference:
+
+    ```mojo
+    var p = UnsafePointer[Int32].alloc(3)
+    (p + 0)[] = 10  # offset by 0 elements, then dereference to write
+    (p + 1)[] = 20  # offset +1 element, then dereference to write
+    p[2] = 30  # equivalent offset/dereference with brackets (via __getitem__)
+    var second = p[1]  # reads the element at index 1
+    print(second, p[2])  # => 20 30
+    p.free()
+    ```
+
+    Point to a value on the stack:
+
+    ```mojo
+    var foo: Int = 123
+    var p = UnsafePointer(to=foo)
+    print(p[])  # => 123
+    # Don't call `free()` because the value was not heap-allocated
+    # Mojo will destroy it when the `foo` lifetime ends
+    ```
 
     Parameters:
         type: The type the pointer points to.
@@ -157,43 +222,25 @@ struct UnsafePointer[
             other.address
         )
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Copy an existing pointer.
+    fn __init__(
+        out self: UnsafePointer[type, mut=mut, origin=origin],
+        *,
+        ref [origin]unchecked_downcast_value: PythonObject,
+    ):
+        """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
-        Returns:
-            A copy of the value.
+        This operation is only valid if the provided Python object contains
+        an initialized Mojo object of matching type.
+
+        Args:
+            unchecked_downcast_value: The Python object to downcast from.
         """
-        return self
+
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    @always_inline("nodebug")
-    @deprecated("Use UnsafePointer(to=...) constructor instead.")
-    fn address_of(
-        ref [address_space]arg: type,
-        out result: UnsafePointer[
-            type,
-            address_space=address_space,
-            alignment=1,
-            mut = Origin(__origin_of(arg)).mut,
-            origin = __origin_of(arg),
-        ],
-    ):
-        """Gets the address of the argument.
-
-        Args:
-            arg: The value to get the address of.
-
-        Returns:
-            An UnsafePointer which contains the address of the argument.
-        """
-        return __type_of(result)(
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg))
-        )
 
     @staticmethod
     @always_inline
@@ -207,17 +254,35 @@ struct UnsafePointer[
         # already existing.
         origin = MutableOrigin.empty,
     ]:
-        """Allocate an array with specified or default alignment.
+        """Allocates contiguous storage for `count` elements of `type`
+        with compile-time alignment `alignment`.
+
+        - The returned memory is uninitialized; reading before writing is undefined.
+        - The returned pointer has an empty mutable origin; you must call `free()`
+          to release it.
+        - `count` must be positive and `size_of[type]()` must be > 0.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.int32]].alloc(4)
+        p.store(0, SIMD[DType.int32, 1](42))
+        p.store(1, SIMD[DType.int32, 1](7))
+        p.store(2, SIMD[DType.int32, 1](9))
+        var a = p.load(0)
+        print(a[0], p.load(1)[0], p.load(2)[0])
+        p.free()
+        ```
 
         Args:
-            count: The number of elements in the array.
+            count: Number of elements to allocate.
 
         Returns:
-            The pointer to the newly allocated array.
+            Pointer to the newly allocated uninitialized array.
         """
-        alias sizeof_t = sizeof[type]()
-        constrained[sizeof_t > 0, "size must be greater than zero"]()
-        return _malloc[type, alignment=alignment](sizeof_t * count)
+        alias size_of_t = size_of[type]()
+        constrained[size_of_t > 0, "size must be greater than zero"]()
+        return _malloc[type, alignment=alignment](size_of_t * count)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -480,12 +545,9 @@ struct UnsafePointer[
         return hex(Int(self))
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """
         Formats this pointer address to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -517,24 +579,39 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
-        """Loads the value the pointer points to.
+        """Loads `width` elements from the value the pointer points to.
+
+        Use `alignment` to specify minimal known alignment in bytes; pass a
+        smaller value (such as 1) if loading from packed/unaligned memory. The
+        `volatile`/`invariant` flags control reordering and common-subexpression
+        elimination semantics for special cases.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.int32]].alloc(8)
+        p.store(0, SIMD[DType.int32, 4](1, 2, 3, 4))
+        var v = p.load[width=4]()
+        print(v)  # => [1, 2, 3, 4]
+        p.free()
+        ```
 
         Constraints:
             The width and alignment must be positive integer values.
 
         Parameters:
-            dtype: The data type of SIMD vector.
-            width: The size of the SIMD vector.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
-            invariant: Whether the memory is load invariant.
+            dtype: The data type of the SIMD vector.
+            width: The number of elements to load.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
+            invariant: Whether the load is from invariant memory.
 
         Returns:
-            The loaded value.
+            The loaded SIMD vector.
         """
         _simd_construction_checks[dtype, width]()
         constrained[
@@ -546,7 +623,7 @@ struct UnsafePointer[
         ]()
 
         @parameter
-        if is_nvidia_gpu() and sizeof[dtype]() == 1 and alignment == 1:
+        if is_nvidia_gpu() and size_of[dtype]() == 1 and alignment == 1:
             # LLVM lowering to PTX incorrectly vectorizes loads for 1-byte types
             # regardless of the alignment that is passed. This causes issues if
             # this method is called on an unaligned pointer.
@@ -556,44 +633,27 @@ struct UnsafePointer[
 
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
-
-                @parameter
-                if volatile:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isVolatile = __mlir_attr.unit,
-                    ]((self + i).address)
-                elif invariant:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isInvariant = __mlir_attr.unit,
-                    ]((self + i).address)
-                else:
-                    v[i] = __mlir_op.`pop.load`[alignment = alignment.value](
-                        (self + i).address
-                    )
+                v[i] = __mlir_op.`pop.load`[
+                    alignment = alignment.value,
+                    isVolatile = volatile.value,
+                    isInvariant = invariant.value,
+                ]((self + i).address)
             return v
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
-        @parameter
-        if volatile:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](address)
-        elif invariant:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isInvariant = __mlir_attr.unit
-            ](address)
-        else:
-            return __mlir_op.`pop.load`[alignment = alignment.value](address)
+        return __mlir_op.`pop.load`[
+            alignment = alignment.value,
+            isVolatile = volatile.value,
+            isInvariant = invariant.value,
+        ](address)
 
     @always_inline("nodebug")
     fn load[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
@@ -632,7 +692,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[dtype, width]:
@@ -668,7 +728,7 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -701,7 +761,7 @@ struct UnsafePointer[
         offset_type: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -735,22 +795,37 @@ struct UnsafePointer[
         dtype: DType, //,
         width: Int = 1,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
-        """Stores a single element value.
+        """Stores a single element value `val` at element offset 0.
+
+        Specify `alignment` when writing to packed/unaligned memory. Requires a
+        mutable pointer. For writing at an element offset, use the overloads
+        that accept an index or scalar offset.
+
+        Example:
+
+        ```mojo
+        var p = UnsafePointer[Scalar[DType.float32]].alloc(4)
+        var vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+        p.store(vec)
+        var out = p.load[width=4]()
+        print(out)  # => [1.0, 2.0, 3.0, 4.0]
+        p.free()
+        ```
 
         Constraints:
             The width and alignment must be positive integer values.
 
         Parameters:
             dtype: The data type of SIMD vector elements.
-            width: The size of the SIMD vector.
-            alignment: The minimal alignment of the address.
-            volatile: Whether the operation is volatile or not.
+            width: The number of elements to store.
+            alignment: The minimal alignment (bytes) of the address.
+            volatile: Whether the operation is volatile.
 
         Args:
-            val: The value to store.
+            val: The SIMD value to store.
         """
         constrained[mut, _must_be_mut_err]()
         self._store[alignment=alignment, volatile=volatile](val)
@@ -760,7 +835,7 @@ struct UnsafePointer[
         dtype: DType,
         width: Int,
         *,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
         constrained[mut, _must_be_mut_err]()
@@ -769,15 +844,9 @@ struct UnsafePointer[
             alignment > 0, "alignment must be a positive integer value"
         ]()
 
-        @parameter
-        if volatile:
-            __mlir_op.`pop.store`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](val, self.bitcast[SIMD[dtype, width]]().address)
-        else:
-            __mlir_op.`pop.store`[alignment = alignment.value](
-                val, self.bitcast[SIMD[dtype, width]]().address
-            )
+        __mlir_op.`pop.store`[
+            alignment = alignment.value, isVolatile = volatile.value
+        ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
     fn strided_load[
@@ -796,7 +865,9 @@ struct UnsafePointer[
         Returns:
             A vector which is stride loaded.
         """
-        return strided_load(self, Int(stride), SIMD[DType.bool, width](True))
+        return strided_load(
+            self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn strided_store[
@@ -820,18 +891,20 @@ struct UnsafePointer[
             stride: The stride between stores.
         """
         constrained[mut, _must_be_mut_err]()
-        strided_store(val, self, Int(stride), True)
+        strided_store(
+            val, self, Int(stride), SIMD[DType.bool, width](fill=True)
+        )
 
     @always_inline("nodebug")
     fn gather[
         dtype: DType, //,
         *,
         width: Int = 1,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width] = True,
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
         default: SIMD[dtype, width] = 0,
     ) -> SIMD[dtype, width]:
         """Gathers a SIMD vector from offsets of the current pointer.
@@ -874,7 +947,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(sizeof[dtype](), Int(self))
+        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
         return gather(base, mask, default, alignment)
 
     @always_inline("nodebug")
@@ -882,12 +955,12 @@ struct UnsafePointer[
         dtype: DType, //,
         *,
         width: Int = 1,
-        alignment: Int = _default_alignment[dtype, width](),
+        alignment: Int = align_of[dtype](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
-        mask: SIMD[DType.bool, width] = True,
+        mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
     ):
         """Scatters a SIMD vector into offsets of the current pointer.
 
@@ -929,7 +1002,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(sizeof[dtype](), Int(self))
+        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
         scatter(val, base, mask, alignment)
 
     @always_inline
@@ -1000,7 +1073,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
@@ -1093,7 +1166,7 @@ struct UnsafePointer[
         T: Movable, //,
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        owned value: T,
+        var value: T,
     ):
         """Emplace a new value into the pointer location, moving from `value`.
 
@@ -1116,7 +1189,7 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_copy[
-        T: Copyable, //,
+        T: ExplicitlyCopyable, //,
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
         value: T,
@@ -1138,7 +1211,7 @@ struct UnsafePointer[
             value: The value to emplace.
         """
         constrained[mut, _must_be_mut_err]()
-        __get_address_as_uninit_lvalue(self.address) = value
+        __get_address_as_uninit_lvalue(self.address) = value.copy()
 
     @always_inline
     fn init_pointee_explicit_copy[
@@ -1204,3 +1277,7 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)
+
+
+alias OpaquePointer = UnsafePointer[NoneType]
+"""An opaque pointer, equivalent to the C `void*` type."""

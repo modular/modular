@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from typing import Any, Optional
 
 import numpy as np
+import numpy.typing as npt
 from max.profiler import traced
 
 Key = Any
@@ -24,7 +25,7 @@ Key = Any
 class SimpleNode:
     """A node in a simple trie data structure."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Pointer to the children of this node
         self.children: dict[Key, SimpleNode] = {}
         # Whether this node is the end of a word
@@ -38,11 +39,11 @@ class SimpleTrie:
     map multiple keys to multiple values. Instead, it just stores a set of keys.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.root = SimpleNode()
 
     @traced
-    def insert(self, s: Sequence[Key] | np.ndarray):
+    def insert(self, s: Sequence[Key] | npt.NDArray[np.integer[Any]]) -> None:
         """Inserts a sequence into the trie."""
         curr = self.root
         for ch in s:
@@ -53,7 +54,7 @@ class SimpleTrie:
 
     @traced
     def _search(
-        self, s: Sequence[Key] | np.ndarray
+        self, s: Sequence[Key] | npt.NDArray[np.integer[Any]]
     ) -> tuple[SimpleNode, list[Key]]:
         """Internal helper method to search for a sequence in the trie.
 
@@ -76,7 +77,7 @@ class SimpleTrie:
 
     @traced
     def find_string_with_largest_common_prefix(
-        self, target: Sequence[Key] | np.ndarray
+        self, target: Sequence[Key] | npt.NDArray[np.integer[Any]]
     ) -> Optional[tuple[Sequence[Key], int]]:
         """Returns a sequence in the trie that shares the longest common prefix
         with the target.
@@ -104,12 +105,16 @@ class SimpleTrie:
 
         return s, prefix_len
 
-    def __contains__(self, s: Sequence[Key] | np.ndarray) -> bool:
+    def __contains__(
+        self, s: Sequence[Key] | npt.NDArray[np.integer[Any]]
+    ) -> bool:
         """Checks if the trie contains the exact sequence."""
         node, matched = self._search(s)
         return len(matched) == len(s) and node.is_eow
 
-    def __delitem__(self, s: Sequence[Key] | np.ndarray) -> None:
+    def __delitem__(
+        self, s: Sequence[Key] | npt.NDArray[np.integer[Any]]
+    ) -> None:
         """Deletes a sequence from the trie."""
 
         def _remove(
@@ -144,7 +149,7 @@ class SimpleTrie:
         """Returns a formatted string representation of the trie for debugging."""
         lines: list[str] = []
 
-        def helper(node: SimpleNode, indent: int):
+        def helper(node: SimpleNode, indent: int) -> None:
             if node.is_eow:
                 lines.append(f"{'-' * indent}*")
             for ch, child in node.children.items():

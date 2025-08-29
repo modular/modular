@@ -1,0 +1,55 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+_FILECHECK_TESTS = [
+    "test_parallelize.mojo",
+    "test_reductions.mojo",
+    "test_stencil.mojo",
+    "test_tile.mojo",
+]
+
+_MOJO_COMPILE_OPTS = {
+    "test_parallelize.mojo": [
+        "-D",
+        "ASSERT=warn",
+    ],
+}
+
+_DISABLED_ASSERTIONS = [
+    "test_parallelize.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ] + _MOJO_COMPILE_OPTS.get(src, []),
+        enable_assertions = src not in _DISABLED_ASSERTIONS,
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:stdlib",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
+]

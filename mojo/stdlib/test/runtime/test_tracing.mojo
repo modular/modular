@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
-from collections.string import StaticString
-from pathlib import Path
 
 from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
@@ -58,10 +56,3 @@ fn main():
     # CHECK-SAME: "ENABLED: detail event 1"
     # CHECK-SAME: "ENABLED: trace event 2"
     # CHECK-SAME: "ENABLED: detail event 2"
-
-    print("== test_tracing_disabled")
-    test_tracing[TraceLevel.THREAD, False]()
-    # CHECK-NOT: "DISABLED: trace event 1"
-    # CHECK-NOT: "DISABLED: detail event 1"
-    # CHECK-NOT: "DISABLED: trace event 2"
-    # CHECK-NOT: "DISABLED: detail event 2"

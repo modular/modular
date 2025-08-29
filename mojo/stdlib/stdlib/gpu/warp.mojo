@@ -31,8 +31,14 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from collections.string import StringSlice
-from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
+from sys import (
+    CompilationTarget,
+    bit_width_of,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    llvm_intrinsic,
+    size_of,
+)
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
 
@@ -47,7 +53,7 @@ from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
-alias _FULL_MASK = 2**WARP_SIZE - 1
+alias _FULL_MASK = UInt(2**WARP_SIZE - 1)
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -61,32 +67,30 @@ alias _WIDTH_MASK_SHUFFLE_UP = 0
 @always_inline
 fn _shuffle[
     mnemonic: StringSlice,
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     *,
     WIDTH_MASK: Int32,
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     constrained[
-        type.is_half_float() or simd_width == 1,
+        dtype.is_half_float() or simd_width == 1,
         "Unsupported simd_width",
     ]()
 
     @parameter
-    if type is DType.float32:
+    if dtype is DType.float32:
         return llvm_intrinsic[
-            "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[type]
+            "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif type in (DType.int32, DType.uint32):
+    elif dtype in (DType.int32, DType.uint32):
         return llvm_intrinsic[
-            "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
+            "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif type in (DType.int64, DType.uint64):
-        var val_bitcast = bitcast[
-            new_type = DType.uint32, new_width = simd_width * 2
-        ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+    elif dtype in (DType.int64, DType.uint64):
+        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val_half1, offset
         )
@@ -94,13 +98,13 @@ fn _shuffle[
             mask, val_half2, offset
         )
         var result = shuffle1.interleave(shuffle2)
-        return bitcast[type, simd_width](result)
-    elif type.is_half_float():
+        return bitcast[dtype, simd_width](result)
+    elif dtype.is_half_float():
 
         @parameter
         if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[Scalar[type]](val))
+            var splatted_val = SIMD[dtype, 2](val._refine[size=1]())
             return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, splatted_val, offset
             )[0]
@@ -111,51 +115,49 @@ fn _shuffle[
             var result_packed = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, packed_val, offset
             )
-            return bitcast[type, simd_width](result_packed)
-    elif type is DType.bool:
+            return bitcast[dtype, simd_width](result_packed)
+    elif dtype is DType.bool:
         constrained[simd_width == 1, "unhandled simd width"]()
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
-        ).cast[type]()
+        ).cast[dtype]()
 
     else:
-        constrained[False, "unhandled shuffle type"]()
+        constrained[False, "unhandled shuffle dtype"]()
         return 0
 
 
 @always_inline
 fn _shuffle_amd_helper[
-    type: DType, simd_width: Int
-](dst_lane: UInt32, val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](dst_lane: UInt32, val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
-    if sizeof[SIMD[type, simd_width]]() == 4:
+    if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
         var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
             dst_lane * 4, bitcast[DType.int32, 1](val)
         )
-        return bitcast[type, simd_width](result_packed)
+        return bitcast[dtype, simd_width](result_packed)
 
     constrained[simd_width == 1, "Unsupported simd width"]()
 
     @parameter
-    if type is DType.bool:
+    if dtype is DType.bool:
         return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
-            type
+            dtype
         ]()
-    elif bitwidthof[type]() == 16:
-        var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
+    elif bit_width_of[dtype]() == 16:
+        var val_splatted = SIMD[dtype, 2](val._refine[size=1]())
         return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-    elif bitwidthof[type]() == 64:
-        var val_bitcast = bitcast[
-            new_type = DType.uint32, new_width = simd_width * 2
-        ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+    elif bit_width_of[dtype]() == 64:
+        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
         var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
         var result = shuffle1.interleave(shuffle2)
-        return bitcast[type, simd_width](result)
+        return bitcast[dtype, simd_width](result)
     else:
-        constrained[False, "unhandled shuffle type"]()
+        constrained[False, "unhandled shuffle dtype"]()
         return 0
 
 
@@ -166,8 +168,8 @@ fn _shuffle_amd_helper[
 
 @always_inline
 fn shuffle_idx[
-    type: DType, simd_width: Int, //
-](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int, //
+](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies a value from a source lane to other lanes in a warp.
 
         Broadcasts a value from a source thread in a warp to all participating threads
@@ -175,7 +177,7 @@ fn shuffle_idx[
         warp mask by default.
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32, half).
+        dtype: The data type of the SIMD elements (e.g. float32, int32, half).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -198,16 +200,15 @@ fn shuffle_idx[
             # Get value from lane 5
             result = shuffle_idx(val, 5)
         ```
-        .
     """
     return shuffle_idx(_FULL_MASK, val, offset)
 
 
 @always_inline
 fn _shuffle_idx_amd[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
     var lane: Int32 = lane_id()
@@ -222,9 +223,9 @@ fn _shuffle_idx_amd[
 
 @always_inline
 fn shuffle_idx[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     """Copies a value from a source lane to other lanes in a warp with explicit mask control.
 
@@ -233,7 +234,7 @@ fn shuffle_idx[
         operation.
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32, half).
+        dtype: The data type of the SIMD elements (e.g. float32, int32, half).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -255,7 +256,6 @@ fn shuffle_idx[
             var val = SIMD[DType.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
-        .
     """
 
     @parameter
@@ -264,8 +264,13 @@ fn shuffle_idx[
             "idx",
             WIDTH_MASK=_WIDTH_MASK,
         ](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_idx",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -275,8 +280,8 @@ fn shuffle_idx[
 
 @always_inline
 fn shuffle_up[
-    type: DType, simd_width: Int, //
-](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int, //
+](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies values from threads with lower lane IDs in the warp.
 
     Performs a shuffle operation where each thread receives a value from a thread with a
@@ -288,7 +293,7 @@ fn shuffle_up[
     - Thread 0 gets undefined value
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -304,23 +309,23 @@ fn shuffle_up[
 
 @always_inline
 fn _shuffle_up_amd[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
     var lane: Int32 = lane_id()
     var t0 = lane - offset.cast[DType.int32]()
     var t1 = lane & -WARP_SIZE
-    var dst_lane = (t0 < t1).select(lane, t0)
+    var dst_lane = t0.lt(t1).select(lane, t0)
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
 
 @always_inline
 fn shuffle_up[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     """Copies values from threads with lower lane IDs in the warp.
 
@@ -335,7 +340,7 @@ fn shuffle_up[
     - Threads not in the mask get undefined values
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -354,8 +359,13 @@ fn shuffle_up[
         return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](
             mask, val, offset
         )
-    else:
+    elif is_amd_gpu():
         return _shuffle_up_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_up",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -365,8 +375,8 @@ fn shuffle_up[
 
 @always_inline
 fn shuffle_down[
-    type: DType, simd_width: Int, //
-](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int, //
+](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies values from threads with higher lane IDs in the warp.
 
     Performs a shuffle operation where each thread receives a value from a thread with a
@@ -379,7 +389,7 @@ fn shuffle_down[
     - Last N threads get undefined values
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -395,22 +405,22 @@ fn shuffle_down[
 
 @always_inline
 fn _shuffle_down_amd[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
     var lane = lane_id()
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset > _WIDTH_MASK).select(0, offset) + lane
+    var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
 
 @always_inline
 fn shuffle_down[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     """Copies values from threads with higher lane IDs in the warp using a custom mask.
 
@@ -425,7 +435,7 @@ fn shuffle_down[
     - Last N threads get undefined values
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -443,8 +453,13 @@ fn shuffle_down[
     @parameter
     if is_nvidia_gpu():
         return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_down",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -454,8 +469,8 @@ fn shuffle_down[
 
 @always_inline
 fn shuffle_xor[
-    type: DType, simd_width: Int, //
-](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int, //
+](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Exchanges values between threads in a warp using a butterfly pattern.
 
     Performs a butterfly exchange pattern where each thread swaps values with another thread
@@ -463,7 +478,7 @@ fn shuffle_xor[
     communication pattern useful for parallel reductions and scans.
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -479,9 +494,9 @@ fn shuffle_xor[
 
 @always_inline
 fn _shuffle_xor_amd[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
     var lane: UInt32 = lane_id()
@@ -489,15 +504,15 @@ fn _shuffle_xor_amd[
     var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap
     var t2 = t1 + WARP_SIZE
-    var dst_lane = (t0 < t2).select(t0, lane)
+    var dst_lane = t0.lt(t2).select(t0, lane)
     return _shuffle_amd_helper(dst_lane, val)
 
 
 @always_inline
 fn shuffle_xor[
-    type: DType, simd_width: Int, //
-](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
+    dtype, simd_width
 ]:
     """Exchanges values between threads in a warp using a butterfly pattern with masking.
 
@@ -506,7 +521,7 @@ fn shuffle_xor[
     controlling which threads participate in the exchange.
 
     Parameters:
-        type: The data type of the SIMD elements (e.g. float32, int32).
+        dtype: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in each SIMD vector.
 
     Args:
@@ -530,14 +545,18 @@ fn shuffle_xor[
             var val = SIMD[DType.float32, 16](42.0)  # Example value
             result = shuffle_xor(mask, val, 4.0)
         ```
-        .
     """
 
     @parameter
     if is_nvidia_gpu():
         return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
-    else:
+    elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            SIMD[dtype, simd_width],
+            operation="shuffle_xor",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -549,12 +568,12 @@ fn shuffle_xor[
 fn lane_group_reduce[
     val_type: DType,
     simd_width: Int, //,
-    shuffle: fn[type: DType, simd_width: Int] (
-        val: SIMD[type, simd_width], offset: UInt32
-    ) -> SIMD[type, simd_width],
-    func: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    shuffle: fn[dtype: DType, simd_width: Int] (
+        val: SIMD[dtype, simd_width], offset: UInt32
+    ) -> SIMD[dtype, simd_width],
+    func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing -> SIMD[dtype, width],
     num_lanes: Int,
     *,
     stride: Int = 1,
@@ -587,12 +606,11 @@ fn lane_group_reduce[
 
             # Compute sum across 16 threads using shuffle down
             @parameter
-            fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+            fn add[dtype: DType, width: Int](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[DType.float32, 16](42.0)
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
-        .
     """
     var res = val
 
@@ -610,12 +628,12 @@ fn lane_group_reduce[
 fn reduce[
     val_type: DType,
     simd_width: Int, //,
-    shuffle: fn[type: DType, simd_width: Int] (
-        val: SIMD[type, simd_width], offset: UInt32
-    ) -> SIMD[type, simd_width],
-    func: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    shuffle: fn[dtype: DType, simd_width: Int] (
+        val: SIMD[dtype, simd_width], offset: UInt32
+    ) -> SIMD[dtype, simd_width],
+    func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing -> SIMD[dtype, width],
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Performs a generic warp-wide reduction operation using shuffle operations.
 
@@ -643,13 +661,12 @@ fn reduce[
 
         # Compute warp-wide sum using shuffle down
         @parameter
-        fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) capturing -> SIMD[type, width]:
+        fn add[dtype: DType, width: Int](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
         val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
         result = reduce[shuffle_down, add](val)
     ```
-    .
     """
     return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
 
@@ -823,11 +840,11 @@ fn sum[
 
     This function provides two reduction methods:
     1. Warp shuffle: Uses warp shuffle operations to efficiently sum values across threads
-    2. Tensor core: Leverages tensor cores for high-performance reductions, with type casting
+    2. Tensor core: Leverages tensor cores for high-performance reductions, with dtype casting
 
-    The tensor core method will cast the input to the specified intermediate type before
+    The tensor core method will cast the input to the specified intermediate dtype before
     reduction to ensure compatibility with tensor core operations. The warp shuffle method
-    requires the output type to match the input type.
+    requires the output dtype to match the input dtype.
 
     Parameters:
         intermediate_type: The data type to cast to when using tensor core reduction.
@@ -839,10 +856,10 @@ fn sum[
 
     Returns:
         A scalar containing the sum of the input values across all threads in the warp,
-        cast to the specified output type.
+        cast to the specified output dtype.
 
     Constraints:
-        - For warp shuffle reduction, output_type must match the input value type.
+        - For warp shuffle reduction, output_type must match the input value dtype.
         - For tensor core reduction, input will be cast to intermediate_type.
     """
 
@@ -851,12 +868,12 @@ fn sum[
         constrained[
             output_type == x.dtype,
             (
-                "the output type must match the input value for warp-level"
+                "the output dtype must match the input value for warp-level"
                 " reduction"
             ),
         ]()
 
-        return rebind[Scalar[output_type]](sum(x.reduce_add()))
+        return sum(x.reduce_add())._refine[output_type]()
     else:
         return tc_reduce[output_type](x.cast[intermediate_type]())
 
@@ -868,12 +885,12 @@ fn sum[
 
 @always_inline
 fn prefix_sum[
-    type: DType, //,
-    intermediate_type: DType = type,
+    dtype: DType, //,
+    intermediate_type: DType = dtype,
     *,
-    output_type: DType = type,
+    output_type: DType = dtype,
     exclusive: Bool = False,
-](x: Scalar[type]) -> Scalar[output_type]:
+](x: Scalar[dtype]) -> Scalar[output_type]:
     """Computes a warp-level prefix sum (scan) operation.
 
     Performs an inclusive or exclusive prefix sum across threads in a warp using
@@ -891,10 +908,10 @@ fn prefix_sum[
     $$$
 
     Parameters:
-        type: The data type of the input SIMD elements.
+        dtype: The data type of the input SIMD elements.
         intermediate_type: Type used for intermediate calculations (defaults to
-                          input type).
-        output_type: The desired output data type (defaults to input type).
+                          input dtype).
+        output_type: The desired output data type (defaults to input dtype).
         exclusive: If True, performs exclusive scan where each thread receives
                    the sum of all previous threads. If False (default), performs
                    inclusive scan where each thread receives the sum including
@@ -905,7 +922,7 @@ fn prefix_sum[
 
     Returns:
         A scalar containing the prefix sum at the current thread's position in
-        the warp, cast to the specified output type.
+        the warp, cast to the specified output dtype.
     """
     var res = x.cast[intermediate_type]().reduce_add()
 
@@ -913,7 +930,7 @@ fn prefix_sum[
     for i in range(log2_floor(WARP_SIZE)):
         alias offset = 1 << i
         var n = shuffle_up(res, offset)
-        if lane_id() >= offset:
+        if lane_id() >= UInt(offset):
             res += n
 
     @parameter
@@ -1183,4 +1200,4 @@ fn broadcast(val: UInt) -> UInt:
     Returns:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
-    return Int(shuffle_idx(Int32(val), 0))
+    return UInt(Int(shuffle_idx(Int32(val), 0)))

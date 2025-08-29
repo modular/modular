@@ -23,9 +23,10 @@ import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.interfaces import LogProbabilities
+from max.nn import Module, ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -33,7 +34,7 @@ from max.nn.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.core import LogProbabilities, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -43,10 +44,14 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.lib.log_probabilities import compute_log_probabilities_ragged
+from max.pipelines.lib.log_probabilities import (
+    compute_log_probabilities_ragged,
+    log_probabilities_ragged_graph,
+)
 from transformers import AutoConfig
 
 from .deepseekV2 import DeepseekV2
+from .distributed_deepseekV2 import DistributedDeepseekV2
 from .model_config import DeepseekV2Config
 
 logger = logging.getLogger("max.pipelines")
@@ -63,17 +68,21 @@ class DeepseekV2Inputs(ModelInputs):
 
     tokens: Tensor
     input_row_offsets: Tensor
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
     return_n_logits: Tensor
 
     def __init__(
         self,
         tokens: Tensor,
         input_row_offsets: Tensor,
+        signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: Tensor | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
+        self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
         if return_n_logits is None:
             # Provide a default value if none is provided
@@ -115,32 +124,53 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         )
         self.return_n_logits = return_n_logits
         self.model = self.load_model(session)
+        self.logprobs_device = devices[0]
+        self.logprobs_model = self.load_logprobs_model(session)
+
+        # Initialize state needed for communication collectives.
+        # Contents of signal buffer should be filled with zeros.
+        self.signal_buffers = (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
 
     def execute(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
-        model_inputs = cast(DeepseekV2Inputs, model_inputs)
-        # keep mypy happy.
-        assert model_inputs.kv_cache_inputs is not None, (
-            "DeepseekV2 has KV cache inputs"
-        )
+        assert isinstance(model_inputs, DeepseekV2Inputs)
+
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.signal_buffers,
+            *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
+            assert isinstance(model_outputs[0], Tensor)
+            assert isinstance(model_outputs[1], Tensor)
+            assert isinstance(model_outputs[2], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[1]),
-                logit_offsets=cast(Tensor, model_outputs[2]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[1],
+                logit_offsets=model_outputs[2],
             )
         else:
+            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
-                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=model_outputs[0],
+                logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -152,8 +182,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
@@ -164,6 +193,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
                 self.devices[0]
             ),
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
@@ -175,12 +205,13 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         next_tokens: Tensor,
         prev_model_inputs: ModelInputs,
     ) -> DeepseekV2Inputs:
-        prev_model_inputs = cast(DeepseekV2Inputs, prev_model_inputs)
+        assert isinstance(prev_model_inputs, DeepseekV2Inputs)
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
         return DeepseekV2Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
         )
@@ -265,18 +296,78 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=huggingface_config.num_hidden_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
         )
 
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
+    def graph_inputs(self) -> tuple[TensorType]:
+        # Generate DeviceRef
+        device_ref = DeviceRef.from_device(self.devices[0])
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=device_ref
+        )
+
+        kv_inputs = self.kv_manager.input_symbols()
+
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+
+        if len(self.devices) > 1:
+            # Flatten kv types for each device
+            flattened_kv_types = [
+                kv_type for sublist in kv_inputs for kv_type in sublist
+            ]
+            signals = Signals(
+                devices=(DeviceRef(d.label, d.id) for d in self.devices)
+            )
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *signals.input_types(),
+                *flattened_kv_types,
+            )
+        else:
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *kv_inputs[0],
+            )
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[TensorValue]
+    ) -> list[tuple[TensorValue, ...]]:
+        kv_params = DeepseekV2Config.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        n_devices = kv_params.n_devices
+        fetch_types = self.kv_manager.input_symbols()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev = [
+            tuple(
+                kv_inputs_flat[
+                    i * len_of_kv_tuple_per_dev : (i + 1)
+                    * len_of_kv_tuple_per_dev
+                ]
+            )
+            for i in range(n_devices)
+        ]
+        return kv_caches_per_dev
+
+    def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
         assert self.pipeline_config.max_batch_size, (
@@ -290,9 +381,6 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         if not isinstance(self.weights, SafetensorWeights):
             msg = "only safetensors weights supported in DeepseekV2."
             raise ValueError(msg)
-
-        logger.info("Building and compiling model...")
-        before = time.perf_counter()
 
         pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
@@ -360,69 +448,109 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             kv_params=kv_params,
             devices=device_refs,
         )
-        nn_model = DeepseekV2(model_config)
 
-        # print("Expected weights:")
-        # print("\n".join(f"{k}: {v}\n" for k, v in nn_model.raw_state_dict().items()))
+        # Get Graph Inputs
+        graph_inputs = self.graph_inputs()
 
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.GPU(),
-        )
-        return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.GPU(),
-        )
-        kv_cache_types = self.kv_manager.input_symbols()[0]
-        with Graph(
-            "DeepseekV2",
-            input_types=[
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                *kv_cache_types,
-            ],
-        ) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
+        # Build Graph
+        nn_model: Module
+        if len(self.devices) > 1:
+            nn_model = DistributedDeepseekV2(model_config)
+            nn_model.load_state_dict(
+                state_dict, weight_alignment=1, strict=False
             )
-            # This is just needed for type checking.
-            kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
-            outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets,
-                kv_cache_inputs=kv_cache_tensors,
-                return_n_logits=return_n_logits.tensor,
-            )
-            graph.output(*outputs)
+            self.state_dict = nn_model.state_dict()
 
-        model = session.load(graph, weights_registry=nn_model.state_dict())
+            with Graph("deepseekV2", input_types=[*graph_inputs]) as graph:
+                tokens, input_row_offsets, return_n_logits, *variadic_args = (
+                    graph.inputs
+                )
+
+                # Multi-GPU passes a signal buffer per device: unmarshal these.
+                signal_buffers = [
+                    v.buffer for v in variadic_args[: len(self.devices)]
+                ]
+
+                # Unmarshal the remaining arguments, which are for KV cache.
+                kv_cache = [
+                    v.tensor for v in variadic_args[len(self.devices) :]
+                ]
+
+                kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+
+                outputs = nn_model(
+                    tokens.tensor,
+                    signal_buffers,
+                    kv_caches_per_dev,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
+                )
+
+                graph.output(*outputs)
+                return graph
+
+        else:
+            nn_model = DeepseekV2(model_config)
+            nn_model.load_state_dict(state_dict, weight_alignment=1)
+            self.state_dict = nn_model.state_dict()
+
+            with Graph("deepseekV2", input_types=[*graph_inputs]) as graph:
+                tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                    graph.inputs
+                )
+                outputs = nn_model(
+                    tokens.tensor,
+                    [inp.tensor for inp in kv_cache_inputs],
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
+                )
+                graph.output(*outputs)
+                return graph
+
+    def load_model(
+        self,
+        session: InferenceSession,
+    ) -> Model:
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+
+        graph = self._build_graph()
+        after_build = time.perf_counter()
+
+        logger.info(f"Building graph took {after_build - before:.6f} seconds")
+
+        before_compile = time.perf_counter()
+        model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
+
+        logger.info(
+            f"Compiling model took {after - before_compile:.6f} seconds"
+        )
+
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
         )
         return model
 
+    def load_logprobs_model(self, session: InferenceSession) -> Model:
+        # TODO: Perhaps 'levels' ought to be configurable.
+        graph = log_probabilities_ragged_graph(
+            DeviceRef.from_device(self.logprobs_device), levels=3
+        )
+        return session.load(graph)
+
     def compute_log_probabilities(
         self,
+        session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
         next_tokens: Tensor,
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None] | None:
-        if model_outputs.logits is not None:
-            logits = model_outputs.logits.to_numpy()
-        else:
-            logits = None
+        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits.to_numpy()
+        next_token_logits = model_outputs.next_token_logits
         sampled_tokens = next_tokens.to_numpy()
 
         model_inputs = cast(DeepseekV2Inputs, model_inputs)
@@ -430,6 +558,8 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         input_row_offsets = model_inputs.input_row_offsets.to_numpy()
 
         return compute_log_probabilities_ragged(
+            self.logprobs_device,
+            self.logprobs_model,
             input_row_offsets=input_row_offsets,
             logits=logits,
             next_token_logits=next_token_logits,

@@ -18,25 +18,60 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import click
 from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
+    MAXConfig,
     MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from typing_extensions import ParamSpec, TypeGuard
 
 from .device_options import DevicesOptionType
 
-VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float]
+VALID_CONFIG_TYPES = [str, bool, Enum, Path, DeviceSpec, int, float, dict]
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+class JSONType(click.ParamType):
+    """Click parameter type for JSON input."""
+
+    name = "json"
+
+    def convert(
+        self,
+        value: Any,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> Any:
+        if isinstance(value, dict):
+            return value
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            self.fail(f"Invalid JSON: {e}", param, ctx)
 
 
 def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
@@ -44,7 +79,7 @@ def get_interior_type(type_hint: Union[type, str, Any]) -> type[Any]:
     if len(interior_args) > 1:
         msg = (
             "Parsing does not currently supported Union type, with more than"
-            " one non-None type: {type_hint}"
+            f" one non-None type: {type_hint}"
         )
         raise ValueError(msg)
 
@@ -90,6 +125,8 @@ def get_field_type(field_type: Any):
     # Update the field_type to be format specific.
     if field_type == Path:
         field_type = click.Path(path_type=pathlib.Path)
+    elif get_origin(field_type) is dict or field_type is dict:
+        field_type = JSONType()
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
@@ -125,7 +162,7 @@ def create_click_option(
     help_for_fields: dict[str, str],
     dataclass_field: Field,
     field_type: Any,
-) -> click.option:  # type: ignore
+) -> Callable[[Callable], Callable]:
     # Get Help text.
     help_text = help_for_fields.get(dataclass_field.name, None)
 
@@ -141,7 +178,9 @@ def create_click_option(
     )
 
 
-def config_to_flag(cls, prefix: Optional[str] = None):
+def config_to_flag(
+    cls: type[MAXConfig], prefix: Optional[str] = None
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     options = []
     if hasattr(cls, "help"):
         help_text = cls.help()
@@ -173,21 +212,22 @@ def config_to_flag(cls, prefix: Optional[str] = None):
             )
         options.append(new_option)
 
-    def apply_flags(func):
+    def apply_flags(func: Callable[_P, _R]) -> Callable[_P, _R]:
         for option in reversed(options):
-            func = option(func)  # type: ignore
+            func = option(func)
         return func
 
     return apply_flags
 
 
-def pipeline_config_options(func):
+def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)
+    @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)
     @click.option(
@@ -204,13 +244,67 @@ def pipeline_config_options(func):
             " or CPU if no GPUs are available (--devices=cpu)."
         ),
     )
+    @click.option(
+        "--draft-devices",
+        is_flag=False,
+        type=DevicesOptionType(),
+        show_default=False,
+        default="default",
+        help=(
+            "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
+            " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"
+            " provided optionally to indicate the device ID to target. If not"
+            " provided, the model will run on the first available GPU (--devices=gpu),"
+            " or CPU if no GPUs are available (--devices=cpu)."
+        ),
+    )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        def is_str_or_list_of_int(value: Any) -> TypeGuard[str | list[int]]:
+            return isinstance(value, str) or (
+                isinstance(value, list)
+                and all(isinstance(x, int) for x in value)
+            )
+
         # Remove the options from kwargs and replace with unified device_specs.
-        devices: str | list[int] = kwargs.pop("devices")
+        devices = kwargs.pop("devices")
+        draft_devices = kwargs.pop("draft_devices")
+        assert is_str_or_list_of_int(devices)
+        assert is_str_or_list_of_int(draft_devices)
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
+        kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
+            draft_devices
+        )
 
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def parse_task_flags(task_flags: tuple[str, ...]) -> dict[str, str]:
+    """Parse task flags into a dictionary.
+
+    The flags must be in the format `flag_name=flag_value`.
+
+    This requires that the task flags are:
+    1. Passed and interpreted as strings, including their values.
+    2. Be passed as a list of strings via explicit --task-arg flags. For example:
+        --task-arg=flag1=value1 --task-arg=flag2=value2
+
+    Args:
+        task_flags: A tuple of task flags.
+
+    Returns:
+        A dictionary of parsed flag values.
+    """
+    flags = {}
+    for flag in task_flags:
+        if "=" not in flag or flag.startswith("--"):
+            raise ValueError(
+                f"Flag must be in format 'flag_name=flag_value', got: {flag}"
+            )
+
+        flag_name, flag_value = flag.split("=", 1)
+        flags[flag_name.replace("-", "_")] = flag_value
+    return flags

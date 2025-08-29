@@ -15,7 +15,6 @@ import linalg.vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -35,7 +34,6 @@ from layout.tensor_core_async import (
 from testing import assert_almost_equal
 
 from utils import StaticTuple
-from utils.index import Index
 
 
 fn wgmma_kernel_ss[
@@ -95,10 +93,8 @@ fn wgmma_kernel_ss[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -115,9 +111,11 @@ fn wgmma_kernel_ss[
     var warp_id = thread_idx.x // 32
     var lane_id = thread_idx.x % 32
 
-    var th_local_res = c_gmem.tile[16, WMMA_N](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lane_id)
+    var th_local_res = (
+        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lane_id)
+    )
 
     for i in range(num_output_regs):
         th_local_res[(i // 2) % 2, i // 4][i % 2] = c_reg[i].cast[

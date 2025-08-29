@@ -19,11 +19,21 @@ from .paged_cache import (
     PagedKVCacheManager,
     PagedKVCacheType,
 )
+from .transfer_engine import (
+    KVTransferEngine,
+    KVTransferEngineMetadata,
+    XferReqData,
+    available_port,
+)
 
 __all__ = [
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
-    "PagedKVCacheManager",
+    "KVTransferEngine",
+    "KVTransferEngineMetadata",
     "PagedKVCacheCollection",
+    "PagedKVCacheManager",
     "PagedKVCacheType",
+    "XferReqData",
+    "available_port",
 ]

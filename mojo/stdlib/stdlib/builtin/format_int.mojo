@@ -16,7 +16,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import InlineArray, List, Optional
 from os import abort
 
 alias _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -325,18 +324,16 @@ fn _try_write_int[
         #   Support printing non-null-terminated strings on GPU and switch
         #   back to this code without a workaround.
         # ptr=digit_chars_array,
-        var zero = StringSlice[ImmutableAnyOrigin](
-            ptr=zero_buf.unsafe_ptr(), length=1
-        )
-        writer.write(zero)
+        writer.write(StringSlice(ptr=zero_buf.unsafe_ptr(), length=1))
 
         return None
 
     # Create a buffer to store the formatted value
 
-    # Stack allocate enough bytes to store any formatted 64-bit integer
+    # Stack allocate enough bytes to store any formatted integer up to 256 bits
     # TODO: use a dynamic size when #2194 is resolved
-    alias CAPACITY: Int = 64 + 1  # +1 for storing NUL terminator.
+    # +1 for storing NUL terminator.
+    alias CAPACITY: Int = max(64, dtype.bitwidth()) + 1
 
     var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
 
@@ -402,7 +399,7 @@ fn _try_write_int[
 
     # SAFETY:
     #   Create a slice to only those bytes in `buf` that have been initialized.
-    var str_slice = StringSlice[__origin_of(buf)](ptr=buf_ptr, length=len)
+    var str_slice = StringSlice[__origin_of(buf)](ptr=buf_ptr, length=UInt(len))
 
     writer.write(str_slice)
 

@@ -15,10 +15,10 @@ from math import align_down, ceildiv
 
 from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, block_idx, global_idx, thread_idx
+from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_false
 
 from utils.index import Index

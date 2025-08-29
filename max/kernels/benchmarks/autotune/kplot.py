@@ -42,7 +42,7 @@ MARKER_COLORS = [
 ]
 
 
-def _get_max_groups_per_chart(x_labels, width_px, font_size_pt):
+def _get_max_groups_per_chart(x_labels, width_px, font_size_pt):  # noqa: ANN001
     x_labels_len = [
         ([len(t) for t in entry.split("<br>")]) for entry in x_labels
     ]
@@ -190,7 +190,7 @@ def draw_plot(
         )
 
 
-def get_labels_by_pivots(x_labels, pivots):
+def get_labels_by_pivots(x_labels, pivots):  # noqa: ANN001
     df = label_to_df(x_labels)
     assert len(df) == len(x_labels)
     pivot_labels = []
@@ -202,11 +202,11 @@ def get_labels_by_pivots(x_labels, pivots):
     return pivot_labels
 
 
-def wrap_labels(x_labels):
+def wrap_labels(x_labels):  # noqa: ANN001
     return [entry.replace("$", "") for entry in x_labels]
 
 
-def label_to_df(x_labels):
+def label_to_df(x_labels):  # noqa: ANN001
     ds = []
     for label in x_labels:
         vals = label.replace("$", "").split("/")
@@ -220,7 +220,7 @@ def label_to_df(x_labels):
     return df
 
 
-def extract_pivots(x_labels):
+def extract_pivots(x_labels):  # noqa: ANN001
     df = label_to_df(x_labels)
     pivot_columns = []
     for c in df.columns:
@@ -254,7 +254,7 @@ def parse_and_plot(
     key_col: str,
     target_col: str = "1",
     compare: bool = False,
-    pivots: list[str] = [],
+    pivots: list[str] = [],  # noqa: B006
     cfg: PlotConfig = PlotConfig(),
     force: bool = False,
 ) -> None:
@@ -465,7 +465,7 @@ def parse_and_plot(
 )
 @click.argument("input_files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    input_files,
+    input_files,  # noqa: ANN001
     label_list: list[str],
     output_prefix: Optional[str],
     plot_col: str,
@@ -478,7 +478,7 @@ def cli(
     groups_per_chart: int,
     force: bool,
     verbose: bool,
-    pivot,
+    pivot,  # noqa: ANN001
 ) -> None:
     """CLI entry point for plotting benchmark results."""
     input_path_list = [Path(file).resolve() for file in input_files]

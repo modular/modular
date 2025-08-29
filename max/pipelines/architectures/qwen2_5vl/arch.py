@@ -11,36 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from max.graph.weights import WeightsFormat
+from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
-    TextAndVisionTokenizer,
 )
 
 from .model import Qwen2_5VLModel
+from .tokenizer import Qwen2_5VLTokenizer
+from .weight_adapters import convert_qwen2_5vl_model_state_dict
 
 qwen2_5_vl_arch = SupportedArchitecture(
     name="Qwen2_5_VLForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen2.5-VL-3B-Instruct",
+        "Qwen/Qwen2.5-VL-7B-Instruct",
     ],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-            KVCacheStrategy.CONTINUOUS,
-        ],
+        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+    },
+    weight_adapters={
+        WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,
     },
     pipeline_model=Qwen2_5VLModel,
-    tokenizer=TextAndVisionTokenizer,
+    tokenizer=Qwen2_5VLTokenizer,
 )

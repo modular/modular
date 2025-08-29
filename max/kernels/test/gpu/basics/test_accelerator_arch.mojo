@@ -20,12 +20,21 @@ def main():
     var accelerator_arch = _accelerator_arch()
 
     assert_true(
+        # NVIDIA
         accelerator_arch == "nvidia:80"
         or accelerator_arch == "nvidia:84"
         or accelerator_arch == "nvidia:86"
         or accelerator_arch == "nvidia:89"
         or accelerator_arch == "nvidia:90"
         or accelerator_arch == "nvidia:90a"
-        or accelerator_arch == "amdgpu:94",
+        or accelerator_arch == "nvidia:100"
+        or accelerator_arch == "nvidia:100a"
+        # AMD
+        or accelerator_arch == "amdgpu:gfx942"
+        or accelerator_arch == "amdgpu:gfx1101"
+        or accelerator_arch == "amdgpu:gfx1102"
+        or accelerator_arch == "amdgpu:gfx1103"
+        or accelerator_arch == "amdgpu:gfx1200"
+        or accelerator_arch == "amdgpu:gfx1201",
         "Expected specific accelerator_archs, got: " + accelerator_arch,
     )

@@ -19,7 +19,11 @@ from memory import bitcast
 ```
 """
 
-from sys import bitwidthof
+from sys import bit_width_of
+from sys import (
+    is_amd_gpu,
+    is_nvidia_gpu,
+)
 
 # ===-----------------------------------------------------------------------===#
 # bitcast
@@ -28,11 +32,11 @@ from sys import bitwidthof
 
 @always_inline("nodebug")
 fn bitcast[
+    src_dtype: DType,
+    src_width: Int, //,
     dtype: DType,
-    width: Int, //,
-    new_type: DType,
-    new_width: Int = width,
-](val: SIMD[dtype, width]) -> SIMD[new_type, new_width]:
+    width: Int = src_width,
+](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
@@ -47,19 +51,19 @@ fn bitcast[
     ```mojo
     from memory import bitcast
 
-    one = SIMD[DType.uint32, 1](4631)
-    many = bitcast[DType.uint8, 4](one)
-    print(one, many) # 4631 [23, 18, 0, 0]
+    u32 = SIMD[DType.uint32, 1](4631)
+    u8x4 = bitcast[DType.uint8, 4](u32)
+    print(u32, u8x4) # 4631 [23, 18, 0, 0]
     ```
 
     Constraints:
         The bitwidth of the two types must be the same.
 
     Parameters:
-        dtype: The source type.
-        width: The source width.
-        new_type: The target type.
-        new_width: The target width.
+        src_dtype: The source type.
+        src_width: The source width.
+        dtype: The target type.
+        width: The target width.
 
     Args:
         val: The source value.
@@ -69,39 +73,102 @@ fn bitcast[
         source SIMD value.
     """
     constrained[
-        bitwidthof[SIMD[dtype, width]]()
-        == bitwidthof[SIMD[new_type, new_width]](),
+        bit_width_of[SIMD[dtype, width]]() == bit_width_of[__type_of(val)](),
         "the source and destination types must have the same bitwidth",
     ]()
 
+    # TODO(MOCO-2179): Change this to be more precise check for Arm devices, or
+    # generate different ops on Arm.
     @parameter
-    if new_type == dtype:
-        return rebind[SIMD[new_type, new_width]](val)
-    return __mlir_op.`pop.bitcast`[
-        _type = SIMD[new_type, new_width]._mlir_type
-    ](val.value)
+    if not is_nvidia_gpu() and not is_amd_gpu():
+        # Arm doesnt support casting between float16 and two ints.
+        constrained[
+            not (
+                src_dtype == DType.float16
+                and src_width == 1
+                and dtype == DType.int8
+                and width == 2
+            ),
+            "Can't cast a float16 directly to a 2 x i8",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.float16
+                and src_width == 1
+                and dtype == DType.uint8
+                and width == 2
+            ),
+            "Can't cast a float16 directly to a 2 x ui8",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.int8
+                and src_width == 2
+                and dtype == DType.float16
+                and width == 1
+            ),
+            "Can't cast a 2 x i8 directly to a float16",
+        ]()
+        constrained[
+            not (
+                src_dtype == DType.uint8
+                and src_width == 2
+                and dtype == DType.float16
+                and width == 1
+            ),
+            "Can't cast a 2 x ui8 directly to a float16",
+        ]()
+
+    @parameter
+    if dtype == src_dtype:
+        return val._refine[dtype, width]()
+    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
+        val.value
+    )
+    return SIMD(mlir_value=res)
 
 
 @always_inline("builtin")
 fn _uint(n: Int) -> DType:
     # fmt: off
     return (
-        DType.uint8 if n == 8
-        else DType.uint16 if n == 16
-        else DType.uint32 if n == 32
-        else DType.uint64 if n == 64
-        else DType.uint128 if n == 128
-        else DType.uint256 if n == 256
-        else DType.invalid
+        DType._uint1 if n == 1 else
+        DType._uint2 if n == 2 else
+        DType._uint4 if n == 4 else
+        DType.uint8 if n == 8 else
+        DType.uint16 if n == 16 else
+        DType.uint32 if n == 32 else
+        DType.uint64 if n == 64 else
+        DType.uint128 if n == 128 else
+        DType.uint256 if n == 256 else
+        DType.invalid
+    )
+    # fmt: on
+
+
+fn _llvm_bitwidth(dtype: DType) -> Int:
+    # fmt: off
+    return (
+        1 if dtype is DType._uint1 else
+        2 if dtype is DType._uint2 else
+        4 if dtype is DType._uint4 else
+        8 if dtype is DType.uint8 else
+        16 if dtype is DType.uint16 else
+        32 if dtype is DType.uint32 else
+        64 if dtype is DType.uint64 else
+        128 if dtype is DType.uint128 else
+        256 if dtype is DType.uint256 else
+        -1
     )
     # fmt: on
 
 
 @always_inline("nodebug")
 fn pack_bits[
-    width: Int, //,
-    new_type: DType = _uint(width),
-](val: SIMD[DType.bool, width]) -> Scalar[new_type]:
+    src_width: Int, //,
+    dtype: DType = _uint(src_width),
+    width: Int = 1,
+](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 
     Examples:
@@ -111,18 +178,19 @@ fn pack_bits[
     ```mojo
     from memory import pack_bits
 
-    flags = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
-    i = pack_bits[DType.uint8](flags)
-    print(flags, i) # [True, True, False, True, False, False, False, False] 11
+    bits = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
+    u8 = pack_bits[DType.uint8](bits)
+    print(bits, u8) # [True, True, False, True, False, False, False, False] 11
     ```
 
     Constraints:
-        The width of the bool vector must be the same as the bitwidth of the
-        target type.
+        The logical bitwidth of the bool vector must be the same as the bitwidth of the
+        target type. The target type must be a unsigned type.
 
     Parameters:
-        width: The source width.
-        new_type: The target type.
+        src_width: The source width.
+        dtype: The target type.
+        width: The target width.
 
     Args:
         val: The source value.
@@ -131,14 +199,14 @@ fn pack_bits[
         A new integer scalar which has the same bitwidth as the bool vector.
     """
     constrained[
-        width == bitwidthof[Scalar[new_type]](),
+        dtype.is_unsigned() and _llvm_bitwidth(dtype) * width == src_width,
         (
-            "the width of the bool vector must be the same as the bitwidth of"
-            " the target type. "
+            "the logical bitwidth of the bool vector must be the same as the"
+            " target type"
         ),
-        "Scalar bool (width=1) is not supported." if width == 1 else "",
     ]()
 
-    return __mlir_op.`pop.bitcast`[_type = Scalar[new_type]._mlir_type](
+    var res = __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )
+    return SIMD(mlir_value=res)

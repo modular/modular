@@ -20,13 +20,9 @@ from random import seed
 """
 
 import math
-from collections import List, Optional
 from math import floor
-from sys import bitwidthof, external_call
-from sys.ffi import OpaquePointer
+from sys import external_call
 from time import perf_counter_ns
-
-from memory import UnsafePointer
 
 
 fn _get_random_state() -> OpaquePointer:
@@ -38,7 +34,7 @@ fn _get_random_state() -> OpaquePointer:
 
 fn seed():
     """Seeds the random number generator using the current time."""
-    seed(perf_counter_ns())
+    seed(Int(perf_counter_ns()))
 
 
 fn seed(a: Int):
@@ -147,7 +143,7 @@ fn rand[
     @parameter
     if dtype.is_floating_point():
         if scale_val >= 0:
-            var scale_double: Float64 = (1 << scale_val)
+            var scale_double: Float64 = 1 << scale_val
             for i in range(size):
                 var rnd = random_float64(min, max)
                 ptr[i] = (floor(rnd * scale_double) / scale_double).cast[

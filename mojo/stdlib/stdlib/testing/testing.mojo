@@ -30,7 +30,7 @@ def main():
         print(e)
 ```
 """
-from collections import Optional
+
 from math import isclose
 
 from builtin._location import __call_location, _SourceLocation
@@ -64,7 +64,7 @@ fn assert_true[
     Args:
         val: The value to assert to be True.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -90,7 +90,7 @@ fn assert_false[
     Args:
         val: The value to assert to be False.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -119,7 +119,7 @@ fn assert_equal[
         lhs: The lhs of the equality.
         rhs: The rhs of the equality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -133,7 +133,7 @@ fn assert_equal[
         )
 
 
-# TODO: Remove the PythonObject, String, SIMD and List overloads once we have
+# TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
 @always_inline
 fn assert_equal(
@@ -150,7 +150,7 @@ fn assert_equal(
         lhs: The lhs of the equality.
         rhs: The rhs of the equality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -158,41 +158,6 @@ fn assert_equal(
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
-        )
-
-
-@always_inline
-fn assert_equal[
-    dtype: DType, size: Int
-](
-    lhs: SIMD[dtype, size],
-    rhs: SIMD[dtype, size],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that the input values are equal. If it is not then an
-    Error is raised.
-
-    Parameters:
-        dtype: The dtype of the left- and right-hand-side SIMD vectors.
-        size: The width of the left- and right-hand-side SIMD vectors.
-
-    Args:
-        lhs: The lhs of the equality.
-        rhs: The rhs of the equality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if any(lhs != rhs):
-        raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
-            msg=msg,
-            loc=location.or_else(__call_location()),
         )
 
 
@@ -215,7 +180,7 @@ fn assert_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -254,7 +219,7 @@ fn assert_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -275,35 +240,38 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal[
-    D: DType
+    O: ImmutableOrigin,
 ](
-    lhs: List[Scalar[D]],
-    rhs: List[Scalar[D]],
+    lhs: StringSlice[O],
+    rhs: String,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that two lists are equal.
-
-    Parameters:
-        D: A DType.
-
-    Args:
-        lhs: The left-hand side list.
-        rhs: The right-hand side list.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    var length = len(lhs)
-    if (
-        length != len(rhs)
-        or memcmp(lhs.unsafe_ptr(), rhs.unsafe_ptr(), length) != 0
-    ):
+    """Asserts that a `StringSlice` is equal to a `String`."""
+    if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
+            rhs,
+            msg=msg,
+            loc=location.or_else(__call_location()),
+        )
+
+
+@always_inline
+fn assert_equal[
+    O: ImmutableOrigin,
+](
+    lhs: String,
+    rhs: StringSlice[O],
+    msg: String = "",
+    *,
+    location: Optional[_SourceLocation] = None,
+) raises:
+    """Asserts that a `String` is equal to a `StringSlice`."""
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            lhs,
             rhs.__str__(),
             msg=msg,
             loc=location.or_else(__call_location()),
@@ -311,14 +279,14 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal(
+fn assert_equal_pyobj(
     lhs: PythonObject,
     rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that the input values are equal. If it is not then an Error
+    """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
 
     Args:
@@ -359,7 +327,7 @@ fn assert_not_equal[
         lhs: The lhs of the inequality.
         rhs: The rhs of the inequality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -388,7 +356,7 @@ fn assert_not_equal(
         lhs: The lhs of the inequality.
         rhs: The rhs of the inequality.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -396,41 +364,6 @@ fn assert_not_equal(
     if lhs == rhs:
         raise _assert_cmp_error["`left != right` comparison"](
             lhs, rhs, msg=msg, loc=location.or_else(__call_location())
-        )
-
-
-@always_inline
-fn assert_not_equal[
-    dtype: DType, size: Int
-](
-    lhs: SIMD[dtype, size],
-    rhs: SIMD[dtype, size],
-    msg: String = "",
-    *,
-    location: Optional[_SourceLocation] = None,
-) raises:
-    """Asserts that the input values are not equal. If it is not then an
-    Error is raised.
-
-    Parameters:
-        dtype: The dtype of the left- and right-hand-side SIMD vectors.
-        size: The width of the left- and right-hand-side SIMD vectors.
-
-    Args:
-        lhs: The lhs of the inequality.
-        rhs: The rhs of the inequality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if all(lhs == rhs):
-        raise _assert_cmp_error["`left != right` comparison"](
-            String(lhs),
-            String(rhs),
-            msg=msg,
-            loc=location.or_else(__call_location()),
         )
 
 
@@ -453,7 +386,7 @@ fn assert_not_equal[
         lhs: The left-hand side list.
         rhs: The right-hand side list.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -502,7 +435,7 @@ fn assert_almost_equal[
         atol: The absolute tolerance.
         rtol: The relative tolerance.
         equal_nan: Whether to treat nans as equal.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -549,7 +482,7 @@ fn assert_is[
         lhs: The lhs of the `is` statement.
         rhs: The rhs of the `is` statement.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -583,7 +516,7 @@ fn assert_is_not[
         lhs: The lhs of the `is not` statement.
         rhs: The rhs of the `is not` statement.
         msg: The message to be printed if the assertion fails.
-        location: The location of the error (default to the `__call_location`).
+        location: The location of the error (defaults to `__call_location`).
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
@@ -600,7 +533,7 @@ fn assert_is_not[
 fn _assert_cmp_error[
     cmp: String
 ](lhs: String, rhs: String, *, msg: String, loc: _SourceLocation) -> String:
-    var err = (cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs)
+    var err = cmp + " failed:\n   left: " + lhs + "\n  right: " + rhs
     if msg:
         err += "\n  reason: " + msg
     return _assert_error(err, loc)
@@ -617,11 +550,11 @@ struct assert_raises:
 
     # Good! Caught the raised error, test passes
     with assert_raises():
-        raise "SomeError"
+        raise Error("SomeError")
 
     # Also good!
     with assert_raises(contains="Some"):
-        raise "SomeError"
+        raise Error("SomeError")
 
     # This will assert, we didn't raise
     with assert_raises():
@@ -629,7 +562,7 @@ struct assert_raises:
 
     # This will let the underlying error propagate, failing the test
     with assert_raises(contains="Some"):
-        raise "OtherError"
+        raise Error("OtherError")
     ```
     """
 
@@ -644,7 +577,7 @@ struct assert_raises:
         """Construct a context manager with no message pattern.
 
         Args:
-            location: The location of the error (default to the `__call_location`).
+            location: The location of the error (defaults to `__call_location`).
         """
         self.message_contains = None
         self.call_location = location.or_else(__call_location())
@@ -661,7 +594,7 @@ struct assert_raises:
         Args:
             contains: The test will only pass if the error message
                 includes the literal text passed.
-            location: The location of the error (default to the `__call_location`).
+            location: The location of the error (defaults to `__call_location`).
         """
         self.message_contains = contains
         self.call_location = location.or_else(__call_location())

@@ -1,66 +1,59 @@
-# Phase 1
+# MAX AI kernels contributor guide
 
-Thank you for your interest in contributing to the Modular kernel library! We
-recently made our kernel codebase available as a foundation for building
-high-performance CPU and GPU code with Mojo.
+Thank you for your interest in contributing to the MAX AI kernels! We’re excited
+to welcome external contributors to help build high-performance CPU and GPU
+kernels in Mojo.
 
-**We are not yet accepting external contributions to the kernel library, but we
-expect to open contributions in the next month or two.** We will provide
-detailed information about timing, contribution guidelines, and how to get
-involved soon. [The Modular forum](https://forum.modular.com/) is the best place
-to stay up-to-date with the latest developments.
+## Contributing to MAX AI kernels
 
-In the meantime, you can still support the project by testing the kernels,
-filing bugs, and suggesting improvements through [GitHub Issues](https://github.com/modular/modular/issues).
+The MAX AI kernels power key components of MAX and Mojo, and contributions here
+can have a meaningful impact across the AI ecosystem. Before jumping in, please
+take a moment to review our contribution guidelines and processes.
 
-## Submitting bugs
+We welcome contributions across a wide range of functionality, but **if you’re
+proposing a change that could affect the performance of the core kernel
+library**, we ask that you first go through our [proposal process](#proposals).
 
-Reporting issues is a great way to contribute to the project. The kernel library
-uses GitHub Issues for tracking bugs.
+### Changes we accept
 
-Keep in mind that bugs with a reproducible test case and well-written supporting
-documentation are considered a higher priority. Ensure that reproducible steps
-are the smallest possible to maximize contributor time.
+We welcome contributions across all hardware platforms and are particularly
+interested in Blackwell, Hopper, MI3xx, and other data center GPUs.
 
-Also, before opening a new issue, take a moment to search through the already
-submitted issues to avoid creating duplicate issues for the maintainers to
-address.
+In particular, we welcome contributions of the following kernels:
 
-### Writing high-quality bug descriptions
+- Batched matrix multiplication (BMM)
+- Multi-head latent attention (MLA)
+- Mixture of experts (MOE)
+- Non-maximum suppression (NMS)
+- Grouped matrix multiplication
+- 2D convolutions
+- General matrix-vector multiply (GEMV) on Hopper
 
-We encourage you to provide as much information about the issue as practical.
-The more details you provide, the faster we can resolve the issue. The following
-is a template of the information that should accompany every submitted issue.
+## Proposals
 
-### Issue template
+If you’re interested in making a significant change (one that doesn’t fall into
+the [list of changes we accept](#Changes-we-accept) above), your first step is
+a written proposal. The proposal process:
 
-- **Summary:** a descriptive summary of the issue.
-- **Description:** a detailed account of the bug, including what was expected
-and what occurred.
-- **Environment details**
-  - Mojo compiler version
-  - Operating system version
-  - Hardware specifications
-- **Severity/frequency**: an assessment of the impact ranging from inconvenience
-to a blocker.
+- Ensures feedback from the widest possible set of community members
+- Maintains an audit trail of important design decisions
+- Provides rationale for changes that impact long-term performance or
+architecture
 
-### Guidelines for Review Time
+**To submit a proposal, create a GitHub Pull Request that adds a document to the
+[`modular/mojo/proposals`](https://github.com/modular/modular/tree/main/mojo/proposals)
+directory.**
 
-#### Issue Triage Timeline
+Contributors are encouraged to react with a 👍 to proposal PRs if they support
+the high-level direction. Proposals are reviewed and assigned to MAX AI kernels
+leads. A proposal can be merged once the lead approves, all blocking issues are
+resolved, and relevant decisions are incorporated. If a lead chooses to defer or
+reject the proposal, they will explain the reasoning and close the PR. This
+process is inspired by successful practices in other open source communities.
 
-- New Issues:
-  - Maintainers will label and acknowledge new issues within 10 days of the
-    issue submission.
+## Submitting pull requests
 
-#### Exceptions
+For details about how to submit a pull request, see the repo's
+[primary contributing guide](../../CONTRIBUTING.md).
 
-While we strive our best to adhere to these timelines, there may be occasional
-delays due any of the following:
-
-- High volume of contributions.
-- Maintainers' availability (e.g. holidays, team events).
-- Complex Issues requiring extended discussion — please bring these to the
-[Modular forums](https://forum.modular.com/), where we can engage more deeply
-with the community in the decision-making process.
-
-If delays occur, we'll provide status updates in the relevant GitHub Issue.
+Thank you for your contributions! ❤️

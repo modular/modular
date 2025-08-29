@@ -12,20 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.string import StaticString
 from math import ceildiv, iota
-from sys.info import alignof, bitwidthof, simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import elementwise
 from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import Index, IndexList, StaticTuple
+from utils.index import IndexList, StaticTuple
 
 
 fn _argsort_cpu[
@@ -47,12 +46,14 @@ fn _argsort_cpu[
     """
 
     @parameter
-    fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
+    fn fill_indices_iota[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
-    elementwise[fill_indices_iota, simdwidthof[indices.dtype](), target="cpu"](
-        indices.size()
-    )
+    elementwise[
+        fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
+    ](indices.size())
 
     @parameter
     fn cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
@@ -71,12 +72,12 @@ fn _argsort_cpu[
 
 
 @always_inline
-fn _sentinel_val[type: DType, ascending: Bool]() -> Scalar[type]:
+fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
     """
     Returns a sentinel value based on sort direction.
 
     Parameters:
-        type: Data type of the sentinel value.
+        dtype: Data type of the sentinel value.
         ascending: Sort direction.
 
     Returns:
@@ -85,9 +86,9 @@ fn _sentinel_val[type: DType, ascending: Bool]() -> Scalar[type]:
 
     @parameter
     if ascending:
-        return Scalar[type].MAX_FINITE
+        return Scalar[dtype].MAX_FINITE
     else:
-        return Scalar[type].MIN_FINITE
+        return Scalar[dtype].MIN_FINITE
 
 
 fn _argsort_gpu_impl[
@@ -207,14 +208,14 @@ fn _argsort_gpu[
         @parameter
         @__copy_capture(indices)
         fn fill_indices_iota_no_padding[
-            width: Int, rank: Int
+            width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
             indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width = simdwidthof[
-                indices.dtype, target = _get_gpu_target()
+            simd_width = simd_width_of[
+                indices.dtype, target = get_gpu_target()
             ](),
             target="gpu",
         ](n, ctx)
@@ -252,7 +253,9 @@ fn _argsort_gpu[
     # Initialize indices with sequential values and copy input data to device
     @parameter
     @__copy_capture(padded_indices, padded_input, input, indices, n)
-    fn fill_indices_iota[width: Int, rank: Int](offset: IndexList[rank]):
+    fn fill_indices_iota[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
             padded_indices.ptr.store(i, iota[padded_indices.dtype, width](i))
@@ -284,7 +287,9 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     @parameter
     @__copy_capture(padded_indices, indices)
-    fn extract_indices[width: Int, rank: Int](offset: IndexList[rank]):
+    fn extract_indices[
+        width: Int, rank: Int, alignment: Int = 1
+    ](offset: IndexList[rank]):
         indices.ptr.store(
             offset[0], padded_indices.ptr.load[width=width](offset[0])
         )
@@ -292,7 +297,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simdwidthof[indices.dtype, target = _get_gpu_target()](),
+        simd_width = simd_width_of[indices.dtype, target = get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 

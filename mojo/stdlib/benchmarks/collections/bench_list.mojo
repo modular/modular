@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,15 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
-# NOTE: to test changes on the current branch using run-benchmarks.sh, remove
-# the -t flag. Remember to replace it again before pushing any code.
 
-from collections import List
 from random import *
-from random import seed
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
+from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -57,15 +52,15 @@ fn bench_list_copyinit[
     fn call_fn() raises:
         result = items
         res += len(result)
-        keep(result.data)
-        keep(items.data)
+        keep(result.unsafe_ptr())
+        keep(items.unsafe_ptr())
 
     b.iter[call_fn]()
     print(res)
     keep(Bool(items))
     keep(Bool(result))
-    keep(result.data)
-    keep(items.data)
+    keep(result.unsafe_ptr())
+    keep(items.unsafe_ptr())
 
 
 def main():

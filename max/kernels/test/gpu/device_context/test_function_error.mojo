@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import *
 
 
@@ -31,12 +30,13 @@ def test_function_error(ctx: DeviceContext):
         ctx.synchronize()
         res_host.free()
     except e:
-        assert_true(
-            "open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:27:24"
-            in String(e)
-        )
+        # This error should occur at the synchronize call as the kernel launches
+        # async by default.
+        # CHECK: open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:30:24
+        print(e)
 
 
 def main():
     with DeviceContext() as ctx:
+        # CHECK: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
         test_function_error(ctx)

@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import sizeof
 
-from layout import LayoutTensor, Layout
-from memory import UnsafePointer, memcpy
-from memory.unsafe_pointer import _default_alignment
+from layout import LayoutTensor
+from memory import memcpy
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -23,10 +21,10 @@ from memory.unsafe_pointer import _default_alignment
 
 
 fn _get_rightmost_broadcast_axis[
-    type: DType,
+    dtype: DType,
 ](
-    input: LayoutTensor[type, **_],
-    output: LayoutTensor[mut=True, type, **_],
+    input: LayoutTensor[dtype, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
 ) -> Int:
     """
     Return the rightmost position (largest axis) at which the dimensions of
@@ -52,12 +50,12 @@ fn _get_rightmost_broadcast_axis[
 
 
 fn broadcast[
-    type: DType,
+    dtype: DType,
 ](
     output: LayoutTensor[
-        mut=True, type, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
-    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -73,7 +71,7 @@ fn broadcast[
     if output.size() == 0:
         return
 
-    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[type](
+    var rightmost_broadcast_axis: Int = _get_rightmost_broadcast_axis[dtype](
         input, output
     )
 
@@ -88,7 +86,7 @@ fn broadcast[
     # imaginary axis before 0
     var init_input_prev_axis_stride = input.size()
     var init_output_prev_axis_stride = output.size()
-    broadcast_impl[type](
+    broadcast_impl[dtype](
         init_axis,
         output,
         input,
@@ -101,13 +99,13 @@ fn broadcast[
 
 
 fn broadcast_impl[
-    type: DType,
+    dtype: DType,
 ](
     axis: Int,
     output: LayoutTensor[
-        mut=True, type, address_space = AddressSpace.GENERIC, **_
+        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
     ],
-    input: LayoutTensor[type, address_space = AddressSpace.GENERIC, **_],
+    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `constrained` to keep in bound
     input_prev_axis_stride: Int,
@@ -146,14 +144,14 @@ fn broadcast_impl[
         )
         return
 
-    var output_axis_stride = output_prev_axis_stride // output.runtime_layout.dim(
-        axis
+    var output_axis_stride = (
+        output_prev_axis_stride // output.runtime_layout.dim(axis)
     )
 
     var next_input_offset = input_offset
     var next_output_offset = output_offset
     for _ in range(input.runtime_layout.dim(axis)):
-        broadcast_impl[type](
+        broadcast_impl[dtype](
             axis + 1,
             output,
             input,
@@ -183,15 +181,15 @@ fn broadcast_impl[
 
 
 fn _tile_1d[
-    type: DType,
+    dtype: DType,
 ](
     init_dst_ptr: UnsafePointer[
-        Scalar[type],
+        Scalar[dtype],
         address_space = AddressSpace.GENERIC,
         mut=True, **_,
     ],
     src_ptr: UnsafePointer[
-        Scalar[type],
+        Scalar[dtype],
         address_space = AddressSpace.GENERIC, **_,
     ],
     tile_num_elems: Int,

@@ -10,24 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
 from math import ceil, ceildiv
-from sys.info import sizeof
+from sys.info import size_of
 
-from buffer import NDBuffer
-from buffer.buffer import prod_dims
-from memory import UnsafePointer, bitcast, memcpy
+from layout import LayoutTensor, Layout
+from memory import bitcast, memcpy
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple, product
 
 
 @always_inline
 fn _to_StaticTuple[
-    type: DType, size: Int
-](data: SIMD[type, size]) -> StaticTuple[Scalar[type], size]:
+    dtype: DType, size: Int
+](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
 
-    var res = StaticTuple[Scalar[type], size]()
+    var res = StaticTuple[Scalar[dtype], size]()
 
     @parameter
     for i in range(size):
@@ -37,10 +35,10 @@ fn _to_StaticTuple[
 
 @always_inline
 fn _to_SIMD[
-    type: DType, size: Int
-](data: StaticTuple[Scalar[type], size]) -> SIMD[type, size]:
+    dtype: DType, size: Int
+](data: StaticTuple[Scalar[dtype], size]) -> SIMD[dtype, size]:
     """Convert StaticTuple to SIMD."""
-    var res = SIMD[type, size]()
+    var res = SIMD[dtype, size]()
 
     @parameter
     for i in range(size):
@@ -86,7 +84,7 @@ fn calculate_symmetric_vector[
 
     # quantize as if we were signed, and convert back to unsigned later
     var positive_steps = (1 << (output_bits - 1)) - 1
-    var negative_steps = (1 << (output_bits - 1))
+    var negative_steps = 1 << (output_bits - 1)
 
     # Handle the case we only have one type of value in `data`, e.g.
     # data = [12., 12., 12., 12.], then the scale is 1/12.0 and the quantized
@@ -107,7 +105,7 @@ fn calculate_symmetric_vector[
 struct Q4sym[
     group_size: Int,
     float_dtype: DType = DType.float32,
-]:
+](Defaultable):
     """
     Q4sym: compresses values of type `float_dtype` to 4bit unsigned integers
     which have been dynamically symmetrically quantized with the given scale
@@ -161,7 +159,6 @@ struct Q4sym[
         self._check_constraints()
 
     @always_inline
-    @implicit
     fn __init__(out self, data: SIMD[float_dtype, group_size]):
         """
         Construct an encoded Q4sym from data.
@@ -194,7 +191,7 @@ struct Q4sym[
         # Extract the lower 4 bits of all bits in the `l_bits` format
         var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
-        var bits_lower = (bits_simd & 0x0F)
+        var bits_lower = bits_simd & 0x0F
         return rebind[SIMD[DType.uint8, group_size]](
             bits_lower.join(bits_upper)
         )
@@ -218,7 +215,7 @@ struct Q4sym[
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        var final_result = upcast_bytes.reduce_add()
+        var final_result: SIMD[DType.uint16, 1] = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
@@ -260,27 +257,27 @@ struct Q4sym[
         # Obtain the fully dequantized values
         var signed_result = self.decode_signed()
         var scale_decoded = self.decode_scale().cast[float_dtype]()
-        var answer = scale_decoded.cast[float_dtype]() * signed_result.cast[
-            float_dtype
-        ]()
+        var answer = (
+            scale_decoded.cast[float_dtype]()
+            * signed_result.cast[float_dtype]()
+        )
         return answer
 
     # TODO: support other axis of quantization, right now assume inner-most dim.
     # TODO: support axis which not divisible by group_size
     @staticmethod
-    fn quantize_and_write_to_tensor[
-        rank: Int,
-    ](
-        input_tensor: NDBuffer[float_dtype, rank],
-        output_tensor: NDBuffer[DType.uint8, rank],
-        input_shape: IndexList[rank],
+    fn quantize_and_write_to_tensor(
+        input_tensor: LayoutTensor[
+            float_dtype, address_space = AddressSpace.GENERIC, **_
+        ],
+        output_tensor: LayoutTensor[
+            DType.uint8, address_space = AddressSpace.GENERIC, **_
+        ],
+        input_shape: IndexList[input_tensor.rank],
     ):
         """
         Encodes the floating point numbers in `input_tensor` along the
         inner-most dimension and writes the result to output_tensor.
-
-        Parameters:
-            rank: The rank of the input and output tensors.
 
         Args:
             input_tensor: The input tensor we are encoding.
@@ -288,34 +285,43 @@ struct Q4sym[
                 The shape of the output should be the same as the input
                 except along the inner dimension where if the original inner
                 dimension was `d`, the corresponding output dimension should be:
-                    ceil(`d` / group_size) * sizeof(self).
+                    ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
+        constrained[
+            input_tensor.rank == output_tensor.rank,
+            "input tensor and output tensor must have the same rank",
+        ]()
         # TODO: check contiguous inputs and outputs
 
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
-        var size_of_block = sizeof[Q4sym[group_size, float_dtype]]()
+        var size_of_block = size_of[Q4sym[group_size, float_dtype]]()
         debug_assert(
-            input_shape[rank - 1] % group_size == 0,
+            input_shape[input_tensor.rank - 1] % group_size == 0,
             "Only support fully divisible dimensions right now.",
         )
 
-        var blob_output_ptr = output_tensor.data
+        var blob_output_ptr = output_tensor.ptr
         var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
             Q4sym[group_size, float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        var outer_stride = prod_dims[0, rank - 1](input_tensor)
-        var input_inner_stride = input_shape[rank - 1]
-        var output_inner_stride = ceildiv(input_shape[rank - 1], group_size)
+        var outer_stride = product(input_tensor.runtime_layout.stride.value)
+        var input_inner_stride = input_tensor.runtime_layout.shape.value[
+            input_tensor.rank - 1
+        ]
+        var output_inner_stride = ceildiv(
+            Int(input_tensor.runtime_layout.shape[input_tensor.rank - 1]),
+            group_size,
+        )
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_stride):
             for j in range(output_inner_stride):
                 var flat_index_input = input_inner_stride * i + j * group_size
-                var loaded_group = input_tensor.data.load[width=group_size](
+                var loaded_group = input_tensor.ptr.load[width=group_size](
                     flat_index_input
                 )
 
@@ -331,42 +337,49 @@ struct Q4sym[
                 _ = encoded_data^
 
     @staticmethod
-    fn dequantize_and_write_to_tensor[
-        rank: Int, //
-    ](
-        input_tensor: NDBuffer[DType.uint8, rank],
-        output_tensor: NDBuffer[float_dtype, rank],
-        output_shape: IndexList[rank],
+    fn dequantize_and_write_to_tensor(
+        input_tensor: LayoutTensor[
+            DType.uint8, address_space = AddressSpace.GENERIC, **_
+        ],
+        output_tensor: LayoutTensor[
+            float_dtype, address_space = AddressSpace.GENERIC, **_
+        ],
+        output_shape: IndexList[output_tensor.rank],
     ):
         """
         Encodes the floating point numbers in `input_tensor` along the
         inner-most dimension and writes the result to output_tensor.
-
-        Parameters:
-            rank: The rank of the input and output tensors.
 
         Args:
             input_tensor: The input tensor we are decoding.
             output_tensor: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
+        constrained[
+            input_tensor.rank == output_tensor.rank,
+            "input tensor and output tensor must have the same rank",
+        ]()
         # Read and dequantize `input_tensor` which are the bytes of the raw
         # blocked format. Write the corresponding results to `output_tensor`
         debug_assert(
-            output_shape[rank - 1] % group_size == 0,
+            output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
+            % group_size
+            == 0,
             "Only support fully divisible dimensions right now.",
         )
 
         # TODO: check contiguous inputs and outputs
 
-        var uint8_input_ptr = input_tensor.data
+        var uint8_input_ptr = input_tensor.ptr
         var base_block_ptr = UnsafePointer(uint8_input_ptr).bitcast[
             Q4sym[group_size, float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        var output_inner_dim = output_shape[rank - 1]
-        var outer_dim = prod_dims[0, rank - 1](output_tensor)
+        var output_inner_dim = output_tensor.runtime_layout.shape.value[
+            output_tensor.rank - 1
+        ]
+        var outer_dim = product(output_tensor.runtime_layout.stride.value)
 
         # Note: this is calculated assuming a pointer of Q4Sym's
         var input_inner_dim = ceildiv(output_inner_dim, group_size)
@@ -383,7 +396,7 @@ struct Q4sym[
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
-                output_tensor.data.store(
+                output_tensor.ptr.store(
                     flat_index_output,
                     encoded.decode_fully(),
                 )
@@ -412,7 +425,10 @@ struct block_Q4_K:
 
 
 fn scale_min_k4(
-    src_ptr: UnsafePointer[block_Q4_K], g: Int
+    src_ptr: UnsafePointer[
+        block_Q4_K, address_space = AddressSpace.GENERIC, **_
+    ],
+    g: Int,
 ) -> (Float32, Float32):
     if g < 4:
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
@@ -431,18 +447,22 @@ fn scale_min_k4(
 
 
 fn q4_k_dequantize_impl(
-    input_tensor: NDBuffer[DType.uint8, 2],
-    output_tensor: NDBuffer[mut=True, DType.float32, 2],
+    input_tensor: LayoutTensor[
+        DType.uint8, address_space = AddressSpace.GENERIC, **_
+    ],
+    output_tensor: LayoutTensor[
+        mut=True, DType.float32, address_space = AddressSpace.GENERIC, **_
+    ],
 ):
     alias group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
     alias group_nbytes = group_nelems // 2
     alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = sizeof[block_Q4_K]()
+    alias block_nbytes = size_of[block_Q4_K]()
 
-    var num_blocks = input_tensor.num_elements() // block_nbytes
-    var input_q4_k_ptr = input_tensor.data.bitcast[block_Q4_K]()
-    var output_ptr = output_tensor.data.bitcast[Float32]()
+    var num_blocks = input_tensor.size() // block_nbytes
+    var input_q4_k_ptr = input_tensor.ptr.bitcast[block_Q4_K]()
+    var output_ptr = output_tensor.ptr.bitcast[Float32]()
     for block_idx in range(num_blocks):
         var src_ptr = input_q4_k_ptr + block_idx
         var dst_ptr = output_ptr + (block_idx * block_nelems)
@@ -514,17 +534,17 @@ struct block_Q6_K:
 
 
 fn q6_k_dequantize_impl(
-    input_tensor: NDBuffer[DType.uint8, 2],
-    output_tensor: NDBuffer[mut=True, DType.float32, 2],
-    output_shape: IndexList[2],
+    input_tensor: LayoutTensor[DType.uint8, **_],
+    output_tensor: LayoutTensor[mut=True, DType.float32, **_],
+    output_shape: IndexList[output_tensor.rank],
 ):
     alias group_nelems = block_Q6_K.group_size
     alias block_nelems = block_QK_K.quantized_k
-    alias block_nbytes = sizeof[block_Q6_K]()
+    alias block_nbytes = size_of[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
-    var input_q6_k_ptr = input_tensor.data.bitcast[block_Q6_K]()
-    var dst_ptr = output_tensor.data.bitcast[Float32]()
+    var input_q6_k_ptr = input_tensor.ptr.bitcast[block_Q6_K]()
+    var dst_ptr = output_tensor.ptr.bitcast[Float32]()
     var dst_idx = 0
     for block_idx in range(num_blocks):
         var src_ptr = input_q6_k_ptr + block_idx

@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
+from io.io import _printf
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu.id import block_idx
 from gpu.memory import (
@@ -25,10 +24,9 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 from utils.index import Index
-from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
@@ -72,7 +70,7 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
     )
 
 
-# CHECK-LABLE: test_tma_tile_copy
+# CHECK-LABEL: test_tma_tile_copy
 # CHECK-DAG: (0, 0) : 0 1 2 3; 8 9 10 11; 16 17 18 19; 24 25 26 27
 # CHECK-DAG: (1, 0) : 4 5 6 7; 12 13 14 15; 20 21 22 23; 28 29 30 31
 # CHECK-DAG: (0, 1) : 32 33 34 35; 40 41 42 43; 48 49 50 51; 56 57 58 59

@@ -8,6 +8,7 @@ what we publish.
 [//]: # Here's the template to use when starting a new batch of notes:
 [//]: ## UNRELEASED
 [//]: ### ✨ Highlights
+[//]: ### Language enhancements
 [//]: ### Language changes
 [//]: ### Standard library changes
 [//]: ### Tooling changes
@@ -18,137 +19,310 @@ what we publish.
 
 ### ✨ Highlights
 
-- Parts of the Kernel library continue to be progressively open sourced!
-  Packages that are open sourced now include:
-  - `kv_cache`
-  - `quantization`
-  - `nvml`
-  - Benchmarks
-  - `Mogg` directory which contains registration of kernels with the Graph
-    Compiler
+### 🔥 Legendary
 
-- Implicit trait conformance is deprecated. Each instance of implicit
-  conformance results in a warning, but compilation still goes through. Soon it
-  will be upgraded into an error. Any code currently relying on implicit
-  conformance should either declare conformances explicitly or, if appropriate,
-  replace empty, non-load-bearing traits with trait compositions.
+- Mojo now has support for default trait methods, allowing traits to provide
+  reusable behavior without requiring every conforming struct to re-implement it.
+  Default methods are automatically inherited by conforming structs unless
+  explicitly overridden. For example:
+
+  ```mojo
+  # Any struct conforming to EqualityComparable now only needs to define one of
+  # __ne__ ~or~ __eq__ and will get a definition of the other with no
+  # additional code!
+
+  # For instance:
+  trait EqualityComparable:
+      fn __eq__(self, other: Self) -> Bool:
+          ...
+
+      fn __ne__(self, other: Self) -> Bool:
+          return not self.__eq__(other)
+
+  @value
+  struct Point(EqualityComparable):
+      var x: Int
+      var y: Int
+
+      fn __eq__(self, other: Self) -> Bool:
+          # Since __eq__ is implemented we now get __ne__ defined for free!
+          return self.x == other.x and self.y == other.y
+
+      # Defaulted methods can also be overriden if we want different behavior.
+      # fn __ne__(self, other: Self) -> Bool:
+      #     return self.x != other.x or self.y != other.y
+  ```
+
+  Currently a trait method is considered to be non-defaulted if the first thing in
+  it's body is either a '...' or a 'pass' i.e.
+
+  ```mojo
+
+  trait Foo:
+    # Either of the following are non-defaulted
+    # fn foo(self):
+    #   ...
+    #
+    # fn foo(self):
+    #   pass
+
+    # While this is not:
+    fn foo(self):
+      print("Foo.foo")
+  ```
+
+  Note that in the future only '...' will mark a trait method as not defaulted.
+
+### Documentation
+
+- New [Mojo vision](/mojo/vision) doc explains our motivations and design
+decisions for the Mojo language.
+
+- New [Mojo roadmap](/mojo/roadmap) provides a high-level roadmap for the
+language across multiple phases.
+
+### Language enhancements
+
+- Methods on structs may now declare their `self` argument with a `deinit`
+  argument convention.  This argument convention is used for methods like
+  `__del__` and `__moveinit__` to indicate that they tear down the corresponding
+  value without needing its destructor to be run again. Beyond these two
+  methods, this convention can be used to declare "named" destructors, which are
+  methods that consume and destroy the value without themselves running the
+  values destructor.  For example, the standard `VariadicPack` type has these
+  methods:
+
+  ```mojo
+  struct VariadicPack[...]:
+      # implicit destructor
+      fn __del__(deinit self): ...
+      # move constructor
+      fn __moveinit__(out self, deinit existing: Self): ...
+      # custom explicit destructor that destroys "self" by transferring all of
+      # the stored elements.
+      fn consume_elements[
+        elt_handler: fn (idx: Int, var elt: element_type) capturing
+    ](deinit self): ...
+  ```
+
+  This argument convention is a fairly narrow power-user feature that is
+  important to clarify the destruction model and make linear types fit into the
+  model better.  A linear types are just types where all of the destructors are
+  explicit - it has no `__del__`.
+
+- Uncaught exceptions or segmentation faults in Mojo programs can now
+  generate stack traces. This is currently only for CPU-based code. To generate
+  a fully symbolicated stack trace, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+  environment variable, use `mojo build` with debug info enabled, e.g.
+  `-debug-level=line-tables`, and then run the resulting binary.
 
 ### Language changes
 
-- The type [`Dict`](/mojo/stdlib/collections/dict/Dict/) is now part of the
-  prelude, so there is no need to import them anymore.
+- The `__del__` and `__moveinit__` methods should now take their `self` and
+  `existing` arguments as `deinit` instead of either `owned`.
 
-- The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
-  `copy()` methods for structs that conform to `Movable`, `Copyable`, and
-  `ExplicitlyCopyable` (respectively) but that do not implement the methods
-  explicitly.
+- The Mojo compiler now warns about use of the deprecated `owned` keyword,
+  please move to `var` or `deinit` as the warning indicates.
 
-- A new `@fieldwise_init` decorator can be attached to structs to synthesize a
-  fieldwise initializer - an `__init__` method that takes the same arguments as
-  the fields in the struct.  This gives access to this helpful capability
-  without having to opt into the rest of the methods that `@value` synthesizes.
-  This decorator allows an optional `@fieldwise_init("implicit")` form for
-  single-element structs, which marks the initializer as `@implicit`.
+- The `__disable_del` keyword and statement has been removed, use `deinit`
+  methods instead.
 
-- `try` and `raise` now work at comptime.
-
-- "Initializer lists" are now supported for creating struct instances with an
-  inferred type based on context, for example:
-
-  ```mojo
-  fn foo(x: SomeComplicatedType): ...
-
-  # Example with normal initializer.
-  foo(SomeComplicatedType(1, kwarg=42))
-  # Example with initializer list.
-  foo({1, kwarg=42})
-  ```
-
-- List literals have been redesigned to work better.  They produce homogenous
-  sequences by invoking the `T(<elements>, __list_literal__: ())` constructor
-  of a type `T` that is inferred by context, or otherwise defaulting to the
-  standard library `List[Elt]` type.  The `ListLiteral` type has been removed
-  from the standard library.
-
-- Dictionary and set literals now work and default to creating instances of the
-  `Dict` and `Set` types in the collections library.
+- The previously deprecated `@value` decorator has been removed.
 
 ### Standard library changes
 
-- The `CollectionElement` trait has been removed.
+- Added `Path(..).name()` method to the `Path` type, which returns the name of
+  the file or directory.
 
-- Added support for a wider range of consumer-grade hardware, including:
-  - NVIDIA RTX 2060 GPUs
-  - NVIDIA RTX 4090 GPUs
+- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
+  all types that can be implicitly copied may also be copied using an explicit
+  `.copy()` method call.
 
-- The `bitset` datastructure was added to the `collections` package. This is a
-  fixed `bitset` that simplifies working with a set of bits and perform bit
-  operations.
+  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
+  implementation is not provided by the type, a default implementation will be
+  synthesized by the compiler.
 
-- Fixed GPU `sum` and `prefix_sum` implementations in `gpu.warp` and `gpu.block`
-  modules. Previously, the implementations have been incorrect and would either
-  return wrong results or hang the kernel (due to the deadlock). [PR
-  4508](https://github.com/modular/modular/pull/4508) and [PR
-  4553](https://github.com/modular/modular/pull/4553) by [Kirill
-  Bobyrev](https://github.com/kirillbobyrev) mitigate the found issues and add
-  tests to ensure correctness going forward.
+  - The following standard library types and functions now require only
+    `ExplicitlyCopyable`, enabling their use with types that are not implicitly
+    copyable:
+    `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
+    `Set`, `Counter`, `LinkedList`, `Deque`, `reversed`.
 
-Changes to Python-Mojo interoperability:
+    Additionally, the following traits now require `ExplicitlyCopyable` instead
+    of implicit `Copyable`:
+    `KeyElement`
 
-- Python objects are now constructible with list/set/dict literal syntax, e.g.:
-  `var list: PythonObject = [1, "foo", 2.0]` will produce a Python list
-  containing other Python objects and `var d: PythonObject = {}` will construct
-  an empty dictionary.
+- A new `Some` utility is introduced to reduce the syntactic load of declaring
+  function arguments of a type that implements a given trait or trait
+  composition. For example, instead of writing
 
-- `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
-  have been removed in favor of `CPython.{unsafe_get_error, get_error}`.
+  ```mojo
+  fn foo[T: Intable, //](x: T) -> Int:
+      return x.__int__()
+  ```
 
-- Since virtually any operation on a `PythonObject` can raise, the
-  `PythonObject` struct no longer implements the `Indexer` and `Intable` traits.
-  Instead, it now conforms to `IntableRaising`, and users should convert
-  explictly to builtin types and handle exceptions as needed. In particular, the
-  `PythonObject.__int__` method now returns a Python `int` instead of a mojo
-  `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
-  must handle the exception if the conversion fails, e.g. due to overflow).
+  one can now write:
 
-- `PythonObject` no longer implements `Stringable`. Instead, the
-  `PythonObject.__str__` method now returns a Python `str` object and can raise.
-  The new `Python.str` function can also be used to convert an arbitrary
-  `PythonObject` to a Python `str` object.
+  ```mojo
+  fn foo(x: Some[Intable]) -> Int:
+      return x.__int__()
+  ```
 
-- `PythonObject` no longer implements the `KeyElement` trait. Since Python
-  objects may not be hashable, and even if they are, could theoretically raise
-  in the `__hash__` method, `PythonObject` cannot conform to `Hashable`.
-  This has no effect on accessing Python `dict` objects with `PythonObject`
-  keys, since `__getitem__` and `__setitem__` should behave correctly and raise
-  as needed. Two overloads of the `Python.dict` factory function have been added
-  to allow constructing dictionaries from a list of key-value tuples and from
-  keyword arguments.
+- The comparison operators (e.g. `__eq__` and `__le__`) of the `SIMD` type now
+  return a single `Bool` instead of a boolean `SIMD` mask. Moreover, `SIMD` now
+  has explicit elementwise comparisons that return boolean masks, e.g. `eq()`
+  and `le()`.
+  - This allows `SIMD` to conform to the `EqualityComparable` trait, enabling
+    the use of `SIMD` vectors in sets, as keys to dictionaries, generic search
+    algorithms, etc. Moreover, `Scalar` now conforms to the `Comparable` trait,
+    i.e. `SIMD` conforms to `Comparable` when the size is 1.
+  - As a consequence, `SIMD.__bool__` no longer needs to be restricted to
+    scalars, and instead performs an `any` reduction on the elements of vectors.
 
-- `String` and `Bool` now implement `ConvertibleFromPython`.
+- Non-scalar `SIMD` constructors no longer allow implicit splatting of `Bool`
+  values. This could lead to subtle bugs that cannot be caught at compile time,
+  for example:
 
-- A new `def_function` API is added to `PythonModuleBuilder` to allow declaring
-  Python bindings for arbitrary functions that take and return `PythonObject`s.
-  Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
-  declaring Python bindings for methods that take and return `PythonObject`s.
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return v == 42  # this silently reduced to a single bool, and then splat
+  ```
+
+  Similarly to `InlineArray`, an explicit constructor with the `fill`
+  keyword-only argument can be used to express the same logic more safely:
+
+  ```mojo
+  ```mojo
+  fn foo[w: Int](v: SIMD[_, w]) -> SIMD[DType.bool, w]:
+    return SIMD[DType.bool, w](fill=(v == 42))  # highlights the splat logic
+
+  fn bar(Scalar[_]) -> Scalar[DType.bool]:
+    # still works, since implicit splatting to a scalar is never ambiguous
+    return v == 42
+  ```
+
+- Several types that can be constructed from raw MLIR values now require the use
+  of an `mlir_value` keyword-only argument initializer. Affected types include:
+  `SIMD`, `UInt`.
+
+- Added `os.path.realpath` to resolve symbolic links to an absolute path and
+
+  remove relative path components (`.`, `..`, etc.). Behaves the same as the
+  Python equivalent function.
+
+- `Span` is now `Representable` if its elements implement trait
+  `Representable`.
+
+- `Optional` and `OptionalReg` can now be composed with `Bool` in
+  expressions, both at comptime and runtime:
+
+  ```mojo
+  alias value = Optional[Int](42)
+
+  @parameter
+  if CompilationTarget.is_macos() and value:
+      print("is macos and value is:", value.value())
+
+- Added `sys.info.platform_map` for specifying types that can have different
+
+  values depending on the platform:
+
+  ```mojo
+  from sys.info import platform_map
+
+  alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
+  ```
+
+- Deprecated the following functions with `flatcase` names in `sys.info`:
+  - `simdbitwidth`
+  - `simdbytewidth`
+  - `sizeof`
+  - `alignof`
+  - `bitwidthof`
+  - `bitwidthof`
+  - `simdwidthof`
+  - `simdwidthof`
+  in favor of `snake_case` counterparts, respectively:
+  - `simd_bit_width`
+  - `simd_byte_width`
+  - `size_of`
+  - `align_of`
+  - `bit_width_of`
+  - `bit_width_of`
+  - `simd_width_of`
+  - `simd_width_of`
+
+- Added support for AMD RX 6900 XT consumer-grade GPU.
+
+- Added support for AMD RDNA3.5 consumer-grade GPUs in the `gfx1150`,
+`gfx1151`, and `gfx1152` architectures. Representative configurations have been
+added for AMD Radeon 860M, 880M, and 8060S GPUs.
+
+- Updated `layout_tensor` copy related functions to support 2D and 3D
+  threadblock dimensions.
+
+- The `compile.reflection.get_type_name` utility now has limited capability to
+  print parametric types, e.g. `SIMD[DType.float32, 4]` instead of just `SIMD`.
+  If the parameter is not printable, an `<unprintable>` placeholder is printed
+  instead. A new `qualified_builtins` flag also allows users to control the
+  verbosity for the most common (but not all) builtin types.
+
+- Add `repr` support for `List`, `Deque`, `Dict`, `LinkedList`, `Optional`, `Set`.
+  [PR #5189](https://github.com/modular/modular/pull/5189) by rd4com.
+
+- `InlineArray` now automatically detects whether its element types are
+  trivially destructible to not invoke the destructors in its `__del__`
+  function.  This improves performance for trivially destructible types
+  (such as `Int` and friends).
+
+- The `SIMD.from_bits` factory method is now a constructor, use
+  `SIMD(from_bits=...)` instead.
+
+- Added `os.atomic.fence` for creating atomic memory fences.
+  ([#5216](https://github.com/modular/modular/pull/5216) by
+  [@nate](https://github.com/NathanSWard))
+
+  ```mojo
+    from os.atomic import Atomic, Consistency, fence
+
+    fn decrease_ref_count(ref_count: Atomic[DType.uint64]):
+      if atomic.fetch_sub[ordering = Consistency.MONOTONIC](1) == 1:
+        fence[Consistency.ACQUIRE]()
+        # ...
+  ```
+
+- `Span` now implements a generic `.count()` method which can be passed a
+  function that returns a boolean SIMD vector. The function counts how many
+  times it returns `True` evaluating it in a vectorized manner. This works for
+  any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
+  [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
 
 ### Tooling changes
 
-- Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
-  - Example usage: `mojo build --emit=llvm YourModule.mojo`
+- `mojo test` now ignores folders with a leading `.` in the name. This will
+  exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
 
-- Removing support for command line option `--emit-llvm` infavor of `--emit=llvm`.
+- Nightly `mojo` Python wheels are now available. To install everything needed
+  for Mojo development in a Python virtual environment, you can use
 
-- Added support for emitting assembly code (.s) using `--emit-asm`.
-  - Example usage: `mojo build --emit=asm YourModule.mojo`
+  ```sh
+  pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
+  ```
 
-- Added `associated alias` support for documentation generated via `mojo doc`.
+### Kernels changes
+
+- A fast matmul for SM100 is available in Mojo. Please check it out in `matmul_sm100.mojo`.
+
+- Moved `mojo/stdlib/stdlib/gpu/comm/` to `max/kernels/src/comm/`
 
 ### ❌ Removed
 
 ### 🛠️ Fixed
 
-- [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
-  products incorrect results for large inputs.
-- [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
-  False Positive "Uninitialized Value".
+- Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
+  inferred for `__getitem__` if `[]` operator is used and `__setitem__` is present.
+- Fixed <https://github.com/modular/modular/issues/5190>
+- Fixed <https://github.com/modular/modular/issues/5139> - Crash on malformed initializer.
+- Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
+- Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
+  docs.

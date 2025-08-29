@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
+from builtin.variadics import VariadicOf
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -27,10 +27,8 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Copyable & Movable](
-    Copyable,
-    Movable,
-    Sized,
+struct Tuple[*element_types: ExplicitlyCopyable & Movable](
+    Copyable, Movable, Sized
 ):
     """The type of a literal tuple expression.
 
@@ -41,9 +39,8 @@ struct Tuple[*element_types: Copyable & Movable](
     """
 
     alias _mlir_type = __mlir_type[
-        `!kgen.pack<:!kgen.variadic<`,
-        Copyable & Movable,
-        `> `,
+        `!kgen.pack<:`,
+        VariadicOf[ExplicitlyCopyable & Movable],
         element_types,
         `>`,
     ]
@@ -60,7 +57,7 @@ struct Tuple[*element_types: Copyable & Movable](
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, owned *args: *element_types):
+    fn __init__(out self, var *args: *element_types):
         """Construct the tuple.
 
         Args:
@@ -72,7 +69,9 @@ struct Tuple[*element_types: Copyable & Movable](
     fn __init__(
         out self,
         *,
-        owned storage: VariadicPack[_, _, Copyable & Movable, *element_types],
+        var storage: VariadicPack[
+            _, _, ExplicitlyCopyable & Movable, *element_types
+        ],
     ):
         """Construct the tuple from a low-level internal representation.
 
@@ -87,15 +86,12 @@ struct Tuple[*element_types: Copyable & Movable](
 
         # Move each element into the tuple storage.
         @parameter
-        for i in range(Self.__len__()):
-            UnsafePointer(to=storage[i]).move_pointee_into(
-                UnsafePointer(to=self[i])
-            )
+        fn init_elt[idx: Int](var elt: element_types[idx]):
+            UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
-        # Do not destroy the elements when 'storage' goes away.
-        __disable_del storage
+        storage^.consume_elements[init_elt]()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Destructor that destroys all of the elements."""
 
         # Run the destructor on each member, the destructor of !kgen.pack is
@@ -120,17 +116,8 @@ struct Tuple[*element_types: Copyable & Movable](
         for i in range(Self.__len__()):
             UnsafePointer(to=self[i]).init_pointee_copy(existing[i])
 
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
-
-        Returns:
-            A copy of this value.
-        """
-        return self
-
     @always_inline("nodebug")
-    fn __moveinit__(out self, owned existing: Self):
+    fn __moveinit__(out self, deinit existing: Self):
         """Move construct the tuple.
 
         Args:
@@ -157,13 +144,7 @@ struct Tuple[*element_types: Copyable & Movable](
             The tuple length.
         """
 
-        @parameter
-        fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, Copyable & Movable, `>`]
-        ) -> Int:
-            return __mlir_op.`pop.variadic.size`(x)
-
-        alias result = variadic_size(element_types)
+        alias result = stdlib.builtin.variadic_size(element_types)
         return result
 
     @always_inline("nodebug")
@@ -197,9 +178,7 @@ struct Tuple[*element_types: Copyable & Movable](
         return UnsafePointer(elt_kgen_ptr)[]
 
     @always_inline("nodebug")
-    fn __contains__[
-        T: EqualityComparable & Copyable & Movable
-    ](self, value: T) -> Bool:
+    fn __contains__[T: EqualityComparable](self, value: T) -> Bool:
         """Return whether the tuple contains the specified value.
 
         For example:

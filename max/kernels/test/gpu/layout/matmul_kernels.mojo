@@ -10,36 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
-from collections.string import StaticString
 from math import ceildiv
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from builtin.io import _printf
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
-from layout.int_tuple import IntTuple
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
-    copy_dram_to_sram,
     copy_dram_to_sram_async,
 )
 from layout.math import outer_product_acc
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from memory import UnsafePointer
-from memory.pointer import _GPUAddressSpace as AddressSpace
 
-from utils import IndexList
 from utils.index import Index
 
 alias NWARMUP = 1
@@ -329,14 +319,13 @@ fn run_gemm_kernel_2[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
-    ]()
+    alias kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -357,7 +346,7 @@ fn run_gemm_kernel_2[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,
@@ -476,14 +465,15 @@ fn run_gemm_kernel_3[
     var N = b.shape[1]()
     var K = a.shape[1]()
 
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_3[dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN]
-    ]()
+    alias kernel = gemm_kernel_3[
+        dtype, a.layout, b.layout, c.layout, BM, BN, BK, BM * BN
+    ]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -504,7 +494,7 @@ fn run_gemm_kernel_3[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,
@@ -639,16 +629,15 @@ fn run_gemm_kernel_4[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // TM
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_4[
-            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
-        ]
-    ]()
+    alias kernel = gemm_kernel_4[
+        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, NUM_THREADS
+    ]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -669,7 +658,7 @@ fn run_gemm_kernel_4[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,
@@ -794,16 +783,15 @@ fn run_gemm_kernel_5[
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
 
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_5[
-            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
-        ]
-    ]()
+    alias kernel = gemm_kernel_5[
+        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
+    ]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -823,7 +811,7 @@ fn run_gemm_kernel_5[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,
@@ -886,7 +874,7 @@ fn gemm_kernel_6[
     of rows in B.
     """
 
-    alias simd_width = simdwidthof[dtype]()
+    alias simd_width = simd_width_of[dtype]()
     var partition_col = thread_idx.x % (BN // TN)
     var partition_row = thread_idx.x // (BN // TN)
     var bidx = block_idx.x
@@ -973,16 +961,15 @@ fn run_gemm_kernel_6[
     var K = a.shape[1]()
 
     alias NUM_THREADS = (BM * BN) // (TM * TN)
-    var func = ctx.compile_function_unchecked[
-        gemm_kernel_6[
-            dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
-        ]
-    ]()
+    alias kernel = gemm_kernel_6[
+        dtype, a.layout, b.layout, c.layout, BM, BN, BK, TM, TN, NUM_THREADS
+    ]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -1002,7 +989,7 @@ fn run_gemm_kernel_6[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,
@@ -1190,27 +1177,26 @@ fn run_gemm_kernel_tc[
     var K = a.shape[1]()
 
     alias NUM_WARPS = (BM // WM) * (BN // WN)
-    var func = ctx.compile_function_unchecked[
-        matmul_kernel_tc[
-            dtype,
-            a.layout,
-            b.layout,
-            c.layout,
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            MMA_M,
-            MMA_N,
-            MMA_K,
-        ]
-    ]()
+    alias kernel = matmul_kernel_tc[
+        dtype,
+        a.layout,
+        b.layout,
+        c.layout,
+        BM,
+        BN,
+        BK,
+        WM,
+        WN,
+        MMA_M,
+        MMA_N,
+        MMA_K,
+    ]
+    var func = ctx.compile_function_checked[kernel, kernel]()
 
     @always_inline
     @parameter
     fn run_func(ctx: DeviceContext) raises:
-        ctx.enqueue_function_unchecked(
+        ctx.enqueue_function_checked(
             func,
             a,
             b,
@@ -1230,7 +1216,7 @@ fn run_gemm_kernel_tc[
         ),
         0,
     )
-    ctx.enqueue_function_unchecked(
+    ctx.enqueue_function_checked(
         func,
         a,
         b,

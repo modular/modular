@@ -20,14 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheParams,
-)
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.nn.kv_cache import KVCacheParams
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -45,6 +39,11 @@ class Gemma3_MultiModalModel(Gemma3Model):
 
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
+
+    # The vision and text towers are in the same weights file, but are in
+    # separate models, so load_state_dict will naturally be loading subsets in
+    # each case.
+    _strict_state_dict_loading = False
 
     def __init__(
         self,
@@ -76,6 +75,17 @@ class Gemma3_MultiModalModel(Gemma3Model):
             return_logits: The number of top logits to return from the model
                 execution.
         """
+        hf_quant_config = getattr(
+            huggingface_config, "quantization_config", None
+        )
+        # To the language model section of the config (`text_config`), add a
+        # reference to the top level `quantization_config` for compatibility
+        # with the base Gemma3Model, if text_config doesn't already have one
+        if hf_quant_config and not hasattr(
+            huggingface_config.text_config, "quantization_config"
+        ):
+            huggingface_config.text_config.quantization_config = hf_quant_config
+
         super().__init__(
             pipeline_config,
             session,

@@ -23,7 +23,6 @@ from layout._fillers import arange
 from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index
@@ -373,9 +372,11 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
 
     # Allocate a register tile for the dst matrix with the same layout.
     # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
-    var dst_register_tile = LayoutTensor[
-        DType.float32, Layout.row_major(2, 2), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var dst_register_tile = (
+        LayoutTensor[DType.float32, Layout.row_major(2, 2), MutableAnyOrigin]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):

@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import qwen2_5_vl_arch
+from .model_config import Qwen2_5VLConfig
 
-__all__ = ["qwen2_5_vl_arch"]
+__all__ = ["Qwen2_5VLConfig", "qwen2_5_vl_arch"]

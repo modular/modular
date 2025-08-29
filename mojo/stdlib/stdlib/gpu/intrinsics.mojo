@@ -26,19 +26,14 @@ underlying GPU architecture.
 """
 
 from collections.string.string_slice import get_static_string
-from os import abort
 from os.atomic import Consistency
-from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
+from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, size_of
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x, alignof, bitwidthof
+from sys.info import _is_sm_9x, align_of, bit_width_of, CompilationTarget
 from sys.intrinsics import llvm_intrinsic, readfirstlane
-
-from builtin.dtype import _int_type_of_width
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 
-from .host.info import H100, Info
-from .memory import AddressSpace, _int_to_str
+from .memory import AddressSpace, CacheOperation, _int_to_str
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -47,11 +42,11 @@ from .memory import AddressSpace, _int_to_str
 
 @always_inline
 fn ldg[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
-    alignment: Int = alignof[SIMD[type, width]](),
-](x: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = align_of[SIMD[dtype, width]](),
+](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -59,10 +54,10 @@ fn ldg[
     It optimizes for read-only data access patterns.
 
     Parameters:
-        type: The data type to load (must be numeric).
+        dtype: The data type to load (must be numeric).
         width: The SIMD vector width for vectorized loads.
         alignment: Memory alignment in bytes. Defaults to natural alignment
-                  of the SIMD vector type.
+            of the SIMD vector dtype.
 
     Args:
         x: Pointer to global memory location to load from.
@@ -75,7 +70,7 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    constrained[type.is_numeric(), "the type must be numeric"]()
+    constrained[dtype.is_numeric(), "the dtype must be numeric"]()
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -197,9 +192,12 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             constraints="=r,r,n,n,n",
             has_side_effect=False,
         ](a, b, c, Int32(lut))
-
-    constrained[False, "The lop function is not supported by AMD GPUs."]()
-    return abort[Int32]("function not available")
+    else:
+        return CompilationTarget.unsupported_target_error[
+            Int32,
+            operation="lop",
+            note="lop() is only supported when targeting NVIDIA GPUs.",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -229,10 +227,22 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    alias asm = StaticString(
-        "llvm.nvvm.prmt"
-    ) if is_nvidia_gpu() else "llvm.amdgcn.perm"
+    alias asm = _byte_permute_inst()
+
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
+
+
+fn _byte_permute_inst() -> StaticString:
+    @parameter
+    if is_nvidia_gpu():
+        return "llvm.nvvm.prmt"
+    elif is_amd_gpu():
+        return "llvm.amdgcn.perm"
+    else:
+        return CompilationTarget.unsupported_target_error[
+            StaticString,
+            operation="byte_permute",
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -442,7 +452,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @fieldwise_init
-struct Scope(Writable, Copyable, Movable, EqualityComparable):
+struct Scope(Copyable, EqualityComparable, Movable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -489,17 +499,6 @@ struct Scope(Writable, Copyable, Movable, EqualityComparable):
         """
         return self is other
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if two `Scope` instances are not equal.
-
-        Args:
-            other: The other `Scope` instance to compare with.
-
-        Returns:
-            True if the instances are different, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances have the same value.
 
@@ -525,11 +524,8 @@ struct Scope(Writable, Copyable, Movable, EqualityComparable):
         return not (self is other)
 
     @no_inline
-    fn write_to[W: Writer](self, mut w: W):
+    fn write_to(self, mut w: Some[Writer]):
         """Writes the string representation of the scope to a writer.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer interface.
 
         Args:
             w: The writer to write to.
@@ -625,27 +621,27 @@ fn threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_suffix[type: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[bitwidthof[type]()]()]()
+fn _get_type_suffix[dtype: DType]() -> StaticString:
+    alias str = get_static_string["u", _int_to_str[bit_width_of[dtype]()]()]()
     return str
 
 
-fn _get_register_constraint[type: DType]() -> StaticString:
-    if type is DType.bool:
+fn _get_register_constraint[dtype: DType]() -> StaticString:
+    if dtype is DType.bool:
         return "b"
-    if type.is_half_float():
+    if dtype.is_half_float():
         return "h"
-    if type.is_integral():
-        alias width = bitwidthof[type]()
+    if dtype.is_integral():
+        alias width = bit_width_of[dtype]()
         if width == 16:
             return "c"
         if width == 32:
             return "r"
         if width == 64:
             return "l"
-    if type is DType.float32:
+    if dtype is DType.float32:
         return "f"
-    if type is DType.float64:
+    if dtype is DType.float64:
         return "d"
 
     return "<<unknown_register_constraint>>"
@@ -657,15 +653,15 @@ fn _get_pointer_constraint() -> StaticString:
 
 @always_inline
 fn store_release[
-    type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    dtype: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
     This function provides a memory barrier that ensures all previous memory operations
     from the calling thread are visible to other threads before this store is performed.
 
     Parameters:
-        type: The data type to store.
+        dtype: The data type to store.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
 
@@ -686,14 +682,14 @@ fn store_release[
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = _get_register_constraint[
-            type
+            dtype
         ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
             + ((scope_str + ".") if scope_str else "")
             + "global."
-            + _get_type_suffix[type]()
+            + _get_type_suffix[dtype]()
             + " [$1], $0;",
             NoneType,
             constraints=constraints,
@@ -704,20 +700,22 @@ fn store_release[
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
-        abort("unsupported device type")
+        return CompilationTarget.unsupported_target_error[
+            operation="store_release"
+        ]()
 
 
 @always_inline
 fn load_acquire[
-    type: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    dtype: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
     This function provides a memory barrier that ensures no subsequent memory operations
     from the calling thread are executed until after this load completes.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
 
@@ -740,16 +738,16 @@ fn load_acquire[
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = "=" + _get_register_constraint[
-            type
+            dtype
         ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
             + ((scope_str + ".") if scope_str else "")
             + "global."
-            + _get_type_suffix[type]()
+            + _get_type_suffix[dtype]()
             + " $0, [$1];",
-            Scalar[type],
+            Scalar[dtype],
             constraints=constraints,
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
@@ -758,20 +756,23 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:
-        return abort[Scalar[type]]("unsupported device type")
+        return CompilationTarget.unsupported_target_error[
+            Scalar[dtype],
+            operation="load_acquire",
+        ]()
 
 
 @always_inline
 fn store_volatile[
-    type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    dtype: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
 
     This function guarantees that the store operation will be performed exactly as
     specified, without being reordered or optimized away by the compiler.
 
     Parameters:
-        type: The data type to store.
+        dtype: The data type to store.
         memory: Whether to include memory side effects in constraints (default: True).
 
     Args:
@@ -790,10 +791,10 @@ fn store_volatile[
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = _get_register_constraint[
-        type
+        dtype
     ]() + "," + _get_pointer_constraint() + mem_constraint
     inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[type]() + " [$1], $0;",
+        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
         NoneType,
         constraints=constraints,
     ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
@@ -801,15 +802,15 @@ fn store_volatile[
 
 @always_inline
 fn load_volatile[
-    type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    dtype: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
 
     This function guarantees that the load operation will be performed exactly as
     specified, without being reordered or optimized away by the compiler.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         memory: Whether to include memory side effects in constraints (default: True).
 
     Args:
@@ -830,11 +831,11 @@ fn load_volatile[
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = "=" + _get_register_constraint[
-        type
+        dtype
     ]() + "," + _get_pointer_constraint() + mem_constraint
     return inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[type]() + " $0, [$1];",
-        Scalar[type],
+        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
+        Scalar[dtype],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
@@ -846,9 +847,9 @@ buffer_load/buffer_store instructions."""
 
 @always_inline
 fn make_buffer_resource[
-    type: DType
+    dtype: DType
 ](
-    gds_ptr: UnsafePointer[Scalar[type], **_],
+    gds_ptr: UnsafePointer[Scalar[dtype], **_],
     num_records: Int = Int(UInt32.MAX),
 ) -> _buffer_resource:
     """Creates a 128-bit buffer resource descriptor for AMD GPU buffer operations.
@@ -859,7 +860,7 @@ fn make_buffer_resource[
     perform memory operations.
 
     Parameters:
-        type: The data type of elements in the buffer.
+        dtype: The data type of elements in the buffer.
 
     Args:
         gds_ptr: Global memory base address pointer to the start of the buffer.
@@ -889,7 +890,6 @@ fn make_buffer_resource[
         var resource = make_buffer_resource[DType.float32](ptr, 1024)
         # Use resource with buffer_load/buffer_store operations
         ```
-        .
     """
 
     constrained[
@@ -911,265 +911,229 @@ fn make_buffer_resource[
     resource_constant[0] = address[0]
     # assuming 0 stride currently
     resource_constant[1] = address[1]
-    resource_constant[2] = sizeof[type]() * num_records
+    resource_constant[2] = size_of[dtype]() * num_records
     # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
     resource_constant[3] = 0x00020000
     return resource_constant
 
 
-@always_inline
-fn _waitcnt():
-    constrained[
-        is_amd_gpu(),
-        "The _waitcnt function is only applicable on AMDGPU hardware.",
-    ]()
-    inlined_assembly[
-        "s_waitcnt vmcnt(0)",
-        NoneType,
-        constraints="",
-        has_side_effect=True,
-    ]()
-
-
-@always_inline
-fn _raw_buffer_load_lds[
-    type: DType
-](
-    rsrc: _buffer_resource,
-    lds_ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
-    size: Int32,
-    voffset: Int32,
-    soffset: Int32,
-    offset: Int32,
-    aux: Int32,
-):
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _raw_buffer_load_lds function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
-    llvm_intrinsic[
-        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-    ](rsrc, lds_ptr, size, voffset, soffset, offset, aux)
-
-
-@always_inline
-fn _buffer_load_store_lds_nowait[
-    type: DType
-](
-    src_resource: _buffer_resource,
-    gds_offset: Int32,
-    lds_ptr_base: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED
-    ],
-    lds_offset: Int32,
-):
-    """Loads four bytes from global memory ands writes them to shared memory.
-
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register without waiting for the copy to finish. A call to wait_cnt_amd()
-    is necessary to ensure the copy is finished.
+@parameter
+fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
+    """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
     Parameters:
-        type: The type of the data to be loaded.
+        cache_policy: The cache operation policy.
 
-    Arg:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        gds_offset: Global memory offset.
-        lds_ptr_base: LDS base address.
-        lds_offset: LDS offset.
+    Returns:
+        The auxiliary parameter value formatted for AMD buffer operations.
+        Format: bit 0 = SC0, bit 1 = NT, bit 4 = SC1
     """
 
-    constrained[
-        is_amd_gpu(),
-        (
-            "The _buffer_load_store_lds_nowait  function is only applicable on"
-            " AMDGPU hardware."
-        ),
-    ]()
+    @parameter
+    if cache_policy is CacheOperation.ALWAYS:
+        return 0x00  # SC=00, NT=0
+    elif cache_policy is CacheOperation.STREAMING:
+        return 0x02  # SC=00, NT=1
+    elif cache_policy is CacheOperation.GLOBAL:
+        return 0x10  # SC=10, NT=0
+    elif cache_policy is CacheOperation.VOLATILE:
+        return 0x11  # SC=11, NT=0
+    else:
+        # Default to ALWAYS for unknown/unsupported operations
+        return 0x00
 
-    var lds_ptr = lds_ptr_base + lds_offset
-    var lds_ptr_sgpr = readfirstlane(SIMD[DType.int32, 1](Int(lds_ptr)))
-    inlined_assembly[
-        "s_mov_b32 m0, $0",
-        NoneType,
-        constraints="s,~{memory}",
-        has_side_effect=True,
-    ](lds_ptr_sgpr)
-
-    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
-    inlined_assembly[
-        "buffer_load_dword $0, $1, 0 offen lds",
-        NoneType,
-        constraints="v,s,~{memory}",
-        has_side_effect=True,
-    ](global_offset_bytes, src_resource)
+    # Additional cache operations for potential future support:
+    # CacheOperation.WORKGROUP -> 0x01 (SC=01, NT=0) - Workgroup/CU-level coherency
+    # CacheOperation.GLOBAL_STREAMING -> 0x12 (SC=10, NT=1) - Global + streaming
+    # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
 
 
-@always_inline
-fn buffer_load_store_lds[
-    type: DType
-](
-    src_resource: _buffer_resource,
-    gds_offset: Int32,
-    lds_ptr_base: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED
-    ],
-    lds_offset: Int32,
-):
-    """Loads four bytes from global memory ands writes them to shared memory.
+fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
+    @parameter
+    if bytes == 1:
+        return DType.uint8
+    elif bytes == 2:
+        return DType.uint16
+    else:
+        constrained[bytes in (4, 8, 16), "Width not supported"]()
+        return DType.uint32
 
-    Copies from global memory to shared memory (aka LDS) bypassing storing to
-    register.
 
-    Parameters:
-        type: The type of the data to be loaded.
-
-    Args:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        gds_offset: Global memory offset.
-        lds_ptr_base: LDS base address.
-        lds_offset: LDS offset.
-    """
-    constrained[
-        is_amd_gpu(),
-        (
-            "The buffer_load_store_lds  function is only applicable on AMDGPU"
-            " hardware."
-        ),
-    ]()
-
-    var lds_ptr = lds_ptr_base + lds_offset
-    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
-    _raw_buffer_load_lds(
-        src_resource,
-        lds_ptr,
-        sizeof[DType.uint32](),
-        global_offset_bytes,
-        0,
-        0,
-        0,
-    )
+@parameter
+fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
+    return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 
 
 @always_inline
 fn buffer_load[
-    type: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[type, width]:
-    """Loads data from global memory into a SIMD register.
+    dtype: DType,
+    width: Int,
+    *,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](
+    src_resource: _buffer_resource,
+    vector_offset: Int32,
+    *,
+    scalar_offset: Int32 = 0,
+) -> SIMD[dtype, width]:
+    """Loads data from global memory into a SIMD register with cache operation control.
 
     This function provides a hardware-accelerated global memory load operation
     that maps directly to the AMDGPU buffer_load instruction. It efficiently
-    transfers data from global memory to registers.
+    transfers data from global memory to registers with high-level cache control.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: The SIMD vector width for vectorized loads.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
 
     Args:
         src_resource: Buffer resource descriptor created by make_buffer_resource().
-        gds_offset: Offset in elements (not bytes) from the base address in the resource.
+        vector_offset: Vector memory offset in elements (per thread).
+        scalar_offset: Scalar memory offset in elements (shared across wave).
 
     Returns:
         SIMD vector containing the loaded data.
 
     Note:
         - Only supported on AMD GPUs.
-        - Uses non-glc loads by default (can hit L1 cache and persist across wavefronts).
+        - Provides high-level cache control via CacheOperation enum values.
         - Supports widths that map to 1, 2, 4, 8, or 16 byte loads.
         - Maps directly to llvm.amdgcn.raw.buffer.load intrinsics.
+        - Cache control bits:
+          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
     """
-
     constrained[
         is_amd_gpu(),
         "The buffer_load function is only applicable on AMDGPU hardware.",
     ]()
 
-    alias bytes = sizeof[type]() * width
-    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
-    # READ
-    # GLC = 0 Reads can hit on the L1 and persist across wavefronts
-    # GLC = 1 Reads miss the L1 and L2 and force fetch to the data fabric. No L1 persistence across waves.
-    alias glc: Int32 = 0
-    var src_wave_addr_offset: Int32 = 0
+    alias bytes = size_of[dtype]() * width
+    alias aux = _cache_operation_to_amd_aux[cache_policy]()
 
-    @parameter
-    fn get_inst_name() -> StaticString:
-        @parameter
-        if bytes == 1:
-            return "llvm.amdgcn.raw.buffer.load.i8"
-        elif bytes == 2:
-            return "llvm.amdgcn.raw.buffer.load.i16"
-        elif bytes == 4:
-            return "llvm.amdgcn.raw.buffer.load.i32"
-        elif bytes == 8:
-            return "llvm.amdgcn.raw.buffer.load.v2i32"
-        elif bytes == 16:
-            return "llvm.amdgcn.raw.buffer.load.v4i32"
-        else:
-            constrained[False, "Width not supported"]()
-            return ""
+    var vector_offset_bytes = vector_offset * size_of[dtype]()
+    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
 
-    return llvm_intrinsic[
-        get_inst_name(),
-        SIMD[type, width],
-        has_side_effect=True,
-    ](src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+    var load_val = llvm_intrinsic[
+        "llvm.amdgcn.raw.buffer.load",
+        SIMD[
+            _get_buffer_intrinsic_simd_dtype[bytes](),
+            _get_buffer_intrinsic_simd_width[bytes](),
+        ],
+        has_side_effect=False,
+    ](src_resource, vector_offset_bytes, scalar_offset_bytes, aux)
+
+    return bitcast[dtype, width](load_val)
+
+
+@always_inline
+fn buffer_load_lds[
+    dtype: DType,
+    *,
+    width: Int = 1,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](
+    src_resource: _buffer_resource,
+    vector_offset: Int32,
+    shared_ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED
+    ],
+    *,
+    scalar_offset: Int32 = 0,
+):
+    """Loads data from global memory and stores to shared memory.
+
+    Copies from global memory to shared memory (aka LDS) bypassing storing to
+    register.
+
+    Parameters:
+        dtype: The dtype of the data to be loaded.
+        width: The SIMD vector width.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
+
+    Args:
+        src_resource: Buffer resource descriptor from make_buffer_resource.
+        vector_offset: Vector memory offset in elements (per thread).
+        shared_ptr: Shared memory address.
+        scalar_offset: Scalar memory offset in elements (shared across wave).
+    """
+    constrained[
+        is_amd_gpu(),
+        "The buffer_load_lds function is only applicable on AMDGPU hardware.",
+    ]()
+
+    alias bytes = size_of[dtype]() * width
+    alias aux = _cache_operation_to_amd_aux[cache_policy]()
+
+    var vector_offset_bytes = vector_offset * size_of[dtype]()
+    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+
+    llvm_intrinsic[
+        "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
+    ](
+        src_resource,
+        shared_ptr,
+        Int32(bytes),
+        vector_offset_bytes,
+        scalar_offset_bytes,
+        Int32(0),
+        aux,
+    )
 
 
 @always_inline
 fn buffer_store[
-    type: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width]):
-    """Stores a register variable to global memory.
+    dtype: DType,
+    width: Int,
+    *,
+    cache_policy: CacheOperation = CacheOperation.ALWAYS,
+](
+    dst_resource: _buffer_resource,
+    vector_offset: Int32,
+    val: SIMD[dtype, width],
+    *,
+    scalar_offset: Int32 = 0,
+):
+    """Stores a register variable to global memory with cache operation control.
 
-    Writes to global memory from a register.
+    Writes to global memory from a register with high-level cache control.
 
     Parameters:
-        type: The data type.
+        dtype: The data type.
         width: The SIMD vector width.
+        cache_policy: Cache operation policy controlling cache behavior at all levels.
 
     Args:
-        src_resource: Buffer resource descriptor.
-        gds_offset: Global memory offset.
+        dst_resource: Buffer resource descriptor.
+        vector_offset: Vector memory offset in elements (per thread).
         val: Value to write.
-    """
+        scalar_offset: Scalar memory offset in elements (shared across wave).
 
+    Note:
+        - Only supported on AMD GPUs.
+        - Provides high-level cache control via CacheOperation enum values.
+        - Maps directly to llvm.amdgcn.raw.buffer.store intrinsics.
+        - Cache control bits:
+          - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
+          - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
+    """
     constrained[
         is_amd_gpu(),
         "The buffer_store function is only applicable on AMDGPU hardware.",
     ]()
 
-    alias bytes = sizeof[type]() * width
+    alias bytes = width * size_of[dtype]()
+    alias aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
 
-    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
-    # WRITE
-    # GLC = 0 Writes miss the L1, write through to L2, and persist in L1 across wavefronts.
-    # GLC = 1 Writes miss the L1, write through to L2. No persistence across wavefronts.
-    alias glc: Int32 = 0
-    var src_wave_addr_offset: Int32 = 0
+    var vector_offset_bytes = vector_offset * size_of[dtype]()
+    var scalar_offset_bytes = scalar_offset * size_of[dtype]()
 
-    @parameter
-    fn get_inst_name() -> StaticString:
-        @parameter
-        if bytes == 1:
-            return "llvm.amdgcn.raw.buffer.store.i8"
-        elif bytes == 2:
-            return "llvm.amdgcn.raw.buffer.store.i16"
-        elif bytes == 4:
-            return "llvm.amdgcn.raw.buffer.store.i32"
-        elif bytes == 8:
-            return "llvm.amdgcn.raw.buffer.store.v2i32"
-        elif bytes == 16:
-            return "llvm.amdgcn.raw.buffer.store.v4i32"
-        else:
-            constrained[False, "Width not supported"]()
-            return ""
+    var store_val = bitcast[
+        _get_buffer_intrinsic_simd_dtype[bytes](),
+        _get_buffer_intrinsic_simd_width[bytes](),
+    ](val)
 
     llvm_intrinsic[
-        get_inst_name(),
-        NoneType,
-        has_side_effect=True,
-    ](val, src_resource, global_offset_bytes, src_wave_addr_offset, glc)
+        "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
+    ](store_val, dst_resource, vector_offset_bytes, scalar_offset_bytes, aux)

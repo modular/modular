@@ -24,13 +24,10 @@
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray
-from math import log2
-from sys.info import sizeof
+from sys.info import size_of
 
-from builtin.io import _printf
-from memory import Span, bitcast
+from memory import bitcast
 
-from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan
 
 
@@ -64,8 +61,8 @@ struct _MulResult[CarrierDType: DType]:
 @register_passable("trivial")
 struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias CarrierType = Scalar[Self.CarrierDType]
-    alias total_bits = sizeof[dtype]() * 8
-    alias carrier_bits = sizeof[Self.CarrierDType]() * 8
+    alias total_bits = size_of[dtype]() * 8
+    alias carrier_bits = size_of[Self.CarrierDType]() * 8
     alias sig_bits = FPUtils[dtype].mantissa_width()
     alias exp_bits = FPUtils[dtype].exponent_width()
     alias neg_exp_bias = -FPUtils[dtype].exponent_bias()
@@ -73,7 +70,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     alias min_k = -31 if Self.CarrierDType == DType.uint32 else -292
     alias max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    alias divide_magic_number = StaticTuple[UInt32, 2](6554, 656)
+    alias divide_magic_number = InlineArray[UInt32, 2](6554, 656)
     alias n_max = (
         (Scalar[Self.CarrierDType](2) << Self.sig_bits) + 1
     ) // 3 + 1 * 20
@@ -160,7 +157,7 @@ fn _write_float[
         # overhead here compared to snprintf.
         var orig_sig = sig
         var abs_exp = abs(exp)
-        var digits = StaticTuple[Byte, 21]()
+        var digits = InlineArray[Byte, 21](uninitialized=True)
         var idx = 0
         while sig > 0:
             digits[idx] = (sig % 10).cast[DType.uint8]()
@@ -191,7 +188,7 @@ fn _write_float[
             # Pad exponent with a 0 if less than two digits
             if exp < 10:
                 writer.write("0")
-            var exp_digits = StaticTuple[Byte, 10]()
+            var exp_digits = InlineArray[Byte, 10](uninitialized=True)
             var exp_idx = 0
             while exp > 0:
                 exp_digits[exp_idx] = exp % 10
@@ -316,7 +313,7 @@ fn _to_decimal[
     sig = _divide_by_pow10[
         FP[dtype, CarrierDType].kappa + 1, FP[dtype, CarrierDType].n_max_larger
     ](z_result.integer_part)
-    var r = (z_result.integer_part - FP[dtype].big_divisor * sig)
+    var r = z_result.integer_part - FP[dtype].big_divisor * sig
 
     if r < deltai:
         exp = minus_k + FP[dtype].kappa + 1
@@ -395,7 +392,7 @@ fn _compute_endpoint[
 
 
 fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
-    alias total_bits = sizeof[dtype]() * 8
+    alias total_bits = size_of[dtype]() * 8
     var output = String()
 
     @parameter
@@ -475,9 +472,9 @@ fn _umul128[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[
-        DType.uint32
-    ](bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
 
     return _UInt128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
@@ -615,7 +612,7 @@ fn _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
 fn _check_divisibility_and_divide_by_pow10[
     CarrierDType: DType, //,
     carrier_bits: Int,
-    divide_magic_number: StaticTuple[UInt32, 2],
+    divide_magic_number: InlineArray[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
     debug_assert(N + 1 <= _floor_log10_pow2(carrier_bits))
@@ -624,19 +621,20 @@ fn _check_divisibility_and_divide_by_pow10[
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
 
     var mask = UInt32((UInt32(1) << 16) - 1)
-    var result = ((prod & mask) < magic_number)
+    var result = (prod & mask) < magic_number
 
     n = (prod >> 16).cast[CarrierDType]()
     return result
 
 
+@always_inline
 fn _truncate[
-    D: DType, S: Int, //, TruncateType: DType
-](u: SIMD[D, S]) -> SIMD[D, S]:
+    dtype: DType, S: Int, //, TruncateType: DType
+](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
     """Cast to DType to truncate to the width of that type, then cast back to
     original DType.
     """
-    return u.cast[TruncateType]().cast[D]()
+    return u.cast[TruncateType]().cast[dtype]()
 
 
 fn _umul96_upper64[
@@ -696,9 +694,9 @@ fn _umul128_upper64[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[
-        DType.uint32
-    ](bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
     return (ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)).cast[
         CarrierDType
     ]()
@@ -710,7 +708,7 @@ fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
 
 fn _count_factors[
     CarrierDType: DType
-](owned n: Scalar[CarrierDType], a: Int) -> Int:
+](var n: Scalar[CarrierDType], a: Int) -> Int:
     debug_assert(a > 1)
     var c = 0
     while n % a == 0:
@@ -743,9 +741,9 @@ fn _compute_round_up_for_shorter_interval_case[
 fn _case_shorter_interval_left_endpoint_upper_threshold[
     CarrierDType: DType, sig_bits: Int
 ]() -> Int:
-    var k = _count_factors(
-        (Scalar[CarrierDType](1) << (sig_bits + 2)) - 1, 5
-    ) + 1
+    var k = (
+        _count_factors((Scalar[CarrierDType](1) << (sig_bits + 2)) - 1, 5) + 1
+    )
     return 2 + _floor_log2(pow(10, k)) // 3
 
 
@@ -762,7 +760,7 @@ fn _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-alias cache_f32 = StaticTuple[UInt64, 78](
+alias cache_f32 = InlineArray[UInt64, 78](
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -805,7 +803,7 @@ alias cache_f32 = StaticTuple[UInt64, 78](
 )
 # fmt: on
 
-alias cache_f64 = StaticTuple[_UInt128, 619](
+alias cache_f64 = InlineArray[_UInt128, 619](
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1427,7 +1425,7 @@ alias cache_f64 = StaticTuple[_UInt128, 619](
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 )
 
-alias float8_e5m2_to_str = StaticTuple[StaticString, 256](
+alias float8_e5m2_to_str = InlineArray[StaticString, 256](
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1686,7 +1684,7 @@ alias float8_e5m2_to_str = StaticTuple[StaticString, 256](
     "nan",
 )
 
-alias float8_e4m3fn_to_str = StaticTuple[StaticString, 256](
+alias float8_e4m3fn_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -1945,7 +1943,7 @@ alias float8_e4m3fn_to_str = StaticTuple[StaticString, 256](
     "nan",
 )
 
-alias float8_e5m2fnuz_to_str = StaticTuple[StaticString, 256](
+alias float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2204,7 +2202,7 @@ alias float8_e5m2fnuz_to_str = StaticTuple[StaticString, 256](
     "-57344.0",
 )
 
-alias float8_e4m3fnuz_to_str = StaticTuple[StaticString, 256](
+alias float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.0009765625",
     "0.001953125",

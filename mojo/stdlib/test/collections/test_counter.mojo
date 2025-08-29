@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
 
-from collections import Optional
 from collections.counter import Counter
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -104,7 +102,7 @@ def test_counter_getitem():
 
 
 def test_fromkeys():
-    var keys = List[String]("a", "b", "c")
+    var keys = [String("a"), "b", "c"]
     var c = Counter[String].fromkeys(keys, 3)
 
     assert_equal(c["a"], 3)
@@ -137,7 +135,7 @@ def test_iter():
 
     var keys = String()
     for key in c:
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -149,7 +147,7 @@ def test_iter_keys():
 
     var keys = String()
     for key in c.keys():
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -161,7 +159,7 @@ def test_iter_values():
 
     var sum = 0
     for value in c.values():
-        sum += value[]
+        sum += value
 
     assert_equal(sum, 3)
 
@@ -171,8 +169,8 @@ def test_iter_values_mut():
     c["a"] = 1
     c["b"] = 2
 
-    for value in c.values():
-        value[] += 1
+    for ref value in c.values():
+        value += 1
 
     assert_equal(2, c["a"])
     assert_equal(3, c["b"])
@@ -187,8 +185,8 @@ def test_iter_items():
     var keys = String()
     var sum = 0
     for entry in c.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
@@ -333,7 +331,7 @@ def test_add():
     assert_equal(c2["c"], 4)
 
 
-def test_substract():
+def test_subtract():
     var c1 = Counter[String]()
     c1["a"] = 4
     c1["b"] = 2
@@ -483,6 +481,6 @@ def main():
     test_or()
     test_pop()
     test_popitem()
-    test_substract()
+    test_subtract()
     test_total()
     test_update()

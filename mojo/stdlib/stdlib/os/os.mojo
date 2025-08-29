@@ -21,16 +21,16 @@ from os import listdir
 """
 
 from collections import InlineArray, List
-from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import OpaquePointer, c_char
+from collections.string.string_slice import _unsafe_strlen
+from sys import CompilationTarget, external_call, is_gpu
+from sys.ffi import c_char
 
-from memory import UnsafePointer
 
 from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if os_is_windows() else "/"
+alias sep = "\\" if CompilationTarget.is_windows() else "/"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -81,26 +81,20 @@ struct _dirent_macos(Copyable, Movable):
     """Name of entry."""
 
 
-fn _strnlen(ptr: UnsafePointer[c_char], max: Int) -> Int:
-    var offset = 0
-    while offset < max and ptr[offset]:
-        offset += 1
-    return offset
-
-
 struct _DirHandle:
     """Handle to an open directory descriptor opened via opendir."""
 
     var _handle: OpaquePointer
 
-    fn __init__(out self, owned path: String) raises:
+    fn __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
 
         Args:
           path: The path to open.
         """
         constrained[
-            not os_is_windows(), "operation is only available on unix systems"
+            not CompilationTarget.is_windows(),
+            "operation is only available on unix systems",
         ]()
 
         if not isdir(path):
@@ -113,7 +107,7 @@ struct _DirHandle:
         if not self._handle:
             raise "unable to open the directory '" + path + "'"
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
@@ -125,7 +119,7 @@ struct _DirHandle:
         """
 
         @parameter
-        if os_is_linux():
+        if CompilationTarget.is_linux():
             return self._list_linux()
         else:
             return self._list_macos()
@@ -134,7 +128,7 @@ struct _DirHandle:
         """Reads all the data from the handle.
 
         Returns:
-          A string containing the output of running the command.
+            A string containing the output of running the command.
         """
         var res = List[String]()
 
@@ -145,15 +139,14 @@ struct _DirHandle:
             if not ep:
                 break
             var name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr()
+            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[__origin_of(name)](
-                ptr=name_ptr.bitcast[UInt8](),
-                length=_strnlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
+                ptr=name_ptr,
+                length=_unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
                 continue
             res.append(String(name_str))
-            _ = name^
 
         return res
 
@@ -161,7 +154,7 @@ struct _DirHandle:
         """Reads all the data from the handle.
 
         Returns:
-          A string containing the output of running the command.
+            A string containing the output of running the command.
         """
         var res = List[String]()
 
@@ -172,15 +165,14 @@ struct _DirHandle:
             if not ep:
                 break
             var name = ep.take_pointee().name
-            var name_ptr = name.unsafe_ptr()
+            var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[__origin_of(name)](
-                ptr=name_ptr.bitcast[UInt8](),
-                length=_strnlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
+                ptr=name_ptr,
+                length=_unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE),
             )
             if name_str == "." or name_str == "..":
                 continue
             res.append(String(name_str))
-            _ = name^
 
         return res
 
@@ -198,7 +190,8 @@ fn getuid() -> Int:
         This function is constrained to run on Linux or macOS operating systems only.
     """
     constrained[
-        not os_is_windows(), "operating system must be Linux or macOS"
+        not CompilationTarget.is_windows(),
+        "operating system must be Linux or macOS",
     ]()
     return Int(external_call["getuid", UInt32]())
 
@@ -248,17 +241,14 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 
 @no_inline
-fn abort[
-    result: AnyType = NoneType._mlir_type, *Ts: Writable
-](*messages: *Ts) -> result:
+fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
         result: The result type.
-        Ts: The Writable types.
 
     Args:
-        messages: The messages to include when aborting.
+        message: The message to include when aborting.
 
     Returns:
         A null result type.
@@ -266,7 +256,7 @@ fn abort[
 
     @parameter
     if not is_gpu():
-        print("ABORT:", String(messages), flush=True)
+        print("ABORT:", message, flush=True)
 
     return abort[result]()
 
@@ -293,7 +283,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     if error != 0:
         # TODO get error message, the following code prints it
         # var error_str = String("Something went wrong")
-        # _ = external_call["perror", UnsafePointer[NoneType]](error_str.unsafe_ptr())
+        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
         # _ = error_str
         raise Error("Can not remove file: " + fspath)
 
@@ -353,7 +343,7 @@ def makedirs[
       mode: The mode to create the directory with.
       exist_ok: Ignore error if `True` and path exists (default `False`).
     """
-    head, tail = split(path)
+    var head, tail = split(path)
     if not tail:
         head, tail = split(head)
     if head and tail and not os.path.exists(head):
@@ -409,7 +399,7 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
       path: The path to the directory.
     """
     rmdir(path)
-    head, tail = os.path.split(path)
+    var head, tail = os.path.split(path)
     if not tail:
         head, tail = os.path.split(head)
     while head and tail:

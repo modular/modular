@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code
+from gpu.host import get_gpu_target
 from nn.mha_mask import (
     AndMask,
     CausalMask,
@@ -22,7 +23,9 @@ from nn.mha_mask import (
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
+
+from sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from sys.info import CompilationTarget
 
 
 def test_causal_mask():
@@ -74,7 +77,7 @@ def test_causal_mask_asm():
 
     print("== test_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32) -> Float32:
+    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
         var mask = CausalMask()
         var vec = mask.mask(
             IndexList[4, element_type = DType.uint32](
@@ -89,13 +92,24 @@ def test_causal_mask_asm():
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
-            return vec[3]
+            x[0] = vec[3]
 
-        return vec[2]
+        x[0] = vec[2]
 
-    var asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
-    assert_true("setp.lt.u64" not in asm)
-    assert_true("setp.lt.s64" not in asm)
+    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
+    print(asm)
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        assert_true("setp.lt.u64" not in asm)
+        assert_true("setp.lt.s64" not in asm)
+    elif has_amd_gpu_accelerator():
+        assert_true("s_cselect_b64" in asm)
+        assert_true("v_cndmask_b32_e64" in asm)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="test_causal_mask_asm",
+        ]()
 
 
 def test_and_mask():
@@ -192,7 +206,7 @@ def test_sliding_window_causal_mask_asm():
 
     print("== test_sliding_window_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32) -> Float32:
+    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
             IndexList[4, element_type = DType.uint32](
@@ -207,14 +221,25 @@ def test_sliding_window_causal_mask_asm():
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
-            return vec[3]
+            x[0] = vec[3]
 
-        return vec[2]
+        x[0] = vec[2]
 
-    var asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
+    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
     print(asm)
-    assert_true("setp.lt.u64" not in asm)
-    assert_true("setp.lt.s64" not in asm)
+
+    @parameter
+    if has_nvidia_gpu_accelerator():
+        assert_true("setp.lt.u64" not in asm)
+        assert_true("setp.lt.s64" not in asm)
+    elif has_amd_gpu_accelerator():
+        # there is nothing special about these instructions
+        assert_true("s_cselect_b64" in asm)
+        assert_true("v_cndmask_b32_e64" in asm)
+    else:
+        return CompilationTarget.unsupported_target_error[
+            operation="test_sliding_window_causal_mask_asm()",
+        ]()
 
 
 def main():

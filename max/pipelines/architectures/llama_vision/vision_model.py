@@ -27,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights
-from max.nn import Conv2DV1, EmbeddingV1, LayerNormV1, LinearV1
+from max.nn import Conv2dV1, EmbeddingV1, LayerNormV1, LinearV1
 from max.nn.layer import Layer
 
 from .attention import Attention
@@ -42,7 +42,7 @@ from .positional_embedding import (
 # TODO(MAXCORE-170): We should clean this up. This is just a RSCF layout permutation so it
 # conforms with our conv op API.
 @dataclass
-class VisionConv2D(Conv2DV1):
+class VisionConv2d(Conv2dV1):
     def __call__(self, x: TensorValue) -> TensorValue:
         # Permute first before calling the parent forward pass.
         self.filter = ops.permute(self.filter, [2, 3, 1, 0])
@@ -75,7 +75,7 @@ class VisionModel(Layer):
     gated_positional_embedding: PrecomputedPositionEmbedding
     pre_tile_positional_embedding: PrecomputedAspectRatioEmbedding
     post_tile_positional_embedding: PrecomputedAspectRatioEmbedding
-    patch_embedding: VisionConv2D
+    patch_embedding: VisionConv2d
     class_embedding: TensorValueLike
     layernorm_pre: LayerNormV1
     layernorm_post: LayerNormV1
@@ -177,9 +177,9 @@ class VisionModel(Layer):
     def _manual_constant_pad_4d(
         self,
         dtype: DType,
-        input_tensor,
+        input_tensor: TensorValue,
         pad: tuple[int, int, int, int],
-        value=0,
+        value: float = 0,
     ) -> TensorValue:
         """
         Manually pads a 4D tensor (batch of images) with constant values.
@@ -194,6 +194,8 @@ class VisionModel(Layer):
         """
         left, right, top, bottom = pad
         batch_size, channels, height, width = input_tensor.shape
+        assert isinstance(height, StaticDim)
+        assert isinstance(width, StaticDim)
 
         # Compute new height and width after padding
         new_height = height + top + bottom
@@ -308,7 +310,7 @@ class VisionModel(Layer):
         hidden_state = self.layernorm_pre(hidden_state)
 
         # Compute the number of tokens to pad
-        curr_num_patches = StaticDim(hidden_state.shape[-2]).dim
+        curr_num_patches = int(hidden_state.shape[-2])
         num_padding_patches = (8 - (curr_num_patches % 8)) % 8
         # Compute padding tuple for pad function
         padding = (
@@ -319,10 +321,7 @@ class VisionModel(Layer):
         )  # (pad_left, pad_right, pad_left for dim -2, pad_right for dim -2)
         # Pad the tensor
         hidden_state = self._manual_constant_pad_4d(
-            dtype=self.dtype,
-            input_tensor=hidden_state,
-            pad=padding,
-            value=0,
+            dtype=self.dtype, input_tensor=hidden_state, pad=padding, value=0
         )
 
         slice_index = -num_padding_patches if num_padding_patches > 0 else None
@@ -335,7 +334,7 @@ class VisionModel(Layer):
         attention_mask = self._prepare_aspect_ratio_attention_mask(
             aspect_ratio_mask=attention_mask,
             num_patches=self.num_patches,
-            target_length=StaticDim(hidden_state.shape[2]).dim,
+            target_length=int(hidden_state.shape[2]),
             dtype=self.dtype,
         )
 
@@ -515,8 +514,7 @@ def instantiate_vision_model(
         ),
         embedding=EmbeddingV1(
             weights.vision_model.pre_tile_positional_embedding.embedding.weight.allocate(
-                dtype,
-                [max_aspect_ratio_id, max_num_tiles * hidden_size],
+                dtype, [max_aspect_ratio_id, max_num_tiles * hidden_size]
             ),
             device=device,
         ),
@@ -544,7 +542,7 @@ def instantiate_vision_model(
     )
 
     # patch_embedding filter has a shape of (1280, 3, 14, 14).
-    patch_embedding = VisionConv2D(
+    patch_embedding = VisionConv2d(
         filter=weights.vision_model.patch_embedding.weight.allocate(
             dtype,
             [hidden_size, num_channels, patch_size, patch_size],

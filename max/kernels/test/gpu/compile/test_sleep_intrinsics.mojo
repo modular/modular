@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StringSlice
 from time import sleep
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code
+from gpu.host import get_gpu_target
 from testing import *
 
 
@@ -33,23 +33,23 @@ fn _verify_sleep_intrinsics_mi300x(asm: StringSlice) raises -> None:
 
 
 def test_sleep_intrinsics_sm80():
-    var asm = _compile_code_asm[
-        sleep_intrinsics, target = _get_gpu_target["sm_80"]()
-    ]()
+    var asm = _compile_code[
+        sleep_intrinsics, target = get_gpu_target["sm_80"]()
+    ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_sm90():
-    var asm = _compile_code_asm[
-        sleep_intrinsics, target = _get_gpu_target["sm_90"]()
-    ]()
+    var asm = _compile_code[
+        sleep_intrinsics, target = get_gpu_target["sm_90"]()
+    ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
 def test_sleep_intrinsics_mi300x():
-    var asm = _compile_code_asm[
-        sleep_intrinsics, target = _get_gpu_target["mi300x"]()
-    ]()
+    var asm = _compile_code[
+        sleep_intrinsics, target = get_gpu_target["mi300x"]()
+    ]().asm
     _verify_sleep_intrinsics_mi300x(asm)
 
 

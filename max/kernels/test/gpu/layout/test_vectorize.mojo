@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
 from layout import *
 from layout.int_tuple import product
@@ -44,6 +43,32 @@ fn test_vectorize_2() raises:
     assert_equal(val_linear[2], 66)
     assert_equal(val_linear[3], 67)
 
+    var three_dim_tensor = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(16, 32, 4), IntTuple(32, 1, 512)),
+        MutableAnyOrigin,
+    ].stack_allocation[alignment=16]()
+
+    n = product(three_dim_tensor.layout.shape)
+    for i in range(n):
+        three_dim_tensor.ptr[i] = i
+
+    var frag_3dt = three_dim_tensor._vectorize_2[
+        __origin_of(), IntTuple(1, 4, 1)
+    ]()
+    var val_3dt = frag_3dt[crd]
+    assert_equal(val_3dt[0], 64)
+    assert_equal(val_3dt[1], 65)
+    assert_equal(val_3dt[2], 66)
+    assert_equal(val_3dt[3], 67)
+
+    var frag_linear_3dt = three_dim_tensor._vectorize_2[4]()
+    var val_linear_3dt = frag_linear_3dt[crd]
+    assert_equal(val_linear_3dt[0], 64)
+    assert_equal(val_linear_3dt[1], 65)
+    assert_equal(val_linear_3dt[2], 66)
+    assert_equal(val_linear_3dt[3], 67)
+
     alias layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
     var tensor2 = LayoutTensor[
         DType.float32,
@@ -73,20 +98,12 @@ fn test_vectorize_2() raises:
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
     var heap = UnsafePointer[Int32, alignment=8].alloc(64)
-    var runtime_layout = RuntimeLayout[
-        layout_unknown,
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ](
-        RuntimeTuple[layout_unknown.shape, element_type = DType.int32](8, 8),
-        RuntimeTuple[layout_unknown.stride, element_type = DType.int32](8, 1),
-    )
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,
         linear_idx_type = DType.int32,
         layout_int_type = DType.int32,
-    ](heap, runtime_layout)
+    ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
         tensor4.ptr[i] = i
     var frag4 = tensor4._vectorize_2[2]()

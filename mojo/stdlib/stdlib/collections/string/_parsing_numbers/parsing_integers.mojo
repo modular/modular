@@ -23,7 +23,7 @@ fn standardize_string_slice(
     """Put the input string in an inline array, aligned to the right and padded
     with "0" on the left.
     """
-    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
     memcpy(std_x_ptr + CONTAINER_SIZE - x_len, x.unsafe_ptr(), x_len)
@@ -69,8 +69,9 @@ fn to_integer(
     for i in range(CONTAINER_SIZE):
         if not (Byte(ord("0")) <= std_x_ptr[i] <= Byte(ord("9"))):
             var num_str = StringSlice(
-                ptr=std_x_ptr, length=len(standardized_x)
+                ptr=std_x_ptr, length=UInt(len(standardized_x))
             ).lstrip("0")
+
             raise Error(
                 "Invalid character(s) in the number: '",
                 num_str,
@@ -81,18 +82,18 @@ fn to_integer(
     # 24 is not divisible by 16, so we stop at 8. Later on,
     # when we have better compile-time computation, we can
     # change 24 to be adapted to the simd width.
-    alias simd_width = min(sys.simdwidthof[DType.uint64](), 8)
+    alias simd_width = min(sys.simd_width_of[DType.uint64](), 8)
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
     # We use memcmp to check that the number is not too large.
     alias max_standardized_x = String(UInt64.MAX).rjust(CONTAINER_SIZE, "0")
-    var too_large = memcmp(
-        std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
-    ) == 1
+    var too_large = (
+        memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
+    )
     if too_large:
         var num_str = StringSlice(
-            ptr=std_x_ptr, length=len(standardized_x)
+            ptr=std_x_ptr, length=UInt(len(standardized_x))
         ).lstrip("0")
         raise Error(
             "The string is too large to be converted to an integer: '",
@@ -117,7 +118,7 @@ fn to_integer(
 
 fn get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
-    var result = InlineArray[UInt64, CONTAINER_SIZE](0)
+    var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
         result[i] = 10 ** (CONTAINER_SIZE - i - 1)
     return result

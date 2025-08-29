@@ -12,88 +12,121 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-import zmq
-from max.pipelines.core import EmbeddingsGenerator, TokenGenerator
-from max.pipelines.lib import PipelineRole
-from max.serve.config import Settings
-from max.serve.process_control import ProcessControl
+from typing import TypeVar
 
-from .base import Scheduler
-from .config import TokenGeneratorSchedulerConfig
+import zmq
+from max.interfaces import AudioGenerator, EmbeddingsGenerator, Pipeline
+from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import TTSContext
+from max.pipelines.lib import PipelineConfig, PipelineRole
+from max.serve.config import Settings
+from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
+
+from .audio_generation_scheduler import (
+    AudioGenerationScheduler,
+    AudioGenerationSchedulerConfig,
+)
+from .base import PrefillRequest, PrefillResponse, Scheduler
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 __all__ = [
-    "Scheduler",
-    "ZmqPushSocket",
-    "ZmqPullSocket",
-    "load_scheduler",
-    "TokenGeneratorSchedulerConfig",
+    "AudioGenerationScheduler",
+    "AudioGenerationSchedulerConfig",
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
+    "PrefillRequest",
+    "PrefillResponse",
+    "Scheduler",
+    "load_scheduler",
 ]
+
+T = TypeVar("T")
 
 
 def load_scheduler(
-    pc: ProcessControl,
-    pipeline: TokenGenerator | EmbeddingsGenerator,
-    zmq_ctx: zmq.Context,
+    pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator[TTSContext],
+    pipeline_config: PipelineConfig,
     settings: Settings,
-    config: TokenGeneratorSchedulerConfig,
+    dispatcher_client: DispatcherClient | None = None,
 ) -> Scheduler:
     if isinstance(pipeline, EmbeddingsGenerator):
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=config.token_generation.size,
+            max_batch_size=pipeline_config.max_batch_size
+            if pipeline_config.max_batch_size is not None
+            else 1
         )
         return EmbeddingsScheduler(
-            process_control=pc,
             scheduler_config=embeddings_scheduler_config,
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-            zmq_ctx=zmq_ctx,
         )
-    elif config.pipeline_role == PipelineRole.PrefillAndDecode:
+    elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
+        assert isinstance(pipeline, AudioGenerator)
+        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
+        assert isinstance(paged_manager, PagedKVCacheManager)
+
+        assert pipeline_config.ce_delay_ms is not None
+        assert pipeline_config.enable_prioritize_first_decode is not None
+
+        token_gen_config = AudioGenerationSchedulerConfig(
+            max_batch_size_tg=pipeline_config.max_batch_size,
+            max_forward_steps_tg=pipeline_config.max_num_steps
+            if pipeline_config.max_num_steps != -1
+            else 1,
+            max_batch_size_ce=pipeline_config.max_batch_size,
+            target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
+            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            max_queue_size_tg=pipeline_config.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
+        )
+
+        return AudioGenerationScheduler(
+            scheduler_config=token_gen_config,
+            pipeline=pipeline,
+            request_zmq_endpoint=settings.request_zmq_endpoint,
+            response_zmq_endpoint=settings.response_zmq_endpoint,
+            cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+            paged_manager=paged_manager,
+        )
+    elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
+        assert isinstance(pipeline, Pipeline)
         return load_text_generation_scheduler(
-            zmq_ctx,
             settings,
             pipeline,
-            pc,
-            max_batch_size_tg=config.max_batch_size_tg,
-            max_forward_steps_tg=config.max_forward_steps_tg,
-            target_tokens_per_batch_tg=config.target_tokens_per_batch_tg,
-            max_batch_size_ce=config.max_batch_size_ce,
-            max_forward_steps_ce=config.max_forward_steps_ce,
-            target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
-            batch_timeout=config.batch_timeout,
-            enable_chunked_prefill=config.enable_chunked_prefill,
-            enable_in_flight_batching=config.enable_in_flight_batching,
+            pipeline_config,
         )
-    elif config.pipeline_role == PipelineRole.DecodeOnly:
+    elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
+        assert isinstance(pipeline, Pipeline)
+        if dispatcher_client is None:
+            raise ValueError(
+                "Dispatcher client is required for decode scheduler"
+            )
         return load_decode_scheduler(
-            zmq_ctx,
             settings,
             pipeline,
-            pc,
-            max_batch_size_tg=config.max_batch_size_tg,
-            max_forward_steps_tg=config.max_forward_steps_tg,
+            pipeline_config,
+            dispatcher_client=dispatcher_client,
         )
-    elif config.pipeline_role == PipelineRole.PrefillOnly:
+    elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
+        assert isinstance(pipeline, Pipeline)
+        if dispatcher_client is None:
+            raise ValueError(
+                "Dispatcher client is required for prefill scheduler"
+            )
         return load_prefill_scheduler(
-            zmq_ctx,
-            settings,
             pipeline,
-            pc=pc,
-            max_batch_size_ce=config.max_batch_size_ce,
-            target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
-            batch_timeout=config.batch_timeout,
-            enable_chunked_prefill=config.enable_chunked_prefill,
+            pipeline_config,
+            dispatcher_client=dispatcher_client,
         )
     else:
         raise ValueError(
-            f"no scheduler support for pipeline_role ({config.pipeline_role})."
+            f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."
         )

@@ -22,14 +22,12 @@ from typing import TYPE_CHECKING, cast
 from max.driver import Device
 from max.dtype import DType
 from max.support.human_readable_formatter import to_human_readable_bytes
-from transformers import (
-    AutoConfig,
-)
+from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
-from .max_config import KVCacheConfig
+from .kv_cache_config import KVCacheConfig
 from .model_config import MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel
 
@@ -43,8 +41,12 @@ class MemoryEstimator:
         pipeline_model: type[PipelineModel],
         model_config: MAXModelConfig,
         devices: list[Device],
-    ):
+    ) -> None:
         huggingface_config = model_config.huggingface_config
+        is_draft_model = (
+            pipeline_config.draft_model_config is not None
+            and model_config is pipeline_config.draft_model_config
+        )
 
         try:
             free_memory = int(sum(d.stats["free_memory"] for d in devices))
@@ -53,31 +55,48 @@ class MemoryEstimator:
                 "Unable to estimate memory footprint of model, can't query device stats: "
                 + str(e)
             )
+            if is_draft_model:
+                # Early return for draft model - we don't modify the original config
+                return
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
                 pipeline_config.max_length = (
                     pipeline_model.calculate_max_seq_len(
-                        pipeline_config,
-                        huggingface_config=huggingface_config,
+                        pipeline_config, huggingface_config=huggingface_config
                     )
                 )
             return
 
-        model_weights_size = pipeline_model.estimate_weights_size(
-            pipeline_config
-        )
-
-        if model_weights_size > free_memory:
-            raise RuntimeError(
-                f"Model size exceeds available memory ({to_human_readable_bytes(model_weights_size)} > {to_human_readable_bytes(free_memory)}). "
-                "Try running a smaller model, using a smaller precision, or using a device with more memory."
+        if is_draft_model:
+            model_weights_size = model_config.weights_size()
+        else:
+            model_weights_size = pipeline_model.estimate_weights_size(
+                pipeline_config
             )
 
-        total_size = model_weights_size
+        # Get activation memory estimate from the model
+        activation_memory_size = pipeline_model.estimate_activation_memory(
+            pipeline_config, huggingface_config
+        )
+
+        # Total static memory requirement (weights + activations)
+        static_memory_size = model_weights_size + activation_memory_size
+
+        if static_memory_size > free_memory:
+            error_msg = f"Model size exceeds available memory ({to_human_readable_bytes(static_memory_size)} > {to_human_readable_bytes(free_memory)}). "
+            if activation_memory_size > 0:
+                error_msg += (
+                    f"Model weights: {to_human_readable_bytes(model_weights_size)}, "
+                    f"Activation memory: {to_human_readable_bytes(activation_memory_size)}. "
+                )
+            error_msg += "Try running a smaller model, using a smaller precision, or using a device with more memory."
+            raise RuntimeError(error_msg)
+
+        total_size = static_memory_size
         available_kv_cache_memory = int(
             free_memory * model_config.kv_cache_config.device_memory_utilization
-            - model_weights_size
+            - static_memory_size
         )
         available_kv_cache_memory = max(0, available_kv_cache_memory)
 
@@ -85,10 +104,29 @@ class MemoryEstimator:
         user_provided_max_batch_size = (
             pipeline_config.max_batch_size is not None
         )
+
+        if is_draft_model:
+            if not model_config.quantization_encoding:
+                msg = "quantization_encoding must be provided for draft model"
+                raise ValueError(msg)
+
+            kv_cache_size = self._calculate_kv_cache_size(
+                pipeline_model,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
+            )
+
+            model_config.kv_cache_config._available_cache_memory = kv_cache_size
+
+            return  # Don't modify pipeline config values
+
         if not user_provided_max_length:
             pipeline_config.max_length = pipeline_model.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             )
 
         if not model_config.quantization_encoding:
@@ -164,6 +202,10 @@ class MemoryEstimator:
         if model_weights_size:
             weights_str = f"\n\t    Weights:                {to_human_readable_bytes(model_weights_size)}"
 
+        activation_str = ""
+        if activation_memory_size:
+            activation_str = f"\n\t    Activation memory:      {to_human_readable_bytes(activation_memory_size)}"
+
         if not user_provided_max_length:
             max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
         else:
@@ -182,8 +224,9 @@ class MemoryEstimator:
             "\n"
             f"\n\tEstimated memory consumption:"
             f"{weights_str}"
+            f"{activation_str}"
             f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {to_human_readable_bytes(model_weights_size + actual_kv_cache_size)} used{free_memory_str}"
+            f"\n\t    Total estimated:        {to_human_readable_bytes(static_memory_size + actual_kv_cache_size)} used{free_memory_str}"
             f"\n\t{max_length_str}"
             f"\n\t{max_batch_size_str}\n"
         )

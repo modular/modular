@@ -20,7 +20,7 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def main():
+def main() -> None:
     mojo_kernels = Path(__file__).parent / "kernels"
 
     dtype = DType.float32
@@ -56,6 +56,7 @@ def main():
         q, k, v, *_ = graph.inputs
         results = ops.custom(
             name="modular_ops::fused_attention_custom",
+            device=DeviceRef.from_device(device),
             parameters={"BD": BD, "BN": BN},
             values=[q, k, v],
             out_types=[

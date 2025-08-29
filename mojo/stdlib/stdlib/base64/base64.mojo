@@ -19,11 +19,8 @@ from base64 import b64encode
 ```
 """
 
-from collections import List
-from sys import simdwidthof
 
-import bit
-from memory import Span, UnsafePointer
+from memory import Span
 
 from ._b64encode import _b64encode
 

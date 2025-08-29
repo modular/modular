@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import ceildiv, isclose
 from random import rand, random_float64
-from sys import sizeof
+from sys import size_of
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
@@ -34,7 +31,7 @@ from quantization.qmatmul_k import (
 from utils.index import Index
 
 
-fn fill_random[type: DType](mut array: InlineArray[Scalar[type]]):
+fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
     rand(array.unsafe_ptr(), len(array))
 
 
@@ -136,7 +133,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q4_0]()
+            N * k_groups * size_of[_block_Q4_0]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
@@ -147,7 +144,7 @@ struct qgemm_Q4_0(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q4_0]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q4_0]())
         )
 
     @staticmethod
@@ -190,13 +187,15 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
 
         # Decode the bits of the weight data.
-        var q_packed_bits = block_ptr[].q_bits.unsafe_ptr().load[
-            width = _block_Q4_0.group_size // 2
-        ]()
+        var q_packed_bits = (
+            block_ptr[]
+            .q_bits.unsafe_ptr()
+            .load[width = _block_Q4_0.group_size // 2]()
+        )
 
         for j in range(2):
             var idx = j * _block_Q4_0.group_size // 2
-            var q_bits = ((q_packed_bits >> (j * 4)) & 15)
+            var q_bits = (q_packed_bits >> (j * 4)) & 15
             b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum: Int32 = 0
@@ -208,9 +207,10 @@ struct qgemm_Q4_0(QuantizedGemm):
                 (b_quant_data[i].cast[DType.int32]() - b_zero_point)
             )
 
-        var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
-            DType.float32
-        ]()
+        var sumf = (
+            sum.cast[DType.float32]()
+            * block_ptr[].base_scale.cast[DType.float32]()
+        )
 
         return sumf * a_scale
 
@@ -226,7 +226,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q4_K]()
+            N * k_groups * size_of[_block_Q4_K]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
 
@@ -239,7 +239,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q4_K]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q4_K]())
         )
 
     @staticmethod
@@ -320,7 +320,7 @@ struct qgemm_Q4_K(QuantizedGemm):
 
             for j in range(2):
                 var idx = i * 2 + j * 32
-                var q_bits = ((q_packed_bits >> (j * 4)) & 15)
+                var q_bits = (q_packed_bits >> (j * 4)) & 15
                 b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum2: Int32 = 0
@@ -334,9 +334,10 @@ struct qgemm_Q4_K(QuantizedGemm):
             b_scales.unsafe_ptr(),
         )
 
-        var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
-            DType.float32
-        ]()
+        var sumf = (
+            sum.cast[DType.float32]()
+            * block_ptr[].base_scale.cast[DType.float32]()
+        )
         sumf = (
             sumf
             - sum2.cast[DType.float32]()
@@ -357,7 +358,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
-            N * k_groups * sizeof[_block_Q6_K]()
+            N * k_groups * size_of[_block_Q6_K]()
         )
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
 
@@ -370,7 +371,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr += 1
 
         return NDBuffer[DType.uint8, 2](
-            b_ptr, Index(N, k_groups * sizeof[_block_Q6_K]())
+            b_ptr, Index(N, k_groups * size_of[_block_Q6_K]())
         )
 
     @staticmethod
@@ -419,7 +420,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
             for j in range(2):
                 var idx = i * 2 + j * 64
-                var q_bits = ((q_packed_bits >> (j * 4)) & 15)
+                var q_bits = (q_packed_bits >> (j * 4)) & 15
                 b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         # Decode the top bits of the weight data.
@@ -430,7 +431,7 @@ struct qgemm_Q6_K(QuantizedGemm):
             for j in range(4):
                 var idx = i * 4 + j * 32
                 var q_bits_lo = b_quant_data.unsafe_ptr().load[width=32](idx)
-                var q_bits_hi = (((q_packed_bits >> (j * 2)) & 3) << 4)
+                var q_bits_hi = ((q_packed_bits >> (j * 2)) & 3) << 4
                 b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
@@ -441,9 +442,10 @@ struct qgemm_Q6_K(QuantizedGemm):
             block_ptr[].q_scales.unsafe_ptr(),
         )
 
-        var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
-            DType.float32
-        ]()
+        var sumf = (
+            sum.cast[DType.float32]()
+            * block_ptr[].base_scale.cast[DType.float32]()
+        )
 
         return sumf * a_scale
 

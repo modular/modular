@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
 
-from collections import InlineArray, List
 from math import (
     align_down,
     align_up,
@@ -33,14 +31,14 @@ from math import (
     lcm,
     log,
     log2,
+    log1p,
     sin,
     sqrt,
     trunc,
     ulp,
 )
-from sys.info import has_neon
+from sys import CompilationTarget
 
-from memory import Span
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
@@ -55,7 +53,7 @@ fn test_cos() raises:
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
@@ -68,51 +66,120 @@ fn test_factorial() raises:
 
 def test_copysign():
     var x = Int32(2)
-    assert_equal(2, copysign(x, x))
-    assert_equal(-2, copysign(x, -x))
-    assert_equal(2, copysign(-x, x))
-    assert_equal(-2, copysign(-x, -x))
+    assert_equal(x, copysign(x, x))
+    assert_equal(-x, copysign(x, -x))
+    assert_equal(x, copysign(-x, x))
+    assert_equal(-x, copysign(-x, -x))
 
-    assert_equal(1, copysign(Float32(1), Float32(2)))
-    assert_equal(-1, copysign(Float32(1), Float32(-2)))
+    assert_equal(Float32(1.0), copysign(Float32(1.0), Float32(2.0)))
+    assert_equal(Float32(-1.0), copysign(Float32(1.0), Float32(-2.0)))
     assert_equal(neg_inf[DType.float32](), copysign(inf[DType.float32](), -2.0))
-    assert_equal(-nan[DType.float32](), copysign(nan[DType.float32](), -2.0))
+    assert_equal(
+        String(-nan[DType.float32]()),
+        String(copysign(nan[DType.float32](), -2.0)),
+    )
 
     # Test some cases with 0 and signed zero
-    assert_equal(1, copysign(Float32(1.0), Float32(0.0)))
-    assert_equal(0, copysign(Float32(0.0), Float32(1.0)))
-    assert_equal(0, copysign(Float32(-0.0), Float32(1.0)))
-    assert_equal(-0, copysign(Float32(0.0), Float32(-1.0)))
+    assert_equal(Float32(1.0), copysign(Float32(1.0), Float32(0.0)))
+    assert_equal(Float32(0.0), copysign(Float32(0.0), Float32(1.0)))
+    assert_equal(Float32(0.0), copysign(Float32(-0.0), Float32(1.0)))
+    assert_equal(Float32(-0.0), copysign(Float32(0.0), Float32(-1.0)))
 
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
+fn test_isclose_numerics[*, symm: Bool]() raises:
+    alias dtype = DType.float64
+    alias T = SIMD[dtype, 2]
+
+    alias atol = 1e-8
+    alias rtol = 1e-5
+
+    alias inf_ = inf[dtype]()
+    alias nan_ = nan[dtype]()
+    alias v = T(0.1, 0.2)
+
+    fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
+        """Creates a value at the tolerance boundary that should be considered close to `a`.
+        """
+        debug_assert(all(a.ge(0)))
+
+        @parameter
+        if symm:
+            # |a - b| ≤ max(atol, rtol * max(|a|, |b|))
+            return a - max(atol, rtol * a)
+        else:
+            # |a - b| ≤ atol + rtol * |b|
+            return a + atol + rtol * a
+
+    var all_close: List[Tuple[T, T]] = [
+        (T(1, 0), T(1, 0)),
+        (T(atol), T(0)),
+        (T(inf_, -inf_), T(inf_, -inf_)),
+        (T(1), edge_val[symm](1, atol, 0)),
+        (edge_val[symm](v, atol, 0), v),
+    ]
+
+    @parameter
+    if not symm:
+        all_close += [
+            (edge_val[symm](v, 0, rtol), v),
+            (edge_val[symm](v, atol, rtol), v),
+        ]
+
+    for i in range(len(all_close)):
+        var a, b = all_close[i]
+        var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
+        assert_true(all(res))
+
+    var none_close: List[Tuple[T, T]] = [
+        (T(inf_, 0), T(1, inf_)),
+        (T(inf_, -inf_), T(1, 0)),
+        (T(inf_, inf_), T(1, -inf_)),
+        (T(inf_, inf_), T(1, 0)),
+        (T(nan_, 0), T(nan_, -inf_)),
+    ]
+
+    @parameter
+    if symm:
+        none_close += [(v, v + atol + rtol)]
+    else:
+        none_close += [
+            (T(0), edge_val[symm](0, 2 * atol, 0)),
+            (T(1), edge_val[symm](1, 2 * atol, rtol)),
+            (T(1), edge_val[symm](1, atol, 2 * rtol)),
+            (v, edge_val[symm](v, atol, 2 * rtol)),
+            (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
+        ]
+
+    for i in range(len(none_close)):
+        var a, b = none_close[i]
+        var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
+        assert_false(any(res))
+
+
 def test_isclose():
-    assert_true(isclose(Int64(2), Int64(2), atol=0, rtol=0))
-    assert_false(isclose(Int64(2), Int64(3), atol=0, rtol=0))
+    # floating-point
+    alias dtype = DType.float32
+    alias S = Scalar[dtype]
+    alias T = SIMD[dtype, 4]
+    alias nan_ = nan[dtype]()
 
-    assert_true(isclose(Float32(2), Float32(2)))
-    assert_true(isclose(Float32(2), Float32(2), rtol=1e-9))
-    assert_true(isclose(Float32(2), Float32(2.00001), rtol=1e-3))
-    assert_true(
-        isclose(nan[DType.float32](), nan[DType.float32](), equal_nan=True)
-    )
+    assert_true(isclose(S(2), S(2)))
+    assert_true(isclose(S(2), S(2), rtol=1e-9))
+    assert_true(isclose(S(2), S(2.00001), rtol=1e-3))
+    assert_true(isclose(nan_, nan_, equal_nan=True))
 
     assert_true(
-        isclose(
-            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
-            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
-            equal_nan=True,
-        ).reduce_and()
+        all(isclose(T(1, 2, 3, nan_), T(1, 2, 3, nan_), equal_nan=True))
     )
 
     assert_false(
-        isclose(
-            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 3),
-            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 4),
-            equal_nan=True,
-        ).reduce_and()
+        all(isclose(T(1, 2, nan_, 3), T(1, 2, nan_, 4), equal_nan=True))
     )
+
+    test_isclose_numerics[symm=False]()
+    test_isclose_numerics[symm=True]()
 
 
 def test_ceil():
@@ -151,30 +218,38 @@ def test_exp2():
     assert_equal(exp2(Float32(0)), 1.0)
     assert_equal(exp2(Float32(-1)), 0.5)
     assert_equal(exp2(Float32(2)), 4.0)
+    assert_almost_equal(exp2(Float32(-125)), 2.3509887e-38)
+    assert_almost_equal(exp2(Float32(125)), 4.2535296e37)
+
+    assert_equal(exp2(Float64(1)), 2.0)
+    assert_almost_equal(exp2(Float64(0.2)), 1.148696)
+    assert_equal(exp2(Float64(0)), 1.0)
+    assert_equal(exp2(Float64(-1)), 0.5)
+    assert_equal(exp2(Float64(2)), 4.0)
+    assert_almost_equal(exp2(Float64(-127)), 5.877471754111438e-39)
+    assert_almost_equal(exp2(Float64(127)), 1.7014118346046923e38)
+    assert_almost_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
+    assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
 
 
 def test_iota():
     alias length = 103
     var offset = 2
 
-    var vector = List[Int32]()
-    vector.resize(length, 0)
+    var vector = List[Int32](unsafe_uninit_length=length)
 
-    var buff = vector.data
+    var buff = vector.unsafe_ptr()
     iota(buff, length, offset)
-
     for i in range(length):
         assert_equal(vector[i], offset + i)
 
     iota(vector, offset)
-
     for i in range(length):
         assert_equal(vector[i], offset + i)
 
-    var vector2 = List[Int]()
-    vector2.resize(length, 0)
-    iota(vector2, offset)
+    var vector2 = List[Int](unsafe_uninit_length=length)
 
+    iota(vector2, offset)
     for i in range(length):
         assert_equal(vector2[i], offset + i)
 
@@ -256,8 +331,8 @@ def test_isqrt():
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = frexp(Scalar[type](123.45))
+def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol
     )
@@ -265,7 +340,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res0[1].cast[DType.float32](), 7.0, atol=atol, rtol=rtol
     )
 
-    var res1 = frexp(Scalar[type](0.1))
+    var res1 = frexp(Scalar[dtype](0.1))
     assert_almost_equal(
         res1[0].cast[DType.float32](), 0.8, atol=atol, rtol=rtol
     )
@@ -273,7 +348,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res1[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res2 = frexp(Scalar[type](-0.1))
+    var res2 = frexp(Scalar[dtype](-0.1))
     assert_almost_equal(
         res2[0].cast[DType.float32](), -0.8, atol=atol, rtol=rtol
     )
@@ -281,7 +356,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res2[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res3 = frexp(SIMD[type, 4](0, 2, 4, 5))
+    var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
         res3[0].cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
@@ -296,18 +371,18 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log(Scalar[type](123.45))
+def _test_log_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol
     )
 
-    var res1 = log(Scalar[type](0.1))
+    var res1 = log(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -2.3025, atol=atol, rtol=rtol
     )
 
-    var res2 = log(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
@@ -315,28 +390,64 @@ def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
         rtol=rtol,
     )
 
-    var res3 = log(Scalar[type](2.7182818284590452353602874713526624977572))
+    var res3 = log(Scalar[dtype](2.7182818284590452353602874713526624977572))
     assert_almost_equal(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol)
 
-    var res4 = isinf(log(SIMD[type, 4](0, 1, 0, 0)))
+    var res4 = isinf(log(SIMD[dtype, 4](0, 1, 0, 0)))
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log2(Scalar[type](123.45))
+def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
     )
 
-    var res1 = log2(Scalar[type](0.1))
+    var res1 = log2(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -3.3219, atol=atol, rtol=rtol
     )
 
-    var res2 = log2(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log2(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
+        atol=atol,
+        rtol=rtol,
+    )
+
+
+def _test_log1p_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log1p(Scalar[dtype](123.45))
+    assert_almost_equal(
+        res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
+    )
+
+    var res1 = log1p(Scalar[dtype](0.1))
+    assert_almost_equal(
+        res1.cast[DType.float32](), 0.0953102, atol=atol, rtol=rtol
+    )
+
+    var res2 = log1p(SIMD[dtype, 4](1, 2, 4, 5))
+    assert_almost_equal(
+        res2.cast[DType.float32](),
+        SIMD[DType.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
+        atol=atol,
+        rtol=rtol,
+    )
+
+    var res3 = log1p(SIMD[dtype, 4](0.00001, 0.000002, 0.000004, 0.00005))
+    assert_almost_equal(
+        res3.cast[DType.float32](),
+        SIMD[DType.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
+        atol=atol,
+        rtol=rtol,
+    )
+
+    var res4 = log1p(SIMD[dtype, 4](0.707107, 0.807107, 0.9, 1))
+    assert_almost_equal(
+        res4.cast[DType.float32](),
+        SIMD[DType.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
         atol=atol,
         rtol=rtol,
     )
@@ -348,7 +459,7 @@ def test_frexp():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -358,7 +469,7 @@ def test_log():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -368,8 +479,19 @@ def test_log2():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+
+
+def test_log1p():
+    _test_log1p_impl[DType.float64](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
+
+    # TODO(KERN-228): support BF16 on neon systems.
+    @parameter
+    if not CompilationTarget.has_neon():
+        _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_gcd():
@@ -559,6 +681,7 @@ def main():
     test_frexp()
     test_log()
     test_log2()
+    test_log1p()
     test_gcd()
     test_lcm()
     test_ulp()

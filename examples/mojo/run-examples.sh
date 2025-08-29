@@ -15,13 +15,6 @@
 set -euo pipefail
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_ROOT=$(realpath "${SCRIPT_DIR}/../..")
-EXAMPLES_DIR="${REPO_ROOT}"/examples/mojo
+REPO_ROOT="${SCRIPT_DIR}"/../..
 
-BUILD_DIR="${REPO_ROOT}"/mojo/build
-mkdir -p "${BUILD_DIR}"
-
-source "${REPO_ROOT}"/mojo/stdlib/scripts/build-stdlib.sh
-
-# Run the examples using `lit`.
-lit -sv "${EXAMPLES_DIR}"
+exec "$REPO_ROOT"/bazelw test //examples/mojo/...

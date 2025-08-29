@@ -17,7 +17,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -31,10 +30,10 @@ trait MaybeZeroSized:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZeroSized(MaybeZeroSized, DevicePassable):
+struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -49,7 +48,7 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
     fn value(self) -> S:
         return 2
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         constrained[
             not is_gpu(),
             "ZeroSized is not supported on GPUs",
@@ -61,10 +60,10 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NotZeroSized(MaybeZeroSized, DevicePassable):
+struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -84,7 +83,7 @@ struct NotZeroSized(MaybeZeroSized, DevicePassable):
     fn value(self) -> S:
         return self.val
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         constrained[
             not is_gpu(),
             "ZeroSized is not supported on GPUs",
@@ -98,26 +97,26 @@ fn _vec_func_zero(
     zs: ZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func_not_zero(
     zs: NotZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func[
@@ -126,13 +125,13 @@ fn _vec_func[
     zs: zero_sized_t,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn test_function_compilation(ctx: DeviceContext) raises:
@@ -243,6 +242,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
     print("compiling vec_func")
+    # TODO(MAXPLAT-333): Make compile_function_experimental support this case.
     var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
     print("calling vec_func")
     ctx.enqueue_function_checked(

@@ -17,15 +17,12 @@
 # ===-----------------------------------------------------------------------===#
 
 from math import align_down, ceildiv, iota
-from sys.info import simdwidthof
+from sys.info import simd_width_of
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
-from builtin.math import max as _max
 from builtin.math import min as _min
-from layout import Layout, LayoutTensor
-
-from utils.index import IndexList
+from layout import LayoutTensor
 
 
 fn _argn[
@@ -44,7 +41,7 @@ fn _argn[
         output: The output tensor.
     """
     alias rank = input.rank
-    alias simd_width = simdwidthof[input.dtype]()
+    alias simd_width = simd_width_of[input.dtype]()
 
     var canonical_axis = axis
     if canonical_axis < 0:
@@ -99,28 +96,28 @@ fn _argn[
         @parameter
         @always_inline
         fn cmpeq[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter
             if is_max:
-                return a <= b
+                return a.le(b)
             else:
-                return a >= b
+                return a.ge(b)
 
         @parameter
         @always_inline
         fn cmp[
-            type: DType, simd_width: Int
-        ](a: SIMD[type, simd_width], b: SIMD[type, simd_width]) -> SIMD[
+            dtype: DType, simd_width: Int
+        ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
             @parameter
             if is_max:
-                return a < b
+                return a.lt(b)
             else:
-                return a > b
+                return a.gt(b)
 
         # iterate over flattened axes
         var start = task_id * chunk_size
@@ -176,7 +173,7 @@ fn _argn[
 
             # handle the case where min wasn't in trailing values
             if not found_min:
-                var matching = global_values == global_val
+                var matching = global_values.eq(global_val)
                 var min_indices = matching.select(
                     global_indices, Scalar[output.dtype].MAX
                 )

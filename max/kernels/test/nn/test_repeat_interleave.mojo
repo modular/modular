@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import stderr
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn test_collapse_dims_around_axis() raises:
@@ -51,11 +49,9 @@ fn test_repeat_interleave_1d() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
+    var input = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(4),
+        Layout.row_major(4),
     ](input_stack)
 
     input[0] = 0
@@ -69,11 +65,9 @@ fn test_repeat_interleave_1d() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = NDBuffer[
+    var repeats = LayoutTensor[
         type_repeats,
-        rank_repeats,
-        _,
-        DimList(4),
+        Layout.row_major(4),
     ](repeats_stack)
 
     repeats[0] = 1
@@ -82,11 +76,10 @@ fn test_repeat_interleave_1d() raises:
     repeats[3] = 4
 
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = NDBuffer[
+    var output = LayoutTensor[
+        mut=True,
         type,
-        rank,
-        _,
-        DimList(10),
+        Layout.row_major(10),
     ](output_stack)
 
     repeat_interleave(input, repeats, 0, output)
@@ -106,11 +99,9 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
+    var input = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(4),
+        Layout.row_major(4),
     ](input_stack)
 
     input[0] = 0
@@ -124,21 +115,17 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
-    var repeats = NDBuffer[
+    var repeats = LayoutTensor[
         type_repeats,
-        rank_repeats,
-        _,
-        DimList(1),
+        Layout.row_major(1),
     ](repeats_stack)
 
     repeats[0] = 2
 
     var output_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var output = NDBuffer[
+    var output = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(8),
+        Layout.row_major(8),
     ](output_stack)
 
     repeat_interleave(input, repeats, 0, output)
@@ -158,11 +145,9 @@ fn test_repeat_interleave_2d_axis_0() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
+    var input = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(2, 2),
+        Layout.row_major(2, 2),
     ](input_stack)
 
     input[0, 0] = 0
@@ -176,11 +161,9 @@ fn test_repeat_interleave_2d_axis_0() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = NDBuffer[
+    var repeats = LayoutTensor[
         type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
+        Layout.row_major(2),
     ](repeats_stack)
 
     repeats[0] = 2
@@ -188,11 +171,9 @@ fn test_repeat_interleave_2d_axis_0() raises:
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = NDBuffer[
+    var output = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(5, 2),
+        Layout.row_major(5, 2),
     ](output_stack)
 
     repeat_interleave(input, repeats, 0, output)
@@ -218,11 +199,9 @@ fn test_repeat_interleave_2d_axis_1() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = NDBuffer[
+    var input = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(2, 2),
+        Layout.row_major(2, 2),
     ](input_stack)
 
     input[0, 0] = 0
@@ -236,11 +215,9 @@ fn test_repeat_interleave_2d_axis_1() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
+    var repeats = LayoutTensor[
         type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
+        Layout.row_major(2),
     ](repeats_stack)
 
     repeats[0] = 2
@@ -248,11 +225,9 @@ fn test_repeat_interleave_2d_axis_1() raises:
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = NDBuffer[
+    var output = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(2, 5),
+        Layout.row_major(2, 5),
     ](output_stack)
 
     repeat_interleave(input, repeats, 1, output)
@@ -275,11 +250,9 @@ fn test_repeat_interleave_3d() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var input = NDBuffer[
+    var input = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(2, 2, 2),
+        Layout.row_major(2, 2, 2),
     ](input_stack)
 
     input[0, 0, 0] = 0
@@ -298,11 +271,9 @@ fn test_repeat_interleave_3d() raises:
     alias type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = NDBuffer[
+    var repeats = LayoutTensor[
         type_repeats,
-        rank_repeats,
-        _,
-        DimList(2),
+        Layout.row_major(2),
     ](repeats_stack)
 
     repeats[0] = 2
@@ -310,11 +281,9 @@ fn test_repeat_interleave_3d() raises:
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 20](uninitialized=True)
-    var output = NDBuffer[
+    var output = LayoutTensor[
         type,
-        rank,
-        _,
-        DimList(2, 5, 2),
+        Layout.row_major(2, 5, 2),
     ](output_stack)
 
     repeat_interleave(input, repeats, 1, output)

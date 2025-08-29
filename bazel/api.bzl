@@ -1,35 +1,122 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@modular_test_deps//:requirements.bzl", _requirement = "requirement")
-load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
-load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
-load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
 load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
-load("@rules_python//python:py_library.bzl", "py_library")
-load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
+load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
+load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_py_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_venv.bzl", _modular_py_venv = "modular_py_venv")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_run_binary_test.bzl", _modular_run_binary_test = "modular_run_binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
+load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
+modular_py_venv = _modular_py_venv
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
+mojo_test_environment = _mojo_test_environment
+proto_library = _proto_library
+py_grpc_library = _py_grpc_library
 requirement = _requirement
 strip_prefix = _strip_prefix
 
-def _has_internal_reference(deps):
-    return any([dep.startswith(("//GenericML", "//Kernels/", "//SDK/")) for dep in deps])
+# Deps that aren't open source so we need to remap to pull from the wheel instead.
+_DEPS_FROM_WHEEL = [
+    "//max",
+    "//max/_core_mojo",
+    "//max/driver",
+    "//max/dtype",
+    "//max/engine",
+    "//max/experimental",
+    "//max/interfaces",
+    "//max/mlir",
+    "//max/profiler",
+    "//max/support",
+    "//max/torch",
+    "//max:_core",
+]
 
-def modular_py_library(**kwargs):
-    # TODO: Pull in the necessary pip dependencies, remap labels, etc
-    if native.package_name().startswith(("max/entrypoints", "max/nn", "max/pipelines", "max/serve")):
+def _is_internal_reference(dep):
+    """Check if a dependency is an internal reference."""
+    return dep.startswith((
+        "//GenericML",
+        "//KGEN/",
+        "//Kernels/",
+        "//SDK/integration-test/pipelines/python",
+        "//SDK:max",
+    )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml_files" in dep
+
+def _has_internal_reference(deps):
+    return any([_is_internal_reference(dep) for dep in deps])
+
+def _remove_internal_data(data):
+    # TODO: This is a hack that potentially breaks things at runtime
+    if type(data) != type([]):
+        return []
+    return [d for d in data if not _is_internal_reference(d)]
+
+def _rewrite_deps(deps):
+    """Rewrite dependencies to use the open-source package names, or to come from the wheel."""
+    new_deps = []
+    for dep in deps:
+        if dep.startswith("//SDK/lib/API/python/"):
+            replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
+            if replaced_dep in _DEPS_FROM_WHEEL:
+                replaced_dep = "@modular_wheel//:wheel"
+            if replaced_dep not in new_deps:
+                new_deps.append(replaced_dep)
+        elif dep.startswith("//open-source/max/mojo"):
+            replaced_dep = dep.replace("//open-source/max/mojo", "//mojo")
+            new_deps.append(replaced_dep)
+        else:
+            new_deps.append(dep)
+    return new_deps
+
+def modular_py_library(
+        data = [],
+        deps = [],
+        visibility = ["//visibility:public"],
+        **kwargs):
+    if _has_internal_reference(deps):
         return
 
-    py_library(**kwargs)
+    _modular_py_library(
+        data = _remove_internal_data(data),
+        deps = _rewrite_deps(deps),
+        visibility = visibility,
+        **kwargs
+    )
 
 # buildifier: disable=function-docstring
-def mojo_library(
-        validate_missing_docs = False,  # buildifier: disable=unused-variable
-        build_docs = False,  # buildifier: disable=unused-variable
+def modular_py_binary(
+        name,
         deps = [],
+        data = [],
+        env = {},
         **kwargs):
+    if name == "pipelines":
+        # TODO: Fix this hack, there is a layering issue with what is open source right now
+        deps.append("//mojo/python/mojo")
+        data = []
+        env = {}
+
+    # TODO: There is some data we can fix by pulling from the wheel
+    if _has_internal_reference(deps) or _has_internal_reference(data):
+        return
+
+    _modular_py_binary(
+        name = name,
+        data = data,
+        env = env,
+        deps = _rewrite_deps(deps),
+        **kwargs
+    )
+
+def mojo_library(deps = [], **kwargs):
     if _has_internal_reference(deps):
         return
 
@@ -50,25 +137,31 @@ def mojo_binary(
         **kwargs
     )
 
-def modular_run_binary_test(name, **kwargs):
-    if name.endswith(".example-test"):
-        return  # TODO: Fix custom_ops python examples
-    binary_test(
+# buildifier: disable=function-docstring
+def modular_run_binary_test(name, external_noop = False, **kwargs):
+    if external_noop:
+        return
+
+    _modular_run_binary_test(
         name = name,
+        **kwargs
+    )
+
+def lit_tests(tools = [], data = [], **kwargs):
+    if _has_internal_reference(data) or _has_internal_reference(tools):
+        return
+
+    _lit_tests(
+        data = data,
+        tools = tools,
         **kwargs
     )
 
 def _noop(**_kwargs):
     pass
 
-lit_tests = _noop
-modular_py_binary = _noop
 modular_py_test = _noop
-mojo_doc = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
 pkg_files = _noop
-proto_library = _noop
-py_grpc_library = _noop
-py_proto_library = _noop

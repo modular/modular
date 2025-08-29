@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
+from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -26,7 +26,6 @@ from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index, IndexList
@@ -257,7 +256,7 @@ def test_shapes[
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
     @parameter
-    if b_packed and os_is_macos():
+    if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[

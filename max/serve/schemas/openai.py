@@ -2,11 +2,9 @@
 #   filename:  openai.yaml
 #   timestamp: 2024-08-14T17:09:16+00:00
 
-# type: ignore
-
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Optional, Union, cast
 
 from pydantic import (
     AnyUrl,
@@ -493,7 +491,7 @@ class CreateImageRequest(BaseModel):
         description='The model to use for image generation.',
         examples=['dall-e-3'],
     )
-    n: Optional[conint(ge=1, le=10)] = Field(
+    n: Optional[Annotated[int, Field(ge=1, le=10)]] = Field(
         1,
         description='The number of images to generate. Must be between 1 and 10. For `dall-e-3`, only `n=1` is supported.',
         examples=[1],
@@ -561,7 +559,7 @@ class CreateImageEditRequest(BaseModel):
         description='The model to use for image generation. Only `dall-e-2` is supported at this time.',
         examples=['dall-e-2'],
     )
-    n: Optional[conint(ge=1, le=10)] = Field(
+    n: Optional[Annotated[int, Field(ge=1, le=10)]] = Field(
         1,
         description='The number of images to generate. Must be between 1 and 10.',
         examples=[1],
@@ -593,7 +591,7 @@ class CreateImageVariationRequest(BaseModel):
         description='The model to use for image generation. Only `dall-e-2` is supported at this time.',
         examples=['dall-e-2'],
     )
-    n: Optional[conint(ge=1, le=10)] = Field(
+    n: Optional[Annotated[int, Field(ge=1, le=10)]] = Field(
         1,
         description='The number of images to generate. Must be between 1 and 10. For `dall-e-3`, only `n=1` is supported.',
         examples=[1],
@@ -821,7 +819,7 @@ class CancelUploadRequest(BaseModel):
 
 
 class Hyperparameters(BaseModel):
-    batch_size: Optional[Union[Literal['auto'], conint(ge=1, le=256)]] = Field(
+    batch_size: Optional[Union[Literal['auto'], Annotated[int, Field(ge=1, le=256)]]] = Field(
         'auto',
         description='Number of examples in each batch. A larger batch size means that model parameters\nare updated less frequently, but with lower variance.\n',
     )
@@ -831,7 +829,7 @@ class Hyperparameters(BaseModel):
         'auto',
         description='Scaling factor for the learning rate. A smaller learning rate may be useful to avoid\noverfitting.\n',
     )
-    n_epochs: Optional[Union[Literal['auto'], conint(ge=1, le=50)]] = Field(
+    n_epochs: Optional[Union[Literal['auto'], Annotated[int, Field(ge=1, le=50)]]] = Field(
         'auto',
         description='The number of epochs to train the model for. An epoch refers to one full cycle\nthrough the training dataset.\n',
     )
@@ -885,7 +883,7 @@ class CreateFineTuningJobRequest(BaseModel):
     hyperparameters: Optional[Hyperparameters] = Field(
         None, description='The hyperparameters used for the fine-tuning job.'
     )
-    suffix: Optional[constr(min_length=1, max_length=40)] = Field(
+    suffix: Optional[Annotated[str, Field(min_length=1, max_length=40)]] = Field(
         None,
         description='A string of up to 18 characters that will be added to your fine-tuned model name.\n\nFor example, a `suffix` of "custom-model-name" would produce a model name like `ft:gpt-4o-mini:openai:custom-model-name:7p4lURel`.\n',
     )
@@ -898,7 +896,7 @@ class CreateFineTuningJobRequest(BaseModel):
         None,
         description='A list of integrations to enable for your fine-tuning job.',
     )
-    seed: Optional[conint(ge=0, le=2147483647)] = Field(
+    seed: Optional[Annotated[int, Field(ge=0, le=2147483647)]] = Field(
         None,
         description='The seed controls the reproducibility of the job. Passing in the same seed and job parameters should produce the same results, but may differ in rare cases.\nIf a seed is not specified, one will be generated for you.\n',
         examples=[42],
@@ -935,7 +933,7 @@ class CreateEmbeddingRequest(BaseModel):
         description='The format to return the embeddings in. Can be either `float` or [`base64`](https://pypi.org/project/pybase64/).',
         examples=['float'],
     )
-    dimensions: Optional[conint(ge=1)] = Field(
+    dimensions: Optional[Annotated[int, Field(ge=1)]] = Field(
         None,
         description='The number of dimensions the resulting output embeddings should have. Only supported in `text-embedding-3` and later models.\n',
     )
@@ -988,7 +986,7 @@ class CreateTranscriptionRequest(BaseModel):
     )
     timestamp_granularities__: Optional[List[Literal['word', 'segment']]] = (
         Field(
-            ['segment'],
+            default=cast(List[Literal['word', 'segment']], ['segment']),
             alias='timestamp_granularities[]',
             description='The timestamp granularities to populate for this transcription. `response_format` must be set `verbose_json` to use timestamp granularities. Either or both of these options are supported: `word`, or `segment`. Note: There is no additional latency for segment timestamps, but generating word timestamps incurs additional latency.\n',
         )
@@ -1099,7 +1097,7 @@ class CreateSpeechRequest(BaseModel):
         ...,
         description='One of the available [TTS models](/docs/models/tts): `tts-1` or `tts-1-hd`\n',
     )
-    input: constr(max_length=4096) = Field(
+    input: Annotated[str, Field(max_length=4096)] = Field(
         ...,
         description='The text to generate audio for. The maximum length is 4096 characters.',
     )
@@ -1113,7 +1111,7 @@ class CreateSpeechRequest(BaseModel):
         'mp3',
         description='The format to audio in. Supported formats are `mp3`, `opus`, `aac`, `flac`, `wav`, and `pcm`.',
     )
-    speed: Optional[confloat(ge=0.25, le=4.0)] = Field(
+    speed: Optional[Annotated[float, Field(ge=0.25, le=4.0)]] = Field(
         1.0,
         description='The speed of the generated audio. Select a value from `0.25` to `4.0`. `1.0` is the default.',
     )
@@ -1254,7 +1252,7 @@ class Error1(BaseModel):
 
 
 class Hyperparameters1(BaseModel):
-    n_epochs: Union[Literal['auto'], conint(ge=1, le=50)] = Field(
+    n_epochs: Union[Literal['auto'], Annotated[int, Field(ge=1, le=50)]] = Field(
         ...,
         description='The number of epochs to train the model for. An epoch refers to one full cycle through the training dataset.\n"auto" decides the optimal number of epochs based on the size of the dataset. If setting the number manually, we support any number between 1 and 50 epochs.',
     )
@@ -1430,7 +1428,7 @@ class Static(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    max_chunk_size_tokens: conint(ge=100, le=4096) = Field(
+    max_chunk_size_tokens: Annotated[int, Field(ge=100, le=4096)] = Field(
         ...,
         description='The maximum number of tokens in each chunk. The default value is `800`. The minimum value is `100` and the maximum value is `4096`.',
     )
@@ -1462,7 +1460,7 @@ class VectorStore(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1508,7 +1506,7 @@ class VectorStore1(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1564,7 +1562,7 @@ class AssistantToolsCode(BaseModel):
 
 
 class FileSearch4(BaseModel):
-    max_num_results: Optional[conint(ge=1, le=50)] = Field(
+    max_num_results: Optional[Annotated[int, Field(ge=1, le=50)]] = Field(
         None,
         description='The maximum number of results the file search tool should output. The default is 20 for `gpt-4*` models and 5 for `gpt-3.5-turbo`. This number should be between 1 and 50 inclusive.\n\nNote that the file search tool may output fewer than `max_num_results` results. See the [file search tool documentation](/docs/assistants/tools/file-search/number-of-chunks-returned) for more information.\n',
     )
@@ -1597,7 +1595,7 @@ class TruncationObject(BaseModel):
         ...,
         description='The truncation strategy to use for the thread. The default is `auto`. If set to `last_messages`, the thread will be truncated to the n most recent messages in the thread. When set to `auto`, messages in the middle of the thread will be dropped to fit the context length of the model, `max_prompt_tokens`.',
     )
-    last_messages: Optional[conint(ge=1)] = Field(
+    last_messages: Optional[Annotated[int, Field(ge=1)]] = Field(
         None,
         description='The number of most recent messages from the thread when constructing the context for the run.',
     )
@@ -1642,7 +1640,7 @@ class ModifyRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1743,7 +1741,7 @@ class ThreadObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1776,7 +1774,7 @@ class VectorStore2(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1822,7 +1820,7 @@ class VectorStore3(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1867,7 +1865,7 @@ class ModifyThreadRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1910,7 +1908,7 @@ class ModifyMessageRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2017,8 +2015,8 @@ class MessageContentTextAnnotationsFileCitationObject(BaseModel):
         description='The text in the message content that needs to be replaced.',
     )
     file_citation: FileCitation
-    start_index: conint(ge=0)
-    end_index: conint(ge=0)
+    start_index: Annotated[int, Field(ge=0)]
+    end_index: Annotated[int, Field(ge=0)]
 
 
 class FilePath(BaseModel):
@@ -2034,8 +2032,8 @@ class MessageContentTextAnnotationsFilePathObject(BaseModel):
         description='The text in the message content that needs to be replaced.',
     )
     file_path: FilePath
-    start_index: conint(ge=0)
-    end_index: conint(ge=0)
+    start_index: Annotated[int, Field(ge=0)]
+    end_index: Annotated[int, Field(ge=0)]
 
 
 class MessageDeltaContentRefusalObject(BaseModel):
@@ -2067,8 +2065,8 @@ class MessageDeltaContentTextAnnotationsFileCitationObject(BaseModel):
         description='The text in the message content that needs to be replaced.',
     )
     file_citation: Optional[FileCitation1] = None
-    start_index: Optional[conint(ge=0)] = None
-    end_index: Optional[conint(ge=0)] = None
+    start_index: Optional[Annotated[int, Field(ge=0)]] = None
+    end_index: Optional[Annotated[int, Field(ge=0)]] = None
 
 
 class FilePath1(BaseModel):
@@ -2087,8 +2085,8 @@ class MessageDeltaContentTextAnnotationsFilePathObject(BaseModel):
         description='The text in the message content that needs to be replaced.',
     )
     file_path: Optional[FilePath1] = None
-    start_index: Optional[conint(ge=0)] = None
-    end_index: Optional[conint(ge=0)] = None
+    start_index: Optional[Annotated[int, Field(ge=0)]] = None
+    end_index: Optional[Annotated[int, Field(ge=0)]] = None
 
 
 class LastError1(BaseModel):
@@ -2253,7 +2251,7 @@ class VectorStoreExpirationAfter(BaseModel):
         ...,
         description='Anchor timestamp after which the expiration policy applies. Supported anchors: `last_active_at`.',
     )
-    days: conint(ge=1, le=365) = Field(
+    days: Annotated[int, Field(ge=1, le=365)] = Field(
         ...,
         description='The number of days after the anchor time that the vector store will expire.',
     )
@@ -2310,7 +2308,7 @@ class VectorStoreObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2324,7 +2322,7 @@ class UpdateVectorStoreRequest(BaseModel):
     expires_after: Optional[VectorStoreExpirationAfter] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2362,7 +2360,7 @@ class StaticChunkingStrategy(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    max_chunk_size_tokens: conint(ge=100, le=4096) = Field(
+    max_chunk_size_tokens: Annotated[int, Field(ge=100, le=4096)] = Field(
         ...,
         description='The maximum number of tokens in each chunk. The default value is `800`. The minimum value is `100` and the maximum value is `4096`.',
     )
@@ -2604,7 +2602,7 @@ class Batch(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -3382,7 +3380,7 @@ class CreateCompletionRequest(BaseModel):
         ...,
         description='The prompt(s) to generate completions for, encoded as a string, array of strings, array of tokens, or array of token arrays.\n\nNote that <|endoftext|> is the document separator that the model sees during training, so if a prompt is not specified the model will generate as if from the beginning of a new document.\n',
     )
-    best_of: Optional[conint(ge=0, le=20)] = Field(
+    best_of: Optional[Annotated[int, Field(ge=0, le=20)]] = Field(
         1,
         description='Generates `best_of` completions server-side and returns the "best" (the one with the highest log probability per token). Results cannot be streamed.\n\nWhen used with `n`, `best_of` controls the number of candidate completions and `n` specifies how many to return – `best_of` must be greater than `n`.\n\n**Note:** Because this parameter generates many completions, it can quickly consume your token quota. Use carefully and ensure that you have reasonable settings for `max_tokens` and `stop`.\n',
     )
@@ -3390,7 +3388,7 @@ class CreateCompletionRequest(BaseModel):
         False,
         description='Echo back the prompt in addition to the completion\n',
     )
-    frequency_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
+    frequency_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
@@ -3398,25 +3396,34 @@ class CreateCompletionRequest(BaseModel):
         None,
         description='Modify the likelihood of specified tokens appearing in the completion.\n\nAccepts a JSON object that maps tokens (specified by their token ID in the GPT tokenizer) to an associated bias value from -100 to 100. You can use this [tokenizer tool](/tokenizer?view=bpe) to convert text to token IDs. Mathematically, the bias is added to the logits generated by the model prior to sampling. The exact effect will vary per model, but values between -1 and 1 should decrease or increase likelihood of selection; values like -100 or 100 should result in a ban or exclusive selection of the relevant token.\n\nAs an example, you can pass `{"50256": -100}` to prevent the <|endoftext|> token from being generated.\n',
     )
-    logprobs: Optional[conint(ge=0, le=5)] = Field(
+    logprobs: Optional[Annotated[int, Field(ge=0, le=5)]] = Field(
         None,
         description='Include the log probabilities on the `logprobs` most likely output tokens, as well the chosen tokens. For example, if `logprobs` is 5, the API will return a list of the 5 most likely tokens. The API will always return the `logprob` of the sampled token, so there may be up to `logprobs+1` elements in the response.\n\nThe maximum value for `logprobs` is 5.\n',
     )
-    max_tokens: Optional[conint(ge=0)] = Field(
+    max_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
         16,
         description="The maximum number of [tokens](/tokenizer) that can be generated in the completion.\n\nThe token count of your prompt plus `max_tokens` cannot exceed the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
         examples=[16],
     )
-    n: Optional[conint(ge=1, le=128)] = Field(
+    min_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
+        0,
+        description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
+        examples=[16],
+    )
+    n: Optional[Annotated[int, Field(ge=1, le=128)]] = Field(
         1,
         description='How many completions to generate for each prompt.\n\n**Note:** Because this parameter generates many completions, it can quickly consume your token quota. Use carefully and ensure that you have reasonable settings for `max_tokens` and `stop`.\n',
         examples=[1],
     )
-    presence_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
+    presence_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
-    seed: Optional[conint(ge=-9223372036854775808, le=9223372036854775807)] = (
+    repetition_penalty: Optional[Annotated[float, Field(gt=0.0)]] = Field(
+        1,
+        description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
+    )
+    seed: Optional[Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]] = (
         Field(
             None,
             description='If specified, our system will make a best effort to sample deterministically, such that repeated requests with the same `seed` and parameters should return the same result.\n\nDeterminism is not guaranteed, and you should refer to the `system_fingerprint` response parameter to monitor changes in the backend.\n',
@@ -3425,6 +3432,10 @@ class CreateCompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = Field(
         None,
         description='Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.\n',
+    )
+    stop_token_ids: Optional[List[int]] = Field(
+        None,
+        description='List of tokens that stop the generation when they are generated. The returned output will contain the stop tokens unless the stop tokens are special tokens.\n',
     )
     stream: Optional[bool] = Field(
         False,
@@ -3436,12 +3447,17 @@ class CreateCompletionRequest(BaseModel):
         description='The suffix that comes after a completion of inserted text.\n\nThis parameter is only supported for `gpt-3.5-turbo-instruct`.\n',
         examples=['test.'],
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
+        1,
+        description='Integer that controls the number of top tokens to consider.\n',
+        examples=[1],
+    )
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
@@ -3452,6 +3468,10 @@ class CreateCompletionRequest(BaseModel):
         examples=['user-1234'],
     )
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
+    target_endpoint: Optional[str] = Field(
+        None,
+        description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
+    )
 
 
 class CreateCompletionResponse(BaseModel):
@@ -3730,11 +3750,11 @@ class AssistantObject(BaseModel):
         ...,
         description='The Unix timestamp (in seconds) for when the assistant was created.',
     )
-    name: constr(max_length=256) = Field(
+    name: Annotated[str, Field(max_length=256)] = Field(
         ...,
         description='The name of the assistant. The maximum length is 256 characters.\n',
     )
-    description: constr(max_length=512) = Field(
+    description: Annotated[str, Field(max_length=512)] = Field(
         ...,
         description='The description of the assistant. The maximum length is 512 characters.\n',
     )
@@ -3742,7 +3762,7 @@ class AssistantObject(BaseModel):
         ...,
         description='ID of the model to use. You can use the [List models](/docs/api-reference/models/list) API to see all of your available models, or see our [Model overview](/docs/models/overview) for descriptions of them.\n',
     )
-    instructions: constr(max_length=256000) = Field(
+    instructions: Annotated[str, Field(max_length=256000)] = Field(
         ...,
         description='The system instructions that the assistant uses. The maximum length is 256,000 characters.\n',
     )
@@ -3761,14 +3781,14 @@ class AssistantObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
@@ -3813,15 +3833,15 @@ class CreateAssistantRequest(BaseModel):
         description='ID of the model to use. You can use the [List models](/docs/api-reference/models/list) API to see all of your available models, or see our [Model overview](/docs/models/overview) for descriptions of them.\n',
         examples=['gpt-4o'],
     )
-    name: Optional[constr(max_length=256)] = Field(
+    name: Optional[Annotated[str, Field(max_length=256)]] = Field(
         None,
         description='The name of the assistant. The maximum length is 256 characters.\n',
     )
-    description: Optional[constr(max_length=512)] = Field(
+    description: Optional[Annotated[str, Field(max_length=512)]] = Field(
         None,
         description='The description of the assistant. The maximum length is 512 characters.\n',
     )
-    instructions: Optional[constr(max_length=256000)] = Field(
+    instructions: Optional[Annotated[str, Field(max_length=256000)]] = Field(
         None,
         description='The system instructions that the assistant uses. The maximum length is 256,000 characters.\n',
     )
@@ -3844,14 +3864,14 @@ class CreateAssistantRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
@@ -3867,15 +3887,15 @@ class ModifyAssistantRequest(BaseModel):
         None,
         description='ID of the model to use. You can use the [List models](/docs/api-reference/models/list) API to see all of your available models, or see our [Model overview](/docs/models/overview) for descriptions of them.\n',
     )
-    name: Optional[constr(max_length=256)] = Field(
+    name: Optional[Annotated[str, Field(max_length=256)]] = Field(
         None,
         description='The name of the assistant. The maximum length is 256 characters.\n',
     )
-    description: Optional[constr(max_length=512)] = Field(
+    description: Optional[Annotated[str, Field(max_length=512)]] = Field(
         None,
         description='The description of the assistant. The maximum length is 512 characters.\n',
     )
-    instructions: Optional[constr(max_length=256000)] = Field(
+    instructions: Optional[Annotated[str, Field(max_length=256000)]] = Field(
         None,
         description='The system instructions that the assistant uses. The maximum length is 256,000 characters.\n',
     )
@@ -3898,14 +3918,14 @@ class ModifyAssistantRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
@@ -4035,7 +4055,7 @@ class RunObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     usage: RunCompletionUsage
     temperature: Optional[float] = Field(
@@ -4046,11 +4066,11 @@ class RunObject(BaseModel):
         None,
         description='The nucleus sampling value used for this run. If not set, defaults to 1.',
     )
-    max_prompt_tokens: conint(ge=256) = Field(
+    max_prompt_tokens: Annotated[int, Field(ge=256)] = Field(
         ...,
         description='The maximum number of prompt tokens specified to have been used over the course of the run.\n',
     )
-    max_completion_tokens: conint(ge=256) = Field(
+    max_completion_tokens: Annotated[int, Field(ge=256)] = Field(
         ...,
         description='The maximum number of completion tokens specified to have been used over the course of the run.\n',
     )
@@ -4092,7 +4112,7 @@ class CreateMessageRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4213,7 +4233,7 @@ class CreateVectorStoreRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4456,14 +4476,14 @@ class CreateRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
@@ -4472,11 +4492,11 @@ class CreateRunRequest(BaseModel):
         None,
         description='If `true`, returns a stream of events that happen during the Run as server-sent events, terminating when the Run enters a terminal state with a `data: [DONE]` message.\n',
     )
-    max_prompt_tokens: Optional[conint(ge=256)] = Field(
+    max_prompt_tokens: Optional[Annotated[int, Field(ge=256)]] = Field(
         None,
         description='The maximum number of prompt tokens that may be used over the course of the run. The run will make a best effort to use only the number of prompt tokens specified, across multiple turns of the run. If the run exceeds the number of prompt tokens specified, the run will end with status `incomplete`. See `incomplete_details` for more info.\n',
     )
-    max_completion_tokens: Optional[conint(ge=256)] = Field(
+    max_completion_tokens: Optional[Annotated[int, Field(ge=256)]] = Field(
         None,
         description='The maximum number of completion tokens that may be used over the course of the run. The run will make a best effort to use only the number of completion tokens specified, across multiple turns of the run. If the run exceeds the number of completion tokens specified, the run will end with status `incomplete`. See `incomplete_details` for more info.\n',
     )
@@ -4500,7 +4520,7 @@ class CreateThreadRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4565,7 +4585,7 @@ class MessageObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4790,7 +4810,7 @@ class CreateChatCompletionRequest(BaseModel):
         description='ID of the model to use. See the [model endpoint compatibility](/docs/models/model-endpoint-compatibility) table for details on which models work with the Chat API.',
         examples=['gpt-4o'],
     )
-    frequency_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
+    frequency_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
     )
@@ -4802,7 +4822,7 @@ class CreateChatCompletionRequest(BaseModel):
         False,
         description='Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the `content` of `message`.',
     )
-    top_logprobs: Optional[conint(ge=0, le=20)] = Field(
+    top_logprobs: Optional[Annotated[int, Field(ge=0, le=20)]] = Field(
         None,
         description='An integer between 0 and 20 specifying the number of most likely tokens to return at each token position, each with an associated log probability. `logprobs` must be set to `true` if this parameter is used.',
     )
@@ -4810,14 +4830,23 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description="The maximum number of [tokens](/tokenizer) that can be generated in the chat completion.\n\nThe total length of input tokens and generated tokens is limited by the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
     )
-    n: Optional[conint(ge=1, le=128)] = Field(
+    min_tokens: Optional[Annotated[int, Field(ge=0)]] = Field(
+        0,
+        description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
+        examples=[16],
+    )
+    n: Optional[Annotated[int, Field(ge=1, le=128)]] = Field(
         1,
         description='How many chat completion choices to generate for each input message. Note that you will be charged based on the number of generated tokens across all of the choices. Keep `n` as `1` to minimize costs.',
         examples=[1],
     )
-    presence_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
+    presence_penalty: Optional[Annotated[float, Field(ge=-2.0, le=2.0)]] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
+    )
+    repetition_penalty: Optional[Annotated[float, Field(gt=0.0)]] = Field(
+        1,
+        description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
     )
     response_format: Optional[
         Union[
@@ -4829,7 +4858,7 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description='An object specifying the format that the model must output. Compatible with [GPT-4o](/docs/models/gpt-4o), [GPT-4o mini](/docs/models/gpt-4o-mini), [GPT-4 Turbo](/docs/models/gpt-4-and-gpt-4-turbo) and all GPT-3.5 Turbo models newer than `gpt-3.5-turbo-1106`.\n\nSetting to `{ "type": "json_schema", "json_schema": {...} }` enables Structured Outputs which guarantees the model will match your supplied JSON schema. Learn more in the [Structured Outputs guide](/docs/guides/structured-outputs).\n\nSetting to `{ "type": "json_object" }` enables JSON mode, which guarantees the message the model generates is valid JSON.\n\n**Important:** when using JSON mode, you **must** also instruct the model to produce JSON yourself via a system or user message. Without this, the model may generate an unending stream of whitespace until the generation reaches the token limit, resulting in a long-running and seemingly "stuck" request. Also note that the message content may be partially cut off if `finish_reason="length"`, which indicates the generation exceeded `max_tokens` or the conversation exceeded the max context length.\n',
     )
-    seed: Optional[conint(ge=-9223372036854775808, le=9223372036854775807)] = (
+    seed: Optional[Annotated[int, Field(ge=-9223372036854775808, le=9223372036854775807)]] = (
         Field(
             None,
             description='This feature is in Beta.\nIf specified, our system will make a best effort to sample deterministically, such that repeated requests with the same `seed` and parameters should return the same result.\nDeterminism is not guaranteed, and you should refer to the `system_fingerprint` response parameter to monitor changes in the backend.\n',
@@ -4837,23 +4866,32 @@ class CreateChatCompletionRequest(BaseModel):
     )
     service_tier: Optional[Literal['auto', 'default']] = Field(
         None,
-        description="Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:\n  - If set to 'auto', the system will utilize scale tier credits until they are exhausted.\n  - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarentee.\n  - When not set, the default behavior is 'auto'.\n\n  When this parameter is set, the response body will include the `service_tier` utilized.\n",
+        description="Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:\n  - If set to 'auto', the system will utilize scale tier credits until they are exhausted.\n  - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarantee.\n  - When not set, the default behavior is 'auto'.\n\n  When this parameter is set, the response body will include the `service_tier` utilized.\n",
     )
     stop: Optional[Union[str, List[str]]] = Field(
         None,
         description='Up to 4 sequences where the API will stop generating further tokens.\n',
+    )
+    stop_token_ids: Optional[List[int]] = Field(
+        None,
+        description='List of tokens that stop the generation when they are generated. The returned output will contain the stop tokens unless the stop tokens are special tokens.\n',
     )
     stream: Optional[bool] = Field(
         False,
         description='If set, partial message deltas will be sent, like in ChatGPT. Tokens will be sent as data-only [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format) as they become available, with the stream terminated by a `data: [DONE]` message. [Example Python code](https://cookbook.openai.com/examples/how_to_stream_completions).\n',
     )
     stream_options: Optional[ChatCompletionStreamOptions] = None
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
+        1,
+        description='Integer that controls the number of top tokens to consider.\n',
+        examples=[1],
+    )
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or `temperature` but not both.\n',
         examples=[1],
@@ -4883,6 +4921,10 @@ class CreateChatCompletionRequest(BaseModel):
     )
     # Extra args
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
+    target_endpoint: Optional[str] = Field(
+        None,
+        description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
+    )
 
 
 class CreateThreadAndRunRequest(BaseModel):
@@ -4955,14 +4997,14 @@ class CreateThreadAndRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
-    temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
+    temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n',
         examples=[1],
     )
-    top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
+    top_p: Optional[Annotated[float, Field(ge=0.0, le=1.0)]] = Field(
         1,
         description='An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.\n\nWe generally recommend altering this or temperature but not both.\n',
         examples=[1],
@@ -4971,11 +5013,11 @@ class CreateThreadAndRunRequest(BaseModel):
         None,
         description='If `true`, returns a stream of events that happen during the Run as server-sent events, terminating when the Run enters a terminal state with a `data: [DONE]` message.\n',
     )
-    max_prompt_tokens: Optional[conint(ge=256)] = Field(
+    max_prompt_tokens: Optional[Annotated[int, Field(ge=256)]] = Field(
         None,
         description='The maximum number of prompt tokens that may be used over the course of the run. The run will make a best effort to use only the number of prompt tokens specified, across multiple turns of the run. If the run exceeds the number of prompt tokens specified, the run will end with status `incomplete`. See `incomplete_details` for more info.\n',
     )
-    max_completion_tokens: Optional[conint(ge=256)] = Field(
+    max_completion_tokens: Optional[Annotated[int, Field(ge=256)]] = Field(
         None,
         description='The maximum number of completion tokens that may be used over the course of the run. The run will make a best effort to use only the number of completion tokens specified, across multiple turns of the run. If the run exceeds the number of completion tokens specified, the run will end with status `incomplete`. See `incomplete_details` for more info.\n',
     )
@@ -5044,7 +5086,7 @@ class RunStepObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     usage: RunStepCompletionUsage
 
@@ -5163,3 +5205,28 @@ class AssistantStreamEvent(
         ...,
         description='Represents an event emitted when streaming a Run.\n\nEach event in a server-sent events stream has an `event` and `data` property:\n\n```\nevent: thread.created\ndata: {"id": "thread_123", "object": "thread", ...}\n```\n\nWe emit events whenever a new object is created, transitions to a new state, or is being\nstreamed in parts (deltas). For example, we emit `thread.run.created` when a new run\nis created, `thread.run.completed` when a run completes, and so on. When an Assistant chooses\nto create a message during a run, we emit a `thread.message.created event`, a\n`thread.message.in_progress` event, many `thread.message.delta` events, and finally a\n`thread.message.completed` event.\n\nWe may add additional events over time, so we recommend handling unknown events gracefully\nin your code. See the [Assistants API quickstart](/docs/assistants/overview) to learn how to\nintegrate the Assistants API with streaming.\n',
     )
+
+
+
+class CreateAudioGenerationRequest(BaseModel):
+    model: str = Field(..., description='The model to use for the audio generation.')
+    input: str = Field(..., description='The input to the audio generation.')
+    audio_prompt_tokens: list[int] = Field(..., description='The audio prompt tokens to use for the audio generation.')
+    audio_prompt_transcription: str = Field(..., description='The audio prompt transcription to use for the audio generation.')
+    instructions: str = Field(..., description='The instructions for the audio generation.')
+    response_format: Literal['wav', 'mp3', 'pcm'] = Field(..., description='The response format for the audio generation.')
+    speed: float = Field(..., description='The speed of the audio generation.')
+    min_tokens: int = Field(default=0, description='Generate at least this many tokens, even if we generate EOS before we get there.')
+
+class CreateAudioGenerationResponse(BaseModel):
+    audio_data: bytes = Field(..., description='The audio data for the audio generation.')
+    metadata: Dict[str, Any] = Field(..., description='The metadata for the audio generation.')
+
+
+class LoadLoraRequest(BaseModel):
+    lora_name: str = Field(..., description='The name identifier for the LoRA adapter.')
+    lora_path: str = Field(..., description='The file path to the LoRA adapter weights.')
+
+
+class UnloadLoraRequest(BaseModel):
+    lora_name: str = Field(..., description='The name identifier for the LoRA adapter to unload.')

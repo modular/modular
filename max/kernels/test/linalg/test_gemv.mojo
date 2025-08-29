@@ -13,14 +13,13 @@
 
 from math import isclose
 from random import rand
-from sys import simdwidthof, sizeof
+from sys import simd_width_of, size_of
 
 import benchmark
 from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import UnsafePointer
 from testing import assert_false
 
 from utils.index import Index
@@ -45,7 +44,7 @@ def test_gemv():
     # alias absolute_tolerance = 5e-02
     # alias relative_tolerance = 5e-01
 
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simd_width_of[type]()
     # alias m = 22016
     # alias k = 4096
 
@@ -106,7 +105,7 @@ def test_gemv():
             print("Parallel Error")
             assert_false(True)
 
-    alias bytes_per_iteration = 2 * m * k * sizeof[type]()
+    alias bytes_per_iteration = 2 * m * k * size_of[type]()
     alias gigabyte = 1024 * 1024 * 1024
 
     # Serial Gemv

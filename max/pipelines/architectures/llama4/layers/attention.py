@@ -19,24 +19,30 @@ import math
 from typing import Callable
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+    ops,
+)
+from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import distribute_value
 from max.nn.comm import Allreduce
 from max.nn.kernels import (
-    MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 
 from .norm import l2_norm
 
@@ -56,7 +62,7 @@ class _Llama4TextAttention(Module):
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -74,11 +80,11 @@ class _Llama4TextAttention(Module):
         use_qk_norm: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 8192,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -197,8 +203,7 @@ class _Llama4TextAttention(Module):
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection]
-        | list[PagedKVCacheCollection],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         assert len(xs) == 1 and len(kv_collections) == 1
@@ -229,11 +234,9 @@ class _Llama4TextAttention(Module):
 
         if self.use_rope:
             if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
+                freqs_cis = self.rope.freqs_cis.to(xq.device)
             else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+                freqs_cis = self.rope.freqs_cis
             xq = fused_qk_ragged_rope(
                 self.kv_params,
                 xq,
@@ -246,7 +249,7 @@ class _Llama4TextAttention(Module):
 
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
-            xq = l2_norm(xq)
+            xq = l2_norm(xq, self.qk_norm_eps, multiply_before_cast=False)
             rms_norm_key_cache(
                 self.kv_params,
                 kv_collection=kv_collection,
@@ -301,47 +304,45 @@ class _Llama4TextAttention(Module):
 class _DistributedLlama4TextAttention(_Llama4TextAttention):
     """Distributed implementation of the Llama4 text attention layer."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(
                 f"Must provide at least 2 devices to `_DistributedLlama4TextAttention`, got {self.devices}"
             )
         # Shard weights into separate AttentionWithRope layers.
-        n_devices = len(self.devices)
-        self.allreduce = Allreduce(n_devices)
+        num_devices = len(self.devices)
+        self.allreduce = Allreduce(num_devices)
 
-        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
-            col_size = int(weight.shape[1]) // n_devices
-            return weight[:, i * col_size : (i + 1) * col_size]
-
-        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
-            row_size = int(weight.shape[0]) // n_devices
-            return weight[i * row_size : (i + 1) * row_size, :]
-
-        self.q_proj.set_sharding_strategy(row_sharding_strategy)
-        self.k_proj.set_sharding_strategy(row_sharding_strategy)
-        self.v_proj.set_sharding_strategy(row_sharding_strategy)
-        self.o_proj.weight.set_sharding_strategy(col_sharding_strategy)
+        self.q_proj.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.k_proj.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.v_proj.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
 
         self.list_of_attentions = []
         kwargs = kwargs.copy()
         kwargs["num_attention_heads"] //= len(self.devices)
+
+        # Shard weights once for all devices
+        q_proj_shards = self.q_proj.shard(self.devices)
+        k_proj_shards = self.k_proj.shard(self.devices)
+        v_proj_shards = self.v_proj.shard(self.devices)
+        o_proj_weight_shards = self.o_proj.weight.shard(self.devices)
+
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
             layer = _Llama4TextAttention(**kwargs)
-            layer.q_proj = self.q_proj.shard(n, device)
-            layer.k_proj = self.k_proj.shard(n, device)
-            layer.v_proj = self.v_proj.shard(n, device)
-            layer.o_proj.weight = self.o_proj.weight.shard(n, device)
+            layer.q_proj = q_proj_shards[n]
+            layer.k_proj = k_proj_shards[n]
+            layer.v_proj = v_proj_shards[n]
+            layer.o_proj.weight = o_proj_weight_shards[n]
             self.list_of_attentions.append(layer)
 
     def __call__(
         self,
         xs: list[TensorValue],
         cache_positions_list: list[TensorValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection]
-        | list[PagedKVCacheCollection],
+        kv_collections: list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
@@ -355,7 +356,7 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
                 self.list_of_attentions[i](
                     [xs[i]],
                     [cache_positions_list[i]],
-                    [kv_collections[i]],  # type: ignore
+                    [kv_collections[i]],
                     input_row_offsets=input_row_offsets_[i],
                 )[0]
                 for i in range(len(self.devices))

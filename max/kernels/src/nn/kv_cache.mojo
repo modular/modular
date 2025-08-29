@@ -10,44 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
-from collections.string import StaticString
-from math import gcd, isqrt
-from sys.info import _current_target, simdwidthof
+from collections import OptionalReg
 from sys.intrinsics import _type_is_eq
 
-from algorithm.functional import elementwise
+from algorithm.functional import unswitch
 from buffer import Dim, DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
-    PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
-from memory import UnsafePointer, memcpy
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import MaterializedMask, MHAMask
+from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import (
     dispatch_mask_and_score_mod,
     dispatch_materialized_mask_and_score_mod,
 )
 from nn.normalization import _rms_norm_impl
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
@@ -61,14 +52,14 @@ from utils import Index, IndexList
 
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
-    type: DType,
+    dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, _, _],
-    weight: NDBuffer[type, 2, _, _],
+    hidden_state: NDBuffer[dtype, 3, _, _],
+    weight: NDBuffer[dtype, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 3, _, _],
+    output: NDBuffer[mut=True, dtype, 3, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -112,17 +103,17 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
 
 @always_inline
 fn _fused_qkv_matmul_kv_cache[
-    type: DType,
+    dtype: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 3, _, _],
-    weight: NDBuffer[type, 2, _, _],
+    hidden_state: NDBuffer[dtype, 3, _, _],
+    weight: NDBuffer[dtype, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 3, _, _],
+    output: NDBuffer[mut=True, dtype, 3, _, _],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -150,14 +141,14 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-alias embed_fn_type = fn[type: DType, width: Int] (
-    IndexList[4], SIMD[type, width]
-) capturing -> SIMD[type, width]
+alias embed_fn_type = fn[dtype: DType, width: Int] (
+    IndexList[4], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
 
 
 @always_inline
 fn _fused_qkv_matmul_kv_cache_impl[
-    type: DType,
+    dtype: DType,
     hidden_state_shape: DimList,
     weight_shape: DimList,
     output_shape: DimList,
@@ -167,11 +158,11 @@ fn _fused_qkv_matmul_kv_cache_impl[
     q_embed_fn: OptionalReg[embed_fn_type] = None,
     k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
-    hidden_state: NDBuffer[type, 3, _, hidden_state_shape],
-    weight: NDBuffer[type, 2, _, weight_shape],
+    hidden_state: NDBuffer[dtype, 3, _, hidden_state_shape],
+    weight: NDBuffer[dtype, 2, _, weight_shape],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 3, _, output_shape],
+    output: NDBuffer[mut=True, dtype, 3, _, output_shape],
     context: Optional[DeviceContext],
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -189,14 +180,14 @@ fn _fused_qkv_matmul_kv_cache_impl[
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
     alias cache_t = collection_t.CacheType
-    alias cache_type = cache_t.type
+    alias cache_dtype = cache_t.dtype
 
     constrained[
-        cache_type == type,
-        "Expected cache type "
-        + String(cache_type)
-        + " to match input type "
-        + String(type),
+        cache_dtype == dtype,
+        "Expected cache dtype ",
+        String(cache_dtype),
+        " to match input dtype ",
+        String(dtype),
     ]()
 
     alias kv_params = cache_t.kv_params
@@ -216,13 +207,13 @@ fn _fused_qkv_matmul_kv_cache_impl[
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
     @always_inline
     fn write_to_cache[
-        type_: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[type_, width]):
-        b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        dtype_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[dtype_, width]):
+        var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 Index(Int(b_idx), Int(t_idx), idx[1]),
-                rebind[SIMD[type, width]](val),
+                rebind[SIMD[dtype, width]](val),
             )
             return
 
@@ -247,7 +238,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             h_idx,
             cache_t_idx,
             hd_idx,
-            rebind[SIMD[cache_type, width]](output_val),
+            rebind[SIMD[cache_dtype, width]](output_val),
         )
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
@@ -257,13 +248,13 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
 @always_inline
 fn _matmul_common[
-    type: DType, //,
+    dtype: DType, //,
     *,
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[type, 3, _, _],
-    weight: NDBuffer[type, 2, _, _],
+    hidden_state: NDBuffer[dtype, 3, _, _],
+    weight: NDBuffer[dtype, 2, _, _],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -272,25 +263,25 @@ fn _matmul_common[
     alias K = weight.shape.get[1]()
 
     var hidden_state_2d = NDBuffer[
-        type, 2, MutableAnyOrigin, DimList(Dim(), hidden_state.shape.get[2]())
+        dtype, 2, MutableAnyOrigin, DimList(Dim(), hidden_state.shape.get[2]())
     ](
         hidden_state.data,
         IndexList[2](BS * SEQ_LEN, K),
     )
 
-    var c_nd: NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)]
+    var c_nd: NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
     @parameter
     if is_cpu[target]():
-        var c_ptr = UnsafePointer[Scalar[type]].alloc(BS * SEQ_LEN * N)
+        var c_ptr = UnsafePointer[Scalar[dtype]].alloc(BS * SEQ_LEN * N)
 
-        c_nd = NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)](
+        c_nd = NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)](
             c_ptr,
             IndexList[2](BS * SEQ_LEN, N),
         )
     else:
-        c_nd = NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)](
-            UnsafePointer[Scalar[type]](),
+        c_nd = NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)](
+            UnsafePointer[Scalar[dtype]](),
             IndexList[2](BS * SEQ_LEN, N),
         )
 
@@ -312,23 +303,23 @@ fn _matmul_common[
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch[
-    type: DType, //,
+    dtype: DType, //,
     *,
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: NDBuffer[type, 4, *_],
+    q_proj: NDBuffer[dtype, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: NDBuffer[type, 2, *_],
+    freqs_cis: NDBuffer[dtype, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
-    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    We have a manually fused QKV projection with mo.opaque dtypes in our Llama model.
     Due to a limitation in custom op definitions, we can't declare both a tensor
-    and opaque type as output from a custom kernel. This requires us to only note
+    and opaque dtype as output from a custom kernel. This requires us to only note
     Q_proj as an output from the QKV projection. If we immediately follow the
     QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
     because the graph compiler doesn't know about the dependency between these
@@ -380,7 +371,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 @always_inline
 fn generic_flash_attention_kv_cache_padded[
     collection_t: KVCollectionT,
-    type: DType, //,
+    dtype: DType, //,
     *,
     target: StaticString,
     mask_str: StaticString,
@@ -388,13 +379,14 @@ fn generic_flash_attention_kv_cache_padded[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     @always_inline
     @parameter
@@ -434,27 +426,29 @@ fn generic_flash_attention_kv_cache_padded[
             scale,
             output,
             context,
+            sink_weights,
         )
 
 
 @always_inline
 fn generic_flash_attention_kv_cache_padded_materialized_mask[
     collection_t: KVCollectionT,
-    type: DType, //,
+    dtype: DType, //,
     *,
     target: StaticString,
     score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    mask: NDBuffer[dtype, *_],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     @always_inline
     @parameter
@@ -491,11 +485,12 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
             scale,
             output,
             context,
+            sink_weights,
         )
 
 
 fn _flash_attention_dispatch[
-    type: DType,
+    dtype: DType,
     collection_t: KVCollectionT, //,
     *,
     target: StaticString,
@@ -503,13 +498,14 @@ fn _flash_attention_dispatch[
     score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -521,7 +517,9 @@ fn _flash_attention_dispatch[
     ](mask: mask_t, score_mod: score_mod_t) raises:
         @parameter
         if is_cpu[target]():
-            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
+            return flash_attention_kv_cache_cpu(
+                q, k, v, mask, scale, output, sink_weights
+            )
         else:
             alias use_score_mod = not _type_is_eq[
                 score_mod_t, IdentityScoreMod
@@ -544,21 +542,22 @@ fn _flash_attention_dispatch[
 
 
 fn _flash_attention_dispatch_materialized_mask[
-    type: DType,
+    dtype: DType,
     collection_t: KVCollectionT, //,
     *,
     target: StaticString,
     score_mod_str: String,
     local_window_size: Int = -1,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    mask_nd: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    mask_nd: NDBuffer[dtype, *_],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: DeviceContextPtr,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -567,24 +566,32 @@ fn _flash_attention_dispatch_materialized_mask[
     fn _dispatch_flash_attention[
         mask_t: MHAMask, score_mod_t: ScoreModTrait
     ](mask: mask_t, score_mod: score_mod_t) raises:
+        @always_inline
         @parameter
-        if is_cpu[target]():
-            return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
-        else:
-            alias use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[use_score_mod=use_score_mod](
-                output,
-                q,
-                k,
-                v,
-                mask,
-                score_mod,
-                valid_lengths,
-                scale,
-                context.get_device_context(),
-            )
+        fn call_flash_attention[sink: Bool]() raises:
+            @parameter
+            if is_cpu[target]():
+                return flash_attention_kv_cache_cpu(
+                    q, k, v, mask, scale, output, sink_weights
+                )
+            else:
+                alias use_score_mod = not _type_is_eq[
+                    score_mod_t, IdentityScoreMod
+                ]()
+                gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
+                    output,
+                    q,
+                    k,
+                    v,
+                    mask,
+                    score_mod,
+                    valid_lengths,
+                    scale,
+                    context.get_device_context(),
+                    sink_weights=sink_weights,
+                )
+
+        unswitch[call_flash_attention](Bool(sink_weights))
 
     return dispatch_materialized_mask_and_score_mod[
         score_mod_str,
@@ -599,19 +606,20 @@ fn _flash_attention_dispatch_materialized_mask[
 
 
 def rms_norm_kv_cache_ragged_continuous_batching[
-    type: DType,
+    dtype: DType,
     num_heads: Int,
     head_dim: Int, //,
     target: StaticString,
     multiply_before_cast: Bool,
+    per_head_norm: Bool,
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
-        type,
+        dtype,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
-    gamma: NDBuffer[type, 1, *_],
-    epsilon: Scalar[type],
-    weight_offset: Scalar[type],
+    gamma: NDBuffer[dtype, 1, *_],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -638,33 +646,40 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 
     `multiply_before_cast` is a boolean parameter that determines whether to
     multiply the normalized values by the gamma tensor before casting to the
-    output type or not. We set it to `True` by default.
+    output dtype or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3
+    alias rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
     alias rms_norm_cols = gamma.shape.get[0]()
 
     constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size,
-        "Size of gamma must be smaller or equal to head size",
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
+        "Length of gamma must be smaller or equal to head size",
     ]()
 
-    var shape = IndexList[rank](
-        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
-    )
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    @parameter
+    if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = Int(rms_norm_cols)
+    else:
+        shape[1] = Int(rms_norm_cols)
 
     @always_inline
     @parameter
     @__copy_capture(k_cache, input_row_offsets)
     fn key_cache_input_fn[
         width: Int, rank_: Int
-    ](idx: IndexList[rank_]) -> SIMD[type, width]:
+    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
         constrained[
             rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank 3",
+            "rms_norm_key_cache input lambda index should have rank "
+            + String(rank),
         ]()
 
         var global_token_idx = idx[0]
@@ -676,19 +691,30 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         return k_cache.load[width=width](
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
         )
 
     @always_inline
     @parameter
     @__copy_capture(k_cache)
     fn key_cache_output_fn[
-        width: Int
-    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -698,11 +724,22 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
             val=val,
         )
 
@@ -713,7 +750,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         + String(kv_collection.kv_params.head_size),
     ):
         _rms_norm_impl[
-            type,
+            dtype,
             rank,
             key_cache_input_fn,
             key_cache_output_fn,
@@ -723,19 +760,20 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 
 
 def rms_norm_kv_cache_ragged_paged[
-    type: DType,
+    dtype: DType,
     num_heads: Int,
     head_dim: Int, //,
     target: StaticString,
     multiply_before_cast: Bool,
+    per_head_norm: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
-        type,
+        dtype,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
-    gamma: NDBuffer[type, 1, *_],
-    epsilon: Scalar[type],
-    weight_offset: Scalar[type],
+    gamma: NDBuffer[dtype, 1, *_],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -762,33 +800,40 @@ def rms_norm_kv_cache_ragged_paged[
 
     `multiply_before_cast` is a boolean parameter that determines whether to
     multiply the normalized values by the gamma tensor before casting to the
-    output type or not. We set it to `True` by default.
+    output dtype or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3
+    alias rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
     alias rms_norm_cols = gamma.shape.get[0]()
 
     constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size,
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
         "Length of gamma must be smaller or equal to head size",
     ]()
 
-    var shape = IndexList[rank](
-        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
-    )
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    @parameter
+    if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = Int(rms_norm_cols)
+    else:
+        shape[1] = Int(rms_norm_cols)
 
     @always_inline
     @parameter
     @__copy_capture(k_cache, input_row_offsets)
     fn key_cache_input_fn[
         width: Int, rank_: Int
-    ](idx: IndexList[rank_]) -> SIMD[type, width]:
+    ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
         constrained[
             rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank 3",
+            "rms_norm_key_cache input lambda index should have rank "
+            + String(rank),
         ]()
 
         var global_token_idx = idx[0]
@@ -800,19 +845,30 @@ def rms_norm_kv_cache_ragged_paged[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         return k_cache.load[width=width](
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
         )
 
     @always_inline
     @parameter
     @__copy_capture(k_cache)
     fn key_cache_output_fn[
-        width: Int
-    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        width: Int, alignment: Int
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -822,11 +878,21 @@ def rms_norm_kv_cache_ragged_paged[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
             val=val,
         )
 
@@ -837,7 +903,7 @@ def rms_norm_kv_cache_ragged_paged[
         + String(kv_collection.kv_params.head_size),
     ):
         _rms_norm_impl[
-            type,
+            dtype,
             rank,
             key_cache_input_fn,
             key_cache_output_fn,
@@ -894,10 +960,10 @@ def _print_cache[
 
 
 def print_kv_cache_cont_batch_generic_cpu[
-    target: StaticString, type: DType, kv_params: KVCacheStaticParams
+    target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -924,15 +990,12 @@ def print_kv_cache_cont_batch_generic_cpu[
 
 def print_kv_cache_paged_generic_cpu[
     target: StaticString,
-    type: DType,
+    dtype: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -958,15 +1021,15 @@ def print_kv_cache_paged_generic_cpu[
 
 
 def print_kv_cache_cont_batch_generic_gpu[
-    target: StaticString, type: DType, kv_params: KVCacheStaticParams
+    target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
+    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
         kv_collection.blocks.num_elements()
     )
     var blocks_host_nd = __type_of(kv_collection.blocks)(
@@ -1053,20 +1116,17 @@ def print_kv_cache_cont_batch_generic_gpu[
 
 def print_kv_cache_paged_generic_gpu[
     target: StaticString,
-    type: DType,
+    dtype: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
+    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
         kv_collection.blocks.num_elements()
     )
     var blocks_host_nd = __type_of(kv_collection.blocks)(
@@ -1153,13 +1213,13 @@ def print_kv_cache_paged_generic_gpu[
 
 
 fn _continuous_batch_kv_cache_collection[
-    type: DType, //, kv_params: KVCacheStaticParams
+    dtype: DType, //, kv_params: KVCacheStaticParams
 ](
-    blocks: NDBuffer[type, 6],
+    blocks: NDBuffer[dtype, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     max_lengths: NDBuffer[DType.uint32, 2],
-    out result: ContinuousBatchingKVCacheCollection[type, kv_params],
+    out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
     # Marshal NDBuffers into arguments expected by the
     # ContinuousKVCacheCollection constructor.
@@ -1174,26 +1234,26 @@ fn _continuous_batch_kv_cache_collection[
 
 @always_inline
 fn generic_get_continuous_cache[
-    type: DType, kv_params: KVCacheStaticParams
+    dtype: DType, kv_params: KVCacheStaticParams
 ](
-    blocks: NDBuffer[type, 6],
+    blocks: NDBuffer[dtype, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     max_lengths: NDBuffer[DType.uint32, 2],
-) -> ContinuousBatchingKVCacheCollection[type, kv_params]:
+) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
 fn generic_get_paged_cache[
-    type: DType, kv_params: KVCacheStaticParams, page_size: Int
+    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
 ](
-    blocks: NDBuffer[type, 6],
+    blocks: NDBuffer[dtype, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
     max_lengths: NDBuffer[DType.uint32, 2],
-    out result: PagedKVCacheCollection[type, kv_params, page_size],
+    out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return __type_of(result)(
         blocks=blocks,
@@ -1208,7 +1268,7 @@ fn generic_get_paged_cache[
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec, //
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.type,
+    spec.dtype,
     spec.rank,
     MutableAnyOrigin,
     spec.shape,
@@ -1219,7 +1279,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ]:
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return NDBuffer[
-        spec.type,
+        spec.dtype,
         spec.rank,
         _,
         spec.shape,

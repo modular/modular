@@ -14,13 +14,11 @@
 from collections import OptionalReg
 from math import ceildiv
 from os import abort
-from sys import sizeof
-from sys.info import alignof, simdwidthof
+from sys import size_of
+from sys.info import align_of, simd_width_of
 
-import layout.runtime_tuple
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from builtin.io import _printf
+from buffer.dimlist import Dim
+from io.io import _printf
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -33,30 +31,25 @@ from gpu import (
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import (
     AddressSpace,
-    async_copy_commit_group,
-    async_copy_wait_all,
-    async_copy_wait_group,
     external_memory,
 )
 from layout import Layout, LayoutTensor
-from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
-    copy,
-    copy_dram_to_sram_async,
+    copy_local_to_shared,
     copy_local_to_dram,
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
+from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig, block_swizzle
-from testing import assert_almost_equal, assert_false
+from linalg.utils_gpu import block_swizzle
+from testing import assert_almost_equal
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
@@ -98,7 +91,7 @@ struct BackToBackMatmulConfig[
             + self.num_pipeline_stages
             * self.block_tile_shape[1]
             * self.block_tile_shape[2]
-        ) * sizeof[src_type]()
+        ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
         return Index(1, Int(ceildiv(M, self.block_tile_shape[0])), 1)
@@ -174,7 +167,7 @@ fn b2b_gemm[
         "The number of columns of `A` must be known.",
     ]()
 
-    alias simd_size = simdwidthof[d_type]()
+    alias simd_size = simd_width_of[d_type]()
 
     # A is M x K
     # B is K x L
@@ -243,7 +236,7 @@ fn b2b_gemm[
     var a_smem = external_memory[
         Scalar[in_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[in_type, simd_size]](),
+        alignment = align_of[SIMD[in_type, simd_size]](),
     ]()
     alias a_smem_size = BM * K  # single block
     var a_smem_iter = LayoutTensorIter[
@@ -309,13 +302,20 @@ fn b2b_gemm[
     # alias c_frag_size = b_frag_size
     alias d_frag_size = frag_size[2]
     # (WM*WN // WARP_SIZE)
-    var d_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, d_frag_size
-    ]().local().alloc().fill(0)
+    var d_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
-    var ab_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, d_frag_size
-    ]().local().alloc()
+    var ab_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
+        .local()
+        .alloc()
+    )
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
@@ -432,7 +432,7 @@ fn b2b_gemm[
             d_reg_tile,
             ab_iter,
             c_gmem_iter,
-            a_smem_iter,  # ingored
+            a_smem_iter,  # ignored
             c_smem_iter,
             ceildiv(N, BK),
             num_b_rows=num_rows_b,
@@ -456,13 +456,17 @@ fn b2b_gemm[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[accum_type]().row_major[
-            WM, WN
-        ]().shared().view(
-            a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN
+        var accum_smem_warp_tile = (
+            tb[accum_type]()
+            .row_major[WM, WN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             d_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -487,10 +491,10 @@ fn b2b_gemm[
             ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
             alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
-            alias src_align = alignof[
-                SIMD[accum_type, simdwidthof[accum_type]()]
+            alias src_align = align_of[
+                SIMD[accum_type, simd_width_of[accum_type]()]
             ]()
-            alias dst_align = alignof[SIMD[d_type, simd_size]]()
+            alias dst_align = align_of[SIMD[d_type, simd_size]]()
 
             var d_smem_frag_offset = d_smem_frag.distance(
                 accum_smem_warp_tile.ptr
@@ -501,12 +505,11 @@ fn b2b_gemm[
                 alias src_idx = __type_of(d_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    d_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
-                var dst_idx = 0
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -550,7 +553,6 @@ fn b2b_gemm[
             for i in range(__type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
                 alias dst_static_idx: UInt = __type_of(d_gmem_frag).layout(i)
-                var dst_idx = 0
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -562,7 +564,7 @@ fn b2b_gemm[
                 var n = Int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     var vec = d_reg_frag.ptr.offset(src_idx).load[
-                        width=2, alignment = alignof[SIMD[d_type, 2]]()
+                        width=2, alignment = align_of[SIMD[d_type, 2]]()
                     ]()
                     epilogue((m, n), vec)
 
@@ -606,7 +608,9 @@ fn multistage_b2b_gemm[
             config,
             elementwise_lambda_fn,
         ]
-        var smem_use: Int = config.shared_mem_usage(size(A.layout.shape[1]))
+        var smem_use: Int = config.shared_mem_usage(
+            size(Layout(A.layout.shape[1]))
+        )
         print("smem_use =", smem_use)
         ctx.enqueue_function[b2b_fn](
             D,
@@ -621,7 +625,7 @@ fn multistage_b2b_gemm[
             ),
         )
     except e:
-        abort(e)
+        abort(String(e))
 
 
 fn matmul_naive(
@@ -632,12 +636,12 @@ fn matmul_naive(
     constrained[len(C.layout) == 2]()
     constrained[len(A.layout) == 2]()
     constrained[len(B.layout) == 2]()
-    alias M: Int = size(C.layout.shape[0])
-    alias N: Int = size(C.layout.shape[1])
-    alias K: Int = size(A.layout.shape[1])
-    constrained[M == size(A.layout.shape[0])]()
-    constrained[N == size(B.layout.shape[1])]()
-    constrained[K == size(B.layout.shape[0])]()
+    alias M: Int = size(Layout(C.layout.shape[0]))
+    alias N: Int = size(Layout(C.layout.shape[1]))
+    alias K: Int = size(Layout(A.layout.shape[1]))
+    constrained[M == size(Layout(A.layout.shape[0]))]()
+    constrained[N == size(Layout(B.layout.shape[1]))]()
+    constrained[K == size(Layout(B.layout.shape[0]))]()
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[C.dtype]()

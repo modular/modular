@@ -14,45 +14,22 @@
 """Types to interface with ML pipelines such as text/token generation."""
 
 from .architectures import register_all_models
-from .core import (
-    EmbeddingsGenerator,
-    EmbeddingsResponse,
-    InputContext,
-    LogProbabilities,
-    PipelinesFactory,
-    PipelineTask,
-    TextAndVisionContext,
-    TextContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
-    TokenGenerator,
-    TokenGeneratorContext,
-    TokenGeneratorRequest,
-    TokenGeneratorRequestFunction,
-    TokenGeneratorRequestMessage,
-    TokenGeneratorRequestTool,
-    TokenGeneratorResponseFormat,
+from .core import TextAndVisionContext, TextContext, TTSContext
+from .lib.config import (
+    AudioGenerationConfig,
+    PipelineConfig,
+    PrependPromptSpeechTokens,
+    PrometheusMetricsMode,
 )
-from .lib.config import PipelineConfig
 from .lib.config_enums import (
-    PipelineEngine,
     PipelineRole,
     RepoType,
     RopeType,
     SupportedEncoding,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline
-from .lib.hf_utils import (
-    HuggingFaceFile,
-    download_weight_files,
-    repo_exists_with_retry,
-)
-from .lib.max_config import (
-    KVCacheConfig,
-    ProfilingConfig,
-    SamplingConfig,
-)
+from .lib.hf_utils import download_weight_files
+from .lib.kv_cache_config import KVCacheConfig
 from .lib.memory_estimation import MEMORY_ESTIMATOR
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline import (
@@ -62,11 +39,13 @@ from .lib.pipeline import (
     TextGenerationPipeline,
     upper_bounded_default,
 )
+from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .lib.sampling_config import SamplingConfig
 from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
-    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
@@ -76,50 +55,35 @@ from .lib.tokenizer import (
 register_all_models()
 
 __all__ = [
-    "download_weight_files",
-    "EmbeddingsGenerator",
-    "EmbeddingsPipeline",
-    "EmbeddingsResponse",
-    "HuggingFaceFile",
-    "IdentityPipelineTokenizer",
-    "InputContext",
-    "KVCacheConfig",
-    "LogProbabilities",
-    "MAXModelConfig",
     "MEMORY_ESTIMATOR",
+    "PIPELINE_REGISTRY",
+    "AudioGenerationConfig",
+    "EmbeddingsPipeline",
+    "IdentityPipelineTokenizer",
+    "KVCacheConfig",
+    "MAXModelConfig",
     "ModelInputs",
     "ModelOutputs",
-    "PIPELINE_REGISTRY",
     "PipelineConfig",
-    "PipelineEngine",
-    "PipelineRole",
     "PipelineModel",
-    "PipelinesFactory",
-    "PipelineTask",
-    "PipelineTokenizer",
+    "PipelineRole",
     "PreTrainedPipelineTokenizer",
+    "PrependPromptSpeechTokens",
     "ProfilingConfig",
-    "repo_exists_with_retry",
+    "PrometheusMetricsMode",
     "RepoType",
     "RopeType",
     "SamplingConfig",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
+    "TTSContext",
     "TextAndVisionContext",
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
-    "TextGenerationResponse",
-    "TextGenerationStatus",
-    "TextResponse",
     "TextTokenizer",
-    "TokenGenerator",
-    "TokenGeneratorContext",
-    "TokenGeneratorRequest",
-    "TokenGeneratorRequestFunction",
-    "TokenGeneratorRequestMessage",
-    "TokenGeneratorRequestTool",
-    "TokenGeneratorResponseFormat",
+    "download_weight_files",
     "upper_bounded_default",
 ]

@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
-from sys.info import alignof, simdwidthof
+from sys.ffi import _get_global_or_null, external_call
+from sys.info import align_of, simd_width_of
 
 from algorithm import (
+    elementwise,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
@@ -36,8 +37,10 @@ from gpu._cudnn.cnn_infer import (
     cudnnConvolutionStruct,
     cudnnCreateConvolutionDescriptor,
     cudnnDestroyConvolutionDescriptor,
-    cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionGroupCount,
+    cudnnSetConvolutionMathType,
+    cudnnGetConvolutionForwardWorkspaceSize,
 )
 from gpu._cudnn.infer import (
     cudnnContext,
@@ -47,19 +50,22 @@ from gpu._cudnn.infer import (
     cudnnCreateTensorDescriptor,
     cudnnDataType_t,
     cudnnDestroy,
+    cudnnDestroyFilterDescriptor,
     cudnnDestroyTensorDescriptor,
     cudnnFilterStruct,
     cudnnSetFilter4dDescriptor,
+    cudnnSetStream,
     cudnnSetTensor4dDescriptor,
     cudnnStatus_t,
     cudnnTensorFormat_t,
     cudnnTensorStruct,
+    cudnnMathType_t,
 )
 from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUDA
 from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -85,12 +91,12 @@ from .conv_utils import (
 from .shapes import get_sliding_window_out_dim
 
 
-@value
+@fieldwise_init
 struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-]:
+](Copyable, Movable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -291,12 +297,12 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    type: DType, //,
+    dtype: DType, //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: UnsafePointer[Scalar[type]],
-    output: UnsafePointer[Scalar[type]],
+    scratch: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype]],
     N: Int,
     output_space_dims: IndexList,
     F: Int,
@@ -347,7 +353,7 @@ fn _reduce_output[
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -366,7 +372,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -407,7 +413,7 @@ struct ConvDirectNHWC[
         filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
     ) raises:
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         # TODO: extend to 1d/3d.
         alias WO = output_shape.at[
             output_rank - 2
@@ -597,7 +603,9 @@ struct ConvDirectNHWC[
             var c_round_by_tile = align_down(
                 (self.conv_shape.c_per_group() - 1), tile_size
             )
-            var c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
+            var c_round_by_tile_residual = (
+                self.conv_shape.c_per_group() - c_round_by_tile
+            )
             tile[c_tile_iteration](
                 c_start,
                 c_start + c_round_by_tile,
@@ -626,7 +634,7 @@ struct ConvDirectNHWC[
         """Loop over F tiles."""
         alias micro_kernel_width = get_direct_conv_micro_kernel_width()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # TODO: Extend the merged loop to support 1d and 3d.
@@ -728,7 +736,7 @@ struct ConvDirectNHWC[
             "Use Height x 1 kernel for residual in F.",
         ]()
 
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
@@ -745,7 +753,7 @@ struct ConvDirectNHWC[
                 + c_tile_offset
             )
 
-        alias alignment = alignof[SIMD[output_type, simd_size]]()
+        alias alignment = align_of[SIMD[output_type, simd_size]]()
 
         var acc = _Accumulator[
             output_type,
@@ -754,9 +762,11 @@ struct ConvDirectNHWC[
             simd_size,
         ]()
 
-        var output_offset = self.conv_shape.f * (
-            n * self.conv_shape.output_image_flat_size() + output_flat_coord
-        ) + f_tile_offset
+        var output_offset = (
+            self.conv_shape.f
+            * (n * self.conv_shape.output_image_flat_size() + output_flat_coord)
+            + f_tile_offset
+        )
 
         if self.is_new_c_accum(c_tile_offset):
             acc.init(0)
@@ -1115,7 +1125,7 @@ struct ConvDirectNHWC[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_height = get_direct_conv_micro_kernel_height()
         alias micro_kernel_width = micro_kernel_f_size // simd_size
 
@@ -1164,7 +1174,7 @@ struct ConvDirectNHWC[
         c_tile_offset: Int,
         c_tile_size: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Current group index.
@@ -1296,9 +1306,9 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
-        # Offset by -pad_w because s loop starts from the leftmost neightbor
+        # Offset by -pad_w because s loop starts from the leftmost neighbor
         # in padding. The kernel skip the padding point and increment the
         # pointer.
         var input_base = input - self.conv_shape.c * self.conv_shape.pad_w[0]
@@ -1366,7 +1376,7 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         for ho in range(
             self.partition.ho_or_howo_offset,
@@ -1375,7 +1385,7 @@ struct ConvDirectNHWC[
             var h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
 
             # Points input to the start of the row.
-            # Offset by -pad_w because s loop starts from the leftmost neightbor
+            # Offset by -pad_w because s loop starts from the leftmost neighbor
             # in padding. The kernel skip the padding point and increment the
             # pointer.
             var input_base = input + self.conv_shape.c * (
@@ -1383,7 +1393,9 @@ struct ConvDirectNHWC[
             )
 
             # Points output to the start of the row
-            var output_base = output + self.conv_shape.f * self.conv_shape.wo() * ho
+            var output_base = (
+                output + self.conv_shape.f * self.conv_shape.wo() * ho
+            )
 
             @parameter
             @always_inline
@@ -1445,7 +1457,7 @@ struct ConvDirectNHWC[
         left_pad_impact_end: Int,
         right_pad_impact_start: Int,
     ):
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
 
         for do in range(0, self.conv_shape.do()):
             var d = do * self.conv_shape.stride[0] - self.conv_shape.pad_d[0]
@@ -1460,7 +1472,7 @@ struct ConvDirectNHWC[
                 # fmt: on
 
                 # Points input to the start of the row.
-                # Offset by -pad_w because s loop starts from the leftmost neightbor
+                # Offset by -pad_w because s loop starts from the leftmost neighbor
                 # in padding. The kernel skip the padding point and increment the
                 # pointer.
                 var input_base = input + self.conv_shape.c * (
@@ -1469,8 +1481,11 @@ struct ConvDirectNHWC[
                 )
 
                 # Points output to the start of the row
-                var output_base = output + self.conv_shape.f * self.conv_shape.wo() * (
-                    ho + self.conv_shape.ho() * do
+                var output_base = (
+                    output
+                    + self.conv_shape.f
+                    * self.conv_shape.wo()
+                    * (ho + self.conv_shape.ho() * do)
                 )
 
                 @parameter
@@ -1518,7 +1533,7 @@ struct ConvDirectNHWC[
     ](self, n: Int, c_tile_offset: Int, c_tile_size: Int):
         alias WO = output_shape.get[2]()  # NHWC
         alias F = output_shape.get[3]()  # NHWC
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_shape = get_micro_kernel_shape[
             input_rank - 2, WO, F, conv_attr, simd_size
         ]()
@@ -1581,7 +1596,7 @@ struct ConvDirectNHWC[
         micro kernel 1 x micro_kernel_width for (1) and (3) and exploits the
         default micro kernel for (2).
         """
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         alias H = input_shape.get[1]()  # NHWC
@@ -1773,7 +1788,7 @@ struct ConvDirectNHWC[
         if micro_kernel_height == 0:
             return
 
-        alias simd_size = simdwidthof[output_type]()
+        alias simd_size = simd_width_of[output_type]()
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         alias R = filter_shape.get[1]()  # FRSCf
@@ -1893,7 +1908,9 @@ struct ConvDirectNHWC[
             alias epilogue = elementwise_epilogue.value()
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            var f_tile_size_bounded = F - f_tile_offset if has_residual else f_tile_size
+            var f_tile_size_bounded = (
+                F - f_tile_offset if has_residual else f_tile_size
+            )
             for wo_idx in range(wo, wo + micro_kernel_height):
                 epilogue(
                     Index(n, ho, wo_idx, f_tile_offset), f_tile_size_bounded
@@ -2185,9 +2202,9 @@ fn conv2d_update_wo_tile[
 
     # Input stride to neighbor point in the filter window (R, S).
     var input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
-    var input_stride_by_r = conv_shape.dilation[
-        0
-    ] * conv_shape.w() * conv_shape.c
+    var input_stride_by_r = (
+        conv_shape.dilation[0] * conv_shape.w() * conv_shape.c
+    )
 
     # Filter stride when s increments by 1.
     var filter_stride_by_s: Int
@@ -2486,7 +2503,7 @@ fn pack_filter_shape_impl[
     Returns:
         The output shape.
     """
-    alias simd_size = simdwidthof[filter_type]()
+    alias simd_size = simd_width_of[filter_type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2526,7 +2543,7 @@ fn pack_conv_filter_shape[
         The output shape.
     """
 
-    alias simd_size = simdwidthof[filter.type]()
+    alias simd_size = simd_width_of[filter.type]()
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size = micro_kernel_width * simd_size
 
@@ -2570,7 +2587,7 @@ fn pack_filter_shape[
     Returns:
         The output shape.
     """
-    alias simd_size = simdwidthof[filter_type]()
+    alias simd_size = simd_width_of[filter_type]()
 
     var F = filter.dim[filter.rank - 1]()  # RSCF layout
 
@@ -2650,7 +2667,7 @@ fn _get_group_filter_base(
 @always_inline
 fn pack_filter(
     filter: NDBuffer,
-    packed_filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2661,7 +2678,7 @@ fn pack_filter(
         "Type mismatch between the filter and the packed filter.",
     ]()
 
-    alias simd_size = simdwidthof[filter.type]()
+    alias simd_size = simd_width_of[filter.type]()
     alias f_size_default = get_direct_conv_micro_kernel_width() * simd_size
 
     @parameter
@@ -2678,7 +2695,11 @@ fn pack_filter(
 fn pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
-](filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+](
+    filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
+    num_groups: Int,
+):
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
@@ -2694,7 +2715,7 @@ fn pack_filter[
             f       - the index within a continuous segments.
         num_groups: The number of groups in the convolution.
 
-    F is first broken down to segements of size micro_kernel_f_size, then the
+    F is first broken down to segments of size micro_kernel_f_size, then the
     remainder is further divided by simd_size. The last residual elements if
     any is padded with zero to fill simd_size.
     """
@@ -2704,7 +2725,7 @@ fn pack_filter[
 
     # The input simd size should not exceed filter type's simd size.
     # E.x. we can pack int8 filter based on int32 simd size.
-    constrained[simd_size <= simdwidthof[filter.type]()]()
+    constrained[simd_size <= simd_width_of[filter.type]()]()
 
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
@@ -2740,7 +2761,9 @@ fn pack_filter[
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
             for row in range(outer_dims_prod):
-                var filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
+                var filter_ptr = (
+                    filter.data + row * F + g * F_per_group + f_tile_start
+                )
 
                 @parameter
                 for i in range(f_tile_size // simd_size):
@@ -2768,10 +2791,14 @@ fn pack_filter[
             var group_start = _get_group_filter_base(
                 packed_filter, g, F_per_group
             )
-            var packed_filter_ptr = group_start + F_round_by_simd * outer_dims_prod
+            var packed_filter_ptr = (
+                group_start + F_round_by_simd * outer_dims_prod
+            )
 
             for row in range(outer_dims_prod):
-                var filter_ptr = filter.data + row * F + g * F_per_group + F_round_by_simd
+                var filter_ptr = (
+                    filter.data + row * F + g * F_per_group + F_round_by_simd
+                )
 
                 # Load remainder elements and pad with zero to
                 # to fill a simd vector.
@@ -2927,14 +2954,14 @@ fn conv_nhwc_direct[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        return ";".join(
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
             "group=" + String(num_groups),
-            "stride=" + String("x").join(stride),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
+            "stride=" + "x".join(stride),
+            "padding_h=" + "x".join(pad_h),
+            "padding_w=" + "x".join(pad_w),
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
@@ -2959,12 +2986,12 @@ fn conv_nhwc_direct[
         fn elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
-            alias simd_size = simdwidthof[output_type]()
+            alias simd_size = simd_width_of[output_type]()
 
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
-                # Cooridates of the current index.
+                # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
@@ -3070,93 +3097,176 @@ fn conv2d_gpu_naive_nhwc_rscf[
             output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
 
 
+# ===----------------------------------------------------------------------=== #
+# GPU Convolution using cuDNN                                                  #
+# ===----------------------------------------------------------------------=== #
+
+
 @always_inline
 fn check_cudnn_error(stat: cudnnStatus_t):
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         print(stat)
 
 
+@register_passable
+struct CuDNNConvMeta(Copyable, Defaultable, Movable):
+    var ptr_handle: UnsafePointer[cudnnContext]
+    var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
+    var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
+    var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
+    var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
+
+    fn __init__(out self):
+        self.ptr_handle = UnsafePointer[cudnnContext]()
+        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
+
+        self.ptr_input_desc = UnsafePointer[cudnnTensorStruct]()
+        check_cudnn_error(
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
+        )
+
+        self.ptr_filter_desc = UnsafePointer[cudnnFilterStruct]()
+        check_cudnn_error(
+            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
+        )
+
+        self.ptr_conv_desc = UnsafePointer[cudnnConvolutionStruct]()
+        check_cudnn_error(
+            cudnnCreateConvolutionDescriptor(
+                UnsafePointer(to=self.ptr_conv_desc)
+            )
+        )
+
+        self.ptr_output_desc = UnsafePointer[cudnnTensorStruct]()
+        check_cudnn_error(
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
+        )
+
+    fn __del__(deinit self):
+        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_output_desc))
+        check_cudnn_error(cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc))
+        check_cudnn_error(cudnnDestroyFilterDescriptor(self.ptr_filter_desc))
+        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
+        check_cudnn_error(cudnnDestroy(self.ptr_handle))
+
+
+fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
+    """Get the cuDNN metadata.
+    If the metadata is not found, create a new one and insert it into the global
+    cache.
+
+    Args:
+        ctx: The device context.
+
+    Returns:
+        The cuDNN metadata.
+    """
+    var name = "CUDA_CUDNN_META"
+    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
+        check_cudnn_error(
+            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
+        )
+        return ptr_meta
+
+    ptr_meta = UnsafePointer[CuDNNConvMeta].alloc(1)
+    ptr_meta.init_pointee_move(CuDNNConvMeta())
+
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(name),
+        ptr_meta.bitcast[NoneType](),
+    )
+
+    return ptr_meta
+
+
+fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
+    """Map Mojo DType to cuDNN data type.
+
+    Support only floating point dtypes for now.
+    """
+
+    @parameter
+    if dtype == DType.float32:
+        return cudnnDataType_t.CUDNN_DATA_FLOAT
+    elif dtype == DType.float16:
+        return cudnnDataType_t.CUDNN_DATA_HALF
+    elif dtype == DType.bfloat16:
+        return cudnnDataType_t.CUDNN_DATA_BFLOAT16
+    else:
+        raise Error("unsupported dtype", dtype, "for cuDNN")
+
+
 fn conv_cudnn[
-    input_dim: DimList,
-    filter_dim: DimList,
-    output_dim: DimList,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
 ](
-    input: UnsafePointer[Scalar[input_type]],
-    filter: UnsafePointer[Scalar[filter_type]],
-    output: UnsafePointer[Scalar[output_type]],
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    var cudnn_handle = UnsafePointer[cudnnContext]()
-    check_cudnn_error(cudnnCreate(UnsafePointer(to=cudnn_handle)))
+    var ptr_meta = _get_cudnn_meta(ctx)
 
-    var input_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=input_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            input_desc,
+            ptr_meta[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
-            input_dim.get[0](),
-            input_dim.get[3](),
-            input_dim.get[1](),
-            input_dim.get[2](),
+            get_cudnn_dtype[input_type](),
+            input.dim[0](),
+            input.dim[3](),
+            input.dim[1](),
+            input.dim[2](),
         )
     )
 
-    var filter_desc = UnsafePointer[cudnnFilterStruct]()
-    check_cudnn_error(
-        cudnnCreateFilterDescriptor(UnsafePointer(to=filter_desc))
-    )
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
-            filter_desc,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            ptr_meta[].ptr_filter_desc,
+            get_cudnn_dtype[filter_type](),
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter_dim.get[0](),
-            filter_dim.get[1](),
-            filter_dim.get[2](),
-            filter_dim.get[3](),
+            filter.dim[0](),
+            filter.dim[1](),
+            filter.dim[2](),
+            filter.dim[3](),
         )
     )
 
-    var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
-    check_cudnn_error(
-        cudnnCreateConvolutionDescriptor(UnsafePointer(to=conv_desc))
-    )
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
-            conv_desc,
+            ptr_meta[].ptr_conv_desc,
             padding[0],
             padding[1],
             stride[0],
             stride[1],
             dilation[0],
             dilation[1],
-            cudnnConvolutionMode_t.CUDNN_CONVOLUTION,
+            cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+            # cuDNN 8+ requires float32 accumulation when the I/O tensors are
+            # bfloat16.
+            # Note that this is correct for float16, bfloat16, and float32 but
+            # would have to be adjusted for other input dtypes, such as int8.
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )
     )
 
-    var output_desc = UnsafePointer[cudnnTensorStruct]()
     check_cudnn_error(
-        cudnnCreateTensorDescriptor(UnsafePointer(to=output_desc))
+        cudnnSetConvolutionGroupCount(ptr_meta[].ptr_conv_desc, num_groups)
     )
+
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            output_desc,
+            ptr_meta[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
-            output_dim.get[0](),
-            output_dim.get[3](),
-            output_dim.get[1](),
-            output_dim.get[2](),
+            get_cudnn_dtype[output_type](),
+            output.dim[0](),
+            output.dim[3](),
+            output.dim[1](),
+            output.dim[2](),
         )
     )
 
@@ -3164,28 +3274,49 @@ fn conv_cudnn[
     var beta = Float32(0.0)
 
     check_cudnn_error(
-        cudnnConvolutionForward(
-            cudnn_handle,
-            UnsafePointer(to=alpha).bitcast[NoneType](),
-            input_desc,
-            input.bitcast[NoneType](),
-            filter_desc,
-            filter.bitcast[NoneType](),
-            conv_desc,
-            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
-            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
-            0,
-            UnsafePointer(to=beta).bitcast[NoneType](),
-            output_desc,
-            output.bitcast[NoneType](),
+        cudnnSetConvolutionMathType(
+            ptr_meta[].ptr_conv_desc,
+            cudnnMathType_t.CUDNN_DEFAULT_MATH,  # this is the line that enables tf32
         )
     )
-
-    check_cudnn_error(cudnnDestroyTensorDescriptor(output_desc))
-    check_cudnn_error(cudnnDestroyConvolutionDescriptor(conv_desc))
-    check_cudnn_error(cudnnDestroyFilterDescriptor(filter_desc))
-    check_cudnn_error(cudnnDestroyTensorDescriptor(input_desc))
-    check_cudnn_error(cudnnDestroy(cudnn_handle))
+    # to disable tf32, run export NVIDIA_TF32_OVERRIDE=0 in the environment
+    algo = (
+        cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+    )
+    var workspace_size_var = 0
+    var workspace_size_ptr = UnsafePointer(to=workspace_size_var)
+    check_cudnn_error(
+        cudnnGetConvolutionForwardWorkspaceSize(
+            ptr_meta[].ptr_handle,
+            ptr_meta[].ptr_input_desc,
+            ptr_meta[].ptr_filter_desc,
+            ptr_meta[].ptr_conv_desc,
+            ptr_meta[].ptr_output_desc,
+            algo,
+            workspace_size_ptr,
+        )
+    )
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size_var
+    )
+    check_cudnn_error(
+        cudnnConvolutionForward(
+            ptr_meta[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].ptr_input_desc,
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
+            ptr_meta[].ptr_filter_desc,
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
+            ptr_meta[].ptr_conv_desc,
+            algo,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_size_var,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].ptr_output_desc,
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
+        )
+    )
+    _ = workspace_buffer^
 
 
 fn conv_gpu[
@@ -3198,6 +3329,7 @@ fn conv_gpu[
     filter_type: DType,
     output_type: DType,
     maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
+    filter_is_fcrs: Bool = False,
 ](
     input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
     filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
@@ -3240,19 +3372,78 @@ fn conv_gpu[
 
     @parameter
     if input_rank == 4:
-        var grid_dim_x = ceildiv(
-            output.dim[2](), block_size
-        )  # w / block size for 2d
-        ctx.enqueue_function[conv_gpu_n](
-            input,
-            filter,
-            output,
-            stride,
-            dilation,
-            padding,
-            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-            block_dim=(block_size, block_size),
-        )
+
+        @parameter
+        if filter_is_fcrs:
+
+            @parameter
+            if maybe_epilogue_func:
+                alias epilogue = maybe_epilogue_func.value()
+                var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+                    output.num_elements()
+                )
+
+                var output_tmp = output
+                output_tmp.data = output_tmp_data.unsafe_ptr()
+
+                conv_cudnn[input_type, filter_type, output_type,](
+                    rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+                    rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+                    rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](
+                        output_tmp
+                    ),
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](padding),
+                    num_groups,
+                    ctx,
+                )
+
+                @parameter
+                @__copy_capture(output_tmp)
+                @always_inline
+                fn epilogue_wrapper[
+                    _width: Int, _rank: Int, alignment: Int = 1
+                ](coords: IndexList[_rank]):
+                    alias align = align_of[SIMD[output_type, _width]]()
+                    vec = output_tmp.load[width=_width, alignment=align](
+                        rebind[IndexList[4]](coords)
+                    )
+                    epilogue(coords, vec)
+
+                elementwise[
+                    epilogue_wrapper, simd_width_of[output_type](), target="gpu"
+                ](output.dynamic_shape, ctx)
+
+                _ = output_tmp_data^
+
+            else:
+                conv_cudnn[input_type, filter_type, output_type,](
+                    rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+                    rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+                    rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output),
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](padding),
+                    num_groups,
+                    ctx,
+                )
+
+        else:
+            var grid_dim_x = ceildiv(
+                output.dim[2](), block_size
+            )  # w / block size for 2d
+            ctx.enqueue_function[conv_gpu_n](
+                input,
+                filter,
+                output,
+                stride,
+                dilation,
+                padding,
+                grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                block_dim=(block_size, block_size),
+            )
+
     elif input_rank == 5:
         var grid_dim_x = ceildiv(
             output.dim[2]() * output.dim[3](), block_size

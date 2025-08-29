@@ -13,9 +13,9 @@
 
 
 from collections import OptionalReg
-from math import ceildiv, exp, recip
+from math import ceildiv, recip
 from math.constants import log2e
-from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, sizeof
+from sys import align_of, has_nvidia_gpu_accelerator, simd_width_of, size_of
 
 import gpu.warp as warp
 from algorithm.functional import (
@@ -37,9 +37,8 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext
-from gpu.host import Dim as LaunchDim
 from gpu.host import FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -54,30 +53,27 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     ThreadScope,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
-from linalg.transpose import transpose
-from memory import UnsafePointer, stack_allocation
-from memory.pointer import AddressSpace as _AddressSpace
-from memory.unsafe import bitcast
+from memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
     NDBufferMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
@@ -88,7 +84,7 @@ from nn.softmax import _exp2_concrete
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
@@ -151,7 +147,7 @@ fn flare_mla_decoding[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
     constrained[
-        q.type == cache_t.type == output.type,
+        q.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
 
@@ -163,11 +159,11 @@ fn flare_mla_decoding[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_decoding",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -305,7 +301,7 @@ fn flare_mla_decoding_dispatch[
     constrained[num_heads == q.shape.get[rank - 2]()]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
-    alias has_enough_smem = ctx.device_info is A100 or ctx.device_info is H100
+    alias has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
     constrained[
         depth == q.shape.get[rank - 1]() == 576,
@@ -346,28 +342,29 @@ fn flare_mla_decoding_dispatch[
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
     alias WM = BM
     alias WN = 16
-    # num warps in M and N, multipled by warp size.
+    # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-    alias accum_type = get_accum_type[q.type]()
+    alias accum_type = get_accum_type[q.dtype]()
     alias num_pipeline_stages = 6
     # smem for q
-    var shared_mem_bytes = BM * depth * sizeof[q.type]()
+    var shared_mem_bytes = BM * depth * size_of[q.dtype]()
 
-    shared_mem_bytes += BN * depth * sizeof[k_t.type]()
+    shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
     alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
     # smem for p and warp_scratch
     shared_mem_bytes += (
-        BM * BN * sizeof[k_t.type]() + 2 * num_warps * BM * sizeof[accum_type]()
+        BM * BN * size_of[k_t.dtype]()
+        + 2 * num_warps * BM * size_of[accum_type]()
     )
     alias num_blocks_y = num_heads // BM
 
     alias kernel = mla_decoding[
-        q.type,
+        q.dtype,
         k_t,
-        output.type,
+        output.dtype,
         mask_t,
         score_mod_t,
         BM=BM,
@@ -408,7 +405,7 @@ fn flare_mla_decoding_dispatch[
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            ctx.device_info.shared_memory_per_multiprocessor - 4096
+            ctx.default_device_info.shared_memory_per_multiprocessor - 4096
         ),
     )
 
@@ -459,8 +456,13 @@ fn mla_decoding[
 
     # split-k offsets
     var partition_idx = block_idx.x
-    var output_batch_offset = depth_v * num_heads * batch_idx + depth_v * num_heads * batch_size * partition_idx
-    var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx
+    var output_batch_offset = (
+        depth_v * num_heads * batch_idx
+        + depth_v * num_heads * batch_size * partition_idx
+    )
+    var qk_max_offset = (
+        num_heads * batch_idx + num_heads * batch_size * partition_idx
+    )
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
@@ -562,10 +564,10 @@ fn mla_decoding_single_batch[
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
-    alias k_type = k_t.type
+    alias k_type = k_t.dtype
     constrained[q_type == k_type]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias WN_O = 128
     alias nope_dim = depth_v
@@ -589,14 +591,14 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -673,20 +675,26 @@ fn mla_decoding_single_batch[
 
     alias num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
     alias num_output_rows_full = num_output_rows
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_output_rows_full, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0.0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_output_rows_full, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0.0)
+    )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(Int(WM)):
+    for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -730,7 +738,7 @@ fn mla_decoding_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(depth // BK)):
+    for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -797,7 +805,7 @@ fn mla_decoding_single_batch[
         )
 
         @parameter
-        for k_id in range(Int(rope_dim // BK)):
+        for k_id in range(rope_dim // BK):
             var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -833,7 +841,7 @@ fn mla_decoding_single_batch[
             nope_dim // BK,
         )
 
-        # Cacluate the last `rope_dim` part of Q @ K
+        # Calculate the last `rope_dim` part of Q @ K
         multistage_mma[
             BM,
             BN,
@@ -867,10 +875,10 @@ fn mla_decoding_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -892,7 +900,9 @@ fn mla_decoding_single_batch[
                         var score_head_idx = q_head_idx + i * MMA_M // 2
 
                         var score_row_with_start_pos = num_keys - 1
-                        var score_row = 0  # this is a decoding kernel with seq_len = 1
+                        var score_row = (
+                            0  # this is a decoding kernel with seq_len = 1
+                        )
 
                         @parameter
                         if masked:
@@ -1022,12 +1032,12 @@ fn mla_decoding_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(WN_O // 8)):
+        for n_mma in range(WN_O // 8):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -1065,7 +1075,9 @@ fn mla_decoding_single_batch[
             Int(warp_y), Int(warp_x)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -1158,11 +1170,11 @@ fn flare_mla_prefill[
     """
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == cache_t.type == output.type,
+        q.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1176,11 +1188,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int
 
@@ -1266,11 +1278,11 @@ fn flare_mla_prefill[
 ) raises:
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == k.type == v.type == k_rope.type == output.type,
+        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1284,11 +1296,11 @@ fn flare_mla_prefill[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
         "flare_mla_prefill",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
     ):
         var max_prompt_len: Int = q.dim[0]()
 
@@ -1299,7 +1311,7 @@ fn flare_mla_prefill[
         var v_operand = RaggedMHAOperand(v, cache_row_offsets)
         var k_rope_operand = NDBufferMHAOperand(k_rope)
 
-        alias output_type = output.type
+        alias output_type = output.dtype
         alias kv_num_heads = k_rope.shape.get[2]()
         alias cache_depth = k_rope.shape.get[3]()
         alias q_depth = q_shape.get[rank - 1]()  # hard code for now
@@ -1414,17 +1426,23 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * q_depth
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * config.type.sizeof()
+    alias smem_use = (q_smem + k_smem + v_smem) * config.type.size_of()
 
-    var softmax_info_ptr = softmax_info.value().data if softmax_info else UnsafePointer[
-        Scalar[softmax_type]
-    ]()
-    var prev_output_ptr = prev_output.value().data if prev_output else UnsafePointer[
-        Scalar[output_type]
-    ]()
-    var prev_softmax_info_ptr = prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
-        Scalar[softmax_type]
-    ]()
+    var softmax_info_ptr = (
+        softmax_info.value().data if softmax_info else UnsafePointer[
+            Scalar[softmax_type]
+        ]()
+    )
+    var prev_output_ptr = (
+        prev_output.value().data if prev_output else UnsafePointer[
+            Scalar[output_type]
+        ]()
+    )
+    var prev_softmax_info_ptr = (
+        prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
+            Scalar[softmax_type]
+        ]()
+    )
 
     alias kernel = mla_prefill[
         config.type,
@@ -1620,14 +1638,14 @@ fn mla_prefill_single_batch[
     batch_idx: Int,
 ):
     """MLA for encoding where seqlen > 1."""
-    alias k_type = k_t.type
-    alias v_type = v_t.type
-    alias k_rope_type = k_rope_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
+    alias k_rope_type = k_rope_t.dtype
     constrained[
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     ]()
 
-    alias simd_size = simdwidthof[q_type]()
+    alias simd_size = simd_width_of[q_type]()
 
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
@@ -1660,7 +1678,7 @@ fn mla_prefill_single_batch[
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
-        alignment = alignof[SIMD[q_type, simd_size]](),
+        alignment = align_of[SIMD[q_type, simd_size]](),
     ]()
     var q_smem_iter = LayoutTensorIter[
         q_type,
@@ -1757,15 +1775,21 @@ fn mla_prefill_single_batch[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Rowwise max and sum for online softmax
-    alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
+    alias row_alignment = align_of[
+        SIMD[accum_type, simd_width_of[accum_type]()]
+    ]()
     var rowmax = stack_allocation[WM, accum_type, alignment=row_alignment]()
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
@@ -1809,7 +1833,7 @@ fn mla_prefill_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(q_depth // BK)):
+    for q_id in range(q_depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -1899,7 +1923,7 @@ fn mla_prefill_single_batch[
         )
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
 
-        # here we set up varibles for k_rope tensor
+        # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
             IntTuple(Int(BN), Int(cache_depth)),
             IntTuple(Int(cache_num_heads * cache_depth), 1),
@@ -1963,7 +1987,7 @@ fn mla_prefill_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(Int(depth // BK)):
+        for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -1980,7 +2004,7 @@ fn mla_prefill_single_batch[
             k_gmem_iter._incr()
 
         @parameter
-        for k_id in range(Int(depth // BK), Int(q_depth // BK), 1):
+        for k_id in range(depth // BK, q_depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -2034,10 +2058,10 @@ fn mla_prefill_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2052,7 +2076,9 @@ fn mla_prefill_single_batch[
                     for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                        var score_row = (
+                            mask_block_row + mask_frag_row + i * MMA_M // 2
+                        )
                         var score_col = mask_frag_col
 
                         score_row_with_start_pos = score_row + start_pos
@@ -2157,7 +2183,7 @@ fn mla_prefill_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(Int(BN // BK)):
+        for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -2330,7 +2356,7 @@ fn mla_prefill_single_batch[
 
         # and add them together.
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2378,7 +2404,7 @@ fn mla_prefill_single_batch[
             rowmax[row_1] = max(prev_rowmax_1, rowmax[row_1])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas_output)):
+            for n_mma in range(num_n_mmas_output):
                 var mma_id = n_mma * num_m_mmas + m_mma
 
                 @parameter
@@ -2401,7 +2427,7 @@ fn mla_prefill_single_batch[
     if write_softmax_info:
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2417,12 +2443,12 @@ fn mla_prefill_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(num_n_mmas_output)):
+        for n_mma in range(num_n_mmas_output):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -2447,7 +2473,9 @@ fn mla_prefill_single_batch[
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](
             Int(warp_y), Int(warp_x)
         )
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2602,7 +2630,7 @@ fn mla_prefill_plan_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper fucntion that copies K cache to a contiguous buffer
+# Helper function that copies K cache to a contiguous buffer
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2624,7 +2652,9 @@ fn _k_cache_to_buffer[
     @always_inline
     @parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
-    fn copy_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
+    fn copy_fn[
+        width: Int, rank: Int, alignment: Int = 1
+    ](idx_arg: IndexList[rank]):
         constrained[rank == 2, "rank should be equal to 2"]()
 
         var idx = rebind[IndexList[2]](idx_arg)
@@ -2652,8 +2682,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias compile_target = _get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simd_width_of[type, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         launch_shape, context

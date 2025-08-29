@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attention import (
-    Attention,
     AttentionImpl,
     AttentionImplQKV,
-    AttentionQKV,
     AttentionWithRope,
     AttentionWithRopeQKV,
     AttentionWithRopeV1,
@@ -27,27 +25,29 @@ from .attention import (
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
+from .conv import Conv1D, Conv1DV1, Conv2d, Conv2dV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
-from .kernels import MHAMaskVariant
-from .layer import Layer, LayerList, Module
-from .linear import (
-    MLP,
-    MLPV1,
-    ColumnParallelLinear,
-    DistributedMLP,
+from .float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
+    parse_float8_config,
+)
+from .layer import Layer, LayerList, Module, Shardable
+from .linear import (
+    MLP,
+    MLPV1,
+    ColumnParallelLinear,
+    DistributedGemmConfig,
     GPTQLinear,
     Linear,
     LinearV1,
 )
+from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .norm import (
-    DistributedRMSNorm,
     GroupNorm,
     LayerNorm,
     LayerNormV1,
@@ -55,11 +55,15 @@ from .norm import (
     RMSNormV1,
 )
 from .rotary_embedding import (
+    DynamicRotaryEmbedding,
     LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
-    OptimizedRotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
     RotaryEmbedding,
+    YarnRotaryEmbedding,
+    YarnScalingParams,
 )
 from .sequential import Sequential
 from .transformer import (
@@ -71,60 +75,66 @@ from .transformer import (
 )
 
 __all__ = [
+    "MLP",
+    "MLPV1",
     "Allreduce",
-    "Attention",
     "AttentionImpl",
     "AttentionImplQKV",
-    "AttentionQKV",
-    "AttentionWithRopeV1",
-    "AttentionWithRopeQKV",
     "AttentionWithRope",
-    "RaggedAttention",
-    "Conv1DV1",
-    "Conv2DV1",
-    "Conv3DV1",
-    "Conv3D",
+    "AttentionWithRopeAndLoRA",
+    "AttentionWithRopeQKV",
+    "AttentionWithRopeV1",
+    "ColumnParallelLinear",
     "Conv1D",
+    "Conv1DV1",
+    "Conv2d",
+    "Conv2dV1",
+    "Conv3D",
+    "Conv3DV1",
     "ConvTranspose1d",
-    "WeightNormConvTranspose1d",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
-    "ColumnParallelLinear",
-    "DistributedMLP",
-    "DistributedRMSNorm",
     "DistributedTransformer",
     "DistributedTransformerBlock",
-    "EmbeddingV1",
     "Embedding",
+    "EmbeddingV1",
     "Float8Config",
+    "Float8InputScaleSpec",
     "Float8ScaleGranularity",
     "Float8ScaleOrigin",
-    "Float8InputScaleSpec",
     "Float8WeightScaleSpec",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
     "Layer",
-    "LayerNormV1",
+    "LayerList",
     "LayerNorm",
-    "LinearV1",
+    "LayerNormV1",
     "Linear",
+    "LinearLoRA",
     "LinearScalingParams",
+    "LinearV1",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
-    "MHAMaskVariant",
-    "MLPV1",
-    "MLP",
+    "LongRoPERotaryEmbedding",
+    "LongRoPEScalingParams",
     "Module",
-    "LayerList",
-    "OptimizedRotaryEmbedding",
-    "RMSNormV1",
     "RMSNorm",
-    "RotaryEmbedding",
+    "RMSNormV1",
+    "RaggedAttention",
     "ReturnLogits",
+    "RotaryEmbedding",
     "Sequential",
+    "Shardable",
     "Signals",
+    "SupportsLoRA",
     "Transformer",
     "TransformerBlock",
+    "VocabParallelEmbedding",
+    "WeightNormConvTranspose1d",
+    "YarnRotaryEmbedding",
+    "YarnScalingParams",
+    "clamp",
+    "parse_float8_config",
 ]

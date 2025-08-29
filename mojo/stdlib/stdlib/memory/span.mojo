@@ -20,22 +20,23 @@ from memory import Span
 ```
 """
 
-from collections import InlineArray
-from sys.info import simdwidthof
+from algorithm import vectorize
+from sys import align_of
+from sys.info import simd_width_of
 
-from memory import Pointer, UnsafePointer
-from memory.unsafe_pointer import _default_alignment
+from collections._index_normalization import normalize_index
+from memory import Pointer
 
 
-@value
+@fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[T](),
-]:
+    alignment: Int = align_of[T](),
+](Copyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -56,40 +57,35 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(
-        mut self, out p: Pointer[T, origin, address_space=address_space]
-    ):
+    fn __has_next__(self) -> Bool:
         @parameter
         if forward:
-            p = Pointer(to=self.src[self.index])
+            return self.index < len(self.src)
+        else:
+            return self.index > 0
+
+    @always_inline
+    fn __next_ref__(mut self) -> ref [origin, address_space] T:
+        @parameter
+        if forward:
+            var curr = self.index
             self.index += 1
+            return self.src[curr]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[self.index])
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src) - self.index
-        else:
-            return self.index
+            return self.src[self.index]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = _default_alignment[T](),
-](ExplicitlyCopyable, Copyable, Movable, Sized):
+    alignment: Int = align_of[T](),
+](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -101,18 +97,20 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin].result]
+    alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Span`."""
-    # Fields
-    var _data: UnsafePointer[
+    alias UnsafePointerType = UnsafePointer[
         T,
         mut=mut,
         origin=origin,
         address_space=address_space,
         alignment=alignment,
     ]
+    """The UnsafePointer type that corresponds to this `Span`."""
+    # Fields
+    var _data: Self.UnsafePointerType
     var _len: Int
 
     # ===------------------------------------------------------------------===#
@@ -122,7 +120,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(out self):
         """Create an empty / zero-length span."""
-        self._data = __type_of(self._data)()
+        self._data = {}
         self._len = 0
 
     @doc_private
@@ -130,7 +128,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(
         other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin].result],
+        out self: Span[T, ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -140,12 +138,7 @@ struct Span[
         self = rebind[__type_of(self)](other)
 
     @always_inline("builtin")
-    fn __init__(
-        out self,
-        *,
-        ptr: UnsafePointer[T, address_space=address_space, alignment=alignment],
-        length: UInt,
-    ):
+    fn __init__(out self, *, ptr: Self.UnsafePointerType, length: UInt):
         """Unsafe construction from a pointer and length.
 
         Args:
@@ -153,16 +146,7 @@ struct Span[
             length: The length of the view.
         """
         self._data = ptr
-        self._len = length
-
-    @always_inline
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of the provided `Span`.
-
-        Returns:
-            A copy of the `Span`.
-        """
-        return self
+        self._len = Int(length)
 
     @always_inline
     @implicit
@@ -172,7 +156,12 @@ struct Span[
         Args:
             list: The list to which the span refers.
         """
-        self._data = list.data.address_space_cast[address_space]()
+        self._data = (
+            list.unsafe_ptr()
+            .address_space_cast[address_space]()
+            .static_alignment_cast[alignment]()
+            .origin_cast[mut, origin]()
+        )
         self._len = list._len
 
     @always_inline
@@ -193,6 +182,8 @@ struct Span[
             UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
+            .static_alignment_cast[alignment]()
+            .origin_cast[mut, origin]()
         )
         self._len = size
 
@@ -213,15 +204,10 @@ struct Span[
         Returns:
             An element reference.
         """
-        # TODO: Simplify this with a UInt type.
-        debug_assert(
-            -self._len <= Int(idx) < self._len, "index must be within bounds"
+        var normalized_idx = normalize_index["Span", assert_always=False](
+            idx, UInt(len(self))
         )
-        # TODO(MSTDL-1086): optimize away SIMD/UInt normalization check
-        var offset = Int(idx)
-        if offset < 0:
-            offset += len(self)
-        return self._data[offset]
+        return self._data[normalized_idx]
 
     @always_inline
     fn __getitem__(self, slc: Slice) -> Self:
@@ -237,10 +223,7 @@ struct Span[
             This function allocates when the step is negative, to avoid a memory
             leak, take ownership of the value.
         """
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slc.indices(len(self))
+        var start, end, step = slc.indices(len(self))
 
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
@@ -248,7 +231,7 @@ struct Span[
         debug_assert(step == 1, "Slice step must be 1")
 
         return Self(
-            ptr=(self._data + start), length=len(range(start, end, step))
+            ptr=(self._data + start), length=UInt(len(range(start, end, step)))
         )
 
     @always_inline
@@ -293,7 +276,7 @@ struct Span[
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     fn __len__(self) -> Int:
         """Returns the length of the span. This is a known constant value.
 
@@ -335,7 +318,7 @@ struct Span[
             alias width = widths[i]
 
             @parameter
-            if simdwidthof[dtype]() >= width:
+            if simd_width_of[dtype]() >= width:
                 for _ in range((length - processed) // width):
                     if value in (ptr + processed).load[width=width]():
                         return True
@@ -345,6 +328,87 @@ struct Span[
             if ptr[processed + i] == value:
                 return True
         return False
+
+    @no_inline
+    fn __str__[
+        U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_]) -> String:
+        """Returns a string representation of a `Span`.
+
+        Parameters:
+            U: The type of the elements in the span. Must implement the
+              trait `Representable`.
+
+        Returns:
+            A string representation of the span.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet,
+            the way to call this method is a bit special. Here is an example
+            below:
+
+            ```mojo
+            var my_list = [1, 2, 3]
+            var my_span = Span(my_list)
+            print(my_span.__str__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `String(my_span)` will be enough.
+        """
+        # at least 1 byte per item e.g.: [a, b, c, d] = 4 + 2 * 3 + [] + null
+        var l = len(self)
+        var output = String(capacity=l + 2 * (l - 1) * Int(l > 1) + 3)
+        self.write_to(output)
+        return output^
+
+    @no_inline
+    fn write_to[
+        U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_], mut writer: Some[Writer]):
+        """Write `my_span.__str__()` to a `Writer`.
+
+        Parameters:
+            U: The type of the Span elements. Must have the trait
+                `Representable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write("[")
+        for i in range(len(self)):
+            writer.write(repr(self[i]))
+            if i < len(self) - 1:
+                writer.write(", ")
+        writer.write("]")
+
+    @no_inline
+    fn __repr__[
+        U: Representable & Copyable & Movable, //
+    ](self: Span[U, *_]) -> String:
+        """Returns a string representation of a `Span`.
+
+        Parameters:
+            U: The type of the elements in the span. Must implement the
+              trait `Representable`.
+
+        Returns:
+            A string representation of the span.
+
+        Notes:
+            Note that since we can't condition methods on a trait yet, the way
+            to call this method is a bit special. Here is an example below:
+
+            ```mojo
+            var my_list = [1, 2, 3]
+            var my_span = Span(my_list)
+            print(my_span.__repr__())
+            ```
+
+            When the compiler supports conditional methods, then a simple
+            `repr(my_span)` will be enough.
+        """
+        return self.__str__()
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -359,7 +423,7 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
-    @always_inline
+    @always_inline("builtin")
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[
@@ -406,7 +470,7 @@ struct Span[
         """
         debug_assert(len(self) == len(other), "Spans must be of equal length")
         for i in range(len(self)):
-            self[i] = other[i]
+            self[i] = other[i].copy()
 
     fn __bool__(self) -> Bool:
         """Check if a span is non-empty.
@@ -483,8 +547,8 @@ struct Span[
         Args:
             value: The value to assign to each element.
         """
-        for element in self:
-            element[] = value
+        for ref element in self:
+            element = value.copy()
 
     fn swap_elements(
         self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt
@@ -499,7 +563,7 @@ struct Span[
         Raises:
             If a or b are larger than the length of the span.
         """
-        var length = len(self)
+        var length = UInt(len(self))
         if a > length or b > length:
             raise Error(
                 "index out of bounds (length: ",
@@ -540,4 +604,149 @@ struct Span[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(self._data, self._len)
+        return __type_of(result)(
+            ptr=self._data.origin_cast[result.mut, result.origin](),
+            length=UInt(self._len),
+        )
+
+    fn reverse[
+        dtype: DType, O: MutableOrigin, //
+    ](self: Span[Scalar[dtype], O]):
+        """Reverse the elements of the `Span` inplace.
+
+        Parameters:
+            dtype: The DType of the scalars the `Span` stores.
+            O: The origin of the `Span`.
+        """
+
+        alias widths = (256, 128, 64, 32, 16, 8, 4, 2)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var middle = length // 2
+        var is_odd = length % 2 != 0
+        var processed = 0
+
+        @parameter
+        for i in range(len(widths)):
+            alias w = widths[i]
+
+            @parameter
+            if simd_width_of[dtype]() >= w:
+                for _ in range((middle - processed) // w):
+                    var lhs_ptr = ptr + processed
+                    var rhs_ptr = ptr + length - (processed + w)
+                    var lhs_v = lhs_ptr.load[width=w]().reversed()
+                    var rhs_v = rhs_ptr.load[width=w]().reversed()
+                    lhs_ptr.store(rhs_v)
+                    rhs_ptr.store(lhs_v)
+                    processed += w
+
+        if is_odd:
+            var value = ptr[middle + 1]
+            (ptr + middle - 1).move_pointee_into(ptr + middle + 1)
+            (ptr + middle - 1).init_pointee_move(value)
+
+    fn apply[
+        dtype: DType,
+        O: MutableOrigin, //,
+        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+    ](self: Span[Scalar[dtype], O]):
+        """Apply the function to the `Span` inplace.
+
+        Parameters:
+            dtype: The DType.
+            O: The origin of the `Span`.
+            func: The function to evaluate.
+        """
+
+        alias widths = (256, 128, 64, 32, 16, 8, 4)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var processed = 0
+
+        @parameter
+        for i in range(len(widths)):
+            alias w = widths[i]
+
+            @parameter
+            if simd_width_of[dtype]() >= w:
+                for _ in range((length - processed) // w):
+                    var p_curr = ptr + processed
+                    p_curr.store(func(p_curr.load[width=w]()))
+                    processed += w
+
+        for i in range(length - processed):
+            (ptr + processed + i).init_pointee_move(func(ptr[processed + i]))
+
+    fn apply[
+        dtype: DType,
+        O: MutableOrigin, //,
+        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        *,
+        where: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype], O]):
+        """Apply the function to the `Span` inplace where the condition is
+        `True`.
+
+        Parameters:
+            dtype: The DType.
+            O: The origin of the `Span`.
+            func: The function to evaluate.
+            where: The condition to apply the function.
+        """
+
+        alias widths = (256, 128, 64, 32, 16, 8, 4)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var processed = 0
+
+        @parameter
+        for i in range(len(widths)):
+            alias w = widths[i]
+
+            @parameter
+            if simd_width_of[dtype]() >= w:
+                for _ in range((length - processed) // w):
+                    var p_curr = ptr + processed
+                    var vec = p_curr.load[width=w]()
+                    p_curr.store(where(vec).select(func(vec), vec))
+                    processed += w
+
+        for i in range(length - processed):
+            var vec = ptr[processed + i]
+            if where(vec):
+                (ptr + processed + i).init_pointee_move(func(vec))
+
+    fn count[
+        dtype: DType, //,
+        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype]]) -> UInt:
+        """Count the amount of times the function returns `True`.
+
+        Parameters:
+            dtype: The DType.
+            func: The function to evaluate.
+
+        Returns:
+            The amount of times the function returns `True`.
+        """
+
+        alias simdwidth = simd_width_of[DType.index]()
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var countv = SIMD[DType.index, simdwidth](0)
+        var count = Scalar[DType.index](0)
+
+        @parameter
+        fn do_count[width: Int](idx: Int):
+            var vec = func(ptr.load[width=width](idx)).cast[DType.index]()
+
+            @parameter
+            if width == 1:
+                count += rebind[__type_of(count)](vec)
+            else:
+                countv += rebind[__type_of(countv)](vec)
+
+        vectorize[do_count, simdwidth](length)
+
+        return UInt(countv.reduce_add() + count)

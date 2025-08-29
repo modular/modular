@@ -169,14 +169,11 @@ struct Attribute(Writable):
         """
         return not (self is other)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 
             This method converts the `Attribute` enum value to its corresponding string name
             and writes it to the provided writer object.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: A Writer object that will receive the string representation.
@@ -207,7 +204,7 @@ struct Attribute(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct FuncAttribute(Copyable, Movable, EqualityComparable):
+struct FuncAttribute(Copyable, EqualityComparable, Movable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,
@@ -228,14 +225,6 @@ struct FuncAttribute(Copyable, Movable, EqualityComparable):
 
     alias NULL = FuncAttribute(Attribute(-1), -1)
     """A null/invalid function attribute constant."""
-
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:

@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.arg import argv
-from sys.ffi import DLHandle, c_int
 
 import gpu.host
 import gpu.host._nvidia_cuda as cuda
-import gpu.host.info
 
 
 fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
@@ -62,11 +60,12 @@ fn main() raises:
     var ctx = host.DeviceContext(device_id, api=api)
 
     var compute_capability = ctx.compute_capability()
+    var arch_name = ctx.arch_name()
     var major = compute_capability // 10
     var minor = compute_capability % 10
 
     if ctx.api() == "cuda":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.NVIDIA_GPU,")
         print('api="' + String(ctx.api()) + '", ')
@@ -75,7 +74,6 @@ fn main() raises:
             + compute_capability_to_arch_name(major, minor)
             + '", '
         )
-        print('compile_options="nvptx-short-ptr=true", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
         )
@@ -101,30 +99,6 @@ fn main() raises:
         )
         print("threads_per_sm=-1, ")
         print(
-            "threads_per_warp="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
-            + ", "
-        )
-        print("warps_per_multiprocessor=64, ")
-        print(
-            "threads_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "thread_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
             "shared_memory_per_multiprocessor="
             + String(
                 ctx.get_attribute(
@@ -134,58 +108,22 @@ fn main() raises:
             + ", "
         )
         print(
-            "register_file_size="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("register_allocation_unit_size=256, ")
-        print('allocation_granularity="warp", ')
-        print("max_registers_per_thread=255, ")
-        print(
             "max_registers_per_block="
             + String(
                 ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
             )
             + ", "
         )
-        print(
-            "max_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("shared_memory_allocation_unit_size=128, ")
-        print("warp_allocation_granularity=4, ")
         print("max_thread_block_size=1024, ")
         print(")")
     elif ctx.api() == "hip":
-        print("Info(")
+        print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
-        print(
-            'arch_name="'
-            + compute_capability_to_arch_name(major, minor)
-            + '", '
-        )
-        print('compile_options="", ')
+        print('arch_name="' + arch_name + '", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
-        print(
-            'version="sm_'
-            + (
-                String(compute_capability)
-                + ("a" if compute_capability >= 90 else "")
-            )
-            + '",'
         )
         print(
             "sm_count="
@@ -201,67 +139,11 @@ fn main() raises:
         )
         print("threads_per_sm=-1, ")
         print(
-            "threads_per_warp="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
-            + ", "
-        )
-        print("warps_per_multiprocessor=64, ")
-        print(
-            "threads_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "thread_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "shared_memory_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "register_file_size="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("register_allocation_unit_size=256, ")
-        print('allocation_granularity="warp", ')
-        print("max_registers_per_thread=255, ")
-        print(
             "max_registers_per_block="
             + String(
                 ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
             )
             + ", "
         )
-        print(
-            "max_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print("shared_memory_allocation_unit_size=128, ")
-        print("warp_allocation_granularity=4, ")
         print("max_thread_block_size=1024, ")
         print(")")

@@ -15,7 +15,7 @@ name: MAX feature request
 description: Suggest an enhancement for MAX
 title: "[Feature Request]"
 labels:
-  - "enhancement,max,modular-repo"
+  - "enhancement,max,Needs Triage"
 body:
   - type: markdown
     attributes:

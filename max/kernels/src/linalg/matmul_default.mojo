@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import prefetch
-from sys.info import alignof
+from sys.info import align_of
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 
@@ -27,8 +26,8 @@ from .utils import GemmShape, get_matmul_prefetch_b_distance_k
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the default microkernel.
-@value
-struct Inner_matmul_default(InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_default(InnerMatmulKernel, Movable):
     @always_inline
     fn _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
@@ -87,7 +86,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
 
             @parameter
             for idx1 in range(kernel_cols // simd_size):
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+                alias alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
                 var b_val = b_ptr.load[width=simd_size, alignment=alignment](

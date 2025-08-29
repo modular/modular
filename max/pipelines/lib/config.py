@@ -20,23 +20,26 @@ import logging
 import os
 import sys
 from dataclasses import MISSING, dataclass, field, fields
+from enum import Enum
 from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
-from .config_enums import PipelineEngine, PipelineRole
-from .max_config import (
-    KVCacheConfig,
-    MAXConfig,
-    ProfilingConfig,
-    SamplingConfig,
-)
+from .config_enums import PipelineRole
+from .kv_cache_config import KVCacheConfig
+from .lora_config import LoRAConfig
+from .max_config import MAXConfig
 from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig
+from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY
+from .sampling_config import SamplingConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# Default target number of tokens for chunked prefill and memory estimation.
+DEFAULT_TARGET_NUM_NEW_TOKENS = 8192
 
 
 @dataclass(frozen=False)
@@ -50,9 +53,6 @@ class PipelineConfig(MAXConfig):
     default.
     """
 
-    engine: Optional[PipelineEngine] = None
-    """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
-
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
 
@@ -64,13 +64,43 @@ class PipelineConfig(MAXConfig):
 
     max_batch_size: Optional[int] = None
     """Maximum batch size to execute with the model.
-    This is set to one, to minimize memory consumption for the base case, in which a person is
-    running a local server to test out MAX. For users launching in a server scenario, the expectation
-    is that this value should be set higher based on server capacity."""
+    When not specified (None), we determine this value dynamically. For users
+    launching in a server scenario, the expectation is that this value should be
+    set higher based on server capacity.
+    """
 
     max_ce_batch_size: int = 192
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
+
+    max_queue_size_tg: Optional[int] = None
+    """Maximum number of requests in decode queue. By default, this is max-batch-size."""
+
+    min_batch_size_tg: Optional[int] = None
+    """Specifies a soft floor on the decode batch size.
+
+    If the TG batch size is larger than this value, the scheduler will continue to
+    run TG batches. If it falls below, the scheduler will prioritize CE. Note that
+    this is NOT a strict minimum! By default, this is max-queue-size-tg.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    ce_delay_ms: float = 0.0
+    """Duration of scheduler sleep prior to starting a prefill batch.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    enable_prioritize_first_decode: bool = False
+    """When enabled, the scheduler will always run a TG batch immediately after a CE batch,
+    with the same requests. This may be useful for decreasing time-to-first-chunk latency.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
 
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
@@ -85,12 +115,9 @@ class PipelineConfig(MAXConfig):
     configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
     models)."""
 
-    pad_to_multiple_of: int = 2
-    """Pad input tensors to be a multiple of value provided."""
-
-    target_num_new_tokens: Optional[int] = None
+    target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
     """The target number of un-encoded tokens to include in each batch.
-    If not set, this will be set to a best-guess optimal value based on model, hardware, and available memory."""
+    This value is used for chunked prefill and memory estimation."""
 
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""
@@ -102,11 +129,8 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
-    pdl_level: str = os.environ.get("PDL_LEVEL", "1")
+    pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
-
-    ignore_eos: bool = False
-    """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
     custom_architectures: list[str] = field(default_factory=list)
     """A list of custom architecture implementations to register.
@@ -130,6 +154,166 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
+    _lora_config: Optional[LoRAConfig] = None
+    """The LoRA config."""
+
+    _config_file_section_name: str = "pipeline_config"
+    """The section name to use when loading this config from a MAXConfig file.
+    This is used to differentiate between different config sections in a single
+    MAXConfig file."""
+
+    @staticmethod
+    def _extract_kwargs_for_config(
+        kwargs: dict[str, Any],
+        config_class: type[MAXConfig],
+        key_prefix: str = "",
+        strip_prefix: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Extract kwargs that match a config class's fields.
+
+        Args:
+            kwargs: Source kwargs dictionary (modified in place)
+            config_class: The MAXConfig dataclass to match fields against
+            key_prefix: Optional prefix to filter keys (e.g., "draft_")
+            strip_prefix: Whether to strip the prefix from extracted keys
+
+        Returns:
+            Dictionary of extracted kwargs
+        """
+        extracted = {}
+        keys_to_remove = []
+
+        for key, value in kwargs.items():
+            # Check if key matches the prefix filter
+            if key_prefix and not key.startswith(key_prefix):
+                continue
+
+            # Determine the field name to check
+            field_name = key.replace(key_prefix, "") if strip_prefix else key
+
+            # Check if this field exists in the config class
+            if field_name in config_class.__dataclass_fields__:
+                # Use original key or stripped key as specified
+                extracted_key = field_name if strip_prefix else key
+                extracted[extracted_key] = value
+                keys_to_remove.append(key)
+
+        # Remove extracted keys from original kwargs
+        for key in keys_to_remove:
+            del kwargs[key]
+
+        return extracted
+
+    def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
+        """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
+        lora_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, LoRAConfig
+        )
+
+        if lora_kwargs.get("enable_lora", False):
+            self._lora_config = LoRAConfig(**lora_kwargs)
+        # TODO: We should add an elif to check / error out if other LoRA params
+        # are provided, but enable_lora is not. We can't do this today as our
+        # click PipelineConfig autogenerates defaults for all fields, including
+        # required ones.
+
+    def _create_draft_model_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract draft model kwargs and create MAXModelConfig if model_path provided."""
+        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
+            kwargs, MAXModelConfig, key_prefix="draft_", strip_prefix=True
+        )
+
+        if draft_kwargs.get("model_path", "") != "":
+            self._draft_model_config = MAXModelConfig(**draft_kwargs)
+        # TODO: We should add an elif to check / error out if other draft model
+        # params are provided, but model_path is not. We can't do this today
+        # as our click PipelineConfig autogenerates defaults for all fields,
+        # including required ones.
+
+    def _process_remaining_config_classes(
+        self, unmatched_kwargs: dict[str, Any]
+    ) -> None:
+        """
+        Process remaining kwargs for other config classes.
+
+        Args:
+            unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
+        """
+        # TODO(zheng): Make this more efficient by using MaxConfig instance
+        # instead of hardcoding the config names.
+        config_mappings = [
+            "_sampling_config",
+            "_profiling_config",
+            # TODO(zheng): Remove this once backward compatibility is no
+            # longer needed for MAXModelConfig.
+            "_model_config",
+        ]
+
+        for config_name in config_mappings:
+            config_class = get_type_hints(self.__class__)[config_name]
+            matched_kwargs = {}
+            kv_cache_kwargs = {}
+
+            for key, value in unmatched_kwargs.items():
+                if key in config_class.__dataclass_fields__:
+                    matched_kwargs[key] = value
+                # Check if this is a KVCache config param
+                elif (
+                    config_name == "_model_config"
+                    and key in KVCacheConfig.__dataclass_fields__
+                ):
+                    kv_cache_kwargs[key] = value
+
+            if matched_kwargs:
+                self._create_and_set_config(
+                    config_name, config_class, matched_kwargs, kv_cache_kwargs
+                )
+
+                # Remove matched kwargs
+                for key in matched_kwargs:
+                    del unmatched_kwargs[key]
+                for key in kv_cache_kwargs:
+                    del unmatched_kwargs[key]
+
+    def _create_and_set_config(
+        self,
+        config_name: str,
+        config_class: type,
+        matched_kwargs: dict[str, Any],
+        kv_cache_kwargs: dict[str, Any],
+    ) -> None:
+        """
+        Create and set a config object with special handling for different config types.
+
+        Args:
+            config_name: Name of the config attribute (e.g., "_model_config")
+            config_class: The config class to instantiate
+            matched_kwargs: kwargs that matched the config class fields
+            kv_cache_kwargs: kwargs for KVCache config (model config only)
+        """
+        if config_name == "_model_config" and kv_cache_kwargs:
+            # Create new model config with updated KVCache config
+            model_config = config_class(**matched_kwargs)
+            model_config._kv_cache_config = KVCacheConfig(**kv_cache_kwargs)
+            setattr(self, config_name, model_config)
+
+            if self._draft_model_config:
+                self._draft_model_config._kv_cache_config = KVCacheConfig(
+                    **kv_cache_kwargs
+                )
+
+        elif config_name == "_sampling_config" and (
+            self.enable_echo or self._draft_model_config
+        ):
+            sampling_config = config_class(**matched_kwargs)
+            sampling_config.enable_variable_logits = True
+            setattr(self, config_name, sampling_config)
+        else:
+            setattr(self, config_name, config_class(**matched_kwargs))
+
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all fields with their defaults first
         for curr_field in fields(self.__class__):
@@ -138,19 +322,9 @@ class PipelineConfig(MAXConfig):
             elif curr_field.default_factory is not MISSING:
                 setattr(self, curr_field.name, curr_field.default_factory())
 
-        # Check against draft model first
-        draft_kwargs = {}
-        for k, v in list(kwargs.items()):
-            if k.startswith("draft"):
-                field_name = k.replace("draft_", "")
-                if field_name in MAXModelConfig.__dataclass_fields__:
-                    draft_kwargs[field_name] = v
-                    del kwargs[k]
-
-        if draft_kwargs.get("model_path", "") != "":
-            self._draft_model_config = MAXModelConfig(**draft_kwargs)
-        else:
-            self._draft_model_config = None
+        # Process specialized config creation
+        self._create_lora_config_if_needed(kwargs)
+        self._create_draft_model_config_if_needed(kwargs)
 
         # Check if any kwargs are meant for other MAXConfig classes
         unmatched_kwargs: dict[str, Any] = {}
@@ -162,61 +336,9 @@ class PipelineConfig(MAXConfig):
             else:
                 unmatched_kwargs[key] = value
 
-        # Try to match unmatched kwargs with other config classes
+        # Process remaining config classes
         if unmatched_kwargs:
-            # TODO(zheng): Make this more efficient by using MaxConfig instance
-            # instead of hardcoding the config names.
-            for config_name in [
-                "_sampling_config",
-                "_profiling_config",
-                # TODO(zheng): Remove this once backward compatibility is no
-                # longer needed for MAXModelConfig.
-                "_model_config",
-            ]:
-                config_class = get_type_hints(self.__class__)[config_name]
-                matched_kwargs = {}
-                kv_cache_kwargs = {}
-
-                for key, value in unmatched_kwargs.items():
-                    if key in config_class.__dataclass_fields__:
-                        matched_kwargs[key] = value
-                    # Check if this is a KVCache config param
-                    elif (
-                        config_name == "_model_config"
-                        and key in KVCacheConfig.__dataclass_fields__
-                    ):
-                        kv_cache_kwargs[key] = value
-
-                if matched_kwargs:
-                    if config_name == "_model_config" and kv_cache_kwargs:
-                        # Create new model config with updated KVCache config
-                        model_config = config_class(**matched_kwargs)
-                        model_config._kv_cache_config = KVCacheConfig(
-                            **kv_cache_kwargs
-                        )
-                        setattr(self, config_name, model_config)
-
-                        if self._draft_model_config:
-                            self._draft_model_config._kv_cache_config = (
-                                KVCacheConfig(**kv_cache_kwargs)
-                            )
-
-                    elif config_name == "_sampling_config" and (
-                        self.enable_echo or self._draft_model_config
-                    ):
-                        sampling_config = config_class(**matched_kwargs)
-                        sampling_config.enable_variable_logits = True
-                        setattr(self, config_name, sampling_config)
-                    else:
-                        setattr(
-                            self, config_name, config_class(**matched_kwargs)
-                        )
-
-                    # Remove matched kwargs
-                    for key in matched_kwargs:
-                        del unmatched_kwargs[key]
-                    for key in kv_cache_kwargs:
-                        del unmatched_kwargs[key]
+            self._process_remaining_config_classes(unmatched_kwargs)
 
         # NOTE: Do not use this directly after instantiating PipelineConfig. We
         # only keep this here to support backward compatibility of the draft_model
@@ -229,26 +351,21 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
-    def resolve(self) -> None:
+    def _import_custom_architectures(self) -> None:
         """
-        Validates and resolves the config.
-
-        This method is called after the config is initialized, to ensure that all
-        config fields have been initialized to a valid state.
+        Import custom model modules to add them to the registry.
         """
-        # Before anything else, import custom model modules to add them to the registry.
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
-                msg = (
-                    "Custom module spec contains too many colons: {module_spec}"
-                )
+                msg = f"Custom module spec contains too many colons: {module_spec}"
                 raise ValueError(msg)
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
-                sys.path.append(module_path)
             else:
-                module_name = module_parts[0]
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:
@@ -264,16 +381,59 @@ class PipelineConfig(MAXConfig):
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
 
+    def resolve(self) -> None:
+        """
+        Validates and resolves the config.
+
+        This method is called after the config is initialized, to ensure that all
+        config fields have been initialized to a valid state.
+        """
+        # Before anything else, import custom model modules to add them to the registry.
+        self._import_custom_architectures()
+
         self.model_config.resolve()
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
 
-        # Set sensible defaults. These are platform-specific.
+        self._validate_and_resolve_max_num_steps()
+
+        if (
+            self.sampling_config.enable_structured_output
+            and self.model_config.default_device_spec.device_type == "cpu"
+        ):
+            raise ValueError(
+                "enable_structured_output is not currently supported on CPU."
+            )
+
+        if self.sampling_config.do_penalties and self.draft_model_config:
+            raise ValueError(
+                "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
+            )
+
+        # By this point, we should have a valid model_path.
+
+        # Run Baseline Validation
+        self._validate_and_resolve_remaining_pipeline_config(
+            model_config=self.model_config
+        )
+
+        # Run Additional Checks for Speculative Decoding
+        if self.draft_model_config:
+            self._validate_and_resolve_remaining_pipeline_config(
+                model_config=self.draft_model_config
+            )
+
+            self._validate_pipeline_config_for_speculative_decoding()
+
+    def _validate_and_resolve_max_num_steps(self) -> None:
+        """
+        Validate and resolve the max_num_steps field. These are platform-specific.
+        """
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self.model_config.device_specs[0] == DeviceSpec.cpu()
+                or self.model_config.default_device_spec == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -287,50 +447,16 @@ class PipelineConfig(MAXConfig):
                 "max_num_steps > 1 not supported when enable_structured_output = True"
             )
 
-        if self.sampling_config.enable_structured_output:
-            if self.model_config.device_specs[0] == DeviceSpec.cpu():
-                raise ValueError(
-                    "enable_structured_output is not currently supported on CPU."
-                )
-
-        if (
-            self.sampling_config.frequency_penalty != 0
-            or self.sampling_config.presence_penalty != 0
-        ):
-            if self.draft_model_config:
-                raise ValueError(
-                    "frequency_penalty and presence_penalty are not currently supported with speculative decoding."
-                )
-            self.sampling_config.do_penalties = True
-
-        # Run Baseline Validation
-        self._validate_and_resolve_remaining_pipeline_config(self.model_config)
-
-        # Run Additional Checks for Speculative Decoding
-        if self.draft_model_config:
-            self._validate_and_resolve_remaining_pipeline_config(
-                self.draft_model_config
-            )
-
-            self._validate_pipeline_config_for_speculative_decoding()
-
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
         assert self.draft_model_config is not None  # keep mypy happy
 
-        # We don't support running speculative decoding with the HuggingFace backend.
-        if self.engine == PipelineEngine.HUGGINGFACE:
-            msg = (
-                "Speculative Decoding not supported with the HuggingFace Engine"
-            )
-            raise ValueError(msg)
-
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            huggingface_repo=self.draft_model_config.huggingface_model_repo
         )
 
         if not draft_arch:
@@ -338,7 +464,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo,
+            huggingface_repo=self.model_config.huggingface_model_repo
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -392,36 +518,32 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo,
+            huggingface_repo=model_config.huggingface_model_repo
         )
 
         # If nothing is provided, we should not update any more params.
-        # Instead, fall back to the HuggingFace engine.
-        if not arch and self.engine == PipelineEngine.MAX:
-            raise ValueError(
-                "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
-            )
-
-        elif not arch:
+        if not arch:
             msg = (
-                "MAX-optimized architecture not available for"
-                f" '{model_config.model_path}' falling back to"
-                " HuggingFace."
+                f"MAX-optimized architecture not available for '{model_config.model_path}'. "
+                "Please file a request at https://modul.ar/request to add this model architecture to MAX."
             )
-            logger.warning(msg)
-            msg = "Please file a request at https://modul.ar/request to add this model architecture to MAX."
-            logger.warning(msg)
-            self.engine = PipelineEngine.HUGGINGFACE
-            return
+            raise ValueError(msg)
+
+        # TODO(E2EOPT-28): remove this constraint.
+        # Gemma has a MHA head size of 256.
+        # This requires a kv cache page size of at least 256.
+        if "Gemma3" in arch.name:
+            model_config._kv_cache_config.kv_cache_page_size = max(
+                model_config._kv_cache_config.kv_cache_page_size, 256
+            )
 
         model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        # The remainder of this function, assumes we have both a valid model_path,
-        # and a SupportedArchitecture. We should then validate the details of the existing architecture
-        # and fallback to HuggingFace if needed.
-
+        # We have now made sure that we have a valid SupportedArchitecture.
+        # We should then validate the details of the existing architecture and
+        # fallback to HuggingFace if needed.
         model_config.validate_and_resolve_quantization_encoding_weight_path(
             default_encoding=arch.default_encoding
         )
@@ -432,17 +554,10 @@ class PipelineConfig(MAXConfig):
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
         if model_config.quantization_encoding not in arch.supported_encodings:
-            if self.engine == PipelineEngine.MAX:
-                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
-                raise ValueError(msg)
+            msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+            raise ValueError(msg)
 
-            else:
-                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
-                logger.warning(msg)
-                self.engine = PipelineEngine.HUGGINGFACE
-                return
-
-        model_config.validate_and_resolve_with_set_quantization_encoding(
+        model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
@@ -451,11 +566,6 @@ class PipelineConfig(MAXConfig):
         MEMORY_ESTIMATOR.estimate_memory_footprint(
             self, arch.pipeline_model, model_config, devices
         )
-
-        # If we pass validation ensure and the engine is not set, just set it
-        # to MAX.
-        if self.engine is None:
-            self.engine = PipelineEngine.MAX
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -473,35 +583,26 @@ class PipelineConfig(MAXConfig):
 
     @staticmethod
     def help() -> dict[str, str]:
-        pipeline_help = {
-            "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
-            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
+        return {
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
-            "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
-            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests.",
-            "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
-            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
-            "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
+            "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
+            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",
+            "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
+            "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
+            "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
+            "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
+            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`. Default is true.",
+            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
+            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
+            "target_num_new_tokens": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
-            "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
+            "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
+            "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
+            "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
+            "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
         }
-
-        # Add help text for all MAX config classes
-        # TODO(zheng): Make this more efficient by using MaxConfig instance
-        # instead of hardcoding the config names.
-        for config_class in [SamplingConfig, ProfilingConfig]:
-            config_help = config_class.help()  # type: ignore
-            for key in config_help:
-                if key in pipeline_help:
-                    raise ValueError(
-                        f"Duplicate help key '{key}' found in {config_class.__name__}"
-                    )
-            pipeline_help.update(config_help)
-        return pipeline_help
 
     @property
     def model_config(self) -> MAXModelConfig:
@@ -518,3 +619,227 @@ class PipelineConfig(MAXConfig):
     @property
     def profiling_config(self) -> ProfilingConfig:
         return self._profiling_config
+
+    @property
+    def lora_config(self) -> Optional[LoRAConfig]:
+        return self._lora_config
+
+
+def _parse_flag_bool(value: str, flag_name: str) -> bool:
+    if value.lower() == "true":
+        return True
+    elif value.lower() == "false":
+        return False
+    else:
+        raise ValueError(
+            f"Invalid boolean value: {value} for flag: {flag_name}"
+        )
+
+
+def _parse_flag_int(value: str, flag_name: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid integer value: {value} for flag: {flag_name}"
+        ) from exc
+
+
+class PrependPromptSpeechTokens(str, Enum):
+    NEVER = "never"
+    """Never prepend the prompt speech tokens sent to the audio decoder."""
+
+    ONCE = "once"
+    """Prepend the prompt speech tokens to the first block of the audio decoder."""
+
+    ROLLING = "rolling"
+    """Prepend the prompt speech tokens to the first block of the audio decoder,
+    and to later blocks to reach the requested buffer size."""
+
+
+class PrometheusMetricsMode(str, Enum):
+    INSTRUMENT_ONLY = "instrument_only"
+    """Instrument metrics through the Prometheus client library, relying on the application to handle the metrics server."""
+
+    LAUNCH_SERVER = "launch_server"
+    """Launch a Prometheus server to handle metrics requests."""
+
+    LAUNCH_MULTIPROC_SERVER = "launch_multiproc_server"
+    """Launch a Prometheus server in multiprocess mode to report metrics."""
+
+
+@dataclass
+class AudioGenerationConfig(PipelineConfig):
+    # TODO: Make these flags more discoverable.
+    audio_decoder: str = ""
+    """The name of the audio decoder model architecture."""
+
+    audio_decoder_weights: str = ""
+    """The path to the audio decoder weights file."""
+
+    chunk_size: list[int] | None = None
+    """The chunk sizes to use for streaming.
+    If this is an int, then fixed-size chunks of the given size are used
+    If this is a list, then variable chunk sizes are used."""
+
+    buffer: int = 0
+    """The number of previous speech tokens to pass to the audio decoder on
+    each generation step."""
+
+    block_causal: bool = False
+    """Whether prior buffered tokens should attend to tokens in the current block.
+    Has no effect if buffer is not set."""
+
+    prepend_prompt_speech_tokens: PrependPromptSpeechTokens = (
+        PrependPromptSpeechTokens.ONCE
+    )
+    """Whether the prompt speech tokens should be forwarded to the audio decoder.
+    If "never", the prompt tokens are not forwarded.
+    If "once", the prompt tokens are only forwarded on the first block.
+    If "always", the prompt tokens are forwarded on all blocks.
+    """
+
+    prepend_prompt_speech_tokens_causal: bool = False
+    """Whether the prompt speech tokens should attend to tokens in the currently
+    generated audio block.
+    Has no effect if prepend_prompt_speech_tokens is "never".
+    If False (default), the prompt tokens do not attend to the current block.
+    If True, the prompt tokens attend to the current block.
+    """
+
+    audio_decoder_config: dict[str, Any] = field(default_factory=dict)
+    """Parameters to pass to the audio decoder model."""
+
+    _run_model_test_mode: bool = False
+    """Test-only flag that indicates that test parameters have been passed to
+    the model, such as leaving the audio decoder weights empty or using a
+    dummy speech language model."""
+
+    prometheus_metrics_mode: PrometheusMetricsMode = (
+        PrometheusMetricsMode.INSTRUMENT_ONLY
+    )
+    """The mode to use for Prometheus metrics."""
+
+    def __init__(
+        self,
+        audio_decoder: str,
+        audio_decoder_weights: str = "",
+        chunk_size: list[int] | None = None,
+        buffer: int = 0,
+        block_causal: bool = False,
+        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
+        prepend_prompt_speech_tokens_causal: bool = False,
+        run_model_test_mode: bool = False,
+        prometheus_metrics_mode: PrometheusMetricsMode = PrometheusMetricsMode.INSTRUMENT_ONLY,
+        **kwargs: Any,
+    ) -> None:
+        # Must call the superclass's __init__ first, otherwise PipelineConfig's
+        # init will override values defined in the AudioGenerationConfig.
+        PipelineConfig.__init__(self, **kwargs)
+        if block_causal:
+            raise NotImplementedError("Causal generation is not implemented")
+        if prepend_prompt_speech_tokens_causal:
+            raise NotImplementedError(
+                "Prepend prompt speech tokens causal is not implemented"
+            )
+
+        self.audio_decoder = audio_decoder
+        self.audio_decoder_weights = audio_decoder_weights
+        self.chunk_size = chunk_size
+        self.buffer = buffer
+        self.block_causal = block_causal
+        self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
+        self.prepend_prompt_speech_tokens_causal = (
+            prepend_prompt_speech_tokens_causal
+        )
+        self._run_model_test_mode = run_model_test_mode
+        self.prometheus_metrics_mode = prometheus_metrics_mode
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        # Get the parent class help first
+        audio_help = PipelineConfig.help()
+
+        # Add AudioGenerationConfig-specific fields
+        audio_specific_help = {
+            "audio_decoder": "The name of the audio decoder model architecture.",
+            "audio_decoder_weights": "The path to the audio decoder weights file.",
+            "chunk_size": "The chunk sizes to use for streaming. If this is an int, then fixed-size chunks of the given size are used. If this is a list, then variable chunk sizes are used.",
+            "buffer": "The number of previous speech tokens to pass to the audio decoder on each generation step. Default is 0.",
+            "block_causal": "Whether prior buffered tokens should attend to tokens in the current block. Has no effect if buffer is not set. Default is false.",
+            "prepend_prompt_speech_tokens": "Whether the prompt speech tokens should be forwarded to the audio decoder. Options: 'never', 'once', 'rolling'. Default is 'once'.",
+            "prepend_prompt_speech_tokens_causal": "Whether the prompt speech tokens should attend to tokens in the currently generated audio block. Has no effect if prepend_prompt_speech_tokens is 'never'. Default is false.",
+            "audio_decoder_config": "Parameters to pass to the audio decoder model.",
+            "prometheus_metrics_mode": "The mode to use for Prometheus metrics. Default is 'instrument_only'.",
+        }
+
+        # Check for conflicts
+        for key in audio_specific_help:
+            if key in audio_help:
+                raise ValueError(
+                    f"Duplicate help key '{key}' found in AudioGenerationConfig"
+                )
+
+        # Merge the help dictionaries
+        audio_help.update(audio_specific_help)
+        return audio_help
+
+    @classmethod
+    def from_flags(
+        cls, audio_flags: dict[str, str], **config_flags: Any
+    ) -> AudioGenerationConfig:
+        audio_decoder = audio_flags.pop("audio_decoder", "")
+        if not audio_decoder:
+            raise ValueError(
+                "When running the audio generation task, --audio-decoder must be specified"
+            )
+        audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
+
+        # Configuration for audio generation streaming.
+        chunk_size_str = audio_flags.pop("chunk_size", "")
+        if not chunk_size_str:
+            chunk_size = None
+        else:
+            chunk_size = [int(size) for size in chunk_size_str.split(",")]
+
+        buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
+
+        block_causal = _parse_flag_bool(
+            audio_flags.pop("block_causal", "false"), "block_causal"
+        )
+
+        prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
+            audio_flags.pop("prepend_prompt_speech_tokens", "never")
+        )
+
+        prepend_prompt_speech_tokens_causal = _parse_flag_bool(
+            audio_flags.pop("prepend_prompt_speech_tokens_causal", "false"),
+            "prepend_prompt_speech_tokens_causal",
+        )
+
+        run_model_test_mode = _parse_flag_bool(
+            audio_flags.pop("run_model_test_mode", "false"),
+            "run_model_test_mode",
+        )
+
+        prometheus_metrics_mode = PrometheusMetricsMode(
+            audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
+        )
+
+        if audio_flags:
+            raise ValueError(
+                f"Unknown audio generation option(s): {audio_flags}"
+            )
+
+        return cls(
+            audio_decoder=audio_decoder,
+            audio_decoder_weights=audio_decoder_weights,
+            chunk_size=chunk_size,
+            buffer=buffer,
+            block_causal=block_causal,
+            prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
+            prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
+            run_model_test_mode=run_model_test_mode,
+            prometheus_metrics_mode=prometheus_metrics_mode,
+            **config_flags,
+        )

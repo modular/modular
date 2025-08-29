@@ -17,13 +17,53 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 
 @dataclass
-class PixtralConfig(MAXModelConfig):
+class PixtralConfigBase(MAXModelConfigBase):
+    """Base configuration for Pixtral models."""
+
+    # TODO: check if we need to add these fields
+    dtype: DType
+    devices: list[DeviceRef]
+
+    # Llava fields
+    image_token_index: int
+
+    # Language model fields
+    hidden_size: int
+    num_attention_heads: int
+    rms_norm_eps: float
+    rope_theta: float
+    max_seq_len: int
+    num_hidden_layers: int
+    head_dim: int
+    num_key_value_heads: int
+    feed_forward_length: int
+    vocab_size: int
+    kv_params: KVCacheParams
+    return_logits: ReturnLogits
+    attention_multiplier: float
+
+    # Vision encoder fields
+    patch_size: int
+    image_size: int
+    num_channels: int
+    vision_hidden_size: int
+    vision_num_attention_heads: int
+    vision_rope_theta: float
+    vision_num_hidden_layers: int
+    vision_intermediate_size: int
+    vision_head_dim: int
+
+
+@dataclass
+class PixtralConfig(MAXModelConfig, PixtralConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         return {}

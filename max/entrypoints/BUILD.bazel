@@ -7,7 +7,7 @@ modular_py_library(
     srcs = glob(
         ["**/*.py"],
         exclude = [
-            "mojo.py",
+            "gpu_query.py",
             "pipelines.py",
             "replay_recording.py",
         ],
@@ -16,6 +16,7 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/pipelines",
         requirement("click"),
         requirement("gguf"),
@@ -26,6 +27,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("psutil"),
         requirement("requests"),
+        requirement("sentencepiece"),
         requirement("tokenizers"),
         requirement("tqdm"),
         requirement("transformers"),
@@ -35,26 +37,13 @@ modular_py_library(
 )
 
 modular_py_library(
-    name = "mojo",
-    srcs = ["mojo.py"],
-    data = [
-        "//KGEN/tools/mojo",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-modular_py_binary(
-    name = "pipelines",
+    name = "_pipelines",
     srcs = [
         "pipelines.py",
     ],
-    data = ["@flash_attn"],
-    env = {
-        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
-        "FLASH_ATTENTION_LIBRARY": "$(location @flash_attn)",
-    },
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
@@ -64,6 +53,20 @@ modular_py_binary(
         requirement("pillow"),
         requirement("transformers"),
         requirement("uvicorn"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines",
+    srcs = [
+        "pipelines.py",
+    ],
+    env = {
+        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+    },
+    deps = [
+        ":_pipelines",
+        requirement("click"),
     ],
 )
 
@@ -94,4 +97,11 @@ pkg_filegroup(
         ":python_files",
         "//open-source/max/benchmark:python_files",
     ],
+)
+
+modular_py_library(
+    name = "gpu-query",
+    srcs = ["gpu_query.py"],
+    visibility = ["//visibility:public"],
+    deps = ["//open-source/max/mojo/python/mojo"],
 )

@@ -1,40 +1,31 @@
 # Avoid PATH leaking into actions
 common --incompatible_strict_action_env
 
-# Enable --config=(macos|windows|linux) based on the host OS
-common --enable_platform_specific_config
-
 # Force hermetic toolchain, make sure we don't accidentally used the default one
 common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 
-common --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+# Don't fail on unknown GPUs, add needed GPUs to common.MODULE.bazel
+common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
 
-# Use a custom platform to detect GPU hardware
-common --platforms=@modular_host_platform
-common --host_platform=@modular_host_platform
-
-# Disable legacy duplicate runfiles creation
-common --legacy_external_runfiles=false
-common --build_runfile_links=false
-
-# Include full test log in failed tests
-build --test_output=errors
-build --test_summary=terse
+common --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
 
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
-# Buildbuddy cache optimization recommendations
-build --experimental_profile_include_primary_output
-build --experimental_profile_include_target_label
-build --experimental_remote_cache_compression_threshold=100
-build --legacy_important_outputs=false
-build --remote_cache_compression
-build --slim_profile=false
+import %workspace%/bazel/internal/common.bazelrc
 
-# TODO: Disable remote caching for now.
-# build:ci --bes_results_url=https://modular-public.buildbuddy.io/invocation/
-# build:ci --bes_backend=grpcs://modular-public.buildbuddy.io
-# build:ci --remote_cache=grpcs://modular-public.buildbuddy.io
+# Load config generated from tools/bazel
+import %workspace%/build/wrapper.bazelrc
+
+build --remote_instance_name=modular-public
+
+build --disk_cache=~/.cache/bazel-disk-cache
+build --experimental_disk_cache_gc_max_size=100G
+
+build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
+build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
+build:public-cache --build_metadata=VISIBILITY=PUBLIC
+build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
+
 build:ci --remote_timeout=10m

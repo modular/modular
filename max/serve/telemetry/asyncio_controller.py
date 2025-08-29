@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -18,12 +20,13 @@ import queue
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, NoReturn, Optional
+from types import TracebackType
+from typing import Callable, NoReturn
 
-from max.serve.config import MetricLevel
+from max.serve.config import MetricLevel, Settings
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 if sys.version_info >= (3, 13):
@@ -39,7 +42,9 @@ class NotStarted(Exception):
 
 
 class AsyncioMetricClient(MetricClient):
-    def __init__(self, level: MetricLevel, q):
+    def __init__(
+        self, level: MetricLevel, q: asyncio.Queue[MaxMeasurement]
+    ) -> None:
         self.q = q
         self.level = level
 
@@ -61,6 +66,7 @@ class AsyncioMetricClient(MetricClient):
 
     def cross_process_factory(
         self,
+        settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
         return functools.partial(start_asyncio_consumer, self.level)
 
@@ -71,16 +77,16 @@ class AsyncioTelemetryController:
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
 
-    def __init__(self, maxsize=0):
+    def __init__(self, maxsize: int = 0) -> None:
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task[object] | None = None
 
-    def start(self):
+    def start(self) -> None:
         if self.task is not None:
             raise Exception("task already started")
         self.task = asyncio.create_task(self._consume(self.q))
 
-    async def shutdown(self, timeout_s: float = 2.0):
+    async def shutdown(self, timeout_s: float = 2.0) -> None:
         if sys.version_info >= (3, 13):
             self.q.shutdown()
 
@@ -105,7 +111,7 @@ class AsyncioTelemetryController:
         return AsyncioMetricClient(level, self.q)
 
     @staticmethod
-    async def _consume(q):
+    async def _consume(q: asyncio.Queue[MaxMeasurement]) -> None:
         while True:
             try:
                 m: MaxMeasurement = await q.get()
@@ -128,7 +134,12 @@ class AsyncioTelemetryController:
         self.start()
         return self
 
-    async def __aexit__(self, type, value, traceback):
+    async def __aexit__(
+        self,
+        type: type[BaseException],
+        value: BaseException,
+        traceback: TracebackType,
+    ) -> None:
         await self.shutdown()
 
 

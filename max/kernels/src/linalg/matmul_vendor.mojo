@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import alignof, simdwidthof
+from sys import align_of, simd_width_of
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 
 from utils import Index, IndexList
 
-from .utils import apply_epilogue, elementwise_epilogue_type
+from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .vendor_blas import matmul as vendor_matmul
 
@@ -30,13 +30,11 @@ fn matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
-    use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-    _trace_description: StaticString = "",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -52,19 +50,23 @@ fn matmul[
     if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated"
-        vendor_matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
+        vendor_matmul[use_tf32=True](
+            ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
+        )
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
-        alias simd_size = simdwidthof[c.type, target = _get_gpu_target()]()
+        alias simd_size = simd_width_of[c.type, target = get_gpu_target()]()
 
         @parameter
         @__copy_capture(c)
-        fn epilogue_wrapper[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        fn epilogue_wrapper[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
             var c_val = c.load[
                 width=simd_width,
-                alignment = alignof[SIMD[c.type, simd_width]](),
+                alignment = align_of[SIMD[c.type, simd_width]](),
             ](c_coord)
             epilogue[c.type, simd_width](c_coord, c_val)
 
@@ -76,7 +78,7 @@ fn matmul[
 
             # For D = alpha * A * B + beta * C, vendor matmul currently sets
             # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
-            vendor_matmul(
+            vendor_matmul[use_tf32=True](
                 ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
             )
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
@@ -95,7 +97,6 @@ fn matmul[
         c_tmp.data = tmp_device_buffer._unsafe_ptr()
 
         matmul[
-            use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             config=config,

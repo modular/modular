@@ -15,10 +15,8 @@
 from collections.optional import Optional
 from collections.string import StaticString
 
-from memory import UnsafePointer
 
 from utils import Variant
-from utils.write import _WriteBufferStack
 
 import ._c
 import ._c.IR
@@ -26,8 +24,6 @@ from ._c.ffi import MLIR_func
 from .diagnostics import (
     Diagnostic,
     DiagnosticHandler,
-    DiagnosticHandlerID,
-    DiagnosticSeverity,
     ErrorCapturingDiagnosticHandler,
 )
 
@@ -64,14 +60,14 @@ trait DialectAttribute:
         ...
 
 
-struct DialectRegistry:
+struct DialectRegistry(Defaultable):
     alias cType = _c.IR.MlirDialectRegistry
     var c: Self.cType
 
     fn __init__(out self):
         self.c = _c.IR.mlirDialectRegistryCreate()
 
-    fn __del__(owned self):
+    fn __del__(deinit self):
         # We only want to do this for objects which are not added to a context
         pass  # _c.IR.mlirDialectRegistryDestroy(self.c)
 
@@ -82,7 +78,6 @@ struct DialectRegistry:
         MLIR_func["MAXG_loadModularDialects", NoneType._mlir_type](self.c)
 
 
-@value
 @register_passable("trivial")
 struct Dialect(Copyable, Movable):
     alias cType = _c.IR.MlirDialect
@@ -102,7 +97,7 @@ struct Dialect(Copyable, Movable):
         return _c.IR.mlirDialectGetNamespace(self.c)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct DialectHandle(Copyable, Movable):
     alias cType = _c.IR.MlirDialectHandle
@@ -112,9 +107,8 @@ struct DialectHandle(Copyable, Movable):
         return _c.IR.mlirDialectHandleGetNamespace(self.c)
 
 
-@value
 @register_passable("trivial")
-struct Context:
+struct Context(Copyable, Defaultable, Movable):
     alias cType = _c.IR.MlirContext
     var c: Self.cType
 
@@ -130,7 +124,7 @@ struct Context:
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
     fn __init__(
-        out self, owned registry: DialectRegistry, threading_enabled: Bool
+        out self, var registry: DialectRegistry, threading_enabled: Bool
     ):
         self.c = _c.IR.mlirContextCreateWithRegistry(
             registry.c, threading_enabled
@@ -149,7 +143,7 @@ struct Context:
     fn __eq__(self, other: Self) -> Bool:
         return _c.IR.mlirContextEqual(self.c, other.c)
 
-    fn append(mut self, owned registry: DialectRegistry):
+    fn append(mut self, var registry: DialectRegistry):
         return _c.IR.mlirContextAppendDialectRegistry(self.c, registry.c)
 
     fn register(mut self, handle: DialectHandle):
@@ -215,7 +209,6 @@ struct Context:
     # TODO: mlirContextSetThreadPool
 
 
-@value
 @register_passable("trivial")
 struct Location(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirLocation
@@ -259,13 +252,12 @@ struct Location(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirLocationPrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
-struct Module(Stringable, Writable):
+struct Module(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
@@ -280,7 +272,7 @@ struct Module(Stringable, Writable):
     # TODO: The lifetime of module appears to be iffy in the current codebase.
     # For now, this is manually called when known to be safe to prevent ASAN
     # from complaining for certain tests.
-    fn destroy(owned self):
+    fn destroy(var self):
         _c.IR.mlirModuleDestroy(self.c)
 
     @staticmethod
@@ -313,32 +305,32 @@ struct Module(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         writer.write(self.as_op())
 
 
 # Helper class with a bunch of implicit conversions for things that go on
 # Operations.
-struct _OpBuilderList[T: Copyable & Movable]:
+struct _OpBuilderList[T: Copyable & Movable](Defaultable):
     var elements: List[T]
 
     fn __init__(out self):
-        self.elements = List[T]()
+        self.elements = []
 
     @implicit
-    fn __init__(out self, owned elements: List[T]):
+    fn __init__(out self, var elements: List[T]):
         self.elements = elements^
 
     @implicit
     fn __init__(out self, element: T):
-        self.elements = List[T]()
+        self.elements = []
         self.elements.append(element)
 
     fn __bool__(self) -> Bool:
         return len(self.elements).__bool__()
 
 
-@value
+@fieldwise_init
 struct NamedAttribute(Copyable, Movable):
     alias cType = _c.IR.MlirNamedAttribute
     var name: Identifier
@@ -355,14 +347,13 @@ struct NamedAttribute(Copyable, Movable):
     # TODO: tuple init so we can write these a bit less verbosely.
 
 
-@value
-struct _WriteState:
+@fieldwise_init
+struct _WriteState(Copyable, Movable):
     var handle: UnsafePointer[FileHandle]
     var errors: List[String]
 
 
 # TODO: how to correctly destroy "owned" Operations?
-@value
 @register_passable("trivial")
 struct Operation(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
@@ -450,19 +441,19 @@ struct Operation(Copyable, Movable, Stringable, Writable):
                 UnsafePointer(to=state),
                 len(attributes),
                 # This technically works as long as `Attribute` is only `MlirAttribute`.
-                attributes.data.bitcast[NamedAttribute.cType](),
+                attributes.unsafe_ptr().bitcast[NamedAttribute.cType](),
             )
         if operands:
             _c.IR.mlirOperationStateAddOperands(
                 UnsafePointer(to=state),
                 len(operands),
-                operands.data.bitcast[Value.cType](),
+                operands.unsafe_ptr().bitcast[Value.cType](),
             )
         if results:
             _c.IR.mlirOperationStateAddResults(
                 UnsafePointer(to=state),
                 len(results),
-                results.data.bitcast[Type.cType](),
+                results.unsafe_ptr().bitcast[Type.cType](),
             )
         # TODO: how to express to the caller that we're taking ownership
         #       over Regions.
@@ -470,13 +461,13 @@ struct Operation(Copyable, Movable, Stringable, Writable):
             _c.IR.mlirOperationStateAddOwnedRegions(
                 UnsafePointer(to=state),
                 len(regions),
-                regions.data.bitcast[Region.cType](),
+                regions.unsafe_ptr().bitcast[Region.cType](),
             )
         if successors:
             _c.IR.mlirOperationStateAddSuccessors(
                 UnsafePointer(to=state),
                 len(successors),
-                successors.data.bitcast[Block.cType](),
+                successors.unsafe_ptr().bitcast[Block.cType](),
             )
 
     @staticmethod
@@ -490,7 +481,7 @@ struct Operation(Copyable, Movable, Stringable, Writable):
             raise "Operation.parse failed"
         return Self(result)
 
-    fn destroy(owned self):
+    fn destroy(var self):
         _c.IR.mlirOperationDestroy(self.c)
 
     fn context(self) -> Context:
@@ -538,13 +529,13 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn successor(self, successor_idx: Int) raises -> Block:
         var block = _c.IR.mlirOperationGetSuccessor(self.c, successor_idx)
         if not block.ptr:
-            raise "IndexError"
+            raise Error("IndexError")
         return block
 
     fn region(self, region_idx: Int) raises -> Region:
         var region = _c.IR.mlirOperationGetRegion(self.c, region_idx)
         if not region.ptr:
-            raise "IndexError"
+            raise Error("IndexError")
         return region
 
     fn num_results(self) -> Int:
@@ -599,11 +590,10 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirOperationPrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
 struct Identifier(Copyable, Movable, Stringable):
     alias cType = _c.IR.MlirIdentifier
@@ -623,7 +613,6 @@ struct Identifier(Copyable, Movable, Stringable):
         return String(_c.IR.mlirIdentifierStr(self.c))
 
 
-@value
 @register_passable("trivial")
 struct Type(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirType
@@ -652,11 +641,10 @@ struct Type(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirTypePrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
 struct Value(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirValue
@@ -706,11 +694,10 @@ struct Value(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirValuePrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
 struct Attribute(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirAttribute
@@ -739,11 +726,10 @@ struct Attribute(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirAttributePrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
 struct Block(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirBlock
@@ -771,8 +757,8 @@ struct Block(Copyable, Movable, Stringable, Writable):
         )
         self.c = _c.IR.mlirBlockCreate(
             len(args),
-            args.data.bitcast[Type.cType](),
-            locations.data.bitcast[Location.cType](),
+            args.unsafe_ptr().bitcast[Type.cType](),
+            locations.unsafe_ptr().bitcast[Location.cType](),
         )
 
     fn region(self) -> Region:
@@ -810,13 +796,12 @@ struct Block(Copyable, Movable, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         _c.IR.mlirBlockPrint(writer, self.c)
 
 
-@value
 @register_passable("trivial")
-struct Region(Copyable, Movable):
+struct Region(Copyable, Defaultable, Movable):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 

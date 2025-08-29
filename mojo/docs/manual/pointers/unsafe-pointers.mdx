@@ -28,8 +28,6 @@ point to any type of value, and the value type is specified as a parameter. The
 value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
-from memory import UnsafePointer
-
 # Allocate memory to hold a value
 var ptr = UnsafePointer[Int].alloc(1)
 # Initialize the allocated memory
@@ -169,7 +167,7 @@ type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
 `Int`) or a newly-constructed, "owned" value:
 
 ```mojo
-str_ptr.init_pointee_move(String("Owned string"))
+str_ptr.init_pointee_move("Owned string")
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
@@ -328,7 +326,7 @@ the origin of the pointee. For example, in the following code, `s_ptr.origin` is
 the same as the origin of `s`:
 
 ```mojo
-s = String("Testing")
+s = "Testing"
 s_ptr = UnsafePointer(to=s)
 ```
 
@@ -390,8 +388,8 @@ data types and byte order. For more information, see
 
 ### Creating a Mojo pointer from a Python pointer
 
-The `PythonObject` type defines
-an [`unsafe_get_as_pointer()`](/mojo/stdlib/python/object/PythonObject#unsafe_get_as_pointer)
+The `PythonObject` type defines an
+[`unsafe_get_as_pointer()`](/mojo/stdlib/python/python_object/PythonObject/#unsafe_get_as_pointer)
 method to construct an `UnsafePointer` from a Python address.
 
 For example, the following code creates a NumPy array and then accesses the
@@ -399,7 +397,6 @@ data using a Mojo pointer:
 
 ```mojo
 from python import Python
-from memory import UnsafePointer
 
 def share_array():
     np = Python.import_module("numpy")
@@ -454,7 +451,7 @@ Each chunk begins with an 8-bit integer that identifies the number of values
 in the chunk.
 
 ```mojo
-def read_chunks(owned ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
+def read_chunks(var ptr: UnsafePointer[UInt8]) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])

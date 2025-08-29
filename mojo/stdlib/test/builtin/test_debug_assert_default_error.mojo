@@ -14,8 +14,6 @@
 # This file only tests the debug_assert function
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not --crash %bare-mojo %s 2>&1 | FileCheck %s
 
 
 # CHECK-LABEL: test_fail

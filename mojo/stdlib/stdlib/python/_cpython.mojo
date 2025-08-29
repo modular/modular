@@ -17,8 +17,7 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray, Optional
-from collections.string.string_slice import get_static_string
+from collections import InlineArray
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
@@ -26,55 +25,47 @@ from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
     DLHandle,
-    OpaquePointer,
     c_char,
+    c_double,
     c_int,
     c_long,
     c_size_t,
     c_ssize_t,
     c_uint,
 )
+from utils import Variant
 
-from memory import UnsafePointer
-from python._bindings import PyMojoObject, Typed_initproc, Typed_newfunc
+alias Py_ssize_t = c_ssize_t
+alias Py_hash_t = Py_ssize_t
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
 # ===-----------------------------------------------------------------------===#
 
-# https://github.com/python/cpython/blob/d45225bd66a8123e4a30314c627f2586293ba532/Include/compile.h#L7
-alias Py_single_input = 256
-alias Py_file_input = 257
-alias Py_eval_input = 258
-alias Py_func_type_input = 345
+# ref: https://github.com/python/cpython/blob/main/Include/compile.h
+alias Py_single_input: c_int = 256
+alias Py_file_input: c_int = 257
+alias Py_eval_input: c_int = 258
+alias Py_func_type_input: c_int = 345
 
-alias Py_tp_dealloc = 52
-alias Py_tp_init = 60
-alias Py_tp_methods = 64
-alias Py_tp_new = 65
-alias Py_tp_repr = 66
-
+# 0 when Stackless Python is disabled
+# ref: https://github.com/python/cpython/blob/main/Include/object.h
 alias Py_TPFLAGS_DEFAULT = 0
 
-alias Py_ssize_t = c_ssize_t
-alias Py_hash_t = Py_ssize_t
 
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
+# ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunction
 alias PyCFunction = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
-"""[Reference](https://docs.python.org/3/c-api/structures.html#c.PyCFunction).
-"""
-
-alias METH_VARARGS = 0x1
-
-alias destructor = fn (PyObjectPtr) -> None
-
-alias reprfunc = fn (PyObjectPtr) -> PyObjectPtr
-
-alias initproc = fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int
-alias newfunc = fn (
-    UnsafePointer[PyTypeObject], PyObjectPtr, PyObjectPtr
+alias PyCFunctionWithKeywords = fn (
+    PyObjectPtr, PyObjectPtr, PyObjectPtr
 ) -> PyObjectPtr
+
+# Flag passed to newmethodobject
+# ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
+alias METH_VARARGS = 0x01
+alias METH_KEYWORDS = 0x02
+alias METH_STATIC = 0x20
 
 
 # GIL
@@ -83,12 +74,16 @@ alias newfunc = fn (
 struct PyGILState_STATE:
     """Represents the state of the Python Global Interpreter Lock (GIL).
 
-    Notes:
-        This struct is used to store and manage the state of the GIL, which is
-        crucial for thread-safe operations in Python. [Reference](
-        https://github.com/python/cpython/blob/d45225bd66a8123e4a30314c627f2586293ba532/Include/pystate.h#L76
-        ).
+    This struct is used to store and manage the state of the GIL, which is
+    crucial for thread-safe operations in Python.
+
+    References:
+    - https://github.com/python/cpython/blob/d45225bd66a8123e4a30314c627f2586293ba532/Include/pystate.h#L76
     """
+
+    # typedef enum {
+    #   PyGILState_LOCKED, PyGILState_UNLOCKED
+    # } PyGILState_STATE;
 
     var current_state: c_int
     """The current state of the GIL."""
@@ -98,48 +93,42 @@ struct PyGILState_STATE:
 
 
 struct PyThreadState:
-    """Opaque struct."""
+    """This data structure represents the state of a single thread.
 
+    It's an opaque struct.
+
+    References:
+    - https://docs.python.org/3/c-api/init.html#c.PyThreadState
+    """
+
+    # TODO: add this public data member
+    # PyInterpreterState *interp
     pass
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyKeysValuePair:
-    """Represents a key-value pair in a Python dictionary iteration.
-
-    This struct is used to store the result of iterating over a Python dictionary,
-    containing the key, value, current position, and success status of the iteration.
-    """
-
-    var key: PyObjectPtr
-    """The key of the current dictionary item."""
-    var value: PyObjectPtr
-    """The value of the current dictionary item."""
-    var position: c_int
-    """The current position in the dictionary iteration."""
-    var success: Bool
-    """Indicates whether the iteration was successful."""
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct PyObjectPtr(Copyable, Movable):
+struct PyObjectPtr(
+    Boolable,
+    Copyable,
+    Defaultable,
+    EqualityComparable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
+):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
     for FFI ABI correctness.
-
-    This struct provides methods for initialization, null checking,
-    equality comparison, and conversion to integer representation.
     """
 
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var unsized_obj_ptr: UnsafePointer[PyObject]
-
+    var _unsized_obj_ptr: UnsafePointer[PyObject]
     """Raw pointer to the underlying PyObject struct instance.
 
     It is not valid to read or write a `PyObject` directly from this pointer.
@@ -161,13 +150,18 @@ struct PyObjectPtr(Copyable, Movable):
     @always_inline
     fn __init__(out self):
         """Initialize a null PyObjectPtr."""
-        self.unsized_obj_ptr = UnsafePointer[PyObject]()
+        self._unsized_obj_ptr = {}
+
+    @always_inline
+    fn __init__[T: AnyType, //](out self, *, upcast_from: UnsafePointer[T]):
+        self._unsized_obj_ptr = upcast_from.bitcast[PyObject]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __eq__(self, rhs: PyObjectPtr) -> Bool:
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for equality.
 
         Args:
@@ -176,76 +170,46 @@ struct PyObjectPtr(Copyable, Movable):
         Returns:
             Bool: True if the pointers are equal, False otherwise.
         """
-        return Int(self.unsized_obj_ptr) == Int(rhs.unsized_obj_ptr)
+        return self._unsized_obj_ptr == rhs._unsized_obj_ptr
 
-    fn __ne__(self, rhs: PyObjectPtr) -> Bool:
-        """Compare two PyObjectPtr for inequality.
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
 
-        Args:
-            rhs: The right-hand side PyObjectPtr to compare.
+    @always_inline
+    fn __bool__(self) -> Bool:
+        return Bool(self._unsized_obj_ptr)
 
-        Returns:
-            Bool: True if the pointers are not equal, False otherwise.
-        """
-        return not (self == rhs)
+    @always_inline
+    fn __int__(self) -> Int:
+        return Int(self._unsized_obj_ptr)
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn try_cast_to_mojo_value[
-        T: AnyType,
-    ](
-        owned self,
-        # TODO: Make this part of the trait bound
-        expected_type_name: StringSlice,
-    ) -> Optional[UnsafePointer[T]]:
-        var cpython = Python().cpython()
-        var type = cpython.Py_TYPE(self)
-        var type_name = PythonObject(
-            from_owned_ptr=cpython.PyType_GetName(type)
-        )
+    fn bitcast[T: AnyType](self) -> UnsafePointer[T]:
+        """Bitcasts the `PyObjectPtr` to a pointer of type `T`.
 
-        # FIXME(MSTDL-978):
-        #   Improve this check. We should do something conceptually equivalent
-        #   to:
-        #       type == T.python_type_object
-        #   where:
-        #       trait Pythonable:
-        #           var python_type_object: PyTypeObject
-        if type_name == PythonObject(expected_type_name):
-            return self.unchecked_cast_to_mojo_value[T]()
-        else:
-            return None
-
-    fn unchecked_cast_to_mojo_object[
-        T: AnyType
-    ](owned self) -> UnsafePointer[PyMojoObject[T]]:
-        """Assume that this Python object contains a wrapped Mojo value."""
-        return self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-
-    fn unchecked_cast_to_mojo_value[T: AnyType](owned self) -> UnsafePointer[T]:
-        var mojo_obj_ptr = self.unchecked_cast_to_mojo_object[T]()
-
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T](to=mojo_obj_ptr[].mojo_value)
-
-    fn is_null(self) -> Bool:
-        """Check if the pointer is null.
+        Parameters:
+            T: The target type to cast to.
 
         Returns:
-            Bool: True if the pointer is null, False otherwise.
+            A pointer to the underlying object as type `T`.
         """
-        return Int(self.unsized_obj_ptr) == 0
+        return self._unsized_obj_ptr.bitcast[T]()
 
-    # TODO: Consider removing this and inlining Int(p.value) into callers
-    fn _get_ptr_as_int(self) -> Int:
-        """Get the pointer value as an integer.
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats to the provided Writer.
 
-        Returns:
-            Int: The integer representation of the pointer.
+        Args:
+            writer: The object to write to.
         """
-        return Int(self.unsized_obj_ptr)
+        writer.write(self._unsized_obj_ptr)
 
 
 @fieldwise_init
@@ -260,7 +224,6 @@ struct PythonVersion(Copyable, Movable):
     var patch: Int
     """The patch version number."""
 
-    @implicit
     fn __init__(out self, version: StringSlice):
         """Initialize a PythonVersion object from a version string.
 
@@ -270,7 +233,7 @@ struct PythonVersion(Copyable, Movable):
         The version string is parsed to extract major, minor, and patch numbers.
         If parsing fails for any component, it defaults to -1.
         """
-        var components = InlineArray[Int, 3](-1)
+        var components = InlineArray[Int, 3](fill=-1)
         var start = 0
         var next_idx = 0
         var i = 0
@@ -298,12 +261,8 @@ fn _py_get_version(lib: DLHandle) -> StaticString:
     )
 
 
-fn _py_finalize(lib: DLHandle):
-    lib.call["Py_Finalize"]()
-
-
 @fieldwise_init
-struct PyMethodDef(Copyable, Movable):
+struct PyMethodDef(Copyable, Defaultable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -326,13 +285,14 @@ struct PyMethodDef(Copyable, Movable):
         called `ml_name` in CPython.
     """
 
-    # TODO(MSTDL-887): Support keyword-argument only methods
-    var method_impl: PyCFunction
+    var method_impl: OpaquePointer
     """A function pointer to the implementation of the method."""
 
     var method_flags: c_int
-    """Flags indicating how the method should be called. [Reference](
-    https://docs.python.org/3/c-api/structures.html#c.PyMethodDef)."""
+    """Flags indicating how the method should be called.
+
+    References:
+    - https://docs.python.org/3/c-api/structures.html#c.PyMethodDef"""
 
     var method_docstring: UnsafePointer[
         c_char, mut=False, origin=StaticConstantOrigin
@@ -349,25 +309,23 @@ struct PyMethodDef(Copyable, Movable):
         This is suitable for use terminating an array of PyMethodDef values.
         """
         self.method_name = UnsafePointer[c_char]()
-        self.method_impl = _null_fn_ptr[PyCFunction]()
+        self.method_impl = OpaquePointer()
         self.method_flags = 0
         self.method_docstring = UnsafePointer[c_char]()
 
-    fn __init__(out self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
     @staticmethod
-    fn function(
-        func: PyCFunction,
+    fn function[
+        static_method: Bool = False
+    ](
+        func: Variant[PyCFunction, PyCFunctionWithKeywords],
         func_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> Self:
         """Create a PyMethodDef for a function.
+
+        Parameters:
+            static_method: Whether the function is a static method. Default is
+                False.
 
         Arguments:
             func: The function to wrap.
@@ -378,12 +336,20 @@ struct PyMethodDef(Copyable, Movable):
         #   Support a way to get the name of the function from its parameter
         #   type, similar to `get_linkage_name()`?
 
-        # FIXME: PyMethodDef is capturing the pointer without an origin.
+        var with_kwargs = func.isa[PyCFunctionWithKeywords]()
+        var func_ptr = rebind[OpaquePointer](
+            func[PyCFunctionWithKeywords]
+        ) if with_kwargs else rebind[OpaquePointer](func[PyCFunction])
 
+        var flags = (
+            METH_VARARGS
+            | (METH_STATIC if static_method else 0)
+            | (METH_KEYWORDS if with_kwargs else 0)
+        )
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
-            func,
-            METH_VARARGS,
+            func_ptr,
+            flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )
 
@@ -394,11 +360,14 @@ fn _null_fn_ptr[T: AnyTrivialRegType]() -> T:
     )
 
 
+alias PyTypeObjectPtr = UnsafePointer[PyTypeObject]
+
+
 struct PyTypeObject:
     """The opaque C structure of the objects used to describe types.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/type.html#c.PyTypeObject).
+    References:
+    - https://docs.python.org/3/c-api/type.html#c.PyTypeObject
     """
 
     # TODO(MSTDL-877):
@@ -412,8 +381,8 @@ struct PyTypeObject:
 struct PyType_Spec:
     """Structure defining a type's behavior.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/type.html#c.PyType_Spec).
+    References:
+    - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
     var name: UnsafePointer[c_char]
@@ -423,34 +392,62 @@ struct PyType_Spec:
     var slots: UnsafePointer[PyType_Slot]
 
 
+# https://github.com/python/cpython/blob/main/Include/typeslots.h
+alias Py_tp_dealloc = 52
+alias Py_tp_init = 60
+alias Py_tp_methods = 64
+alias Py_tp_new = 65
+alias Py_tp_repr = 66
+
+# https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
+
+alias destructor = fn (PyObjectPtr) -> None
+"""`typedef void (*destructor)(PyObject*)`"""
+alias reprfunc = fn (PyObjectPtr) -> PyObjectPtr
+"""`typedef PyObject *(*reprfunc)(PyObject*)`"""
+alias Typed_initproc = fn (
+    PyObjectPtr,
+    PyObjectPtr,
+    PyObjectPtr,  # NULL if no keyword arguments were passed
+) -> c_int
+"""`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`"""
+alias Typed_newfunc = fn (
+    PyTypeObjectPtr,
+    PyObjectPtr,
+    PyObjectPtr,
+) -> PyObjectPtr
+"""`typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)`"""
+
+
 @fieldwise_init
 @register_passable("trivial")
 struct PyType_Slot(Copyable, Movable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/type.html#c.PyType_Slot).
+    References:
+    - https://docs.python.org/3/c-api/type.html#c.PyType_Slot
+    - https://docs.python.org/3/c-api/typeobj.html#type-object-structures
     """
 
     var slot: c_int
     var pfunc: OpaquePointer
 
     @staticmethod
-    fn tp_new(func: Typed_newfunc) -> Self:
-        return PyType_Slot(Py_tp_new, rebind[OpaquePointer](func))
+    fn tp_dealloc(func: destructor) -> Self:
+        return PyType_Slot(Py_tp_dealloc, rebind[OpaquePointer](func))
 
     @staticmethod
     fn tp_init(func: Typed_initproc) -> Self:
         return PyType_Slot(Py_tp_init, rebind[OpaquePointer](func))
 
     @staticmethod
-    fn tp_dealloc(func: destructor) -> Self:
-        return PyType_Slot(Py_tp_dealloc, rebind[OpaquePointer](func))
-
-    @staticmethod
     fn tp_methods(methods: UnsafePointer[PyMethodDef]) -> Self:
         return PyType_Slot(Py_tp_methods, rebind[OpaquePointer](methods))
+
+    @staticmethod
+    fn tp_new(func: Typed_newfunc) -> Self:
+        return PyType_Slot(Py_tp_new, rebind[OpaquePointer](func))
 
     @staticmethod
     fn tp_repr(func: reprfunc) -> Self:
@@ -462,7 +459,9 @@ struct PyType_Slot(Copyable, Movable):
 
 
 @fieldwise_init
-struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
+struct PyObject(
+    Copyable, Defaultable, Movable, Representable, Stringable, Writable
+):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an
     object. In a normal “release” build, it contains only the object's reference
@@ -470,16 +469,16 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
     declared to be a PyObject, but every pointer to a Python object can be cast
     to a PyObject.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/structures.html#c.PyObject).
+    References:
+    - https://docs.python.org/3/c-api/structures.html#c.PyObject
     """
 
-    var object_ref_count: Int
-    var object_type: UnsafePointer[PyTypeObject]
+    var object_ref_count: Py_ssize_t
+    var object_type: PyTypeObjectPtr
 
     fn __init__(out self):
         self.object_ref_count = 0
-        self.object_type = UnsafePointer[PyTypeObject]()
+        self.object_type = {}
 
     @no_inline
     fn __str__(self) -> String:
@@ -505,11 +504,8 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -522,48 +518,40 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
 
 
 # Mojo doesn't have macros, so we define it here for ease.
-struct PyModuleDef_Base(Stringable, Representable, Writable):
+struct PyModuleDef_Base(
+    Defaultable, Movable, Representable, Stringable, Writable
+):
     """PyModuleDef_Base.
 
-    Notes:
-        [Reference 1](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39
-        ). [Reference 2](
-        https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base
-        ). `PyModuleDef_HEAD_INIT` defaults all of its members, [Reference 3](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60
-        ).
+    References:
+    - https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39
+    - https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base
+    - `PyModuleDef_HEAD_INIT` default inits all of its members (https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60)
     """
 
     var object_base: PyObject
     """The initial segment of every `PyObject` in CPython."""
 
     # TODO(MOCO-1138): This is a C ABI function pointer, not Mojo a function.
-    alias _init_fn_type = fn () -> UnsafePointer[PyObject]
-    """The function used to re-initialize the module."""
+    alias _init_fn_type = fn () -> PyObjectPtr
     var init_fn: Self._init_fn_type
+    """The function used to re-initialize the module."""
 
     var index: Py_ssize_t
-    """The module's index into its interpreter's modules_by_index cache."""
+    """The module's index into its interpreter's `modules_by_index` cache."""
 
-    var dict_copy: UnsafePointer[PyObject]
-    """A copy of the module's __dict__ after the first time it was loaded."""
+    var dict_copy: PyObjectPtr
+    """A copy of the module's `__dict__` after the first time it was loaded."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
     fn __init__(out self):
-        self.object_base = PyObject()
+        self.object_base = {}
         self.init_fn = _null_fn_ptr[Self._init_fn_type]()
         self.index = 0
-        self.dict_copy = UnsafePointer[PyObject]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.object_base = existing.object_base
-        self.init_fn = existing.init_fn
-        self.index = existing.index
-        self.dict_copy = existing.dict_copy
+        self.dict_copy = {}
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -593,11 +581,8 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -613,38 +598,42 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
 
 @fieldwise_init
 struct PyModuleDef_Slot:
-    """[Reference](
-    https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
+    """A struct representing a slot in the module definition.
+
+    References:
+    - https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot
     """
 
     var slot: c_int
     var value: OpaquePointer
 
 
-struct PyModuleDef(Stringable, Representable, Writable, Movable):
+struct PyModuleDef(Movable, Representable, Stringable, Writable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef).
+    References:
+    - https://docs.python.org/3/c-api/module.html#c.PyModuleDef
     """
 
     var base: PyModuleDef_Base
 
     var name: UnsafePointer[c_char]
-    """[Reference](https://docs.python.org/3/c-api/structures.html#c.PyMethodDef
-    )."""
+    """Name for the new module."""
 
     var docstring: UnsafePointer[c_char]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
+    """Size of per-module data."""
 
     var methods: UnsafePointer[PyMethodDef]
-    """A pointer to a table of module-level functions.  Can be null if there
+    """A pointer to a table of module-level functions. Can be null if there
     are no functions present."""
 
     var slots: UnsafePointer[PyModuleDef_Slot]
+    """An array of slot definitions for multi-phase initialization, terminated
+    by a `{0, NULL}` entry."""
 
     # TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
     alias _visitproc_fn_type = fn (PyObjectPtr, OpaquePointer) -> c_int
@@ -652,38 +641,30 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
         PyObjectPtr, Self._visitproc_fn_type, OpaquePointer
     ) -> c_int
     var traverse_fn: Self._traverse_fn_type
+    """A traversal function to call during GC traversal of the module object,
+    or `NULL` if not needed."""
 
     alias _clear_fn_type = fn (PyObjectPtr) -> c_int
     var clear_fn: Self._clear_fn_type
+    """A clear function to call during GC clearing of the module object,
+    or `NULL` if not needed."""
 
     alias _free_fn_type = fn (OpaquePointer) -> OpaquePointer
     var free_fn: Self._free_fn_type
+    """A function to call during deallocation of the module object,
+    or `NULL` if not needed."""
 
-    @implicit
     fn __init__(out self, name: StaticString):
-        self.base = PyModuleDef_Base()
+        self.base = {}
         self.name = name.unsafe_ptr().bitcast[c_char]()
-        self.docstring = UnsafePointer[c_char]()
-        # means that the module does not support sub-interpreters
+        self.docstring = {}
+        # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
-        self.methods = UnsafePointer[PyMethodDef]()
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
-
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
+        self.methods = {}
+        self.slots = {}
         self.traverse_fn = _null_fn_ptr[Self._traverse_fn_type]()
         self.clear_fn = _null_fn_ptr[Self._clear_fn_type]()
         self.free_fn = _null_fn_ptr[Self._free_fn_type]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.base = existing.base^
-        self.name = existing.name
-        self.docstring = existing.docstring
-        self.size = existing.size
-        self.methods = existing.methods
-        self.slots = existing.slots
-        self.traverse_fn = existing.traverse_fn
-        self.clear_fn = existing.clear_fn
-        self.free_fn = existing.free_fn
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -713,11 +694,8 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn write_to[W: Writer](self, mut writer: W):
+    fn write_to(self, mut writer: Some[Writer]):
         """Formats to the provided Writer.
-
-        Parameters:
-            W: A type conforming to the Writable trait.
 
         Args:
             writer: The object to write to.
@@ -746,36 +724,557 @@ struct ExternalFunction[
     type: AnyTrivialRegType,
 ]:
     @staticmethod
+    @always_inline
     fn load(lib: DLHandle) -> type:
         """Loads this external function from an opened dynamic library."""
         return lib._get_function[name, type]()
 
 
-# int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
-alias PyList_SetItem = ExternalFunction[
-    "PyList_SetItem",
+# external functions for the CPython C API
+# ordered based on https://docs.python.org/3/c-api/index.html
+
+# The Very High Level Layer
+alias PyRun_SimpleString = ExternalFunction[
+    "PyRun_SimpleString",
+    # int PyRun_SimpleString(const char *command)
+    fn (UnsafePointer[c_char, mut=False]) -> c_int,
+]
+alias PyRun_String = ExternalFunction[
+    "PyRun_String",
+    # PyObject *PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        c_int,
+        PyObjectPtr,
+        PyObjectPtr,
+    ) -> PyObjectPtr,
+]
+alias Py_CompileString = ExternalFunction[
+    "Py_CompileString",
+    # PyObject *Py_CompileString(const char *str, const char *filename, int start)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        UnsafePointer[c_char, mut=False],
+        c_int,
+    ) -> PyObjectPtr,
+]
+alias PyEval_EvalCode = ExternalFunction[
+    "PyEval_EvalCode",
+    # PyObject *PyEval_EvalCode(PyObject *co, PyObject *globals, PyObject *locals)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
+# Reference Counting
+alias Py_IncRef = ExternalFunction[
+    "Py_IncRef",
+    # void Py_IncRef(PyObject *o)
+    fn (PyObjectPtr) -> None,
+]
+alias Py_DecRef = ExternalFunction[
+    "Py_DecRef",
+    # void Py_DecRef(PyObject *o)
+    fn (PyObjectPtr) -> None,
+]
+
+# Exception Handling
+# - Printing and clearing
+alias PyErr_Clear = ExternalFunction[
+    "PyErr_Clear",
+    # void PyErr_Clear()
+    fn () -> None,
+]
+# - Raising exceptions
+alias PyErr_SetString = ExternalFunction[
+    "PyErr_SetString",
+    # void PyErr_SetString(PyObject *type, const char *message)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> None,
+]
+alias PyErr_SetNone = ExternalFunction[
+    "PyErr_SetNone",
+    # void PyErr_SetNone(PyObject *type)
+    fn (PyObjectPtr) -> None,
+]
+# - Querying the error indicator
+alias PyErr_Occurred = ExternalFunction[
+    "PyErr_Occurred",
+    # PyObject *PyErr_Occurred()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_GetRaisedException = ExternalFunction[
+    "PyErr_GetRaisedException",
+    # PyObject *PyErr_GetRaisedException()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_Fetch = ExternalFunction[
+    "PyErr_Fetch",
+    # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
+    fn (
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+    ) -> None,
+]
+
+# Initialization, Finalization, and Threads
+alias PyEval_SaveThread = ExternalFunction[
+    "PyEval_SaveThread",
+    # PyThreadState *PyEval_SaveThread()
+    fn () -> UnsafePointer[PyThreadState],
+]
+alias PyEval_RestoreThread = ExternalFunction[
+    "PyEval_RestoreThread",
+    # void PyEval_RestoreThread(PyThreadState *tstate)
+    fn (UnsafePointer[PyThreadState]) -> None,
+]
+alias PyGILState_Ensure = ExternalFunction[
+    "PyGILState_Ensure",
+    # PyGILState_STATE PyGILState_Ensure()
+    fn () -> PyGILState_STATE,
+]
+alias PyGILState_Release = ExternalFunction[
+    "PyGILState_Release",
+    # void PyGILState_Release(PyGILState_STATE)
+    fn (PyGILState_STATE) -> None,
+]
+
+# Importing Modules
+alias PyImport_ImportModule = ExternalFunction[
+    "PyImport_ImportModule",
+    # PyObject *PyImport_ImportModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+alias PyImport_AddModule = ExternalFunction[
+    "PyImport_AddModule",
+    # PyObject *PyImport_AddModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+
+# Abstract Objects Layer
+# Object Protocol
+alias PyObject_HasAttrString = ExternalFunction[
+    "PyObject_HasAttrString",
+    # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> c_int,
+]
+alias PyObject_GetAttrString = ExternalFunction[
+    "PyObject_GetAttrString",
+    # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+alias PyObject_SetAttrString = ExternalFunction[
+    "PyObject_SetAttrString",
+    # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
+]
+alias PyObject_Str = ExternalFunction[
+    "PyObject_Str",
+    # PyObject *PyObject_Str(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyObject_Hash = ExternalFunction[
+    "PyObject_Hash",
+    # Py_hash_t PyObject_Hash(PyObject *o)
+    fn (PyObjectPtr) -> Py_hash_t,
+]
+alias PyObject_IsTrue = ExternalFunction[
+    "PyObject_IsTrue",
+    # int PyObject_IsTrue(PyObject *o)
+    fn (PyObjectPtr) -> c_int,
+]
+alias PyObject_Type = ExternalFunction[
+    "PyObject_Type",
+    # PyTypeObject *PyObject_Type(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyObject_Length = ExternalFunction[
+    "PyObject_Length",
+    # Py_ssize_t PyObject_Length(PyObject *o)
+    fn (PyObjectPtr) -> Py_ssize_t,
+]
+alias PyObject_GetItem = ExternalFunction[
+    "PyObject_GetItem",
+    # PyObject *PyObject_GetItem(PyObject *o, PyObject *key)
+    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+alias PyObject_SetItem = ExternalFunction[
+    "PyObject_SetItem",
+    # int PyObject_SetItem(PyObject *o, PyObject *key, PyObject *v)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
+]
+alias PyObject_GetIter = ExternalFunction[
+    "PyObject_GetIter",
+    # PyObject *PyObject_GetIter(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
+# Call Protocol
+alias PyObject_Call = ExternalFunction[
+    "PyObject_Call",
+    # PyObject *PyObject_Call(PyObject *callable, PyObject *args, PyObject *kwargs)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+alias PyObject_CallObject = ExternalFunction[
+    "PyObject_CallObject",
+    # PyObject *PyObject_CallObject(PyObject *callable, PyObject *args)
+    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
+# Number Protocol
+alias PyNumber_Long = ExternalFunction[
+    "PyNumber_Long",
+    # PyObject *PyNumber_Long(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyNumber_Float = ExternalFunction[
+    "PyNumber_Float",
+    # PyObject *PyNumber_Float(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
+# Iterator Protocol
+alias PyIter_Check = ExternalFunction[
+    "PyIter_Check",
+    # int PyIter_Check(PyObject *o)
+    fn (PyObjectPtr) -> c_int,
+]
+alias PyIter_Next = ExternalFunction[
+    "PyIter_Next",
+    # PyObject *PyIter_Next(PyObject *o)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+
+# Concrete Objects Layer
+# Type Objects
+alias PyType_GenericAlloc = ExternalFunction[
+    "PyType_GenericAlloc",
+    # PyObject *PyType_GenericAlloc(PyTypeObject *type, Py_ssize_t nitems)
+    fn (PyTypeObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyType_GetName = ExternalFunction[
+    "PyType_GetName",
+    # PyObject *PyType_GetName(PyTypeObject *type)
+    fn (PyTypeObjectPtr) -> PyObjectPtr,
+]
+alias PyType_FromSpec = ExternalFunction[
+    "PyType_FromSpec",
+    # PyObject *PyType_FromSpec(PyType_Spec *spec)
+    fn (UnsafePointer[PyType_Spec]) -> PyObjectPtr,
+]
+
+# Integer Objects
+alias PyLong_FromSsize_t = ExternalFunction[
+    "PyLong_FromSsize_t",
+    # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyLong_FromSize_t = ExternalFunction[
+    "PyLong_FromSize_t",
+    # PyObject *PyLong_FromSize_t(size_t v)
+    fn (c_size_t) -> PyObjectPtr,
+]
+alias PyLong_AsSsize_t = ExternalFunction[
+    "PyLong_AsSsize_t",
+    # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
+    fn (PyObjectPtr) -> Py_ssize_t,
+]
+
+# Boolean Objects
+alias PyBool_FromLong = ExternalFunction[
+    "PyBool_FromLong",
+    # PyObject *PyBool_FromLong(long v)
+    fn (c_long) -> PyObjectPtr,
+]
+
+# Floating-Point Objects
+alias PyFloat_FromDouble = ExternalFunction[
+    "PyFloat_FromDouble",
+    # PyObject *PyFloat_FromDouble(double v)
+    fn (c_double) -> PyObjectPtr,
+]
+alias PyFloat_AsDouble = ExternalFunction[
+    "PyFloat_AsDouble",
+    # double PyFloat_AsDouble(PyObject *pyfloat)
+    fn (PyObjectPtr) -> c_double,
+]
+
+# Unicode Objects and Codecs
+alias PyUnicode_DecodeUTF8 = ExternalFunction[
+    "PyUnicode_DecodeUTF8",
+    # PyObject *PyUnicode_DecodeUTF8(const char *str, Py_ssize_t size, const char *errors)
+    fn (
+        UnsafePointer[c_char, mut=False],
+        Py_ssize_t,
+        UnsafePointer[c_char, mut=False],
+    ) -> PyObjectPtr,
+]
+alias PyUnicode_AsUTF8AndSize = ExternalFunction[
+    "PyUnicode_AsUTF8AndSize",
+    # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
+    fn (
+        PyObjectPtr,
+        UnsafePointer[Py_ssize_t],
+    ) -> UnsafePointer[c_char, mut=False],
+]
+
+# Tuple Objects
+alias PyTuple_New = ExternalFunction[
+    "PyTuple_New",
+    # PyObject *PyTuple_New(Py_ssize_t len)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyTuple_GetItem = ExternalFunction[
+    "PyTuple_GetItem",
+    # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
+    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyTuple_SetItem = ExternalFunction[
+    "PyTuple_SetItem",
+    # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
     fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
-alias Py_IncRef = ExternalFunction[
-    "Py_IncRef",
-    fn (PyObjectPtr) -> None,
+# List Objects
+alias PyList_New = ExternalFunction[
+    "PyList_New",
+    # PyObject *PyList_New(Py_ssize_t len)
+    fn (Py_ssize_t) -> PyObjectPtr,
+]
+alias PyList_GetItem = ExternalFunction[
+    "PyList_GetItem",
+    # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
+    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+]
+alias PyList_SetItem = ExternalFunction[
+    "PyList_SetItem",
+    # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
+    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
-alias Py_DecRef = ExternalFunction[
-    "Py_DecRef",
-    fn (PyObjectPtr) -> None,
+# Dictionary Objects
+alias PyDict_New = ExternalFunction[
+    "PyDict_New",
+    # PyObject *PyDict_New()
+    fn () -> PyObjectPtr,
+]
+alias PyDict_SetItem = ExternalFunction[
+    "PyDict_SetItem",
+    # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
+]
+alias PyDict_GetItemWithError = ExternalFunction[
+    "PyDict_GetItemWithError",
+    # PyObject *PyDict_GetItemWithError(PyObject *p, PyObject *key)
+    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+alias PyDict_Next = ExternalFunction[
+    "PyDict_Next",
+    # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
+    fn (
+        PyObjectPtr,
+        UnsafePointer[Py_ssize_t],
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+    ) -> c_int,
 ]
 
-alias PyLong_FromSsize_t = ExternalFunction[
-    "PyLong_FromSsize_t",
-    fn (c_ssize_t) -> PyObjectPtr,
+# Set Objects
+alias PySet_New = ExternalFunction[
+    "PySet_New",
+    # PyObject *PySet_New(PyObject *iterable)
+    fn (PyObjectPtr) -> PyObjectPtr,
 ]
+alias PySet_Add = ExternalFunction[
+    "PySet_Add",
+    # int PySet_Add(PyObject *set, PyObject *key)
+    fn (PyObjectPtr, PyObjectPtr) -> c_int,
+]
+
+# Module Objects
+alias PyModule_GetDict = ExternalFunction[
+    "PyModule_GetDict",
+    # PyObject *PyModule_GetDict(PyObject *module)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyModule_Create2 = ExternalFunction[
+    "PyModule_Create2",
+    # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
+    fn (UnsafePointer[PyModuleDef], c_int) -> PyObjectPtr,
+]
+alias PyModule_AddFunctions = ExternalFunction[
+    "PyModule_AddFunctions",
+    # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
+    fn (PyObjectPtr, UnsafePointer[PyMethodDef]) -> c_int,
+]
+alias PyModule_AddObjectRef = ExternalFunction[
+    "PyModule_AddObjectRef",
+    # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
+]
+
+# Slice Objects
+alias PySlice_New = ExternalFunction[
+    "PySlice_New",
+    # PyObject *PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
+    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+]
+
+# Capsules
+alias PyCapsule_Destructor = (
+    # typedef void (*PyCapsule_Destructor)(PyObject *)
+    destructor
+)
+alias PyCapsule_New = ExternalFunction[
+    "PyCapsule_New",
+    # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
+    fn (
+        OpaquePointer,
+        UnsafePointer[c_char, mut=False],
+        PyCapsule_Destructor,
+    ) -> PyObjectPtr,
+]
+alias PyCapsule_GetPointer = ExternalFunction[
+    "PyCapsule_GetPointer",
+    # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> OpaquePointer,
+]
+
+# Memory Management
+alias PyObject_Free = ExternalFunction[
+    "PyObject_Free",
+    # void PyObject_Free(void *p)
+    fn (OpaquePointer) -> None,
+]
+
+# Object Implementation Support
+# Common Object Structures
+alias Py_Is = ExternalFunction[
+    "Py_Is",
+    # int Py_Is(PyObject *x, PyObject *y)
+    fn (PyObjectPtr, PyObjectPtr) -> c_int,
+]
+
+
+fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
+    return abort[PyObjectPtr](
+        "PyErr_GetRaisedException is not available in this Python version"
+    )
+
+
+fn _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
+    return abort[PyObjectPtr](
+        "PyType_GetName is not available in this Python version"
+    )
+
+
+fn _PyModule_AddObjectRef_dummy(
+    module: PyObjectPtr,
+    name: UnsafePointer[c_char, mut=False],
+    value: PyObjectPtr,
+) -> c_int:
+    return abort[c_int](
+        "PyModule_AddObjectRef is not available in this Python version"
+    )
+
+
+fn _Py_Is_dummy(x: PyObjectPtr, y: PyObjectPtr) -> c_int:
+    return abort[c_int]("Py_Is is not available in this Python version")
+
+
+# ===-------------------------------------------------------------------===#
+# Context Managers for Python GIL and Threading
+# ===-------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct CPython(Copyable, Movable):
-    """Handle to the CPython interpreter present in the current process."""
+struct GILAcquired(Movable):
+    """Context manager for Python Global Interpreter Lock (GIL) operations.
+
+    This struct provides automatic GIL management inspired by nanobind/pybind11.
+    It ensures the GIL is acquired on construction and released on destruction,
+    making it safe to use Python objects within the managed scope.
+
+    Example:
+        ```mojo
+        var python = Python()
+        with GILAcquired(Python(python)):
+            # Python objects can be safely accessed here
+            var py_obj = python.cpython().Py_None()
+        # GIL is automatically released here
+        ```
+    """
+
+    var python: Python
+    """Reference to the CPython instance."""
+    var gil_state: PyGILState_STATE
+    """The GIL state returned by PyGILState_Ensure."""
+
+    fn __init__(out self, python: Python):
+        """Acquire the GIL and initialize the context manager.
+
+        Args:
+            python: The CPython instance to use for GIL operations.
+        """
+        self.python = python
+        self.gil_state = PyGILState_STATE(PyGILState_STATE.PyGILState_UNLOCKED)
+
+    fn __enter__(mut self):
+        """Acquire the GIL."""
+        self.gil_state = self.python.cpython().PyGILState_Ensure()
+
+    fn __exit__(mut self):
+        """Release the GIL."""
+        self.python.cpython().PyGILState_Release(self.gil_state)
+
+
+@fieldwise_init
+struct GILReleased(Movable):
+    """Context manager for Python thread state operations.
+
+    This struct provides automatic thread state management for scenarios where
+    you need to temporarily release the GIL to allow other threads to run,
+    then restore the thread state. This is useful for long-running operations
+    that don't need to access Python objects.
+
+    Example:
+        ```mojo
+        var python = Python()
+        with GILReleased(python):
+            # GIL is released here, other threads can run
+            # Perform CPU-intensive work without Python object access
+            perform_heavy_computation()
+        # Thread state is automatically restored here
+        ```
+    """
+
+    var python: Python
+    """Reference to the CPython instance."""
+    var thread_state: UnsafePointer[PyThreadState]
+    """The thread state returned by PyEval_SaveThread."""
+
+    fn __init__(out self, python: Python):
+        """Save the current thread state and release the GIL.
+
+        Args:
+            python: The Python instance to use for GIL operations.
+        """
+        self.python = python
+        self.thread_state = {}
+
+    fn __enter__(mut self):
+        """Save the current thread state and release the GIL."""
+        self.thread_state = self.python.cpython().PyEval_SaveThread()
+
+    fn __exit__(mut self):
+        """Restore the thread state and acquire the GIL."""
+        self.python.cpython().PyEval_RestoreThread(self.thread_state)
+
+
+@fieldwise_init
+struct CPython(Defaultable, Movable):
+    """Handle to the CPython interpreter present in the current process.
+
+    This type is non-copyable due to its large size. Please refer to it only
+    using either a reference, or the `Python` handle type."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -783,31 +1282,116 @@ struct CPython(Copyable, Movable):
 
     var lib: DLHandle
     """The handle to the CPython shared library."""
-    var logging_enabled: Bool
-    """Whether logging is enabled."""
     var version: PythonVersion
     """The version of the Python runtime."""
-    var total_ref_count: UnsafePointer[Int]
-    """The total reference count of all Python objects."""
     var init_error: StringSlice[StaticConstantOrigin]
     """An error message if initialization failed."""
 
-    var Py_IncRef_func: Py_IncRef.type
-    var Py_DecRef_func: Py_DecRef.type
-    var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
-    var PyList_SetItem_func: PyList_SetItem.type
+    # fields holding function pointers to CPython C API functions
+    # ordered based on https://docs.python.org/3/c-api/index.html
+
+    # The Very High Level Layer
+    var _PyRun_SimpleString: PyRun_SimpleString.type
+    var _PyRun_String: PyRun_String.type
+    var _Py_CompileString: Py_CompileString.type
+    var _PyEval_EvalCode: PyEval_EvalCode.type
+    # Reference Counting
+    var _Py_IncRef: Py_IncRef.type
+    var _Py_DecRef: Py_DecRef.type
+    # Exception Handling
+    var _PyErr_Clear: PyErr_Clear.type
+    var _PyErr_SetString: PyErr_SetString.type
+    var _PyErr_SetNone: PyErr_SetNone.type
+    var _PyErr_Occurred: PyErr_Occurred.type
+    var _PyErr_GetRaisedException: PyErr_GetRaisedException.type
+    var _PyErr_Fetch: PyErr_Fetch.type
+    # Initialization, Finalization, and Threads
+    var _PyEval_SaveThread: PyEval_SaveThread.type
+    var _PyEval_RestoreThread: PyEval_RestoreThread.type
+    var _PyGILState_Ensure: PyGILState_Ensure.type
+    var _PyGILState_Release: PyGILState_Release.type
+    # Importing Modules
+    var _PyImport_ImportModule: PyImport_ImportModule.type
+    var _PyImport_AddModule: PyImport_AddModule.type
+    # Abstract Objects Layer
+    # Object Protocol
+    var _PyObject_HasAttrString: PyObject_HasAttrString.type
+    var _PyObject_GetAttrString: PyObject_GetAttrString.type
+    var _PyObject_SetAttrString: PyObject_SetAttrString.type
+    var _PyObject_Str: PyObject_Str.type
+    var _PyObject_Hash: PyObject_Hash.type
+    var _PyObject_IsTrue: PyObject_IsTrue.type
+    var _PyObject_Type: PyObject_Type.type
+    var _PyObject_Length: PyObject_Length.type
+    var _PyObject_GetItem: PyObject_GetItem.type
+    var _PyObject_SetItem: PyObject_SetItem.type
+    var _PyObject_GetIter: PyObject_GetIter.type
+    # Call Protocol
+    var _PyObject_Call: PyObject_Call.type
+    var _PyObject_CallObject: PyObject_CallObject.type
+    # Number Protocol
+    var _PyNumber_Long: PyNumber_Long.type
+    var _PyNumber_Float: PyNumber_Float.type
+    # Iterator Protocol
+    var _PyIter_Check: PyIter_Check.type
+    var _PyIter_Next: PyIter_Next.type
+    # Concrete Objects Layer
+    # Type Objects
+    var _PyType_GenericAlloc: PyType_GenericAlloc.type
+    var _PyType_GetName: PyType_GetName.type
+    var _PyType_FromSpec: PyType_FromSpec.type
+    # The None Object
+    var _Py_None: PyObjectPtr
+    # Integer Objects
+    var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
+    var _PyLong_FromSize_t: PyLong_FromSize_t.type
+    var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
+    # Boolean Objects
+    var _PyBool_FromLong: PyBool_FromLong.type
+    # Floating-Point Objects
+    var _PyFloat_FromDouble: PyFloat_FromDouble.type
+    var _PyFloat_AsDouble: PyFloat_AsDouble.type
+    # Unicode Objects and Codecs
+    var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
+    var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
+    # Tuple Objects
+    var _PyTuple_New: PyTuple_New.type
+    var _PyTuple_GetItem: PyTuple_GetItem.type
+    var _PyTuple_SetItem: PyTuple_SetItem.type
+    # List Objects
+    var _PyList_New: PyList_New.type
+    var _PyList_GetItem: PyList_GetItem.type
+    var _PyList_SetItem: PyList_SetItem.type
+    # Dictionary Objects
+    var _PyDict_Type: PyTypeObjectPtr
+    var _PyDict_New: PyDict_New.type
+    var _PyDict_SetItem: PyDict_SetItem.type
+    var _PyDict_GetItemWithError: PyDict_GetItemWithError.type
+    var _PyDict_Next: PyDict_Next.type
+    # Set Objects
+    var _PySet_New: PySet_New.type
+    var _PySet_Add: PySet_Add.type
+    # Module Objects
+    var _PyModule_GetDict: PyModule_GetDict.type
+    var _PyModule_Create2: PyModule_Create2.type
+    var _PyModule_AddFunctions: PyModule_AddFunctions.type
+    var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
+    # Slice Objects
+    var _PySlice_New: PySlice_New.type
+    # Capsules
+    var _PyCapsule_New: PyCapsule_New.type
+    var _PyCapsule_GetPointer: PyCapsule_GetPointer.type
+    # Memory Management
+    var _PyObject_Free: PyObject_Free.type
+    # Object Implementation Support
+    # Common Object Structures
+    var _Py_Is: Py_Is.type
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        var logging_enabled = getenv("MODULAR_CPYTHON_LOGGING") == "ON"
-        if logging_enabled:
-            print("CPython init")
-            print("MOJO_PYTHON:", getenv("MOJO_PYTHON"))
-            print("MOJO_PYTHON_LIBRARY:", getenv("MOJO_PYTHON_LIBRARY"))
-
         # Add directory of target file to top of sys.path to find python modules
         var file_dir = dirname(argv()[0])
         if Path(file_dir).is_dir() or file_dir == "":
@@ -833,26 +1417,25 @@ struct CPython(Copyable, Movable):
 
         var python_lib = getenv("MOJO_PYTHON_LIBRARY")
 
-        if logging_enabled:
-            print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
-            print("libpython selected:", python_lib)
-
+        # Note:
+        #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
+        #   is a dynamic library being loaded as a Python extension module,
+        #   and we need to find CPython symbols that are statically linked
+        #   into the `python` main executable. On those platforms where
+        #   `python` executable can be statically linked (Linux), it's
+        #   important that we don't load a second copy of CPython symbols
+        #   into the process by loading the `libpython` dynamic library.
         try:
-            # Note:
-            #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
-            #   is a dynamic library being loaded as a Python extension module,
-            #   and we need to find CPython symbols that are statically linked
-            #   into the `python` main executable. On those paltforms where
-            #   `python` executable can be statically linked (Linux), it's
-            #   important that we don't load a second copy of CPython symbols
-            #   into the process by loading the `libpython` dynamic library.
-            self.lib = DLHandle(python_lib) if python_lib != "" else DLHandle()
+            # Try to load the library from the current process.
+            self.lib = DLHandle()
+            if not self.lib.check_symbol("Py_Initialize"):
+                # If the library is not present in the current process, try to load it from the environment variable.
+                self.lib = DLHandle(python_lib)
         except e:
             self.lib = abort[DLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
-        self.total_ref_count = UnsafePointer[Int].alloc(1)
-        self.logging_enabled = logging_enabled
+
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):
                 self.init_error = "compatible Python library not found"
@@ -861,27 +1444,141 @@ struct CPython(Copyable, Movable):
         else:
             self.version = PythonVersion(0, 0, 0)
 
-        self.Py_IncRef_func = Py_IncRef.load(self.lib)
-        self.Py_DecRef_func = Py_DecRef.load(self.lib)
-        self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
-        self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
+        # The Very High Level Layer
+        self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib)
+        self._PyRun_String = PyRun_String.load(self.lib)
+        self._Py_CompileString = Py_CompileString.load(self.lib)
+        self._PyEval_EvalCode = PyEval_EvalCode.load(self.lib)
+        # Reference Counting
+        self._Py_IncRef = Py_IncRef.load(self.lib)
+        self._Py_DecRef = Py_DecRef.load(self.lib)
+        # Exception Handling
+        self._PyErr_Clear = PyErr_Clear.load(self.lib)
+        self._PyErr_SetString = PyErr_SetString.load(self.lib)
+        self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
+        self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
+        if self.version.minor >= 12:
+            self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(
+                self.lib
+            )
+        else:
+            self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
+        self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
+        # Initialization, Finalization, and Threads
+        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
+        self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
+        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
+        self._PyGILState_Release = PyGILState_Release.load(self.lib)
+        # Importing Modules
+        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+        # Abstract Objects Layer
+        # Object Protocol
+        self._PyObject_HasAttrString = PyObject_HasAttrString.load(self.lib)
+        self._PyObject_GetAttrString = PyObject_GetAttrString.load(self.lib)
+        self._PyObject_SetAttrString = PyObject_SetAttrString.load(self.lib)
+        self._PyObject_Str = PyObject_Str.load(self.lib)
+        self._PyObject_Hash = PyObject_Hash.load(self.lib)
+        self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib)
+        self._PyObject_Type = PyObject_Type.load(self.lib)
+        self._PyObject_Length = PyObject_Length.load(self.lib)
+        self._PyObject_GetItem = PyObject_GetItem.load(self.lib)
+        self._PyObject_SetItem = PyObject_SetItem.load(self.lib)
+        self._PyObject_GetIter = PyObject_GetIter.load(self.lib)
+        # Call Protocol
+        self._PyObject_Call = PyObject_Call.load(self.lib)
+        self._PyObject_CallObject = PyObject_CallObject.load(self.lib)
+        # Number Protocol
+        self._PyNumber_Long = PyNumber_Long.load(self.lib)
+        self._PyNumber_Float = PyNumber_Float.load(self.lib)
+        # Iterator Protocol
+        self._PyIter_Check = PyIter_Check.load(self.lib)
+        self._PyIter_Next = PyIter_Next.load(self.lib)
+        # Concrete Objects Layer
+        # Type Objects
+        self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib)
+        if self.version.minor >= 11:
+            self._PyType_GetName = PyType_GetName.load(self.lib)
+        else:
+            self._PyType_GetName = _PyType_GetName_dummy
+        self._PyType_FromSpec = PyType_FromSpec.load(self.lib)
+        # The None Object
+        if self.version.minor >= 13:
+            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
+            # References:
+            # - https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
+            # - https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
 
-    fn __del__(owned self):
+            # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
+            self._Py_None = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](0)
+        else:
+            # PyObject *Py_None
+            self._Py_None = PyObjectPtr(
+                self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            )
+        # Integer Objects
+        self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib)
+        self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib)
+        self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib)
+        # Boolean Objects
+        self._PyBool_FromLong = PyBool_FromLong.load(self.lib)
+        # Floating-Point Objects
+        self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib)
+        self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib)
+        # Unicode Objects and Codecs
+        self._PyUnicode_DecodeUTF8 = PyUnicode_DecodeUTF8.load(self.lib)
+        self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(self.lib)
+        # Tuple Objects
+        self._PyTuple_New = PyTuple_New.load(self.lib)
+        self._PyTuple_GetItem = PyTuple_GetItem.load(self.lib)
+        self._PyTuple_SetItem = PyTuple_SetItem.load(self.lib)
+        # List Objects
+        self._PyList_New = PyList_New.load(self.lib)
+        self._PyList_GetItem = PyList_GetItem.load(self.lib)
+        self._PyList_SetItem = PyList_SetItem.load(self.lib)
+        # Dictionary Objects
+        self._PyDict_Type = PyTypeObjectPtr(
+            # PyTypeObject PyDict_Type
+            self.lib.get_symbol[PyTypeObject]("PyDict_Type")
+        )
+        self._PyDict_New = PyDict_New.load(self.lib)
+        self._PyDict_SetItem = PyDict_SetItem.load(self.lib)
+        self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(self.lib)
+        self._PyDict_Next = PyDict_Next.load(self.lib)
+        # Set Objects
+        self._PySet_New = PySet_New.load(self.lib)
+        self._PySet_Add = PySet_Add.load(self.lib)
+        # Module Objects
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
+        if self.version.minor >= 10:
+            self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
+        else:
+            self._PyModule_AddObjectRef = _PyModule_AddObjectRef_dummy
+        # Slice Objects
+        self._PySlice_New = PySlice_New.load(self.lib)
+        # Capsules
+        self._PyCapsule_New = PyCapsule_New.load(self.lib)
+        self._PyCapsule_GetPointer = PyCapsule_GetPointer.load(self.lib)
+        # Memory Management
+        self._PyObject_Free = PyObject_Free.load(self.lib)
+        # Object Implementation Support
+        # Common Object Structures
+        if self.version.minor >= 10:
+            self._Py_Is = Py_Is.load(self.lib)
+        else:
+            self._Py_Is = _Py_Is_dummy
+
+    fn __del__(deinit self):
         pass
 
-    @staticmethod
-    fn destroy(mut existing: CPython):
-        if existing.logging_enabled:
-            print("CPython destroy")
-            var remaining_refs = existing.total_ref_count.take_pointee()
-            print("Number of remaining refs:", remaining_refs)
-            # Technically not necessary since we're working with register
-            # passable types, by it's good practice to re-initialize the
-            # pointer after a consuming move.
-            existing.total_ref_count.init_pointee_move(remaining_refs)
-        _py_finalize(existing.lib)
-        existing.lib.close()
-        existing.total_ref_count.free()
+    fn destroy(mut self):
+        # https://docs.python.org/3/c-api/init.html#c.Py_FinalizeEx
+        self.lib.call["Py_FinalizeEx"]()
+        self.lib.close()
 
     fn check_init_error(self) raises:
         """Used for entry points that initialize Python on first use, will
@@ -915,29 +1612,38 @@ struct CPython(Copyable, Movable):
         Returns:
             `Error` object describing the CPython error.
         """
-        debug_assert(
-            self.PyErr_Occurred(),
+
+        @parameter
+        fn err_occurred() -> Bool:
+            return self.PyErr_Occurred()
+
+        debug_assert[err_occurred](
             "invalid unchecked conversion of Python error to Mojo error",
         )
 
-        # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
-        var err_ptr = self.PyErr_Fetch()
+        var err_ptr: PyObjectPtr
+        # NOTE: PyErr_Fetch is deprecated since Python 3.12.
+        var old_python = self.version.minor < 12
+        if old_python:
+            err_ptr = self.PyErr_Fetch()
+        else:
+            err_ptr = self.PyErr_GetRaisedException()
         debug_assert(
-            not err_ptr.is_null(),
-            "Python exception occurred but PyErr_Fetch returned null",
+            Bool(err_ptr), "Python exception occurred but null was returned"
         )
 
-        var error: Error
+        var error: String
         try:
-            error = String(PythonObject(from_owned_ptr=err_ptr))
+            error = String(PythonObject(from_owned=err_ptr))
         except e:
             return abort[Error](
                 "internal error: Python exception occurred but cannot be"
                 " converted to String"
             )
 
-        self.PyErr_Clear()
-        return error
+        if old_python:
+            self.PyErr_Clear()
+        return Error(error^)
 
     fn get_error(self) -> Error:
         """Return an `Error` object from the CPython interpreter if it's in an
@@ -953,1098 +1659,6 @@ struct CPython(Copyable, Movable):
         if self.PyErr_Occurred():
             return self.unsafe_get_error()
         return Error("internal error: expected CPython exception not found")
-
-    # ===-------------------------------------------------------------------===#
-    # Logging
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn log[*Ts: Writable](self, *args: *Ts):
-        """If logging is enabled, print the given arguments as a log message.
-
-        Parameters:
-            Ts: The argument types.
-
-        Arguments:
-            args: The arguments to log.
-        """
-        if not self.logging_enabled:
-            return
-
-        # TODO(MOCO-358):
-        #   Once Mojo argument splatting is supported, this should just
-        #   be: `print(*args)`
-        @parameter
-        fn print_arg[T: Writable](arg: T):
-            print(arg, sep="", end="", flush=False)
-
-        args.each[print_arg]()
-
-        print(flush=True)
-
-    # ===-------------------------------------------------------------------===#
-    # Reference count management
-    # ===-------------------------------------------------------------------===#
-
-    fn _inc_total_rc(self):
-        var v = self.total_ref_count.take_pointee()
-        self.total_ref_count.init_pointee_move(v + 1)
-
-    fn _dec_total_rc(self):
-        var v = self.total_ref_count.take_pointee()
-        self.total_ref_count.init_pointee_move(v - 1)
-
-    fn Py_IncRef(self, ptr: PyObjectPtr):
-        """[Reference](
-        https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef).
-        """
-
-        self.log(ptr._get_ptr_as_int(), " INCREF refcnt:", self._Py_REFCNT(ptr))
-
-        self.Py_IncRef_func(ptr)
-        self._inc_total_rc()
-
-    fn Py_DecRef(self, ptr: PyObjectPtr):
-        """[Reference](
-        https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef).
-        """
-
-        self.log(ptr._get_ptr_as_int(), " DECREF refcnt:", self._Py_REFCNT(ptr))
-        self.Py_DecRef_func(ptr)
-        self._dec_total_rc()
-
-    # This function assumes a specific way PyObjectPtr is implemented, namely
-    # that the refcount has offset 0 in that structure. That generally doesn't
-    # have to always be the case - but often it is and it's convenient for
-    # debugging. We shouldn't rely on this function anywhere - its only purpose
-    # is debugging.
-    fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Int:
-        if ptr._get_ptr_as_int() == 0:
-            return -1
-        # NOTE:
-        #   The "obvious" way to write this would be:
-        #       return ptr.unsized_obj_ptr[].object_ref_count
-        #   However, that is not valid, because, as the name suggest, a PyObject
-        #   is an "unsized" or "incomplete" type, meaning that a pointer to an
-        #   instance of that type doesn't point at the entire allocation of the
-        #   underlying "concrete" object instance.
-        #
-        #   To avoid concerns about whether that's UB or not in Mojo, this
-        #   this by just assumes the first field will be the ref count, and
-        #   treats the object pointer "as if" it was a pointer to just the first
-        #   field.
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ptr.unsized_obj_ptr.bitcast[Int]()[]
-
-    # ===-------------------------------------------------------------------===#
-    # Python GIL and threading
-    # ===-------------------------------------------------------------------===#
-
-    fn PyGILState_Ensure(self) -> PyGILState_STATE:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure).
-        """
-        return self.lib.call["PyGILState_Ensure", PyGILState_STATE]()
-
-    fn PyGILState_Release(self, state: PyGILState_STATE):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Release).
-        """
-        self.lib.call["PyGILState_Release"](state)
-
-    fn PyEval_SaveThread(self) -> UnsafePointer[PyThreadState]:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread).
-        """
-
-        return self.lib.call[
-            "PyEval_SaveThread", UnsafePointer[PyThreadState]
-        ]()
-
-    fn PyEval_RestoreThread(self, state: UnsafePointer[PyThreadState]):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread).
-        """
-        self.lib.call["PyEval_RestoreThread"](state)
-
-    # ===-------------------------------------------------------------------===#
-    # Python Set operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PySet_New(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_New).
-        """
-
-        var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PySet_New, refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    # int PySet_Add(PyObject *set, PyObject *key)
-    fn PySet_Add(self, set: PyObjectPtr, element: PyObjectPtr) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/set.html#c.PySet_Add).
-        """
-
-        var r = self.lib.call["PySet_Add", c_int](set, element)
-        self.log(
-            set._get_ptr_as_int(),
-            " PySet_Add, element: ",
-            element._get_ptr_as_int(),
-        )
-        return r
-
-    # ===-------------------------------------------------------------------===#
-    # Python Dict operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyDict_New(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_New).
-        """
-
-        var r = self.lib.call["PyDict_New", PyObjectPtr]()
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyDict_New, refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
-    fn PyDict_SetItem(
-        self, dict_obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem).
-        """
-
-        var r = self.lib.call["PyDict_SetItem", c_int](dict_obj, key, value)
-
-        self.log(
-            "PyDict_SetItem, key: ",
-            key._get_ptr_as_int(),
-            " value: ",
-            value._get_ptr_as_int(),
-        )
-
-        return r
-
-    fn PyDict_GetItemWithError(
-        self, dict_obj: PyObjectPtr, key: PyObjectPtr
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError).
-        """
-
-        var r = self.lib.call["PyDict_GetItemWithError", PyObjectPtr](
-            dict_obj, key
-        )
-        self.log("PyDict_GetItemWithError, key: ", key._get_ptr_as_int())
-        return r
-
-    fn PyDict_Check(self, maybe_dict: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Check).
-        """
-
-        var my_type = self.PyObject_Type(maybe_dict)
-        var my_type_as_int = my_type._get_ptr_as_int()
-        var dict_type = self.PyDict_Type()
-        var result = my_type_as_int == dict_type._get_ptr_as_int()
-        self.Py_DecRef(my_type)
-        return result
-
-    fn PyDict_Type(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
-        """
-        return self.lib.call["PyDict_Type", PyObjectPtr]()
-
-    # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
-    fn PyDict_Next(self, dictionary: PyObjectPtr, p: Int) -> PyKeysValuePair:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Next).
-        """
-        var key = PyObjectPtr()
-        var value = PyObjectPtr()
-        var v = p
-        var position = UnsafePointer[Int](to=v)
-        var result = self.lib.call["PyDict_Next", c_int](
-            dictionary,
-            position,
-            UnsafePointer(to=key),
-            UnsafePointer(to=value),
-        )
-
-        self.log(
-            dictionary._get_ptr_as_int(),
-            " NEWREF PyDict_Next",
-            dictionary._get_ptr_as_int(),
-            "refcnt:",
-            self._Py_REFCNT(dictionary),
-            " key: ",
-            key._get_ptr_as_int(),
-            ", refcnt(key):",
-            self._Py_REFCNT(key),
-            "value:",
-            value._get_ptr_as_int(),
-            "refcnt(value)",
-            self._Py_REFCNT(value),
-        )
-
-        _ = v
-        return PyKeysValuePair(
-            key,
-            value,
-            position.take_pointee(),
-            result == 1,
-        )
-
-    # ===-------------------------------------------------------------------===#
-    # Python Module operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyImport_ImportModule(
-        self,
-        owned name: String,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule).
-        """
-
-        var r = self.lib.call["PyImport_ImportModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyImport_ImportModule, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
-        """
-        return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-    fn PyModule_Create(
-        self,
-        name: StaticString,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_Create).
-        """
-
-        # TODO: See https://docs.python.org/3/c-api/module.html#c.PyModule_Create
-        # and https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
-        # for what we want to do essentially here.
-        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
-        var module_def = PyModuleDef(name)
-        module_def_ptr.init_pointee_move(module_def^)
-
-        # TODO: set gil stuff
-        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
-        # after the caller imports said module.
-
-        # TODO: it would be nice to programatically call a CPython API to get the value here
-        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
-        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
-        # docs.
-        var module_api_version = 1013
-        return self.lib.call["PyModule_Create2", PyObjectPtr](
-            module_def_ptr, module_api_version
-        )
-
-    fn PyModule_AddFunctions(
-        self,
-        mod: PyObjectPtr,
-        functions: UnsafePointer[PyMethodDef],
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions).
-        """
-        return self.lib.call["PyModule_AddFunctions", c_int](mod, functions)
-
-    fn PyModule_AddObjectRef(
-        self,
-        module: PyObjectPtr,
-        name: UnsafePointer[c_char, **_],
-        value: PyObjectPtr,
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef).
-        """
-
-        return self.lib.call["PyModule_AddObjectRef", c_int](
-            module, name, value
-        )
-
-    fn PyModule_GetDict(self, name: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
-        """
-        return self.lib.call["PyModule_GetDict", PyObjectPtr](name)
-
-    # ===-------------------------------------------------------------------===#
-    # Python Type operations
-    # ===-------------------------------------------------------------------===#
-
-    fn Py_TYPE(self, ob_raw: PyObjectPtr) -> UnsafePointer[PyTypeObject]:
-        """Get the PyTypeObject field of a Python object."""
-
-        # Note:
-        #   The `Py_TYPE` function is a `static` function in the C API, so
-        #   we can't call it directly. Instead we reproduce its (trivial)
-        #   behavior here.
-        # TODO(MSTDL-977):
-        #   Investigate doing this without hard-coding private API details.
-
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ob_raw.unsized_obj_ptr[].object_type
-
-    fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
-        return self.lib.call["PyType_GetName", PyObjectPtr](type)
-
-    fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec).
-        """
-        return self.lib.call["PyType_FromSpec", PyObjectPtr](spec)
-
-    fn PyType_GenericAlloc(
-        self,
-        type: UnsafePointer[PyTypeObject],
-        nitems: Py_ssize_t,
-    ) -> PyObjectPtr:
-        return self.lib.call["PyType_GenericAlloc", PyObjectPtr](type, nitems)
-
-    # ===-------------------------------------------------------------------===#
-    # Python Evaluation
-    # ===-------------------------------------------------------------------===#
-
-    fn PyRun_SimpleString(self, owned str: String) -> Bool:
-        """Executes the given Python code.
-
-        Args:
-            str: The python code to execute.
-
-        Returns:
-            `True` if the code executed successfully or `False` if the code
-            raised an exception.
-
-        Notes:
-            [Reference](
-            https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString).
-        """
-        return (
-            self.lib.call["PyRun_SimpleString", c_int](str.unsafe_cstr_ptr())
-            == 0
-        )
-
-    fn PyRun_String(
-        self,
-        owned str: String,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-        run_mode: Int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String).
-        """
-        var result = self.lib.call["PyRun_String", PyObjectPtr](
-            str.unsafe_cstr_ptr(), Int32(run_mode), globals, locals
-        )
-
-        self.log(
-            result._get_ptr_as_int(),
-            " NEWREF PyRun_String, str:",
-            str,
-            ", ptr: ",
-            result._get_ptr_as_int(),
-            ", refcnt:",
-            self._Py_REFCNT(result),
-        )
-
-        self._inc_total_rc()
-        return result
-
-    fn PyEval_EvalCode(
-        self,
-        co: PyObjectPtr,
-        globals: PyObjectPtr,
-        locals: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode).
-        """
-        var result = self.lib.call["PyEval_EvalCode", PyObjectPtr](
-            co, globals, locals
-        )
-        self._inc_total_rc()
-        return result
-
-    fn PyEval_GetBuiltins(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/reflection.html#c.PyEval_GetBuiltins).
-        """
-        return self.lib.call["PyEval_GetBuiltins", PyObjectPtr]()
-
-    fn Py_CompileString(
-        self,
-        owned str: String,
-        owned filename: String,
-        compile_mode: Int,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString).
-        """
-
-        var r = self.lib.call["Py_CompileString", PyObjectPtr](
-            str.unsafe_cstr_ptr(),
-            filename.unsafe_cstr_ptr(),
-            Int32(compile_mode),
-        )
-        self._inc_total_rc()
-        return r
-
-    # ===-------------------------------------------------------------------===#
-    # Python Object operations
-    # ===-------------------------------------------------------------------===#
-
-    fn Py_Is(
-        self,
-        rhs: PyObjectPtr,
-        lhs: PyObjectPtr,
-    ) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/structures.html#c.Py_Is).
-        """
-
-        if self.version.minor >= 10:
-            # int Py_Is(PyObject *x, PyObject *y)
-            return self.lib.call["Py_Is", c_int](rhs, lhs) > 0
-        else:
-            return rhs == lhs
-
-    fn PyObject_Type(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_Type).
-        """
-
-        var p = self.lib.call["PyObject_Type", PyObjectPtr](obj)
-        self._inc_total_rc()
-        return p
-
-    fn PyObject_Free(self, p: OpaquePointer):
-        """[Reference](
-        https://docs.python.org/3/c-api/memory.html#c.PyObject_Free).
-        """
-        self.lib.call["PyObject_Free"](p)
-
-    fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_Str).
-        """
-
-        var p = self.lib.call["PyObject_Str", PyObjectPtr](obj)
-        self._inc_total_rc()
-        return p
-
-    fn PyObject_GetItem(
-        self, obj: PyObjectPtr, key: PyObjectPtr
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem).
-        """
-
-        var r = self.lib.call["PyObject_GetItem", PyObjectPtr](obj, key)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyObject_GetItem, key:",
-            key._get_ptr_as_int(),
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj._get_ptr_as_int(),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_SetItem(
-        self, obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_SetItem).
-        """
-
-        var r = self.lib.call["PyObject_SetItem", c_int](obj, key, value)
-
-        self.log(
-            "PyObject_SetItem result:",
-            r,
-            ", key:",
-            key._get_ptr_as_int(),
-            ", value:",
-            value._get_ptr_as_int(),
-            ", parent obj:",
-            obj._get_ptr_as_int(),
-        )
-        return r
-
-    fn PyObject_HasAttrString(
-        self,
-        obj: PyObjectPtr,
-        owned name: String,
-    ) -> c_int:
-        """Returns `1` if `obj` has the attribute `attr_name`, and `0` otherwise.
-
-        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString).
-        """
-        # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
-        return self.lib.call["PyObject_HasAttrString", c_int](
-            obj, name.unsafe_cstr_ptr()
-        )
-
-    fn PyObject_GetAttrString(
-        self,
-        obj: PyObjectPtr,
-        owned name: String,
-    ) -> PyObjectPtr:
-        """Retrieve an attribute named `name` from object `obj`.
-
-        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString).
-        """
-        # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
-        var r = self.lib.call["PyObject_GetAttrString", PyObjectPtr](
-            obj, name.unsafe_cstr_ptr()
-        )
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyObject_GetAttrString, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-            ", parent obj:",
-            obj._get_ptr_as_int(),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_SetAttrString(
-        self,
-        obj: PyObjectPtr,
-        owned name: String,
-        new_value: PyObjectPtr,
-    ) -> c_int:
-        """Set the value of the attribute named `name`, for object `obj`, to the value `new_value`.
-
-        [Reference](https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString).
-        """
-        # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
-        var r = self.lib.call["PyObject_SetAttrString", c_int](
-            obj, name.unsafe_cstr_ptr(), new_value
-        )
-
-        self.log(
-            "PyObject_SetAttrString str:",
-            name,
-            ", parent obj:",
-            obj._get_ptr_as_int(),
-            ", new value:",
-            new_value._get_ptr_as_int(),
-            " new value ref count: ",
-            self._Py_REFCNT(new_value),
-        )
-
-        return r
-
-    fn PyObject_CallObject(
-        self,
-        callable_obj: PyObjectPtr,
-        args: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject).
-        """
-
-        var r = self.lib.call["PyObject_CallObject", PyObjectPtr](
-            callable_obj, args
-        )
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyObject_CallObject, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable_obj._get_ptr_as_int(),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_Call(
-        self,
-        callable_obj: PyObjectPtr,
-        args: PyObjectPtr,
-        kwargs: PyObjectPtr,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/call.html#c.PyObject_Call).
-        """
-
-        var r = self.lib.call["PyObject_Call", PyObjectPtr](
-            callable_obj, args, kwargs
-        )
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyObject_Call, refcnt:",
-            self._Py_REFCNT(r),
-            ", callable obj:",
-            callable_obj._get_ptr_as_int(),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyObject_IsTrue(self, obj: PyObjectPtr) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_IsTrue).
-        """
-        return self.lib.call["PyObject_IsTrue", c_int](obj)
-
-    fn PyObject_Length(self, obj: PyObjectPtr) -> Int:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_Length).
-        """
-        return Int(self.lib.call["PyObject_Length", Int](obj))
-
-    fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_Hash).
-        """
-        return self.lib.call["PyObject_Hash", Py_hash_t](obj)
-
-    fn PyObject_GetIter(
-        self, traversable_py_object: PyObjectPtr
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter).
-        """
-        var iterator = self.lib.call["PyObject_GetIter", PyObjectPtr](
-            traversable_py_object
-        )
-
-        self.log(
-            iterator._get_ptr_as_int(),
-            " NEWREF PyObject_GetIter, refcnt:",
-            self._Py_REFCNT(iterator),
-            "referencing ",
-            traversable_py_object._get_ptr_as_int(),
-            "refcnt of traversable: ",
-            self._Py_REFCNT(traversable_py_object),
-        )
-
-        self._inc_total_rc()
-        return iterator
-
-    # ===-------------------------------------------------------------------===#
-    # Tuple Objects
-    # ref: https://docs.python.org/3/c-api/tuple.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new tuple object of size `length`, or `NULL` with an exception set on failure.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New).
-        """
-
-        # PyObject *PyTuple_New(Py_ssize_t len)
-        var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyTuple_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", tuple size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyTuple_GetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `pos` in the tuple pointed to by `tuple`.
-
-        Returns borrowed reference.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem).
-        """
-
-        # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
-        return self.lib.call["PyTuple_GetItem", PyObjectPtr](tuple, pos)
-
-    fn PyTuple_SetItem(
-        self,
-        tuple: PyObjectPtr,
-        pos: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Insert a reference to object `value` at position `pos` of the tuple pointed to by `tuple`.
-
-        [Reference](https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem).
-        """
-
-        # PyTuple_SetItem steals the reference - the value object will be
-        # destroyed along with the tuple
-        self._dec_total_rc()
-
-        # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
-        return self.lib.call["PyTuple_SetItem", c_int](tuple, pos, value)
-
-    # ===-------------------------------------------------------------------===#
-    # List Objects
-    # ref: https://docs.python.org/3/c-api/list.html
-    # ===-------------------------------------------------------------------===#
-
-    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
-        """Return a new list of length `length` on success, or `NULL` on failure.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_New).
-        """
-
-        # PyObject *PyList_New(Py_ssize_t len)
-        var r = self.lib.call["PyList_New", PyObjectPtr](length)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyList_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", list size:",
-            length,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyList_GetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-    ) -> PyObjectPtr:
-        """Return the object at position `index` in the list pointed to by `list_obj`.
-
-        Returns a borrowed reference instead of a strong reference.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_GetItem).
-        """
-
-        # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
-        return self.lib.call["PyList_GetItem", PyObjectPtr](list_obj, index)
-
-    fn PyList_SetItem(
-        self,
-        list_obj: PyObjectPtr,
-        index: Py_ssize_t,
-        value: PyObjectPtr,
-    ) -> c_int:
-        """Set the item at index `index` in list to `value`.
-
-        [Reference](https://docs.python.org/3/c-api/list.html#c.PyList_SetItem).
-        """
-
-        # PyList_SetItem steals the reference - the element object will be
-        # destroyed along with the list
-        self._dec_total_rc()
-        return self.PyList_SetItem_func(list_obj, index, value)
-
-    # ===-------------------------------------------------------------------===#
-    # Concrete Objects
-    # ref: https://docs.python.org/3/c-api/concrete.html
-    # ===-------------------------------------------------------------------===#
-
-    fn Py_None(self) -> PyObjectPtr:
-        """Get a None value, of type NoneType. [Reference](
-        https://docs.python.org/3/c-api/none.html#c.Py_None)."""
-
-        # Get pointer to the immortal `None` PyObject struct instance.
-        # Note:
-        #   The name of this global is technical a private part of the
-        #   CPython API, but unfortunately the only stable ways to access it are
-        #   macros.
-        # TODO(MSTDL-977):
-        #   Investigate doing this without hard-coding private API details.
-        var ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-
-        if not ptr:
-            abort("error: unable to get pointer to CPython `None` struct")
-
-        return PyObjectPtr(ptr)
-
-    # ===-------------------------------------------------------------------===#
-    # Boolean Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong).
-        """
-
-        var r = self.lib.call["PyBool_FromLong", PyObjectPtr](value)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyBool_FromLong, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyBool_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/bool.html#c.PyBool_Check).
-        """
-        return self.lib.call["PyBool_Check", c_int](obj) != 0
-
-    # ===-------------------------------------------------------------------===#
-    # Integer Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyLong_FromSsize_t(self, value: c_ssize_t) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t).
-        """
-
-        var r = self.PyLong_FromSsize_t_func(value)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyLong_FromSsize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t).
-        """
-
-        var r = self.lib.call["PyLong_FromSize_t", PyObjectPtr](value)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyLong_FromSize_t, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyLong_AsSsize_t(self, py_object: PyObjectPtr) -> c_ssize_t:
-        """[Reference](
-        https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t).
-        """
-        return self.lib.call["PyLong_AsSsize_t", c_ssize_t](py_object)
-
-    fn PyNumber_Long(self, py_object: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/number.html#c.PyNumber_Long).
-        """
-        return self.lib.call["PyNumber_Long", PyObjectPtr](py_object)
-
-    # ===-------------------------------------------------------------------===#
-    # Floating-Point Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble).
-        """
-
-        var r = self.lib.call["PyFloat_FromDouble", PyObjectPtr](value)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyFloat_FromDouble, refcnt:",
-            self._Py_REFCNT(r),
-            ", value:",
-            value,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyFloat_AsDouble(self, py_object: PyObjectPtr) -> Float64:
-        """[Reference](
-        https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble).
-        """
-        return self.lib.call["PyFloat_AsDouble", Float64](py_object)
-
-    # ===-------------------------------------------------------------------===#
-    # Unicode Objects
-    # ===-------------------------------------------------------------------===#
-
-    fn PyUnicode_DecodeUTF8(self, strslice: StringSlice) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8).
-        """
-        var r = self.lib.call["PyUnicode_DecodeUTF8", PyObjectPtr](
-            strslice.unsafe_ptr().bitcast[Int8](),
-            strslice.byte_length(),
-            "strict".unsafe_cstr_ptr(),
-        )
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyUnicode_DecodeUTF8, refcnt:",
-            self._Py_REFCNT(r),
-            ", str:",
-            strslice,
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PySlice_FromSlice(self, slice: Slice) -> PyObjectPtr:
-        # Convert Mojo Slice to Python slice parameters
-        # Note: Deliberately avoid using `span.indices()` here and instead pass
-        # the Slice parameters directly to Python. Python's C implementation
-        # already handles such conditions, allowing Python to apply its own slice
-        # handling.
-        var py_start = self.Py_None()
-        var py_stop = self.Py_None()
-        var py_step = self.Py_None()
-
-        if slice.start:
-            py_start = self.PyLong_FromSsize_t(c_ssize_t(slice.start.value()))
-        if slice.end:
-            py_stop = self.PyLong_FromSsize_t(c_ssize_t(slice.end.value()))
-        if slice.end:
-            py_step = self.PyLong_FromSsize_t(c_ssize_t(slice.step.value()))
-
-        var py_slice = self.PySlice_New(py_start, py_stop, py_step)
-
-        if py_start != self.Py_None():
-            self.Py_DecRef(py_start)
-        if py_stop != self.Py_None():
-            self.Py_DecRef(py_stop)
-        self.Py_DecRef(py_step)
-
-        return py_slice
-
-    fn PyUnicode_AsUTF8AndSize(
-        self, py_object: PyObjectPtr
-    ) -> StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)]:
-        """[Reference](
-        https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
-        """
-
-        var length = Int(0)
-        var ptr = self.lib.call[
-            "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
-        ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
-        return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
-            ptr=ptr, length=length
-        )
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyErr_Clear(self):
-        """[Reference](
-        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear).
-        """
-        self.lib.call["PyErr_Clear"]()
-
-    fn PyErr_Occurred(self) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred).
-        """
-        return not self.lib.call["PyErr_Occurred", PyObjectPtr]().is_null()
-
-    fn PyErr_Fetch(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch).
-        """
-        var type = PyObjectPtr()
-        var value = PyObjectPtr()
-        var traceback = PyObjectPtr()
-
-        self.lib.call["PyErr_Fetch"](
-            UnsafePointer(to=type),
-            UnsafePointer(to=value),
-            UnsafePointer(to=traceback),
-        )
-        var r = value
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PyErr_Fetch, refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        _ = type
-        _ = value
-        _ = traceback
-        return r
-
-    fn PyErr_SetNone(self, type: PyObjectPtr):
-        """[Reference](
-        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone).
-        """
-        self.lib.call["PyErr_SetNone"](type)
-
-    fn PyErr_SetString(
-        self,
-        type: PyObjectPtr,
-        message: UnsafePointer[c_char],
-    ):
-        """[Reference](
-        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString).
-        """
-        self.lib.call["PyErr_SetString"](type, message)
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error types
-    # ===-------------------------------------------------------------------===#
 
     fn get_error_global(
         self,
@@ -2068,68 +1682,956 @@ struct CPython(Copyable, Movable):
         return ptr[]
 
     # ===-------------------------------------------------------------------===#
-    # Python Iterator operations
+    # Python/C API
+    # ref: https://docs.python.org/3/c-api/index.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyIter_Next(self, iterator: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Next).
+    # ===-------------------------------------------------------------------===#
+    # The Very High Level Layer
+    # ref: https://docs.python.org/3/c-api/veryhigh.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyRun_SimpleString(self, var command: String) -> c_int:
+        """This is a simplified interface to `PyRun_SimpleStringFlags()` below,
+        leaving the `PyCompilerFlags*` argument set to `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_SimpleString
         """
+        return self._PyRun_SimpleString(command.unsafe_cstr_ptr())
 
-        var next_obj = self.lib.call["PyIter_Next", PyObjectPtr](iterator)
+    fn PyRun_String(
+        self,
+        var str: String,
+        start: c_int,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Execute Python source code from `str` in the context specified by
+        the objects `globals` and `locals`.
 
-        self.log(
-            next_obj._get_ptr_as_int(),
-            " NEWREF PyIter_Next from ",
-            iterator._get_ptr_as_int(),
-            ", refcnt(obj):",
-            self._Py_REFCNT(next_obj),
-            "refcnt(iter)",
-            self._Py_REFCNT(iterator),
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String
+        """
+        return self._PyRun_String(str.unsafe_cstr_ptr(), start, globals, locals)
+
+    fn Py_CompileString(
+        self,
+        var str: String,
+        var filename: String,
+        start: c_int,
+    ) -> PyObjectPtr:
+        """Parse and compile the Python source code in `str`, returning the
+        resulting code object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString
+        """
+        return self._Py_CompileString(
+            str.unsafe_cstr_ptr(),
+            filename.unsafe_cstr_ptr(),
+            start,
         )
 
-        if next_obj._get_ptr_as_int() != 0:
-            self._inc_total_rc()
-        return next_obj
+    fn PyEval_EvalCode(
+        self,
+        co: PyObjectPtr,
+        globals: PyObjectPtr,
+        locals: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Evaluate a precompiled code object, given a particular environment
+        for its evaluation.
 
-    fn PyIter_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/iter.html#c.PyIter_Check).
-        """
-        return self.lib.call["PyIter_Check", c_int](obj) != 0
+        Return value: New reference.
 
-    fn PySequence_Check(self, obj: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/sequence.html#c.PySequence_Check).
+        References:
+        - https://docs.python.org/3/c-api/veryhigh.html#c.PyEval_EvalCode
         """
-        return self.lib.call["PySequence_Check", c_int](obj) != 0
+        return self._PyEval_EvalCode(co, globals, locals)
 
     # ===-------------------------------------------------------------------===#
-    # Python Slice Creation
+    # Reference Counting
+    # ref: https://docs.python.org/3/c-api/refcounting.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_IncRef(self, ptr: PyObjectPtr):
+        """Indicate taking a new strong reference to the object `ptr` points to.
+
+        A function version of `Py_XINCREF()`, which is no-op if `ptr` is `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XINCREF
+        """
+        self._Py_IncRef(ptr)
+
+    fn Py_DecRef(self, ptr: PyObjectPtr):
+        """Release a strong reference to the object `ptr` points to.
+
+        A function version of `Py_XDECREF()`, which is no-op if `ptr` is `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef
+        - https://docs.python.org/3/c-api/refcounting.html#c.Py_XDECREF
+        """
+        self._Py_DecRef(ptr)
+
+    # This function assumes a specific way PyObjectPtr is implemented, namely
+    # that the refcount has offset 0 in that structure. That generally doesn't
+    # have to always be the case - but often it is and it's convenient for
+    # debugging. We shouldn't rely on this function anywhere - its only purpose
+    # is debugging.
+    fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Py_ssize_t:
+        if not ptr:
+            return -1
+        # NOTE:
+        #   The "obvious" way to write this would be:
+        #       return ptr._unsized_obj_ptr[].object_ref_count
+        #   However, that is not valid, because, as the name suggest, a PyObject
+        #   is an "unsized" or "incomplete" type, meaning that a pointer to an
+        #   instance of that type doesn't point at the entire allocation of the
+        #   underlying "concrete" object instance.
+        #
+        #   To avoid concerns about whether that's UB or not in Mojo, this
+        #   this by just assumes the first field will be the ref count, and
+        #   treats the object pointer "as if" it was a pointer to just the first
+        #   field.
+        # TODO(MSTDL-950): Should use something like `addr_of!`
+        return ptr.bitcast[Py_ssize_t]()[]
+
+    # ===-------------------------------------------------------------------===#
+    # Exception Handling
+    # ref: https://docs.python.org/3/c-api/exceptions.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # - Printing and clearing
+    # ===-------------------------------------------------------------------===#
+
+    fn PyErr_Clear(self):
+        """Clear the error indicator. If the error indicator is not set, there
+        is no effect.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear
+        """
+        self._PyErr_Clear()
+
+    # ===-------------------------------------------------------------------===#
+    # - Raising exceptions
+    # ===-------------------------------------------------------------------===#
+
+    fn PyErr_SetString(
+        self,
+        type: PyObjectPtr,
+        message: UnsafePointer[c_char],
+    ):
+        """This is the most common way to set the error indicator. The first
+        argument specifies the exception type; it is normally one of the
+        standard exceptions, e.g. `PyExc_RuntimeError`. You need not create a
+        new strong reference to it (e.g. with `Py_INCREF()`). The second
+        argument is an error message; it is decoded from `'utf-8'`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
+        """
+        self._PyErr_SetString(type, message)
+
+    fn PyErr_SetNone(self, type: PyObjectPtr):
+        """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone
+        """
+        self._PyErr_SetNone(type)
+
+    # ===-------------------------------------------------------------------===#
+    # - Querying the error indicator
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the return type
+    fn PyErr_Occurred(self) -> Bool:
+        """Test whether the error indicator is set. If set, return the exception
+        type (the first argument to the last call to one of the `PyErr_Set*`
+        functions or to `PyErr_Restore()`). If not set, return `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred
+        """
+        return Bool(self._PyErr_Occurred())
+
+    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
+        """Return the exception currently being raised, clearing the error
+        indicator at the same time. Return `NULL` if the error indicator is not
+        set.
+
+        Return value: New reference. Part of the Stable ABI since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
+        """
+        return self._PyErr_GetRaisedException()
+
+    # TODO: fix the signature to take the type, value, and traceback as args
+    fn PyErr_Fetch(self) -> PyObjectPtr:
+        """Retrieve the error indicator into three variables whose addresses
+        are passed.
+
+        Deprecated since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
+        """
+        var type = PyObjectPtr()
+        var value = PyObjectPtr()
+        var traceback = PyObjectPtr()
+
+        self._PyErr_Fetch(
+            UnsafePointer(to=type),
+            UnsafePointer(to=value),
+            UnsafePointer(to=traceback),
+        )
+
+        return value
+
+    # ===-------------------------------------------------------------------===#
+    # Initialization, Finalization, and Threads
+    # ref: https://docs.python.org/3/c-api/init.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyEval_SaveThread(self) -> UnsafePointer[PyThreadState]:
+        """Release the global interpreter lock (if it has been created) and
+        reset the thread state to `NULL`, returning the previous thread state
+        (which is not `NULL`).
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread
+        """
+        return self._PyEval_SaveThread()
+
+    fn PyEval_RestoreThread(self, state: UnsafePointer[PyThreadState]):
+        """Acquire the global interpreter lock (if it has been created) and
+        set the thread state to tstate, which must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread
+        """
+        self._PyEval_RestoreThread(state)
+
+    fn PyGILState_Ensure(self) -> PyGILState_STATE:
+        """Ensure that the current thread is ready to call the Python C API
+        regardless of the current state of Python, or of the global interpreter
+        lock.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure
+        """
+        return self._PyGILState_Ensure()
+
+    fn PyGILState_Release(self, state: PyGILState_STATE):
+        """Release any resources previously acquired.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Release
+        """
+        self._PyGILState_Release(state)
+
+    # ===-------------------------------------------------------------------===#
+    # Importing Modules
+    # ref: https://docs.python.org/3/c-api/import.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyImport_ImportModule(self, var name: String) -> PyObjectPtr:
+        """This is a wrapper around `PyImport_Import()` which takes a `const char*`
+        as an argument instead of a `PyObject*`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
+        """
+        return self._PyImport_ImportModule(name.unsafe_cstr_ptr())
+
+    fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
+        """Return the module object corresponding to a module name.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
+        """
+        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+
+    # ===-------------------------------------------------------------------===#
+    # Abstract Objects Layer
+    # ref: https://docs.python.org/3/c-api/abstract.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # Object Protocol
+    # ref: https://docs.python.org/3/c-api/object.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_HasAttrString(
+        self, obj: PyObjectPtr, var name: String
+    ) -> c_int:
+        """Returns `1` if `obj` has the attribute `name`, and `0` otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_HasAttrString
+        """
+        return self._PyObject_HasAttrString(obj, name.unsafe_cstr_ptr())
+
+    fn PyObject_GetAttrString(
+        self, obj: PyObjectPtr, var name: String
+    ) -> PyObjectPtr:
+        """Retrieve an attribute named `name` from object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetAttrString
+        """
+        return self._PyObject_GetAttrString(obj, name.unsafe_cstr_ptr())
+
+    fn PyObject_SetAttrString(
+        self, obj: PyObjectPtr, var name: String, value: PyObjectPtr
+    ) -> c_int:
+        """Set the value of the attribute named `name`, for object `obj`, to
+        `value`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetAttrString
+        """
+        return self._PyObject_SetAttrString(obj, name.unsafe_cstr_ptr(), value)
+
+    fn PyObject_Str(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Compute a string representation of object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Str
+        """
+        return self._PyObject_Str(obj)
+
+    fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
+        """Compute and return the hash value of an object `obj`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Hash
+        """
+        return self._PyObject_Hash(obj)
+
+    fn PyObject_IsTrue(self, obj: PyObjectPtr) -> c_int:
+        """Returns `1` if the object `obj` is considered to be true, and `0`
+        otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_IsTrue
+        """
+        return self._PyObject_IsTrue(obj)
+
+    fn PyObject_Type(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """When `obj` is non-`NULL`, returns a type object corresponding to the
+        object type of object `obj`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Type
+        """
+        return self._PyObject_Type(obj)
+
+    fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
+        """Return the length of object `obj`.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_Length
+        """
+        return self._PyObject_Length(obj)
+
+    fn PyObject_GetItem(
+        self, obj: PyObjectPtr, key: PyObjectPtr
+    ) -> PyObjectPtr:
+        """Return element of `obj` corresponding to the object `key` or `NULL`
+        on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetItem
+        """
+        return self._PyObject_GetItem(obj, key)
+
+    fn PyObject_SetItem(
+        self, obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
+    ) -> c_int:
+        """Map the object `key` to `value`. Raise an exception and return `-1`
+        on failure; return `0` on success.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_SetItem
+        """
+        return self._PyObject_SetItem(obj, key, value)
+
+    fn PyObject_GetIter(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """This is equivalent to the Python expression `iter(obj)`. It returns
+        a new iterator for the object argument, or the object itself if the
+        object is already an iterator.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.PyObject_GetIter
+        """
+        return self._PyObject_GetIter(obj)
+
+    # ===-------------------------------------------------------------------===#
+    # Call Protocol
+    # ref: https://docs.python.org/3/c-api/call.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_Call(
+        self,
+        callable: PyObjectPtr,
+        args: PyObjectPtr,
+        kwargs: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Call a callable Python object `callable`, with arguments given by the
+        tuple `args`, and named arguments given by the dictionary `kwargs`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/call.html#c.PyObject_Call
+        """
+        return self._PyObject_Call(callable, args, kwargs)
+
+    fn PyObject_CallObject(
+        self,
+        callable: PyObjectPtr,
+        args: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Call a callable Python object `callable`, with arguments given by the
+        tuple `args`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/call.html#c.PyObject_CallObject
+        """
+        return self._PyObject_CallObject(callable, args)
+
+    # ===-------------------------------------------------------------------===#
+    # Number Protocol
+    # ref: https://docs.python.org/3/c-api/number.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyNumber_Long(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `obj` converted to an integer object on success,
+        or `NULL` on failure. This is the equivalent of the Python expression
+        `int(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Long
+        """
+        return self._PyNumber_Long(obj)
+
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Returns the `o` converted to a float object on success, or `NULL` on
+        failure. This is the equivalent of the Python expression `float(obj)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/number.html#c.PyNumber_Float
+        """
+        return self._PyNumber_Float(obj)
+
+    # ===-------------------------------------------------------------------===#
+    # Iterator Protocol
+    # ref: https://docs.python.org/3/c-api/iter.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyIter_Check(self, obj: PyObjectPtr) -> c_int:
+        """Return non-zero if the object `obj` can be safely passed to `PyIter_Next()`,
+        and `0` otherwise.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Check
+        """
+        return self._PyIter_Check(obj)
+
+    fn PyIter_Next(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """Return the next value from the iterator `obj`. The object must be an
+        iterator according to `PyIter_Check()`. If there are no remaining values,
+        returns `NULL` with no exception set. If an error occurs while retrieving
+        the item, returns `NULL` and passes along the exception.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_Next
+        """
+        return self._PyIter_Next(obj)
+
+    # ===-------------------------------------------------------------------===#
+    # Concrete Objects Layer
+    # ref: https://docs.python.org/3/c-api/concrete.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # Type Objects
+    # ref: https://docs.python.org/3/c-api/type.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyType_GenericAlloc(
+        self,
+        type: PyTypeObjectPtr,
+        nitems: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Generic handler for the `tp_alloc` slot of a type object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GenericAlloc
+        """
+        return self._PyType_GenericAlloc(type, nitems)
+
+    fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
+        """Return the type's name.
+
+        Return value: New reference. Part of the Stable ABI since version 3.11.
+        This function is patched to work with Python 3.10 and earlier versions.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_GetName
+        """
+        if self.version.minor < 11:
+            return self.PyObject_GetAttrString(
+                rebind[PyObjectPtr](type), "__name__"
+            )
+        return self._PyType_GetName(type)
+
+    fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
+        """Equivalent to `PyType_FromMetaclass(NULL, NULL, spec, NULL)`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/type.html#c.PyType_FromSpec
+        """
+        return self._PyType_FromSpec(spec)
+
+    # ===-------------------------------------------------------------------===#
+    # The None Object
+    # ref: https://docs.python.org/3/c-api/none.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_None(self) -> PyObjectPtr:
+        """The Python `None` object, denoting lack of value.
+
+        References:
+        - https://docs.python.org/3/c-api/none.html#c.Py_None
+        """
+        return self._Py_None
+
+    # ===-------------------------------------------------------------------===#
+    # Integer Objects
+    # ref: https://docs.python.org/3/c-api/long.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyLong_FromSsize_t(self, value: Py_ssize_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `Py_ssize_t`, or `NULL`
+        on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSsize_t
+        """
+        return self._PyLong_FromSsize_t(value)
+
+    fn PyLong_FromSize_t(self, value: c_size_t) -> PyObjectPtr:
+        """Return a new `PyLongObject` object from a C `size_t`, or `NULL` on
+        failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_FromSize_t
+        """
+        return self._PyLong_FromSize_t(value)
+
+    fn PyLong_AsSsize_t(self, pylong: PyObjectPtr) -> Py_ssize_t:
+        """Return a C `Py_ssize_t` representation of `pylong`.
+
+        Raise `OverflowError` if the value of `pylong` is out of range for
+        a `Py_ssize_t`.
+
+        Returns `-1` on error. Use `PyErr_Occurred()` to disambiguate.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
+        """
+        return self._PyLong_AsSsize_t(pylong)
+
+    # ===-------------------------------------------------------------------===#
+    # Boolean Objects
+    # ref: https://docs.python.org/3/c-api/bool.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyBool_FromLong(self, value: c_long) -> PyObjectPtr:
+        """Return `Py_True` or `Py_False`, depending on the truth value
+        of `value`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
+        """
+        return self._PyBool_FromLong(value)
+
+    # ===-------------------------------------------------------------------===#
+    # Floating-Point Objects
+    # ref: https://docs.python.org/3/c-api/float.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyFloat_FromDouble(self, value: c_double) -> PyObjectPtr:
+        """Create a PyFloatObject object from `value`, or `NULL` on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble
+        """
+        return self._PyFloat_FromDouble(value)
+
+    fn PyFloat_AsDouble(self, pyfloat: PyObjectPtr) -> c_double:
+        """Return a C double representation of the contents of `pyfloat`.
+
+        This method returns `-1.0` upon failure, so one should call
+        `PyErr_Occurred()` to check for errors.
+
+        References:
+        - https://docs.python.org/3/c-api/float.html#c.PyFloat_AsDouble
+        """
+        return self._PyFloat_AsDouble(pyfloat)
+
+    # ===-------------------------------------------------------------------===#
+    # Unicode Objects and Codecs
+    # ref: https://docs.python.org/3/c-api/unicode.html
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the signature to take str, size, and errors as args
+    fn PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
+        """Create a Unicode object by decoding size bytes of the UTF-8 encoded
+        string slice `s`. Return `NULL` if an exception was raised by the codec.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
+        """
+        return self._PyUnicode_DecodeUTF8(
+            s.unsafe_ptr().bitcast[c_char](),
+            Py_ssize_t(s.byte_length()),
+            "strict".unsafe_cstr_ptr(),
+        )
+
+    # TODO: fix signature to take unicode and size as args
+    fn PyUnicode_AsUTF8AndSize(
+        self, obj: PyObjectPtr
+    ) -> StringSlice[MutableAnyOrigin]:
+        """Return a pointer to the UTF-8 encoding of the Unicode object, and
+        store the size of the encoded representation (in bytes) in `size`.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize
+        """
+        var length = Py_ssize_t(0)
+        var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
+        return StringSlice[MutableAnyOrigin](
+            ptr=ptr.bitcast[Byte](), length=UInt(length)
+        )
+
+    # ===-------------------------------------------------------------------===#
+    # Tuple Objects
+    # ref: https://docs.python.org/3/c-api/tuple.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyTuple_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new tuple object of size `length`, or `NULL` with an
+        exception set on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_New
+        """
+        return self._PyTuple_New(length)
+
+    fn PyTuple_GetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `pos` in the tuple `tuple`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_GetItem
+        """
+        return self._PyTuple_GetItem(tuple, pos)
+
+    fn PyTuple_SetItem(
+        self,
+        tuple: PyObjectPtr,
+        pos: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Insert a reference to object `value` at position `pos` of the tuple
+        `tuple`.
+
+        This function "steals" a reference to `value` and discards a reference
+        to an item already in the tuple at the affected position.
+
+        References:
+        - https://docs.python.org/3/c-api/tuple.html#c.PyTuple_SetItem
+        """
+        return self._PyTuple_SetItem(tuple, pos, value)
+
+    # ===-------------------------------------------------------------------===#
+    # List Objects
+    # ref: https://docs.python.org/3/c-api/list.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyList_New(self, length: Py_ssize_t) -> PyObjectPtr:
+        """Return a new list of length `length` on success, or `NULL` on
+        failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_New
+        """
+        return self._PyList_New(length)
+
+    fn PyList_GetItem(
+        self,
+        list: PyObjectPtr,
+        index: Py_ssize_t,
+    ) -> PyObjectPtr:
+        """Return the object at position `index` in the list `list`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_GetItem
+        """
+        return self._PyList_GetItem(list, index)
+
+    fn PyList_SetItem(
+        self,
+        list: PyObjectPtr,
+        index: Py_ssize_t,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Set the item at index `index` in `list` to `value`.
+
+        This function "steals" a reference to `value` and discards a reference
+        to an item already in the list at the affected position.
+
+        References:
+        - https://docs.python.org/3/c-api/list.html#c.PyList_SetItem
+        """
+        return self._PyList_SetItem(list, index, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Dictionary Objects
+    # ref: https://docs.python.org/3/c-api/dict.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyDict_Type(self) -> PyTypeObjectPtr:
+        """This instance of `PyTypeObject` represents the Python dictionary type.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_Type
+        """
+        return self._PyDict_Type
+
+    fn PyDict_New(self) -> PyObjectPtr:
+        """Return a new empty dictionary, or `NULL` on failure.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_New
+        """
+        return self._PyDict_New()
+
+    fn PyDict_SetItem(
+        self,
+        dict: PyObjectPtr,
+        key: PyObjectPtr,
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Insert `value` into the dictionary `dict` with a key of `key`.
+
+        This function *does not* steal a reference to `value`.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem
+        """
+        return self._PyDict_SetItem(dict, key, value)
+
+    fn PyDict_GetItemWithError(
+        self,
+        dict: PyObjectPtr,
+        key: PyObjectPtr,
+    ) -> PyObjectPtr:
+        """Return the object from dictionary `dict` which has a key `key`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError
+        """
+        return self._PyDict_GetItemWithError(dict, key)
+
+    fn PyDict_Next(
+        self,
+        dict: PyObjectPtr,
+        pos: UnsafePointer[Py_ssize_t],
+        key: UnsafePointer[PyObjectPtr],
+        value: UnsafePointer[PyObjectPtr],
+    ) -> c_int:
+        """Iterate over all key-value pairs in the dictionary `dict`.
+
+        References:
+        - https://docs.python.org/3/c-api/dict.html#c.PyDict_Next
+        """
+        return self._PyDict_Next(dict, pos, key, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Set Objects
+    # ref: https://docs.python.org/3/c-api/set.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PySet_New(self, iterable: PyObjectPtr) -> PyObjectPtr:
+        """Return a new `set` containing objects returned by the `iterable`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/set.html#c.PySet_New
+        """
+        return self._PySet_New(iterable)
+
+    fn PySet_Add(self, set: PyObjectPtr, key: PyObjectPtr) -> c_int:
+        """Add `key` to a `set` instance.
+
+        References:
+        - https://docs.python.org/3/c-api/set.html#c.PySet_Add
+        """
+        return self._PySet_Add(set, key)
+
+    # ===-------------------------------------------------------------------===#
+    # Module Objects
+    # ref: https://docs.python.org/3/c-api/module.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyModule_GetDict(self, module: PyObjectPtr) -> PyObjectPtr:
+        """Return the dictionary object that implements `module`'s namespace;
+        this object is the same as the `__dict__` attribute of the module
+        object.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
+        """
+        return self._PyModule_GetDict(module)
+
+    fn PyModule_Create(self, name: StaticString) -> PyObjectPtr:
+        """Create a new module object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_Create
+        """
+
+        # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
+        # for what we want to do here.
+        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
+        module_def_ptr.init_pointee_move(PyModuleDef(name))
+
+        # TODO: set gil stuff
+        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
+        # after the caller imports said module.
+
+        # TODO: it would be nice to programmatically call a CPython API to get the value here
+        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
+        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
+        # docs.
+        alias module_api_version: c_int = 1013
+        return self._PyModule_Create2(module_def_ptr, module_api_version)
+
+    fn PyModule_AddFunctions(
+        self,
+        module: PyObjectPtr,
+        functions: UnsafePointer[PyMethodDef],
+    ) -> c_int:
+        """Add the functions from the `NULL` terminated `functions` array to
+        module.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
+        """
+        return self._PyModule_AddFunctions(module, functions)
+
+    fn PyModule_AddObjectRef(
+        self,
+        module: PyObjectPtr,
+        name: UnsafePointer[c_char],
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Add an object to `module` as `name`.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
+        """
+        return self._PyModule_AddObjectRef(module, name, value)
+
+    # ===-------------------------------------------------------------------===#
+    # Slice Objects
+    # ref: https://docs.python.org/3/c-api/slice.html
     # ===-------------------------------------------------------------------===#
 
     fn PySlice_New(
-        self, start: PyObjectPtr, stop: PyObjectPtr, step: PyObjectPtr
+        self,
+        start: PyObjectPtr,
+        stop: PyObjectPtr,
+        step: PyObjectPtr,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/slice.html#c.PySlice_New).
+        """Return a new slice object with the given values.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/slice.html#c.PySlice_New
         """
-        var r = self.lib.call["PySlice_New", PyObjectPtr](start, stop, step)
-
-        self.log(
-            r._get_ptr_as_int(),
-            " NEWREF PySlice_New, refcnt:",
-            self._Py_REFCNT(r),
-            ", start:",
-            start._get_ptr_as_int(),
-            ", stop:",
-            stop._get_ptr_as_int(),
-            ", step:",
-            step._get_ptr_as_int(),
-        )
-
-        self._inc_total_rc()
-        return r
+        return self._PySlice_New(start, stop, step)
 
     # ===-------------------------------------------------------------------===#
     # Capsules
@@ -2137,32 +2639,91 @@ struct CPython(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
 
     fn PyCapsule_New(
-        mut self,
+        self,
         pointer: OpaquePointer,
-        owned name: String,
-        destructor: destructor,
+        var name: String,
+        destructor: PyCapsule_Destructor,
     ) -> PyObjectPtr:
-        """Create a PyCapsule to communicate to another C extension the C API in `pointer`, identified by `name` and with the custom destructor in `destructor`.
+        """Create a `PyCapsule` encapsulating the pointer. The pointer argument
+        may not be `NULL`.
 
-        [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New).
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_New
         """
-        # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
-        var new_capsule = self.lib.call["PyCapsule_New", PyObjectPtr](
-            pointer, name.unsafe_cstr_ptr(), destructor
-        )
-        self._inc_total_rc()
-        return new_capsule
+        return self._PyCapsule_New(pointer, name.unsafe_cstr_ptr(), destructor)
 
     fn PyCapsule_GetPointer(
-        mut self,
+        self,
         capsule: PyObjectPtr,
-        owned name: String,
-    ) -> OpaquePointer:
-        """Extract the pointer to another C extension from a PyCapsule `capsule` with the given `name`.
+        var name: String,
+    ) raises -> OpaquePointer:
+        """Retrieve the pointer stored in the capsule. On failure, set an
+        exception and return `NULL`.
 
-        [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer).
+        References:
+        - https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer
         """
-        # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
-        return self.lib.call["PyCapsule_GetPointer", OpaquePointer](
-            capsule, name.unsafe_cstr_ptr()
-        )
+        var r = self._PyCapsule_GetPointer(capsule, name.unsafe_cstr_ptr())
+        if self.PyErr_Occurred():
+            raise self.get_error()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Memory Management
+    # ref: https://docs.python.org/3/c-api/memory.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyObject_Free(self, ptr: OpaquePointer):
+        """Frees the memory block pointed to by `ptr`, which must have been
+        returned by a previous call to `PyObject_Malloc()`, `PyObject_Realloc()`
+        or PyObject_Calloc()`.
+
+        References:
+        - https://docs.python.org/3/c-api/memory.html#c.PyObject_Free
+        """
+        self._PyObject_Free(ptr)
+
+    # ===-------------------------------------------------------------------===#
+    # Object Implementation Support
+    # ref: https://docs.python.org/3/c-api/objimpl.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # Common Object Structures
+    # ref: https://docs.python.org/3/c-api/structures.html
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_Is(self, x: PyObjectPtr, y: PyObjectPtr) -> c_int:
+        """Test if the `x` object is the `y` object, the same as `x is y` in
+        Python.
+
+        Part of the Stable ABI since version 3.10.
+        This function is patched to work with Python 3.9 and earlier versions.
+
+        References:
+        - https://docs.python.org/3/c-api/structures.html#c.Py_Is
+        """
+        if self.version.minor < 11:
+            return c_int(Int(x == y))
+        return self._Py_Is(x, y)
+
+    fn Py_TYPE(self, obj: PyObjectPtr) -> PyTypeObjectPtr:
+        """Get the type of the Python object `obj`.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/structures.html#c.Py_TYPE
+        - https://docs.python.org/3/c-api/typeobj.html#c.Py_TYPE
+        """
+        # Note:
+        #   The `Py_TYPE` function is a `static` function in the C API, so
+        #   we can't call it directly. Instead we reproduce its (trivial)
+        #   behavior here.
+        # TODO(MSTDL-977):
+        #   Investigate doing this without hard-coding private API details.
+
+        # TODO(MSTDL-950): Should use something like `addr_of!`
+        return obj._unsized_obj_ptr[].object_type

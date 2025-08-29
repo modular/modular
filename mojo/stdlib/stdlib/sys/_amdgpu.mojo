@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from os.atomic import Atomic, Consistency, _compare_exchange_weak_integral_impl
+from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
@@ -22,7 +22,7 @@ from sys.intrinsics import (
 )
 from time import sleep
 
-from memory import Span, UnsafePointer
+from memory import Span
 from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
@@ -162,7 +162,7 @@ fn append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte[].cast[DType.uint64]() << (ii * 8)
+                arg |= byte.cast[DType.uint64]() << (ii * 8)
                 ii += 1
             data = data[0:0]
         return arg
@@ -222,7 +222,7 @@ fn message_append_bytes(
         var prev_len = len(data_)
         # We can only send 7 packed UInt64s per message
         # Therefore, if the length is greater than 56,
-        # we need to take a 56 byte == (7 * sizeof[UInt64]())
+        # we need to take a 56 byte == (7 * size_of[UInt64]())
         # chunk to process.
         if len(data_) > 56:
             prev_len = 56
@@ -293,7 +293,7 @@ fn message_append_args(
 
 
 # ===-----------------------------------------------------------------------===#
-# Serivces - printf
+# Services - printf
 # ===-----------------------------------------------------------------------===#
 
 
@@ -383,7 +383,7 @@ fn fprintf_append_args(
     message. The remaining arguments are ignored. Behaviour is
     undefined if num_args is greater then seven.
 
-    If is_last is zero, the function returns a message desciptor that
+    If is_last is zero, the function returns a message descriptor that
     must be used by a subsequent call to any __ockl_fprintf*
     function. If is_last is non-zero, the function causes the current
     fprintf to be completed on the host-side, and returns the value
@@ -439,7 +439,7 @@ fn fprintf_append_string_n(
      The call to message_append_args() ensures that during
      transmission, the string is null-padded to a multiple of eight.
 
-     If is_last is zero, the function returns a message desciptor that
+     If is_last is zero, the function returns a message descriptor that
      must be used by a subsequent call to any __ockl_fprintf*
      function. If is_last is non-zero, the function causes the current
      fprintf to be completed on the host-side, and returns the value
@@ -661,11 +661,7 @@ struct Buffer(Copyable, Movable):
                 UnsafePointer(to=p._handle[].next),
                 0,
             )
-            if _compare_exchange_weak_integral_impl[
-                scope="",
-                failure_ordering = Consistency.SEQUENTIAL,
-                success_ordering = Consistency.SEQUENTIAL,
-            ](top, f, n):
+            if Atomic.compare_exchange(top, f, n):
                 break
 
             sleep(UInt(1))
@@ -698,11 +694,7 @@ struct Buffer(Copyable, Movable):
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if _compare_exchange_weak_integral_impl[
-                scope="",
-                failure_ordering = Consistency.SEQUENTIAL,
-                success_ordering = Consistency.SEQUENTIAL,
-            ](top, f, ptr):
+            if Atomic.compare_exchange(top, f, ptr):
                 break
             sleep(UInt(1))
 

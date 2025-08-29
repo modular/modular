@@ -19,29 +19,27 @@ from math import floor
 ```
 """
 
-from collections import List
 from sys import (
-    bitwidthof,
-    has_avx512f,
+    CompilationTarget,
+    bit_width_of,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
-    simdwidthof,
-    sizeof,
+    simd_width_of,
+    size_of,
     is_compile_time,
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
-from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize
-from bit import count_leading_zeros, count_trailing_zeros
+from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
-from memory import Span, UnsafePointer
+from memory import Span
 
-from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
 from utils.static_tuple import StaticTuple
 
@@ -134,10 +132,8 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # before overload resolution.
 @always_inline("builtin")
 fn ceildiv(
-    numerator: IntLiteral,
-    denominator: IntLiteral,
-    out result: __type_of(numerator.__ceildiv__(denominator)),
-):
+    numerator: IntLiteral, denominator: IntLiteral
+) -> __type_of(numerator.__ceildiv__(denominator)):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -147,7 +143,7 @@ fn ceildiv(
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    result = __type_of(result)()
+    return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -193,7 +189,7 @@ fn sqrt(x: Int) -> Int:
     var r2 = 0
 
     @parameter
-    for p in reversed(range(bitwidthof[Int]() // 2)):
+    for p in reversed(range(bit_width_of[Int]() // 2)):
         var dr2 = (r << (p + 1)) + (1 << (p + p))
         if r2 <= x - dr2:
             r2 += dr2
@@ -438,17 +434,23 @@ fn exp2[
         ](x)
 
     @parameter
-    if dtype not in (DType.float32, DType.float64):
+    if dtype is DType.float32:
+        return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
+    elif dtype is DType.float64:
+        return 2**x
+    else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
+
+@always_inline
+fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
+    alias u32 = DType.uint32
     var xc = x.clamp(-126, 126)
-
-    var m = xc.cast[__type_of(x.to_bits()).dtype]()
-
-    xc -= m.cast[dtype]()
+    var m = xc.cast[DType.int32]()
+    xc -= m.cast[x.dtype]()
 
     var r = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Float32](
             1.0,
             0.693144857883,
             0.2401793301105,
@@ -457,8 +459,9 @@ fn exp2[
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(r).from_bits(
-        (r.to_bits() + (m << FPUtils[dtype].mantissa_width()))
+    return __type_of(x)(
+        from_bits=r.to_bits[u32]()
+        + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
     )
 
 
@@ -489,10 +492,14 @@ fn _ldexp_impl[
         Vector containing elementwise result of ldexp on x and exp.
     """
 
-    alias hardware_width = simdwidthof[dtype]()
+    alias hardware_width = simd_width_of[dtype]()
 
     @parameter
-    if has_avx512f() and dtype is DType.float32 and width >= hardware_width:
+    if (
+        CompilationTarget.has_avx512f()
+        and dtype is DType.float32
+        and width >= hardware_width
+    ):
         var res: SIMD[dtype, width] = 0
         var zero: SIMD[dtype, hardware_width] = 0
 
@@ -519,7 +526,7 @@ fn _ldexp_impl[
     alias integral_type = FPUtils[dtype].integral_type
     var m = exp.cast[integral_type]() + FPUtils[dtype].exponent_bias()
 
-    return x * __type_of(x).from_bits(m << FPUtils[dtype].mantissa_width())
+    return x * __type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
 
 
 @always_inline
@@ -567,7 +574,7 @@ trait _Expable:
 fn _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    alias coefficients = List[SIMD[dtype, width]](
+    alias coefficients = List[Scalar[dtype]](
         1.0,
         1.0,
         0.5,
@@ -726,13 +733,13 @@ fn frexp[
     alias mantissa_width = FPUtils[dtype].mantissa_width()
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
-    var x_int = x.to_bits()
-    var selector = x != zero
+    var x_int = x._to_bits_signed()
+    var selector = x.ne(zero)
     var exp = selector.select(
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
         zero,
     )
-    var frac = selector.select(T.from_bits(x_int & ~mask1 | mask2), zero)
+    var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
     return StaticTuple[size=2](frac, exp)
 
 
@@ -766,15 +773,15 @@ fn _log_base[
     var frexp_result = frexp(x)
     var x1 = frexp_result[0]
     var exp = frexp_result[1]
-    exp = (x1 < sqrt2_div_2).select(exp - 1, exp)
-    x1 = (x1 < sqrt2_div_2).select(x1 + x1, x1) - 1
+    exp = x1.lt(sqrt2_div_2).select(exp - 1, exp)
+    x1 = x1.lt(sqrt2_div_2).select(x1 + x1, x1) - 1
 
     var x2 = x1 * x1
     var x3 = x2 * x1
 
     var y = (
         polynomial_evaluate[
-            List[SIMD[dtype, width]](
+            List[Scalar[dtype]](
                 3.3333331174e-1,
                 -2.4999993993e-1,
                 2.0000714765e-1,
@@ -797,7 +804,7 @@ fn _log_base[
         y = exp.fma(ln2, y)
     else:
         y = y.fma(log2e, exp)
-    return (x == 0).select(Scalar[dtype].MIN, (x > 0).select(y, nan[dtype]()))
+    return x.eq(0).select(Scalar[dtype].MIN, x.gt(0).select(y, nan[dtype]()))
 
 
 @always_inline
@@ -820,7 +827,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         alias ln2 = 0.69314718055966295651160180568695068359375
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return log(x.cast[DType.float32]()).cast[dtype]()
         elif dtype is DType.float32:
             return (
@@ -853,16 +860,18 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    if not is_compile_time():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
-            return log2(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
+        if is_nvidia_gpu():
+
+            @parameter
+            if size_of[dtype]() < size_of[DType.float32]():
+                return log2(x.cast[DType.float32]()).cast[dtype]()
+            elif dtype is DType.float32:
+                return _call_ptx_intrinsic[
+                    instruction="lg2.approx.f32", constraints="=f,f"
+                ](x)
 
     return _log_base[2](x)
 
@@ -895,16 +904,17 @@ fn copysign[
     Returns:
         Copies the sign from sign to magnitude.
     """
+    constrained[dtype.is_numeric(), "operands must be a numeric type"]()
 
     @parameter
-    if dtype.is_integral():
+    if dtype.is_unsigned():
+        return magnitude
+    elif dtype.is_integral():
         var mag_abs = abs(magnitude)
-        return (sign > 0).select(mag_abs, -mag_abs)
-    else:
-        constrained[dtype.is_numeric(), "operands must be a numeric type"]()
-        return llvm_intrinsic[
-            "llvm.copysign", SIMD[dtype, width], has_side_effect=False
-        ](magnitude, sign)
+        return sign.lt(0).select(-mag_abs, mag_abs)
+    return llvm_intrinsic[
+        "llvm.copysign", SIMD[dtype, width], has_side_effect=False
+    ](magnitude, sign)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -935,7 +945,7 @@ fn erf[
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28717512e-1,
             6.34846687e-1,
             1.06777847e-1,
@@ -950,7 +960,7 @@ fn erf[
     r_large = copysign(1 - exp(-r_large), x)
 
     var r_small = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28379151e-1,
             -3.76124859e-1,
             1.12818025e-1,
@@ -960,7 +970,7 @@ fn erf[
         ),
     ](x_abs * x_abs).fma(x, x)
 
-    return (x_abs > 0.921875).select[dtype](r_large, r_small)
+    return x_abs.gt(0.921875).select[dtype](r_large, r_small)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -994,20 +1004,39 @@ fn tanh[
         alias instruction = "tanh.approx.f32"
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if dtype is DType.float16:
             return _call_ptx_intrinsic[
-                instruction=instruction, constraints="=f,f"
-            ](x.cast[DType.float32]()).cast[dtype]()
+                scalar_instruction="tanh.approx.f16",
+                vector2_instruction="tanh.approx.f16x2",
+                scalar_constraints="=h,h",
+                vector_constraints="=r,r",
+            ](x)
+
+        elif dtype is DType.bfloat16:
+
+            @parameter
+            if _is_sm_9x_or_newer():
+                return _call_ptx_intrinsic[
+                    scalar_instruction="tanh.approx.bf16",
+                    vector2_instruction="tanh.approx.bf16x2",
+                    scalar_constraints="=h,h",
+                    vector_constraints="=r,r",
+                ](x)
+            else:
+                return _call_ptx_intrinsic[
+                    instruction="tanh.approx.f32", constraints="=f,f"
+                ](x.cast[DType.float32]()).cast[dtype]()
+
         elif dtype is DType.float32:
             return _call_ptx_intrinsic[
-                instruction=instruction, constraints="=f,f"
+                instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
 
     var xc = x.clamp(-9, 9)
     var x_squared = xc * xc
 
     var numerator = xc * polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352455891786e-03,
             6.37261928875436e-04,
             1.48572235717979e-05,
@@ -1019,7 +1048,7 @@ fn tanh[
     ](x_squared)
 
     var denominator = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352518554385e-03,
             2.26843463243900e-03,
             1.18534705686654e-04,
@@ -1035,10 +1064,12 @@ fn tanh[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: control symmetric behavior with flag so we can be compatible with Python
 @always_inline
 fn isclose[
-    dtype: DType, width: Int
+    dtype: DType,
+    width: Int,
+    *,
+    symmetrical: Bool = True,
 ](
     a: SIMD[dtype, width],
     b: SIMD[dtype, width],
@@ -1047,44 +1078,57 @@ fn isclose[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, width]:
-    """Checks if the two input values are numerically within a tolerance.
+    """Returns a boolean SIMD vector indicating which element pairs of `a` and
+    `b` are equal within a given tolerance.
 
-    When the type is integral, then equality is checked. When the type is
-    floating point, then this checks if the two input values are numerically the
-    close using the $abs(a - b) <= max(rtol * max(abs(a), abs(b)), atol)$
-    formula.
+    For floating-point dtypes, the following criteria apply:
 
-    Unlike Pythons's `math.isclose`, this implementation is symmetric. I.e.
-    `isclose(a,b) == isclose(b,a)`.
+    - Symmetric (Python `math.isclose` style), when `symmetrical` is true:
+        ```
+        |a - b| ≤ max(atol, rtol * max(|a|, |b|))
+        ```
+    - Asymmetric (NumPy style), when `symmetrical` is false:
+        ```
+        |a - b| ≤ atol + rtol * |b|
+        ```
+
+    NaN values are considered equal only if `equal_nan` is true.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-        width: The width of the input and output SIMD vector.
+        dtype: Element type of the input and output vectors.
+        width: Number of lanes in each SIMD vector.
+        symmetrical: If true, use the symmetric comparison formula (default: true).
 
     Args:
-        a: The first value to compare.
-        b: The second value to compare.
-        atol: The absolute tolerance.
-        rtol: The relative tolerance.
-        equal_nan: Whether to treat nans as equal.
+        a: First input vector.
+        b: Second input vector.
+        atol: Absolute tolerance.
+        rtol: Relative tolerance.
+        equal_nan: If true, treat NaNs as equal (default: false).
 
     Returns:
-        A boolean vector where a and b are equal within the specified tolerance.
+        A boolean vector where `a` and `b` are equal within the given tolerance.
     """
-
     constrained[
-        a.dtype is DType.bool or a.dtype.is_numeric(),
-        "input type must be boolean, integral, or floating-point",
+        a.dtype.is_floating_point(),
+        "isclose only supports floating-point types",
     ]()
     alias T = __type_of(a)
 
+    var check_nan = isnan(a) & isnan(b)
+    var check_fin: T._Mask
+    var in_range: T._Mask
+
     @parameter
-    if a.dtype is DType.bool or a.dtype.is_integral():
-        return a == b
-    var both_nan = isnan(a) & isnan(b)
-    var both_finite = isfinite(a) & isfinite(b)
-    var in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
-    return (a == b) | (both_nan & equal_nan) | (both_finite & in_range)
+    if symmetrical:
+        check_fin = isfinite(a) & isfinite(b)
+        in_range = abs(a - b).le(max(T(atol), T(rtol) * max(abs(a), abs(b))))
+    else:
+        check_fin = isfinite(b)
+        in_range = abs(a - b).le(T(atol) + T(rtol) * abs(b))
+    return (
+        a.eq(b) | (check_nan & T._Mask(fill=equal_nan)) | (check_fin & in_range)
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1116,10 +1160,7 @@ fn iota[
 
     alias step_dtype = dtype if dtype.is_integral() else DType.index
     var step: SIMD[step_dtype, width]
-    alias is_amd = is_amd_gpu()
-    # We can't use llvm.stepvector on AMD GPUs, because of a bug in the
-    # amd backend. See https://github.com/llvm/llvm-project/issues/139317
-    if is_amd or is_compile_time():
+    if is_compile_time():
         step = 0
 
         @parameter
@@ -1155,7 +1196,7 @@ fn iota[
     fn fill[width: Int](i: Int):
         buff.store(i, iota[dtype, width](offset + i))
 
-    vectorize[fill, simdwidthof[dtype]()](len)
+    vectorize[fill, simd_width_of[dtype]()](len)
 
 
 fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
@@ -1168,7 +1209,7 @@ fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    iota(v.data, len(v), offset)
+    iota(v.unsafe_ptr(), len(v), offset)
 
 
 fn iota(mut v: List[Int, *_], offset: Int = 0):
@@ -1178,7 +1219,7 @@ fn iota(mut v: List[Int, *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = v.data.bitcast[Scalar[DType.index]]()
+    var buff = v.unsafe_ptr().bitcast[Scalar[DType.index]]()
     iota(buff, len(v), offset=offset)
 
 
@@ -1476,7 +1517,12 @@ fn cos[
     """
 
     @parameter
-    if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+
+        @parameter
+        if size_of[dtype]() < size_of[DType.float32]():
+            return cos(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -1513,7 +1559,12 @@ fn sin[
     """
 
     @parameter
-    if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+    if is_nvidia_gpu() and size_of[dtype]() <= size_of[DType.float32]():
+
+        @parameter
+        if size_of[dtype]() < size_of[DType.float32]():
+            return sin(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -1606,11 +1657,11 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
-    alias nan_val = __type_of(x)(nan[x.dtype]())
-    alias inf_val = __type_of(x)(inf[x.dtype]())
-    alias neg_inf_val = __type_of(x)(-inf[x.dtype]())
+    alias nan_val = nan[x.dtype]()
+    alias inf_val = inf[x.dtype]()
+    alias neg_inf_val = -inf[x.dtype]()
 
-    var is_neg = x < 0
+    var is_neg = x.lt(0)
     var x_abs = abs(x)
     var x2 = x * x
     var x3 = x2 * x
@@ -1618,7 +1669,7 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     # When x is in the range [0, 0.5], we use a polynomial approximation.
     # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
     var p = polynomial_evaluate[
-        List[__type_of(x)](
+        List[Scalar[x.dtype]](
             0.3333373963832855224609375,
             0.1997792422771453857421875,
             0.14672131836414337158203125,
@@ -1636,11 +1687,11 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     # If x is 1, then the result is +infinity if x is negative, and -infinity
     # if x is positive. If x is >= 1, NaN is returned. Otherwise, if x is >= 0.5,
     # we use the r approximation, otherwise we use the p polynomial approximation.
-    return (x_abs == 1).select(
+    return x_abs.eq(1).select(
         is_neg.select(neg_inf_val, inf_val),
-        (x_abs >= 1).select(
+        x_abs.ge(1).select(
             is_neg.select(nan_val, -nan_val),
-            (x_abs > 0.5).select(r, p),
+            x_abs.gt(0.5).select(r, p),
         ),
     )
 
@@ -1667,7 +1718,7 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     ]()
 
     @parameter
-    if bitwidthof[dtype]() <= 16:
+    if bit_width_of[dtype]() <= 16:
         # We promote the input to float32 and then cast back to the original
         # type. This is done to avoid precision issues that can occur when
         # using the lower-precision floating-point types.
@@ -1779,7 +1830,7 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         alias log10_2 = 0.301029995663981195213738894724493027
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if size_of[dtype]() < size_of[DType.float32]():
             return log10(x.cast[DType.float32]()).cast[dtype]()
         elif dtype is DType.float32:
             return (
@@ -1801,8 +1852,54 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
+fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> __type_of(x):
+    # This uses the approximation from cephes to compute log1p via the approximation
+    # log(1+x) = x - x**2/2 + x**3 P(x)/Q(x)
+    # in the domain 1/sqrt(2) <= x < sqrt(2)
+
+    alias P = [
+        2.0039553499201281259648e1,
+        5.7112963590585538103336e1,
+        6.0949667980987787057556e1,
+        2.9911919328553073277375e1,
+        6.5787325942061044846969e0,
+        4.9854102823193375972212e-1,
+        4.5270000862445199635215e-5,
+    ]
+    alias Q = [
+        6.0118660497603843919306e1,
+        2.1642788614495947685003e2,
+        3.0909872225312059774938e2,
+        2.2176239823732856465394e2,
+        8.3047565967967209469434e1,
+        1.5062909083469192043167e1,
+    ]
+
+    # Sqrt(1/2)
+    alias sqrt2_div_2 = 0.70710678118654752440
+    # Sqrt(2)
+    alias sqrt2 = 1.41421356237309504880
+
+    var z = 1 + x
+    var log1x = log(z)
+
+    var in_domain_mask = z.lt(sqrt2_div_2) | z.gt(sqrt2)
+    if all(in_domain_mask):
+        return log1x
+
+    z = x * x
+    z = -0.5 * z + x * (
+        z * polynomial_evaluate[P](x) / polynomial_evaluate[Q](x)
+    )
+
+    return in_domain_mask.select(log1x, x + z)
+
+
 fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     """Computes the `log1p` of the inputs.
+
+    The `log1p(x)` is equivalent to `log(1+x)`.
 
     Constraints:
         The input must be a floating-point type.
@@ -1817,7 +1914,12 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
     Returns:
         The `log1p` of the input.
     """
-    return _call_libm["log1p"](x)
+
+    constrained[
+        dtype.is_floating_point(), "input type must be floating point"
+    ]()
+
+    return _log1p_f64(x.cast[DType.float64]()).cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2243,7 +2345,7 @@ fn gcd(s: Span[Int], /) -> Int:
         return 0
     var result = s[0]
     for item in s[1:]:
-        result = gcd(item[], result)
+        result = gcd(item, result)
         if result == 1:
             return result
     return result
@@ -2297,7 +2399,6 @@ fn lcm(m: Int, n: Int, /) -> Int:
     Returns:
         The least common multiple of the two integers.
     """
-    var d: Int
     if d := gcd(m, n):
         return abs((m // d) * n if m > n else (n // d) * m)
     return 0
@@ -2317,7 +2418,7 @@ fn lcm(s: Span[Int], /) -> Int:
 
     var result = s[0]
     for item in s[1:]:
-        result = lcm(result, item[])
+        result = lcm(result, item)
     return result
 
 
@@ -2459,7 +2560,9 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(0 <= n <= 20, "input value causes an overflow")
+    debug_assert(
+        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
+    )
     return table[n]
 
 
@@ -2534,22 +2637,14 @@ fn clamp[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _type_is_libm_supported(dtype: DType) -> Bool:
-    return dtype in (DType.float32, DType.float64) or dtype.is_integral()
-
-
+@always_inline("nodebug")
 fn _call_libm[
+    dtype: DType,
+    width: Int, //,
     func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
+](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
     constrained[
-        arg_type.is_floating_point(), "argument type must be floating point"
-    ]()
-    constrained[
-        arg_type == result_type, "the argument type must match the result type"
+        dtype.is_floating_point(), "argument type must be floating point"
     ]()
     constrained[
         not is_nvidia_gpu(),
@@ -2557,32 +2652,17 @@ fn _call_libm[
     ]()
 
     @parameter
-    if not _type_is_libm_supported(arg_type):
-        # Coerse to f32 if the value is not representable by libm.
-        return _call_libm_impl[func_name, result_type = DType.float32](
-            arg.cast[DType.float32]()
-        ).cast[result_type]()
+    if dtype not in [DType.float32, DType.float64]:
+        # Coerce to f32 if the value is not representable by libm.
+        var arg_f32 = arg.cast[DType.float32]()
+        return _call_libm[func_name](arg_f32).cast[dtype]()
 
-    return _call_libm_impl[func_name, result_type=result_type](arg)
-
-
-fn _call_libm_impl[
-    func_name: StaticString,
-    arg_type: DType,
-    width: Int,
-    *,
-    result_type: DType = arg_type,
-](arg: SIMD[arg_type, width]) -> SIMD[result_type, width]:
-    alias libm_name = String(
-        func_name
-    ) if arg_type is DType.float64 else func_name + "f"
-
-    var res = SIMD[result_type, width]()
+    alias libm_name = func_name + ("f" if dtype is DType.float32 else "")
+    var res = SIMD[dtype, width]()
 
     @parameter
     for i in range(width):
-        res[i] = _external_call_const[libm_name, Scalar[result_type]](arg[i])
-
+        res[i] = _external_call_const[libm_name, Scalar[dtype]](arg[i])
     return res
 
 
@@ -2741,8 +2821,8 @@ trait Ceilable:
     ```mojo
     from math import Ceilable, ceil
 
-    @value
-    struct Complex(Ceilable):
+    @fieldwise_init
+    struct Complex(Ceilable, Copyable):
         var re: Float64
         var im: Float64
 
@@ -2778,8 +2858,8 @@ trait Floorable:
     ```mojo
     from math import Floorable, floor
 
-    @value
-    struct Complex(Floorable):
+    @fieldwise_init
+    struct Complex(Floorable, Copyable):
         var re: Float64
         var im: Float64
 
@@ -2816,8 +2896,8 @@ trait CeilDivable:
     ```mojo
     from math import CeilDivable
 
-    @value
-    struct Foo(CeilDivable):
+    @fieldwise_init
+    struct Foo(CeilDivable, Copyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) -> Self:
@@ -2849,8 +2929,8 @@ trait CeilDivableRaising:
     ```mojo
     from math import CeilDivableRaising
 
-    @value
-    struct Foo(CeilDivableRaising):
+    @fieldwise_init
+    struct Foo(CeilDivableRaising, Copyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) raises -> Self:
@@ -2887,8 +2967,8 @@ trait Truncable:
     ```mojo
     from math import Truncable, trunc
 
-    @value
-    struct Complex(Truncable):
+    @fieldwise_init
+    struct Complex(Truncable, Copyable):
         var re: Float64
         var im: Float64
 
