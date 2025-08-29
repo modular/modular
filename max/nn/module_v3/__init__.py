@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Module implementation using eager tensors."""
 
+from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
 from .sequential import Sequential
 
 __all__ = [
+    "Embedding",
     "Linear",
     "Module",
     "Sequential",
