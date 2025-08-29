@@ -11,15 +11,11 @@ from typing import Any, Callable, Union
 
 import pytest
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
-from max.serve.kvcache_agent.dispatcher_factory import (
-    DispatcherConfig,
-    DispatcherFactory,
-    TransportFactory,
-    TransportType,
-)
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
+
+from .utils import create_dispatcher_config
 
 
 @pytest.mark.asyncio
@@ -28,21 +24,8 @@ async def test_dispatcher_client_to_service_communication() -> None:
 
     try:
         # Create dispatcher configs
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
+        _, client_config = create_dispatcher_config()
+        server_bind_address, server_config = create_dispatcher_config()
 
         # Create factories
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -142,21 +125,8 @@ async def test_dispatcher_request_reply_pattern() -> None:
 
     try:
         # Create dispatcher configs
-        instance_a_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="instance_a",
-            ),
-        )
-        instance_b_bind_address = generate_zmq_inproc_endpoint()
-        instance_b_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=instance_b_bind_address,
-                instance_id="instance_b",
-            ),
-        )
+        _, instance_a_config = create_dispatcher_config()
+        instance_b_bind_address, instance_b_config = create_dispatcher_config()
 
         # Create factories
         instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -253,14 +223,7 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
 
     try:
         # Server setup using factory
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
+        server_bind_address, server_config = create_dispatcher_config()
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
             server_config,
             transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
@@ -280,13 +243,7 @@ async def test_multiple_clients_one_server_dispatcher() -> None:
 
         for i in range(num_clients):
             # Create dispatcher config and factory for each client
-            client_config = DispatcherConfig(
-                transport=TransportType.DYNAMIC_ZMQ,
-                transport_config=TransportFactory.DynamicZmqTransportConfig(
-                    bind_address=generate_zmq_inproc_endpoint(),
-                    instance_id=f"client_{i}",
-                ),
-            )
+            _, client_config = create_dispatcher_config()
             client_factory = DispatcherFactory[dict[str, Union[str, int]]](
                 client_config,
                 transport_payload_type=TransportMessage[
@@ -401,21 +358,8 @@ async def test_composable_handlers() -> None:
 
     try:
         # Create dispatcher configs
-        instance_a_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="instance_a",
-            ),
-        )
-        instance_b_bind_address = generate_zmq_inproc_endpoint()
-        instance_b_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=instance_b_bind_address,
-                instance_id="instance_b",
-            ),
-        )
+        _, instance_a_config = create_dispatcher_config()
+        instance_b_bind_address, instance_b_config = create_dispatcher_config()
 
         # Create factories
         instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -543,21 +487,8 @@ async def test_error_handling_and_resilience() -> None:
 
     try:
         # Create dispatcher configs
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        server_bind_address, server_config = create_dispatcher_config()
+        _, client_config = create_dispatcher_config()
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
@@ -678,21 +609,8 @@ async def test_high_throughput_performance() -> None:
 
     try:
         # Create dispatcher configs
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        server_bind_address, server_config = create_dispatcher_config()
+        _, client_config = create_dispatcher_config()
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -808,13 +726,7 @@ async def test_connection_failure_recovery() -> None:
 
     try:
         # Create dispatcher config
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        _, client_config = create_dispatcher_config()
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -867,21 +779,8 @@ async def test_handler_exception_isolation() -> None:
 
     try:
         # Create dispatcher configs
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        server_bind_address, server_config = create_dispatcher_config()
+        _, client_config = create_dispatcher_config()
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
@@ -1007,21 +906,8 @@ async def test_no_handler_registered() -> None:
 
     try:
         # Create dispatcher configs
-        server_bind_address = generate_zmq_inproc_endpoint()
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=server_bind_address,
-                instance_id="server",
-            ),
-        )
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        server_bind_address, server_config = create_dispatcher_config()
+        _, client_config = create_dispatcher_config()
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -1100,13 +986,7 @@ async def test_invalid_destination_address() -> None:
 
     try:
         # Create dispatcher config
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        _, client_config = create_dispatcher_config()
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
@@ -1168,13 +1048,7 @@ async def test_duplicate_handler_registration() -> None:
 
     try:
         # Create dispatcher config
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="client",
-            ),
-        )
+        _, client_config = create_dispatcher_config()
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](

@@ -10,28 +10,18 @@ from typing import Any, Union
 
 import pytest
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
-from max.serve.kvcache_agent.dispatcher_factory import (
-    DispatcherConfig,
-    DispatcherFactory,
-    TransportFactory,
-    TransportType,
-)
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
+
+from .utils import create_dispatcher_config
 
 
 @pytest.mark.asyncio
 async def test_dispatcher_factory_dynamic_zmq() -> None:
     """Test DispatcherFactory creation from JSON configuration with dynamic transport."""
     try:
-        config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="test_factory",
-            ),
-        )
+        _, config = create_dispatcher_config()
         factory = DispatcherFactory[int](
             config, transport_payload_type=TransportMessage[int]
         )
@@ -57,13 +47,7 @@ async def test_end_to_end_communication_with_config() -> None:
 
     try:
         # Create server factory from config
-        server_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="test_server",
-            ),
-        )
+        _, server_config = create_dispatcher_config()
 
         server_factory = DispatcherFactory[dict[str, Union[int, str]]](
             server_config,
@@ -76,13 +60,7 @@ async def test_end_to_end_communication_with_config() -> None:
         server_client = server_factory.create_client()
 
         # Create client factory from config
-        client_config = DispatcherConfig(
-            transport=TransportType.DYNAMIC_ZMQ,
-            transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address=generate_zmq_inproc_endpoint(),
-                instance_id="test_client",
-            ),
-        )
+        _, client_config = create_dispatcher_config()
 
         client_factory = DispatcherFactory[dict[str, Union[int, str]]](
             client_config,

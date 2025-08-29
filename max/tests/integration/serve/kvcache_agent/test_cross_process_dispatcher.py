@@ -7,6 +7,7 @@
 import asyncio
 import multiprocessing
 import time
+from multiprocessing.context import SpawnProcess
 from typing import Any, Union
 
 import pytest
@@ -20,6 +21,86 @@ from max.serve.kvcache_agent.dispatcher_factory import (
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+
+
+def create_dispatchers() -> tuple[
+    str,
+    str,
+    DispatcherFactory[dict[str, Union[str, int]]],
+    DispatcherFactory[dict[str, Union[str, int]]],
+    ProcessControl,
+    ProcessControl,
+    SpawnProcess,
+    SpawnProcess,
+    ProcessMonitor,
+    ProcessMonitor,
+]:
+    mp_context = multiprocessing.get_context("spawn")
+
+    # Create IPC endpoints for dynamic ZMQ communication between dispatchers
+    instance_a_address = generate_zmq_ipc_path()
+    instance_b_address = generate_zmq_ipc_path()
+
+    # Create dispatcher configs with dynamic ZMQ transport
+    instance_a_config = DispatcherConfig(
+        transport=TransportType.DYNAMIC_ZMQ,
+        transport_config=TransportFactory.DynamicZmqTransportConfig(
+            bind_address=instance_a_address,
+            default_destination_address=instance_b_address,
+        ),
+    )
+
+    instance_b_config = DispatcherConfig(
+        transport=TransportType.DYNAMIC_ZMQ,
+        transport_config=TransportFactory.DynamicZmqTransportConfig(
+            bind_address=instance_b_address,
+            default_destination_address=instance_a_address,
+        ),
+    )
+
+    # Create factories
+    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_a_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
+    )
+    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_b_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
+    )
+
+    # Create process controls
+    pc_a = ProcessControl(mp_context, "instance_a")
+    pc_b = ProcessControl(mp_context, "instance_b")
+
+    # Create processes for dispatcher services
+    process_a = mp_context.Process(
+        target=instance_a_service_process_fn,
+        args=(pc_a, instance_a_factory),
+        name="instance_a_single_request_reply_service_process",
+    )
+
+    process_b = mp_context.Process(
+        target=instance_b_service_process_fn,
+        args=(pc_b, instance_b_factory),
+        name="instance_b_single_request_reply_service_process",
+    )
+
+    # Create process monitors
+    monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
+    monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
+
+    return (
+        instance_a_address,
+        instance_b_address,
+        instance_a_factory,
+        instance_b_factory,
+        pc_a,
+        pc_b,
+        process_a,
+        process_b,
+        monitor_a,
+        monitor_b,
+    )
 
 
 def instance_a_service_process_fn(
@@ -92,59 +173,18 @@ def instance_b_service_process_fn(
 @pytest.mark.asyncio
 async def test_single_request_reply() -> None:
     """Test single request-reply pattern with dispatcher services running in separate processes."""
-    mp_context = multiprocessing.get_context("spawn")
-
-    # Create IPC endpoints for dynamic ZMQ communication between dispatchers
-    instance_a_address = generate_zmq_ipc_path()
-    instance_b_address = generate_zmq_ipc_path()
-
-    # Create dispatcher configs with dynamic ZMQ transport
-    instance_a_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_a_address,
-            default_destination_address=instance_b_address,
-        ),
-    )
-
-    instance_b_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_b_address,
-            default_destination_address=instance_a_address,
-        ),
-    )
-
-    # Create factories
-    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-
-    # Create process controls
-    pc_a = ProcessControl(mp_context, "instance_a")
-    pc_b = ProcessControl(mp_context, "instance_b")
-
-    # Create processes for dispatcher services
-    process_a = mp_context.Process(
-        target=instance_a_service_process_fn,
-        args=(pc_a, instance_a_factory),
-        name="instance_a_single_request_reply_service_process",
-    )
-
-    process_b = mp_context.Process(
-        target=instance_b_service_process_fn,
-        args=(pc_b, instance_b_factory),
-        name="instance_b_single_request_reply_service_process",
-    )
-
-    # Create process monitors
-    monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
-    monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
+    (
+        _,
+        instance_b_address,
+        instance_a_factory,
+        instance_b_factory,
+        pc_a,
+        pc_b,
+        process_a,
+        process_b,
+        monitor_a,
+        monitor_b,
+    ) = create_dispatchers()
 
     try:
         # Start both service processes
@@ -256,59 +296,18 @@ async def test_single_request_reply() -> None:
 @pytest.mark.asyncio
 async def test_multiple_request_reply() -> None:
     """Test multiple request-reply exchanges between cross-process dispatcher services."""
-    mp_context = multiprocessing.get_context("spawn")
-
-    # Create IPC endpoints for dynamic ZMQ communication between dispatchers
-    instance_a_address = generate_zmq_ipc_path()
-    instance_b_address = generate_zmq_ipc_path()
-
-    # Create dispatcher configs with dynamic ZMQ transport
-    instance_a_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_a_address,
-            default_destination_address=instance_b_address,
-        ),
-    )
-
-    instance_b_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_b_address,
-            default_destination_address=instance_a_address,
-        ),
-    )
-
-    # Create factories
-    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-
-    # Create process controls
-    pc_a = ProcessControl(mp_context, "instance_a")
-    pc_b = ProcessControl(mp_context, "instance_b")
-
-    # Create processes for dispatcher services
-    process_a = mp_context.Process(
-        target=instance_a_service_process_fn,
-        args=(pc_a, instance_a_factory),
-        name="instance_a_multi_request_reply_service_process",
-    )
-
-    process_b = mp_context.Process(
-        target=instance_b_service_process_fn,
-        args=(pc_b, instance_b_factory),
-        name="instance_b_multi_request_reply_service_process",
-    )
-
-    # Create process monitors
-    monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
-    monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
+    (
+        _,
+        instance_b_address,
+        instance_a_factory,
+        instance_b_factory,
+        pc_a,
+        pc_b,
+        process_a,
+        process_b,
+        monitor_a,
+        monitor_b,
+    ) = create_dispatchers()
 
     try:
         # Start both service processes
@@ -432,59 +431,18 @@ async def test_multiple_request_reply() -> None:
 @pytest.mark.asyncio
 async def test_bidirectional_communication() -> None:
     """Test that both processes can send requests to each other simultaneously."""
-    mp_context = multiprocessing.get_context("spawn")
-
-    # Create IPC endpoints for dynamic ZMQ communication between dispatchers
-    instance_a_address = generate_zmq_ipc_path()
-    instance_b_address = generate_zmq_ipc_path()
-
-    # Create dispatcher configs with dynamic ZMQ transport
-    instance_a_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_a_address,
-            default_destination_address=instance_b_address,
-        ),
-    )
-
-    instance_b_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_b_address,
-            default_destination_address=instance_a_address,
-        ),
-    )
-
-    # Create factories
-    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-
-    # Create process controls
-    pc_a = ProcessControl(mp_context, "instance_a")
-    pc_b = ProcessControl(mp_context, "instance_b")
-
-    # Create processes for dispatcher services
-    process_a = mp_context.Process(
-        target=instance_a_service_process_fn,
-        args=(pc_a, instance_a_factory),
-        name="instance_a_bidirectional_service_process",
-    )
-
-    process_b = mp_context.Process(
-        target=instance_b_service_process_fn,
-        args=(pc_b, instance_b_factory),
-        name="instance_b_bidirectional_service_process",
-    )
-
-    # Create process monitors
-    monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=10.0)
-    monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=10.0)
+    (
+        instance_a_address,
+        instance_b_address,
+        instance_a_factory,
+        instance_b_factory,
+        pc_a,
+        pc_b,
+        process_a,
+        process_b,
+        monitor_a,
+        monitor_b,
+    ) = create_dispatchers()
 
     try:
         # Start both service processes
@@ -628,59 +586,18 @@ async def test_bidirectional_communication() -> None:
 @pytest.mark.asyncio
 async def test_high_throughput_cross_process() -> None:
     """Test high throughput message processing across processes."""
-    mp_context = multiprocessing.get_context("spawn")
-
-    # Create IPC endpoints for dynamic ZMQ communication between dispatchers
-    instance_a_address = generate_zmq_ipc_path()
-    instance_b_address = generate_zmq_ipc_path()
-
-    # Create dispatcher configs with dynamic ZMQ transport
-    instance_a_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_a_address,
-            default_destination_address=instance_b_address,
-        ),
-    )
-
-    instance_b_config = DispatcherConfig(
-        transport=TransportType.DYNAMIC_ZMQ,
-        transport_config=TransportFactory.DynamicZmqTransportConfig(
-            bind_address=instance_b_address,
-            default_destination_address=instance_a_address,
-        ),
-    )
-
-    # Create factories
-    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config,
-        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
-    )
-
-    # Create process controls
-    pc_a = ProcessControl(mp_context, "instance_a")
-    pc_b = ProcessControl(mp_context, "instance_b")
-
-    # Create processes for dispatcher services
-    process_a = mp_context.Process(
-        target=instance_a_service_process_fn,
-        args=(pc_a, instance_a_factory),
-        name="instance_a_high_throughput_service_process",
-    )
-
-    process_b = mp_context.Process(
-        target=instance_b_service_process_fn,
-        args=(pc_b, instance_b_factory),
-        name="instance_b_high_throughput_service_process",
-    )
-
-    # Create process monitors
-    monitor_a = ProcessMonitor(pc_a, process_a, poll_s=0.01, max_time_s=30.0)
-    monitor_b = ProcessMonitor(pc_b, process_b, poll_s=0.01, max_time_s=30.0)
+    (
+        _,
+        instance_b_address,
+        instance_a_factory,
+        instance_b_factory,
+        pc_a,
+        pc_b,
+        process_a,
+        process_b,
+        monitor_a,
+        monitor_b,
+    ) = create_dispatchers()
 
     try:
         # Start both service processes
