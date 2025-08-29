@@ -156,7 +156,7 @@ kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
 
 // -----
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 // CHECK-LABEL: llvm.func @kernel() attributes {dso_local, nvvm.kernel
 kgen.func export @kernel() {
   kgen.return
@@ -245,7 +245,7 @@ kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointe
 
 // -----
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 // CHECK-LABEL: llvm.func @kgen_fp8_param_constant
 kgen.func export @kgen_fp8_param_constant() {
   // CHECK: llvm.mlir.constant(56 : i8) : i8
@@ -259,7 +259,7 @@ kgen.func export @kgen_fp8_param_constant() {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 
 // CHECK-LABEL: kgen_fp8_args
 // CHECK-SAME: %[[ARG0:.+]]: vector<16xi8>
@@ -271,7 +271,7 @@ kgen.func @kgen_fp8_args(%arg0: !pop.simd<16,f8e5m2>) -> !pop.simd<16,f8e5m2> {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 
 // CHECK-LABEL: kgen_fp8_ptr_arg
 kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !pop.scalar<f8e5m2>{

@@ -720,7 +720,7 @@ void SyncX86SymbolTables::populateSymbol(StringRef name,
 bool SyncX86SymbolTables::runOnMachineFunction(MachineFunction &MF) {
   MCContext &ctx = MF.getContext();
   for (auto &[name, symbolEntry] : ctx.getSymbols()) {
-    if (!symbolEntry.Symbol || !symbolEntry.Symbol->isExternal() ||
+    if (!symbolEntry.Symbol || !symbolEntry.Symbol->isUndefined() ||
         externSymbols.contains(name))
       continue;
     externSymbols.insert(name);
