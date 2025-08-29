@@ -28,6 +28,7 @@ lit_tests(
     env = {
         "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rootpath //utils/mblack)",
     },
+    force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
     mojo_deps = [
         "@mojo//:layout",
         "@mojo//:stdlib",
@@ -35,10 +36,6 @@ lit_tests(
     target_compatible_with = select({
         "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }) + select({
-        # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
-        "//:strip_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
     }),
     tools = [
         "//KGEN/tools/kgen",
