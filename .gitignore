@@ -29,6 +29,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Local development only file
+/repro.mojo
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
