@@ -782,7 +782,7 @@ void MojoDocument::startDocumentParse(AsyncRT::AnyAsyncValueRef chain,
 void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
                                  ProgressManager &progressMgr) {
   progressMgr.withProgress(
-      [&]() {
+      [&, doc = MojoDocumentRef::copy(this)]() {
         KGEN::CompilerTimeTraceScope traceScope(
             "parseDocument", [&]() { return getURIs().front().uri().str(); });
 
