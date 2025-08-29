@@ -3537,10 +3537,78 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   ParserBase p(shared, lexer);
 
   SMLoc identifierLoc;
+  StringAttr structNameAttr;
   if (p.parseToken(Token::kw___extension,
                    "internal error: checked by stmt parser") ||
-      p.parseIdentifier("internal error: checked by extension parser",
+      p.parseIdentifier(structNameAttr,
+                        "internal error: checked by extension parser",
                         &identifierLoc))
+    return failure();
+
+  ASTDecl *parentDecl = decl.getParentDecl();
+  assert(parentDecl && "Extension has no parent decl");
+
+  // Look up all declarations with the same name. We need to look up ALL because
+  // if we just look for the first, we'll find the extension itself, which has
+  // the same name.
+  // Note we aren't resolving the struct here, just finding it.
+  // TODO(MOCO-522): Arcana references about how the extension has a unique
+  // generated name, but is known to the parent ASTDecl (and therefore to the
+  // rest of the world) as the struct's name.
+  // TODO(MOCO-522): Consider requiring the extension to import the exact struct
+  // rather than being able to import an intermediate extension. If we have that
+  // restriction, then we can:
+  // - Make the struct (e.g. Spaceship) known by two names:
+  //   - "Spaceship" (as before)
+  //   - "struct:Spaceship"
+  //   The latter would let us do a single lookupAndResolveDecl here instead of
+  //   the more expensive lookupAllDeclsWithName.
+  // TODO(MOCO-522): Consider modifying the import system to automatically
+  // import a target struct when we import an extension.
+  StringRef structName = structNameAttr.getValue();
+  LookupAllResult lookupResult = shared.lookupAllDeclsWithName(
+      structName, identifierLoc, *parentDecl, false);
+  ArrayRef<ASTDecl *> foundDecls = lookupResult.getIfSuccess();
+  // Find the actual struct declaration among all the found declarations.
+  StructDeclOp structDeclOp = nullptr;
+  ASTDecl *structAstDecl = nullptr;
+  for (ASTDecl *decl : foundDecls) {
+    if (auto foundStructDeclOp =
+            dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
+      structDeclOp = foundStructDeclOp;
+      structAstDecl = decl;
+      break;
+    }
+  }
+  if (!structDeclOp) {
+    return emitError(identifierLoc, "can't find a struct named '")
+           << structName << "'";
+  }
+
+  SymbolRefAttr targetStructAttr = structAstDecl->getSymbolRef();
+  extensionDeclOp.setTargetStructAttr(targetStructAttr);
+
+  // This is an extension, but all the methods should think they're inside a
+  // struct, so let's use 'computeSelfTypeForStruct' on the structDeclOp to
+  // figure out the self type they can use.
+  decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structDeclOp));
+
+  shared.notifyListenerOnTraitDecl(decl, identifierLoc);
+
+  if (p.consumeIf(Token::l_square)) {
+    // If the current token is on a new line, report the error on the end of
+    // the previous line, this is probably where the punctuation was omitted.
+    auto diagLoc = p.getTokenLocOrEndOfPreviousLineIfOnNewLine();
+    // Report the error.
+    auto diag = emitError(
+        diagLoc, "cannot specify parameter declarations on extensions");
+
+    diag.attachNote(structAstDecl->getLoc())
+        << "extension already assumes these parameter declarations";
+    return failure();
+  }
+
+  if (p.parseToken(Token::colon, "expected ':' in extension definition"))
     return failure();
 
   // TODO(MOCO-522): This is temporary, removed in a later PR.
