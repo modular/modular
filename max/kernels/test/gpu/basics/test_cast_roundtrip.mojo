@@ -15,7 +15,7 @@ from gpu import *
 from gpu.host import DeviceContext
 from testing import assert_equal, assert_true
 
-from utils.numerics import inf, nan, neg_inf, isnan
+from utils.numerics import isnan
 
 
 fn id(
@@ -40,9 +40,9 @@ fn run_vec_add(ctx: DeviceContext) raises:
     for i in range(length):
         in_host[i] = Float32(i)
 
-    in_host[4] = nan[DType.float32]()
-    in_host[5] = inf[DType.float32]()
-    in_host[6] = neg_inf[DType.float32]()
+    in_host[4] = DType.nan[DType.float32]()
+    in_host[5] = DType.inf[DType.float32]()
+    in_host[6] = DType.neg_inf[DType.float32]()
     in_host[7] = -0.0
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -66,9 +66,9 @@ fn run_vec_add(ctx: DeviceContext) raises:
         1.0,
         2.0,
         3.0,
-        nan[DType.float32](),
-        inf[DType.float32](),
-        neg_inf[DType.float32](),
+        DType.nan[DType.float32](),
+        DType.inf[DType.float32](),
+        DType.neg_inf[DType.float32](),
         -0.0,
         8.0,
         9.0,

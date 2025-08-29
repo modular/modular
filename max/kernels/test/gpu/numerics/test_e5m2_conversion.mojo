@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, nan
-
 from gpu.host import DeviceContext
 from memory import bitcast
 
@@ -178,10 +176,10 @@ fn test_e5m2_initialization():
         40960.0,
         49152.0,
         57344.0,
-        inf[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
+        DType.inf[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
         -0.0,
         -1.52587890625e-05,
         -3.0517578125e-05,
@@ -306,10 +304,10 @@ fn test_e5m2_initialization():
         -40960.0,
         -49152.0,
         -57344.0,
-        -inf[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
-        nan[DType.float8_e5m2](),
+        -DType.inf[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
+        DType.nan[DType.float8_e5m2](),
     )
 
     for i in range(256):
