@@ -5,7 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import (
+    CPU,
+    Accelerator,
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.graph import DeviceKind, DeviceRef
 
 
@@ -112,3 +118,35 @@ def test_cpu_can_access_cpu() -> None:
     cpu = CPU()
     another_cpu = CPU()
     assert not cpu.can_access(another_cpu), "CPU should not access another CPU."
+
+
+def test_accelerator_architecture_name() -> None:
+    """Accelerator should return architecture name (e.g., gfx942, sm_80)."""
+    accelerator = Accelerator()
+    if accelerator.api != "hip":
+        with pytest.raises(
+            Exception, match="failed to get device architecture name"
+        ):
+            _ = accelerator.architecture_name
+        return
+
+    archname = accelerator.architecture_name
+    assert isinstance(archname, str)
+    assert len(archname) > 0, (
+        "Accelerator should have a non-empty architecture name"
+    )
+
+
+def test_accelerator_architecture_name_function() -> None:
+    if accelerator_api() != "hip":
+        with pytest.raises(
+            Exception, match="failed to get device architecture name"
+        ):
+            _ = accelerator_architecture_name()
+        return
+
+    arch = accelerator_architecture_name()
+    assert isinstance(arch, str)
+    assert len(arch) > 0, (
+        "Accelerator should have a non-empty architecture name"
+    )

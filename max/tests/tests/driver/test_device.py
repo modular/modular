@@ -48,3 +48,11 @@ def test_cpu_id() -> None:
     # The CPU id should always be 0.
     cpu = CPU()
     assert 0 == cpu.id
+
+
+def test_cpu_architecture_name() -> None:
+    cpu = CPU()
+    with pytest.raises(
+        Exception, match="failed to get device architecture name"
+    ):
+        _ = cpu.architecture_name
