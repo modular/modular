@@ -81,7 +81,13 @@ struct _ListIter[
 
 
 struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
-    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
+    Boolable,
+    Copyable,
+    Defaultable,
+    DeletableItem,
+    ExplicitlyCopyable,
+    Movable,
+    Sized,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -613,6 +619,49 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
         return self.__str__()
 
+    fn __delitem__(mut self, idx: Some[Indexer]) -> None:
+        """Delete an item from the list at the given index.
+
+        Args:
+            idx: The index of the item to delete.
+        """
+        var normalized_idx = normalize_index["List", assert_always=False](
+            idx, UInt(len(self))
+        )
+
+        (self._data + normalized_idx).destroy_pointee()
+        for j in range(normalized_idx + 1, self._len):
+            (self._data + j).move_pointee_into(self._data + j - 1)
+        self._len -= 1
+
+    fn __delitem__(mut self, slice: Slice) -> None:
+        """Delete a slice of items from the list.
+
+        Args:
+            slice: The slice of items to delete.
+        """
+
+        var start, end, step = slice.indices(len(self))
+        var r = range(start, end, step)
+        var r_len = len(r)
+
+        if not r_len:
+            return  # Nothing to delete
+        elif step == 1:
+            # contiguous range, can optimize
+            for i in r:
+                (self._data + i).destroy_pointee()
+            for j in range(end, self._len):
+                (self._data + j).move_pointee_into(self._data + j - r_len)
+            self._len -= r_len
+        else:
+            # non-contiguous range
+            for i in reversed(r):
+                (self._data + i).destroy_pointee()
+                for j in range(i + 1, self._len):
+                    (self._data + j).move_pointee_into(self._data + j - 1)
+                self._len -= 1
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -1048,14 +1097,11 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
         return res^
 
-    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
+    fn __getitem__(ref self, idx: Some[Indexer]) -> ref [self] T:
         """Gets the list element at the given index.
 
         Args:
             idx: The index of the element.
-
-        Parameters:
-            I: A type that can be used as an index.
 
         Returns:
             A reference to the element at the given index.

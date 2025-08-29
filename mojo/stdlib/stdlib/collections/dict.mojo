@@ -785,6 +785,21 @@ struct Dict[
         """
         self.update(other)
 
+    fn __delitem__(mut self, key: K) -> None:
+        """Delete an item from the dictionary by key.
+
+        Args:
+            key: The key of the item to delete.
+        """
+        var hash = hash[HasherType=H](key)
+        var found, slot, index = self._find_index(hash, key)
+        if found:
+            self._set_index(slot, Self.REMOVED)
+            ref entry = self._entries[index]
+            debug_assert(entry.__bool__(), "entry in index must be full")
+            entry = None
+            self._len -= 1
+
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#

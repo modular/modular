@@ -128,6 +128,7 @@ from builtin.uint import UInt
 from builtin.value import (
     Copyable,
     Defaultable,
+    DeletableItem,
     ExplicitlyCopyable,
     Iterator,
     Movable,
