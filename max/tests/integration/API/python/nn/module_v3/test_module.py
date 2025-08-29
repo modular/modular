@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from max.experimental.tensor import Tensor
 from max.nn.module_v3.module import Module, module_dataclass
@@ -133,3 +135,100 @@ def test_module_descendents(test_module: TestModule, super_module: SuperModule):
     }
     assert dict(super_module.mod.descendents) == {"sub": super_module.mod.sub}
     assert dict(test_module.sub.descendents) == {}
+
+
+def test_apply_to_local_parameters(test_module: TestModule):
+    a = test_module.a
+    b = test_module.sub.b
+
+    test_module.apply_to_local_parameters(lambda _, t: t + 1)
+    # Applied to a
+    assert test_module.a.item() == (a + 1).item()
+    # Not applied to submodule
+    assert test_module.sub.b.item() == b.item()
+
+
+def test_apply_to_parameters(test_module: TestModule):
+    a = test_module.a
+    b = test_module.sub.b
+
+    test_module.apply_to_parameters(lambda _, t: t + 1)
+    # Applied to a
+    assert test_module.a.item() == (a + 1).item()
+    # Also applied to submodule
+    assert test_module.sub.b.item() == (b + 1).item()
+
+
+def test_apply_to_parameters__qualified_names(test_module: TestModule):
+    names = set()
+    expected = dict(test_module.parameters).keys()
+
+    def lookup(name: str, tensor: Tensor):
+        names.add(name)
+        return tensor
+
+    test_module.apply_to_parameters(lookup)
+    assert expected == names
+
+
+def test_load_state_simple_dict(test_module: TestModule):
+    weights = {
+        "a": Tensor.constant(5),
+        "sub.b": Tensor.constant(6),
+    }
+    test_module.load_state(weights.__getitem__)
+    assert test_module.a.item() == 5
+    assert test_module.sub.b.item() == 6
+
+
+def test_load_state_simple_dict_lookup_failure(test_module: TestModule):
+    weights: dict[str, Tensor] = {}
+    # No guarantee on the resulting state here!
+    with pytest.raises(KeyError):
+        test_module.load_state(weights.__getitem__)
+
+
+def test_load_state_name_remapping(test_module: TestModule):
+    def remap_name(name: str):
+        name = re.sub(r"\bsub\.", "feed_forward.", name)
+        return name
+
+    weights = {
+        "a": Tensor.constant(5),
+        "feed_forward.b": Tensor.constant(6),
+    }
+
+    test_module.load_state(lambda name: weights[remap_name(name)])
+    assert test_module.a.item() == 5
+    assert test_module.sub.b.item() == 6
+
+
+def test_load_state_dict(test_module: TestModule):
+    weights = {
+        "a": Tensor.constant(5),
+        "sub.b": Tensor.constant(6),
+    }
+    test_module.load_state_dict(weights)
+    assert test_module.a.item() == 5
+    assert test_module.sub.b.item() == 6
+
+
+def test_load_state_dict_strict(test_module: TestModule):
+    weights = {
+        "a": Tensor.constant(5),
+        "sub.b": Tensor.constant(6),
+        "extra": Tensor.constant(7),
+    }
+    with pytest.raises(ValueError):
+        test_module.load_state_dict(weights)
+
+
+def test_load_state_dict_nonstrict(test_module: TestModule):
+    weights = {
+        "a": Tensor.constant(5),
+        "sub.b": Tensor.constant(6),
+        "extra": Tensor.constant(7),
+    }
+    test_module.load_state_dict(weights, strict=False)
+    assert test_module.a.item() == 5
+    assert test_module.sub.b.item() == 6
