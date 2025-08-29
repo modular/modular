@@ -1005,7 +1005,7 @@ def test_list_delitem_by_slice_contiguous():
 
 def test_list_delitem_by_slice_non_contiguous():
     var l = [0, 1, 2, 3, 4, 5]
-    l.__delitem__(Slice(0, 5, 2))  # del l[0:5:2]
+    l.__delitem__(Slice(0, 6, 2))  # del l[0:6:2]
     assert_equal(l, [1, 3, 5])
 
 

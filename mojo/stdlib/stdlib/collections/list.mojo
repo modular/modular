@@ -649,11 +649,25 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             self._len -= r_len
         else:
             # non-contiguous range
-            for i in reversed(r):
+            var to_delete = [i for i in r]
+            var to_delete_idx = 0
+            var write_idx = 0
+            for read_idx in range(self._len):
+                if (
+                    to_delete_idx < r_len
+                    and read_idx == to_delete[to_delete_idx]
+                ):
+                    (self._data + read_idx).destroy_pointee()
+                    to_delete_idx += 1
+                else:
+                    if write_idx != read_idx:
+                        (self._data + read_idx).move_pointee_into(
+                            self._data + write_idx
+                        )
+                    write_idx += 1
+            for i in range(write_idx, self._len):
                 (self._data + i).destroy_pointee()
-                for j in range(i + 1, self._len):
-                    (self._data + j).move_pointee_into(self._data + j - 1)
-                self._len -= 1
+            self._len = write_idx
 
     # ===-------------------------------------------------------------------===#
     # Methods
