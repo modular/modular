@@ -122,13 +122,14 @@ def start_workers(
                 METRICS.configure(client=metric_client)
 
                 # Start Model Worker
-                engine_queue = await exit_stack.enter_async_context(
+                _ = await exit_stack.enter_async_context(
                     start_model_worker(
                         pipeline_factory,
                         pipeline_config,
                         settings,
                         metric_client,
                         pipeline_task,
+                        dispatcher_factory,
                     )
                 )
 

@@ -13,5 +13,10 @@
 
 from .dispatcher_factory import DispatcherFactory
 from .dispatcher_transport import TransportMessage
+from .kvcache_agent import start_kvcache_agent_service
 
-__all__ = ["DispatcherFactory", "TransportMessage"]
+__all__ = [
+    "DispatcherFactory",
+    "TransportMessage",
+    "start_kvcache_agent_service",
+]

@@ -29,7 +29,7 @@ from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
+from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
@@ -95,6 +95,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Runs a model worker process.
 
@@ -121,15 +122,10 @@ class ModelWorker:
                 pipeline = model_factory()
 
             # create dispatcher client
-            pipeline_role = pipeline_config.pipeline_role
-
             dispatcher_client = None
-            if pipeline_role.uses_dispatch_service:
-                dispatcher_factory = DispatcherFactory[PayloadType](
-                    settings.dispatcher_config,
-                    transport_payload_type=TransportMessage[PayloadType],
-                )
-                logger.debug(f"Starting dispatcher client for {pipeline_role}")
+            if dispatcher_factory is not None:
+                assert pipeline_config.pipeline_role.uses_dispatch_service
+                logger.debug("Starting dispatcher client")
                 dispatcher_client = dispatcher_factory.create_client()
                 dispatcher_client.start()
 
@@ -171,6 +167,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -194,6 +191,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
+                    dispatcher_factory,
                 )
             )
         except KeyboardInterrupt:
@@ -211,6 +209,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     pipeline_task: PipelineTask,
+    dispatcher_factory: DispatcherFactory[PayloadType] | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -253,6 +252,7 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
+            dispatcher_factory,
         ),
     )
     worker.start()

@@ -25,6 +25,8 @@ from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
+from max.serve.pipelines.kvcache_worker import start_kv_cache_service
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -36,6 +38,7 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.scheduler.base import PayloadType
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config
@@ -76,9 +79,23 @@ async def lifespan(
             "It is not valid to start the API Server if the server is in offline inference mode"
         )
 
+    dispatcher_factory = None
+    if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service:
+        dispatcher_factory = DispatcherFactory[PayloadType](
+            settings.dispatcher_config,
+            transport_payload_type=TransportMessage[PayloadType],
+        )
+
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
+            if dispatcher_factory is not None:
+                logger.info("Starting Dispatch Service...")
+                await exit_stack.enter_async_context(
+                    start_kv_cache_service(settings, dispatcher_factory)
+                )
+                logger.info("Dispatch Service started.")
+
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
@@ -93,6 +110,7 @@ async def lifespan(
                     settings,
                     metric_client,
                     serving_settings.pipeline_task,
+                    dispatcher_factory,
                 )
             )
 
