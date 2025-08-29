@@ -12,9 +12,7 @@ load("//bazel:api.bzl", "mojo_filecheck_test")
     )
     for src in [
         "test_e4m3fn_conversion.mojo",
-        "test_e4m3fnuz_conversion.mojo",
         "test_e5m2_conversion.mojo",
-        "test_e5m2fnuz_conversion.mojo",
         "test_fp8_nan.mojo",
     ]
 ]
@@ -31,6 +29,26 @@ mojo_filecheck_test(
         "@mojo//:stdlib",
     ],
 )
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:h100_gpu": ["//:h100_gpu"],
+            "//:mi300x_gpu": ["//:mi300x_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in [
+        "test_e4m3fnuz_conversion.mojo",
+        "test_e5m2fnuz_conversion.mojo",
+    ]
+]
 
 mojo_filecheck_test(
     name = "test_e4m3fn_to_e4m3fnuz_conversion.mojo.test",
