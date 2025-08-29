@@ -637,6 +637,13 @@ Drawbacks:
   automatically importing it.
 
 Still, I recommend this option.
+(( What if you allow new syntax to do everything you want with a + or - character in the import statement like this?
+(( from A import Spaceship + B.Spaceship  # imports A's struct and B's extension
+(( OR
+(( from A import Spaceship - A.fly_to     # import A's struck without the stuff (functions) you don't want 
+(( # Nothing is emplicit, everything explicit --- allow multiple + and - symbols to compose what you want (it's modular!)
+(( #   allowing adding and subtracting like this might solving all related problems mentioned above 
+(( # Couln't the compiler detect unused functions and remove them from all imported modules?
 
 ## Decision 7: Need `import extension`?
 
