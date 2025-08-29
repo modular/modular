@@ -662,10 +662,9 @@ struct String(
         hits zero."""
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            if (
-                self._refcount().fetch_sub[ordering = Consistency.RELEASE](1)
-                == 1
-            ):
+            var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
+            var refcount = ptr.bitcast[Atomic[DType.index]]()
+            if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
                 fence[Consistency.ACQUIRE]()
                 ptr.free()
 
