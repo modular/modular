@@ -113,7 +113,7 @@ fn matmul_dispatch_sm100[
     alias static_N = c.shape.get[1]()  # mxk
     alias static_K = a.shape.get[1]()  # mxn
 
-    var m = c.shape.get[0]()
+    var m = c.dim[0]()
 
     # 8192x8192x2048: BM=128 / BN=128 / CLUSTER=(2,1,1)
     # 4096x8192x2048: BM=128 / BN=128 / CLUSTER=(2,1,1)
