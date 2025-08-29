@@ -226,6 +226,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     random_max_num_unique_sys_prompt: int = 1
     random_distribution_type: str = "normal"  # choices: uniform, normal
     random_num_turns: int = 1
+    obfuscated_conversations_coefficient_of_variation: float = 0.1
+    obfuscated_conversations_average_output_len: int = 175
+    obfuscated_conversations_shuffle: bool = False
 
     # Control flags (serving-specific)
     skip_test_prompt: bool = False
@@ -289,6 +292,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
             "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal",
             "random_num_turns": "Number of turns per session, used only for random sampling and --num-chat-sessions.",
+            "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
+            "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
+            "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "server_args": "Server arguments string.",

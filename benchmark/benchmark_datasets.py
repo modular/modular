@@ -31,6 +31,7 @@ from sample_workload_utils import (
     CODE_DEBUG_TEMPLATE,
     ChatSession,
     CodeDebugLine,
+    ObfuscatedConversationsLine,
     SampledRequest,
     build_chat_message,
     encode_image,
@@ -104,6 +105,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
     "code_debug": DatasetRegistryEntry(
         class_name="CodeDebugBenchmarkDataset",
         has_multiturn_chat_support=True,
+    ),
+    "obfuscated-conversations": DatasetRegistryEntry(
+        class_name="ObfuscatedConversationsBenchmarkDataset",
+        has_multiturn_chat_support=False,
     ),
     "random": DatasetRegistryEntry(
         class_name="RandomBenchmarkDataset",
@@ -1104,4 +1109,66 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
                 SampledRequest(prompt_formatted, prompt_len, output_len, None)
             )
 
+        return sampled_requests
+
+
+class ObfuscatedConversationsBenchmarkDataset(BenchmarkDataset):
+    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
+        if dataset_name == "obfuscated-conversations":
+            # No pre-fetching needed - dataset is loaded directly in sample_requests
+            pass
+        else:
+            raise ValueError(
+                f"Unknown dataset for ObfuscatedConversationsBenchmarkDataset: {dataset_name}"
+            )
+
+    def sample_requests(
+        self,
+        num_requests: int,
+        tokenizer: PreTrainedTokenizerBase,
+        output_lengths: Sequence[int],
+        seed: int,
+        shuffle: bool = False,
+    ) -> Sequence[SampledRequest]:
+        assert self.dataset_path is not None, (
+            "dataset_path must be provided for ObfuscatedConversationsBenchmarkDataset"
+        )
+        random.seed(seed)
+        np.random.seed(seed)
+
+        with open(self.dataset_path) as jsonl_file:
+            decoded_lines = [
+                msgspec.json.decode(json_line, type=ObfuscatedConversationsLine)
+                for json_line in jsonl_file
+            ]
+
+        if len(decoded_lines) < num_requests:
+            raise ValueError(
+                f"Dataset has {len(decoded_lines)} conversations but {num_requests} were requested"
+            )
+
+        if shuffle:
+            conversation_indices = random.choices(
+                range(len(decoded_lines)), k=num_requests
+            )
+        else:
+            max_start = max(0, len(decoded_lines) - num_requests)
+            start_idx = random.randint(0, max_start)
+            conversation_indices = list(
+                range(start_idx, start_idx + num_requests)
+            )
+
+        sampled_requests: list[SampledRequest] = []
+        for i, conversation_idx in enumerate(conversation_indices):
+            item = decoded_lines[conversation_idx]
+            prompt = item.messages
+            prompt_len = len(tokenizer(prompt).input_ids)
+            sampled_requests.append(
+                SampledRequest(
+                    prompt_formatted=prompt,
+                    prompt_len=prompt_len,
+                    output_len=output_lengths[i],
+                    encoded_img=None,
+                )
+            )
         return sampled_requests
