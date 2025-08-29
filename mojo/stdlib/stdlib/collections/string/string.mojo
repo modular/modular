@@ -640,6 +640,7 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            # TODO: use `load[MONOTONIC]` once load supports memory orderings.
             return (
                 self._refcount().fetch_sub[ordering = Consistency.MONOTONIC](0)
                 == 1
@@ -651,8 +652,8 @@ struct String(
     fn _add_ref(mut self):
         """Atomically increment the refcount."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            # See `ArcPointer`'s refcount implementation for more docs
-            # on the use of memory orderings.
+            # See `ArcPointer`'s refcount implementation for more details on the
+            # use of memory orderings.
             _ = self._refcount().fetch_add[ordering = Consistency.MONOTONIC](1)
 
     @always_inline("nodebug")
