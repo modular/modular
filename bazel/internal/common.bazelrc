@@ -106,6 +106,7 @@ build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT=100
 common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
+build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping
 build --experimental_output_paths=strip
