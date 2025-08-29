@@ -28,6 +28,13 @@ def accelerator_api() -> str:
     return CPU().api
 
 
+def accelerator_architecture_name() -> str:
+    """Returns the architecture name of the accelerator device."""
+    if accelerator_count() > 0:
+        return Accelerator().architecture_name
+    return CPU().architecture_name
+
+
 @dataclass(frozen=True)
 class DeviceSpec:
     """Specification for a device, containing its ID and type.

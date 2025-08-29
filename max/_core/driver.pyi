@@ -112,6 +112,25 @@ class Device:
         """
 
     @property
+    def architecture_name(self) -> str:
+        """
+        Returns the architecture name of the device.
+
+        Examples of possible values:
+
+        - ``gfx90a``, ``gfx942`` for AMD GPUs.
+        - ``sm_80``, ``sm_86`` for NVIDIA GPUs.
+        - CPU devices raise an exception.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.archname
+        """
+
+    @property
     def id(self) -> int:
         """
         Returns a zero-based device id. For a CPU device this is always 0.
