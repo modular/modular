@@ -444,10 +444,66 @@ mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
   return mergedBindings;
 }
 
-TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues, Type type) {
+static Type inferBindParamsType(TypedAttr generator,
+                                ArrayRef<TypedAttr> paramValues,
+                                ParameterEvaluationContext *evaluationContext) {
+  auto genType = ::cast<GeneratorType>(generator.getType());
+  GeneratorType specializedType =
+      genType.getSpecializedGenerator(paramValues, evaluationContext,
+                                      /*emitErrorFn=*/{});
+  assert(specializedType && "Failed to specialize generator");
+  // By back-compat, we never eliminate the empty generator type wrapper on
+  // func types. This should eventually be made consistent with other types.
+  bool canEagerInstantiate = specializedType.isFullyBound() &&
+                             !isa<FuncType>(specializedType.getBody());
+  return canEagerInstantiate ? specializedType.getBody() : specializedType;
+}
+
+static TypedAttr simplifyBindParams(TypedAttr generator,
+                                    ArrayRef<TypedAttr> paramValues,
+                                    std::optional<Type> typeOpt,
+                                    ParameterEvaluationContext *evalContext) {
   if (paramValues.empty())
     return generator;
+
+  // If the actual generator is a BindParamsAttr, then we can flatten the new
+  // bindings into the existing ones.
+  if (auto bindParams = ::dyn_cast<BindParamsAttr>(generator)) {
+    SmallVector<TypedAttr> mergedParamValues =
+        mergeParamBindings(bindParams.getParamValues(), paramValues);
+    if (typeOpt)
+      return BindParamsAttr::get(bindParams.getContext(),
+                                 bindParams.getGenerator(), mergedParamValues,
+                                 *typeOpt, evalContext);
+    return BindParamsAttr::get(bindParams.getGenerator(), mergedParamValues,
+                               evalContext);
+  }
+
+  // Can simplify if the generator is a GeneratorAttr.
+  if (auto genAttr = dyn_cast<GeneratorAttr>(generator)) {
+    // If the params are fully bound, just return the specialized generator.
+    if (paramValues.size() == genAttr.getInputParamTypes().size()) {
+      GeneratorAttr specializedGenerator =
+          genAttr.getSpecializedGenerator(paramValues, evalContext);
+      return specializedGenerator.isFullyBound()
+                 ? specializedGenerator.getInstantiatedValue()
+                 : cast<TypedAttr>(specializedGenerator);
+    }
+
+    // Otherwise, fill in with unbound params to perform partial specialization.
+    SmallVector<TypedAttr> partialParamValues;
+    partialParamValues.reserve(genAttr.getInputParamTypes().size());
+    for (auto [idx, type] : llvm::enumerate(genAttr.getInputParamTypes())) {
+      if (idx < paramValues.size())
+        partialParamValues.push_back(paramValues[idx]);
+      else
+        partialParamValues.push_back(UnboundAttr::get(type));
+    }
+
+    GeneratorAttr specializedGenerator =
+        genAttr.getSpecializedGenerator(partialParamValues, evalContext);
+    return cast<TypedAttr>(specializedGenerator);
+  }
 
   // If the actual generator is a SymbolConstantAttr, then we can simplify by
   // folding the parameter values into it directly (this will be cleaned up once
@@ -462,9 +518,11 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
            "cannot have already bound all the input parameters, because we'd "
            "end up with a nongeneric signature that would fail verification");
 
+    Type resultType = typeOpt.value_or(
+        inferBindParamsType(generator, paramValues, evalContext));
     if (symbolConstant.getParamValues().empty())
       return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                     ::cast<FuncTypeGeneratorType>(type),
+                                     ::cast<FuncTypeGeneratorType>(resultType),
                                      paramValues);
 
     // We have to interleave the new values wherever there's an unbound thing
@@ -473,52 +531,41 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
         mergeParamBindings(symbolConstant.getParamValues(), paramValues);
 
     return SymbolConstantAttr::get(symbolConstant.getSymbol(),
-                                   ::cast<FuncTypeGeneratorType>(type),
+                                   ::cast<FuncTypeGeneratorType>(resultType),
                                    mergedParamValues);
   }
 
-  // If the actual generator is a BindParamsAttr, then we can flatten the new
-  // bindings into the existing ones.
-  if (auto bindParams = ::dyn_cast<BindParamsAttr>(generator)) {
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(bindParams.getParamValues(), paramValues);
-    return get(bindParams.getContext(), bindParams.getGenerator(),
-               mergedParamValues, type);
-  }
+  return {};
+}
 
-  // Don't substitute any parameter values into a GeneratorAttr here. Those
-  // should be handled by ParameterEvaluator explicitly so that any contextually
-  // evaluated attributes that got updated can attempt a re-evaluation using
-  // the evaluation context.
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues, Type type,
+                              ParameterEvaluationContext *evaluationContext) {
+  if (auto simplified =
+          simplifyBindParams(generator, paramValues, type, evaluationContext))
+    return simplified;
   return Base::get(generator.getContext(), generator, paramValues, type);
 }
 
 TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues, Type type) {
+                           ArrayRef<TypedAttr> paramValues, Type type,
+                           ParameterEvaluationContext *evaluationContext) {
   if (failed(verify(emitError, generator, paramValues, type)))
     return {};
-  return get(context, generator, paramValues, type);
+  return get(context, generator, paramValues, type, evaluationContext);
 }
 
 TypedAttr BindParamsAttr::get(TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
                               ParameterEvaluationContext *evaluationContext) {
-  if (paramValues.empty())
-    return generator;
-  auto genType = ::cast<GeneratorType>(generator.getType());
-  GeneratorType specializedType =
-      genType.getSpecializedGenerator(paramValues, evaluationContext,
-                                      /*emitErrorFn=*/{});
-  assert(specializedType && "Failed to specialize generator");
-  // By back-compat, we never eliminate the empty generator type wrapper on func
-  // types. This should eventually be made consistent with other types.
-  bool canEagerInstantiate = specializedType.isFullyBound() &&
-                             !isa<FuncType>(specializedType.getBody());
+  if (auto simplified = simplifyBindParams(generator, paramValues, std::nullopt,
+                                           evaluationContext))
+    return simplified;
   Type resultType =
-      canEagerInstantiate ? specializedType.getBody() : specializedType;
-  return get(generator.getContext(), generator, paramValues, resultType);
+      inferBindParamsType(generator, paramValues, evaluationContext);
+  return Base::get(generator.getContext(), generator, paramValues, resultType);
 }
 
 TypedAttr
@@ -527,7 +574,7 @@ BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            ParameterEvaluationContext *evaluationContext) {
   if (failed(verify(emitError, generator, paramValues, {})))
     return {};
-  return get(generator, paramValues);
+  return get(generator, paramValues, evaluationContext);
 }
 
 bool BindParamsAttr::isConstant() const { return false; }

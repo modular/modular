@@ -433,7 +433,8 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
       getFullSignature(), bindings, &evalContext);
 
   if (ParamDeclAttr decl = getParamDeclAttr())
-    return BindParamsAttr::get(ParamDeclRefAttr::get(decl), bindings);
+    return BindParamsAttr::get(ParamDeclRefAttr::get(decl), bindings,
+                               &evalContext);
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), resultType,
                                  bindings);

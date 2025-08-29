@@ -789,8 +789,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
       auto paramList = genType.getParamListAttrs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
         declareAndAddParam(type, paramList.getName(idx));
-      return shared.getEvaluationContext().getBindParamsAttr(
-          paramType.getParam(), paramValues);
+      return BindParamsAttr::get(paramType.getParam(), paramValues,
+                                 &shared.getEvaluationContext());
     }
   }
 

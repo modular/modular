@@ -17,11 +17,10 @@ using namespace LIT;
 
 FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
+  // Handle simplifiable cases here.
   if (auto bindParams = dyn_cast<BindParamsAttr>(attr))
     return evaluateBindParams(bindParams.getGenerator(),
                               bindParams.getParamValues());
-
-  // Handle simplifiable cases here.
   if (auto getWitness = dyn_cast<GetWitnessAttr>(attr))
     return evaluateGetWitness(
         getWitness.getTypeValue(), getWitness.getTraitName(),
@@ -37,54 +36,11 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateExpression(
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr
-ParserEvaluationContext::getBindParamsAttr(TypedAttr generator,
-                                           ArrayRef<TypedAttr> paramValues) {
-  // Try to simplify immediately.
-  auto specializedGenerator = evaluateBindParams(generator, paramValues);
-  if (succeeded(specializedGenerator))
-    return specializedGenerator.value();
-
-  // Otherwise, use the default builder and then attempt evaluation again in
-  // case any folders were triggered at build time.
-  auto bindParamsAttr = BindParamsAttr::get(generator, paramValues, this);
-  if (auto evaluatable =
-          dyn_cast<ContextuallyEvaluatedAttrInterface>(bindParamsAttr)) {
-    return evaluateExpression(evaluatable).value_or(bindParamsAttr);
-  }
-  return bindParamsAttr;
-}
-
 FailureOr<TypedAttr>
 ParserEvaluationContext::evaluateBindParams(TypedAttr generator,
                                             ArrayRef<TypedAttr> paramValues) {
-  // Can simplify if the generator is a GeneratorAttr.
-  auto genAttr = dyn_cast<GeneratorAttr>(generator);
-  if (!genAttr)
-    return failure();
-
-  // If the params are fully bound, just return the specialized generator.
-  if (paramValues.size() == genAttr.getInputParamTypes().size()) {
-    GeneratorAttr specializedGenerator =
-        genAttr.getSpecializedGenerator(paramValues, this);
-    return specializedGenerator.isFullyBound()
-               ? specializedGenerator.getInstantiatedValue()
-               : cast<TypedAttr>(specializedGenerator);
-  }
-
-  // Otherwise, fill in with unbound params to perform partial specialization.
-  SmallVector<TypedAttr> partialParamValues;
-  partialParamValues.reserve(genAttr.getInputParamTypes().size());
-  for (auto [idx, type] : llvm::enumerate(genAttr.getInputParamTypes())) {
-    if (idx < paramValues.size())
-      partialParamValues.push_back(paramValues[idx]);
-    else
-      partialParamValues.push_back(UnboundAttr::get(type));
-  }
-
-  GeneratorAttr specializedGenerator =
-      genAttr.getSpecializedGenerator(partialParamValues, this);
-  return cast<TypedAttr>(specializedGenerator);
+  // Simply re-construct the bind params with the current evaluation context.
+  return BindParamsAttr::get(generator, paramValues, this);
 }
 
 //===----------------------------------------------------------------------===//
