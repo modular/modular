@@ -29,7 +29,7 @@ from max.pipelines import (
 from max.serve.config import Settings
 from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
 from max.serve.pipelines.kvcache_worker import start_kv_cache_service
-from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.model_worker import PayloadType, start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.scheduler import PrefillRequest, PrefillResponse
 from max.serve.telemetry.metrics import METRICS
@@ -103,21 +103,9 @@ def start_workers(
             async with AsyncExitStack() as exit_stack:
                 # Start Dispatch service if needed
                 if pipeline_config.pipeline_role.uses_dispatch_service:
-                    dispatcher_factory = DispatcherFactory[
-                        Union[
-                            PrefillRequest,
-                            PrefillResponse,
-                            KVTransferEngineMetadata,
-                        ]
-                    ](
+                    dispatcher_factory = DispatcherFactory[PayloadType](
                         settings.dispatcher_config,
-                        transport_payload_type=TransportMessage[
-                            Union[
-                                PrefillRequest,
-                                PrefillResponse,
-                                KVTransferEngineMetadata,
-                            ]
-                        ],
+                        transport_payload_type=TransportMessage[PayloadType],
                     )
 
                     await exit_stack.enter_async_context(
@@ -141,7 +129,6 @@ def start_workers(
                         settings,
                         metric_client,
                         pipeline_task,
-                        dispatcher_factory=dispatcher_factory,
                     )
                 )
 
