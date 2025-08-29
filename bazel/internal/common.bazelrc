@@ -9,6 +9,9 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # TODO: '=true' is required because of a buildbuddy cli bug
 build --enable_platform_specific_config=true
 
+# Show more output files when you build multiple targets
+common --show_result=10
+
 # https://github.com/aspect-build/tools_telemetry
 common --repo_env=ASPECT_TOOLS_TELEMETRY=-all
 
