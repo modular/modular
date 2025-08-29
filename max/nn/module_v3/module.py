@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Callable
 
 from rich.pretty import pretty_repr
 from typing_extensions import dataclass_transform
 
+from ...driver import DLPackArray
 from ...experimental.tensor import Tensor
 
 if TYPE_CHECKING:
@@ -127,6 +128,152 @@ class Module:
             yield prefix, child
             for name, descendent in child.descendents:
                 yield f"{prefix}.{name}", descendent
+
+    def apply_to_local_parameters(self, f: Callable[[str, Tensor], Tensor]):
+        """Applies a transformation to each local parameter tensor on the Module.
+
+        The transformation is applied in-place, updating the module's values.
+        It will not be applied to descendent's parameters.
+
+        .. code-block:: python
+
+            from max.driver import Accelerator
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            model.apply_to_parameters(lambda _, t: t.to(Accelerator())
+
+        Args:
+            f: The transfomation to apply to each local parameter.
+                The transformation takes two arguments, a name and a tensor.
+                - The name is the attribute name of the parameter on the module
+                - The tensor is the current value of that parameter
+                The return value of this function is the new value that will
+                replace the value at that name.
+        """
+        for name, attr in self.local_parameters:
+            setattr(self, name, f(name, attr))
+
+    def apply_to_parameters(self, f: Callable[[str, Tensor], Tensor]):
+        """Applies a transformation to each parameter tensor on the Module
+        and its descendents.
+
+        The transformation is applied in-place, updating the module's values
+        and those of its descendents.
+
+        .. code-block:: python
+
+            from max.driver import Accelerator
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            model.apply_to_parameters(lambda _, t: t.to(Accelerator())
+
+        Args:
+            f: The transfomation to apply to each parameter.
+                The transformation takes two arguments, a name and a tensor.
+                - The name is the qualified name of the parameter
+                    with respect to the module on which `apply_to_parameters`
+                    was called.
+                - The tensor is the current value of that parameter
+                The return value of this function is the new value that will
+                replace the value at that name in the module tree.
+        """
+        self.apply_to_local_parameters(f)
+        for prefix, child in self.children:
+            # Bind an explicit reference to `prefix` into the closure
+            # See https://stackoverflow.com/a/54289183
+            child.apply_to_parameters(
+                functools.partial(
+                    (lambda prefix, name, t: f(f"{prefix}.{name}", t)),
+                    prefix,
+                )
+            )
+
+    def load_state(self, lookup: Callable[[str], DLPackArray]):
+        """Replaces each parameter in the module and its descendents.
+
+        The transformation is applied in-place, updating the module's values
+        and those of its descendents.
+
+        Example:
+
+        .. code-block:: python
+
+            from max.experimental.tensor import Tensor
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            weights = {
+                "weight": Tensor.zeros([3, 2]),
+                "bias": Tensor.zeros([3]),
+            }
+            model.load_state(weights.__getitem__)
+
+        The lookup is defined as a function rather than a dictionary, allowing
+        for functional remapping of names during this process to account
+        for differences in common weight naming and storage conventions.
+
+        For instance certain representations may not store weights as
+        transposed, or may need to be quantized, or split out from a shared
+        qkv block, or may just have slightly different names or paths.
+
+        This can also be used for instance to provide a default value for
+        initializing LoRA weights.
+
+        Args:
+            lookup: The lookup function for each parameter.
+                - The argument to the lookup function is the qualified name
+                  of the parameter with respect to the module on which
+                  `load_state` was called.
+                - The return value of this function is the new value that will
+                  replace the value at that name in the module tree.
+        """
+        return self.apply_to_parameters(
+            lambda name, _: Tensor.from_dlpack(lookup(name))
+        )
+
+    def load_state_dict(
+        self, state: Mapping[str, DLPackArray], strict: bool = True
+    ):
+        """Replaces each parameter in the module and its descendents.
+
+        The transformation is applied in-place, updating the module's values
+        and those of its descendents.
+
+        Example:
+
+        .. code-block:: python
+
+            from max.experimental.tensor import Tensor
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            weights = {
+                "weight": Tensor.zeros([3, 2]),
+                "bias": Tensor.zeros([3]),
+            }
+            model.load_state(weights)
+
+        Args:
+            state: A mapping from qualified name to weight
+            strict: If true, verify that every value in `state` is loaded
+                at least once.
+        Raises:
+            If `strict` is set (default) and not all weights in `state` were loaded.
+        """
+        loaded = set()
+
+        def lookup(name: str) -> DLPackArray:
+            loaded.add(name)
+            return state[name]
+
+        self.load_state(lookup)
+
+        if strict and (unloaded := state.keys() - loaded):
+            raise ValueError(
+                f"load_state_dict did not read some weights: {unloaded}"
+            )
 
     def __rich_repr__(self):
         yield from self.children
