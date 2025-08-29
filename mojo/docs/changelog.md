@@ -302,6 +302,13 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - `mojo test` now ignores folders with a leading `.` in the name. This will
   exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
 
+- `mojo doc --validate-doc-strings` now emits a warning when an `fn` function
+is declared to raise an error (`raises`) and it has no [`Raises`
+docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
+However, because Mojo automatically treats all `def` functions as [raising
+functions](/mojo/manual/functions#raising-and-non-raising-functions), we do not
+enforce `Raises` docs for `def` functions (to avoid noisy false positives).
+
 - Nightly `mojo` Python wheels are now available. To install everything needed
   for Mojo development in a Python virtual environment, you can use
 
