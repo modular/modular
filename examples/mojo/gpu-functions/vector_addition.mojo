@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys import has_accelerator
 
 from gpu import global_idx
 from gpu.host import DeviceContext
@@ -25,10 +25,7 @@ alias layout = Layout.row_major(VECTOR_WIDTH)
 
 
 def main():
-    constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    constrained[has_accelerator(), "This example requires a supported GPU"]()
 
     # Get context for the attached GPU
     var ctx = DeviceContext()
