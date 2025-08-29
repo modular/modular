@@ -38,7 +38,7 @@ struct MemType(Copyable, Movable):
 # CHECK-NEXT: %[[W1:.*]] = lit.ref.load %[[W0]]
 # CHECK-NEXT: %[[W2:.*]] = lit.ref.struct.ger %[[SELF]][field1]
 # CHECK-NEXT: %[[W2REF:.*]] = kgen.rebind %[[W2]]
-# CHECK-NEXT: %[[W3:.*]] = lit.ref.struct.ger %[[W2REF]][value]
+# CHECK-NEXT: %[[W3:.*]] = lit.ref.struct.ger %[[W2REF]][_mlir_value]
 # CHECK-NEXT: %[[W4:.*]] = lit.ref.load %[[W3]]
 # CHECK-NEXT: %[[W5:.*]] = index.mul %[[W1]], %[[W4]]
 # CHECK-NEXT: lit.return %[[W5]] : index
@@ -66,7 +66,7 @@ fn make_diff_closures(m: MemType, z: __mlir_type.index, var w: Int):
         return m + y
 
     fn ret_mlir_type() -> __mlir_type.index:
-        return __mlir_op.`index.mul`(z, w.value)
+        return __mlir_op.`index.mul`(z, w._mlir_value)
 
     fn ret_none(p: Int):
         use(m)

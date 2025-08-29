@@ -277,7 +277,7 @@ fn precedence_associativity(a: Int):
   # CHECK-NEXT: %[[ONE:.*]] = kgen{{.*}}{1}
   # CHECK-NEXT: %[[RES:.*]] = lit.call {{.*}}Int::@"__radd__(::Int,::Int)"(%[[Z]], %[[ONE]])
   # CHECK-NEXT: lit.ref.store %[[RES]], %z
-  z = Int(1).value + z
+  z = Int(1)._mlir_value + z
 
   # div tests
   # CHECK: lit.call {{.*}}__truediv__
@@ -314,40 +314,40 @@ fn precedence_associativity(a: Int):
 # CHECK-LABEL: lit.fn @"reverse_operators
 fn reverse_operators(a: Int):
   # CHECK: lit.call {{.*}}Int::@"__radd__(::Int,::Int)"
-  var z = Int(1).value + a
+  var z = Int(1)._mlir_value + a
 
   # CHECK: lit.call {{.*}}Int::@"__rsub__(::Int,::Int)"
-  z = Int(2).value - z
+  z = Int(2)._mlir_value - z
 
   # CHECK: lit.call {{.*}}Int::@"__rmul__(::Int,::Int)"
-  z = Int(3).value * z
+  z = Int(3)._mlir_value * z
 
   # div tests
   # CHECK: lit.call {{.*}}__rtruediv__
   # CHECK: lit.call {{.*}}Int::@"__rfloordiv__(::Int,::Int)"
   var r1 = 33.0 / Float32(42.0)
-  z = Int(33).value // z
+  z = Int(33)._mlir_value // z
 
   # CHECK: lit.call {{.*}}Int::@"__rmod__(::Int,::Int)"
-  var i0 = Int(10).value % z
+  var i0 = Int(10)._mlir_value % z
 
 # CHECK: lit.call {{.*}}Int::@"__rpow__(::Int,::Int)"
-  var i1 = Int(3).value ** z
+  var i1 = Int(3)._mlir_value ** z
 
   # CHECK: lit.call {{.*}}Int::@"__rlshift__(::Int,::Int)"
-  var i2 = Int(1).value << z
+  var i2 = Int(1)._mlir_value << z
 
   # CHECK: lit.call {{.*}}Int::@"__rrshift__(::Int,::Int)"
-  var i3 = Int(1).value >> z
+  var i3 = Int(1)._mlir_value >> z
 
   # CHECK: lit.call {{.*}}Int::@"__rand__(::Int,::Int)"
-  z = Int(1).value & z
+  z = Int(1)._mlir_value & z
 
   # CHECK: lit.call {{.*}}Int::@"__ror__(::Int,::Int)"
-  z = Int(2).value | z
+  z = Int(2)._mlir_value | z
 
   # CHECK: lit.call {{.*}}Int::@"__rxor__(::Int,::Int)"
-  z = Int(3).value ^ z
+  z = Int(3)._mlir_value ^ z
 
 # CHECK-LABEL: lit.fn @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
@@ -568,7 +568,7 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
-    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{_mlir_value: i1 = 1}
+    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:i1 1}
     # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond
     cond = True
     i += i
@@ -580,7 +580,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {_mlir_value: dtype = f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">,
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">,
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
   alias j = 2.0 if cond else 3
 
@@ -625,9 +625,9 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   alias b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int a, "value">, 42)}>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}>
   alias c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{value = mul(#lit.struct.extract<:!Int a, "value">, #lit.struct.extract<:!Int a2, "value">)}>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{_mlir_value = mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)}>
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##
@@ -682,15 +682,15 @@ fn byval_byref_function(a: Int, mut b: Int):
 fn lvaluesAndRValues() -> __mlir_type.index:
   # CHECK: [[VALUE:%.*]] = kgen.param.constant = <4>
   # CHECK: lit.return [[VALUE]] : index
-  return Int(4).value
+  return Int(4)._mlir_value
 
 # CHECK-LABEL: lit.fn @"mvalueStructField()"
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   alias Index = Int(4)
   # CHECK: lit.alias.decl *"value{{.*}}" = <4>
-  alias value = Index.value
-  alias foldToValue = Int(5).value
+  alias value = Index._mlir_value
+  alias foldToValue = Int(5)._mlir_value
 
 ##===----------------------------------------------------------------------===##
 # Augmented Assignments
@@ -789,8 +789,8 @@ def literals():
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
     alias b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
-    c = False         # CHECK: !Bool = <{_mlir_value: i1 = 0}>
-    c = True          # CHECK: !Bool = <{_mlir_value: i1 = 1}>
+    c = False         # CHECK: !Bool = <{:i1 0}>
+    c = True          # CHECK: !Bool = <{:i1 1}>
 
 # CHECK-LABEL: lit.fn @"_strings
 fn _strings():
@@ -982,7 +982,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {_mlir_value: i1 = 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> pos_vararg>{{.*}}(!lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *[0,0]}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int

@@ -110,7 +110,7 @@ fn test_owned_trait():
 # CHECK-LABEL: lit.fn @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 1}, {{.*}}origin<1> = *"rest`"}
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>, imm *"rest`1"> mut|pack_vararg)
-fn takeInoutSomeTraitPack[*Ts: SomeTrait](mut *rest: *Ts):
+fn takeInoutSomeTraitPack[*Ts: SomeTrait](mut*rest: *Ts):
     pass
 
 
@@ -156,7 +156,7 @@ fn test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, mut *args: *Ts):
+    fn __init__(out self, mut*args: *Ts):
         pass
 
 
@@ -210,18 +210,18 @@ fn usePacks(x: FloatDyn, y: Int):
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!Int]>
     var c = MyTuple[Int](1)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [!FloatDyn, [{{.*}}@__MLIRType<:type index>, index]]>
-    var d = MyTuple(3.14, Int(6).value)
+    var d = MyTuple(3.14, Int(6)._mlir_value)
     # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> []>
     var e = MyTuple()
 
-    pack(Int(1).value)
-    pack(Int(1).value, 3.14)
+    pack(Int(1)._mlir_value)
+    pack(Int(1)._mlir_value, 3.14)
     pack()
 
-    pack(Int(1).value, x, y)
+    pack(Int(1)._mlir_value, x, y)
     pack[Int, FloatDyn, Int](Int(1), x, y)
 
-    packBorrowed(Int(1).value, x, y)
+    packBorrowed(Int(1)._mlir_value, x, y)
 
     # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
     variadicParameter[Int, FloatDyn](1)

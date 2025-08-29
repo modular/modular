@@ -8,10 +8,10 @@ kgen.generator @declref_sugar() {
   // GENERIC-NEXT: #lit.struct<{}>
   kgen.param.constant: @S = <{}>
   // CHECK-NEXT: <{1}>
-  // GENERIC-NEXT: #lit.struct<{value = 1}>
+  // GENERIC-NEXT: #lit.struct<{_mlir_value = 1}>
   kgen.param.constant: @S = <{1}>
   // CHECK-NEXT: <{:dtype f32}>
-  // GENERIC-NEXT: #lit.struct<{value: dtype = f32}>
+  // GENERIC-NEXT: #lit.struct<{_mlir_value: dtype = f32}>
   kgen.param.constant: @S = <{:dtype f32}>
   // GENERIC-NEXT: #lit.struct<{a = 1, b: dtype = f32}>
   // CHECK-NEXT: <{a = 1, b: dtype = f32}>

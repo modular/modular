@@ -311,6 +311,7 @@ fn testClosure(a: Bool):
 fn disableDtor(var x: MoreComplexExample):
     x.mem^.consume()
 
+
 fn fieldConsumeError(
     var w: MoreComplexExample,  # expected-note {{'w' declared here}}
     # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
@@ -505,11 +506,13 @@ fn test_inout_ref(mut v: StrArray, i: Int):
 
     _ = r[]
 
+
 fn test_uninit_store_trivial():
     var example = TrivialAggregate()
     example.a = 1
     # expected-warning @+1 {{assignment to 'example.b' was never used}}
     example.b = 2
+
 
 fn test_owned_warning(var arg: TrivialAggregate):
     # expected-warning @+1 {{assignment to 'arg' was never used}}
@@ -532,7 +535,7 @@ fn param_for_merge_diagnostic():
 
     @parameter
     for _ in TrivialRange():
-        _ = array_ptr.value
+        _ = array_ptr._mlir_value
 
 
 def raises_ret_int() -> Int:
@@ -563,12 +566,13 @@ fn test_unused_var(mut mut_arg: Int):
 
 @fieldwise_init
 struct SP[n: Int]:
-  pass
+    pass
+
 
 fn test_no_unused_warning() -> Int:
-  s = SP[2]()
-  # COM: no warning expected as there's a use of the variable.
-  return s.n
+    s = SP[2]()
+    # COM: no warning expected as there's a use of the variable.
+    return s.n
 
 
 @explicit_destroy("Use `consume() method` to finalize")
@@ -577,10 +581,13 @@ struct LinearType:
     fn consume(deinit self):
         pass
 
-    fn use(self): pass
+    fn use(self):
+        pass
+
 
 fn do_something() raises:
     pass
+
 
 fn test_linear_type() raises:
     var tok1 = LinearType()

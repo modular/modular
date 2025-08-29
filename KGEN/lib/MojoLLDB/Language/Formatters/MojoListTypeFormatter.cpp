@@ -73,8 +73,9 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
 
   // The REPL sees a struct around an int, but DWARF shows directly the int.
   lldb::ValueObjectSP sizeVal =
-      sizeField->IsScalarType() ? sizeField
-                                : sizeField->GetChildMemberWithName("value");
+      sizeField->IsScalarType()
+          ? sizeField
+          : sizeField->GetChildMemberWithName("_mlir_value");
   if (!sizeVal || !sizeVal->GetError().Success())
     return {};
 

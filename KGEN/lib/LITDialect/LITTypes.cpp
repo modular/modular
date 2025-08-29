@@ -186,7 +186,7 @@ OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
     if (parseColonTypeParamValue(p, element))
       return failure();
     value = LITStructAttr::get(
-        {{StringAttr::get(p.getContext(), "value"), element}}, *this);
+        {{StringAttr::get(p.getContext(), "_mlir_value"), element}}, *this);
     return p.parseRBrace();
   }
 
@@ -220,7 +220,7 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
   ArrayRef<std::tuple<StringAttr, TypedAttr>> values = attr.getValues();
 
   p << '{';
-  if (values.size() == 1 && std::get<0>(values.front()) == "value" &&
+  if (values.size() == 1 && std::get<0>(values.front()) == "_mlir_value" &&
       // Don't print 'add(x, y)' as the value, because the parser will think
       // that is a field name.
       !::isa<ParamOperatorAttr>(std::get<1>(values.front()))) {

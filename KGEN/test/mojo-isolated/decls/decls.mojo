@@ -291,13 +291,13 @@ fn returnParameter[a: __mlir_type.index]() -> __mlir_type.index:
 fn callReturnParam() -> __mlir_type.index:
     # CHECK-NEXT: %0 = lit.call @decls::@"returnParameter[__mlir_type.index]()"<3>()
     # CHECK-NEXT: return %0
-    return returnParameter[Int(3).value]()
+    return returnParameter[Int(3)._mlir_value]()
 
 
 # CHECK: lit.fn @"pleaseInline()"() -> index always_inline
 @always_inline
 fn pleaseInline() -> __mlir_type.index:
-    return Int(1).value
+    return Int(1)._mlir_value
 
 
 # https://github.com/modularml/modular/issues/8500
@@ -548,7 +548,7 @@ fn callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = {value = add(#lit.struct.extract<:!Int p, "value">, 87)})
+# CHECK-SAME: (%a: !Int = {_mlir_value = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)})
 fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -717,8 +717,8 @@ fn raisesReturnsNone() raises:
 fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
     return __mlir_op.`kgen.variant.create`[
         _type = __mlir_type[`!kgen.variant<`, Error, `, index>`],
-        index = Int(1).value,
-    ](Int(1).value)
+        index = Int(1)._mlir_value,
+    ](Int(1)._mlir_value)
 
 
 # CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> i1
@@ -1461,7 +1461,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
     # CHECK: call[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
-    nestedFunction[Int(2).value]()
+    nestedFunction[Int(2)._mlir_value]()
 
     var value = 0
 

@@ -674,7 +674,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 // This ends up looking like:
 //   ActualAttr = 3 : index
 //   Expected=#lit.struct.extract<:@Int #lit.struct.extract<:@AddressSpace
-//          *(0,3), "_value">, "value"> : index
+//          *(0,3), "_value">, "_mlir_value"> : index
 //
 // The "right" solution is to change pointer and reference to take an
 // AddressSpace directly.  Until then we do a special hack for these things.

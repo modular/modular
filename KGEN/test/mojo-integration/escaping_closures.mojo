@@ -162,7 +162,7 @@ fn makeEscapingClosure[
 
 fn main():
     var x = 2
-    var c = makes_escaping_closure(x.value)
+    var c = makes_escaping_closure(x._mlir_value)
     # CHECK: 4
     print(c(x))
 

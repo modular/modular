@@ -15,7 +15,7 @@ struct Empty: pass
 @register_passable("trivial")
 struct DType:
     alias type = __mlir_type.`!kgen.dtype`
-    var value: Self.type
+    var _mlir_value: Self.type
 
     alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
     alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
@@ -23,14 +23,14 @@ struct DType:
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self.type):
-        self.value = value
+        self._mlir_value = value
 
 # CHECK-LABEL: lit.struct.decl @SIMD
 # CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
 # CHECK-SAME: register_passable
 @register_passable("trivial")
 struct SIMD[dt: DType, size: Int]:
-    var value: __mlir_type[`!pop.simd<`, size.value, `, `, dt.value, `>`]
+    var value: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, dt._mlir_value, `>`]
 
     fn __add__(lhs, rhs: Self) -> Self:
         while __mlir_attr.true:
@@ -47,7 +47,7 @@ struct StructWithIntParam[size: Int]:
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 fn paramArith[x: Int]():
-    # CHECK: lit.alias.decl *"y`": !Bool = <{value: i1 = eq(#lit.struct.extract<:!Int x, "value">, 99)}>
+    # CHECK: lit.alias.decl *"y`": !Bool = <{_mlir_value: i1 = eq(#lit.struct.extract<:!Int x, "_mlir_value">, 99)}>
     alias y = x == 98 + 1
 
 fn take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -68,7 +68,7 @@ fn fancy_signature[dt: DType, size: Int](
   # CHECK: lit.ref.store %[[RES]], %local
   var local = take_3index(size, size, size)
 
-  # CHECK: %[[TMP:.*]] = kgen.param.constant: !Int = <{value = add(#lit.struct.extract<:!Int size, "value">, 42)}>
+  # CHECK: %[[TMP:.*]] = kgen.param.constant: !Int = <{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 42)}>
   # CHECK: lit.return %[[TMP]]
   return size+42
 
@@ -93,15 +93,15 @@ fn call_generic[dt: DType]():
 struct TestParamStruct[A: Int]:
 
   # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
-  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {value = add(#lit.struct.extract<:!Int [[A]], "value">, #lit.struct.extract<:!Int B, "value">)}>>
+  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {_mlir_value = add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)}>>
   fn method[B: Int](self: TestParamStruct[A], other: TestParamStruct[A+B]):
     pass
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
-    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 2), 1)}>
+    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{_mlir_value = add(mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2), 1)}>
     alias B = A+A+1
-    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 3), 1)}>
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{_mlir_value = add(mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 3), 1)}>
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
@@ -112,10 +112,10 @@ struct TestParamStruct[A: Int]:
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
     alias intVal : Int = 42
 
-    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {value = mul(#lit.struct.extract<:!Int [[A]], "value">, 2)}>
+    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}>
     var temp2: TestParamStruct[TestParamStruct[A].TypeLevelAlias]
 
-  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{value = mul(#lit.struct.extract<:!Int *"A`", "value">, 2)}>
+  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{_mlir_value = mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)}>
   alias TypeLevelAlias = A+A
 
 # Test that we support partially bound parameters.
@@ -218,7 +218,7 @@ fn fnToCall[size: Index, arr: __mlir_type[`!pop.array<`, size, `, f32>`]]():
 # CHECK: lit.fn @"fnWithCall{{.*}}"<array: array<10, f32>
 fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<10, :array<10, f32> array>()
-   fnToCall[Int(10).value, array]()
+   fnToCall[Int(10)._mlir_value, array]()
 
 # CHECK-LABEL: lit.fn @"meta_str{{.*}}"<[""]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
@@ -242,7 +242,7 @@ fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
 
 # CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: {{.*}}@StringLiteral<:string *"value`">>()
 fn my_constrained[cond: Bool, message: StringLiteral]():
-    # CHECK: kgen.param.assert <#lit.struct.extract<:!Bool cond, "value">>, *"value`"
+    # CHECK: kgen.param.assert <#lit.struct.extract<:!Bool cond, "_mlir_value">>, *"value`"
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
@@ -462,7 +462,7 @@ fn callMemoryValueParam():
     memoryParam[MemoryType(22)]()
 
     # CHECK: dontFoldMemoryCall{{.*}}{42})))
-    alias dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42)).value
+    alias dontFoldMemoryCall = readMemoryValue(NonMovableMemoryType(42))._mlir_value
 
 # CHECK-LABEL: lit.fn @"memoryParam{{.*}}"<value: !MemoryType>()
 fn memoryParam[value: MemoryType]():
@@ -661,7 +661,7 @@ alias FORTY_TWO = 42
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int v, "value">, 42)}>
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{_mlir_value = add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)}>
   alias member = v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
@@ -685,9 +685,9 @@ struct MyDType:
   fn __eq__(self, rhs: MyDType) -> Bool:
      return __mlir_attr.true
 
-  alias ui8 = MyDType(Int(1).value)
-  alias float32 = MyDType(Int(2).value)
-  alias float64 = MyDType(Int(3).value)
+  alias ui8 = MyDType(Int(1)._mlir_value)
+  alias float32 = MyDType(Int(2)._mlir_value)
+  alias float64 = MyDType(Int(3)._mlir_value)
 
 struct MyVector[size: Int, dtype: MyDType]:
     pass
@@ -699,10 +699,10 @@ fn testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
 struct UnqualAliasLookup[param: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int param, "value">, 1)}>
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}>
   alias member = param+1
   fn get(self) -> Int:
-    # CHECK: %0 = kgen.param.constant: !Int = <{value = add(#lit.struct.extract<:!Int param, "value">, 1)}>
+    # CHECK: %0 = kgen.param.constant: !Int = <{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}>
     return Self.member
 
 ##===----------------------------------------------------------------------===##
@@ -837,11 +837,11 @@ fn form_reference_to_overloaded():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
+  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]):
       pass
 
   @staticmethod
-  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
+  fn thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]):
       return
 
 fn callee1[size: Int](v: StaticVec[size]): pass
@@ -860,7 +860,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(a)
   # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int size>(%b)
   callee1(b)
-  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int {value = add(#lit.struct.extract<:!Int size, "value">, 2)}>(%b2)
+  # CHECK-NEXT: lit.call @{{.*}}callee1{{.*}}<:!Int {_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}>(%b2)
   callee1(b2)
   # CHECK-NEXT: lit.call @{{.*}}callee2{{.*}}<:type @parameters::@StaticVec<:!Int size>{{.*}}>(%b)
   callee2(b)
@@ -874,7 +874,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 @fieldwise_init
 @register_passable("trivial")
 struct Abstraction[a: Int]:
-  alias val = a.value
+  alias val = a._mlir_value
 
   @implicit
   fn __init__(out self, arg: Int):
@@ -889,10 +889,10 @@ struct Abstraction[a: Int]:
       return
 
 # CHECK-LABEL: lit.fn @"testDependentType{{.*}}"<
-# CHECK-SAME: rank: !Int, shape: array<#lit.struct.extract<:!Int rank, "value">
+# CHECK-SAME: rank: !Int, shape: array<#lit.struct.extract<:!Int rank, "_mlir_value">
 fn testDependentType[
     rank: Int,
-    shape: __mlir_type[`!pop.array<`, rank.value, `, index>`],
+    shape: __mlir_type[`!pop.array<`, rank._mlir_value, `, index>`],
 ]():
     pass
 

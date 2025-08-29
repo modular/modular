@@ -83,7 +83,7 @@ fn function():
                   [](const lsp::CompletionList &completion) {
                     EXPECT_TRUE(llvm::any_of(
                         completion.items, [](const lsp::CompletionItem &item) {
-                          return item.label == "value" &&
+                          return item.label == "_mlir_value" &&
                                  item.kind == lsp::CompletionItemKind::Field;
                         }));
                   })

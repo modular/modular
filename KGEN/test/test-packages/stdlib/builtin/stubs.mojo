@@ -37,7 +37,7 @@ alias `False` = __mlir_attr.`0 : i1`
 struct Origin[mut: Bool]:
     alias _mlir_type = __mlir_type[
         `!lit.origin<`,
-        mut.value,
+        mut._mlir_value,
         `>`,
     ]
 
@@ -64,7 +64,7 @@ struct _lit_mut_cast[
         `#lit.origin.mutcast<`,
         operand._mlir_origin,
         `> : !lit.origin<`,
-        result_mutable.value,
+        result_mutable._mlir_value,
         `>`,
     ]
 
@@ -264,12 +264,12 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
 
 @register_passable("trivial")
 struct FloatDyn:
-    var value: __mlir_type.`!pop.scalar<f64>`
+    var _mlir_value: __mlir_type.`!pop.scalar<f64>`
 
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<f64>`):
-        self.value = value
+        self._mlir_value = value
 
     @always_inline("builtin")
     @implicit
@@ -286,35 +286,37 @@ struct FloatDyn:
 
 @register_passable("trivial")
 struct Int(AnyRPTrivialType, Copyable):
-    var value: Index
+    var _mlir_value: Index
 
     @always_inline("builtin")
     fn __init__(out self):
-        self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
+        self._mlir_value = __mlir_op.`index.constant`[
+            value = __mlir_attr.`0:index`
+        ]()
 
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Index):
-        self.value = value
+        self._mlir_value = value
 
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: IntLiteral[_]):
-        self.value = __mlir_attr[
+        self._mlir_value = __mlir_attr[
             `#pop<int_literal_convert<`, +value.value, `, 0>> : index`
         ]
 
     @always_inline("builtin")
     fn __add__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.add`(lhs.value, rhs.value)
+        return __mlir_op.`index.add`(lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __sub__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.sub`(lhs.value, rhs.value)
+        return __mlir_op.`index.sub`(lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __mul__(lhs, rhs: Int) -> Int:
-        return __mlir_op.`index.mul`(lhs.value, rhs.value)
+        return __mlir_op.`index.mul`(lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     fn __iadd__(mut self, rhs: Int):
@@ -324,19 +326,19 @@ struct Int(AnyRPTrivialType, Copyable):
     fn __eq__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate eq>`
-        ](lhs.value, rhs.value)
+        ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __lt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
-        ](rhs.value, lhs.value)
+        ](rhs._mlir_value, lhs._mlir_value)
 
     @always_inline("builtin")
     fn __gt__(lhs, rhs: Int) -> Bool:
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
-        ](lhs.value, rhs.value)
+        ](lhs._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __bool__(self) -> Bool:
@@ -344,7 +346,7 @@ struct Int(AnyRPTrivialType, Copyable):
 
     @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
-        return self.value
+        return self._mlir_value
 
 
 @register_passable("trivial")
@@ -492,20 +494,20 @@ struct String(Copyable, KeyElement):
 
 @register_passable("trivial")
 struct Bool(AnyRPTrivialType):
-    var value: __mlir_type.i1
+    var _mlir_value: __mlir_type.i1
 
     @always_inline("builtin")
     fn __init__(out self):
-        self.value = __mlir_attr.`0 : i1`
+        self._mlir_value = __mlir_attr.`0 : i1`
 
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: __mlir_type.i1):
-        self.value = value
+        self._mlir_value = value
 
     @always_inline("builtin")
     fn __mlir_i1__(self) -> __mlir_type.i1:
-        return self.value
+        return self._mlir_value
 
     @always_inline("builtin")
     fn __bool__(self) -> Bool:
@@ -513,11 +515,11 @@ struct Bool(AnyRPTrivialType):
 
     @always_inline("builtin")
     fn __invert__(self) -> Bool:
-        return __mlir_op.`pop.xor`(self.value, __mlir_attr.true)
+        return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
 
     @always_inline("builtin")
     fn __and__(self, rhs: Bool) -> Bool:
-        return __mlir_op.`pop.and`(self.value, rhs.value)
+        return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
 
 
 @register_passable("trivial")
@@ -660,7 +662,7 @@ struct _lit_origin_union[
         `,`,
         b,
         `> : !lit.origin<`,
-        mut.value,
+        mut._mlir_value,
         `>`,
     ]
 
@@ -767,9 +769,7 @@ struct VariadicPack[
     fn __init__(out self, value: Self._mlir_pack_type):
         pass
 
-    fn __getitem__[
-        index: Int
-    ](self) -> ref [Self.origin] element_types[index.value]:
+    fn __getitem__[index: Int](self) -> ref [Self.origin] element_types[index]:
         while True:
             pass
 
@@ -822,7 +822,7 @@ struct AddressSpace:
 
     @always_inline("builtin")
     fn __index__(self) -> __mlir_type.index:
-        return self._value.value
+        return self._value._mlir_value
 
 
 @register_passable("trivial")
@@ -838,7 +838,7 @@ struct Pointer[
         `, `,
         origin._mlir_origin,
         `, `,
-        address_space._value.value,
+        address_space._value._mlir_value,
         `>`,
     ]
 
@@ -850,7 +850,9 @@ struct Pointer[
         self._value = _mlir_value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, ref [origin, address_space._value.value]to: type):
+    fn __init__(
+        out self, *, ref [origin, address_space._value._mlir_value]to: type
+    ):
         """Constructs a Pointer from a reference to a value.
 
         Args:
@@ -897,7 +899,7 @@ struct Tuple[*element_types: AnyType]:
     fn __moveinit__(out self, deinit existing: Self):
         pass
 
-    fn __getitem__[i: Int](ref self) -> ref [self] element_types[i.value]:
+    fn __getitem__[i: Int](ref self) -> ref [self] element_types[i]:
         while __mlir_attr.true:
             pass
 
@@ -911,7 +913,7 @@ struct UnsafePointer[
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
 ]:
     alias _mlir_type = __mlir_type[
-        `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
+        `!kgen.pointer<`, T, `,`, address_space._value._mlir_value, `>`
     ]
     var address: Self._mlir_type
 
@@ -924,7 +926,7 @@ struct UnsafePointer[
         self.address = value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, ref [address_space._value.value]to: T):
+    fn __init__(out self, *, ref [address_space._value._mlir_value]to: T):
         """Constructs a Pointer from a reference to a value.
 
         Args:

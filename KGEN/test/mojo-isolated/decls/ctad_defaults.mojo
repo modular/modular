@@ -8,6 +8,7 @@
 
 # COM: Verify kw-only defaults are searched during binding verification.
 
+
 struct MyUnsafePointer[
     type: AnyType,
     x: Int = 3,
@@ -15,12 +16,13 @@ struct MyUnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = False,
     alignment: Int = 1,
-    lifetime: Origin[True]._mlir_type = MutableAnyOrigin]:
+    lifetime: Origin[True]._mlir_type = MutableAnyOrigin,
+]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`,
         type,
         `, `,
-        address_space._value.value,
+        address_space._value._mlir_value,
         `>`,
     ]
     var address: Self._mlir_type
@@ -29,6 +31,7 @@ struct MyUnsafePointer[
     @implicit
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
+
 
 # CHECK-LABEL: lit.fn @"unsafe_ptr
 fn unsafe_ptr(s: __mlir_type.`!kgen.string`):
