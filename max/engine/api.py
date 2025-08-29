@@ -266,6 +266,7 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        kernel_logging: bool | None = None,
     ) -> None:
         """Construct an inference session.
 
@@ -277,11 +278,18 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
+            kernel_logging: Enable kernel execution logging. If None,
+              defaults to MAX_LOG_KERNELS environment variable. Kernel logging
+              will emit information about each kernel launch and completion to
+              stderr. Note: this can be a lot of output, so use with caution.
         """
         config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
+
+        if kernel_logging is not None:
+            config["kernel_logging"] = kernel_logging
 
         # Process the provided iterable `devices`.
         final_devices: list[Device] = []
