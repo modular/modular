@@ -66,6 +66,10 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
 
     // Dig through some names we know about.
     while (field && !field->IsScalarType() && !field->IsPointerType()) {
+      if (auto member = field->GetChildMemberWithName("_mlir_value")) {
+        field = member;
+        continue;
+      }
       if (auto member = field->GetChildMemberWithName("value")) {
         field = member;
         continue;

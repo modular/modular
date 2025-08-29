@@ -127,7 +127,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     auto extractInt = digOutSingleField(value, "_value", loc, shared);
     if (!extractInt)
       return {};
-    auto extractIndex = digOutSingleField(extractInt, "value", loc, shared);
+    auto extractIndex =
+        digOutSingleField(extractInt, "_mlir_value", loc, shared);
     if (!extractIndex)
       return {};
     if (extractIndex.getType().isIndex())

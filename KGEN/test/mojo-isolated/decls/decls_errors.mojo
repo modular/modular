@@ -280,7 +280,7 @@ fn badPackCalls(value: Int):
   # expected-error @+1 {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 2 positional operands, but 1 was specified}}
   examplePack[Int, FloatDyn](1)
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
-  examplePack[Int, FloatDyn](1, Int(2).value)
+  examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
   # expected-error @below {{invalid call to 'examplePack': could not deduce parameter 'Ts' of callee 'examplePack'}}
   # expected-note @below {{failed to infer parameter 'Ts', parameter isn't used in any argument}}
@@ -719,7 +719,7 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   @implicit
-  fn __init__(out self, elem: BadInit[Int(1).value]):
+  fn __init__(out self, elem: BadInit[Int(1)._mlir_value]):
     var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
     self = x

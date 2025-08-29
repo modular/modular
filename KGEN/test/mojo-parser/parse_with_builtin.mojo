@@ -8,7 +8,7 @@
 
 
 # CHECK-LABEL: lit.fn @"import_of_import
-# CHECK-SAME: #SIMD <:!DType {_mlir_value: dtype = f64}, :!Int {1}>
+# CHECK-SAME: #SIMD <:!DType {:dtype f64}, :!Int {1}>
 fn import_of_import(arg: Float64):
     pass
 
@@ -39,6 +39,6 @@ fn testSIMDGetter[
     # CHECK: %[[AVAL:.*]] = lit.ref.load %a
     # CHECK: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])
-    # CHECK: %[[RES:.*]] = lit.struct.extract %[[GOT]][value]
+    # CHECK: %[[RES:.*]] = lit.struct.extract %[[GOT]][_mlir_value]
     # CHECK: lit.return %[[RES]]
-    return a[0].value
+    return a[0]._mlir_value

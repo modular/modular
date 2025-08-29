@@ -6,7 +6,10 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-struct MemExample: pass
+
+struct MemExample:
+    pass
+
 
 fn return_generic_memory_only[T: AnyType]() -> T:
     pass
@@ -33,6 +36,7 @@ fn var_decls():
     z = `42`
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
+
 
 # CHECK-LABEL: lit.fn @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
@@ -80,9 +84,11 @@ fn test_shadowing_reference_shadowed(cond: Bool):
     if cond:
         var num = fudge_int(`42`)
 
+
 # ===----------------------------------------------------------------------=== #
 # Implicitly declared variables.
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK-LABEL: lit.fn @"var_decls_implicit()
 def var_decls_implicit() -> None:
@@ -95,56 +101,63 @@ def var_decls_implicit() -> None:
     x = fudge_int(`42`)
 
 
-fn use_int(x: Int): pass
+fn use_int(x: Int):
+    pass
+
 
 # Check implicit values are declared at top level where they belong.
 # https://github.com/modularml/modular/issues/34368
 
+
 # CHECK-LABEL: lit.fn @"walrus_control_flow
 def walrus_control_flow(a: Int):
-   # CHECK: %b = lit.var.decl
-   # CHECK: %curr = lit.var.decl "curr"
-   curr = a
+    # CHECK: %b = lit.var.decl
+    # CHECK: %curr = lit.var.decl "curr"
+    curr = a
 
-   # CHECK: lit.loop cond {
-   # CHECK-NEXT: lit.ref.load %curr
-   while b := curr + 1:
-   # CHECK: } body {
-   # CHECK-NEXT: lit.ref.load %b
-     use_int(b)
-     curr = b
+    # CHECK: lit.loop cond {
+    # CHECK-NEXT: lit.ref.load %curr
+    while b := curr + 1:
+        # CHECK: } body {
+        # CHECK-NEXT: lit.ref.load %b
+        use_int(b)
+        curr = b
+
 
 # Check that we only get one implicit declaration and all three scopes use it.
 # CHECK-LABEL: lit.fn @"reuse_implicit
 def reuse_implicit(a: Int, cond: __mlir_type.i1):
-  # CHECK: %implicit = lit.var.decl
+    # CHECK: %implicit = lit.var.decl
 
-  # CHECK: hlcf.elif
-  if cond:
-      # CHECK: lit.ref.store %a, %implicit :
-      implicit = a
-      # CHECK: lit.ref.load %implicit :
-      use_int(implicit)
+    # CHECK: hlcf.elif
+    if cond:
+        # CHECK: lit.ref.store %a, %implicit :
+        implicit = a
+        # CHECK: lit.ref.load %implicit :
+        use_int(implicit)
 
-  # CHECK: hlcf.elif
-  if cond:
-      # CHECK: lit.ref.store %a, %implicit :
-      implicit = a
-      # CHECK: lit.ref.load %implicit :
-      use_int(implicit)
+    # CHECK: hlcf.elif
+    if cond:
+        # CHECK: lit.ref.store %a, %implicit :
+        implicit = a
+        # CHECK: lit.ref.load %implicit :
+        use_int(implicit)
 
-  # CHECK: lit.ref.store %a, %implicit :
-  implicit = a
-  # CHECK: lit.ref.load %implicit :
-  use_int(implicit)
+    # CHECK: lit.ref.store %a, %implicit :
+    implicit = a
+    # CHECK: lit.ref.load %implicit :
+    use_int(implicit)
+
 
 # CHECK-LABEL: lit.fn @"addrSpaces
 fn addrSpaces[lt1: MutableOrigin, lt2: ImmutableOrigin, as1: AddressSpace]():
-  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
-  var ref1 : Pointer[MemExample, lt1, as1]._mlir_type
+    # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "_mlir_value">>
+    var ref1: Pointer[MemExample, lt1, as1]._mlir_type
 
-  # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
-  alias as2: AddressSpace = AddressSpace(42)
+    # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
+    alias as2: AddressSpace = AddressSpace(42)
 
-  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, 42>
-  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, +as2._value.value, `>`]
+    # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, 42>
+    var ref2: __mlir_type[
+        `!lit.ref<`, MemExample, `, `, lt2, `, `, +as2._value._mlir_value, `>`
+    ]

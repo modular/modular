@@ -153,7 +153,7 @@ fn function(arg: Int):
     );
     assert.ok(
       completions.some(
-        (i) => i.label === "value" && i.kind! == CompletionItemKind.Field
+        (i) => i.label === "_mlir_value" && i.kind! == CompletionItemKind.Field
       )
     );
   });
@@ -184,7 +184,7 @@ fn function() -> Int:
     );
   });
 
-  it("should not regress MOTO-767", async function() {
+  it("should not regress MOTO-767", async function () {
     let doc = new Document(
       server,
       "test:///moto-767.mojo",

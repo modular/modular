@@ -46,8 +46,8 @@ fn implicit_owned(var a: MemExample):
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.fn @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>)
-# CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>)
+# CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "_mlir_value">, life>
 fn parametricMut[isMut: Bool,
                  life: Origin[isMut]._mlir_type](a: Pointer[MemExample, life]._mlir_type)
    -> Pointer[MemExample, life]._mlir_type:
@@ -277,7 +277,7 @@ struct CutDownVariadicPack[element_trait: __type_of(AnyType),
         func(self.get_element[i]()[])
 
     fn get_element[index: Int](self) -> Pointer[
-        element_types[index.value],
+        element_types[index],
         __origin_of(self),
     ]:
        while True: pass
@@ -290,7 +290,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "value">,
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "_mlir_value">,
   # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
   return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
