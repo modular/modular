@@ -165,6 +165,27 @@ platform(
 )
 
 platform(
+    name = "b200-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
     name = "mi300-platform",
     constraint_values = [
         "@platforms//cpu:x86_64",
