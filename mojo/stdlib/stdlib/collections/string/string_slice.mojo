@@ -80,6 +80,80 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
 
 
+@fieldwise_init
+struct _SplitlinesIter[
+    is_mutable: Bool, //,
+    origin: Origin[is_mutable],
+    *,
+    keep_ends: Bool = False,
+    forward: Bool = True,
+](Copyable, Movable):
+    """Iterator for `StringSlice` over unicode line breaks.
+
+    Parameters:
+        is_mutable: Whether the slice is mutable.
+        origin: The origin of the underlying string data.
+        keep_ends: Whether to keep the line breaks in the resulting slices.
+        forward: The iteration direction. `False` is backwards.
+    """
+
+    var _slice: StringSlice[origin]
+
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(mut self) -> StringSlice[origin]:
+        alias `\r` = UInt8(ord("\r"))
+        alias `\n` = UInt8(ord("\n"))
+
+        # highly performance sensitive code, benchmark before touching
+        @parameter
+        if forward:
+            var ptr = self._slice.unsafe_ptr()
+            var length = UInt(self._slice.byte_length())
+            var line_end = UInt(0)
+            var is_new_line = False
+            var b0 = Byte(0)
+            var char_len = UInt(0)
+
+            while not is_new_line and line_end < length:
+                b0 = ptr[line_end]
+                char_len = _utf8_first_byte_sequence_length(b0)
+                debug_assert(
+                    line_end + char_len <= length,
+                    "corrupted sequence causing unsafe memory access",
+                )
+                # percentage-wise a newline is uncommon compared to a normal byte
+                is_new_line = unlikely(
+                    _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                )
+                line_end += char_len
+
+            var str_len = line_end
+            var is_r = unlikely(b0 == `\r`)
+            var may_be_r_n = is_r and likely(line_end < length)
+            var is_r_n = UInt(unlikely(may_be_r_n and ptr[line_end] == `\n`))
+            line_end += is_r_n
+
+            @parameter
+            if keep_ends:
+                str_len += is_r_n
+            else:
+                str_len -= UInt(splat(likely(is_new_line))) & char_len
+
+            self._slice = StringSlice[origin](
+                ptr=ptr + line_end, length=length - line_end
+            )
+            return StringSlice[origin](ptr=ptr, length=str_len)
+        else:
+            constrained[False, "reversed splitlines is not yet implemented"]()
+            return abort[StringSlice[origin]]()
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self._slice.byte_length() > 0
+
+
 struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
@@ -305,6 +379,25 @@ struct CodepointSliceIter[
             self._slice._slice._len -= slice_len
 
         return result
+
+    fn splitlines[
+        keep_ends: Bool = False
+    ](var self: CodepointSliceIter[forward=True]) -> _SplitlinesIter[
+        origin, keep_ends=keep_ends, forward=True
+    ]:
+        """Split the string at line boundaries. This corresponds to Python's
+        [universal newlines:](
+        https://docs.python.org/3/library/stdtypes.html#str.splitlines)
+        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
+
+        Parameters:
+            keep_ends: Whether to keep the line breaks in the resulting slices.
+
+        Returns:
+            An iterator of StringSlices over the input split by line boundaries.
+        """
+        alias S = _SplitlinesIter[origin, keep_ends=keep_ends, forward=True]
+        return S(rebind[StringSlice[S.origin]](self._slice))
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
@@ -2068,7 +2161,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 offset += b_len
             return length != 0
 
-    fn splitlines(self, keepends: Bool = False) -> List[Self.Immutable]:
+    fn splitlines(self, keepends: Bool = False, out res: List[Self.Immutable]):
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -2081,72 +2174,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             A List of Strings containing the input split by line boundaries.
         """
 
-        # highly performance sensitive code, benchmark before touching
-        alias `\r` = UInt8(ord("\r"))
-        alias `\n` = UInt8(ord("\n"))
-
-        var output = List[Self.Immutable](capacity=128)  # guessing
-        var ptr = self.get_immutable().unsafe_ptr()
-        var length = self.byte_length()
-        var line_start = UInt(0)
-        var prev_b0 = Byte(0)
-
-        @always_inline
-        @parameter
-        fn _splitlines[keep: Bool]():
-            while line_start < UInt(length):
-                var line_end = line_start
-                var is_new_line = False
-                var b0 = Byte(0)
-                var char_len = UInt(0)
-
-                while not is_new_line and line_end < UInt(length):
-                    b0 = ptr[line_end]
-                    char_len = _utf8_first_byte_sequence_length(b0)
-                    debug_assert(
-                        line_end + char_len <= UInt(length),
-                        "corrupted sequence causing unsafe memory access",
-                    )
-                    # percentage-wise a newline is uncommon compared to a normal byte
-                    is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
-                    )
-                    line_end += char_len
-
-                var str_len = line_end - line_start
-
-                # NOTE: when keep=True the algorithm needs to check the next
-                # character to see whether it is \r\n due to having to store the
-                # full line + the line ending.
-                # When keep=False it is much faster because the previous
-                # character is stored in a variable instead of having to deref a
-                # pointer
-                @parameter
-                if keep:
-                    var is_r = unlikely(b0 == `\r`)
-                    var may_be_r_n = is_r and likely(line_end < UInt(length))
-                    var is_r_n = UInt(
-                        unlikely(may_be_r_n and ptr[line_end] == `\n`)
-                    )
-                    line_end += is_r_n
-                    str_len += is_r_n
-                else:
-                    str_len -= UInt(splat(likely(is_new_line))) & char_len
-                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
-                    prev_b0 = b0
-                    if is_r_n:  # the line was already appended
-                        line_start = line_end
-                        continue
-                var s = Self.Immutable(ptr=ptr + line_start, length=str_len)
-                output.append(s)
-                line_start = line_end
-
+        res = List[Self.Immutable](capacity=128)  # guessing
         if keepends:
-            _splitlines[keep=True]()
+            for s in self.codepoint_slices().splitlines[keep_ends=True]():
+                res.append(s)
         else:
-            _splitlines[keep=False]()
-
-        return output^
+            for s in self.codepoint_slices().splitlines[keep_ends=False]():
+                res.append(s)
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring

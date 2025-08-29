@@ -160,7 +160,7 @@ fn bench_string_splitlines[
     @always_inline
     @parameter
     fn call_fn() raises:
-        for _ in range(1_000_000 // length):
+        for _ in range(10**6 // length):
             var res = items.splitlines()
             keep(res.unsafe_ptr())
 
@@ -457,4 +457,14 @@ def main():
         BenchId(String("bench_string_join_long"))
     )
 
-    print(m)
+    # NOTE: do not replace this for print(m). This averages all the results for
+    # the different languages and runs that these benchmarks evaluate.
+    results = Dict[String, (Float64, Int)]()
+    for info in m.info_vec:
+        n = info.name
+        time = info.result.mean("ms")
+        avg, amnt = results.get(n, (Float64(0), 0))
+        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+    print("")
+    for k_v in results.items():
+        print(k_v.key, k_v.value[0], sep=",")
