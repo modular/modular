@@ -44,14 +44,14 @@ fn make_string[
 
         @parameter
         if length > 0:
-            var items = f.read_bytes(Int(length))
+            var items = f.read(Int(length))
             i = 0
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
-            return String(bytes=items)
+            return String(items)
         else:
-            return String(bytes=f.read_bytes())
+            return f.read()
     except e:
         print(e, file=stderr)
     return abort[String]()
