@@ -137,4 +137,4 @@ from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
 
 from io import Writable, Writer
 
-from iter import Iterator, Iterable, iter, next
+from iter import Iterator, Iterable, iter, next, enumerate
