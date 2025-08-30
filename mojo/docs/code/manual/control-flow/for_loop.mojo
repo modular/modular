@@ -28,7 +28,7 @@ def main():
         "Oregon": "Salem",
     }
 
-    for state in capitals:
+    for var state in capitals:
         print(capitals[state] + ", " + state)
 
     for item in capitals.items():

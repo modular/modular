@@ -358,6 +358,8 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 
 ### 🛠️ Fixed
 
+- Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__`
+  always returns immutable references.
 - Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
   inferred for `__getitem__` if `[]` operator is used and `__setitem__` is present.
 - Fixed <https://github.com/modular/modular/issues/5190>

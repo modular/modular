@@ -76,6 +76,11 @@ def test_basic():
     assert_equal(1, dict["a"])
     assert_equal(2, dict["b"])
 
+    ptr = Pointer(to=dict["a"])
+    assert_equal(1, ptr[])
+    ptr[] = 17
+    assert_equal(17, dict["a"])
+
 
 def test_basic_no_copies():
     var dict = Dict[String, Int]()
