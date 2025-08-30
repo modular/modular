@@ -220,3 +220,24 @@ trait Iterator(Movable):
 
     fn __next__(mut self) -> Self.Element:
         ...
+
+
+trait DeletableItem:
+    """The `DeletableItem` trait describes a type that can delete items from a indexed collection.
+    """
+
+    fn __delitem__(mut self, i: Int) -> None:
+        """Delete an item from the collection.
+
+        Args:
+            i: The index of the item to delete.
+        """
+        ...
+
+    fn __delitem__(mut self, slice: Slice) -> None:
+        """Delete a slice of items from the collection.
+
+        Args:
+            slice: The slice of items to delete.
+        """
+        ...

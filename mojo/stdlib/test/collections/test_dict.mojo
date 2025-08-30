@@ -673,6 +673,22 @@ def test_dict_repr_wrap():
     )
 
 
+def test_dict_delitem():
+    var dict: Dict[String, String] = {}
+    dict["mojo"] = "lang"
+    dict["max"] = "engine"
+
+    assert_equal(len(dict), 2)
+    assert_equal(dict["mojo"], "lang")
+
+    dict.__delitem__("mojo")  # del dict["mojo"]
+
+    assert_equal(len(dict), 1)
+
+    with assert_raises(contains="KeyError"):
+        _ = dict["mojo"]
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -690,3 +706,4 @@ def main():
     test_compile_time_dict()
     test_dict_comprehension()
     test_dict_repr_wrap()
+    test_dict_delitem()
