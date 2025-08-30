@@ -37,7 +37,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](Copyable, Iterable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:
@@ -51,11 +51,13 @@ struct _ListIter[
 
     alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
 
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+
     var index: Int
     var src: Pointer[List[Self.Element, hint_trivial_type], origin]
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -81,7 +83,13 @@ struct _ListIter[
 
 
 struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
-    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
+    Boolable,
+    Copyable,
+    Defaultable,
+    ExplicitlyCopyable,
+    Iterable,
+    Movable,
+    Sized,
 ):
     """A dynamically-allocated and resizable list.
 
@@ -241,6 +249,10 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     """The number of elements in the list."""
     var capacity: Int
     """The amount of elements that can fit in the list without resizing it."""
+
+    alias IteratorType[
+        mut: Bool, //, origin: Origin[mut]
+    ]: Iterator = _ListIter[T, hint_trivial_type, origin, True]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -494,13 +506,13 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
         self.extend(other^)
 
-    fn __iter__(ref self) -> _ListIter[T, hint_trivial_type, __origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return _ListIter(0, Pointer(to=self))
+        return {0, Pointer(to=self)}
 
     fn __reversed__(
         ref self,

@@ -153,6 +153,8 @@ language across multiple phases.
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 
+- There is now an `iter` module which exposes the `next` and `iter` methods.
+
 - The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
   all types that can be implicitly copied may also be copied using an explicit
   `.copy()` method call.
