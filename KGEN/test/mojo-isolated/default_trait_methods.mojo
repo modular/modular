@@ -66,7 +66,7 @@ struct Zork(Copyable, Movable):
 trait AA1:
     alias X: Copyable
 
-    fn zork(self, x: X) -> X:
+    fn zork(self, x: Self.X) -> Self.X:
         return x
 
 

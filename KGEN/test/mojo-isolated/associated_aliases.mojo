@@ -107,7 +107,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasArgMethod:
     alias T: ATrait
 
-    fn lork(self, thing: SIMD[T]):
+    fn lork(self, thing: SIMD[Self.T]):
         ...
 
 
@@ -157,7 +157,7 @@ trait TraitWithAliasArgMethod:
     alias T: ATrait
 
     @staticmethod
-    fn lork(thing: SIMD[T]):
+    fn lork(thing: SIMD[Self.T]):
         ...
 
 
@@ -203,7 +203,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasArgMethod:
     alias T: ATrait
 
-    fn lork(self, thing: SIMD[T]):
+    fn lork(self, thing: SIMD[Self.T]):
         ...
 
 
@@ -241,7 +241,7 @@ trait TraitWithAliasArgMethod:
     alias T: ATrait
 
     @staticmethod
-    fn lork(thing: SIMD[T]):
+    fn lork(thing: SIMD[Self.T]):
         ...
 
 
@@ -279,7 +279,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
-    fn bork(self) -> SIMD[T]:
+    fn bork(self) -> SIMD[Self.T]:
         ...
 
 
@@ -331,7 +331,7 @@ trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
     @staticmethod
-    fn bork() -> SIMD[T]:
+    fn bork() -> SIMD[Self.T]:
         ...
 
 
@@ -371,7 +371,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
-    fn bork(self) -> SIMD[T]:
+    fn bork(self) -> SIMD[Self.T]:
         ...
 
 
@@ -401,7 +401,7 @@ trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
     @staticmethod
-    fn bork() -> SIMD[T]:
+    fn bork() -> SIMD[Self.T]:
         ...
 
 
@@ -438,7 +438,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
-    fn bork(self) -> SIMD[T]:
+    fn bork(self) -> SIMD[Self.T]:
         ...
 
 
@@ -491,7 +491,7 @@ trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
     @staticmethod
-    fn bork() -> SIMD[T]:
+    fn bork() -> SIMD[Self.T]:
         ...
 
 
@@ -663,8 +663,8 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     # CHECK: kgen.witness "bork" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork(
     alias T: ATrait = Z
 
-    fn bork(self) -> SIMD[Self.Z]:
-        return SIMD[Z]()
+    fn bork(self) -> SIMD[Self.T]:
+        return SIMD[Self.T]()
 
 
 fn receiveTraitWithSelfDotAliasReturnMethod[
@@ -721,8 +721,8 @@ struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     alias T: ATrait = Z
 
     @staticmethod
-    fn bork() -> SIMD[Self.Z]:
-        return SIMD[Z]()
+    fn bork() -> SIMD[Self.T]:
+        return SIMD[Self.T]()
 
 
 fn receiveTraitWithSelfDotAliasReturnMethod[
@@ -764,7 +764,7 @@ struct SIMD[T: ATrait]:
 trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
-    fn bork(self) -> SIMD[T]:
+    fn bork(self) -> SIMD[Self.T]:
         ...
 
 
@@ -809,7 +809,7 @@ trait TraitWithAliasReturnMethod:
     alias T: ATrait
 
     @staticmethod
-    fn bork() -> SIMD[T]:
+    fn bork() -> SIMD[Self.T]:
         ...
 
 
@@ -845,7 +845,7 @@ trait FooTrait:
     alias dtype: ZInt
 
     @staticmethod
-    fn foo(x: Zcalar[dtype]):
+    fn foo(x: Zcalar[Self.dtype]):
         ...
 
 

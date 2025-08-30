@@ -229,7 +229,7 @@ fn rebind[
 trait ConvertibleToZPointer:
     alias Pointee: AnyType
 
-    fn to_zpointer(self) -> ZPointer[Pointee]:
+    fn to_zpointer(self) -> ZPointer[Self.Pointee]:
         pass
 
 

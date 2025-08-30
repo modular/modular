@@ -742,10 +742,12 @@ fn unqualifiedNameLookup(a: StructWithField):
   StructWithField.field
 
 struct DirectInstanceReference:
+  alias my_alias: Int = 8
   var value: Int
   fn fxn(self):
     # expected-error @+1 {{cannot access instance field 'value' directly; did you mean 'self.'?}}
     var xx = value
+    _ = my_alias  # expected-error {{cannot access alias 'my_alias' directly; did you mean 'Self.'?}}
 
   @staticmethod
   fn stat():
@@ -755,6 +757,18 @@ struct DirectInstanceReference:
     fxn(self) # expected-error {{cannot access method 'fxn' directly; did you mean 'self.'?}}
     stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
 
+trait DirectTraitMemberReference:
+  alias my_alias: Int
+  fn fxn(self):
+    _ = my_alias  # expected-error {{cannot access alias 'my_alias' directly; did you mean 'Self.'?}}
+
+  @staticmethod
+  fn stat():
+    _ = fxn  # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
+
+  fn direct_ref(self):
+    fxn(self) # expected-error {{cannot access method 'fxn' directly; did you mean 'Self.'?}}
+    stat() # expected-error {{cannot access method 'stat' directly; did you mean 'Self.'?}}
 
 fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
