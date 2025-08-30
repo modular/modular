@@ -2904,10 +2904,8 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
       return {};
 
     PValue lhsPV = emitter.emitPValue({lhsV, lhs}, EC_OperatorOperandValue);
-    if (!lhsPV)
-      return {};
     PValue rhsPV = emitter.emitPValue({rhsV, rhs}, EC_OperatorOperandValue);
-    if (!rhsPV)
+    if (!lhsPV || !rhsPV)
       return {};
 
     if (kind == kBoolOr) // and/or swap true/false operands
@@ -3238,25 +3236,44 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
 AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
 
+  // This function is used to get a CValue for an operand, inferring the type of
+  // a UValue from the other operand if not present.  This allows us to handle
+  // things like "Int() if cond else {}".
+  auto emitToCValueInferringType = [&](ASTExprAnd<AnyValue> value,
+                                       AnyValue otherValue) -> CValue {
+    // If we already have a CValue, leave it alone so we get coercion between
+    // two concrete types.
+    if (auto cVal = value.ir.getIfCValue())
+      return cVal;
+    // If the other operand is a CValue, use its type.
+    if (auto otherCVal = otherValue.getIfCValue())
+      return emitter.emitCValue(value, EC_CondExpr, otherCVal.getRValueType());
+    // Otherwise just emit it to get an error message.
+    return emitter.emitCValue(value, EC_CondExpr);
+  };
+
   // Inside a parameter context, emit conditional expression.
   if (!emitter.builder) {
     PValue condPVal =
         emitter.emitPValue({condRVal, condExpr}, EC_BoolCondition);
     if (!condPVal)
       return {};
-
-    CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
-    CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
-
+    // Emit the expressions.
+    AnyValue trueRawVal = emitter.emitExpr(trueExpr, EC_CondExpr);
+    AnyValue falseRawVal = emitter.emitExpr(falseExpr, EC_CondExpr);
+    // Get CValues, resolving a UValue to the other operand's type.
+    CValue trueVal =
+        emitToCValueInferringType({trueRawVal, trueExpr}, falseRawVal);
+    CValue falseVal =
+        emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
+    // Coerce the types to each other if they disagree.
     if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
                                        falseExpr, {}))
       return {};
 
     PValue truePVal = emitter.emitPValue({trueVal, trueExpr}, EC_CondExpr);
-    if (!truePVal)
-      return {};
     PValue falsePVal = emitter.emitPValue({falseVal, falseExpr}, EC_CondExpr);
-    if (!falsePVal)
+    if (!truePVal || !falsePVal)
       return {};
 
     auto value =
@@ -3277,13 +3294,20 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto ifOp = emitter.builder->create<HLCF::IfOp>(
       ifLoc, TypeRange{condValue.getType()}, condValue);
 
-  // Emit the trueVal and falseVal's but don't check for error or emit the
-  // yield yet.
+  // Emit the trueVal and falseVal's, coercing any UValue to the other operand
+  // type if present, but otherwise not diagnosing conflicts or merging types
+  // yet.
   emitter.builder->createBlock(&ifOp.getThenRegion());
-  CValue trueVal = emitter.emitExprCValue(trueExpr, EC_CondExpr);
+  AnyValue trueRawVal = emitter.emitExpr(trueExpr, EC_CondExpr);
 
   emitter.builder->createBlock(&ifOp.getElseRegion());
-  CValue falseVal = emitter.emitExprCValue(falseExpr, EC_CondExpr);
+  AnyValue falseRawVal = emitter.emitExpr(falseExpr, EC_CondExpr);
+  // Get CValues, resolving a UValue to the other operand's type.
+  CValue falseVal =
+      emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
+  emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
+  CValue trueVal =
+      emitToCValueInferringType({trueRawVal, trueExpr}, falseRawVal);
 
   if (!trueVal || !falseVal) {
     emitter.builder->setInsertionPointAfter(ifOp);

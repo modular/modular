@@ -341,6 +341,12 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
   # CHECK:   hlcf.yield [[ARES]]
   # CHECK: }
 
+  # Infer UValues from CValues.
+  # https://github.com/modular/modular/issues/5239
+  _ = Int() if cond else {}
+  _ = {} if cond else Int()
+
+
 ##===----------------------------------------------------------------------===##
 # Chained comparisons.
 ##===----------------------------------------------------------------------===##
