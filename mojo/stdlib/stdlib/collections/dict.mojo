@@ -844,7 +844,7 @@ struct Dict[
 
         var i = 0
         for key_value in self.items():
-            result += repr(key_value.key) + ": " + repr(key_value.value)
+            result.write(repr(key_value.key), ": ", repr(key_value.value))
             if i < len(self) - 1:
                 result += ", "
             i += 1

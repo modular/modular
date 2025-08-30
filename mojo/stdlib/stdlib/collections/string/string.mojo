@@ -1997,9 +1997,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return '"' + result + '"'
+        return String('"', result, '"')
     else:
-        return "'" + result + "'"
+        return String("'", result, "'")
 
 
 # ===----------------------------------------------------------------------=== #

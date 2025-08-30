@@ -190,27 +190,31 @@ fn tcgen05_ld[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias shape_str = String(datapaths, "x", bits)
     alias num_str = String(repeat)
     alias pack_str = ".pack::16b" if pack else ""
     alias constraints_str = "=r," * width + "r"
-    alias output_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
-    alias addr_str = "[$" + String(width) + "]"
+    alias output_args_str = String(
+        "{", _str_iota[width, prefix="$", sep=","](), "}"
+    )
+    alias addr_str = String("[$", width, "]")
 
     @parameter
     @always_inline("nodebug")
     fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
-            "tcgen05.ld.sync.aligned."
-            + shape_str
-            + "b.x"
-            + num_str
-            + pack_str
-            + ".b32 "
-            + output_args_str
-            + ", "
-            + addr_str
-            + ";",
+            String(
+                "tcgen05.ld.sync.aligned.",
+                shape_str,
+                "b.x",
+                num_str,
+                pack_str,
+                ".b32 ",
+                output_args_str,
+                ", ",
+                addr_str,
+                ";",
+            ),
             pack_type,
             constraints=constraints_str,
             has_side_effect=True,
@@ -339,24 +343,26 @@ fn tcgen05_st[
         ),
     ]()
 
-    alias shape_str = String(datapaths) + "x" + String(bits)
+    alias shape_str = String(datapaths, "x", bits)
     alias num_str = String(repeat)
     alias pack_str = ".unpack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
-    alias addr_str = "[$" + String(width) + "]"
-    alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
+    alias addr_str = String("[$", width, "]")
+    alias input_args_str = String(
+        "{", _str_iota[width, prefix="$", sep=","](), "}"
+    )
 
-    alias asm_str = (
-        "tcgen05.st.sync.aligned."
-        + shape_str
-        + "b.x"
-        + num_str
-        + pack_str
-        + ".b32 "
-        + addr_str
-        + ", "
-        + input_args_str
-        + ";"
+    alias asm_str = String(
+        "tcgen05.st.sync.aligned.",
+        shape_str,
+        "b.x",
+        num_str,
+        pack_str,
+        ".b32 ",
+        addr_str,
+        ", ",
+        input_args_str,
+        ";",
     )
 
     # fmt: off
@@ -582,18 +588,18 @@ fn tcgen05_cp[
         ),
     ]()
 
-    alias asm_str = (
-        "tcgen05.cp.cta_group::"
-        + String(cta_group)
-        + "."
-        + String(datapaths)
-        + "x"
-        + String(bits)
-        + "b"
-        + ("" if (len(multicast) == 0) else "." + multicast)
-        + ("" if (len(dst_fmt) == 0) else "." + dst_fmt)
-        + ("" if (len(src_fmt) == 0) else "." + src_fmt)
-        + " [$0], $1;"
+    alias asm_str = String(
+        "tcgen05.cp.cta_group::",
+        cta_group,
+        ".",
+        datapaths,
+        "x",
+        bits,
+        "b",
+        ("" if (len(multicast) == 0) else String(".", multicast)),
+        ("" if (len(dst_fmt) == 0) else String(".", dst_fmt)),
+        ("" if (len(src_fmt) == 0) else String(".", src_fmt)),
+        " [$0], $1;",
     )
 
     inlined_assembly[

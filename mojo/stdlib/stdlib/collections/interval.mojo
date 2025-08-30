@@ -313,7 +313,7 @@ struct Interval[T: IntervalElement](
         Returns:
             A string in the format '(start, end)' representing this interval.
         """
-        return "Interval" + String.write(self) + ""
+        return String("Interval", self, "")
 
 
 struct _IntervalNode[
@@ -466,7 +466,7 @@ struct _IntervalNode[
             A string in the format '(start, end): data' representing this
             interval node.
         """
-        return "IntervalNode(" + String.write(self) + ")"
+        return String("IntervalNode(", String.write(self), ")")
 
     fn depth(self) -> Int:
         """Returns the depth of this interval node.

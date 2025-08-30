@@ -120,7 +120,7 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             ](a.dtype, b.dtype, c.dtype, d.dtype)
         ) and _has_shape[4](a.size, b.size, c.size, d.size):
             alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
-            return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+            return String("llvm.amdgcn.wmma.f32.16x16x16.", type_name)
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
@@ -779,7 +779,7 @@ fn ld_matrix[
     fn get_suffix() -> String:
         alias sfx = ".b16.p3"
         if transpose:
-            return ".trans" + sfx
+            return String(".trans", sfx)
         return sfx
 
     var d: SIMD[dtype, simd_width]
@@ -789,14 +789,14 @@ fn ld_matrix[
     # and input simd_width being equal to 4
     @parameter
     if num_registers == 1:
-        alias ins = base + ".x1" + get_suffix()
+        alias ins = String(base, ".x1", get_suffix())
         var r = llvm_intrinsic[ins, UInt32](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
 
         d = rebind[SIMD[dtype, simd_width]](r0)
 
     elif num_registers == 2:
-        alias ins = base + ".x2" + get_suffix()
+        alias ins = String(base, ".x2", get_suffix())
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
         var r0 = bitcast[dtype, register_width](r[0])
         var r1 = bitcast[dtype, register_width](r[1])
@@ -808,7 +808,7 @@ fn ld_matrix[
             num_registers == 4,
             "no valid implementation of ldmatrix instruction",
         ]()
-        alias ins = base + ".x4" + get_suffix()
+        alias ins = String(base, ".x4", get_suffix())
         var r = llvm_intrinsic[
             ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
         ](ptr)
@@ -883,7 +883,7 @@ fn st_matrix[
     fn get_suffix() -> String:
         alias sfx = ".m8n8"
         if transpose:
-            return ".trans" + sfx
+            return String(".trans", sfx)
         return sfx
 
     @parameter
@@ -1501,20 +1501,24 @@ fn wgmma_async[
         alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
         alias input_constraints_prefix = "=f," * (n // 2)
         alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
-        alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
+        alias constraints = String(
+            input_constraints_prefix,
+            "r,r,r,r,l,n,n,n,n,",
+            input_constraints_suffix,
+        )
 
         # fmt: off
         @parameter
         if n == 8:
             var r = inlined_assembly[
-                """{
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $9, 0;
                     wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$4, $5, $6, $7},
                      $8, p, $10, $11, $12;
-                }""",
+                }"""),
                 _RegisterPackType[Float32, Float32, Float32, Float32],
                 constraints = constraints,
             ](
@@ -1529,14 +1533,14 @@ fn wgmma_async[
             )
         elif n == 16:
             var r = inlined_assembly[
-                """{
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $13, 0;
                     wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$8, $9, $10, $11},
                      $12, p, $14, $15, $16;
-                }""",
+                }"""),
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1556,14 +1560,14 @@ fn wgmma_async[
             )
         elif n == 32:
             var r = inlined_assembly[
-                """{
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $21, 0;
                     wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$16, $17, $18, $19},
                      $20, p, $22, $23, $24;
-                }""",
+                }"""),
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1587,14 +1591,14 @@ fn wgmma_async[
             )
         elif n == 64:
             var r = inlined_assembly[
-                """{
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $37, 0;
                     wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$32, $33, $34, $35},
                      $36, p, $38, $39, $40;
-                }""",
+                }"""),
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1626,14 +1630,14 @@ fn wgmma_async[
             )
         elif n == 128:
             var r = inlined_assembly[
-                """{
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $69, 0;
                     wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$64, $65, $66, $67},
                      $68, p, $70, $71, $72;
-                }""",
+                }"""),
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,
@@ -1680,15 +1684,14 @@ fn wgmma_async[
             )
         elif n == 256:
             var r = inlined_assembly[
-                """
-                {
+                String("""{
                     .reg .pred p;
                     setp.ne.b32 p, $133, 0;
                     wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16
-                    {""" + input_reg_spec + """},
+                    {""", input_reg_spec, """},
                      {$128, $129, $130, $131},
                      $132, p, $134, $135, $136;
-                }""",
+                }"""),
                 _RegisterPackType[
                     Float32, Float32, Float32, Float32,
                     Float32, Float32, Float32, Float32,

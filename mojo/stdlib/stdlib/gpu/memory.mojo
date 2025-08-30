@@ -770,11 +770,13 @@ fn async_copy[
     )
     var cache_policy = _mark_eviction[eviction_policy]()
 
-    alias l2_prefetch_substr = ".L2::" + _int_to_str[
-        l2_prefetch.value()
-    ]() + "B" if l2_prefetch else ""
+    alias l2_prefetch_substr = String(
+        ".L2::", _int_to_str[l2_prefetch.value()](), "B" if l2_prefetch else ""
+    )
 
-    alias cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
+    alias cp_async_asm = String(
+        "cp.async.", cache_op, ".shared.global", cache_hint, l2_prefetch_substr
+    )
 
     @parameter
     if Bool(fill) and Bool(fill.value() == 0):
@@ -818,12 +820,12 @@ fn async_copy[
         alias header_asm = "{\n.reg .pred p;\nsetp.ne.b32 p, $0, 0;\n"
         alias footer_asm = "@!p st.shared.v4.b32 [$1], {$4, $5, $6, $7};\n}\n"
         alias args_with_fill = " [$1], [$2], $3"
-        alias copy_asm = header_asm + "@p " + cp_async_asm + args_with_fill
+        alias copy_asm = String(header_asm, "@p ", cp_async_asm, args_with_fill)
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
             inlined_assembly[
-                copy_asm + ";\n" + footer_asm,
+                String(copy_asm, ";\n", footer_asm),
                 NoneType,
                 constraints="r,r,l,n,r,r,r,r",
             ](
@@ -838,7 +840,7 @@ fn async_copy[
             )
         else:
             inlined_assembly[
-                copy_asm + ", $8;\n" + footer_asm,
+                String(copy_asm, ", $8;\n", footer_asm),
                 NoneType,
                 constraints="r,r,l,n,r,r,r,r,l",
             ](
@@ -859,17 +861,17 @@ fn async_copy[
         )
 
         alias args = " [$0], [$1], $2"
-        alias asm = cp_async_asm + args
+        alias asm = String(cp_async_asm, args)
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
-            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
+            inlined_assembly[String(asm, ";"), NoneType, constraints="r,l,n"](
                 Int32(Int(dst)), src, Int32(size)
             )
         else:
-            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,l"](
-                Int32(Int(dst)), src, Int32(size), cache_policy
-            )
+            inlined_assembly[
+                String(asm, ", $3;"), NoneType, constraints="r,l,n,l"
+            ](Int32(Int(dst)), src, Int32(size), cache_policy)
 
 
 @always_inline
@@ -1581,30 +1583,41 @@ fn _load_impl[
             ](ptr.bitcast[UInt32]())
         )
 
-    alias dtype_mnemonic = "u" + _int_to_str[dtype_bitwidth]()
+    alias dtype_mnemonic = String("u", _int_to_str[dtype_bitwidth]())
     alias cache_policy_mnemonic = cache_policy.mnemonic()
-    alias eviction_policy_mnemonic = (
-        ".L1::" + eviction_policy.mnemonic()
+    alias eviction_policy_mnemonic = String(
+        ".L1::", eviction_policy.mnemonic()
     ) if eviction_policy != CacheEviction.EVICT_NORMAL else ""
-    alias pretch_size_mnemonic = (
-        ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
+    alias pretch_size_mnemonic = String(
+        ".L2::", _int_to_str[prefetch_size.value()](), "B"
     ) if prefetch_size else ""
     alias cache_operation = ".nc" if read_only else ""
 
     alias cache_policy_inst = (
         "" if cache_policy
-        is CacheOperation.ALWAYS else ("." + cache_policy_mnemonic)
+        is CacheOperation.ALWAYS else String(".", cache_policy_mnemonic)
     )
-    alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
+    alias v_width = ("" if width == 1 else String(".v", _int_to_str[width]()))
 
-    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + dtype_mnemonic
+    alias instruction_name = String(
+        "ld.global",
+        cache_policy_inst,
+        cache_operation,
+        eviction_policy_mnemonic,
+        pretch_size_mnemonic,
+        v_width,
+        ".",
+        dtype_mnemonic,
+    )
 
     var res = SIMD[dtype, width]()
 
     @parameter
     if width == 1:
         var tmp = inlined_assembly[
-            "ld.global " + cache_policy_inst + cache_operation + " $0, [$2];",
+            String(
+                "ld.global ", cache_policy_inst, cache_operation, " $0, [$2];"
+            ),
             Scalar[dtype],
             constraints="=r,l,r",
             has_side_effect=True,
@@ -1612,7 +1625,7 @@ fn _load_impl[
         return SIMD[dtype, width](tmp)
     elif width == 2:
         var tmp = inlined_assembly[
-            instruction_name + " {$0, $1}, [$2];",
+            String(instruction_name, " {$0, $1}, [$2];"),
             _RegisterPackType[Scalar[dtype], Scalar[dtype]],
             constraints="=r,=r,l,r,r",
             has_side_effect=True,
@@ -1620,7 +1633,7 @@ fn _load_impl[
         return SIMD[dtype, width](tmp[0], tmp[1])
     elif width == 4:
         var tmp = inlined_assembly[
-            instruction_name + " {$0, $1, $2, $3}, [$4];",
+            String(instruction_name, " {$0, $1, $2, $3}, [$4];"),
             _RegisterPackType[
                 Scalar[dtype], Scalar[dtype], Scalar[dtype], Scalar[dtype]
             ],
@@ -1791,15 +1804,27 @@ fn _get_multimem_ld_reduce_asm[
     ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
-    alias op = "." + reduction.mnemonic()
-    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
-        "x" + _int_to_str[output_width]() if output_width > 1 else ""
+    alias vec = String(".v", _int_to_str[count]() if count > 1 else "")
+    alias op = String(".", reduction.mnemonic())
+    alias dtype_mnemonic = String(
+        ".",
+        _get_type_mnemonic[dtype](),
+        (String("x", _int_to_str[output_width]()) if output_width > 1 else ""),
     )
-    alias accum = (
-        ".acc::" + _get_type_mnemonic[accum_type]()
+    alias accum = String(
+        ".acc::", _get_type_mnemonic[accum_type]()
     ) if accum_type is not dtype else ""
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
+    alias asm = String(
+        "multimem.ld_reduce.",
+        consistency.mnemonic(),
+        ".",
+        scope.mnemonic(),
+        ss,
+        op,
+        accum,
+        vec,
+        dtype_mnemonic,
+    )
     return asm
 
 
@@ -2028,11 +2053,21 @@ fn _get_multimem_st_asm[
     ]()
 
     alias ss = ".global"
-    alias vec = ".v" + _int_to_str[count]() if count > 1 else ""
-    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
-        "x" + _int_to_str[width]() if width > 1 else ""
+    alias vec = String(".v", _int_to_str[count]() if count > 1 else "")
+    alias dtype_mnemonic = String(
+        ".",
+        _get_type_mnemonic[dtype](),
+        (String("x", _int_to_str[width]()) if width > 1 else ""),
     )
-    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + dtype_mnemonic
+    alias asm = String(
+        "multimem.st.",
+        consistency.mnemonic(),
+        ".",
+        scope.mnemonic(),
+        ss,
+        vec,
+        dtype_mnemonic,
+    )
     return asm
 
 
