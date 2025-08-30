@@ -452,7 +452,7 @@ trait RequiredType:
     alias T: AnyType
 
     @staticmethod
-    fn use_it(arg: T) -> T:
+    fn use_it(arg: Self.T) -> Self.T:
         ...
 
 

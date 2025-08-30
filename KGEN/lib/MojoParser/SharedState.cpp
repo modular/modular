@@ -745,10 +745,11 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
       ArrayRef<ASTDecl *> e = lookupInScope(*curSearchScope);
       if (!e.empty()) {
         if (curSearchScope &&
-            isa_and_nonnull<StructDeclOp>(curSearchScope->getIfOperation()) &&
+            isa_and_nonnull<StructDeclOp, TraitDeclOp>(
+                curSearchScope->getIfOperation()) &&
             !(*e.front()).getIfIRValue().getIfPValue()) {
-          // Skip struct bodies when searching up parent scopes, unless the
-          // value is a parameter.
+          // Skip struct/trait bodies when searching up parent scopes, unless
+          // the value is a parameter.
           if (skipped.empty())
             skipped = e;
 

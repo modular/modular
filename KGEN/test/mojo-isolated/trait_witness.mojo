@@ -20,7 +20,7 @@ trait R1:
 trait R2:
     alias T: AnyType
 
-    fn f2(self, x: T):
+    fn f2(self, x: Self.T):
         ...
 
 

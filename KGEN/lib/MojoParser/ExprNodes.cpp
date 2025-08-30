@@ -800,25 +800,38 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
             << spelling << "' directly; did you mean 'self.'?"
             << expr->getRange() << FixIt::insertBeforeToken(loc, "self.");
         return {};
-        // Rejected unqualified struct method references.
+        // Rejected unqualified struct/trait method/alias references.
       } else if (failureDecls[0]->getParentDecl() &&
-                 isa_and_nonnull<StructDeclOp>(
+                 isa_and_nonnull<StructDeclOp, TraitDeclOp>(
                      failureDecls[0]->getParentDecl()->getIfOperation())) {
-        const char *replacement = "self.";
+        const char *declKind = "";
+        const char *replacement =
+            isa<StructDeclOp>(
+                failureDecls[0]->getParentDecl()->getIfOperation())
+                ? "self."
+                : "Self.";
         // References to static methods can always use capital Self.
-        if (auto firstCandidate =
-                dyn_cast_or_null<FnOp>(failureDecls[0]->getIfOperation()))
-          if (firstCandidate.getIsStatic())
+        Operation *firstCandidate = failureDecls[0]->getIfOperation();
+        if (auto fnCandidate = dyn_cast_or_null<FnOp>(firstCandidate)) {
+          declKind = "method ";
+          if (fnCandidate.getIsStatic())
             replacement = "Self.";
+        } else if (isa_and_nonnull<AliasDeclOp>(firstCandidate)) {
+          declKind = "alias ";
+          // Aliases are properties of the type, so `Self` is more idiomatic.
+          // However `self.` is also supported.
+          replacement = "Self.";
+        }
 
         // References /from/ static methods can only use capital Self.
         if (auto curFn = dyn_cast_or_null<FnOp>(lookupScope.getIfOperation()))
           if (curFn.getIsStatic())
             replacement = "Self.";
 
-        emitter.emitError(loc, "cannot access method '")
-            << spelling << "' directly; did you mean '" << replacement << "'?"
-            << expr->getRange() << FixIt::insertBeforeToken(loc, replacement);
+        emitter.emitError(loc, "cannot access ")
+            << declKind << "'" << spelling << "' directly; did you mean '"
+            << replacement << "'?" << expr->getRange()
+            << FixIt::insertBeforeToken(loc, replacement);
         return {};
       }
     }

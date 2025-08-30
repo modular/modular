@@ -117,7 +117,7 @@ struct TensorIndex[rank: Int]:
 trait Stencil:
     alias rank: Int
     # expected-error @below {{associated alias declarations in a trait shouldn't have an initializer}}
-    alias Index = TensorIndex[rank]
+    alias Index = TensorIndex[Self.rank]
 
 
 # // -----

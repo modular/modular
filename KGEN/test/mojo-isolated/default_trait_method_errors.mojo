@@ -39,7 +39,7 @@ trait AA1:
     alias X: Copyable
 
     # expected-note @+1 {{original default implementation from trait 'AA1' here}}
-    fn zork(self, x: X) -> X:
+    fn zork(self, x: Self.X) -> Self.X:
         return x
 
 
@@ -47,7 +47,7 @@ trait AA2:
     alias X: Copyable & Movable
 
     # expected-note @+1 {{conflicting implementation from trait 'AA2' here}}
-    fn zork(self, x: X) -> X:
+    fn zork(self, x: Self.X) -> Self.X:
         return x
 
 
