@@ -613,7 +613,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
         "invalid threadfence scope",
     ]()
     alias suffix = "gl" if scope is Scope.GPU else scope.mnemonic()
-    llvm_intrinsic["llvm.nvvm.membar." + suffix, NoneType]()
+    llvm_intrinsic[String("llvm.nvvm.membar.", suffix), NoneType]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -681,16 +681,21 @@ fn store_release[
     @parameter
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = _get_register_constraint[
-            dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
+        alias constraints = String(
+            _get_register_constraint[dtype](),
+            ",",
+            _get_pointer_constraint(),
+            mem_constraint,
+        )
         alias scope_str = scope.mnemonic()
         inlined_assembly[
-            "st.release."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " [$1], $0;",
+            String(
+                "st.release.",
+                (String(scope_str, ".") if scope_str else ""),
+                "global.",
+                _get_type_suffix[dtype](),
+                " [$1], $0;",
+            ),
             NoneType,
             constraints=constraints,
         ](value, ptr)
@@ -737,16 +742,22 @@ fn load_acquire[
     @parameter
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
-        alias constraints = "=" + _get_register_constraint[
-            dtype
-        ]() + "," + _get_pointer_constraint() + mem_constraint
+        alias constraints = String(
+            "=",
+            _get_register_constraint[dtype](),
+            ",",
+            _get_pointer_constraint(),
+            mem_constraint,
+        )
         alias scope_str = scope.mnemonic()
         return inlined_assembly[
-            "ld.acquire."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " $0, [$1];",
+            String(
+                "ld.acquire.",
+                (String(scope_str, ".") if scope_str else ""),
+                "global.",
+                _get_type_suffix[dtype](),
+                " $0, [$1];",
+            ),
             Scalar[dtype],
             constraints=constraints,
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
@@ -790,11 +801,14 @@ fn store_volatile[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = _get_register_constraint[
-        dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    alias constraints = String(
+        _get_register_constraint[dtype](),
+        ",",
+        _get_pointer_constraint(),
+        mem_constraint,
+    )
     inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
+        String("st.volatile.global.", _get_type_suffix[dtype](), " [$1], $0;"),
         NoneType,
         constraints=constraints,
     ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
@@ -830,11 +844,15 @@ fn load_volatile[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
-    alias constraints = "=" + _get_register_constraint[
-        dtype
-    ]() + "," + _get_pointer_constraint() + mem_constraint
+    alias constraints = String(
+        "=",
+        _get_register_constraint[dtype](),
+        ",",
+        _get_pointer_constraint(),
+        mem_constraint,
+    )
     return inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
+        String("ld.volatile.global.", _get_type_suffix[dtype](), " $0, [$1];"),
         Scalar[dtype],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())

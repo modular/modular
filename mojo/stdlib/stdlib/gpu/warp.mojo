@@ -82,11 +82,11 @@ fn _shuffle[
     @parameter
     if dtype is DType.float32:
         return llvm_intrinsic[
-            "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
+            String("llvm.nvvm.shfl.sync.", mnemonic, ".f32"), Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
     elif dtype in (DType.int32, DType.uint32):
         return llvm_intrinsic[
-            "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
+            String("llvm.nvvm.shfl.sync.", mnemonic, ".i32"), Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
     elif dtype in (DType.int64, DType.uint64):
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)

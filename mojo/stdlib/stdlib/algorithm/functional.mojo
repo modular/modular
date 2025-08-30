@@ -1370,10 +1370,9 @@ fn elementwise[
         )
 
     # Intern the kind string as a static string so we don't allocate.
-    alias kind = get_static_string[
-        "elementwise",
-        ("(" + _trace_description + ")" if _trace_description else ""),
-    ]()
+    alias d = _trace_description
+    alias desc = String("(", d, ")") if d else ""
+    alias kind = get_static_string["elementwise", desc]()
 
     with Trace[TraceLevel.OP, target=target](
         kind,

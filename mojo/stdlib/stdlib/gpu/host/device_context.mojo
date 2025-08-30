@@ -162,7 +162,7 @@ fn _raise_checked_impl(
     err_msg: _CharPtr, msg: String, location: _SourceLocation
 ) raises:
     var err = _string_from_owned_charptr(err_msg)
-    raise Error(location.prefix(err + ((" " + msg) if msg else "")))
+    raise Error(location.prefix(String(err, (String(" ", msg) if msg else ""))))
 
 
 # Checks that the given `dim` has only positive integers in them.
@@ -2088,7 +2088,7 @@ struct DeviceFunction[
 
     @staticmethod
     fn _dump_q[name: String, val: _DumpPath]() -> (Bool, _DumpPath):
-        alias env_var = "DUMP_GPU_" + name.upper()
+        alias env_var = String("DUMP_GPU_", name.upper())
 
         @parameter
         if is_defined[env_var]():

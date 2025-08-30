@@ -1402,7 +1402,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", file_dir + ":" + python_path)
+                _ = setenv("PYTHONPATH", String(file_dir, ":", python_path))
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 
@@ -1590,11 +1590,11 @@ struct CPython(Defaultable, Movable):
             var python_lib = getenv("MOJO_PYTHON_LIBRARY")
             var python_exe = getenv("PYTHONEXECUTABLE")
             if mojo_python:
-                error += "\nMOJO_PYTHON: " + mojo_python
+                error += String("\nMOJO_PYTHON: ", mojo_python)
             if python_lib:
-                error += "\nMOJO_PYTHON_LIBRARY: " + python_lib
+                error += String("\nMOJO_PYTHON_LIBRARY: ", python_lib)
             if python_exe:
-                error += "\npython executable: " + python_exe
+                error += String("\npython executable: ", python_exe)
             error += "\n\nMojo/Python interop error, troubleshooting docs at:"
             error += "\n    https://modul.ar/fix-python\n"
             raise error

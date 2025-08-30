@@ -126,7 +126,7 @@ struct Status(Stringable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftResult_t(" + String(self) + ")"
+        return String("cufftResult_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -183,7 +183,7 @@ struct Type(Stringable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftType_t(" + String(self) + ")"
+        return String("cufftType_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -222,7 +222,7 @@ struct Compatibility(Stringable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftCompatibility_t(" + String(self) + ")"
+        return String("cufftCompatibility_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -266,7 +266,7 @@ struct Property(Stringable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftProperty_t(" + String(self) + ")"
+        return String("cufftProperty_t(", self, ")")
 
     fn __int__(self) -> Int:
         return Int(self._value)
