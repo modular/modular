@@ -158,6 +158,8 @@ public:
   Block &block;
   Value newResPtr;
   Value newErrPtr;
+  SmallVector<Attribute> LLVMArgMetadata;
+  bool hasError = false;
 
 private:
   void applyOneToOneTransform(unsigned operandIndex, Type newType,
@@ -254,7 +256,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
 FuncTransform::FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp,
                              TargetInfoAttr target)
     : Transform(target, funcOp.getSubprogramScope()), b(b),
-      block(funcOp.getBodyRegion().front()) {}
+      block(funcOp.getBodyRegion().front()),
+      LLVMArgMetadata(funcOp.getLLVMArgMetadata().getValue()) {}
 
 Location Transform::addDI(Location loc) {
   if (!spAttr)
@@ -331,6 +334,29 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
     block.insertArgument(++curr, KGEN::NoneType::get(type.getContext()),
                          originalLocation);
   block.eraseArgument(operandIndex);
+
+  // Update the per-argument LLVM metadata to remain aligned with the updated
+  // argument list.
+  if (LLVMArgMetadata.empty())
+    return;
+
+  auto dict = cast<DictionaryAttr>(LLVMArgMetadata[operandIndex]);
+  if (!dict.empty()) {
+    block.getParentOp()->emitError()
+        << "cannot unpack argument " << operandIndex
+        << " that has LLVMArgMetadata";
+    hasError = true;
+    return;
+  }
+
+  if (types.size() > 1) {
+    // Insert (types.size() - 1) empty entries after operandIndex, preserving
+    // the existing empty entry at operandIndex to correspond to the first
+    // unpacked arg since it's already known to be an empty DictionaryAttr.
+    LLVMArgMetadata.insert(LLVMArgMetadata.begin() + operandIndex + 1,
+                           types.size() - 1,
+                           DictionaryAttr::get(type.getContext()));
+  }
 }
 
 void CallsiteTransform::performResultTransform(TransformResult const &result,
@@ -617,7 +643,7 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   return ifOp.getResult(0);
 }
 
-static void lowerFuncOp(FuncOp funcOp) {
+static LogicalResult lowerFuncOp(FuncOp funcOp) {
   FuncType sig = funcOp.getFuncTypeGenerator().getBody();
   ImplicitLocOpBuilder b(funcOp.getLoc(), funcOp);
   b.setInsertionPoint(&funcOp.getBodyRegion().front().front());
@@ -632,6 +658,8 @@ static void lowerFuncOp(FuncOp funcOp) {
       result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
   funcOp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, newSig));
+  funcOp.setLLVMArgMetadataAttr(
+      ArrayAttr::get(funcOp.getContext(), transform.LLVMArgMetadata));
   if (result.abiLowering != Neither) {
     Block &body = funcOp.getBodyRegion().front();
     // Find all return sites in the function and rewrite them.
@@ -667,11 +695,13 @@ static void lowerFuncOp(FuncOp funcOp) {
       returnOp->insertOperands(1, newRes);
     });
   }
+  return success(!transform.hasError);
 }
 
 void LowerArgConventionsPass::runOnOperation() {
   FuncOp func = getOperation();
-  lowerFuncOp(func);
+  if (failed(lowerFuncOp(func)))
+    return signalPassFailure();
 
   // Lower the ops in the function body.
   DebugInfo::DISubprogramAttr spAttr = func.getSubprogramScope();
