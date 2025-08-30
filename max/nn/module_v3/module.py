@@ -14,16 +14,21 @@
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import dataclasses
 import functools
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Callable
 
 from rich.pretty import pretty_repr
-from typing_extensions import dataclass_transform
+from typing_extensions import Self, dataclass_transform
 
+from ... import graph
 from ...driver import DLPackArray
-from ...experimental.tensor import Tensor
+from ...experimental import functional as F
+from ...experimental.tensor import Tensor, _session
+from ...graph import Graph
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -274,6 +279,114 @@ class Module:
             raise ValueError(
                 f"load_state_dict did not read some weights: {unloaded}"
             )
+
+    def map_parameters(self, f: Callable[[str, Tensor], Tensor]) -> Self:
+        """Creates a new Module with its parameters transformed by the function.
+
+        The transformation is functional rather than in-place. The module is
+        deep-copied; its descendents are also replaced via the same transform
+        without affecting the original module.
+
+        .. code-block:: python
+
+            from max.driver import Accelerator
+            from max.nn.module_v3 import Linear
+
+            model = Linear(2, 3)
+            model_on_gpu = model.map_parameters(lambda _, t: t.to(Accelerator())
+
+        Args:
+            f: The transfomation to apply to each parameter.
+                The transformation takes two arguments, a name and a tensor.
+                - The name is the qualified name of the parameter
+                    with respect to the module on which `map_parameters`
+                    was called.
+                - The tensor is the current value of that parameter
+                The return value of this function is the new value that will
+                replace the value at that name in the module tree.
+
+        Returns:
+            A new module tree of the same type resulting from mapping the
+            transformation over all model parameters.
+        """
+        new = copy.deepcopy(self)
+        new.apply_to_parameters(f)
+        return new
+
+    @contextlib.contextmanager
+    def _mapped_parameters(self, f: Callable[[str, Tensor], Tensor]):
+        parameters = dict(self.parameters)
+        try:
+            self.apply_to_parameters(f)
+            yield parameters
+        finally:
+            self.load_state_dict(parameters)
+
+    def compile(self, *input_types: graph.Type) -> Callable:
+        """Compiles the module to a model operating on the given input types.
+
+        Example:
+
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.experimental import random
+            from max.experimental.tensor import Tensor, TensorType, defaults
+            from max.nn.module_v3 import Linear
+
+            linear = Linear(2, 3)
+            _, device = defaults()
+            input_type = TensorType(DType.float32, ["batch", 2], device=device)
+            model = linear.compile(input_type)
+
+            print(model(random([3, 2], dtype=DType.float32))
+            print(model(random([10, 2], dtype=DType.float32))
+
+        Args:
+            input_types: The types of the inputs to the model.
+
+        Returns:
+            A compiled implementation of the module.
+        """
+
+        with Graph(type(self).__qualname__, input_types=input_types) as graph:
+            # Wrap the graph inputs in Tensors
+            inputs = [Tensor(value=input.tensor) for input in graph.inputs]
+
+            def as_weight(name: str, tensor: Tensor):
+                return F.constant_external(name, tensor.type)
+
+            # Temporarily replace the parameters with external constants
+            # while building the graph.
+            #  - Pure tensors as Module parameters are treated as constants
+            #  - Making them external constants allows them to be compiled as
+            #       weights instead.
+            #  - Weights aren't constant-folded (improving compile time) but
+            #       can be replaced in the compiled model and still subject
+            #       to exec-invariant-code-motion optimizations.
+            with self._mapped_parameters(as_weight):
+                outputs: Tensor | Sequence[Tensor] = self(*inputs)
+
+            # Set the outputs.
+            # - The graph API and model assume that all graphs and models
+            #   have variadic outputs
+            # - Module allows returning a single Tensor or variadic return
+            # - The compiled model should have the same semantics as the module
+            if unary := isinstance(outputs, Tensor):
+                graph.output(outputs)
+            else:
+                graph.output(*outputs)
+
+        # Compile the graph with module parameters as weights
+        session = _session()
+        weights = dict(self.parameters)
+        compiled = F.functional(session.load(graph, weights_registry=weights))
+
+        if unary:
+            # Return the single result for a unary module
+            return functools.wraps(self)(lambda *inputs: compiled(*inputs)[0])
+
+        return compiled
 
     def __rich_repr__(self):
         yield from self.children

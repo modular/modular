@@ -52,7 +52,7 @@ from .type import (
     Type,
     _ChainType,
 )
-from .value import BufferValue, TensorValue, Value, _ChainValue
+from .value import BufferValue, TensorValue, TensorValueLike, Value, _ChainValue
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -793,8 +793,12 @@ class Graph:
                 block_terminator_op, results + [self._current_chain]
             )
 
-    def output(self, *outputs: Value[Any]) -> None:
+    def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
+        outputs = tuple(
+            o if isinstance(o, Value) else TensorValue(o) for o in outputs
+        )
+        outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
         graph_body_args = self._graph_body.arguments
         mlir_values = [o._mlir_value for o in outputs]

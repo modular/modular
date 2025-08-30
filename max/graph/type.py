@@ -390,10 +390,10 @@ class TensorType(_TensorTypeBase[mo.TensorType]):
         self,
         dtype: DType,
         shape: ShapeLike,
-        device: DeviceRef,
+        device: Device | DeviceRef,
         _layout: FilterLayout | None = None,
     ) -> None:
-        super().__init__(dtype, shape, device)
+        super().__init__(dtype, shape, DeviceRef.from_device(device))
         self._layout = _layout
 
     @classmethod
