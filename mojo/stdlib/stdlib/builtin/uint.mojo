@@ -41,6 +41,7 @@ struct UInt(
     KeyElement,
     Movable,
     Representable,
+    Roundable,
     Stringable,
     Writable,
 ):
@@ -755,17 +756,22 @@ struct UInt(
         """
         return self
 
-    @always_inline("builtin")
-    fn __round__(self) -> Self:
-        """Return the rounded value of the UInt value, which is itself.
+    @always_inline("nodebug")
+    fn __round__[mode: RoundMode, to_multiple_of: UInt](self) -> Self:
+        """Get a rounded value for `Int`.
+
+        Parameters:
+            mode: The `RoundMode` for the operation.
+            to_multiple_of: The target base for which self is is rounded until
+                reaching a multiple thereof.
 
         Returns:
-            The UInt value itself.
+            The rounded value.
         """
-        return self
+        return UInt(Scalar[DType.index](self).__round__[mode, to_multiple_of]())
 
-    @always_inline("builtin")
-    fn __round__(self, ndigits: UInt) -> Self:
+    @always_inline("nodebug")
+    fn __round__(self, ndigits: Int) -> Self:
         """Return the rounded value of the UInt value, which is itself.
 
         Args:
@@ -774,7 +780,7 @@ struct UInt(
         Returns:
             The UInt value itself if ndigits >= 0 else the rounded value.
         """
-        return self
+        return UInt(Int(self).__round__(ndigits))
 
     @always_inline("builtin")
     fn __trunc__(self) -> Self:
