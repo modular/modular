@@ -404,3 +404,18 @@ kgen.func @callIt() -> index {
     %4 = pop.load %3 : !kgen.pointer<index>
     kgen.return %4 : index
 }
+
+// CHECK-LABEL: kgen.func @lower_args_with_arg_metadata
+// CHECK-SAME: (%arg0: i8, %arg1: index, %arg2: i1, %arg3: index, %arg4: i1, %arg5: i16, %arg6: !kgen.none, %arg7: i32)
+// CHECK-SAME: LLVMArgMetadata = [{nvvm.grid_constant}, {}, {}, {}, {}, {nvvm.grid_constant}, {}, {nvvm.grid_constant}]
+kgen.func @lower_args_with_arg_metadata(
+ %arg0: !kgen.pointer<i8> read_mem,
+ %arg1: !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> read_mem,
+ %arg2: !kgen.pointer<i16> read_mem,
+ %arg3: !kgen.pointer<!kgen.pack<[]>> read_mem,
+ %arg4: !kgen.pointer<i32> read_mem
+) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> attributes {
+  LLVMArgMetadata = [{nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}]
+} {
+    kgen.return %arg1 : !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+}
