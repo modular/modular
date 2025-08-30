@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 
 import pytest
-from max.experimental.tensor import Tensor
+from max.experimental import random
+from max.experimental.tensor import Tensor, TensorType, defaults
 from max.nn.module_v3.module import Module, module_dataclass
 
 
@@ -171,6 +172,19 @@ def test_apply_to_parameters__qualified_names(test_module: TestModule):
     assert expected == names
 
 
+def test_map_parameters(test_module: TestModule):
+    a = test_module.a
+    b = test_module.sub.b
+
+    m2 = test_module.map_parameters(lambda _, t: t + 1)
+    # Test parameters were mapped
+    assert m2.a.item() == (a + 1).item()
+    assert m2.sub.b.item() == (b + 1).item()
+    # Not updated in the original module
+    assert test_module.a.item() == a.item()
+    assert test_module.sub.b.item() == b.item()
+
+
 def test_load_state_simple_dict(test_module: TestModule):
     weights = {
         "a": Tensor.constant(5),
@@ -232,3 +246,15 @@ def test_load_state_dict_nonstrict(test_module: TestModule):
     test_module.load_state_dict(weights, strict=False)
     assert test_module.a.item() == 5
     assert test_module.sub.b.item() == 6
+
+
+def test_compile(test_module: TestModule):
+    dtype, device = defaults()
+    type = TensorType(dtype, ["batch", "n"], device=device)
+    compiled = test_module.compile(type)
+
+    input = random.uniform([3, 3])
+    result_eager = test_module(input)
+    result_compiled = compiled(input)
+
+    assert all((result_eager == result_compiled)._values())
