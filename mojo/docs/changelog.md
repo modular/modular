@@ -368,3 +368,5 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 - Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
 - Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
   docs.
+- Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
+  detected inside an inline if-else.
