@@ -20,6 +20,7 @@ from typing import Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from rich.pretty import pretty_repr
 
 from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
@@ -92,6 +93,18 @@ def _session() -> engine.api.InferenceSession:
     return session
 
 
+def _in_running_loop() -> bool:
+    """Check whether the caller is inside a running event loop."""
+    # - asyncio.get_event_loop().is_running() works in most scenarios
+    # - asyncio.get_event_loop() raises in some environments
+    # - use asyncio.get_running_loop() and check if it fails instead
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 class Tensor:
     """A Tensor object with numerics.
 
@@ -133,7 +146,8 @@ class Tensor:
         self._storage = storage
         if value is not None:
             self._value = value
-            GRAPH.unrealized.add(self)
+            if self._in_global_compute_graph:
+                GRAPH.unrealized.add(self)
         else:
             GRAPH.add_source(self)
 
@@ -277,6 +291,12 @@ class Tensor:
     def __tensorvalue__(self) -> graph.TensorValue:
         return self._value
 
+    @property
+    def _in_global_compute_graph(self) -> bool:
+        mlir_value = self._value.to_mlir()
+        graph_op = mlir_value.owner.parent_op
+        return graph_op == _core.Operation._from_cmlir(GRAPH.graph._mlir_op)
+
     def __await__(self):
         """Force the tensor to realize if it is not already."""
         yield from asyncio.create_task(GRAPH.evaluate(self))
@@ -288,20 +308,18 @@ class Tensor:
         """Force the tensor to realize if it is not already."""
         return await self
 
-    def _sync_realize(self) -> None:
+    def _sync_realize(self) -> Tensor:
         if self.real:
-            return
+            return self
+
+        if not self._in_global_compute_graph:
+            raise TypeError(
+                "Can't realize symbolic tensors in graph compilation."
+            )
 
         # If there's no running loop, just use asyncio.run
-        try:
-            # - asyncio.get_event_loop().is_running() works in most scenarios
-            # - asyncio.get_event_loop() raises in some environments
-            # - use asyncio.get_running_loop() and check if it fails instead
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop
-            asyncio.run(self.realize)
-            return
+        if not _in_running_loop():
+            return asyncio.run(self.realize)
 
         # If there is a running loop, execute using a ThreadPoolExecutor
         # - This is a common case inside a Jupyter notebook, eg.
@@ -323,7 +341,8 @@ class Tensor:
         # Run self.realize in another thread
         loop = asyncio.new_event_loop()
         with ThreadPoolExecutor() as pool:
-            pool.submit(loop.run_until_complete, self.realize)
+            fut = pool.submit(loop.run_until_complete, self.realize)
+        return fut.result()
 
     def __bool__(self) -> bool:
         return bool(self.item())
@@ -353,8 +372,14 @@ class Tensor:
         yield "device", self.device
 
     def __repr__(self):
+        if not self._in_global_compute_graph:
+            return pretty_repr(self)
         # Janky repr for bootstrapping, we can do much better.
         return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
+
+    def __deepcopy__(self, memo: object) -> Tensor:
+        # Tensors are value-semantic
+        return self
 
     def item(self):
         if self.num_elements() != 1:

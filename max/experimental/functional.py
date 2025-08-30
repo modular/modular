@@ -35,16 +35,13 @@ def functional(op: Op) -> Op:
 
     @functools.wraps(op)
     def wrapped(*args, **kwargs):
-        # No-op for graph construction
         try:
-            _ = Graph.current
+            graph = Graph.current
         except LookupError:
-            pass
-        else:
-            return op(*args, **kwargs)
+            # No graph, use Tensor compute graph.
+            graph = tensor.GRAPH.graph
 
-        # No graph, use Tensor compute graph.
-        with tensor.GRAPH.graph:
+        with graph:
             results = op(*args, **kwargs)
         if isinstance(results, (driver.Tensor, tensor.Tensor, TensorValue)):
             return to_tensor(results)
@@ -66,6 +63,7 @@ broadcast_to = functional(ops.broadcast_to)
 cast = functional(ops.cast)
 chunk = functional(ops.chunk)
 constant = functional(ops.constant)
+constant_external = functional(ops.constant_external)
 conv2d = functional(ops.conv2d)
 conv2d_transpose = functional(ops.conv2d_transpose)
 conv3d = functional(ops.conv3d)
