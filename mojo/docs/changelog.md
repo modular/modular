@@ -129,6 +129,10 @@ language across multiple phases.
 
 - The previously deprecated `@value` decorator has been removed.
 
+- Accesses to associated aliases and methods within a trait now require
+  qualified references (prepended with `Self.`), making it consistent with how
+  accesses to member aliases and methods in a struct require `self.`.
+
 ### Standard library changes
 
 - Added `Path(..).name()` method to the `Path` type, which returns the name of

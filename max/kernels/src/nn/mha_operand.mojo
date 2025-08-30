@@ -68,7 +68,7 @@ trait MHAOperand:
         *,
         is_k_major: Bool,
     ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        dtype, tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
+        Self.dtype, tile_m, tile_n, swizzle_mode, is_k_major=is_k_major
     ]:
         """Creates a TMA tile for efficient GPU memory transfers."""
         ...

@@ -218,5 +218,5 @@ trait Iterator(Movable):
     fn __has_next__(self) -> Bool:
         ...
 
-    fn __next__(mut self) -> Element:
+    fn __next__(mut self) -> Self.Element:
         ...
