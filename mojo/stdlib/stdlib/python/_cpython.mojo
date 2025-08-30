@@ -1585,19 +1585,17 @@ struct CPython(Defaultable, Movable):
         raise an error if one occurred when initializing the global CPython.
         """
         if self.init_error:
-            var error = String(self.init_error)
             var mojo_python = getenv("MOJO_PYTHON")
             var python_lib = getenv("MOJO_PYTHON_LIBRARY")
             var python_exe = getenv("PYTHONEXECUTABLE")
-            if mojo_python:
-                error += "\nMOJO_PYTHON: " + mojo_python
-            if python_lib:
-                error += "\nMOJO_PYTHON_LIBRARY: " + python_lib
-            if python_exe:
-                error += "\npython executable: " + python_exe
-            error += "\n\nMojo/Python interop error, troubleshooting docs at:"
-            error += "\n    https://modul.ar/fix-python\n"
-            raise error
+            raise Error(
+                self.init_error,
+                ("\nMOJO_PYTHON: " + mojo_python) if mojo_python else "",
+                ("\nMOJO_PYTHON_LIBRARY: " + python_lib) if python_lib else "",
+                ("\npython executable: " + python_exe) if python_exe else "",
+                "\n\nMojo/Python interop error, troubleshooting docs at:",
+                "\n    https://modul.ar/fix-python\n",
+            )
 
     fn unsafe_get_error(self) -> Error:
         """Get the `Error` object corresponding to the current CPython
