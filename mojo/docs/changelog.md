@@ -131,6 +131,10 @@ language across multiple phases.
       a.`match`() # This is still valid.
   ```
 
+- When generating error messages for complex types involving parameter calls,
+  the Mojo compiler now prints functions parameter values correctly, eliminating
+  a large class of `T != T` errors that happen with GPU layouts.
+
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
