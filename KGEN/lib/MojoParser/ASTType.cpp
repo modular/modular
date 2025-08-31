@@ -850,6 +850,8 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return printDemangledParam(os, memAttr.getValue(), diagShared);
 
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
+    if (diagShared)
+      os << "DType.";
     os << dtypeAttr.getDType().getAsString(/*libForm=*/true);
     return;
   }
@@ -1060,6 +1062,17 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   printDemangledParam(os, param, diagShared);
 }
 
+/// Given a parameter value of MLIR wrapper type like Bool or Int or DType, dig
+/// out the single element of the struct with the specified type.
+template <typename T>
+static T getSingleElementStructAttr(TypedAttr param) {
+  if (auto strParam = dyn_cast<LITStructAttr>(param)) {
+    if (strParam.getValues().size() == 1)
+      return dyn_cast<T>(std::get<1>(strParam.getValues()[0]));
+  }
+  return {};
+}
+
 void ASTType::print(raw_ostream &os, SharedState *diagShared,
                     bool demangleParams) const {
   // We demangle parameters when printing for diagnostics.
@@ -1076,20 +1089,64 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     // Handle special cases that should be aliased.
     // FIXME(MOCO-367): maintain "typedef" sugar in the type system.
     if (typeDecl &&
-        isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation()) &&
-        params.size() == 1 &&
-        cast<LIT::StructDeclOp>(typeDecl->getIfOperation())
-                .getDeclName()
-                .strref() == "Origin") {
-      // Check to see if we have a Bool with a known constant parameter.
-      //   #lit.struct<{value: i1 = 1}>
-      if (auto strParam = dyn_cast<LITStructAttr>(params[0])) {
-        if (strParam.getValues().size() == 1) {
-          if (auto value =
-                  dyn_cast<BoolAttr>(std::get<1>(strParam.getValues()[0]))) {
-            os << (value.getValue() ? "MutableOrigin" : "ImmutableOrigin");
-            return;
+        isa_and_nonnull<LIT::StructDeclOp>(typeDecl->getIfOperation())) {
+      auto structDecl = cast<LIT::StructDeclOp>(typeDecl->getIfOperation());
+      if (params.size() == 1 && structDecl.getDeclName().strref() == "Origin") {
+        // Check to see if we have a Bool with a known constant parameter.
+        //   #lit.struct<{value: i1 = 1}>
+        if (auto value = getSingleElementStructAttr<BoolAttr>(params[0])) {
+          os << (value.getValue() ? "MutableOrigin" : "ImmutableOrigin");
+          return;
+        }
+      }
+
+      // Handle SIMD[dt, 1] with various aliases. Note that the dtype and size
+      // may be parametric.
+      if (diagShared && params.size() == 2 &&
+          structDecl.getDeclName().strref() == "SIMD") {
+        // DType and Int looks like #lit.struct<{value: index = 42}>, dig.
+        DTypeConstantAttr dtype =
+            getSingleElementStructAttr<DTypeConstantAttr>(params[0]);
+        IntegerAttr size = getSingleElementStructAttr<IntegerAttr>(params[1]);
+        if (size && size.getInt() == 1) {
+          // This list should be kept in sync with the aliases in simd.mojo.
+          static std::pair<KGENDType, const char *> dtypeAliases[] = {
+              {KGENDType::si8, "Int8"},
+              {KGENDType::ui8, "UInt8"},
+              {KGENDType::si16, "Int16"},
+              {KGENDType::ui16, "UInt16"},
+              {KGENDType::si32, "Int32"},
+              {KGENDType::ui32, "UInt32"},
+              {KGENDType::si64, "Int64"},
+              {KGENDType::ui64, "UInt64"},
+              {KGENDType::si128, "Int128"},
+              {KGENDType::ui128, "UInt128"},
+              {KGENDType::si256, "Int256"},
+              {KGENDType::ui256, "UInt256"},
+              {KGENDType::f8e5m2, "Float8_e5m2"},
+              {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
+              {KGENDType::f8e4m3fn, "Float8_e4m3fn"},
+              {KGENDType::f8e4m3fnuz, "Float8_e4m3fnuz"},
+              {KGENDType::bf16, "BFloat16"},
+              {KGENDType::f16, "Float16"},
+              {KGENDType::f32, "Float32"},
+              {KGENDType::f64, "Float64"},
+          };
+          if (dtype) {
+            for (auto [dtypeValue, dtypeName] : dtypeAliases) {
+              if (dtype.getDType() == dtypeValue) {
+                os << dtypeName;
+                return;
+              }
+            }
           }
+
+          // Otherwise if we know the size is 1, we can use Scalar[] alias, even
+          // if the dtype is parametric.
+          os << "Scalar[";
+          printParam(os, params[0], diagShared, demangleParams);
+          os << "]";
+          return;
         }
       }
     }

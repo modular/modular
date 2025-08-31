@@ -701,16 +701,26 @@ from collections.optional import Optional
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none"
-
-
-# CHECK: "signature": "optional_default_arg_none(input: Optional[SIMD[int64, 1]] = Optional[SIMD[int64, 1]](None))"
+# CHECK: "signature": "optional_default_arg_none(input: Optional[Int64] = Optional[Int64](None))"
 fn optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
+# CHECK-LABEL: "name": "optional_default_arg_none2"
+# CHECK: "signature": "optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = Optional[SIMD[DType.int64, 4]](None))"
+fn optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
+    pass
+
+
 # CHECK-LABEL: "name": "optional_default_arg_13"
-# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional[SIMD[int64, 1]](13))"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = Optional[Int64](13))"
 fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
+    pass
+
+
+# CHECK-LABEL: "name": "simd_scalar_alias"
+# CHECK: "signature": "simd_scalar_alias[dt: DType](input: Scalar[dt])"
+fn simd_scalar_alias[dt: DType](input: Scalar[dt]):
     pass
 
 
