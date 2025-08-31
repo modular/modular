@@ -593,3 +593,11 @@ struct SimpleSIMD[arg1: Int, size: Int]:
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{could not deduce parameter 'T' of callee '__init__'}}
     x = SimpleSIMD[50, 4](b)
+
+# expected-note @below {{function declared here}}
+fn takes4(x: HasSize[4]): pass
+fn get_int[A: Int]() -> Int: pass
+fn test_param_call():
+    # expected-error @below {{cannot be converted from 'HasSize[get_int[42]()]' to 'HasSize[4]'}}
+    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+    takes4(HasSize[get_int[42]()]())
