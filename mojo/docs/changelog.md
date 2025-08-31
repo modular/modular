@@ -153,6 +153,9 @@ language across multiple phases.
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 
+- There is now an `iter` module which exposes the `next`, `iter`,
+  and `enumerate` methods.
+
 - The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
   all types that can be implicitly copied may also be copied using an explicit
   `.copy()` method call.
@@ -356,6 +359,8 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 
 ### 🛠️ Fixed
 
+- Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__`
+  always returns immutable references.
 - Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
   inferred for `__getitem__` if `[]` operator is used and `__setitem__` is present.
 - Fixed <https://github.com/modular/modular/issues/5190>
@@ -363,3 +368,5 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 - Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
 - Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
   docs.
+- Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
+  detected inside an inline if-else.

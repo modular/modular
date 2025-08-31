@@ -206,17 +206,3 @@ trait Defaultable:
     fn __init__(out self):
         """Create a default instance of the value."""
         ...
-
-
-trait Iterator(Movable):
-    """The `Iterator` trait describes a type that can be used as an
-    iterator, e.g. in a `for` loop.
-    """
-
-    alias Element: AnyType
-
-    fn __has_next__(self) -> Bool:
-        ...
-
-    fn __next__(mut self) -> Self.Element:
-        ...
