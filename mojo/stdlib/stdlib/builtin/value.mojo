@@ -212,11 +212,11 @@ trait DeletableItem:
     """The `DeletableItem` trait describes a type that can delete items from a indexed collection.
     """
 
-    fn __delitem__(mut self, i: Int) -> None:
+    fn __delitem__(mut self, idx: Some[Indexer]) -> None:
         """Delete an item from the collection.
 
         Args:
-            i: The index of the item to delete.
+            idx: The index of the item to delete.
         """
         ...
 
@@ -227,3 +227,24 @@ trait DeletableItem:
             slice: The slice of items to delete.
         """
         ...
+
+    @always_inline
+    fn delete(mut self, idx: Some[Indexer]) -> None:
+        """Delete an item from the collection.
+        This is a convenience function that wraps the `__delitem__` method.
+
+        Args:
+            idx: The index of the item to delete.
+        """
+
+        self.__delitem__(idx)
+
+    @always_inline
+    fn delete(mut self, slice: Slice) -> None:
+        """Delete a slice of items from the collection.
+        This is a convenience function that wraps the `__delitem__` method.
+
+        Args:
+            slice: The slice of items to delete.
+        """
+        self.__delitem__(slice)

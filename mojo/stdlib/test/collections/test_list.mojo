@@ -989,23 +989,23 @@ def test_list_repr_wrap():
     )
 
 
-def test_list_delitem_by_index():
+def test_list_delete_by_index():
     var l = [1, 2, 3]
-    l.__delitem__(1)  # del l[1]
+    l.delete(1)  # del l[1]
     assert_equal(l, [1, 3])
-    l.__delitem__(-1)  # del l[-1]
+    l.delete(-1)  # del l[-1]
     assert_equal(l, [1])
 
 
-def test_list_delitem_by_slice_contiguous():
+def test_list_delete_by_slice_contiguous():
     var l = [0, 1, 2, 3, 4, 5]
-    l.__delitem__(Slice(1, 5))  # del l[1:5]
+    l.delete(Slice(1, 5))  # del l[1:5]
     assert_equal(l, [0, 5])
 
 
-def test_list_delitem_by_slice_non_contiguous():
+def test_list_delete_by_slice_non_contiguous():
     var l = [0, 1, 2, 3, 4, 5]
-    l.__delitem__(Slice(0, 6, 2))  # del l[0:6:2]
+    l.delete(Slice(0, 6, 2))  # del l[0:6:2]
     assert_equal(l, [1, 3, 5])
 
 
@@ -1053,6 +1053,6 @@ def main():
     test_copyinit_trivial_types_dtypes()
     test_list_comprehension()
     test_list_repr_wrap()
-    test_list_delitem_by_index()
-    test_list_delitem_by_slice_contiguous()
-    test_list_delitem_by_slice_non_contiguous()
+    test_list_delete_by_index()
+    test_list_delete_by_slice_contiguous()
+    test_list_delete_by_slice_non_contiguous()

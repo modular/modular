@@ -627,13 +627,13 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
         return self.__str__()
 
-    fn __delitem__(mut self, i: Int) -> None:
+    fn __delitem__(mut self, idx: Some[Indexer]) -> None:
         """Delete an item from the list at the given index.
 
         Args:
-            i: The index of the item to delete.
+            idx: The index of the item to delete.
         """
-        _ = self.pop(i)
+        _ = self.pop(idx)
 
     fn __delitem__(mut self, slice: Slice) -> None:
         """Delete a slice of items from the list.
@@ -872,20 +872,18 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, idx: Some[Indexer]) -> T:
         """Pops a value from the list at the given index.
 
         Args:
-            i: The index of the value to pop.
+            idx: The index of the value to pop.
 
         Returns:
             The popped value.
         """
-        debug_assert(-self._len <= i < self._len, "pop index out of range")
-
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx += self._len
+        var normalized_idx = normalize_index["List", assert_always=False](
+            idx, UInt(len(self))
+        )
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
@@ -893,6 +891,15 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         self._len -= 1
 
         return ret_val^
+
+    @always_inline
+    fn pop(mut self) -> T:
+        """Pops the last value from the list.
+
+        Returns:
+            The popped value.
+        """
+        return self.pop(-1)
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
