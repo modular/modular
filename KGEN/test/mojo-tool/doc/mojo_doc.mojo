@@ -45,7 +45,7 @@ alias alias_Value = 10
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
 # CHECK:  "path": "/mojo_doc/#alias_construct",
-# CHECK:  "value": "IntTuple(0, 1, 2, 3, 4)"
+# CHECK:  "value": "IntTuple[{}](0, 1, 2, 3, 4)"
 alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 
@@ -700,12 +700,16 @@ fn dep_type[
 from collections.optional import Optional
 
 
-# CHECK: "signature": "optional_default_arg_none(input: Optional[SIMD[int64, 1]] = Optional(None))"
+# CHECK-LABEL: "name": "optional_default_arg_none"
+
+
+# CHECK: "signature": "optional_default_arg_none(input: Optional[SIMD[int64, 1]] = Optional[SIMD[int64, 1]](None))"
 fn optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
-# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(13))"
+# CHECK-LABEL: "name": "optional_default_arg_13"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional[SIMD[int64, 1]](13))"
 fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 

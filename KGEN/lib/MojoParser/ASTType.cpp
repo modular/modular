@@ -477,6 +477,89 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
   os << name;
 }
 
+/// Given a parameter list for a function or struct, print it out in a nice
+/// user-readable format (e.g. eliding infer-only and defaulted parameters).
+///
+/// This needs to handle the case when 'paramInfo' is null, e.g. when mangling.
+static void printParamList(raw_ostream &os, PogListAttr paramInfo,
+                           ArrayRef<TypedAttr> params, SharedState *diagShared,
+                           bool demangleParams) {
+  if (params.empty())
+    return;
+
+  SmallVector<std::pair<StringAttr, TypedAttr>> paramsToPrint;
+
+  // If we're printing for diagnostics, we'll have 'paramInfo'.  In that case we
+  // want to avoid printing defaulted parameter values that are the same as
+  // their default value.
+  if (paramInfo) {
+    assert(paramInfo.size() == params.size() &&
+           "Unexpected number of bound params");
+
+    ParserParameterEvaluator evaluator(*diagShared, params);
+
+    // Find out about default parameter values.
+    DefaultValueHandler defaultValueHandler(paramInfo);
+    bool skippedPositional = false;
+    for (auto [idx, pog, paramValue] :
+         llvm::enumerate(paramInfo.getPogs(), params)) {
+
+      auto passingKind = pog.getPassingKind();
+
+      // See if this parameter has a default value.  If so, and if the
+      // provided value matches it, then don't print the parameter in the
+      // list.
+      if (auto def = defaultValueHandler.getDefault(idx)) {
+        // Make sure to substitute other parameter values in, e.g. so we can
+        // handle things like:
+        //   struct UnsafePointer[type: AnyType,
+        //                        align: Int = _default_alignment[type]()]:
+        def = evaluator.getReboundAttribute(def);
+        if (paramValue == def && passingKind != PassingKind::PosOnly) {
+          // If we skip a posOrKw then include keyword names for any other
+          // posOrKw's that come after it.
+          skippedPositional |= (passingKind == PassingKind::PosOrKw);
+          continue;
+        }
+      }
+
+      StringAttr name;
+      switch (passingKind) {
+      case PassingKind::Implicit:
+      case PassingKind::Inferred:
+        continue; // Don't print implicit parameters at all.
+      case PassingKind::PosOnly:
+        break; // Never include a name.
+      case PassingKind::PosOrKw:
+        if (!skippedPositional)
+          break; // Don't include a name unless we skipped another one.
+        [[fallthrough]];
+      case PassingKind::KwOnly:
+        name = paramInfo.getName(idx);
+        break;
+      }
+      paramsToPrint.push_back({name, paramValue});
+    }
+
+  } else {
+    // When generating mangled names, don't include names for parameters since
+    // positional information is enough.
+    for (TypedAttr paramValue : params)
+      paramsToPrint.push_back({StringAttr(), paramValue});
+  }
+
+  if (!paramsToPrint.empty()) {
+    os << '[';
+    llvm::interleaveComma(
+        paramsToPrint, os, [&](std::pair<StringAttr, TypedAttr> param) {
+          if (param.first)
+            os << param.first.strref() << '=';
+          ASTType::printParam(os, param.second, diagShared, demangleParams);
+        });
+    os << ']';
+  }
+}
+
 /// Try to extract a symbol reference and parameter list from a function callee.
 /// Returns the symbol being called and the parameters, or a null symbol if
 /// decoding failed.
@@ -632,17 +715,6 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
           if (tryPrintLiteralValue(operandsToPrint))
             return;
         }
-
-        // For non-literal structs, handle nested literal constructors
-        // FIXME: This is crushing parameters unnecessarily.
-        if (!structName.empty()) {
-          os << structName << '(';
-          llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr arg) {
-            printDemangledParam(os, arg, diagShared);
-          });
-          os << ')';
-          return;
-        }
       }
 
       // For constructors, print the type name instead of __init__.
@@ -657,18 +729,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
       }
 
-      // If there are parameters, print them. Note that we don't have easy
-      // access to default parameter values or keyword names on the function.
-      // TODO: look up the callee to omit them like isKnownNonStaticMethod is
-      // doing, and integrate into logic that struct printing is using.
-      if (!calleeParams.empty()) {
-        os << '[';
-        llvm::interleaveComma(calleeParams, os, [&](TypedAttr param) {
-          printDemangledParam(os, param, diagShared);
-        });
-        os << ']';
-      }
+      // If there are parameters, print them, eliding infer-only and defaulted
+      // parameter values.
+      PogListAttr paramInfo;
+      if (calleeFn)
+        paramInfo = calleeFn.getFullSignature().getParamListAttrs();
+      printParamList(os, paramInfo, calleeParams, diagShared, false);
 
+      // Finally, also print any operands.
       return printOperands(operandsToPrint);
     }
     case POC::Cond: {
@@ -1028,83 +1096,16 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, diagShared, /*isFunc=*/false);
-    if (params.empty())
-      return;
 
-    SmallVector<std::pair<StringAttr, TypedAttr>> paramsToPrint;
-
-    // If we're printing for diagnostics, we'll have a 'typeDecl' corresponding
-    // to this.  In that case we want to avoid printing defaulted parameter
-    // values that are the same as their default value.
+    // Print any type parameters if we can find the struct.
+    PogListAttr paramInfo;
     if (typeDecl) {
-      TypeSignatureType origSig =
-          cast<StructDeclOp>(typeDecl->getIfOperation()).getSignature();
-      PogListAttr paramInfo = origSig.getParamListAttrs();
-      assert(paramInfo.size() == params.size() &&
-             "Unexpected number of bound params");
-
-      ParserParameterEvaluator evaluator(*diagShared, params);
-
-      // Find out about default parameter values.
-      DefaultValueHandler defaultValueHandler(paramInfo);
-      bool skippedPositional = false;
-      for (auto [idx, pog, paramValue] :
-           llvm::enumerate(paramInfo.getPogs(), params)) {
-
-        auto passingKind = pog.getPassingKind();
-
-        // See if this parameter has a default value.  If so, and if the
-        // provided value matches it, then don't print the parameter in the
-        // list.
-        if (auto def = defaultValueHandler.getDefault(idx)) {
-          // Make sure to substitute other parameter values in, e.g. so we can
-          // handle things like:
-          //   struct UnsafePointer[type: AnyType,
-          //                        align: Int = _default_alignment[type]()]:
-          def = evaluator.getReboundAttribute(def);
-          if (paramValue == def && passingKind != PassingKind::PosOnly) {
-            // If we skip a posOrKw then include keyword names for any other
-            // posOrKw's that come after it.
-            skippedPositional |= (passingKind == PassingKind::PosOrKw);
-            continue;
-          }
-        }
-
-        StringAttr name;
-        switch (passingKind) {
-        case PassingKind::Implicit:
-        case PassingKind::Inferred:
-          continue; // Don't print implicit parameters at all.
-        case PassingKind::PosOnly:
-          break; // Never include a name.
-        case PassingKind::PosOrKw:
-          if (!skippedPositional)
-            break; // Don't include a name unless we skipped another one.
-          [[fallthrough]];
-        case PassingKind::KwOnly:
-          name = paramInfo.getName(idx);
-          break;
-        }
-        paramsToPrint.push_back({name, paramValue});
-      }
-
-    } else {
-      // When generating mangled names, don't include names for parameters since
-      // positional information is enough.
-      for (TypedAttr paramValue : params)
-        paramsToPrint.push_back({StringAttr(), paramValue});
+      paramInfo = cast<StructDeclOp>(typeDecl->getIfOperation())
+                      .getSignature()
+                      .getParamListAttrs();
     }
 
-    if (!paramsToPrint.empty()) {
-      os << '[';
-      llvm::interleaveComma(
-          paramsToPrint, os, [&](std::pair<StringAttr, TypedAttr> param) {
-            if (param.first)
-              os << param.first.strref() << '=';
-            printParam(os, param.second, diagShared, demangleParams);
-          });
-      os << ']';
-    }
+    printParamList(os, paramInfo, params, diagShared, demangleParams);
   };
 
   auto printConvention = [&os](ArgConvention conv) {
