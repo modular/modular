@@ -52,7 +52,7 @@ struct Origin[mut: Bool]:
 
     alias _mlir_type = __mlir_type[
         `!lit.origin<`,
-        mut.value,
+        mut._mlir_value,
         `>`,
     ]
 
@@ -60,7 +60,7 @@ struct Origin[mut: Bool]:
         `#lit.origin.mutcast<`,
         o._mlir_origin,
         `> : !lit.origin<`,
-        mut.value,
+        mut._mlir_value,
         `>`,
     ]
     """Cast an existing Origin to be of the specified mutability.

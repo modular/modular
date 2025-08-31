@@ -157,7 +157,7 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx.value]:
+    fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -171,7 +171,7 @@ struct Tuple[*element_types: ExplicitlyCopyable & Movable](
         var storage_kgen_ptr = UnsafePointer(to=self.storage).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx.value](
+        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[index = idx._mlir_value](
             storage_kgen_ptr
         )
         # Use an immortal mut reference, which converts to self's origin.

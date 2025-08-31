@@ -106,6 +106,7 @@ build --test_env=MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT=100
 common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
+build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping
 build --experimental_output_paths=strip
@@ -179,6 +180,18 @@ build:ci-remote-h100 --config=ci-gpu-common
 build:ci-remote-h100 --config=remote-h100
 build:ci-remote-h100 --build_metadata=TAGS=h100
 build:ci-remote-h100 --test_keep_going=false
+
+build:remote-b200 --config=remote
+build:remote-b200 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-b200 --platforms=//:b200-platform
+build:remote-b200 --extra_execution_platforms=//:m7i-platform,//:b200-platform,@mojo_host_platform
+build:remote-b200 --spawn_strategy=remote,worker,sandboxed,standalone
+build:remote-b200 --repo_env=MODULAR_TARGET=linux:x86_64
+
+build:ci-remote-b200 --config=ci-gpu-common
+build:ci-remote-b200 --config=remote-b200
+build:ci-remote-b200 --build_metadata=TAGS=b200
+build:ci-remote-b200 --test_keep_going=false
 
 build:remote-mi300 --config=remote
 build:remote-mi300 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1

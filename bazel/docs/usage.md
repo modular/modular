@@ -58,6 +58,18 @@ case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
 
+## Testing one-off scripts
+
+If you're working on one off test cases that might not end up being a
+normal test file, you can do so in the root of the repository in
+`repro.mojo`. This file is gitignored but setup to be run with all mojo
+dependencies so you can easily iterate on mojo changes. Once you edit
+that file you can run it with:
+
+```sh
+./bazelw run //:repro
+```
+
 ## Running linters
 
 A few linters and formatters can be run easily from bazel.

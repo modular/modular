@@ -76,7 +76,7 @@ fn pack_string_res(
         length=str_len,
     )
     # We can not free the resource ptr embedded in MEF, create a copy
-    return StringSlice.from_utf8(span).__str__()
+    return String(StringSlice(from_utf8=span))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -92,13 +92,11 @@ fn create_error_async_values_and_destruct_error(
     var err: Error,
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
-    var str = err.__str__()
-    var strslice = str.as_string_slice()
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
         async_ptr,
         async_len,
-        strslice.unsafe_ptr(),
-        strslice.byte_length(),
+        err.unsafe_cstr_ptr(),
+        err.byte_length(),
     )
 
 
@@ -972,92 +970,92 @@ fn mgp_debug_tensor_print[
 
 @register_internal("float8_e5m2")
 fn DTypeFloat8E5M2TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2.value
+    return DType.float8_e5m2._mlir_value
 
 
 @register_internal("float8_e5m2fnuz")
 fn DTypeFloat8E5M2FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e5m2fnuz.value
+    return DType.float8_e5m2fnuz._mlir_value
 
 
 @register_internal("float8_e3m4")
 fn DTypeFloat8E3M4TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e3m4.value
+    return DType.float8_e3m4._mlir_value
 
 
 @register_internal("float8_e4m3fn")
 fn DTypeFloat8E4M3FnTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fn.value
+    return DType.float8_e4m3fn._mlir_value
 
 
 @register_internal("float8_e4m3fnuz")
 fn DTypeFloat8E4M3FnuzTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float8_e4m3fnuz.value
+    return DType.float8_e4m3fnuz._mlir_value
 
 
 @register_internal("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bfloat16.value
+    return DType.bfloat16._mlir_value
 
 
 @register_internal("float16")
 fn DTypeFloat16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float16.value
+    return DType.float16._mlir_value
 
 
 @register_internal("float32")
 fn DTypeFloat32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float32.value
+    return DType.float32._mlir_value
 
 
 @register_internal("float64")
 fn DTypeFloat64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.float64.value
+    return DType.float64._mlir_value
 
 
 @register_internal("int8")
 fn DTypeInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int8.value
+    return DType.int8._mlir_value
 
 
 @register_internal("int16")
 fn DTypeInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int16.value
+    return DType.int16._mlir_value
 
 
 @register_internal("int32")
 fn DTypeInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int32.value
+    return DType.int32._mlir_value
 
 
 @register_internal("uint32")
 fn DTypeUInt32TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint32.value
+    return DType.uint32._mlir_value
 
 
 @register_internal("uint64")
 fn DTypeUInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint64.value
+    return DType.uint64._mlir_value
 
 
 @register_internal("int64")
 fn DTypeInt64TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.int64.value
+    return DType.int64._mlir_value
 
 
 @register_internal("uint8")
 fn DTypeUInt8TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint8.value
+    return DType.uint8._mlir_value
 
 
 @register_internal("uint16")
 fn DTypeUInt16TypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.uint16.value
+    return DType.uint16._mlir_value
 
 
 @register_internal("bool")
 fn DTypeBoolTypeDef(ty: DType._mlir_type) -> DType._mlir_type:
-    return DType.bool.value
+    return DType.bool._mlir_value
 
 
 @register_internal("index")

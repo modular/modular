@@ -14,7 +14,14 @@
 from math import clamp
 
 from algorithm import elementwise
-from buffer import NDBuffer
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
 from runtime.asyncrt import DeviceContextPtr
 
 from utils._select import _select_register_value as select
@@ -41,12 +48,17 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 
 @always_inline
 fn slice_dim_as_view[
-    dtype: DType, rank: Int, dim: Int
+    dtype: DType, dim: Int
 ](
-    tensor: NDBuffer[dtype, rank, *_, **_], start: Int, end: Int, step: Int
-) -> NDBuffer[dtype, rank, tensor.origin]:
-    var new_shape = tensor.get_shape()
-    var new_stride = tensor.get_strides()
+    tensor: LayoutTensor[dtype, **_], start: Int, end: Int, step: Int
+) -> LayoutTensor[
+    dtype,
+    Layout.row_major[tensor.rank](),
+    tensor.origin,
+    address_space = tensor.address_space,
+]:
+    var new_shape = tensor.runtime_layout.shape.value.canonicalize()
+    var new_stride = tensor.runtime_layout.stride.value.canonicalize()
 
     var dim_i = tensor.dim(dim)
     var old_stride = tensor.stride(dim)
@@ -59,7 +71,7 @@ fn slice_dim_as_view[
 
     # The data does not change however we will be addressing a different
     # offset of the data.
-    var new_data = tensor.data.offset(new_offset)
+    var new_data = tensor.ptr + new_offset
 
     # Stride == number of elements to the next index in this dimension.
     # So to step we can just increase the stride.
@@ -70,8 +82,14 @@ fn slice_dim_as_view[
     new_shape[dim] = len(range(clamped_start, clamped_stop, step))
 
     # Create the new view
-    return NDBuffer[dtype, rank, address_space = tensor.address_space](
-        new_data, new_shape, new_stride
+    return LayoutTensor[
+        dtype,
+        Layout.row_major[tensor.rank](),
+        tensor.origin,
+        address_space = tensor.address_space,
+    ](
+        new_data,
+        RuntimeLayout[Layout.row_major[tensor.rank]()](new_shape, new_stride),
     )
 
 
@@ -86,22 +104,26 @@ fn slice_as_view[
     start_type: DType,
     end_type: DType,
     step_type: DType,
-    rank: Int,
 ](
-    tensor: NDBuffer[dtype, rank, *_, **_],
-    starts: NDBuffer[start_type, 1, *_, **_],
-    ends: NDBuffer[end_type, 1, *_, **_],
-    steps: NDBuffer[step_type, 1, *_, **_],
-) -> NDBuffer[dtype, rank, tensor.origin]:
-    var new_shape = IndexList[rank]()
-    var new_stride = IndexList[rank]()
+    tensor: LayoutTensor[dtype, **_],
+    starts: LayoutTensor[start_type, **_],
+    ends: LayoutTensor[end_type, **_],
+    steps: LayoutTensor[step_type, **_],
+) -> LayoutTensor[
+    dtype,
+    Layout.row_major[tensor.rank](),
+    tensor.origin,
+    address_space = tensor.address_space,
+]:
+    var new_shape = IndexList[tensor.rank]()
+    var new_stride = IndexList[tensor.rank]()
 
     # The data does not change however we will be addressing a different
     # offset of the data.
-    var new_data = tensor.data
+    var new_data = tensor.ptr
 
     @parameter
-    for i in range(rank):
+    for i in range(tensor.rank):
         var start = Int(starts[i])
         var stop = Int(ends[i])
         var step = Int(steps[i])
@@ -124,8 +146,17 @@ fn slice_as_view[
         new_shape[i] = len(range(start, stop, step))
 
     # Create the new view
-    return NDBuffer[dtype, rank, address_space = tensor.address_space](
-        new_data, new_shape, new_stride
+    return LayoutTensor[
+        dtype,
+        Layout.row_major[tensor.rank](),
+        tensor.origin,
+        address_space = tensor.address_space,
+    ](
+        new_data,
+        RuntimeLayout[Layout.row_major[tensor.rank]()](
+            new_shape,
+            new_stride,
+        ),
     )
 
 
@@ -140,27 +171,28 @@ fn copy_to_slice[
     start_type: DType,
     end_type: DType,
     step_type: DType,
-    in_rank: Int,
     target: StaticString = "cpu",
 ](
-    buffer: NDBuffer[mut=True, dtype, in_rank],
-    in_slice: NDBuffer[dtype, in_rank],
-    start: NDBuffer[start_type, 1],
-    end: NDBuffer[end_type, 1],
-    step: NDBuffer[step_type, 1],
+    buffer: LayoutTensor[mut=True, dtype, **_],
+    in_slice: LayoutTensor[dtype, **_],
+    start: LayoutTensor[start_type, **_],
+    end: LayoutTensor[end_type, **_],
+    step: LayoutTensor[step_type, **_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var expected_shape = slice_shape[single_thread_blocking_override=True](
         buffer, start, end, step
     )
 
-    if expected_shape != in_slice.get_shape():
+    if expected_shape != rebind[IndexList[buffer.rank]](
+        in_slice.runtime_layout.shape.value.canonicalize()
+    ):
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
             " operand to have shape: ",
             expected_shape,
             " but got: ",
-            in_slice.get_shape(),
+            in_slice.runtime_layout.shape.value.canonicalize(),
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
@@ -171,12 +203,25 @@ fn copy_to_slice[
     fn copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var index = rebind[IndexList[in_rank]](idx)
-        buffer_slice_view.store[width=simd_width](
-            index, in_slice.load[width=simd_width](index)
+        var coords = rebind[IndexList[in_slice.rank]](idx)
+        var buf_index = buffer_slice_view.runtime_layout(
+            RuntimeTuple[
+                fill_like(buffer_slice_view.layout.shape, UNKNOWN_VALUE)
+            ](coords)
+        )
+        var slice_index = in_slice.runtime_layout(
+            RuntimeTuple[fill_like(in_slice.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        buffer_slice_view.ptr.store[width=simd_width](
+            buf_index, in_slice.ptr.load[width=simd_width](slice_index)
         )
 
-    elementwise[copy, 1, target=target](buffer_slice_view.get_shape(), context)
+    elementwise[copy, 1, target=target](
+        buffer_slice_view.runtime_layout.shape.value.canonicalize(),
+        context,
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -186,14 +231,16 @@ fn copy_to_slice[
 
 @always_inline
 fn slice_as_copy[
-    dtype: DType, index_type: DType, in_rank: Int
+    dtype: DType,
+    index_type: DType,
 ](
-    output: NDBuffer[mut=True, dtype, in_rank],
-    tensor: NDBuffer[dtype, in_rank],
-    start: NDBuffer[index_type, 1],
-    end: NDBuffer[index_type, 1],
-    step: NDBuffer[index_type, 1],
+    output: LayoutTensor[mut=True, dtype, **_],
+    tensor: LayoutTensor[dtype, **_],
+    start: LayoutTensor[index_type, **_],
+    end: LayoutTensor[index_type, **_],
+    step: LayoutTensor[index_type, **_],
 ) raises:
+    constrained[output.rank == tensor.rank]()
     # Apply slice to the tensor
     var sliced = slice_as_view(tensor, start, end, step)
 
@@ -204,13 +251,19 @@ fn slice_as_copy[
     fn copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var index = rebind[IndexList[in_rank]](idx)
-        output.store[width=simd_width](
-            index, sliced.load[width=simd_width](index)
+        var index = rebind[IndexList[tensor.rank]](idx)
+        var output_index = output.runtime_layout(
+            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](index)
+        )
+        var slice_index = sliced.runtime_layout(
+            RuntimeTuple[fill_like(sliced.layout.shape, UNKNOWN_VALUE)](index)
+        )
+        output.ptr.store[width=simd_width](
+            output_index, sliced.ptr.load[width=simd_width](slice_index)
         )
 
     # Invoke copy.
-    elementwise[copy, 1](output.dynamic_shape)
+    elementwise[copy, 1](output.runtime_layout.shape.value.canonicalize())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -220,32 +273,35 @@ fn slice_as_copy[
 
 @always_inline
 fn slice_shape[
-    input_rank: Int,
     input_type: DType,
     start_type: DType,
     stop_type: DType,
     step_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    start_buf: NDBuffer[start_type, 1],
-    stop_buf: NDBuffer[stop_type, 1],
-    step_buf: NDBuffer[step_type, 1],
-) raises -> IndexList[input_rank]:
-    if input_rank != start_buf.dim(0):
+    input_buf: LayoutTensor[input_type, **_],
+    start_buf: LayoutTensor[start_type, **_],
+    stop_buf: LayoutTensor[stop_type, **_],
+    step_buf: LayoutTensor[step_type, **_],
+) raises -> IndexList[input_buf.rank]:
+    constrained[start_buf.rank == 1, "start_buf.rank must be 1"]()
+    constrained[stop_buf.rank == 1, "stop_buf.rank must be 1"]()
+    constrained[step_buf.rank == 1, "step_buf.rank must be 1"]()
+
+    if input_buf.rank != start_buf.dim[0]():
         raise Error("[slice] start indices size must equal input rank")
-    if input_rank != stop_buf.dim(0):
+    if input_buf.rank != stop_buf.dim[0]():
         raise Error("[slice] stop indices size must equal input rank")
-    if input_rank != step_buf.dim(0):
+    if input_buf.rank != step_buf.dim[0]():
         raise Error("[slice] step indices size must equal input rank")
 
-    for axis in range(input_rank):
+    for axis in range(input_buf.rank):
         if step_buf[axis] == 0:
             raise Error("[slice] step must be non-zero")
 
-    var output_shape = IndexList[input_rank]()
+    var output_shape = IndexList[input_buf.rank]()
 
-    for i in range(input_rank):
+    for i in range(input_buf.rank):
         var start = Int(start_buf[i])
         var stop = Int(stop_buf[i])
         var step = Int(step_buf[i])

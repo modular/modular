@@ -170,9 +170,9 @@ struct _WriteBufferHeap(Writable, Writer):
     fn __init__(out self):
         alias alignment: Int = align_of[Byte]() if is_gpu() else 1
         self.data = __mlir_op.`pop.stack_allocation`[
-            count = HEAP_BUFFER_BYTES.value,
+            count = HEAP_BUFFER_BYTES._mlir_value,
             _type = UnsafePointer[Byte]._mlir_type,
-            alignment = alignment.value,
+            alignment = alignment._mlir_value,
         ]()
         self.pos = 0
 

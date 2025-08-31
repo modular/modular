@@ -123,14 +123,26 @@ struct Bool(
 ):
     """The primitive Bool scalar value used in Mojo."""
 
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
+    var _mlir_value: __mlir_type.i1
+    """The underlying storage of the boolean value."""
+
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
+
     alias MIN = Bool(False)
     """The minimum value of a Bool."""
 
     alias MAX = Bool(True)
     """The maximum value of a Bool."""
 
-    var value: __mlir_type.i1
-    """The underlying storage of the boolean value."""
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
     fn __init__(out self):
@@ -146,7 +158,7 @@ struct Bool(
         Args:
             value: The initial __mlir_type.i1 value.
         """
-        self.value = value
+        self._mlir_value = value
 
     @doc_private
     @always_inline("nodebug")
@@ -156,9 +168,9 @@ struct Bool(
         Args:
             mlir_value: The initial value.
         """
-        self.value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i1](
-            mlir_value
-        )
+        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
+            _type = __mlir_type.i1
+        ](mlir_value)
 
     @always_inline("nodebug")
     @implicit
@@ -234,7 +246,7 @@ struct Bool(
         Returns:
             The underlying value for the Bool.
         """
-        return self.value
+        return self._mlir_value
 
     @no_inline
     fn __str__(self) -> String:
@@ -294,7 +306,7 @@ struct Bool(
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return self.__int__().value
+        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:
@@ -399,7 +411,7 @@ struct Bool(
         Returns:
             True if the object is false and False otherwise.
         """
-        return __mlir_op.`pop.xor`(self.value, __mlir_attr.true)
+        return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
 
     @always_inline("builtin")
     fn __and__(self, rhs: Bool) -> Bool:
@@ -414,7 +426,7 @@ struct Bool(
         Returns:
             `self & rhs`.
         """
-        return __mlir_op.`pop.and`(self.value, rhs.value)
+        return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     fn __iand__(mut self, rhs: Bool):
@@ -450,7 +462,7 @@ struct Bool(
         Returns:
             `self | rhs`.
         """
-        return __mlir_op.`pop.or`(self.value, rhs.value)
+        return __mlir_op.`pop.or`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     fn __ior__(mut self, rhs: Bool):
@@ -486,7 +498,7 @@ struct Bool(
         Returns:
             `self ^ rhs`.
         """
-        return __mlir_op.`pop.xor`(self.value, rhs.value)
+        return __mlir_op.`pop.xor`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("nodebug")
     fn __ixor__(mut self, rhs: Bool):

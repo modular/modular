@@ -22,20 +22,19 @@ import threading
 import uuid
 from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, NewType, TypeVar, Union, cast
+from typing import Callable, NewType, TypeVar, cast
 
 import tqdm
 from max.interfaces import SamplingParams, TextGenerationRequest
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
-from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
-from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
+from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
 from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler import PrefillRequest, PrefillResponse
+from max.serve.scheduler.base import PayloadType
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -140,10 +139,15 @@ def _run_async_worker(
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
     settings: Settings,
+    dispatcher_factory: DispatcherFactory[PayloadType] | None = None,
 ) -> None:
     asyncio.run(
         _async_worker(
-            pc, pipeline_config, request_queue, pending_requests, settings
+            pc,
+            pipeline_config,
+            request_queue,
+            pending_requests,
+            settings,
         )
     )
 
@@ -181,14 +185,6 @@ async def _async_worker(
         pipeline_config
     )
     model_name = pipeline_config.model_config.model_path
-    dispatcher_factory = DispatcherFactory[
-        Union[PrefillRequest, PrefillResponse]
-    ](
-        settings.dispatcher_config,
-        transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse]
-        ],
-    )
 
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
@@ -210,7 +206,6 @@ async def _async_worker(
             settings=settings,
             metric_client=metric_client,
             pipeline_task=pipeline_task,
-            dispatcher_factory=dispatcher_factory,
         ) as engine_queue,
         TokenGeneratorPipeline(
             model_name=model_name,

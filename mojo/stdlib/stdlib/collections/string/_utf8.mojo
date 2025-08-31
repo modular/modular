@@ -119,7 +119,7 @@ fn validate_chunk[
     return must23_as_80 ^ sc
 
 
-fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
+fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, **_]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -162,7 +162,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
     return all(has_error.eq(0))
 
 
-fn _is_valid_utf8(span: Span[Byte]) -> Bool:
+fn _is_valid_utf8(span: Span[mut=False, Byte, **_]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:

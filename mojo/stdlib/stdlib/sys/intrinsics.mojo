@@ -78,7 +78,7 @@ fn llvm_intrinsic[
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -86,7 +86,7 @@ fn llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)
 
 
@@ -174,10 +174,10 @@ fn gather[
 
     var result = llvm_intrinsic[
         "llvm.masked.gather",
-        __mlir_type[`!pop.simd<`, size.value, `, `, dtype.value, `>`],
+        SIMD[dtype, size]._mlir_type,
     ](
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size.value, `, address>`],
+            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -257,7 +257,7 @@ fn scatter[
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size.value, `, address>`],
+            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -784,7 +784,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
     var storage: __mlir_type[`!kgen.pack<`, a, `>`]
 
     @always_inline("nodebug")
-    fn __getitem__[i: Int](self) -> a[i.value]:
+    fn __getitem__[i: Int](self) -> a[i]:
         """Get the element.
 
         Parameters:
@@ -793,7 +793,9 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i.value](self.storage)
+        return __mlir_op.`kgen.pack.extract`[index = i._mlir_value](
+            self.storage
+        )
 
 
 # ===----------------------------------------------------------------------=== #

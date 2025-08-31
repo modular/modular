@@ -2036,17 +2036,21 @@ struct Slice:
         ],
     ):
         var view_buffer = slice_as_view(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+            input.to_layout_tensor(),
+            starts.to_layout_tensor(),
+            stops.to_layout_tensor(),
+            steps.to_layout_tensor(),
         )
 
-        return __type_of(result)(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-        )
+        result = {
+            view_buffer.ptr,
+            rebind[IndexList[rank]](
+                view_buffer.runtime_layout.shape.value.canonicalize()
+            ),
+            rebind[IndexList[rank]](
+                view_buffer.runtime_layout.stride.value.canonicalize()
+            ),
+        }
 
     @staticmethod
     fn execute[
@@ -2079,11 +2083,13 @@ struct Slice:
         stops: InputTensor[rank=1],
         steps: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
-        return slice_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+        return rebind[IndexList[input.rank]](
+            slice_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                starts.to_layout_tensor(),
+                stops.to_layout_tensor(),
+                steps.to_layout_tensor(),
+            )
         )
 
 
@@ -2125,11 +2131,11 @@ struct MutableStoreSlice:
         ctx: DeviceContextPtr,
     ) raises:
         copy_to_slice[target=target](
-            managed_tensor_slice_to_ndbuffer(to_buffer),
-            managed_tensor_slice_to_ndbuffer(in_slice),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+            to_buffer.to_layout_tensor(),
+            in_slice.to_layout_tensor(),
+            starts.to_layout_tensor(),
+            stops.to_layout_tensor(),
+            steps.to_layout_tensor(),
             ctx,
         )
 
@@ -2179,17 +2185,21 @@ struct SliceDim:
         ],
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
-            managed_tensor_slice_to_ndbuffer(input),
+            input.to_layout_tensor(),
             Int(starts),
             Int(stops),
             Int(steps),
         )
 
-        return __type_of(result)(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
-        )
+        result = {
+            view_buffer.ptr,
+            rebind[IndexList[rank]](
+                view_buffer.runtime_layout.shape.value.canonicalize()
+            ),
+            rebind[IndexList[rank]](
+                view_buffer.runtime_layout.stride.value.canonicalize()
+            ),
+        }
 
     @staticmethod
     fn execute[

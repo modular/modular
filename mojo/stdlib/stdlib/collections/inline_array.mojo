@@ -85,7 +85,7 @@ struct InlineArray[
 
     # Fields
     alias type = __mlir_type[
-        `!pop.array<`, size.value, `, `, Self.ElementType, `>`
+        `!pop.array<`, size._mlir_value, `, `, Self.ElementType, `>`
     ]
     var _array: Self.type
     """The underlying storage for the array."""

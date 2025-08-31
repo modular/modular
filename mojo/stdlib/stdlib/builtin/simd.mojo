@@ -390,6 +390,35 @@ struct SIMD[dtype: DType, size: Int](
         size: The size of the SIMD vector (number of elements).
     """
 
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
+    alias _mlir_type = __mlir_type[
+        `!pop.simd<`, size._mlir_value, `, `, dtype._mlir_value, `>`
+    ]
+
+    var _mlir_value: Self._mlir_type
+    """The underlying storage for the vector."""
+
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
+
+    alias MAX = Self(_max_or_inf[dtype]())
+    """Gets the maximum value for the SIMD value, potentially +inf."""
+
+    alias MIN = Self(_min_or_neg_inf[dtype]())
+    """Gets the minimum value for the SIMD value, potentially -inf."""
+
+    alias MAX_FINITE = Self(_max_finite[dtype]())
+    """Returns the maximum finite value of SIMD value."""
+
+    alias MIN_FINITE = Self(_min_finite[dtype]())
+    """Returns the minimum (lowest) finite value of SIMD value."""
+
+    alias _Mask = SIMD[DType.bool, size]
+
     alias device_type: AnyTrivialRegType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
@@ -422,27 +451,6 @@ struct SIMD[dtype: DType, size: Int](
             This type's name.
         """
         return Self.get_type_name()
-
-    # Fields
-    alias _mlir_type = __mlir_type[
-        `!pop.simd<`, size.value, `, `, dtype.value, `>`
-    ]
-    var value: Self._mlir_type
-    """The underlying storage for the vector."""
-
-    alias MAX = Self(_max_or_inf[dtype]())
-    """Gets the maximum value for the SIMD value, potentially +inf."""
-
-    alias MIN = Self(_min_or_neg_inf[dtype]())
-    """Gets the minimum value for the SIMD value, potentially -inf."""
-
-    alias MAX_FINITE = Self(_max_finite[dtype]())
-    """Returns the maximum finite value of SIMD value."""
-
-    alias MIN_FINITE = Self(_min_finite[dtype]())
-    """Returns the minimum (lowest) finite value of SIMD value."""
-
-    alias _Mask = SIMD[DType.bool, size]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -546,14 +554,16 @@ struct SIMD[dtype: DType, size: Int](
 
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
-        ](value.value)
+        ](value._mlir_value)
         var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](index)
 
         @parameter
         if size == 1:
-            self.value = rebind[Self._mlir_type](s)
+            self._mlir_value = rebind[Self._mlir_type](s)
         else:
-            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
+            self._mlir_value = __mlir_op.`pop.simd.splat`[
+                _type = Self._mlir_type
+            ](s)
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
@@ -643,9 +653,11 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            self.value = rebind[Self._mlir_type](s)
+            self._mlir_value = rebind[Self._mlir_type](s)
         else:
-            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
+            self._mlir_value = __mlir_op.`pop.simd.splat`[
+                _type = Self._mlir_type
+            ](s)
 
     @always_inline("nodebug")
     @implicit
@@ -679,9 +691,9 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
-        ](value.value)
+        ](value._mlir_value)
 
-        self.value = rebind[Self._Mask._mlir_type](s)
+        self._mlir_value = rebind[Self._Mask._mlir_type](s)
 
     @always_inline("nodebug")
     fn __init__(out self: SIMD[DType.bool, size], *, fill: Bool):
@@ -700,13 +712,13 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
-        ](fill.value)
+        ](fill._mlir_value)
 
         @parameter
         if size == 1:
-            self.value = rebind[Self._Mask._mlir_type](s)
+            self._mlir_value = rebind[Self._Mask._mlir_type](s)
         else:
-            self.value = __mlir_op.`pop.simd.splat`[
+            self._mlir_value = __mlir_op.`pop.simd.splat`[
                 _type = Self._Mask._mlir_type
             ](s)
 
@@ -719,7 +731,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value: The input value.
         """
         _simd_construction_checks[dtype, size]()
-        self.value = mlir_value
+        self._mlir_value = mlir_value
 
     @always_inline("nodebug")
     @implicit
@@ -732,8 +744,8 @@ struct SIMD[dtype: DType, size: Int](
             value: The value to splat to the elements of the vector.
         """
         _simd_construction_checks[dtype, size]()
-        self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
-            value.value
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            value._mlir_value
         )
 
     @always_inline("nodebug")
@@ -825,7 +837,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         return Scalar[dtype](
             mlir_value=__mlir_op.`pop.simd.extractelement`(
-                self.value, idx.value
+                self._mlir_value, idx._mlir_value
             )
         )
 
@@ -837,8 +849,8 @@ struct SIMD[dtype: DType, size: Int](
             idx: The index to set.
             val: The value to set.
         """
-        self.value = __mlir_op.`pop.simd.insertelement`(
-            self.value, val.value, idx.value
+        self._mlir_value = __mlir_op.`pop.simd.insertelement`(
+            self._mlir_value, val._mlir_value, idx._mlir_value
         )
 
     fn __contains__(self, value: Scalar[dtype]) -> Bool:
@@ -864,7 +876,9 @@ struct SIMD[dtype: DType, size: Int](
             `self[i] + rhs[i]`.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-        return Self(mlir_value=__mlir_op.`pop.add`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.add`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __sub__(self, rhs: Self) -> Self:
@@ -878,7 +892,9 @@ struct SIMD[dtype: DType, size: Int](
             `self[i] - rhs[i]`.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-        return Self(mlir_value=__mlir_op.`pop.sub`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.sub`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Self) -> Self:
@@ -898,7 +914,9 @@ struct SIMD[dtype: DType, size: Int](
                 self._refine[DType.bool]() & rhs._refine[DType.bool]()
             )._refine[dtype]()
 
-        return Self(mlir_value=__mlir_op.`pop.mul`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __truediv__(self, rhs: Self) -> Self:
@@ -912,7 +930,9 @@ struct SIMD[dtype: DType, size: Int](
             `self[i] / rhs[i]`.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-        return Self(mlir_value=__mlir_op.`pop.div`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.div`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __floordiv__(self, rhs: Self) -> Self:
@@ -967,7 +987,11 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_unsigned():
-            return Self(mlir_value=__mlir_op.`pop.rem`(self.value, rhs.value))
+            return Self(
+                mlir_value=__mlir_op.`pop.rem`(
+                    self._mlir_value, rhs._mlir_value
+                )
+            )
         else:
             var div = self / rhs
 
@@ -1028,7 +1052,7 @@ struct SIMD[dtype: DType, size: Int](
             The negation of this SIMD vector.
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
-        return Self(mlir_value=__mlir_op.`pop.neg`(self.value))
+        return Self(mlir_value=__mlir_op.`pop.neg`(self._mlir_value))
 
     @always_inline("nodebug")
     fn __and__(self, rhs: Self) -> Self:
@@ -1047,7 +1071,11 @@ struct SIMD[dtype: DType, size: Int](
             dtype.is_integral() or dtype is DType.bool,
             "must be an integral or bool type",
         ]()
-        return Self(mlir_value=__mlir_op.`pop.simd.and`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.and`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
 
     @always_inline("nodebug")
     fn __xor__(self, rhs: Self) -> Self:
@@ -1066,7 +1094,11 @@ struct SIMD[dtype: DType, size: Int](
             dtype.is_integral() or dtype is DType.bool,
             "must be an integral or bool type",
         ]()
-        return Self(mlir_value=__mlir_op.`pop.simd.xor`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.xor`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
 
     @always_inline("nodebug")
     fn __or__(self, rhs: Self) -> Self:
@@ -1085,7 +1117,11 @@ struct SIMD[dtype: DType, size: Int](
             dtype.is_integral() or dtype is DType.bool,
             "must be an integral or bool type",
         ]()
-        return Self(mlir_value=__mlir_op.`pop.simd.or`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.simd.or`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
 
     @always_inline("nodebug")
     fn __lshift__(self, rhs: Self) -> Self:
@@ -1106,7 +1142,9 @@ struct SIMD[dtype: DType, size: Int](
             all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
-        return Self(mlir_value=__mlir_op.`pop.shl`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.shl`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __rshift__(self, rhs: Self) -> Self:
@@ -1127,7 +1165,9 @@ struct SIMD[dtype: DType, size: Int](
             all(rhs.lt(bit_width_of[dtype]())),
             "unhandled value greater than size",
         )
-        return Self(mlir_value=__mlir_op.`pop.shr`(self.value, rhs.value))
+        return Self(
+            mlir_value=__mlir_op.`pop.shr`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __invert__(self) -> Self:
@@ -1268,7 +1308,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             var res = __mlir_op.`pop.cmp`[
                 pred = __mlir_attr.`#pop<cmp_pred eq>`
-            ](self.value, rhs.value)
+            ](self._mlir_value, rhs._mlir_value)
             return Self._Mask(mlir_value=res)
 
     @always_inline("nodebug")
@@ -1291,7 +1331,7 @@ struct SIMD[dtype: DType, size: Int](
         else:
             var res = __mlir_op.`pop.cmp`[
                 pred = __mlir_attr.`#pop<cmp_pred ne>`
-            ](self.value, rhs.value)
+            ](self._mlir_value, rhs._mlir_value)
             return Self._Mask(mlir_value=res)
 
     @always_inline("nodebug")
@@ -1307,7 +1347,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](
-            self.value, rhs.value
+            self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
 
@@ -1325,7 +1365,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
-            self.value, rhs.value
+            self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
 
@@ -1342,7 +1382,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](
-            self.value, rhs.value
+            self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
 
@@ -1360,7 +1400,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](
-            self.value, rhs.value
+            self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
 
@@ -1758,7 +1798,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if size == 1:
             var res = self._refine[size=1]().cast[DType.bool]()
-            return Bool(mlir_value=res.value)
+            return Bool(mlir_value=res._mlir_value)
         else:
             return Bool(self.reduce_or())
 
@@ -1784,7 +1824,7 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return Int(self._refine[size=1]().cast[DType.index]().value)
+            return Int(self._refine[size=1]().cast[DType.index]()._mlir_value)
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:
@@ -1797,7 +1837,7 @@ struct SIMD[dtype: DType, size: Int](
             dtype.is_integral(), "cannot index using a floating point type"
         ]()
         # NOTE: using Int(self) here would cause an infinite recursion.
-        return self.__int__().value
+        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:
@@ -2115,12 +2155,12 @@ struct SIMD[dtype: DType, size: Int](
             var uint = __mlir_op.`pop.cast`[
                 _type = SIMD[DType.uint32, size]._mlir_type,
                 fast = __mlir_attr.unit,
-            ](self.value)
+            ](self._mlir_value)
             return SIMD[DType.uint32, size](mlir_value=uint).cast[target]()
 
         var res = __mlir_op.`pop.cast`[
             _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
-        ](self.value)
+        ](self._mlir_value)
         return SIMD(mlir_value=res)
 
     @always_inline
@@ -2307,7 +2347,7 @@ struct SIMD[dtype: DType, size: Int](
         return Self(
             mlir_value=__mlir_op.`pop.fma`[
                 fastmathFlags = __mlir_attr.`#pop<fmf contract>`
-            ](self.value, multiplier.value, accumulator.value)
+            ](self._mlir_value, multiplier._mlir_value, accumulator._mlir_value)
         )
 
     @always_inline("nodebug")
@@ -2369,7 +2409,7 @@ struct SIMD[dtype: DType, size: Int](
         var res = __mlir_op.`pop.simd.shuffle`[
             mask = mask._mlir_value,
             _type = SIMD[dtype, output_size]._mlir_type,
-        ](self.value, other.value)
+        ](self._mlir_value, other._mlir_value)
         return SIMD(mlir_value=res)
 
     @always_inline("nodebug")
@@ -2982,9 +3022,9 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[Self.dtype is DType.bool, "the simd type must be bool"]()
         var res = __mlir_op.`pop.simd.select`(
-            self._refine[DType.bool]().value,
-            true_case.value,
-            false_case.value,
+            self._refine[DType.bool]()._mlir_value,
+            true_case._mlir_value,
+            false_case._mlir_value,
         )
         return SIMD(mlir_value=res)
 
@@ -3381,7 +3421,7 @@ fn _convert_float8_to_f32[
     ):
         var res = __mlir_op.`pop.cast`[
             _type = SIMD[DType.float32, size]._mlir_type
-        ](val.value)
+        ](val._mlir_value)
         return SIMD[DType.float32, size](mlir_value=res)
 
     else:
@@ -3409,7 +3449,7 @@ fn _convert_float8_to_f16[
         # do not call `SIMD.cast` here; the inliner will diverge
         var res = __mlir_op.`pop.cast`[
             _type = SIMD[DType.float16, size]._mlir_type
-        ](val.value)
+        ](val._mlir_value)
         return SIMD[DType.float16, size](mlir_value=res)
     else:
         return _convert_float8_to_f32(val).cast[DType.float16]()
@@ -3428,7 +3468,7 @@ fn _convert_f32_to_float8[
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
         var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
-            val.value
+            val._mlir_value
         )
         return SIMD(mlir_value=res)
     elif _is_amd_mi300x() and target in (
@@ -3436,7 +3476,7 @@ fn _convert_f32_to_float8[
         DType.float8_e5m2fnuz,
     ):
         var res = __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
-            val.value
+            val._mlir_value
         )
         return SIMD(mlir_value=res)
     else:

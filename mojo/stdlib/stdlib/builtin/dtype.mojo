@@ -79,10 +79,18 @@ struct DType(
     ```
     """
 
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
     alias _mlir_type = __mlir_type.`!kgen.dtype`
 
-    var value: Self._mlir_type
+    var _mlir_value: Self._mlir_type
     """The underlying storage for the DType value."""
+
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
 
     alias invalid = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
@@ -261,6 +269,10 @@ struct DType(
     )
     """Represents an IEEE754-2008 `binary64` floating point value."""
 
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
     @always_inline("builtin")
     fn __init__(out self, *, mlir_value: Self._mlir_type):
         """Construct a DType from MLIR dtype.
@@ -268,7 +280,7 @@ struct DType(
         Args:
             mlir_value: The MLIR dtype.
         """
-        self.value = mlir_value
+        self._mlir_value = mlir_value
 
     @staticmethod
     fn _from_str(str: StringSlice) -> DType:
@@ -426,7 +438,7 @@ struct DType(
         Returns:
             The kgen.dtype value.
         """
-        return self.value
+        return self._mlir_value
 
     @doc_private
     @staticmethod
@@ -441,14 +453,14 @@ struct DType(
     @always_inline("nodebug")
     fn _as_ui8(self) -> UInt8._mlir_type:
         return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
-            __mlir_op.`pop.dtype.to_ui8`(self.value)
+            __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
         )
 
     @doc_private
     @always_inline("nodebug")
     fn _match(self, mask: UInt8) -> Bool:
         var res = __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
+            __mlir_op.`pop.simd.and`(self._as_ui8(), mask._mlir_value),
             __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
         )
         return Bool(mlir_value=res)
@@ -617,15 +629,16 @@ struct DType(
             return Int(
                 UInt8(
                     mlir_value=__mlir_op.`pop.shl`(
-                        UInt8(1).value,
+                        UInt8(1)._mlir_value,
                         __mlir_op.`pop.sub`(
                             __mlir_op.`pop.shr`(
                                 __mlir_op.`pop.simd.and`(
-                                    self._as_ui8(), _mIsNotInteger.value
+                                    self._as_ui8(),
+                                    _mIsNotInteger._mlir_value,
                                 ),
-                                UInt8(1).value,
+                                UInt8(1)._mlir_value,
                             ),
-                            UInt8(3).value,
+                            UInt8(3)._mlir_value,
                         ),
                     )
                 )

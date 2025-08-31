@@ -234,6 +234,26 @@ struct Int(
 ):
     """This type represents an integer value."""
 
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
+    var _mlir_value: __mlir_type.index
+    """The underlying storage for the integer value."""
+
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
+
+    alias BITWIDTH = Int(bit_width_of[DType.index]())
+    """The bit width of the integer type."""
+
+    alias MAX = Int(Scalar[DType.index].MAX)
+    """Returns the maximum integer value."""
+
+    alias MIN = Int(Scalar[DType.index].MIN)
+    """Returns the minimum value of type."""
+
     alias device_type: AnyTrivialRegType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
@@ -267,18 +287,6 @@ struct Int(
         """
         return Self.get_type_name()
 
-    alias BITWIDTH = Int(bit_width_of[DType.index]())
-    """The bit width of the integer type."""
-
-    alias MAX = Int(Scalar[DType.index].MAX)
-    """Returns the maximum integer value."""
-
-    alias MIN = Int(Scalar[DType.index].MIN)
-    """Returns the minimum value of type."""
-
-    var value: __mlir_type.index
-    """The underlying storage for the integer value."""
-
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
@@ -286,7 +294,7 @@ struct Int(
     @always_inline("builtin")
     fn __init__(out self):
         """Default constructor that produces zero."""
-        self.value = __mlir_attr.`0 : index`
+        self._mlir_value = __mlir_attr.`0 : index`
 
     @doc_private
     @always_inline("builtin")
@@ -297,7 +305,7 @@ struct Int(
         Args:
             value: The init value.
         """
-        self.value = value
+        self._mlir_value = value
 
     @doc_private
     @always_inline("nodebug")
@@ -307,9 +315,9 @@ struct Int(
         Args:
             value: The init value.
         """
-        self.value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.index](
-            value
-        )
+        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
+            _type = __mlir_type.index
+        ](value)
 
     @always_inline("builtin")
     @implicit
@@ -329,7 +337,7 @@ struct Int(
         Args:
             value: The init value.
         """
-        self.value = value.value
+        self._mlir_value = value._mlir_value
 
     @always_inline("nodebug")
     fn __init__[T: Intable](out self, value: T):
@@ -422,7 +430,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate slt>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __le__(self, rhs: Int) -> Bool:
@@ -437,7 +445,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sle>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __eq__(self, rhs: Int) -> Bool:
@@ -451,7 +459,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate eq>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __ne__(self, rhs: Int) -> Bool:
@@ -465,7 +473,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate ne>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __gt__(self, rhs: Int) -> Bool:
@@ -479,7 +487,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sgt>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __ge__(self, rhs: Int) -> Bool:
@@ -494,7 +502,7 @@ struct Int(
         """
         return __mlir_op.`index.cmp`[
             pred = __mlir_attr.`#index<cmp_predicate sge>`
-        ](self.value, rhs.value)
+        ](self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __pos__(self) -> Int:
@@ -533,7 +541,7 @@ struct Int(
         Returns:
             `self + rhs` value.
         """
-        return __mlir_op.`index.add`(self.value, rhs.value)
+        return __mlir_op.`index.add`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __sub__(self, rhs: Int) -> Int:
@@ -545,7 +553,7 @@ struct Int(
         Returns:
             `self - rhs` value.
         """
-        return __mlir_op.`index.sub`(self.value, rhs.value)
+        return __mlir_op.`index.sub`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __mul__(self, rhs: Int) -> Int:
@@ -557,7 +565,7 @@ struct Int(
         Returns:
             `self * rhs` value.
         """
-        return __mlir_op.`index.mul`(self.value, rhs.value)
+        return __mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
 
     fn __truediv__(self, rhs: Int) -> Float64:
         """Return the floating point division of `self` and `rhs`.
@@ -659,7 +667,9 @@ struct Int(
         Returns:
             `self << rhs`.
         """
-        return select(rhs < 0, 0, __mlir_op.`index.shl`(self.value, rhs.value))
+        return select(
+            rhs < 0, 0, __mlir_op.`index.shl`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __rshift__(self, rhs: Int) -> Int:
@@ -671,7 +681,11 @@ struct Int(
         Returns:
             `self >> rhs`.
         """
-        return select(rhs < 0, 0, __mlir_op.`index.shrs`(self.value, rhs.value))
+        return select(
+            rhs < 0,
+            0,
+            __mlir_op.`index.shrs`(self._mlir_value, rhs._mlir_value),
+        )
 
     @always_inline("builtin")
     fn __and__(self, rhs: Int) -> Int:
@@ -683,7 +697,7 @@ struct Int(
         Returns:
             `self & rhs`.
         """
-        return __mlir_op.`index.and`(self.value, rhs.value)
+        return __mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __xor__(self, rhs: Int) -> Int:
@@ -695,7 +709,7 @@ struct Int(
         Returns:
             `self ^ rhs`.
         """
-        return __mlir_op.`index.xor`(self.value, rhs.value)
+        return __mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn __or__(self, rhs: Int) -> Int:
@@ -707,7 +721,7 @@ struct Int(
         Returns:
             `self | rhs`.
         """
-        return __mlir_op.`index.or`(self.value, rhs.value)
+        return __mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
 
     # ===-------------------------------------------------------------------===#
     # In place operations.
@@ -989,7 +1003,7 @@ struct Int(
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.value
+        return self._mlir_value
 
     @always_inline("builtin")
     fn __int__(self) -> Int:
@@ -998,7 +1012,7 @@ struct Int(
         Returns:
             The value as an integer.
         """
-        return self.value
+        return self
 
     @always_inline("builtin")
     fn __abs__(self) -> Self:
@@ -1174,7 +1188,7 @@ struct Int(
         Returns:
             The integer division of `self` and `rhs` .
         """
-        return __mlir_op.`index.divs`(self.value, rhs.value)
+        return __mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
 
     @always_inline("builtin")
     fn _positive_rem(self, rhs: Int) -> Int:
@@ -1187,7 +1201,7 @@ struct Int(
         Returns:
             The integer modulus of `self` and `rhs` .
         """
-        return __mlir_op.`index.rems`(self.value, rhs.value)
+        return __mlir_op.`index.rems`(self._mlir_value, rhs._mlir_value)
 
     fn _decimal_digit_count(self) -> Int:
         """

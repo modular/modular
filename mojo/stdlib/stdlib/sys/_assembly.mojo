@@ -37,7 +37,7 @@ fn inlined_assembly[
             _type=None,
             assembly=asm_kgen_string,
             constraints=constraints_kgen_string,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[result_type](None)
     else:
@@ -45,5 +45,5 @@ fn inlined_assembly[
             _type=result_type,
             assembly=asm_kgen_string,
             constraints=constraints_kgen_string,
-            hasSideEffects = has_side_effect.value,
+            hasSideEffects = has_side_effect._mlir_value,
         ](loaded_pack)

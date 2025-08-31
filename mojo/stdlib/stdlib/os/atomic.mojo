@@ -305,7 +305,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             _type = Scalar[dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
-            rhs.value,
+            rhs._mlir_value,
         )
         return Scalar[dtype](mlir_value=res)
 
@@ -343,7 +343,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             _type = Scalar[dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
-            value.value,
+            value._mlir_value,
         )
         return Scalar[dtype](mlir_value=res)
 
@@ -375,7 +375,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             _type = Scalar[dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[dtype]._mlir_type]().address,
-            value.value,
+            value._mlir_value,
         )
 
     @always_inline
@@ -444,13 +444,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             self.value -= rhs
             return res
 
-        var value_addr = UnsafePointer(to=self.value.value)
+        var value_addr = UnsafePointer(to=self.value._mlir_value)
         var res = __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = ordering.__mlir_attr(),
             syncscope = _get_kgen_string[scope](),
             _type = Scalar[dtype]._mlir_type,
-        ](value_addr.address, rhs.value)
+        ](value_addr.address, rhs._mlir_value)
         return Scalar[dtype](mlir_value=res)
 
     @always_inline
@@ -685,8 +685,8 @@ fn _compare_exchange_integral_impl[
         syncscope = _get_kgen_string[scope](),
     ](
         atomic_ptr.bitcast[Scalar[dtype]._mlir_type]().address,
-        expected_ptr[].value,
-        desired.value,
+        expected_ptr[]._mlir_value,
+        desired._mlir_value,
     )
 
     var loaded_value = Scalar[dtype](
@@ -716,7 +716,7 @@ fn _max_impl_base[
         ordering = ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
         _type = Scalar[dtype]._mlir_type,
-    ](value_addr.address, rhs.value)
+    ](value_addr.address, rhs._mlir_value)
 
 
 @always_inline
@@ -729,7 +729,7 @@ fn _min_impl_base[
         ordering = ordering.__mlir_attr(),
         syncscope = _get_kgen_string[scope](),
         _type = Scalar[dtype]._mlir_type,
-    ](value_addr.address, rhs.value)
+    ](value_addr.address, rhs._mlir_value)
 
 
 @always_inline

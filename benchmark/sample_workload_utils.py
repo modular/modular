@@ -25,7 +25,7 @@ import base64
 from collections.abc import Sequence
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Literal, Optional, TypedDict
+from typing import Literal, TypedDict
 
 import msgspec
 from PIL import Image
@@ -99,6 +99,12 @@ class CodeDebugLine(msgspec.Struct):
     options: Sequence[str]
 
 
+class ObfuscatedConversationsLine(msgspec.Struct):
+    timestamp: str
+    conversation_id: str
+    messages: str
+
+
 def encode_image(img: Image.Image) -> OpenAIImage:
     """
     Convert the given PIL.Image.Image to JPEG and encode in base64.
@@ -129,7 +135,7 @@ def build_chat_message(
     source: MessageSource,
     prompt: str,
     tokenizer: PreTrainedTokenizerBase,
-    num_tokens: Optional[int] = None,
+    num_tokens: int | None = None,
 ) -> ChatMessage:
     return ChatMessage(
         source,

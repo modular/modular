@@ -356,7 +356,7 @@ struct VariadicListMem[
             given index.
         """
         return __get_litref_as_mvalue(
-            __mlir_op.`pop.variadic.get`(self.value, idx.value)
+            __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
         )
 
     fn __iter__(
@@ -536,9 +536,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[
-        index: Int
-    ](self) -> ref [Self.origin] element_types[index.value]:
+    fn __getitem__[index: Int](self) -> ref [Self.origin] element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -548,9 +546,9 @@ struct VariadicPack[
             A reference to the element.  The Pointer's mutability follows the
             mutability of the pack argument convention.
         """
-        litref_elt = __mlir_op.`lit.ref.pack.extract`[index = index.value](
-            self._value
-        )
+        litref_elt = __mlir_op.`lit.ref.pack.extract`[
+            index = index._mlir_value
+        ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
     # ===-------------------------------------------------------------------===#

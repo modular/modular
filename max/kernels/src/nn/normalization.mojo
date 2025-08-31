@@ -818,7 +818,7 @@ fn _rms_norm_warp_tiling_subkernel[
 fn rms_norm_gpu_warp_tiling_128[
     dtype: DType, //,
     simd_width: Int,
-    max_warps_per_block: Int,
+    warps_per_block: Int,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
@@ -842,13 +842,12 @@ fn rms_norm_gpu_warp_tiling_128[
 
     var vec_data = SIMD[accum_type, simd_width](0)
     var tid = thread_idx.x
-    # Base row for this block.
-    var block_row = block_idx.x * 2
-    # 0 or 1 to identify which 16-thread group.
-    var sub_warp_id = tid // half_warp_size
-    # Each sub-warp handles different row.
-    var row = block_row + sub_warp_id
-    # Thread ID within sub-warp.
+    # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
+    var block_row = block_idx.x * (warps_per_block * 2)
+    var warp_id = tid // WARP_SIZE
+    var sub_warp_id = (tid % WARP_SIZE) // half_warp_size
+    # Each warp handles 2 rows, offset by the block's base row
+    var row = block_row + (warp_id * 2) + sub_warp_id
     var local_tid = tid % half_warp_size
     var idx = local_tid * simd_width
     var thread_m2 = Scalar[accum_type](0)
@@ -858,7 +857,7 @@ fn rms_norm_gpu_warp_tiling_128[
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
-            max_warps_per_block, multiply_before_cast, rows_per_warp=2
+            warps_per_block, multiply_before_cast, rows_per_warp=2
         ](
             row,
             idx,
@@ -1072,12 +1071,16 @@ fn rms_norm_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= 128 and dtype == DType.bfloat16:
-            # For this case we can do two rows per block (where block_dim = 32).
-            grid_dim = ceildiv(rows, 2)
+            # Experimentally determined to be the best - tapers off at 2.
+            alias warps_per_block = 2
+            # Each warp handles 2 rows, so total rows per block is warps_per_block * 2.
+            block_dim = warps_per_block * WARP_SIZE
+            grid_dim = ceildiv(rows, warps_per_block * 2)
+
             ctx.enqueue_function[
                 rms_norm_gpu_warp_tiling_128[
                     simd_width,
-                    max_warps_per_block,
+                    warps_per_block,
                     input_fn_2d,
                     output_fn_2d,
                     multiply_before_cast=multiply_before_cast,

@@ -208,11 +208,11 @@ trait DescriptorPair:
     alias b_t: MMAOperandDescriptor
 
     @always_inline
-    fn get_a(self) -> a_t:
+    fn get_a(self) -> Self.a_t:
         ...
 
     @always_inline
-    fn get_b(self) -> b_t:
+    fn get_b(self) -> Self.b_t:
         ...
 
 
@@ -240,11 +240,11 @@ trait DescriptorPairTS:
     alias b_t: MMAOperandDescriptor
 
     @always_inline
-    fn get_a(self) -> a_t:
+    fn get_a(self) -> Self.a_t:
         ...
 
     @always_inline
-    fn get_b(self) -> b_t:
+    fn get_b(self) -> Self.b_t:
         ...
 
 
@@ -274,7 +274,11 @@ trait AccumulatorTile(Copyable, Movable):
     @staticmethod
     @always_inline
     fn _empty_tensor() -> (
-        __type_of(local_tensor_type[dtype, vec_output_layout, element_layout]())
+        __type_of(
+            local_tensor_type[
+                Self.dtype, Self.vec_output_layout, Self.element_layout
+            ]()
+        )
     ):
         ...
 

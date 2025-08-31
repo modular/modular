@@ -38,7 +38,7 @@ jobs:
 
       - name: Install Pixi
         run: |
-          curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=0.47.0 sh
+          curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=0.53.0 sh
           # Add pixi to PATH
           echo "$HOME/.pixi/bin" >> $GITHUB_PATH
 

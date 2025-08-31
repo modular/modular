@@ -29,10 +29,11 @@ from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
+from max.serve.scheduler.base import PayloadType
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
@@ -94,7 +95,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        dispatcher_factory: DispatcherFactory | None = None,
+        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Runs a model worker process.
 
@@ -107,7 +108,6 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
-            dispatcher_factory: Factory for creating dispatcher client instances
         """
         configure_logging(settings)
         pid = os.getpid()
@@ -122,24 +122,10 @@ class ModelWorker:
                 pipeline = model_factory()
 
             # create dispatcher client
-            pipeline_role = pipeline_config.pipeline_role
-
-            if (
-                not pipeline_role.uses_dispatch_service
-                and dispatcher_factory is not None
-            ):
-                logger.info(
-                    f"Dispatcher factory is not required for {pipeline_role}. Overriding with None."
-                )
-                dispatcher_factory = None
-
             dispatcher_client = None
-            if pipeline_role.uses_dispatch_service:
-                if dispatcher_factory is None:
-                    raise ValueError(
-                        f"Dispatcher factory is required for {pipeline_role} but was not provided"
-                    )
-                logger.debug(f"Starting dispatcher client for {pipeline_role}")
+            if dispatcher_factory is not None:
+                assert pipeline_config.pipeline_role.uses_dispatch_service
+                logger.debug("Starting dispatcher client")
                 dispatcher_client = dispatcher_factory.create_client()
                 dispatcher_client.start()
 
@@ -181,7 +167,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        dispatcher_factory: DispatcherFactory,
+        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -195,7 +181,6 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
-            dispatcher_factory: Factory for creating dispatcher client instances
         """
         try:
             _set_pdeathsig(signal.SIGTERM)
@@ -224,7 +209,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     pipeline_task: PipelineTask,
-    dispatcher_factory: DispatcherFactory | None = None,
+    dispatcher_factory: DispatcherFactory[PayloadType] | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -234,7 +219,6 @@ async def start_model_worker(
         settings: Global server settings
         metric_client: Metric client for recording metrics
         pipeline_task: The task for the pipeline
-        dispatcher_factory: Factory for creating dispatcher client instances
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.

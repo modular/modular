@@ -73,7 +73,7 @@ fn is_benchmark() -> Bool:
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn blackwell_tma_pair_umma_kernel[
+fn kernel_5[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -192,9 +192,6 @@ fn blackwell_tma_pair_umma_kernel[
 
     alias accum_type = get_accum_type[a_type]()
 
-    # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (smem_pool.bitcast[Int64]() + 4).bitcast[UInt32]()
-
     alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag = SIMD[accum_type, c_frag_size]()
 
@@ -204,7 +201,9 @@ fn blackwell_tma_pair_umma_kernel[
     alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
-    var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
+    var mma_mbar_ptr = tma_mbar_ptr + 2
+    # Shared memory pointer to hold tensor memory address
+    var ptr_tmem_addr = (mma_mbar_ptr + 2).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
@@ -470,7 +469,7 @@ fn blackwell_tma_pair_umma_kernel[
     cluster_sync()
 
 
-fn blackwell_matmul_tma_pair_mma[
+fn blackwell_kernel_5[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -535,7 +534,7 @@ fn blackwell_matmul_tma_pair_mma[
         + BM * MMA_N * size_of[c_type]()
     ) + 16 + 16 + 16 + 16
 
-    alias kernel = blackwell_tma_pair_umma_kernel[
+    alias kernel = kernel_5[
         a_type,
         b_type,
         c_type,
@@ -571,7 +570,7 @@ fn blackwell_matmul_tma_pair_mma[
     )
 
 
-def test_blackwell_matmul_tma_pair_mma[
+def test_blackwell_kernel_5[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -664,7 +663,7 @@ def test_blackwell_matmul_tma_pair_mma[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    blackwell_matmul_tma_pair_mma[
+    blackwell_kernel_5[
         transpose_b=transpose_b,
         umma_shape=mma_shape,
         block_tile_shape=block_tile_shape,
@@ -690,7 +689,7 @@ def test_blackwell_matmul_tma_pair_mma[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            blackwell_matmul_tma_pair_mma[
+            blackwell_kernel_5[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
                 block_tile_shape=block_tile_shape,
@@ -801,7 +800,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             shape[2],
             "]",
         )
-        test_blackwell_matmul_tma_pair_mma[
+        test_blackwell_kernel_5[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
@@ -826,7 +825,7 @@ def main():
         alias block_tile_shape = Index(128, 128, 64)
         alias umma_shape = Index(256, 256, 16)
 
-        test_blackwell_matmul_tma_pair_mma[
+        test_blackwell_kernel_5[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,

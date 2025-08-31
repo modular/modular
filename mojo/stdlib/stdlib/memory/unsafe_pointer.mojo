@@ -167,7 +167,7 @@ struct UnsafePointer[
         `!kgen.pointer<`,
         type,
         `, `,
-        address_space._value.value,
+        address_space._value._mlir_value,
         `>`,
     ]
     """The underlying pointer type."""
@@ -200,7 +200,9 @@ struct UnsafePointer[
         self.address = value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, ref [origin, address_space._value.value]to: type):
+    fn __init__(
+        out self, *, ref [origin, address_space._value._mlir_value]to: type
+    ):
         """Constructs a Pointer from a reference to a value.
 
         Args:
@@ -634,18 +636,18 @@ struct UnsafePointer[
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
-                    alignment = alignment.value,
-                    isVolatile = volatile.value,
-                    isInvariant = invariant.value,
+                    alignment = alignment._mlir_value,
+                    isVolatile = volatile._mlir_value,
+                    isInvariant = invariant._mlir_value,
                 ]((self + i).address)
             return v
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
         return __mlir_op.`pop.load`[
-            alignment = alignment.value,
-            isVolatile = volatile.value,
-            isInvariant = invariant.value,
+            alignment = alignment._mlir_value,
+            isVolatile = volatile._mlir_value,
+            isInvariant = invariant._mlir_value,
         ](address)
 
     @always_inline("nodebug")
@@ -845,7 +847,8 @@ struct UnsafePointer[
         ]()
 
         __mlir_op.`pop.store`[
-            alignment = alignment.value, isVolatile = volatile.value
+            alignment = alignment._mlir_value,
+            isVolatile = volatile._mlir_value,
         ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")

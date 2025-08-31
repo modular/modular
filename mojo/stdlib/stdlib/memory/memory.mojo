@@ -431,12 +431,12 @@ fn stack_allocation[
         if address_space == _GPUAddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
-                count = count.value,
+                count = count._mlir_value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type = UnsafePointer[
                     type, address_space=address_space, alignment=alignment
                 ]._mlir_type,
-                alignment = alignment.value,
+                alignment = alignment._mlir_value,
             ]()
         elif address_space == _GPUAddressSpace.CONSTANT:
             # No need to annotation this global_alloc because constants in
@@ -444,11 +444,11 @@ fn stack_allocation[
             # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
-                count = count.value,
+                count = count._mlir_value,
                 _type = UnsafePointer[
                     type, address_space=address_space, alignment=alignment
                 ]._mlir_type,
-                alignment = alignment.value,
+                alignment = alignment._mlir_value,
             ]()
 
         # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
@@ -456,9 +456,9 @@ fn stack_allocation[
         # addrspacecast the resulting pointer.
         elif address_space == _GPUAddressSpace.LOCAL:
             var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count = count.value,
+                count = count._mlir_value,
                 _type = UnsafePointer[type]._mlir_type,
-                alignment = alignment.value,
+                alignment = alignment._mlir_value,
             ]()
             return __mlir_op.`pop.pointer.bitcast`[
                 _type = UnsafePointer[
@@ -468,11 +468,11 @@ fn stack_allocation[
 
     # Perofrm a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
-        count = count.value,
+        count = count._mlir_value,
         _type = UnsafePointer[
             type, address_space=address_space, alignment=alignment
         ]._mlir_type,
-        alignment = alignment.value,
+        alignment = alignment._mlir_value,
     ]()
 
 
@@ -501,7 +501,7 @@ fn _malloc[
             _type = UnsafePointer[
                 type, address_space = AddressSpace.GENERIC
             ]._mlir_type
-        ](alignment.value, size.value)
+        ](alignment._mlir_value, size._mlir_value)
 
 
 # ===-----------------------------------------------------------------------===#

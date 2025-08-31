@@ -130,7 +130,7 @@ trait KVCacheT(Copyable, Movable):
     fn load[
         width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
-        dtype, width
+        Self.dtype, width
     ]:
         """Loads an element from the given index."""
         ...
@@ -141,7 +141,7 @@ trait KVCacheT(Copyable, Movable):
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[dtype, *_],
+        val: SIMD[Self.dtype, *_],
     ):
         """Stores an element at the given index."""
         ...
@@ -171,7 +171,7 @@ trait KVCacheT(Copyable, Movable):
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype]]:
         """Returns a LayoutTensor pointing to the KVCache block at the given index.
 
         Paged KVCache implementations must have a block_size which is a multiple of the
@@ -202,7 +202,7 @@ trait KVCacheT(Copyable, Movable):
         *,
         is_k_major: Bool,
     ](self, ctx: DeviceContext) raises -> TMANestedTensorTile[
-        dtype,
+        Self.dtype,
         tile_m,
         tile_n,
         swizzle_mode,

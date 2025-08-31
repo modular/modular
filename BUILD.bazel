@@ -1,7 +1,34 @@
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
+load("//bazel:api.bzl", "mojo_binary", "requirement")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//visibility:public"])
+
+mojo_binary(
+    name = "repro",
+    testonly = True,
+    srcs = ["repro.mojo"],
+    tags = ["manual"],
+    deps = [
+        "@mojo//:_mlir",
+        "@mojo//:comm",
+        "@mojo//:compiler",
+        "@mojo//:compiler_internal",
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:layout",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:nvml",
+        "@mojo//:quantization",
+        "@mojo//:register",
+        "@mojo//:shmem",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
 
 alias(
     name = "has_gpu",
@@ -130,6 +157,27 @@ platform(
         "OSFamily": "Linux",
         "Pool": "oci-h100-executors",
         "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "b200-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,

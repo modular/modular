@@ -44,7 +44,7 @@ def test_elementwise():
         var x: Float32 = 1.0
         for i in range(numelems):
             buffer1.data[i] = 2.0
-            buffer2.data[i] = Float32(mlir_value=x.value)
+            buffer2.data[i] = Float32(mlir_value=x._mlir_value)
             out_buffer.data[i] = 0.0
             x += 1.0
 

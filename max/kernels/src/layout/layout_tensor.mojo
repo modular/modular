@@ -3374,7 +3374,7 @@ struct LayoutTensor[
             @parameter
             for i in range(len(fragments_layout_stride)):
                 alias fragments_stride_i: UInt = UInt(
-                    mlir_value=Int(fragments_layout_stride[i]).value
+                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
                 alias shape_i: UInt = Int(thread_projected_shape[i])
                 alias stride_i: UInt = Int(thread_projected_stride[i])
@@ -3439,10 +3439,10 @@ struct LayoutTensor[
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 alias shape_i: UInt = UInt(
-                    mlir_value=Int(thread_projected_shape[i]).value
+                    mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
                 alias stride_i: UInt = UInt(
-                    mlir_value=Int(thread_projected_stride[i]).value
+                    mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
@@ -3549,7 +3549,7 @@ struct LayoutTensor[
             @parameter
             for i in range(len(fragments_layout_stride)):
                 alias fragments_stride_i: UInt = UInt(
-                    mlir_value=Int(fragments_layout_stride[i]).value
+                    mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
                 alias shape_i: UInt = Int(thread_projected_shape[i])
                 alias stride_i: UInt = Int(thread_projected_stride[i])
@@ -3623,10 +3623,10 @@ struct LayoutTensor[
             for i in range(len(flatten(Self.layout.stride))):
                 var fragments_stride_i = self.runtime_layout.stride.value[i]
                 alias shape_i: UInt = UInt(
-                    mlir_value=Int(thread_projected_shape[i]).value
+                    mlir_value=Int(thread_projected_shape[i])._mlir_value
                 )
                 alias stride_i: UInt = UInt(
-                    mlir_value=Int(thread_projected_stride[i]).value
+                    mlir_value=Int(thread_projected_stride[i])._mlir_value
                 )
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)

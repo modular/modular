@@ -48,7 +48,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     """
 
     alias _mlir_type = __mlir_type[
-        `!pop.array<`, size.value, `, `, Self.element_type, `>`
+        `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
     ]
 
     var _mlir_value: Self._mlir_type
@@ -79,7 +79,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         _static_tuple_construction_checks[size]()
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type = __mlir_type[
-                `!pop.array<`, size.value, `, `, Self.element_type, `>`
+                `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
             ]
         ](fill)
 
@@ -135,7 +135,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
         constrained[index < size]()
         var val = __mlir_op.`pop.array.get`[
             _type = Self.element_type,
-            index = index.value,
+            index = index._mlir_value,
         ](self._mlir_value)
         return val
 
@@ -186,7 +186,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
     @always_inline("nodebug")
     fn _unsafe_ref(ref self, idx: Int) -> ref [self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx.value
+            UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )
         return UnsafePointer(ptr)[]
 
@@ -207,9 +207,9 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
 
         var array = __mlir_op.`pop.array.replace`[
             _type = __mlir_type[
-                `!pop.array<`, size.value, `, `, Self.element_type, `>`
+                `!pop.array<`, size._mlir_value, `, `, Self.element_type, `>`
             ],
-            index = idx.value,
+            index = idx._mlir_value,
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

@@ -34,7 +34,7 @@ fn is_benchmark() -> Bool:
     return False
 
 
-fn kernel_0[
+fn kernel_1[
     M: Int,
     N: Int,
     K: Int,
@@ -60,7 +60,7 @@ fn kernel_0[
         c[row, col] = acc.cast[DType.bfloat16]()
 
 
-def test_kernel_0[
+def test_kernel_1[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -101,7 +101,7 @@ def test_kernel_0[
             for n in range(N):
                 b_vendor_tensor[k, n] = b_tensor[k, n]
 
-    alias kernel = kernel_0[
+    alias kernel = kernel_1[
         M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
     ]
     # Use 1D thread block for memory coalescing
@@ -180,7 +180,7 @@ def test_kernel_0[
 def main():
     with DeviceContext() as ctx:
         if is_benchmark():
-            test_kernel_0[
+            test_kernel_1[
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
@@ -192,7 +192,7 @@ def main():
 
         # Test with transpose_b=True
         print("Testing with transpose_b=True")
-        test_kernel_0[
+        test_kernel_1[
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,

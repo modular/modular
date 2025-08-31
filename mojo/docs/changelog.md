@@ -129,10 +129,32 @@ language across multiple phases.
 
 - The previously deprecated `@value` decorator has been removed.
 
+- Accesses to associated aliases and methods within a trait now require
+  qualified references (prepended with `Self.`), making it consistent with how
+  accesses to member aliases and methods in a struct require `self.`.
+
 ### Standard library changes
+
+- Added `Path(...).parts()` method to the `Path` type, for example instead of
+  writing:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.path.split(DIR_SEPARATOR)
+  ```
+
+  you can now write:
+
+  ```mojo
+  var path = Path("path/to/file")
+  var parts = path.parts()
+  ```
 
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
+
+- There is now an `iter` module which exposes the `next`, `iter`,
+  and `enumerate` methods.
 
 - The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
   all types that can be implicitly copied may also be copied using an explicit
@@ -201,9 +223,17 @@ language across multiple phases.
     return v == 42
   ```
 
-- Several types that can be constructed from raw MLIR values now require the use
-  of an `mlir_value` keyword-only argument initializer. Affected types include:
-  `SIMD`, `UInt`.
+- Several types that wrap MLIR types have been changed to further
+  encapsulate their behavior, hiding this low-level behavior from non-advanced
+  users.
+
+  - Types that can be constructed from raw MLIR values now require the use
+    of an `mlir_value` keyword-only argument initializer.
+    Affected types include: `SIMD`, `UInt`.
+
+  - Types with raw MLIR type fields have had their `value` fields renamed to
+    `_mlir_value`.
+    Affected types include: `Bool`, `DType`.
 
 - Added `os.path.realpath` to resolve symbolic links to an absolute path and
 
@@ -278,6 +308,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - The `SIMD.from_bits` factory method is now a constructor, use
   `SIMD(from_bits=...)` instead.
 
+- `StringSlice.from_utf8` factory method is now a constructor, use
+  `StringSlice(from_utf8=...)` instead.
+
 - Added `os.atomic.fence` for creating atomic memory fences.
   ([#5216](https://github.com/modular/modular/pull/5216) by
   [@nate](https://github.com/NathanSWard))
@@ -302,6 +335,13 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - `mojo test` now ignores folders with a leading `.` in the name. This will
   exclude hidden folders on Unix systems ([#4686](https://github.com/modular/modular/issues/4686))
 
+- `mojo doc --validate-doc-strings` now emits a warning when an `fn` function
+is declared to raise an error (`raises`) and it has no [`Raises`
+docstring](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/docstring-style-guide.md#errors).
+However, because Mojo automatically treats all `def` functions as [raising
+functions](/mojo/manual/functions#raising-and-non-raising-functions), we do not
+enforce `Raises` docs for `def` functions (to avoid noisy false positives).
+
 - Nightly `mojo` Python wheels are now available. To install everything needed
   for Mojo development in a Python virtual environment, you can use
 
@@ -319,6 +359,8 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 ### 🛠️ Fixed
 
+- Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__`
+  always returns immutable references.
 - Fixed <https://github.com/modular/modular/issues/4705> - Wrong mutability
   inferred for `__getitem__` if `[]` operator is used and `__setitem__` is present.
 - Fixed <https://github.com/modular/modular/issues/5190>
@@ -326,3 +368,5 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - Fixed <https://github.com/modular/modular/issues/5183> - Log1p not working on GPUs.
 - Fixed <https://github.com/modular/modular/issues/5105> - Outdated `CLAUDE.md`
   docs.
+- Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
+  detected inside an inline if-else.

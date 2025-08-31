@@ -1,6 +1,6 @@
 """Helpers for running lit tests in bazel"""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python/private:py_test_rule.bzl", upstream_py_test = "py_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load(":mojo_test_environment.bzl", "mojo_test_environment")  # buildifier: disable=bzl-visibility
 
@@ -16,6 +16,29 @@ for path in [x for x in "{}".split(":") if x]:
         tool_path = os.path.dirname(_R.Rlocation(path))
     os.environ["PATH"] = tool_path + os.pathsep + os.environ["PATH"]
 """
+
+_STRIP_OPTION = "//command_line_option:strip"
+
+def _strip_transition_impl(settings, attr):
+    output = {_STRIP_OPTION: settings[_STRIP_OPTION]}
+    if attr.force_strip:
+        output[_STRIP_OPTION] = "always"
+    return output
+
+_strip_transition = transition(
+    implementation = _strip_transition_impl,
+    inputs = [_STRIP_OPTION],
+    outputs = [_STRIP_OPTION],
+)
+
+py_test = rule(
+    implementation = lambda ctx: ctx.super(),
+    parent = upstream_py_test,
+    attrs = {
+        "force_strip": attr.bool(mandatory = True),
+    },
+    cfg = _strip_transition,
+)
 
 # TODO: Replace with upstream passing 'py_test =' once we bump LLVM
 def _lit_test(name, srcs, args = None, data = None, deps = None, **kwargs):
@@ -138,6 +161,7 @@ def lit_tests(
         generate_litcfg = True,
         unique_suffix = None,
         size = None,
+        force_strip = False,
         exec_properties = {}):
     """Create test rules for all lit tests in the current directory.
 
@@ -157,6 +181,7 @@ def lit_tests(
         generate_litcfg: Generate the lit.cfg.py needed to run the test
         unique_suffix: Optional suffix to add to individual test target names
         size: Test size: https://bazel.build/reference/test-encyclopedia
+        force_strip: Whether binaries should be stripped via a transition, do not use, just here to workaround a bug
         exec_properties: Remote exec resources https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation
     """
 
@@ -284,6 +309,7 @@ EOF
         "env_inherit": env_inherit,
         "size": size,
         "exec_properties": get_default_exec_properties(tags, gpu_constraints) | exec_properties,
+        "force_strip": force_strip,
     }
 
     for src in srcs:
@@ -296,7 +322,7 @@ EOF
             **kwargs
         )
 
-    py_test(
+    upstream_py_test(
         name = name + ".validate_lit_features",
         data = srcs + extra_data,
         srcs = ["//bazel/internal/llvm-lit:validate_lit_features.py"],

@@ -26,7 +26,6 @@ from uuid import uuid4
 
 import msgspec
 from max._core import nixl
-from max.driver import Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
@@ -236,17 +235,11 @@ class KVTransferEngine:
                     f"Tensor {i} num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
                 )
 
-        # Regardless of whether the tensor is on CPU / GPU, we must ensure that
-        # CUDADriver.cpp is called which loads the libcuda.so.1 and libnvidia-ml.so.1
-        # symbols PRIOR to loading the UCX CUDA backend.
-        acc = Accelerator()
-        if acc.api != "cuda":
+        device = tensors[0].device
+        if device.api == "hip":
             raise NotImplementedError(
-                "Currently UCX only supports CUDA devices."
+                "Currently UCX does not support HIP devices."
             )
-        # This device is unused. It is created for the sole purpose of loading
-        # the CUDA symbols.
-        del acc
 
         # Initialize the transfer engine
         self.name = name

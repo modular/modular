@@ -106,7 +106,7 @@ struct Axis(Indexer, Intable):
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.axis.value
+        return self.axis._mlir_value
 
 
 @always_inline

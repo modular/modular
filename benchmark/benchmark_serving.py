@@ -42,6 +42,7 @@ from benchmark_datasets import (
     AxolotlBenchmarkDataset,
     BenchmarkDataset,
     CodeDebugBenchmarkDataset,
+    ObfuscatedConversationsBenchmarkDataset,
     RandomBenchmarkDataset,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
@@ -1347,6 +1348,28 @@ def main(args: argparse.Namespace) -> None:
             shuffle=(
                 args.output_lengths is None and not args.record_output_lengths
             ),
+        )
+    elif isinstance(benchmark_dataset, ObfuscatedConversationsBenchmarkDataset):
+        if output_lengths is None:
+            output_scale = (
+                args.obfuscated_conversations_average_output_len
+                * args.obfuscated_conversations_coefficient_of_variation
+            )
+            output_lengths = np.random.normal(
+                loc=args.obfuscated_conversations_average_output_len,
+                scale=output_scale,
+                size=num_requests,
+            ).tolist()
+            output_lengths = np.round(output_lengths).astype(int).tolist()
+            output_lengths = [
+                max(output_len, 1) for output_len in output_lengths
+            ]
+        input_requests = benchmark_dataset.sample_requests(
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            output_lengths=output_lengths,
+            seed=args.seed,
+            shuffle=args.obfuscated_conversations_shuffle,
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")

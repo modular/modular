@@ -20,9 +20,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from max.serve.config import Settings
-from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
-from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
+from max.serve.kvcache_agent import (
+    DispatcherFactory,
+    start_kvcache_agent_service,
+)
 from max.serve.process_control import ProcessControl, ProcessMonitor
+from max.serve.scheduler.base import PayloadType
 
 logger = logging.getLogger("max.serve")
 
@@ -30,7 +33,7 @@ logger = logging.getLogger("max.serve")
 async def run_kvcache_agent_process(
     pc: ProcessControl,
     settings: Settings,
-    dispatcher_factory: DispatcherFactory,
+    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> None:
     pid = os.getpid()
     logger.info("Starting KV Cache Agent on process %d!", pid)
@@ -56,7 +59,7 @@ async def run_kvcache_agent_process(
 def _kvcache_agent_process_fn(
     pc: ProcessControl,
     settings: Settings,
-    dispatcher_factory: DispatcherFactory,
+    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> None:
     try:
         asyncio.run(run_kvcache_agent_process(pc, settings, dispatcher_factory))
@@ -73,7 +76,7 @@ def _kvcache_agent_process_fn(
 @asynccontextmanager
 async def start_kv_cache_service(
     settings: Settings,
-    dispatcher_factory: DispatcherFactory,
+    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> AsyncGenerator[None, None]:
     """Starts a kvcache agent and associated process."""
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())

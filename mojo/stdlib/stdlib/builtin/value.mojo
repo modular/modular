@@ -208,20 +208,6 @@ trait Defaultable:
         ...
 
 
-trait Iterator(Movable):
-    """The `Iterator` trait describes a type that can be used as an
-    iterator, e.g. in a `for` loop.
-    """
-
-    alias Element: AnyType
-
-    fn __has_next__(self) -> Bool:
-        ...
-
-    fn __next__(mut self) -> Element:
-        ...
-
-
 trait DeletableItem:
     """The `DeletableItem` trait describes a type that can delete items from a indexed collection.
     """
