@@ -76,7 +76,7 @@ struct TAA(AA1):
     alias X = Zork
 
     # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
-    # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,get_witness($0, default_trait_methods::AA1, X))"{{.*}}([[SELF]], [[X]], [[RESULT]])
+    # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,$0.X)"{{.*}}([[SELF]], [[X]], [[RESULT]])
 
     # CHECK: kgen.conformance{{.*}}:AA1
     # CHECK-DAG: kgen.witness "zork"

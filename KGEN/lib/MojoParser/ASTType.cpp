@@ -759,10 +759,8 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
   }
   if (auto getWitness = dyn_cast<GetWitnessAttr>(param)) {
-    os << "get_witness(";
     printDemangledParam(os, getWitness.getTypeValue(), diagShared);
-    os << ", " << getWitness.getTraitName().strref() << ", "
-       << getWitness.getWitnessName().strref() << ")";
+    os << "." << getWitness.getWitnessName().strref();
     return;
   }
   if (auto typeAttr = dyn_cast<TypeParamAttr>(param)) {
