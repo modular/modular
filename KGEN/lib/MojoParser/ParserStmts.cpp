@@ -2570,7 +2570,8 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 
   SMLoc loc;
   StringAttr baseName;
-  if (parseIdentifier(baseName, "expected function name", &loc))
+  if (parseIdentifier(baseName, "expected function name", &loc,
+                      /*allowKeyword=*/true))
     return failure();
 
   // Create a op function with an empty signature so we have an IR construct to

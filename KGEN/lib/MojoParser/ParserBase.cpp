@@ -48,21 +48,34 @@ ParseResult ParserBase::parseToken(Token::Kind expectedToken,
   return failure();
 }
 
-ParseResult ParserBase::parseIdentifier(const Twine &message, SMLoc *loc) {
+/// Consume an identifier token if present, or emit an error if not. If `loc` is
+/// set, it is populated with the source location of the token.  If
+/// `allowKeyword` is true, keywords are allowed, not just identifiers.
+ParseResult ParserBase::parseIdentifier(const Twine &message, SMLoc *loc,
+                                        bool allowKeyword) {
   if (loc)
     *loc = getToken().getLoc();
   if (consumeIf(Token::escaped_identifier))
     return success();
+
+  // If the client allows a keyword and we have one, consume it.
+  if (allowKeyword && getToken().isKeyword()) {
+    consumeToken();
+    return success();
+  }
+  // Otherwise we require an identifier, let parseToken handle the error.
   return parseToken(Token::identifier, message);
 }
 
 /// Consume an identifier token, binding its name into the specified result
 /// string attribute. If `loc` is set, it is populated with the source location
-/// of the token.
+/// of the token.  If `allowKeyword` is true, keywords are allowed, not just
+/// identifiers.
 ParseResult ParserBase::parseIdentifier(StringAttr &result,
-                                        const Twine &message, SMLoc *loc) {
+                                        const Twine &message, SMLoc *loc,
+                                        bool allowKeyword) {
   result = StringAttr::get(getContext(), getToken().getSpelling());
-  return parseIdentifier(message, loc);
+  return parseIdentifier(message, loc, allowKeyword);
 }
 
 /// Parse a list of elements continued with commas.  If a set of terminators

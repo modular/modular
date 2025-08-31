@@ -856,7 +856,8 @@ ParseResult ExprParser::parseAttributeRefSuffix(ExprNode *&result,
                                                 SMLoc dotLoc) {
   Token token = getToken();
   StringRef spelling = token.getSpelling();
-  if (parseIdentifier("expected name in attribute reference")) {
+  if (parseIdentifier("expected name in attribute reference", nullptr,
+                      /*allowKeyword=*/true)) {
     // If we didn't get an identifier, recover by using an empty string.
     // Reuse the spelling buffer to preserve the expected location of the
     // identifier.

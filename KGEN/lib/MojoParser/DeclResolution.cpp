@@ -1170,7 +1170,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   StringAttr baseName;
   SMLoc identifierLoc;
-  if (p.parseIdentifier(baseName, "expected function name", &identifierLoc))
+  if (p.parseIdentifier(baseName, "expected function name", &identifierLoc,
+                        /*allowKeyword=*/true))
     return failure();
 
   // The function signature is a self-contained scope where the input and result
