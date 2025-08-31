@@ -803,7 +803,8 @@ struct Dict[
     @always_inline
     fn delete(mut self, key: K) -> None:
         """Delete an item from the dictionary by key.
-        This is a convenience function that wraps the `__delitem__` method.
+
+        This is a convenience function that wraps the `__delitem__` function.
 
         Args:
             key: The key of the item to delete.
