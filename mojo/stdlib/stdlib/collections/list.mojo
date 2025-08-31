@@ -641,10 +641,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         Args:
             slice: The slice of items to delete.
         """
-
-        var list_len = len(self)
-
-        var start, end, step = slice.indices(list_len)
+        var start, end, step = slice.indices(self._len)
         var slice_range = range(start, end, step)
         var slice_len = len(slice_range)
 
@@ -657,7 +654,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
                 for del_index in slice_range:
                     (self._data + del_index).destroy_pointee()
 
-            for move_index in range(end, list_len):
+            for move_index in range(end, self._len):
                 (self._data + move_index).move_pointee_into(
                     self._data + move_index - slice_len
                 )
@@ -683,7 +680,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
                 previous_deleted = to_delete_index
 
             # Move remaining elements between last deletion and end of the list
-            for move_index in range(previous_deleted + 1, list_len):
+            for move_index in range(previous_deleted + 1, self._len):
                 var move_from = self._data + move_index
                 var move_to = self._data + move_index - n_deleted
                 move_from.move_pointee_into(move_to)
