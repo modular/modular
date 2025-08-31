@@ -116,6 +116,21 @@ language across multiple phases.
   environment variable, use `mojo build` with debug info enabled, e.g.
   `-debug-level=line-tables`, and then run the resulting binary.
 
+- Mojo now allows the use of keywords in function names (after `def` and `fn`)
+  and in attribute references after a `.`. This notably allows the use of the
+  `match` method in regex libraries even though Mojo takes this as a hard
+  keyword.  Uses in other locations can still use backticks:
+
+  ```mojo
+  struct MatchExample:
+      fn match(self): # This is ok now.
+          pass
+
+  fn test_match(a: MatchExample):
+      a.match() # This is ok now.
+      a.`match`() # This is still valid.
+  ```
+
 ### Language changes
 
 - The `__del__` and `__moveinit__` methods should now take their `self` and
