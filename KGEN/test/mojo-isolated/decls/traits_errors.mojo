@@ -120,3 +120,21 @@ fn bindAnyTraitToTrait():
 fn anytrait_assignment():
     # expected-error @below {{cannot implicitly convert 'AnyTrait[Copyable]' value to 'AnyTrait[Movable]' in alias initializer}}
     alias t: __type_of(Movable) = Copyable
+
+
+
+trait SomeTrait:
+    alias A: Int
+
+@fieldwise_init
+struct TakeInt[A: Int]:
+    pass
+
+# expected-note @below {{function declared here}}
+fn take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
+    pass
+
+fn call_take_two_inferred_params[T: SomeTrait](x: T):
+    # expected-error @below {{invalid call to 'take_two_inferred_params': could not deduce parameter 'Size' of callee 'take_two_inferred_params'}}
+    # expected-note @below {{failed to infer parameter 'Size', parameter inferred to two different values: 'T.A' and '1'}}
+    take_two_inferred_params(TakeInt[T.A](), TakeInt[1]())
