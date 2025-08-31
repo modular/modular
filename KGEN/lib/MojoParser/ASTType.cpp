@@ -454,38 +454,42 @@ static StringRef trimBuiltinNamespace(StringRef nestedSymbolName) {
 
 static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
                         SharedState *diagShared, bool isFunc) {
-  const bool forDiag = diagShared != nullptr;
-  if (forDiag) {
-    StringRef name = getNameFromSymbolRef(symbol, isFunc);
-    // For constructors, print the type name instead.
-    // TODO: Handle other dunder methods.
-    if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
-      name = symbol.getNestedReferences().drop_back().back().getAttr();
-
-    // Disable printing all parameters for the user defined `Index` functions.
-    // For example, 'Index[Intable, Intable](16,16)' -> 'Index(16,16)'
-    if (isFunc && getNameFromSymbolRef(symbol, true).starts_with("Index[")) {
-      os << "Index";
-      return;
-    }
-
-    os << trimBuiltinNamespace(name);
+  // When mangling, keep things simple.
+  if (diagShared == nullptr) {
+    std::string nestedSymbolName;
+    llvm::raw_string_ostream buff(nestedSymbolName);
+    printNestedSymbolReference(buff, symbol);
+    os << trimBuiltinNamespace(nestedSymbolName);
     return;
   }
 
-  std::string nestedSymbolName;
-  llvm::raw_string_ostream buff(nestedSymbolName);
-  printNestedSymbolReference(buff, symbol);
-  os << trimBuiltinNamespace(nestedSymbolName);
+  // When printing for diagnostics and the user, we can cut things down to make
+  // them more readable.
+  StringRef name = getNameFromSymbolRef(symbol, isFunc);
+
+  // For constructors, print the type name instead.
+  if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
+    name = symbol.getNestedReferences().drop_back().back().getAttr();
+
+  // Remove stdlib:: prefixes.
+  name = trimBuiltinNamespace(name);
+
+  // The symbol is mangled and therefore will have parameter type information
+  // in it, remove these if present.  This turn things like
+  //    `foo[::Intable,::Intable,::Intable,::DType]` -> `foo`.
+  name = name.take_front(name.find('['));
+  os << name;
 }
 
-/// Try to extract a symbol reference from the given parameter. Returns nullptr
-/// otherwise.
-static SymbolRefAttr tryGetSymbolName(TypedAttr param) {
+/// Try to extract a symbol reference and parameter list from a function callee.
+/// Returns the symbol being called and the parameters, or a null symbol if
+/// decoding failed.
+static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
+tryGetSymbolNameAndParams(TypedAttr param) {
   param = ParamOperatorAttr::stripRebind(param);
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
-    return symbolCst.getSymbol();
-  return {};
+    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
+  return {{}, {}};
 }
 
 static bool isKnownNonStaticMethod(SharedState *diagShared,
@@ -545,140 +549,147 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     switch (op.getOpcode()) {
     case POC::Apply:
     case POC::ApplyResultSlot: {
-      ArrayRef<TypedAttr> operandsToPrint = operands.drop_front();
-
       // Check if we're applying a known symbol, in which case we can do some
       // more specialized printing.
-      if (SymbolRefAttr nameAttr = tryGetSymbolName(operands.front())) {
-        StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
-        // Don't print conversions of boolean's to i1.
-        if (name == "__mlir_i1__" && operands.size() == 2)
-          return printDemangledParam(os, operands.back(), diagShared);
+      auto [nameAttr, calleeParams] =
+          tryGetSymbolNameAndParams(operands.front());
+      if (!nameAttr) {
+        // If we're calling a parameter of function type, print it as a normal
+        // call.
+        printDemangledParam(os, operands.front(), diagShared);
+        return printOperands(operands.drop_front());
+      }
 
-        // Print arithmetic functions using their mathematical form rather than
-        // as dunder method calls.
-        static SmallDenseMap<StringRef, StringRef> binaryOpNames{
-            {"__add__", " + "},     {"__sub__", " - "},
-            {"__mul__", " * "},     {"__mod__", " % "},
-            {"__truediv__", " / "}, {"__floordiv__", " // "},
-            {"__xor__", " ^ "},     {"__and__", " & "},
-            {"__or__", " | "},      {"__lshift__", " << "},
-            {"__rshift__", " >> "}, {"__eq__", " == "},
-            {"__lt__", " < "},      {"__le__", " <= "},
-            {"__in__", " in "},     {"__ne__", " != "},
-            {"__gt__", " > "},      {"__ge__", " >= "},
-            {"__matmul__", " @ "},  {"__pow__", " ** "},
-            {"__is__", " is "},     {"__isnot__", " isnot "},
+      ArrayRef<TypedAttr> operandsToPrint = operands.drop_front();
+      StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
+      // Don't print conversions of boolean's to i1.
+      if (name == "__mlir_i1__" && operands.size() == 2)
+        return printDemangledParam(os, operands.back(), diagShared);
+
+      // Print arithmetic functions using their mathematical form rather than
+      // as dunder method calls.
+      static SmallDenseMap<StringRef, StringRef> binaryOpNames{
+          {"__add__", " + "},     {"__sub__", " - "},
+          {"__mul__", " * "},     {"__mod__", " % "},
+          {"__truediv__", " / "}, {"__floordiv__", " // "},
+          {"__xor__", " ^ "},     {"__and__", " & "},
+          {"__or__", " | "},      {"__lshift__", " << "},
+          {"__rshift__", " >> "}, {"__eq__", " == "},
+          {"__lt__", " < "},      {"__le__", " <= "},
+          {"__in__", " in "},     {"__ne__", " != "},
+          {"__gt__", " > "},      {"__ge__", " >= "},
+          {"__matmul__", " @ "},  {"__pow__", " ** "},
+          {"__is__", " is "},     {"__isnot__", " isnot "},
+      };
+      if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
+        return printOperands(operandsToPrint, /*separator=*/it->second);
+
+      // Print `x.__getitem__(args...)` as `x[args...]`
+      if (name == "__getitem__" && !operandsToPrint.empty()) {
+        printDemangledParam(os, operandsToPrint.front(), diagShared);
+        os << '[';
+        llvm::interleaveComma(operandsToPrint.slice(1), os,
+                              [&](const TypedAttr &value) {
+                                printDemangledParam(os, value, diagShared);
+                              });
+        os << ']';
+        return;
+      }
+
+      // If we can tell that this is a method call, print the receiver first.
+      if (!operandsToPrint.empty() &&
+          isKnownNonStaticMethod(diagShared, nameAttr)) {
+        printDemangledParam(os, operandsToPrint.front(), diagShared);
+        os << '.';
+        operandsToPrint = operandsToPrint.drop_front();
+      }
+
+      // Special case: struct __init__ constructor calls for literal types
+      if (name.starts_with("__init__") && diagShared && operands.size() >= 2) {
+
+        // Helper function to check if this is a literal wrapper by name
+        auto isLiteralWrapperName = [](StringRef structName) {
+          return structName == "StringLiteral" || structName == "IntLiteral" ||
+                 structName == "FloatLiteral";
         };
-        if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
-          return printOperands(operandsToPrint, /*separator=*/it->second);
 
-        // Print `x.__getitem__(args...)` as `x[args...]`
-        if (name == "__getitem__" && !operandsToPrint.empty()) {
-          printDemangledParam(os, operandsToPrint.front(), diagShared);
-          os << '[';
-          llvm::interleaveComma(operandsToPrint.slice(1), os,
-                                [&](const TypedAttr &value) {
-                                  printDemangledParam(os, value, diagShared);
-                                });
-          os << ']';
+        // Helper function to try printing just the literal value
+        auto tryPrintLiteralValue = [&](ArrayRef<TypedAttr> args) -> bool {
+          if (args.size() == 1) {
+            printDemangledParam(os, args[0], diagShared);
+            return true;
+          }
+          return false;
+        };
+
+        // Primary approach: Use symbol structure to get struct name
+        StringRef structName = tryGetTypeNameFromSymbolRef(nameAttr);
+        if (isLiteralWrapperName(structName)) {
+          if (tryPrintLiteralValue(operandsToPrint))
+            return;
+        }
+
+        // Fallback: Check if the symbol name contains type suffixes
+        if (name.contains("[__mlir_type.!kgen.string]") ||
+            name.contains("[__mlir_type.!pop.int_literal]") ||
+            name.contains("[__mlir_type.!pop.float_literal]")) {
+          if (tryPrintLiteralValue(operandsToPrint))
+            return;
+        }
+
+        // Helper to check if an argument is a literal constructor
+        auto tryPrintAsLiteral = [&](TypedAttr arg) -> bool {
+          auto op = dyn_cast<ParamOperatorAttr>(arg);
+          if (!op || op.getOpcode() != POC::Apply)
+            return false;
+
+          ArrayRef<TypedAttr> argOperands = op.getOperands();
+          if (argOperands.size() < 2)
+            return false;
+
+          auto [argNameAttr, argParams] =
+              tryGetSymbolNameAndParams(argOperands.front());
+          if (!argNameAttr)
+            return false;
+
+          StringRef argName =
+              getNameFromSymbolRef(argNameAttr, /*isFunc=*/true);
+          if (!argName.starts_with("__init__"))
+            return false;
+
+          StringRef innerStructName = tryGetTypeNameFromSymbolRef(argNameAttr);
+          if (!isLiteralWrapperName(innerStructName))
+            return false;
+
+          ArrayRef<TypedAttr> innerArgs = argOperands.drop_front();
+          return tryPrintLiteralValue(innerArgs);
+        };
+
+        // For non-literal structs, handle nested literal constructors
+        if (!structName.empty()) {
+          os << structName << '(';
+          llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr arg) {
+            if (!tryPrintAsLiteral(arg))
+              printDemangledParam(os, arg, diagShared);
+          });
+          os << ')';
           return;
         }
+      }
 
-        // If we can tell that this is a method call, print the receiver first.
-        if (!operandsToPrint.empty() &&
-            isKnownNonStaticMethod(diagShared, nameAttr)) {
-          printDemangledParam(os, operandsToPrint.front(), diagShared);
-          os << '.';
-          operandsToPrint = operandsToPrint.drop_front();
-        }
+      // Otherwise, print the symbol and go through the normal argument list.
+      printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
 
-        // Special case: struct __init__ constructor calls for literal types
-        if (name.starts_with("__init__") && diagShared &&
-            operands.size() >= 2) {
-
-          // Helper function to check if this is a literal wrapper by name
-          auto isLiteralWrapperName = [](StringRef structName) {
-            return structName == "StringLiteral" ||
-                   structName == "IntLiteral" || structName == "FloatLiteral";
-          };
-
-          // Helper function to try printing just the literal value
-          auto tryPrintLiteralValue = [&](ArrayRef<TypedAttr> args) -> bool {
-            if (args.size() == 1) {
-              printDemangledParam(os, args[0], diagShared);
-              return true;
-            }
-            return false;
-          };
-
-          // Primary approach: Use symbol structure to get struct name
-          StringRef structName = tryGetTypeNameFromSymbolRef(nameAttr);
-          if (isLiteralWrapperName(structName)) {
-            if (tryPrintLiteralValue(operandsToPrint))
-              return;
-          }
-
-          // Fallback: Check if the symbol name contains type suffixes
-          if (name.contains("[__mlir_type.!kgen.string]") ||
-              name.contains("[__mlir_type.!pop.int_literal]") ||
-              name.contains("[__mlir_type.!pop.float_literal]")) {
-            if (tryPrintLiteralValue(operandsToPrint))
-              return;
-          }
-
-          // Helper to check if an argument is a literal constructor
-          auto tryPrintAsLiteral = [&](TypedAttr arg) -> bool {
-            auto op = dyn_cast<ParamOperatorAttr>(arg);
-            if (!op || op.getOpcode() != POC::Apply)
-              return false;
-
-            ArrayRef<TypedAttr> argOperands = op.getOperands();
-            if (argOperands.size() < 2)
-              return false;
-
-            SymbolRefAttr argNameAttr = tryGetSymbolName(argOperands.front());
-            if (!argNameAttr)
-              return false;
-
-            StringRef argName =
-                getNameFromSymbolRef(argNameAttr, /*isFunc=*/true);
-            if (!argName.starts_with("__init__"))
-              return false;
-
-            StringRef innerStructName =
-                tryGetTypeNameFromSymbolRef(argNameAttr);
-            if (!isLiteralWrapperName(innerStructName))
-              return false;
-
-            ArrayRef<TypedAttr> innerArgs = argOperands.drop_front();
-            return tryPrintLiteralValue(innerArgs);
-          };
-
-          // For non-literal structs, handle nested literal constructors
-          if (!structName.empty()) {
-            os << structName << '(';
-            llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr arg) {
-              if (!tryPrintAsLiteral(arg))
-                printDemangledParam(os, arg, diagShared);
-            });
-            os << ')';
-            return;
-          }
-        }
-
-        // Otherwise, print the symbol and go through the normal argument list.
-        printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
-
-        // Omit the last 'VariadicPack' operand as its the 'is_owned' bit.
-        if (diagShared &&
-            tryGetTypeNameFromSymbolRef(nameAttr) == "VariadicPack" &&
-            operandsToPrint.size() > 1) {
-          operandsToPrint = operandsToPrint.drop_back();
-        }
-
-      } else {
-        printDemangledParam(os, operands.front(), diagShared);
+      // If there are parameters, print them. Note that we don't have easy
+      // access to default parameter values or keyword names on the function.
+      // TODO: look up the callee to omit them like isKnownNonStaticMethod is
+      // doing, and integrate into logic that struct printing is using.
+      if (!calleeParams.empty()) {
+        os << '[';
+        llvm::interleaveComma(calleeParams, os, [&](TypedAttr param) {
+          printDemangledParam(os, param, diagShared);
+        });
+        os << ']';
       }
 
       return printOperands(operandsToPrint);

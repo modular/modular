@@ -8,10 +8,10 @@
 
 from utils import Index
 
-# CHECK: "value": "Index(16, 16, 16)"
+# CHECK: "value": "Index[Int, Int, Int, int64](16, 16, 16)"
 alias x1 = Index(16, 16, 16)
 
-# CHECK: "value": "Tuple(VariadicPack(Index(64, 8, 8)))"
+# CHECK: "value": "Tuple(VariadicPack(Index[Int, Int, Int, int64](64, 8, 8)))"
 alias x2 = (Index(64, 8, 8),)
 
 # CHECK: "value": "Tuple(VariadicPack(1, 1))"
@@ -27,7 +27,7 @@ fn Indexing[T: Indexer](x: T):
 
 
 # Do not truncate functions not literally "Index".
-# CHECK: "value": "Indexing[
+# CHECK: "value": "Indexing[Int](8)"
 alias x5 = Indexing[Int](8)
 
 
