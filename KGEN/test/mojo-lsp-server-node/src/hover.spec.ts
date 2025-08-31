@@ -705,7 +705,7 @@ fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
       (await doc.hover(doc.findFirstPosition("foo")))!.contents,
       {
         kind: "markdown",
-        value: "```mojo\n(argument) foo: SIMD[p1, 1]\n```",
+        value: "```mojo\n(argument) foo: Scalar[p1]\n```",
       }
     );
 
