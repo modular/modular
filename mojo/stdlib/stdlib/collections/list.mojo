@@ -642,41 +642,53 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
             slice: The slice of items to delete.
         """
 
-        var start, end, step = slice.indices(len(self))
-        var slice_range = range(start, end, step)
-        var slice_range_len = len(slice_range)
+        var list_len = len(self)
 
-        if not slice_range_len:
+        var start, end, step = slice.indices(list_len)
+        var slice_range = range(start, end, step)
+        var slice_len = len(slice_range)
+
+        if not slice_len:
             return  # Nothing to delete
         elif step == 1:
-            # contiguous range, can optimize
-            for i in slice_range:
-                (self._data + i).destroy_pointee()
-            for j in range(end, self._len):
-                (self._data + j).move_pointee_into(
-                    self._data + j - slice_range_len
+            # No need to run destructors if `T` has a trivial destructor
+            @parameter
+            if not Bool(T.__del__is_trivial):
+                for del_index in slice_range:
+                    (self._data + del_index).destroy_pointee()
+
+            for move_index in range(end, list_len):
+                (self._data + move_index).move_pointee_into(
+                    self._data + move_index - slice_len
                 )
-            self._len -= slice_range_len
+
+            self._len -= slice_len
         else:
-            # non-contiguous range
-            var slice_range_idx = 0
-            var write_idx = 0
-            for read_idx in range(self._len):
-                if (
-                    slice_range_idx < slice_range_len
-                    and read_idx == slice_range[slice_range_idx]
-                ):
-                    (self._data + read_idx).destroy_pointee()
-                    slice_range_idx += 1
-                else:
-                    if write_idx != read_idx:
-                        (self._data + read_idx).move_pointee_into(
-                            self._data + write_idx
-                        )
-                    write_idx += 1
-            for i in range(write_idx, self._len):
-                (self._data + i).destroy_pointee()
-            self._len = write_idx
+            var n_deleted = 0
+            var previous_deleted = start - 1
+
+            for to_delete_index in slice_range:
+                # Backfill the list to patch the hole from the previously deleted element
+                for move_index in range(previous_deleted + 1, to_delete_index):
+                    var move_from = self._data + move_index
+                    var move_to = self._data + move_index - n_deleted
+                    move_from.move_pointee_into(move_to)
+
+                # Destroy the element at to_delete_index
+                @parameter
+                if not Bool(T.__del__is_trivial):
+                    (self._data + to_delete_index).destroy_pointee()
+
+                n_deleted += 1
+                previous_deleted = to_delete_index
+
+            # Move remaining elements between last deletion and end of the list
+            for move_index in range(previous_deleted + 1, list_len):
+                var move_from = self._data + move_index
+                var move_to = self._data + move_index - n_deleted
+                move_from.move_pointee_into(move_to)
+
+            self._len -= n_deleted
 
     # ===-------------------------------------------------------------------===#
     # Methods
