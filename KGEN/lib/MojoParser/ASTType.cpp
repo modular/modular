@@ -1102,8 +1102,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
       // Handle SIMD[dt, 1] with various aliases. Note that the dtype and size
       // may be parametric.
-      if (diagShared && params.size() == 2 &&
-          structDecl.getDeclName().strref() == "SIMD") {
+      if (params.size() == 2 && structDecl.getDeclName().strref() == "SIMD") {
         // DType and Int looks like #lit.struct<{value: index = 42}>, dig.
         DTypeConstantAttr dtype =
             getSingleElementStructAttr<DTypeConstantAttr>(params[0]);
@@ -1358,6 +1357,52 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     else
       os << "__mlir_type." << (demangleParams ? demangleIfNeeded(type) : type);
   }
+}
+
+/// If the value is a call to an implicit constructor of the value's type,
+/// remove it, otherwise leave the value alone.
+static void removeImplicitCtorCall(TypedAttr &value, SharedState &shared) {
+  // Implicit constructors are always calls.
+  auto op = dyn_cast<ParamOperatorAttr>(value);
+  if (!op ||
+      (op.getOpcode() != POC::Apply &&
+       op.getOpcode() != POC::ApplyResultSlot) ||
+      op.getOperands().size() != 2) // callee and value to convert.
+    return;
+
+  auto [nameAttr, calleeParams] =
+      tryGetSymbolNameAndParams(op.getOperands()[0]);
+  if (!nameAttr)
+    return;
+  StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
+  if (!name.starts_with("__init__"))
+    return;
+
+  ASTDecl *decl = shared.getDeclResolver().getDeclForFuncSymbol(nameAttr);
+  auto calleeFn = cast<FnOp>(decl->getIfOperation());
+  if (!calleeFn.getImplicitConversion())
+    return; // If it's not an implicit conversion, don't remove it.
+
+  value = op.getOperands()[1];
+}
+
+/// This is the same as printParam, but is only used user pretty printing
+/// circumstances (not mangling) after emitting a type annotation.  This
+/// avoids printing obvious implicit conversion calls.
+void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
+                                  SharedState &shared) {
+  removeImplicitCtorCall(value, shared);
+
+  // It is pretty common for function arguments to use default conversions from
+  // the actual value they want, and may not be an always_inline("builtin")
+  // constructor, e.g.:
+  //   fn example(v: Optional[Int64] = None):
+  // Without doing anything fancy, we would get something like:
+  //   fn example(v: Optional[Int64] = Optional[Int64](None)):
+  // Which is literally what is happening, but not very pretty.  To clean this
+  // up, check to see if call is to an implicit constructor, and if so, elide
+  // the call.
+  printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/false);
 }
 
 /// Convert this type to a human readable string representation so it can be

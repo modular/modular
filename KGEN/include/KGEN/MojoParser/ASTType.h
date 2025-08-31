@@ -205,6 +205,13 @@ public:
   /// Print the specified parameter like we would in AST type printing.
   static void printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared, bool demangleParams);
+
+  /// This is the same as printParam, but is only used user pretty printing
+  /// circumstances (not mangling) after emitting a type annotation.  This
+  /// avoids printing obvious implicit conversion calls.
+  static void printParamAfterType(raw_ostream &os, TypedAttr param,
+                                  SharedState &shared);
+
   /// Get the specified parameter as a string.
   static std::string getParamAsString(TypedAttr param, SharedState *diagShared,
                                       bool demangleParams);

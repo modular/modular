@@ -339,7 +339,7 @@ public:
                       KGEN::LIT::SharedState &sharedState,
                       KGEN::LIT::PassingKind passingKind,
                       KGEN::LIT::VariadicKind variadicKind,
-                      std::optional<std::string> defaultValue,
+                      TypedAttr defaultValue,
                       const MojoASTDeclRef *currentDeclContext = nullptr);
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
@@ -386,7 +386,7 @@ private:
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
   KGEN::LIT::PassingKind passingKind;
   KGEN::LIT::VariadicKind variadicKind;
-  std::optional<std::string> defaultValue;
+  TypedAttr defaultValue;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -413,8 +413,7 @@ public:
                      KGEN::LIT::SharedState &sharedState,
                      KGEN::LIT::PassingKind passingKind,
                      KGEN::LIT::VariadicKind variadicKind,
-                     std::optional<std::string> defaultValue,
-                     Convention convention, bool isSelf,
+                     TypedAttr defaultValue, Convention convention, bool isSelf,
                      const MojoASTDeclRef *currentDeclContext = nullptr);
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
@@ -468,7 +467,7 @@ private:
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
   KGEN::LIT::PassingKind passingKind;
   KGEN::LIT::VariadicKind variadicKind;
-  std::optional<std::string> defaultValue;
+  TypedAttr defaultValue;
   Convention convention;
   bool isSelf; // self argument of a method.
 

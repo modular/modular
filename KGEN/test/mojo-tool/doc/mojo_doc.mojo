@@ -701,19 +701,19 @@ from collections.optional import Optional
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none"
-# CHECK: "signature": "optional_default_arg_none(input: Optional[Int64] = Optional[Int64](None))"
+# CHECK: "signature": "optional_default_arg_none(input: Optional[Int64] = None)"
 fn optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none2"
-# CHECK: "signature": "optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = Optional[SIMD[DType.int64, 4]](None))"
+# CHECK: "signature": "optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None)"
 fn optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
     pass
 
 
 # CHECK-LABEL: "name": "optional_default_arg_13"
-# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = Optional[Int64](13))"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = 13)"
 fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 

@@ -576,11 +576,10 @@ static ParameterEvaluator populatePublicParameterDecls(
   // Grab the types of the parameters to the struct.
   DefaultValueHandler defaultParamHandler(paramListAttr);
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
-    std::optional<std::string> defaultValue;
+    TypedAttr defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(idx)) {
-      TypedAttr reboundDefaultAttr =
+      defaultValue =
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
-      defaultValue = generatePValueString(shared, reboundDefaultAttr);
     }
     PassingKind passingKind = paramListAttr.getPassingKind(idx);
     StringRef paramName = demangleParameterName(paramListAttr.getName(idx));
@@ -605,9 +604,9 @@ static ParameterEvaluator populatePublicParameterDecls(
         generateTypeString(shared, reboundType, variadicKind);
 
     // Add the parameter metadata to the list of parameters
-    parameters.push_back(PublicParameterDecl(
-        paramName, typeString, astType, shared, passingKind, variadicKind,
-        std::move(defaultValue), parentDeclContext));
+    parameters.push_back(PublicParameterDecl(paramName, typeString, astType,
+                                             shared, passingKind, variadicKind,
+                                             defaultValue, parentDeclContext));
   }
   return evaluator;
 }
@@ -738,13 +737,24 @@ PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
 // PublicParameterDecl
 //===----------------------------------------------------------------------===//
 
+/// Given a parameter expression corresponding to a default value, return a
+/// rendered string for the value.
+static std::string getDefaultValueString(TypedAttr defaultValue,
+                                         SharedState &shared) {
+  std::string value;
+  llvm::raw_string_ostream os(value);
+  // Default values are always printed after a type annotation.
+  ASTType::printParamAfterType(os, defaultValue, shared);
+  return os.str();
+}
+
 std::string
 PublicParameterDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
   dumpIdentifierWithType(os, getName(), type, variadicKind);
   if (defaultValue)
-    os << " = " << *defaultValue;
+    os << " = " << getDefaultValueString(defaultValue, ctx.getSharedState());
   return buff;
 }
 
@@ -758,14 +768,13 @@ std::string PublicParameterDecl::getMarkdownDocString() const {
 PublicParameterDecl::PublicParameterDecl(
     StringRef name, StringRef type, const MojoASTTypeRef &astType,
     KGEN::LIT::SharedState &sharedState, KGEN::LIT::PassingKind passingKind,
-    KGEN::LIT::VariadicKind variadicKind,
-    std::optional<std::string> defaultValue,
+    KGEN::LIT::VariadicKind variadicKind, TypedAttr defaultValue,
     const MojoASTDeclRef *currentDeclContext)
     : PublicDecl(PublicDeclKind::DK_PublicParameterDecl, name), type(type),
       typeMetadata(::KGEN::TypeExtractionUtils::extractLibraryInfo(
           type, currentDeclContext, &sharedState)),
       passingKind(passingKind), variadicKind(variadicKind),
-      defaultValue(std::move(defaultValue)) {
+      defaultValue(defaultValue) {
 
   // Pre-calculate individual trait metadata for compound types
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
@@ -807,7 +816,8 @@ llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
   }
 
   if (defaultValue)
-    object["default"] = *defaultValue;
+    object["default"] =
+        getDefaultValueString(defaultValue, ctx.getSharedState());
   return object;
 }
 
@@ -819,15 +829,14 @@ PublicArgumentDecl::PublicArgumentDecl(
     StringRef name, std::string prefix, std::string type,
     const MojoASTTypeRef &astType, KGEN::LIT::SharedState &sharedState,
     KGEN::LIT::PassingKind passingKind, KGEN::LIT::VariadicKind variadicKind,
-    std::optional<std::string> defaultValue, Convention convention, bool isSelf,
+    TypedAttr defaultValue, Convention convention, bool isSelf,
     const MojoASTDeclRef *currentDeclContext)
     : PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, name),
       prefix(std::move(prefix)), type(type),
       typeMetadata(::KGEN::TypeExtractionUtils::extractLibraryInfo(
           type, currentDeclContext, &sharedState)),
       passingKind(passingKind), variadicKind(variadicKind),
-      defaultValue(std::move(defaultValue)), convention(convention),
-      isSelf(isSelf) {
+      defaultValue(defaultValue), convention(convention), isSelf(isSelf) {
 
   // Pre-calculate individual trait metadata for compound types
   SmallVector<std::string> traitNames = parseCompoundTraitType(type);
@@ -863,7 +872,7 @@ PublicArgumentDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   bool elideType = isSelf && type == "Self";
   dumpIdentifierWithType(os, getName(), type, variadicKind, elideType);
   if (defaultValue)
-    os << " = " << *defaultValue;
+    os << " = " << getDefaultValueString(defaultValue, ctx.getSharedState());
   return buff;
 }
 
@@ -910,7 +919,8 @@ llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
   }
 
   if (defaultValue)
-    object["default"] = *defaultValue;
+    object["default"] =
+        getDefaultValueString(defaultValue, ctx.getSharedState());
   return object;
 }
 
@@ -1323,11 +1333,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     // Check if this parameter should be excluded from documentation
     if (shouldExcludeParameterFromDocs(passingKind, paramName.getValue()))
       continue;
-    std::optional<std::string> defaultValue;
+    TypedAttr defaultValue;
     if (TypedAttr defaultAttr = defaultParamHandler.getDefault(parIdx)) {
-      TypedAttr reboundDefaultAttr =
+      defaultValue =
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
-      defaultValue = generatePValueString(shared, reboundDefaultAttr);
     }
     VariadicKind variadicKind =
         signature.getParamListAttrs().getVariadicKind(parIdx);
@@ -1335,7 +1344,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
         paramName,
         generateTypeString(shared, reboundType, variadicKind, selfType),
         MojoASTTypeRef(reboundType), shared, passingKind, variadicKind,
-        std::move(defaultValue), &declRef));
+        defaultValue, &declRef));
   }
 
   // Grab the types of the arguments to the function.
@@ -1346,11 +1355,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     if (auto variadic = dyn_cast<VariadicType>(userType))
       convention = signature.getPosVarArgConvention(argIdx);
 
-    std::optional<std::string> defaultValue;
+    TypedAttr defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx)) {
-      TypedAttr reboundDefaultAttr =
+      defaultValue =
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
-      defaultValue = generatePValueString(shared, reboundDefaultAttr);
     }
 
     std::string prefix;
@@ -1415,7 +1423,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     // Use AST-based library source extraction for function arguments
     args.push_back(PublicArgumentDecl(pogAttr.getName(), std::move(prefix),
                                       typeString, astType, shared, passingKind,
-                                      variadicKind, std::move(defaultValue),
+                                      variadicKind, defaultValue,
                                       declConvention, isSelf, &declRef));
   }
 
