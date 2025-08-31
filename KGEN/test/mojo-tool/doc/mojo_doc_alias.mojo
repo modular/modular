@@ -9,15 +9,15 @@
 from utils import Index
 
 # CHECK-LABEL: "name": "x1"
-# CHECK: "value": "Index[Int, Int, Int, int64](16, 16, 16)"
+# CHECK: "value": "Index(16, 16, 16)"
 alias x1 = Index(16, 16, 16)
 
 # CHECK-LABEL: "name": "x2"
-# CHECK: "value": "Tuple(VariadicPack(Index[Int, Int, Int, int64](64, 8, 8)))"
+# CHECK: "value": "Tuple[IndexList[3]](VariadicPack[True, True, {}, ExplicitlyCopyable & Movable, IndexList[3]](Index(64, 8, 8)))"
 alias x2 = (Index(64, 8, 8),)
 
 # CHECK-LABEL: "name": "x3"
-# CHECK: "value": "Tuple(VariadicPack(1, 1))"
+# CHECK: "value": "Tuple[Int, Int](VariadicPack[True, True, {}, ExplicitlyCopyable & Movable, Int, Int](1, 1))"
 alias x3: Tuple[Int, Int] = (1, 1)
 
 # Do not truncate non-functions.
