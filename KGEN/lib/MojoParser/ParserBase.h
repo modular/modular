@@ -142,14 +142,17 @@ public:
                          SMLoc *loc = nullptr);
 
   /// Consume an identifier token. If `loc` is set, it is populated with the
-  /// source location of the token.
-  ParseResult parseIdentifier(const Twine &message, SMLoc *loc = nullptr);
+  /// source location of the token. If `allowKeyword` is true, keywords are
+  /// allowed, not just identifiers.
+  ParseResult parseIdentifier(const Twine &message, SMLoc *loc = nullptr,
+                              bool allowKeyword = false);
 
   /// Consume an identifier token, binding its name into the specified result
   /// string attribute. If `loc` is set, it is populated with the source
-  /// location of the token.
+  /// location of the token. If `allowKeyword` is true, keywords are
+  /// allowed, not just identifiers.
   ParseResult parseIdentifier(StringAttr &result, const Twine &message,
-                              SMLoc *loc = nullptr);
+                              SMLoc *loc = nullptr, bool allowKeyword = false);
 
   /// Consume an identifier token if delimiter is the next token and the parsed
   /// identifier is not a keyword. The location is set to the delimiter (the

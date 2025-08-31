@@ -53,12 +53,11 @@ fn test_mlir2():
   # expected-warning @below {{'!kgen.deferred' value is unused}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
-  # expected-error @below {{expected name in attribute reference}}
-  # expected-note @below {{escape keyword '_' with backticks to use it as an identifier}}
+  # expected-error @below {{invalid MLIR attribute: expected attribute value}}
+  # expected-note @below {{attempting to parse: '_'}}
   __mlir_attr.
 
   # expected-error @below {{expected name in attribute reference}}
-  # expected-error @below {{attribute spec requires a keyword parameter}}
   _ = __mlir_op.`test.op`[__mlir_attr.]
 
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}

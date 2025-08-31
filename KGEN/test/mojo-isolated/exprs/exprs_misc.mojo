@@ -439,7 +439,6 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
 # or/and
 ##===----------------------------------------------------------------------===##
 
-
 # MOCO-1987: Parser error when temporary PythonObject appears in or expression
 @register_passable
 struct RPType(Copyable, Movable):
@@ -463,3 +462,14 @@ fn test_rp_and_or():
   # CHECK-NEXT:     hlcf.yield [[LHS]] : !RPType
 
   _ = RPType() or RPType()
+
+##===----------------------------------------------------------------------===##
+# Keywords as identifiers
+##===----------------------------------------------------------------------===##
+
+struct MatchExample:
+    fn match(self):
+        pass
+
+fn test_match(a: MatchExample):
+    a.match()
