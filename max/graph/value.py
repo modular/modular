@@ -22,7 +22,8 @@ from typing import (
     Protocol,
     TypeVar,
     Union,
-    cast,
+    get_args,
+    get_origin,
     runtime_checkable,
 )
 
@@ -92,10 +93,39 @@ class Value(Generic[MlirType]):
     """
 
     _mlir_value: _Value[MlirType]
+    _registry: dict[type, type] = {}
 
     def __init__(self) -> None:
         """Value is abstract, it shouldn't be constructed directly."""
         raise NotImplementedError
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """
+        Automatically registers subclasses by inferring the MLIR type
+        from the generic base class (e.g., Value[mo.TensorType]).
+        """
+        super().__init_subclass__(**kwargs)
+
+        # Only process classes that directly define `__orig_bases__`, which are
+        # direct subclasses of a generic class. This prevents grandchild
+        # classes from re-triggering registration.
+        if "__orig_bases__" not in cls.__dict__:
+            return
+
+        inferred_mlir_type = None
+        for base in cls.__orig_bases__:
+            if get_origin(base) is Value:
+                type_args = get_args(base)
+                if type_args:
+                    inferred_mlir_type = type_args[0]
+                    break
+
+        if inferred_mlir_type:
+            if inferred_mlir_type in cls._registry:
+                raise TypeError(
+                    f"MLIR type {inferred_mlir_type} is already registered."
+                )
+            cls._registry[inferred_mlir_type] = cls
 
     @classmethod
     def from_mlir(cls, value: _Value[MlirType]) -> Value[Any]:
@@ -104,15 +134,12 @@ class Value(Generic[MlirType]):
         Args:
             value: The MLIR value to wrap.
         """
-        if isinstance(value.type, mo.TensorType):
-            return TensorValue.from_mlir(cast(_Value[mo.TensorType], value))
-        elif isinstance(value.type, mo.ChainType):
-            return _ChainValue.from_mlir(cast(_Value[mo.ChainType], value))
-        elif isinstance(value.type, mo.OpaqueType):
-            return _OpaqueValue.from_mlir(cast(_Value[mo.OpaqueType], value))
-        elif isinstance(value.type, mo.BufferType):
-            return BufferValue.from_mlir(cast(_Value[mo.BufferType], value))
-        raise TypeError(f"Invalid mlir value {value=}")
+        subclass = cls._registry.get(type(value.type))
+        if subclass:
+            return subclass.from_mlir(value)
+        raise TypeError(
+            f"No Value subclass for MLIR type: {type(value.type).__name__}"
+        )
 
     def to_mlir(self) -> _Value[MlirType]:
         """Converts the :obj:`Value` to an MLIR value."""
