@@ -424,10 +424,10 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
   return name;
 }
 
-// Get the typename of the symbol
+// Get the name of the enclosing struct from the function symbol reference.
 static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
   if (symbol.getNestedReferences().size() >= 2)
-    return symbol.getNestedReferences().drop_back().back().getAttr();
+    return symbol.getNestedReferences().drop_back().back().getValue();
   return {};
 }
 
@@ -467,10 +467,6 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
   // them more readable.
   StringRef name = getNameFromSymbolRef(symbol, isFunc);
 
-  // For constructors, print the type name instead.
-  if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
-    name = symbol.getNestedReferences().drop_back().back().getAttr();
-
   // Remove stdlib:: prefixes.
   name = trimBuiltinNamespace(name);
 
@@ -490,19 +486,6 @@ tryGetSymbolNameAndParams(TypedAttr param) {
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
     return {symbolCst.getSymbol(), symbolCst.getParamValues()};
   return {{}, {}};
-}
-
-static bool isKnownNonStaticMethod(SharedState *diagShared,
-                                   SymbolRefAttr callee) {
-  if (!diagShared) // Need SharedState to figure this out.
-    return false;
-  // Must be able to figure out the decl in question, and must be a method.
-  ASTDecl *decl = diagShared->getDeclResolver().getDeclForFuncSymbol(callee);
-  if (!decl || !decl->tryGetMethodParentDecl())
-    return false;
-
-  // Return false for static methods.
-  return !cast<FnOp>(decl->getIfOperation()).getIsStatic();
 }
 
 /// Pretty print a parameter value.
@@ -596,9 +579,22 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         return;
       }
 
+      // Try to resolve the symbol to a ASTDecl and then to a FnOp.
+      FnOp calleeFn;
+      bool calleeIsMethod = false;
+      if (diagShared) {
+        if (ASTDecl *decl =
+                diagShared->getDeclResolver().getDeclForFuncSymbol(nameAttr)) {
+          calleeFn = cast<FnOp>(decl->getIfOperation());
+          calleeIsMethod = decl->tryGetMethodParentDecl() != nullptr;
+        }
+      }
+
+      bool calleeIsStatic =
+          calleeFn && calleeIsMethod && calleeFn.getIsStatic();
+
       // If we can tell that this is a method call, print the receiver first.
-      if (!operandsToPrint.empty() &&
-          isKnownNonStaticMethod(diagShared, nameAttr)) {
+      if (!operandsToPrint.empty() && calleeIsMethod && !calleeIsStatic) {
         printDemangledParam(os, operandsToPrint.front(), diagShared);
         os << '.';
         operandsToPrint = operandsToPrint.drop_front();
@@ -637,48 +633,29 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
             return;
         }
 
-        // Helper to check if an argument is a literal constructor
-        auto tryPrintAsLiteral = [&](TypedAttr arg) -> bool {
-          auto op = dyn_cast<ParamOperatorAttr>(arg);
-          if (!op || op.getOpcode() != POC::Apply)
-            return false;
-
-          ArrayRef<TypedAttr> argOperands = op.getOperands();
-          if (argOperands.size() < 2)
-            return false;
-
-          auto [argNameAttr, argParams] =
-              tryGetSymbolNameAndParams(argOperands.front());
-          if (!argNameAttr)
-            return false;
-
-          StringRef argName =
-              getNameFromSymbolRef(argNameAttr, /*isFunc=*/true);
-          if (!argName.starts_with("__init__"))
-            return false;
-
-          StringRef innerStructName = tryGetTypeNameFromSymbolRef(argNameAttr);
-          if (!isLiteralWrapperName(innerStructName))
-            return false;
-
-          ArrayRef<TypedAttr> innerArgs = argOperands.drop_front();
-          return tryPrintLiteralValue(innerArgs);
-        };
-
         // For non-literal structs, handle nested literal constructors
+        // FIXME: This is crushing parameters unnecessarily.
         if (!structName.empty()) {
           os << structName << '(';
           llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr arg) {
-            if (!tryPrintAsLiteral(arg))
-              printDemangledParam(os, arg, diagShared);
+            printDemangledParam(os, arg, diagShared);
           });
           os << ')';
           return;
         }
       }
 
-      // Otherwise, print the symbol and go through the normal argument list.
-      printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
+      // For constructors, print the type name instead of __init__.
+      if (name == "__init__" && nameAttr.getNestedReferences().size() >= 2) {
+        os << tryGetTypeNameFromSymbolRef(nameAttr);
+      } else {
+        // Static methods print 'StructName.method', not just 'method'.
+        if (calleeIsStatic)
+          os << tryGetTypeNameFromSymbolRef(nameAttr) << '.';
+
+        // Otherwise, print the symbol name.
+        printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
+      }
 
       // If there are parameters, print them. Note that we don't have easy
       // access to default parameter values or keyword names on the function.

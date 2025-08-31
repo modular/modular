@@ -597,7 +597,24 @@ fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
 # expected-note @below {{function declared here}}
 fn takes4(x: HasSize[4]): pass
 fn get_int[A: Int]() -> Int: pass
+
+struct HoldsInt:
+    var t: Int
+    fn __init__(out self):
+        self.t = 1
+
+    @staticmethod
+    fn get_int() -> Int:
+        return 1
+
 fn test_param_call():
     # expected-error @below {{cannot be converted from 'HasSize[get_int[42]()]' to 'HasSize[4]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[get_int[42]()]())
+
+    # expected-error @below {{cannot be converted from 'HasSize[HoldsInt().t]' to 'HasSize[4]'}}
+    takes4(HasSize[HoldsInt().t]())
+
+    # expected-error @below {{cannot be converted from 'HasSize[HoldsInt.get_int()]' to 'HasSize[4]'}}
+    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+    takes4(HasSize[HoldsInt.get_int()]())

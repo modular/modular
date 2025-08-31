@@ -8,16 +8,20 @@
 
 from utils import Index
 
+# CHECK-LABEL: "name": "x1"
 # CHECK: "value": "Index[Int, Int, Int, int64](16, 16, 16)"
 alias x1 = Index(16, 16, 16)
 
+# CHECK-LABEL: "name": "x2"
 # CHECK: "value": "Tuple(VariadicPack(Index[Int, Int, Int, int64](64, 8, 8)))"
 alias x2 = (Index(64, 8, 8),)
 
+# CHECK-LABEL: "name": "x3"
 # CHECK: "value": "Tuple(VariadicPack(1, 1))"
 alias x3: Tuple[Int, Int] = (1, 1)
 
 # Do not truncate non-functions.
+# CHECK-LABEL: "name": "x4"
 # CHECK: "value": "Indexer"
 alias x4 = Indexer
 
@@ -27,6 +31,7 @@ fn Indexing[T: Indexer](x: T):
 
 
 # Do not truncate functions not literally "Index".
+# CHECK-LABEL: "name": "x5"
 # CHECK: "value": "Indexing[Int](8)"
 alias x5 = Indexing[Int](8)
 
@@ -35,7 +40,7 @@ struct S[a: Int, b: Int]:
     pass
 
 
-# CHECK: "name": "S1"
+# CHECK-LABEL: "name": "S1"
 # CHECK: "parameters": [
 # CHECK:   "description": "An integer, naturally.",
 # CHECK:   "name": "z",
