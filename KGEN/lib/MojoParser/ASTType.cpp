@@ -482,8 +482,8 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
 ///
 /// This needs to handle the case when 'paramInfo' is null, e.g. when mangling.
 static void printParamList(raw_ostream &os, PogListAttr paramInfo,
-                           ArrayRef<TypedAttr> params, SharedState *diagShared,
-                           bool demangleParams) {
+                           ArrayRef<TypedAttr> params,
+                           SharedState *diagShared) {
   if (params.empty())
     return;
 
@@ -550,12 +550,12 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
 
   if (!paramsToPrint.empty()) {
     os << '[';
-    llvm::interleaveComma(
-        paramsToPrint, os, [&](std::pair<StringAttr, TypedAttr> param) {
-          if (param.first)
-            os << param.first.strref() << '=';
-          ASTType::printParam(os, param.second, diagShared, demangleParams);
-        });
+    llvm::interleaveComma(paramsToPrint, os,
+                          [&](std::pair<StringAttr, TypedAttr> param) {
+                            if (param.first)
+                              os << param.first.strref() << '=';
+                            ASTType::printParam(os, param.second, diagShared);
+                          });
     os << ']';
   }
 }
@@ -734,7 +734,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       PogListAttr paramInfo;
       if (calleeFn)
         paramInfo = calleeFn.getFullSignature().getParamListAttrs();
-      printParamList(os, paramInfo, calleeParams, diagShared, false);
+      printParamList(os, paramInfo, calleeParams, diagShared);
 
       // Finally, also print any operands.
       return printOperands(operandsToPrint);
@@ -1052,9 +1052,13 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   // Print ParamDeclRefAttr as the name of the parameter.
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
+    StringRef name = declRef.getName();
+    if (diagShared)
+      name = demangleParameterName(name);
+
     // Escape any weird characters in the parameter name that might have been
     // introduced with backticks.
-    printAsMojoStringLiteral(declRef.getName(), os);
+    printAsMojoStringLiteral(name, os);
     return;
   }
 
@@ -1065,9 +1069,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 /// Pretty print a parameter value and optionally demangle it.
 /// TODO(16040): Remove this overload when symbol names are name-erased.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
-                         SharedState *diagShared, bool demangleParams) {
-  if (diagShared || demangleParams)
-    param = demangleIfNeeded(param);
+                         SharedState *diagShared) {
   printDemangledParam(os, param, diagShared);
 }
 
@@ -1082,11 +1084,7 @@ static T getSingleElementStructAttr(TypedAttr param) {
   return {};
 }
 
-void ASTType::print(raw_ostream &os, SharedState *diagShared,
-                    bool demangleParams) const {
-  // We demangle parameters when printing for diagnostics.
-  demangleParams |= (diagShared != nullptr);
-
+void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   if (!mlirType) {
     os << "<<NULL ASTTYPE>>";
     return;
@@ -1152,7 +1150,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
           // Otherwise if we know the size is 1, we can use Scalar[] alias, even
           // if the dtype is parametric.
           os << "Scalar[";
-          printParam(os, params[0], diagShared, demangleParams);
+          printParam(os, params[0], diagShared);
           os << "]";
           return;
         }
@@ -1170,7 +1168,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
                       .getParamListAttrs();
     }
 
-    printParamList(os, paramInfo, params, diagShared, demangleParams);
+    printParamList(os, paramInfo, params, diagShared);
   };
 
   auto printConvention = [&os](ArgConvention conv) {
@@ -1184,10 +1182,10 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
   auto printRef = [&](RefType refType) {
     os << "ref [";
-    printParam(os, refType.getOrigin(), diagShared, demangleParams);
+    printParam(os, refType.getOrigin(), diagShared);
     if (!refType.isDefaultAddrSpace()) {
       os << ", ";
-      printParam(os, refType.getOrigin(), diagShared, demangleParams);
+      printParam(os, refType.getOrigin(), diagShared);
     }
     os << "] ";
   };
@@ -1213,16 +1211,16 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
         " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
     os << "AnyTrait[";
-    ASTType(anyTrait.getTraitType()).print(os, diagShared, demangleParams);
+    ASTType(anyTrait.getTraitType()).print(os, diagShared);
     os << ']';
   } else if (isNoneType()) {
     os << "None";
   } else if (auto ref = dyn_cast<RefType>(type)) {
     printRef(ref);
-    ASTType(ref.getElementType()).print(os, diagShared, demangleParams);
+    ASTType(ref.getElementType()).print(os, diagShared);
   } else if (auto variadic = dyn_cast<VariadicType>(type)) {
     os << "Variadic[";
-    ASTType(variadic.getElementType()).print(os, diagShared, demangleParams);
+    ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";
   } else if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     if (sig.isAsync())
@@ -1235,10 +1233,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
           auto [i, type] = p;
           if (sig.getParamListAttrs().isPosVarArg(i)) {
             os << '*';
-            ASTType(type).getVariadicElementType().print(os, diagShared,
-                                                         demangleParams);
+            ASTType(type).getVariadicElementType().print(os, diagShared);
           } else {
-            ASTType(type).print(os, diagShared, demangleParams);
+            ASTType(type).print(os, diagShared);
           }
         };
         llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
@@ -1286,7 +1283,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
         TypedAttr variadic =
             ASTType(sig.getIfVariadicPack(idx)).getVariadicPackTypeList();
-        printParam(os, variadic, diagShared, demangleParams);
+        printParam(os, variadic, diagShared);
       } else {
         printConvention(convention);
 
@@ -1302,7 +1299,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
         if (hasAddress(convention))
           type = type.getReferenceElementType();
-        type.print(os, diagShared, demangleParams);
+        type.print(os, diagShared);
       }
 
       // Check if we are at the end; if so, we might still have to print a '/'.
@@ -1331,19 +1328,19 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     if (isa<KGEN::NoneType>(resultType))
       os << "None";
     else
-      ASTType(resultType).print(os, diagShared, demangleParams);
+      ASTType(resultType).print(os, diagShared);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
-    printParam(os, paramRef.getParam(), diagShared, demangleParams);
+    printParam(os, paramRef.getParam(), diagShared);
   } else if (isa<TypeType>(type)) {
     os << "AnyTrivialRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "fn (";
     llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
-      ASTType(type).print(os, diagShared, demangleParams);
+      ASTType(type).print(os, diagShared);
     });
     os << ") -> (";
     llvm::interleaveComma(fnType.getResults(), os, [&](Type type) {
-      ASTType(type).print(os, diagShared, demangleParams);
+      ASTType(type).print(os, diagShared);
     });
     os << ')';
   } else if (auto originType = dyn_cast<OriginType>(type)) {
@@ -1364,7 +1361,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     if (diagShared)
       printKGENType(os, demangleIfNeeded(type));
     else
-      os << "__mlir_type." << (demangleParams ? demangleIfNeeded(type) : type);
+      os << "__mlir_type." << (diagShared ? demangleIfNeeded(type) : type);
   }
 }
 
@@ -1411,7 +1408,7 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
   // Which is literally what is happening, but not very pretty.  To clean this
   // up, check to see if call is to an implicit constructor, and if so, elide
   // the call.
-  printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/false);
+  printParam(os, value, /*forDiag=*/&shared);
 }
 
 /// Convert this type to a human readable string representation so it can be
@@ -1423,11 +1420,10 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
   return os;
 }
 
-std::string ASTType::getAsString(SharedState *forDiags,
-                                 bool demangleParams) const {
+std::string ASTType::getAsString(SharedState *forDiags) const {
   std::string result;
   llvm::raw_string_ostream os(result);
-  print(os, forDiags, demangleParams);
+  print(os, forDiags);
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
@@ -1436,11 +1432,11 @@ std::string ASTType::getAsString(SharedState *forDiags,
 }
 
 /// Get the specified parameter as a string.
-std::string ASTType::getParamAsString(TypedAttr param, SharedState *diagShared,
-                                      bool demangleParams) {
+std::string ASTType::getParamAsString(TypedAttr param,
+                                      SharedState *diagShared) {
   std::string result;
   llvm::raw_string_ostream os(result);
-  printParam(os, param, diagShared, demangleParams);
+  printParam(os, param, diagShared);
   return os.str();
 }
 
@@ -1458,8 +1454,7 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
 
   diag << '\'';
   auto *shared = static_cast<SharedState *>(diag.getDiags()->extraContext);
-  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared,
-                                    /*demangleParams=*/true);
+  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/shared);
   diag << '\'';
 }
 
