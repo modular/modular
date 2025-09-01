@@ -49,50 +49,6 @@ from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 
 
-# Function to handle AMD-specific scheduling
-@always_inline
-fn amd_scheduling_hints[
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    num_m_mmas: Int,
-    num_n_mmas: Int,
-    num_k_tiles: Int,
-    simd_width: Int,
-    num_threads: Int,
-    scheduler_hint: IndexList[3],
-]():
-    alias threads_per_row = BK // simd_width
-    alias rows_per_thread_block = num_threads // threads_per_row
-    alias a_loads_per_thread = BM // rows_per_thread_block
-    alias b_loads_per_thread = BN // rows_per_thread_block
-
-    @parameter
-    for i in range((num_m_mmas + num_n_mmas) * (num_k_tiles - 1)):
-        schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
-        schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
-        )
-
-    @parameter
-    for i in range(a_loads_per_thread + b_loads_per_thread):
-        schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
-        schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[0], 0
-        )
-        schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
-        schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[1], 0
-        )
-
-    @parameter
-    for i in range(num_m_mmas + num_n_mmas):
-        schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
-        schedule_group_barrier(
-            AMDScheduleBarrierMask.MFMA, scheduler_hint[2], 0
-        )
-
-
 struct AMD_MMA[
     out_type: DType,
     in_type: DType,
@@ -406,6 +362,7 @@ fn gemm_kernel_amd[
     # MMA instruction tiling
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
+    alias num_k_mmas = WK // MMA_K
 
     # K dimension tiling
     alias frag_size = MMA_M * MMA_K // WARP_SIZE
@@ -555,6 +512,67 @@ fn gemm_kernel_amd[
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=False]()
 
+    @always_inline
+    @parameter
+    fn schedule_loop_body():
+        alias threads_per_row = BK // simd_width
+        alias rows_per_thread_block = config.num_threads() // threads_per_row
+        alias a_loads_per_thread = BM // rows_per_thread_block
+        alias b_loads_per_thread = BN // rows_per_thread_block
+
+        alias num_mn_mmas = num_m_mmas + num_n_mmas
+
+        # Compute the number of MMA and shared load/store operations for the loop body.
+        alias num_mma_ops = num_m_mmas * num_n_mmas * num_k_mmas
+        alias num_shared_store_ops = a_loads_per_thread + b_loads_per_thread
+        alias num_shared_load_ops = num_mn_mmas * num_k_tiles
+
+        # Compute the number of MMA operations to distribute across the shared loads.
+        # The distribution is dependent on the latency of the MMA operation: MMA operations
+        # that have a shape 32x32x8 execute in twice the cycles of 16x16x16, so account
+        # for that here. Also defensively guard against underflow of the remaining MMA
+        # operations.
+        alias mmas_per_shared_load = min(
+            1 if MMA_M == MMA_N == 32 else 2, num_mma_ops // num_shared_load_ops
+        )
+        alias num_remaining_mma_ops = num_mma_ops - num_shared_load_ops * mmas_per_shared_load
+
+        # Distribute the remaining MMA operations across the shared stores and global
+        # memory loads.
+        alias mmas_per_shared_store = num_remaining_mma_ops // num_shared_store_ops
+        alias mmas_per_shared_store_extra = num_remaining_mma_ops % num_shared_store_ops
+
+        @parameter
+        for i in range(num_mn_mmas * (num_k_tiles - 1)):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, mmas_per_shared_load, 0
+            )
+
+        @parameter
+        for i in range(num_shared_store_ops):
+            alias mmas_this_shared_store = (
+                mmas_per_shared_store + 1
+            ) if i < mmas_per_shared_store_extra else mmas_per_shared_store
+
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, mmas_this_shared_store // 2, 0
+            )
+            schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA,
+                mmas_this_shared_store - mmas_this_shared_store // 2,
+                0,
+            )
+
+        @parameter
+        for i in range(num_mn_mmas):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, mmas_per_shared_load, 0
+            )
+
     # GEMM Computation Pipeline
     # This kernel implements a pipelined approach optimized for AMD GPUs:
     # 1. Load: Transfer first tiles from global to shared memory
@@ -596,17 +614,7 @@ fn gemm_kernel_amd[
 
         load_tiles_from_shared[0]()
 
-        amd_scheduling_hints[
-            BM=BM,
-            BN=BN,
-            BK = Int(BK),
-            num_m_mmas=num_m_mmas,
-            num_n_mmas=num_n_mmas,
-            num_k_tiles=num_k_tiles,
-            simd_width=simd_width,
-            num_threads = Int(config.num_threads()),
-            scheduler_hint = config.scheduler_hint,
-        ]()
+        schedule_loop_body()
 
     schedule_barrier()
 
