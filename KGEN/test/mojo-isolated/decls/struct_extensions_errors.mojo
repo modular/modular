@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
+# RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics -split-input-file %s
+
+trait AnyType:
+    pass
 
 # @expected-note @below {{extension already assumes these parameter declarations}}
 struct Spaceship[T: AnyType]:

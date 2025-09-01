@@ -2971,16 +2971,8 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
 
   auto loc = translateLocation(nameSMLoc);
 
-  // Get the symbol table for the current scope to check for conflicts
-  Operation *parentSymbolTableOp = SymbolTable::getNearestSymbolTable(
-      builder.getInsertionBlock()->getParentOp());
-  SymbolTable symbolTable(parentSymbolTableOp);
-
-  // Create the extension with a unique name to avoid a name conflict with the
-  // struct and with other extensions.
-  std::string prefixedName = "extension:" + baseNameAttr.getValue().str();
-  std::string uniqueName = M::getUniqueSymbolName(prefixedName, symbolTable);
-  auto uniqueNameAttr = StringAttr::get(getContext(), uniqueName);
+  std::string nameStr = "extension:" + baseNameAttr.getValue().str();
+  auto uniqueNameAttr = StringAttr::get(getContext(), nameStr);
 
   // Note that this is using the unique name, not the base name.
   // Further below, we'll still add it to the parent ASTDecl with the base name.

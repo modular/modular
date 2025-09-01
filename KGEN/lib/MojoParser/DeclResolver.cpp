@@ -146,28 +146,6 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 
   // Remember the named decl in the symbol table so it can be looked up.
   TinyPtrVector<ASTDecl *> &entries = (*parentDecl->declsInScope)[name];
-  if (entries.empty()) {
-    entries.push_back(decl);
-
-    // If the decl is a type or alias that has a symbol, remember it.  This
-    // allows us to look up decls by symbol when referenced as types. Functions
-    // don't have symbols until they are fully resolved, but decls inside
-    // functions cannot be accessed anyways.
-    if (auto symbolDecl =
-            dyn_cast_or_null<mlir::SymbolOpInterface>(decl->getIfOperation());
-        symbolDecl && !isa_and_nonnull<FnOp>(decl->getIfOperation())) {
-      // Make sure there are no name conflicts with the MLIR symbol.  If there
-      // are, then addDecl will have rejected it with an error.
-      shared.setResolvedDeclSymbol(symbolDecl.getOperation());
-
-      SymbolRefAttr symbol = decl->getSymbolRef();
-      assert(!declForTypeSymbol.count(symbol) &&
-             "Symbol redefinition/collision");
-      declForTypeSymbol[symbol] = decl;
-    }
-
-    return;
-  }
 
   // Function support method overloading on input arguments.  Variables and
   // types cannot be overloaded because they have no inputs.  Well, we could
@@ -192,6 +170,8 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 
     // Otherwise, we're good, charge forwards.
     entries.push_back(decl);
+    // We don't uniquifyNameAndAddToParentSymbolTable here, that's done
+    // elsewhere for functions.
     return;
   }
 
@@ -236,30 +216,61 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
 
     // Otherwise, we're good, charge forwards.
     entries.push_back(decl);
+
+    shared.uniquifyNameAndAddToParentSymbolTable(decl->getIfOperation());
+    // This symbol should now be guaranteed unique because of the above
+    // uniquifyNameAndAddToParentSymbolTable call.
+    SymbolRefAttr symbol = decl->getSymbolRef();
+    assert(!declForTypeSymbol.count(symbol) && "Symbol not unique!");
+    declForTypeSymbol[symbol] = decl;
     return;
   }
 
-  // Check if we are adding an identical unresolved import.
-  if (auto import =
-          dyn_cast_or_null<UnresolvedImportOp>(decl->getIfOperation())) {
-    auto prevOp =
-        dyn_cast_or_null<UnresolvedImportOp>(entries.front()->getIfOperation());
-    if (prevOp && import.getModuleNameAttr() == prevOp.getModuleNameAttr() &&
-        import.getDeclNameAttr() == prevOp.getDeclNameAttr()) {
-      entries.push_back(decl);
-      return;
+  // For any other type of declaration, check for conflicts
+  if (!entries.empty()) {
+    // Check if we are adding an identical unresolved import.
+    auto op = decl->getIfOperation();
+    if (auto import = dyn_cast_or_null<UnresolvedImportOp>(op)) {
+      auto prevOp = entries.front()->getIfOperation();
+      if (auto prevImportOp = dyn_cast_or_null<UnresolvedImportOp>(prevOp)) {
+        if (import.getModuleNameAttr() == prevImportOp.getModuleNameAttr() &&
+            import.getDeclNameAttr() == prevImportOp.getDeclNameAttr()) {
+          entries.push_back(decl);
+          return;
+        }
+      }
     }
+
+    // This is a genuine redefinition error
+    ASTDecl *existing = entries.back();
+    auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
+    diag.attachNote(existing->getLoc()) << "previous definition here";
+
+    // Mark the existing decl and this one as erroneous so uses of either
+    // don't create confusing errors.
+    decl->setErroneous();
+    for (ASTDecl *previous : entries)
+      previous->setErroneous();
+    return;
   }
 
-  ASTDecl *existing = entries.back();
-  auto diag = emitError(decl->getLoc(), "invalid redefinition of ") << name;
-  diag.attachNote(existing->getLoc()) << "previous definition here";
+  // This is the first declaration with this name
+  entries.push_back(decl);
 
-  // Mark the existing decl and this one as erroneous so uses of either
-  // don't create confusing errors.
-  decl->setErroneous();
-  for (ASTDecl *previous : entries)
-    previous->setErroneous();
+  // Register symbol with the parent symbol table.
+  // Functions don't have symbols until they are fully resolved, but decls
+  // inside functions cannot be accessed anyways.
+  if (auto symbolDecl =
+          dyn_cast_or_null<mlir::SymbolOpInterface>(decl->getIfOperation())) {
+    shared.uniquifyNameAndAddToParentSymbolTable(symbolDecl.getOperation());
+    // This symbol may have been renamed by the above
+    // uniquifyNameAndAddToParentSymbolTable call.
+    SymbolRefAttr symbol = decl->getSymbolRef();
+    // This shouldn't trip because we uniqued it in the above
+    // uniquifyNameAndAddToParentSymbolTable call.
+    assert(!declForTypeSymbol.count(symbol) && "Symbol redefinition/collision");
+    declForTypeSymbol[symbol] = decl;
+  }
 }
 
 TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
@@ -857,11 +868,11 @@ ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
 
 Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
   // Install it in the symbol table and check for redefinition while doing so.
-  Operation *existing = shared.setResolvedDeclSymbol(funcOp);
+  Operation *existing = shared.uniquifyNameAndAddToParentSymbolTable(funcOp);
   // Remember the mapping from its fully mangled symbol so we can find its AST
   // representation and body from IR references.
-  // NOTE: this has to run after `setResolvedDeclSymbol` as the call above might
-  // update the symbol name when there is a name collision.
+  // NOTE: this has to run after `uniquifyNameAndAddToParentSymbolTable` as the
+  // call above might update the symbol name when there is a name collision.
   declForFuncSymbol[getFullyResolvedSymbolRef(funcOp)] = &decl;
   return existing;
 }

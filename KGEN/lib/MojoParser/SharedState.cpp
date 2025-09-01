@@ -550,7 +550,8 @@ void SharedState::addBuiltinTypes(ASTDecl &builtinsDecl) {
   addMagicMLIRDecl("__mlir_type", MagicMLIRTypeType::get(context));
 }
 
-Operation *SharedState::setResolvedDeclSymbol(Operation *declOp) {
+Operation *
+SharedState::uniquifyNameAndAddToParentSymbolTable(Operation *declOp) {
   assert(declOp && "Cannot set a symbol for non-operation decl");
 
   // We look up the symbol in the enclosing symbol table.  For example, for a
