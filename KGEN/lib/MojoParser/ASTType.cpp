@@ -1050,7 +1050,16 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
   }
 
-  os << getParamAsString(param, diagShared);
+  // Print ParamDeclRefAttr as the name of the parameter.
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
+    // Escape any weird characters in the parameter name that might have been
+    // introduced with backticks.
+    printAsMojoStringLiteral(declRef.getName(), os);
+    return;
+  }
+
+  // Handle other KGEN parameters that it knows about with an ugly fallback.
+  os << getParamAsString(param);
 }
 
 /// Pretty print a parameter value and optionally demangle it.
