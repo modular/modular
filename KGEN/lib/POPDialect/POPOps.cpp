@@ -617,12 +617,6 @@ static void printGlobalConstantOpValue(OpAsmPrinter &p, Operation *,
   p << ">";
 }
 
-LogicalResult GlobalConstantOp::verify() {
-  if (!isa<ParamType>(getResult().getType().getElementType()))
-    return success();
-  return emitOpError("must have a concrete element type");
-}
-
 //===----------------------------------------------------------------------===//
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//

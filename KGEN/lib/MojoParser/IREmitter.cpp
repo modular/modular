@@ -797,7 +797,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                                                     ValueRange()));
   }
 
-  // If user refers to paramater of a value:
+  // If user refers to parameter of a value:
   // ```mojo
   // @fieldwise_init
   // struct Foo[n: Int]:
@@ -817,7 +817,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           getDeclScope().lookupInCurrentScope(declRef->spelling);
       Operation *op = decls.empty() ? nullptr : decls.back()->getIfOperation();
       // No need to do that for alias declaration
-      if (dyn_cast_if_present<LIT::VarDeclOp>(op))
+      if (isa_and_nonnull<LIT::VarDeclOp>(op))
         builder->create<LIT::OwnershipUseOp>(location, op->getResult(0));
     }
   }
