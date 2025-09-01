@@ -39,7 +39,7 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from sys import align_of, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of, is_amd_gpu
 from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
@@ -78,6 +78,10 @@ from utils.numerics import get_accum_type
 alias elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+
+# On AMD Systems, the loads from GLOBAL addressspace gives an improvement
+# to the performance.
+alias _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -508,7 +512,7 @@ fn _load_reduce[
         var accum: SIMD[accum_type, simd_width]
         accum = (
             ptrs[0]
-            .address_space_cast[AddressSpace.GLOBAL]()
+            .address_space_cast[_target_address_space]()
             .load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
@@ -519,7 +523,7 @@ fn _load_reduce[
         for gpu_idx in range(1, num_buffers):
             accum += (
                 ptrs[gpu_idx]
-                .address_space_cast[AddressSpace.GLOBAL]()
+                .address_space_cast[_target_address_space]()
                 .load[width=simd_width, alignment=alignment, invariant=True](
                     elem_idx
                 )
@@ -611,12 +615,12 @@ fn _allreduce_2stage_kernel[
     var ptrs = stack_allocation[
         num_buffers,
         UnsafePointer[Scalar[dtype]],
-        address_space = _GPUAddressSpace.LOCAL,
+        address_space = AddressSpace.LOCAL,
     ]()
     var tmps = stack_allocation[
         ngpus,
         UnsafePointer[Scalar[dtype]],
-        address_space = _GPUAddressSpace.LOCAL,
+        address_space = AddressSpace.LOCAL,
     ]()
 
     @parameter
@@ -627,7 +631,7 @@ fn _allreduce_2stage_kernel[
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
         tmps[i] = (
-            rank_sigs[target].address_space_cast[_GPUAddressSpace.GENERIC]() + 1
+            rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
     @parameter
@@ -661,7 +665,7 @@ fn _allreduce_2stage_kernel[
 
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
-        tmp_out.address_space_cast[AddressSpace.GLOBAL]().store[
+        tmp_out.address_space_cast[_target_address_space]().store[
             alignment=alignment
         ](elem_idx - elem_start, reduced_result)
 
@@ -693,7 +697,7 @@ fn _allreduce_2stage_kernel[
                 ](
                     result.get_nd_index(elem_dst_idx),
                     tmps[gpu_idx]
-                    .address_space_cast[AddressSpace.GLOBAL]()
+                    .address_space_cast[_target_address_space]()
                     .load[width=simd_width, alignment=alignment](elem_idx),
                 )
 
@@ -752,7 +756,7 @@ fn _allreduce_1stage_kernel[
     var ptrs = stack_allocation[
         num_buffers,
         UnsafePointer[Scalar[dtype]],
-        address_space = _GPUAddressSpace.LOCAL,
+        address_space = AddressSpace.LOCAL,
     ]()
 
     @parameter
