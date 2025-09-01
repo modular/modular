@@ -35,13 +35,13 @@ using namespace KGEN;
 // Parameter Type and Value Printing and Parsing
 //===----------------------------------------------------------------------===//
 
-std::string KGEN::getParamAsString(Attribute value, bool forDiag) {
+std::string KGEN::getParamAsString(Attribute value) {
   SmallVector<char, 128> result;
   {
     llvm::raw_svector_ostream os(result);
     if (auto ta = dyn_cast<TypedAttr>(value)) {
       StreamAsmPrinter p(os);
-      printParamValue(p, ta, {}, forDiag);
+      printParamValue(p, ta, {});
     } else {
       os << value;
     }
@@ -1339,8 +1339,7 @@ void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
   }
 }
 
-void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
-                           bool forDiag) {
+void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
     if (succeeded(typeItf.printValue(p, value)))
@@ -1367,10 +1366,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
     bool isRef = isTypeExpr(value);
     if (auto type = dyn_cast<ParameterTypeInterface>(value.getType()))
       isRef |= type.isMetaType();
-    if (forDiag)
-      printAsMojoStringLiteral(declRef.getName(), p.getStream());
-    else
-      printParamName(p, declRef.getName(), isRef);
+    printParamName(p, declRef.getName(), isRef);
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {

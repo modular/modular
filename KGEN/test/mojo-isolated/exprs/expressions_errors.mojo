@@ -856,12 +856,12 @@ fn test3830():
 
 fn test3830_1[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
     # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
-    # expected-note @below {{operand origin '*"anonymous*"' doesn't match expected origin 'o'}}
+    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
 fn test3830_2[o: ImmutableOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'Int' to ref 'Int'}}
-    # expected-note @below {{operand origin '*"anonymous*"' doesn't match expected origin 'o'}}
+    # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)
 
 

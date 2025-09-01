@@ -32,7 +32,7 @@ ExportMap getExportedSymbols(ModuleOp module);
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file. In diagnostics contexts, MLIR and KGEN keywords
 /// are not escaped with *"...".
-std::string getParamAsString(Attribute value, bool forDiag = false);
+std::string getParamAsString(Attribute value);
 
 /// Print the value as colon type parameter value into a string.
 StringAttr getParamTypeAsString(TypedAttr value);
@@ -140,8 +140,7 @@ ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 /// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
 /// context where printing for diagnostics, we do not use the double quoted
 /// syntax to escape MLIR and KGEN keywords.
-void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {},
-                     bool forDiag = false);
+void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});
 
