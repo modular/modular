@@ -678,7 +678,7 @@ def test_dict_repr_wrap():
     )
 
 
-def test_dict_delete():
+def test_dict_delitem():
     var dict: Dict[String, String] = {}
     dict["mojo"] = "lang"
     dict["max"] = "engine"
@@ -686,7 +686,7 @@ def test_dict_delete():
     assert_equal(len(dict), 2)
     assert_equal(dict["mojo"], "lang")
 
-    dict.delete("mojo")  # del dict["mojo"]
+    dict.del("mojo")  # del dict["mojo"]
 
     assert_equal(len(dict), 1)
 
@@ -711,4 +711,4 @@ def main():
     test_compile_time_dict()
     test_dict_comprehension()
     test_dict_repr_wrap()
-    test_dict_delete()
+    test_dict_delitem()

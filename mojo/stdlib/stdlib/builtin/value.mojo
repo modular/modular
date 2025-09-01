@@ -230,7 +230,7 @@ trait DeletableItem:
         ...
 
     @always_inline
-    fn delete(mut self, idx: Some[Indexer]) -> None:
+    fn del(mut self, idx: Some[Indexer]) -> None:
         """Delete an item from the collection.
 
         This is a convenience function that wraps the `__delitem__` function.
@@ -241,7 +241,7 @@ trait DeletableItem:
         self.__delitem__(idx)
 
     @always_inline
-    fn delete(mut self, slice: Slice) -> None:
+    fn del(mut self, slice: Slice) -> None:
         """Delete a slice of items from the collection.
 
         This is a convenience function that wraps the `__delitem__` function.
