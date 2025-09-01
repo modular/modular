@@ -62,9 +62,15 @@ from gpu.grid_controls import (
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
+from gpu.memory import (
+    multimem_ld_reduce,
+    ReduceOp,
+    Scope,
+    Consistency,
+    AddressSpace,
+)
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-from gpu.memory import AddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -239,12 +245,13 @@ fn _allreduce_naive[
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
+    num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
     ],
     list_of_out_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
     ],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
@@ -293,6 +300,7 @@ fn _allreduce_naive[
         rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in allreduce.
         outputs_lambda: An elementwise output lambda function.
+        num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
         list_of_in_bufs: Input buffers from each GPU.
@@ -471,6 +479,56 @@ fn _multi_gpu_barrier[
         barrier()
 
 
+@always_inline
+fn _load_reduce[
+    dtype: DType,
+    num_buffers: Int,
+    simd_width: Int,
+    alignment: Int,
+    accum_type: DType,
+](
+    elem_idx: Int,
+    ptrs: UnsafePointer[
+        UnsafePointer[Scalar[dtype]], address_space = _GPUAddressSpace.LOCAL
+    ],
+) -> SIMD[dtype, simd_width]:
+    @parameter
+    if num_buffers == 1:
+        # Multimem mode: use optimized reduction
+        return multimem_ld_reduce[
+            dtype,
+            simd_width=simd_width,
+            reduction = ReduceOp.ADD,
+            scope = Scope.GPU,
+            consistency = Consistency.RELAXED,
+            accum_type=accum_type,
+        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
+    else:
+        # Regular mode: manual accumulation
+        var accum: SIMD[accum_type, simd_width]
+        accum = (
+            ptrs[0]
+            .address_space_cast[AddressSpace.GLOBAL]()
+            .load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            .cast[accum_type]()
+        )
+
+        @parameter
+        for gpu_idx in range(1, num_buffers):
+            accum += (
+                ptrs[gpu_idx]
+                .address_space_cast[AddressSpace.GLOBAL]()
+                .load[width=simd_width, alignment=alignment, invariant=True](
+                    elem_idx
+                )
+                .cast[accum_type]()
+            )
+
+        return accum.cast[dtype]()
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
@@ -483,9 +541,10 @@ fn _allreduce_2stage_kernel[
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
+    num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -505,6 +564,7 @@ fn _allreduce_2stage_kernel[
         BLOCK_SIZE: Number of threads per block.
         outputs_lambda: An elementwise output lambda function.
         pdl_level: Control PDL behavior for the kernel.
+        num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
         result: Output buffer for reduced values.
@@ -549,7 +609,7 @@ fn _allreduce_2stage_kernel[
     # --- Memory Pointer Configuration ---
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = stack_allocation[
-        ngpus,
+        num_buffers,
         UnsafePointer[Scalar[dtype]],
         address_space = _GPUAddressSpace.LOCAL,
     ]()
@@ -565,12 +625,15 @@ fn _allreduce_2stage_kernel[
         # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
         # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
         var target = (my_rank + i) % ngpus
-        ptrs[i] = src_ptrs[target]
-
         # Skip Signal header.
         tmps[i] = (
             rank_sigs[target].address_space_cast[_GPUAddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
+
+    @parameter
+    for i in range(num_buffers):
+        var target = 0 if num_buffers == 1 else (my_rank + i) % ngpus
+        ptrs[i] = src_ptrs[target]
 
     # Current rank's output buffer.
     var tmp_out = tmps[0]
@@ -587,31 +650,20 @@ fn _allreduce_2stage_kernel[
     for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
-        var accum = (
-            ptrs[0]
-            .address_space_cast[AddressSpace.GLOBAL]()
-            .load[width=simd_width, alignment=alignment, invariant=True](
-                elem_idx
-            )
-            .cast[accum_type]()
-        )
 
-        @parameter
-        for gpu_idx in range(1, ngpus):
-            accum += (
-                ptrs[gpu_idx]
-                .address_space_cast[AddressSpace.GLOBAL]()
-                .load[width=simd_width, alignment=alignment, invariant=True](
-                    elem_idx
-                )
-                .cast[accum_type]()
-            )
+        var reduced_result = _load_reduce[
+            dtype=dtype,
+            num_buffers=num_buffers,
+            simd_width=simd_width,
+            alignment=alignment,
+            accum_type=accum_type,
+        ](elem_idx, ptrs)
 
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
         tmp_out.address_space_cast[AddressSpace.GLOBAL]().store[
             alignment=alignment
-        ](elem_idx - elem_start, accum.cast[dtype]())
+        ](elem_idx - elem_start, reduced_result)
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -657,9 +709,10 @@ fn _allreduce_1stage_kernel[
     *,
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
+    num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -674,6 +727,7 @@ fn _allreduce_1stage_kernel[
         my_rank: Current GPU rank
         BLOCK_SIZE: Number of threads per block.
         outputs_lambda: An elementwise output lambda function.
+        num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
         result: Output buffer for reduced values
@@ -696,17 +750,17 @@ fn _allreduce_1stage_kernel[
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = stack_allocation[
-        ngpus,
+        num_buffers,
         UnsafePointer[Scalar[dtype]],
         address_space = _GPUAddressSpace.LOCAL,
     ]()
 
     @parameter
-    for i in range(ngpus):
+    for i in range(num_buffers):
         # Round-robin pattern, for 8 GPUs for example:
         # Rank 0 accesses: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7.
         # Rank 1 accesses: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0.
-        var target = (my_rank + i) % ngpus
+        var target = 0 if num_buffers == 1 else (my_rank + i) % ngpus
         ptrs[i] = src_ptrs[target]
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -714,32 +768,19 @@ fn _allreduce_1stage_kernel[
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        var accum = (
-            ptrs[0]
-            .address_space_cast[AddressSpace.GLOBAL]()
-            .load[width=simd_width, alignment=alignment, invariant=True](
-                elem_idx
-            )
-            .cast[accum_type]()
-        )
 
-        @parameter
-        for _id in range(1, ngpus):
-            accum += (
-                ptrs[_id]
-                .address_space_cast[AddressSpace.GLOBAL]()
-                .load[width=simd_width, alignment=alignment, invariant=True](
-                    elem_idx
-                )
-                .cast[accum_type]()
-            )
+        var reduced_result = _load_reduce[
+            dtype=dtype,
+            num_buffers=num_buffers,
+            simd_width=simd_width,
+            alignment=alignment,
+            accum_type=accum_type,
+        ](elem_idx, ptrs)
 
+        # Direct output for 1-stage kernel
         outputs_lambda[
             input_index=my_rank, width=simd_width, alignment=alignment
-        ](
-            result.get_nd_index(elem_idx),
-            accum.cast[dtype](),
-        )
+        ](result.get_nd_index(elem_idx), reduced_result)
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
@@ -751,9 +792,10 @@ fn _allreduce_p2p[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
+    num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
     ],
     list_of_out_bufs: InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
@@ -771,6 +813,7 @@ fn _allreduce_p2p[
         ngpus: Number of GPUs participating.
         outputs_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
+        num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
         list_of_in_bufs: Input buffers from each GPU
@@ -791,10 +834,12 @@ fn _allreduce_p2p[
 
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
-    var list_of_in_ptrs = StaticTuple[UnsafePointer[Scalar[dtype]], ngpus]()
+    var list_of_in_ptrs = StaticTuple[
+        UnsafePointer[Scalar[dtype]], num_buffers
+    ]()
 
     @parameter
-    for i in range(ngpus):
+    for i in range(num_buffers):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
     alias BLOCK_SIZE = 256
@@ -835,6 +880,7 @@ fn _allreduce_p2p[
                     my_rank=i,
                     BLOCK_SIZE=BLOCK_SIZE,
                     outputs_lambda=outputs_lambda,
+                    num_buffers=num_buffers,
                 ]
             ](
                 curr_out_buf,
@@ -863,6 +909,7 @@ fn _allreduce_p2p[
                     BLOCK_SIZE=BLOCK_SIZE,
                     outputs_lambda=outputs_lambda,
                     pdl_level=pdl_level,
+                    num_buffers=num_buffers,
                 ]
             ](
                 curr_out_buf,
@@ -891,8 +938,11 @@ fn allreduce[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
+    use_multimem: Bool = False,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutableAnyOrigin], 1 if use_multimem else ngpus
+    ],
     output_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
@@ -914,6 +964,7 @@ fn allreduce[
         ngpus: The number of GPUs participating in the allreduce.
         outputs_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
+        use_multimem: Whether to use multimem mode for improved performance.
 
     Args:
         input_buffers: Array of input tensors from each GPU, one per GPU.
@@ -928,6 +979,7 @@ fn allreduce[
         - Input and output buffers must have identical shapes across all GPUs.
         - The number of elements must be identical across all input/output buffers.
         - Performance is typically better with P2P access enabled between GPUs.
+        - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus](input_buffers[0].bytecount())
@@ -942,10 +994,34 @@ fn allreduce[
 
     # Check P2P availability.
     if not can_enable_p2p():
-        return _allreduce_naive[outputs_lambda=outputs_lambda](
-            input_buffers, output_buffers, max_num_blocks, ctxs
+
+        @parameter
+        if use_multimem:
+            raise Error(
+                "Allreduce with multimem requires P2P access between GPUs"
+            )
+        return _allreduce_naive[
+            dtype=dtype,
+            rank=rank,
+            ngpus=ngpus,
+            outputs_lambda=outputs_lambda,
+            num_buffers=ngpus,
+        ](
+            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
+                input_buffers
+            ),
+            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
+                output_buffers
+            ),
+            max_num_blocks,
+            ctxs,
         )
     else:
         return _allreduce_p2p[
-            outputs_lambda=outputs_lambda, pdl_level=pdl_level
+            dtype=dtype,
+            rank=rank,
+            ngpus=ngpus,
+            outputs_lambda=outputs_lambda,
+            pdl_level=pdl_level,
+            num_buffers= 1 if use_multimem else ngpus,
         ](input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs)

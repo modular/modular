@@ -1,5 +1,30 @@
 load("//bazel:api.bzl", "mojo_test")
 
+# Special configuration for multimem allreduce test - only runs on SM90+ hardware
+mojo_test(
+    name = "test_multimem_allreduce.mojo.test",
+    size = "large",
+    srcs = ["test_multimem_allreduce.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "@mojo//:internal_utils",
+        "@mojo//:kv_cache",
+        "@mojo//:linalg",
+        "@mojo//:nn",
+        "@mojo//:quantization",
+        "@mojo//:stdlib",
+    ],
+)
+
+# Regular tests for all other files
 [
     mojo_test(
         name = src + ".test",
@@ -22,5 +47,8 @@ load("//bazel:api.bzl", "mojo_test")
             "@mojo//:stdlib",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = ["test_multimem_allreduce.mojo"],
+    )
 ]
