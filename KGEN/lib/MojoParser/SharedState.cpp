@@ -1938,8 +1938,7 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
                                        ASTDecl *moduleDecl) {
   StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
   if (!existing) {
-    std::string name =
-        ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
+    std::string name = ASTType(sig).getAsString(/*diags=*/this);
     existing = closureEmitter->createClosureWrapperStructDecl(
         *moduleDecl, StringAttr::get(getContext(), name), sig, loc);
   }
@@ -1953,8 +1952,7 @@ SharedState::getOrCreateParametricClosureWrapper(SMLoc loc,
                                                  InlineLevel inlineLevel) {
   auto ptr = impl->parametricClosureWrappers.find({sig, moduleDecl});
   if (ptr == impl->parametricClosureWrappers.end()) {
-    std::string name =
-        ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
+    std::string name = ASTType(sig).getAsString(/*diags=*/this);
     auto result = closureEmitter->createParametricClosureWrapperStructDecl(
         *moduleDecl, StringAttr::get(getContext(), name), sig, loc,
         inlineLevel);

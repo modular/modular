@@ -1080,7 +1080,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             os << "*";
             type = type.getVariadicElementType();
           }
-          os << type.getAsString(/*diags=*/nullptr, /*demangleParams=*/true);
+          os << type.getAsString(/*diags=*/nullptr);
         },
         ",");
     os << ']';
@@ -1111,8 +1111,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     } else if (ASTType variadicPack = fullSig.getIfVariadicPack(argNo)) {
       TypedAttr packVariadic = variadicPack.getVariadicPackTypeList();
       mangledName += '*';
-      ASTType::printParam(os, packVariadic, /*diags=*/nullptr,
-                          /*demangleParams=*/true);
+      ASTType::printParam(os, packVariadic, /*diags=*/nullptr);
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
@@ -1124,8 +1123,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     if (hasAddress(convention))
       argType = argType.getReferenceElementType();
 
-    mangledName +=
-        argType.getAsString(/*forDiag=*/nullptr, /*demangleParams=*/true);
+    mangledName += argType.getAsString(/*forDiag=*/nullptr);
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {

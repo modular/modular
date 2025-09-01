@@ -180,9 +180,7 @@ public:
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
-  /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
-  std::string getAsString(SharedState *forDiag = nullptr,
-                          bool demangleParams = false) const;
+  std::string getAsString(SharedState *forDiag = nullptr) const;
 
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
@@ -196,15 +194,12 @@ public:
   }
 
   /// Print the ASTType. If `diagShared` is set, prettier printing is used to
-  /// print the type. If `demangleParams` is set, parameter names will be
-  /// demangled, if necessary.
-  /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
-  void print(raw_ostream &os, SharedState *diagShared = nullptr,
-             bool demangleParams = false) const;
+  /// print the type.
+  void print(raw_ostream &os, SharedState *diagShared = nullptr) const;
 
   /// Print the specified parameter like we would in AST type printing.
   static void printParam(raw_ostream &os, TypedAttr param,
-                         SharedState *diagShared, bool demangleParams);
+                         SharedState *diagShared);
 
   /// This is the same as printParam, but is only used user pretty printing
   /// circumstances (not mangling) after emitting a type annotation.  This
@@ -213,8 +208,7 @@ public:
                                   SharedState &shared);
 
   /// Get the specified parameter as a string.
-  static std::string getParamAsString(TypedAttr param, SharedState *diagShared,
-                                      bool demangleParams);
+  static std::string getParamAsString(TypedAttr param, SharedState *diagShared);
 
   /// Create and return a reference type with 'this' as the underlying element
   /// type an implicit origin reference with the specified arg name.

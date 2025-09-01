@@ -124,7 +124,7 @@ static size_t getIndentationLevel(StringRef str) {
 static std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
-  ASTType::printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/false);
+  ASTType::printParam(os, value, /*forDiag=*/&shared);
   return os.str();
 }
 
@@ -226,7 +226,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
       astType = astType.getReferenceElementType();
 
     ASTType::printParam(os, astType.getVariadicPackTypeList(),
-                        /*forDiag=*/&shared, /*demangleParams=*/true);
+                        /*forDiag=*/&shared);
     return os.str();
   }
 
@@ -247,7 +247,7 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   if (selfType && astType.isEqualCanon(*selfType))
     os << "Self";
   else
-    os << astType.getAsString(/*forDiag=*/&shared, /*demangleParams=*/true);
+    os << astType.getAsString(/*forDiag=*/&shared);
 
   return os.str();
 }
