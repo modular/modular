@@ -120,8 +120,6 @@ struct MatmulConfig[
 
     var partitioned_multicast: Bool
 
-    var scheduler_hint: IndexList[3]
-
     var _pdl_level: PDLLevel
 
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
@@ -154,7 +152,6 @@ struct MatmulConfig[
         num_warp_k_partitions: UInt = 1,
         num_consumer: UInt = 1,
         partitioned_multicast: Bool = False,
-        scheduler_hint: IndexList[3] = Index(2, 2, 2),
         pdl_level: PDLLevel = PDLLevel(),
     ):
         self.block_tile_shape = block_tile_shape
@@ -167,7 +164,6 @@ struct MatmulConfig[
         self.cluster_shape = cluster_shape
         self.num_consumer = num_consumer
         self.partitioned_multicast = partitioned_multicast
-        self.scheduler_hint = scheduler_hint
         self._pdl_level = pdl_level
 
     fn num_warps_m(self) -> UInt:

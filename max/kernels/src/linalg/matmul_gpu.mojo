@@ -234,13 +234,6 @@ fn matmul_kernel_naive[
         c[x, y] = accum.cast[c_type]()
 
 
-@fieldwise_init
-@register_passable("trivial")
-struct AMDSchedulerTuning(Copyable, Movable):
-    var block_shape: IndexList[2]
-    var tuning_values: IndexList[3]
-
-
 @always_inline
 fn _matmul_sm100[
     c_type: DType,
@@ -567,97 +560,6 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
-                fn scheduler_hint_helper[
-                    block_m: Int, block_n: Int
-                ]() -> IndexList[3]:
-                    alias table = List[AMDSchedulerTuning](
-                        # Entered by hand
-                        AMDSchedulerTuning(Index(32, 32), Index(3, 7, 1)),
-                        AMDSchedulerTuning(Index(32, 64), Index(1, 4, 2)),
-                        AMDSchedulerTuning(Index(32, 96), Index(5, 7, 1)),
-                        AMDSchedulerTuning(Index(32, 128), Index(1, 1, 2)),
-                        AMDSchedulerTuning(Index(32, 160), Index(3, 5, 5)),
-                        AMDSchedulerTuning(Index(32, 192), Index(5, 6, 5)),
-                        AMDSchedulerTuning(Index(32, 224), Index(2, 3, 5)),
-                        AMDSchedulerTuning(Index(32, 256), Index(2, 1, 1)),
-                        AMDSchedulerTuning(Index(64, 32), Index(1, 9, 1)),
-                        AMDSchedulerTuning(Index(64, 64), Index(3, 1, 1)),
-                        AMDSchedulerTuning(Index(64, 96), Index(4, 1, 1)),
-                        AMDSchedulerTuning(Index(64, 128), Index(3, 1, 2)),
-                        AMDSchedulerTuning(Index(64, 160), Index(1, 7, 1)),
-                        AMDSchedulerTuning(Index(64, 192), Index(1, 1, 2)),
-                        AMDSchedulerTuning(Index(64, 224), Index(2, 1, 3)),
-                        AMDSchedulerTuning(Index(64, 256), Index(2, 5, 2)),
-                        AMDSchedulerTuning(Index(96, 32), Index(3, 8, 1)),
-                        AMDSchedulerTuning(Index(96, 64), Index(1, 3, 2)),
-                        AMDSchedulerTuning(Index(96, 96), Index(2, 4, 1)),
-                        AMDSchedulerTuning(Index(96, 128), Index(1, 2, 2)),
-                        AMDSchedulerTuning(Index(96, 160), Index(4, 2, 1)),
-                        AMDSchedulerTuning(Index(96, 192), Index(1, 4, 1)),
-                        AMDSchedulerTuning(Index(96, 224), Index(4, 2, 2)),
-                        AMDSchedulerTuning(Index(96, 256), Index(4, 1, 2)),
-                        AMDSchedulerTuning(Index(128, 32), Index(1, 5, 1)),
-                        AMDSchedulerTuning(Index(128, 64), Index(1, 2, 1)),
-                        AMDSchedulerTuning(Index(128, 96), Index(1, 4, 1)),
-                        AMDSchedulerTuning(Index(128, 128), Index(3, 1, 2)),
-                        AMDSchedulerTuning(Index(128, 160), Index(3, 3, 2)),
-                        AMDSchedulerTuning(Index(128, 192), Index(2, 4, 2)),
-                        AMDSchedulerTuning(Index(128, 224), Index(5, 1, 2)),
-                        AMDSchedulerTuning(Index(128, 256), Index(2, 5, 2)),
-                        # Auto generated with kprofile
-                        AMDSchedulerTuning(Index(160, 32), Index(2, 2, 1)),
-                        AMDSchedulerTuning(Index(160, 64), Index(3, 1, 1)),
-                        AMDSchedulerTuning(Index(160, 96), Index(3, 1, 2)),
-                        AMDSchedulerTuning(Index(160, 128), Index(4, 2, 1)),
-                        AMDSchedulerTuning(Index(160, 160), Index(4, 4, 1)),
-                        AMDSchedulerTuning(Index(160, 192), Index(6, 1, 2)),
-                        AMDSchedulerTuning(Index(160, 224), Index(7, 1, 2)),
-                        AMDSchedulerTuning(Index(160, 256), Index(8, 1, 2)),
-                        AMDSchedulerTuning(Index(192, 32), Index(2, 2, 1)),
-                        AMDSchedulerTuning(Index(192, 64), Index(1, 2, 2)),
-                        AMDSchedulerTuning(Index(192, 96), Index(2, 3, 2)),
-                        AMDSchedulerTuning(Index(192, 128), Index(3, 3, 2)),
-                        AMDSchedulerTuning(Index(192, 160), Index(8, 1, 1)),
-                        AMDSchedulerTuning(Index(192, 192), Index(2, 5, 2)),
-                        AMDSchedulerTuning(Index(192, 224), Index(5, 4, 2)),
-                        AMDSchedulerTuning(Index(192, 256), Index(7, 3, 2)),
-                        AMDSchedulerTuning(Index(224, 32), Index(3, 1, 1)),
-                        AMDSchedulerTuning(Index(224, 64), Index(1, 1, 2)),
-                        AMDSchedulerTuning(Index(224, 96), Index(3, 1, 2)),
-                        AMDSchedulerTuning(Index(224, 128), Index(6, 1, 2)),
-                        AMDSchedulerTuning(Index(224, 160), Index(3, 5, 2)),
-                        AMDSchedulerTuning(Index(224, 192), Index(6, 2, 2)),
-                        AMDSchedulerTuning(Index(224, 224), Index(6, 4, 2)),
-                        AMDSchedulerTuning(Index(224, 256), Index(4, 7, 2)),
-                        AMDSchedulerTuning(Index(256, 32), Index(1, 2, 2)),
-                        AMDSchedulerTuning(Index(256, 64), Index(2, 1, 2)),
-                        AMDSchedulerTuning(Index(256, 96), Index(4, 1, 2)),
-                        AMDSchedulerTuning(Index(256, 128), Index(6, 2, 1)),
-                        AMDSchedulerTuning(Index(256, 160), Index(3, 6, 2)),
-                        AMDSchedulerTuning(Index(256, 192), Index(6, 3, 2)),
-                        AMDSchedulerTuning(Index(256, 224), Index(4, 6, 2)),
-                        AMDSchedulerTuning(Index(256, 256), Index(6, 6, 2)),
-                    )
-
-                    @parameter
-                    if (
-                        env_get_bool["AUTOTUNING_MODE", False]()
-                        and env_get_bool["AMD_SCHEDULER_TUNING", False]()
-                    ):
-                        return Index(
-                            env_get_int["TUNE_SCHED_X", 2](),
-                            env_get_int["TUNE_SCHED_Y", 2](),
-                            env_get_int["TUNE_SCHED_Z", 2](),
-                        )
-
-                    @parameter
-                    for i in range(len(table)):
-                        if table[i].block_shape == Index(block_m, block_n):
-                            return table[i].tuning_values
-                    return Index(2, 2, 2)
-
-                @always_inline
-                @parameter
                 fn mma_shape_helper() -> IndexList[3]:
                     @parameter
                     if transpose_b and ctx.default_device_info is MI355X:
@@ -688,9 +590,6 @@ fn _matmul_gpu[
                         ),
                         mma_shape=mma_shape_helper(),
                         num_pipeline_stages=num_pipeline_stages,
-                        scheduler_hint=scheduler_hint_helper[
-                            block_m, block_n
-                        ](),
                         num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
