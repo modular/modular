@@ -44,7 +44,7 @@ from test_common import (
     test_data,
     torch_utils,
 )
-from test_common.evaluate import ModelOutput
+from test_common.evaluate import NUM_STEPS, ModelOutput
 from test_common.github_utils import github_log_group
 from test_common.storage import load_image
 from test_common.torch_utils import MockTextGenerationRequest
@@ -190,6 +190,7 @@ class PipelineOracle(ABC):
         *,
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
+        num_steps: int,
     ) -> list[dict]:
         """Run text generation using the standard torch_utils implementation.
 
@@ -200,6 +201,7 @@ class PipelineOracle(ABC):
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             textgen_requests=self.inputs,
+            num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
         )
@@ -304,6 +306,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         *,
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
+        num_steps: int,
     ) -> list[dict]:
         """Run text generation using InternVL-specific preprocessing logic."""
         return internvl_torch_utils.run_text_generation(
@@ -311,6 +314,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             textgen_requests=self.inputs,
+            num_steps=num_steps,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
         )
@@ -406,6 +410,7 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
         *,
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
+        num_steps: int,
     ) -> list[dict]:
         """Run text generation using Idefics3-specific preprocessing logic."""
 
@@ -414,6 +419,7 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             textgen_requests=self.inputs,
+            num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
         )
@@ -514,6 +520,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
         *,
         torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
         device: torch.device,
+        num_steps: int,
     ) -> list[dict]:
         """Run text generation using Qwen2.5VL-specific preprocessing logic."""
 
@@ -522,6 +529,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             textgen_requests=self.inputs,
+            num_steps=num_steps,
             print_outputs=True,
             use_cache=self.use_cache,
         )
@@ -1349,6 +1357,7 @@ def generate_llm_logits(
                     max_pipeline_and_tokenizer.model,
                     max_pipeline_and_tokenizer.tokenizer,
                     requests=pipeline_oracle.inputs,
+                    num_steps=NUM_STEPS,
                     print_outputs=True,
                     batch_size=max_batch_size,
                     reference=reference,
@@ -1393,6 +1402,7 @@ def generate_llm_logits(
                 results = pipeline_oracle.run_torch_text_generation(
                     torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
                     device=torch_device,
+                    num_steps=NUM_STEPS,
                 )
             elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
                 results = torch_utils.run_embeddings_generation(
