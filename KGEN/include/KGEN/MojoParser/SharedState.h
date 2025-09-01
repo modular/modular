@@ -202,7 +202,7 @@ public:
   /// Set the symbol for the specified declaration (known to be an operation)
   /// into the MLIR symbol table for its container.  If the symbol is already
   /// declared in the same MLIR scope, then return the conflicting operation.
-  Operation *setResolvedDeclSymbol(Operation *declOp);
+  Operation *uniquifyNameAndAddToParentSymbolTable(Operation *declOp);
 
   /// Shared state maintains an MLIR Block and deallocates it when the parser is
   /// torn down.  This can be used to allocate BlockArgument's that may or may
