@@ -965,8 +965,6 @@ ObjectCompiler::emitArchiveParallelCompilation(
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
   CompilerTimeTraceScope traceScope("split-input-module");
 
-  std::string moduleName = llvmModule->getName().str();
-
   bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
 
   // Disable parLLC for NVPTX because NVPTX codegen is inter-procedural for
@@ -2160,8 +2158,6 @@ ObjectCompiler::emitGPUKernels(
         Twine("failed to lower module to LLVM IR for archive compilation, ") +
         err.getError());
   }
-
-  std::string moduleName = llvmModule->getName().str();
 
   (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
 

@@ -57,7 +57,6 @@ int main(int argc, char **argv) {
     break;
   }
   case Property::HandlerPath:
-    std::filesystem::path path;
     if (auto pathOr = getCrashpadHandlerPath((*ctxOr)->get<Config>())) {
       llvm::errs() << "could not determine crashpad handler path: "
                    << pathOr.getError() << '\n';

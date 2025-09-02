@@ -347,8 +347,6 @@ TelemetryContext::TelemetryContext(Config &settings) {
       settings.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       settings.getValue("telemetry.exporters.metrics.file_path").str();
-  std::filesystem::path udsName =
-      settings.getValue("telemetry.exporters.metrics.uds_name").str();
 
   // Create metric readers, one for each exporter.
 
@@ -363,6 +361,8 @@ TelemetryContext::TelemetryContext(Config &settings) {
 
   if (enabled && !httpEndpoint.empty()) {
 #if TEST_UDS
+    std::filesystem::path udsName =
+        settings.getValue("telemetry.exporters.metrics.uds_name").str();
     auto exporter = std::make_unique<UDSMetricExporter>(udsName);
 #else
 
