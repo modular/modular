@@ -25,6 +25,8 @@
 #include "mlir/IR/Dominance.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/Attributes.h"
+#include <type_traits>
+#include <utility>
 
 using namespace M;
 using namespace KGEN;
@@ -45,6 +47,23 @@ static LLVM::FastmathFlagsAttr
 convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
   return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
       static_cast<LLVM::FastmathFlags>(fmf));
+}
+
+// Compile-time detection of an op accessor `getFastmathFlags()`.
+template <typename, typename = void>
+struct has_getFastmathFlags : std::false_type {};
+
+template <typename T>
+struct has_getFastmathFlags<
+    T, std::void_t<decltype(std::declval<T>().getFastmathFlags())>>
+    : std::true_type {};
+
+template <typename OpT>
+static inline LLVM::FastmathFlags fastmathFlagsOrDefault(OpT &op) {
+  if constexpr (has_getFastmathFlags<OpT>::value)
+    return static_cast<LLVM::FastmathFlags>(op.getFastmathFlags());
+  else
+    return LLVM_FASTMATH_FLAGS;
 }
 
 //===----------------------------------------------------------------------===//
@@ -72,8 +91,11 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
         rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
     } else {
-      rewriter.replaceOpWithNewOp<FloatOp>(
-          op, type, adaptor.getLhs(), adaptor.getRhs(), LLVM_FASTMATH_FLAGS);
+      // Take falgs from a `getFastmathFlags()` accessor if present.
+      // Otherwise, default to `contract`.
+      LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
+      rewriter.replaceOpWithNewOp<FloatOp>(op, type, adaptor.getLhs(),
+                                           adaptor.getRhs(), fastmathFlags);
     }
 
     return success();

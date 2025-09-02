@@ -86,6 +86,21 @@ kgen.func @fmul_simd(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f32>) -> !pop
   kgen.return %0 : !pop.simd<4, f32>
 }
 
+// CHECK-LABEL: @fmul_simd_default_contract
+kgen.func @fmul_simd_default_contract(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // Default behavior should attach contract fastmath flags.
+  // CHECK: llvm.fmul {{.*}}{fastmathFlags = #llvm.fastmath<contract>} : vector<4xf32>
+  %0 = pop.mul %a, %b : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// CHECK-LABEL: @fmul_simd_with_reassoc
+kgen.func @fmul_simd_with_reassoc(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // CHECK: llvm.fmul {{.*}} {fastmathFlags = #llvm.fastmath<reassoc>} : vector<4xf32>
+  %0 = pop.mul %a, %b {fastmathFlags = #pop<fmf reassoc>} : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
 // CHECK-LABEL: @div_simd
 kgen.func @div_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
   // CHECK: llvm.sdiv
