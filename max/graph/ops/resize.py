@@ -14,7 +14,7 @@
 
 from enum import Enum
 
-from max.mlir.dialects import rmo
+from max._core.dialects import kgen, rmo
 
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
@@ -95,9 +95,10 @@ def resize(
     )
 
     # Stage bicubic resize op.
-    return Graph.current._add_op(
-        rmo.mo_resize_bicubic,
+    return Graph.current._add_op_generated(
+        rmo.MoResizeBicubicOp,
         result_type.to_mlir(),
         input,
         shape_to_tensor(shape),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor
