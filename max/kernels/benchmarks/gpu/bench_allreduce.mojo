@@ -219,7 +219,11 @@ def main():
     # Force passing `max_num_blocks` explicitly.
     alias max_num_blocks = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
 
-    assert_true(DeviceContext.number_of_devices() >= num_gpus)
+    var num_gpus_found = DeviceContext.number_of_devices()
+    assert_true(
+        num_gpus_found >= num_gpus,
+        String(num_gpus_found) + " devices found, expected " + String(num_gpus),
+    )
     assert_true(num_bytes % size_of[dtype]() == 0)
 
     # Create GPU context.

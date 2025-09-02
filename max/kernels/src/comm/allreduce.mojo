@@ -492,9 +492,7 @@ fn _load_reduce[
     accum_type: DType,
 ](
     elem_idx: Int,
-    ptrs: UnsafePointer[
-        UnsafePointer[Scalar[dtype]], address_space = _GPUAddressSpace.LOCAL
-    ],
+    ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
 ) -> SIMD[dtype, simd_width]:
     @parameter
     if num_buffers == 1:
@@ -548,7 +546,7 @@ fn _allreduce_2stage_kernel[
     num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], num_buffers],
+    src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -612,16 +610,12 @@ fn _allreduce_2stage_kernel[
 
     # --- Memory Pointer Configuration ---
     # Round-robin access pattern to balance NVLink traffic across GPUs.
-    var ptrs = stack_allocation[
-        num_buffers,
-        UnsafePointer[Scalar[dtype]],
-        address_space = AddressSpace.LOCAL,
-    ]()
-    var tmps = stack_allocation[
-        ngpus,
-        UnsafePointer[Scalar[dtype]],
-        address_space = AddressSpace.LOCAL,
-    ]()
+    var ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_buffers](
+        uninitialized=True
+    )
+    var tmps = InlineArray[UnsafePointer[Scalar[dtype]], ngpus](
+        uninitialized=True
+    )
 
     @parameter
     for i in range(ngpus):
@@ -716,7 +710,7 @@ fn _allreduce_1stage_kernel[
     num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], num_buffers],
+    src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -753,11 +747,9 @@ fn _allreduce_1stage_kernel[
     var num_simd_vectors = num_elements // simd_width
 
     # Round-robin access pattern to balance NVLink traffic across GPUs.
-    var ptrs = stack_allocation[
-        num_buffers,
-        UnsafePointer[Scalar[dtype]],
-        address_space = AddressSpace.LOCAL,
-    ]()
+    var ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_buffers](
+        uninitialized=True
+    )
 
     @parameter
     for i in range(num_buffers):
@@ -838,9 +830,9 @@ fn _allreduce_p2p[
 
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
-    var list_of_in_ptrs = StaticTuple[
+    var list_of_in_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype]], num_buffers
-    ]()
+    ](uninitialized=True)
 
     @parameter
     for i in range(num_buffers):
@@ -853,13 +845,13 @@ fn _allreduce_p2p[
 
     # TODO(MOCO-1736): fix kernel interface codegen issue so that we can pass
     # `InlineArray` here.
-    var rank_sigs_tuple = StaticTuple[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
+    var rank_sigs_array = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+        uninitialized=True
     )
 
     @parameter
     for i in range(ngpus):
-        rank_sigs_tuple[i] = rank_sigs[i]
+        rank_sigs_array[i] = rank_sigs[i]
 
     @parameter
     for i in range(ngpus):
@@ -889,7 +881,7 @@ fn _allreduce_p2p[
             ](
                 curr_out_buf,
                 list_of_in_ptrs,
-                rank_sigs_tuple,
+                rank_sigs_array,
                 num_elements,
                 max_num_blocks,
                 grid_dim=grid_size,
@@ -918,7 +910,7 @@ fn _allreduce_p2p[
             ](
                 curr_out_buf,
                 list_of_in_ptrs,
-                rank_sigs_tuple,
+                rank_sigs_array,
                 num_elements,
                 max_num_blocks,
                 grid_dim=grid_size,
