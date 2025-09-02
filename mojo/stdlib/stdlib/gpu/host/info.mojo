@@ -736,6 +736,42 @@ alias RTX3090 = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# GTX1080Ti
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_gtx1080ti_target() -> _TargetType:
+    """
+    Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
+    Returns:
+        MLIR target configuration for GTX 1080 Ti.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_61", `,
+        `features = "+ptx50,+sm_61", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias GTX1080Ti = GPUInfo(
+    name="NVIDIA GeForce GTX 1080 Ti",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="pascal",
+    compute=6.1,
+    version="sm_61",
+    sm_count=28,
+    warp_size=32,
+    threads_per_sm=2048,
+    shared_memory_per_multiprocessor=98304,
+    max_registers_per_block=65536,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # RTX2060
 # ===-----------------------------------------------------------------------===#
 
@@ -1262,6 +1298,8 @@ struct GPUInfo(Stringable, Writable):
         Returns:
             MLIR target configuration for the GPU.
         """
+        if self.name == "NVIDIA GeForce GTX 1080 Ti":
+            return _get_gtx1080ti_target()
         if self.name == "RTX2060":
             return _get_rtx2060_target()
         if self.name == "NVIDIA GeForce RTX 3090":
@@ -1526,6 +1564,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         in (
             # NVIDIA
             StaticString("cuda"),
+            StaticString("61"),
             StaticString("75"),
             StaticString("80"),
             StaticString("86"),
@@ -1564,7 +1603,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     ]()
 
     @parameter
-    if target_arch == "75":
+    if target_arch == "61":
+        return GTX1080Ti
+    elif target_arch == "75":
         return RTX2060
     elif target_arch == "80":
         return A100
