@@ -120,7 +120,7 @@ class GptOssTransformerBlock(Module):
         ]
 
         # Separate outputs and router logits
-        mlp_outputs = [result[0] for result in mlp_results]
+        mlp_outputs = [result for result in mlp_results]
 
         # Allreduce MoE outputs
         mlp_outputs = self.allreduce(mlp_outputs, signal_buffers)
