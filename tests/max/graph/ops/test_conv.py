@@ -54,8 +54,8 @@ def test_conv_valid(
     stride,  # noqa: ANN001
     padding,  # noqa: ANN001
 ) -> None:
-    assume(filter_type.shape[0] <= x_type.shape[1])
-    assume(filter_type.shape[1] <= x_type.shape[2])
+    assume(filter_type.shape[0] <= x_type.shape[1])  # type: ignore
+    assume(filter_type.shape[1] <= x_type.shape[2])  # type: ignore
 
     with graph_builder(input_types=[x_type, filter_type]) as graph:
         try:

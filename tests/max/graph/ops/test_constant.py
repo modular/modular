@@ -22,7 +22,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 def test_constant() -> None:
     with Graph("constants", input_types=()) as graph:
         const = np.array([0, 1, 2, 3, 4, 5]).astype(np.int64).reshape((2, 3))
-        const = ops.constant(
+        const = ops.constant(  # type: ignore
             const, DType.from_numpy(const.dtype), device=DeviceRef.CPU()
         )
 
@@ -34,7 +34,7 @@ def test_constant() -> None:
 def test_constant_transpose() -> None:
     with Graph("constants", input_types=()) as graph:
         const = np.array([0, 1, 2, 3, 4, 5]).astype(np.int64).reshape((2, 3)).T
-        const = ops.constant(
+        const = ops.constant(  # type: ignore
             const, DType.from_numpy(const.dtype), device=DeviceRef.CPU()
         )
 
@@ -51,7 +51,7 @@ def test_scalar_constant(dtype: DType) -> None:
     assume(dtype != DType.bfloat16)
     with Graph("scalar", input_types=()) as graph:
         const = 7.2
-        const = ops.constant(const, dtype, device=DeviceRef.CPU())
+        const = ops.constant(const, dtype, device=DeviceRef.CPU())  # type: ignore
 
         graph.output(const)
 

@@ -25,13 +25,13 @@ def test_shape_to_tensor_invalid_type() -> None:
     """Test that shape_to_tensor fails with non-shape inputs."""
     with Graph("shape_to_tensor_invalid") as graph:
         with pytest.raises(TypeError):
-            ops.shape_to_tensor(None)
+            ops.shape_to_tensor(None)  # type: ignore
 
         with pytest.raises(ValueError):
             ops.shape_to_tensor("not a shape")
 
         with pytest.raises(TypeError):
-            ops.shape_to_tensor(42)
+            ops.shape_to_tensor(42)  # type: ignore
 
 
 shared_static_shapes = st.shared(shapes(dims=static_dims()))

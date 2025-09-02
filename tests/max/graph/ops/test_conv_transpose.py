@@ -56,8 +56,8 @@ def test_conv_transpose_valid(
     padding,  # noqa: ANN001
     output_padding,  # noqa: ANN001
 ) -> None:
-    assume(filter_type.shape[0] <= x_type.shape[1])
-    assume(filter_type.shape[1] <= x_type.shape[2])
+    assume(filter_type.shape[0] <= x_type.shape[1])  # type: ignore
+    assume(filter_type.shape[1] <= x_type.shape[2])  # type: ignore
 
     with Graph("conv2d_transpose", input_types=[x_type, filter_type]) as graph:
         try:
@@ -131,7 +131,7 @@ def test_conv_dtype_promote_weight() -> None:
     )
     with Graph("conv", input_types=[x_type]) as graph:
         out = ops.conv2d_transpose(
-            graph.inputs[0],
+            graph.inputs[0],  # type: ignore
             filter,
         )
         # Both input and filter dtype exactly match.

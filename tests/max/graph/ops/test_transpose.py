@@ -28,7 +28,7 @@ shared_types = st.shared(tensor_types())
 def test_transpose_output_shape(input_type: TensorType, a: int, b: int) -> None:
     assume(input_type.rank > 0)
     with Graph("transpose", input_types=[input_type]) as graph:
-        out = graph.inputs[0].transpose(a, b)
+        out = graph.inputs[0].transpose(a, b)  # type: ignore
         target_shape = list(input_type.shape)
         target_shape[a], target_shape[b] = target_shape[b], target_shape[a]
         assert out.shape == target_shape
@@ -45,7 +45,7 @@ def test_transpose_input_with_rank_zero() -> None:
             TensorType(shape=[], dtype=DType.float32, device=DeviceRef.CPU())
         ],
     ) as graph:
-        out = graph.inputs[0].transpose(0, 0)
+        out = graph.inputs[0].transpose(0, 0)  # type: ignore
         assert out.shape == []
         graph.output(out)
 
@@ -63,7 +63,7 @@ def test_transpose_error_axis_1_out_of_bounds_input_with_rank_zero() -> None:
                 "Axis axis_1 out of range (expected to be in range of [-1, 0], but got 1)"
             ),
         ):
-            out = graph.inputs[0].transpose(1, 0)
+            out = graph.inputs[0].transpose(1, 0)  # type: ignore
             graph.output(out)
 
 
@@ -80,7 +80,7 @@ def test_transpose_error_axis_2_out_of_bounds_input_with_rank_zero() -> None:
                 "Axis axis_2 out of range (expected to be in range of [-1, 0], but got 1)"
             ),
         ):
-            out = graph.inputs[0].transpose(0, 1)
+            out = graph.inputs[0].transpose(0, 1)  # type: ignore
             graph.output(out)
 
 
@@ -99,7 +99,7 @@ def test_transpose_error_axis_1_out_of_bounds() -> None:
                 "Axis axis_1 out of range (expected to be in range of [-2, 1], but got 2)"
             ),
         ):
-            out = graph.inputs[0].transpose(2, 0)
+            out = graph.inputs[0].transpose(2, 0)  # type: ignore
             graph.output(out)
 
 
@@ -118,7 +118,7 @@ def test_transpose_error_axis_2_out_of_bounds() -> None:
                 "Axis axis_2 out of range (expected to be in range of [-2, 1], but got 2)"
             ),
         ):
-            out = graph.inputs[0].transpose(0, 2)
+            out = graph.inputs[0].transpose(0, 2)  # type: ignore
             graph.output(out)
 
 

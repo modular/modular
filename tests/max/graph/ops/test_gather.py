@@ -41,13 +41,13 @@ def test_gather(
     assume(indices_type.rank > 0)
     with Graph("gather", input_types=[input_type, indices_type]) as graph:
         input, indices = graph.inputs
-        out = ops.gather(input, indices, axis)
+        out = ops.gather(input, indices, axis)  # type: ignore
         target_shape = [
-            *input.shape[:axis],
-            *indices.shape,
-            *input.shape[axis + 1 :],
+            *input.shape[:axis],  # type: ignore
+            *indices.shape,  # type: ignore
+            *input.shape[axis + 1 :],  # type: ignore
         ]
-        assert out.type == TensorType(input.dtype, target_shape, input.device)
+        assert out.type == TensorType(input.dtype, target_shape, input.device)  # type: ignore
         graph.output(out)
 
 
@@ -58,7 +58,7 @@ def test_gather_nd(input: TensorType, indices: TensorType) -> None:
     assume(index_size <= input.rank)
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
-        out = ops.gather_nd(*graph.inputs)
+        out = ops.gather_nd(*graph.inputs)  # type: ignore
         assert out.dtype == input.dtype
         assert out.shape == [*indices.shape[:-1], *input.shape[index_size:]]
 
@@ -98,7 +98,7 @@ def test_gather_nd__batch_dims(
     assume(batch_dims + index_size <= input.rank)
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
-        out = ops.gather_nd(*graph.inputs, batch_dims=batch_dims)
+        out = ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore
         assert out.dtype == input.dtype
         assert out.shape == [
             *input.shape[:batch_dims],
@@ -119,7 +119,7 @@ def test_gather_nd__invalid_batch_dims(
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
-            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)
+            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore
 
 
 # TODO: what happens if batch_dims + 1 > indices.rank?
@@ -157,7 +157,7 @@ def test_gather_nd__mismatching_batch_dims(
         "gather_nd", input_types=[input_with_batch, indices_with_batch]
     ) as graph:
         with pytest.raises(ValueError):
-            ops.gather_nd(*graph.inputs, batch_dims=len(input_batch))
+            ops.gather_nd(*graph.inputs, batch_dims=len(input_batch))  # type: ignore
 
 
 @given(
@@ -179,7 +179,7 @@ def test_gather_nd__symbolic_index(
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
-            ops.gather_nd(*graph.inputs, batch_dims=len(batch_shape))
+            ops.gather_nd(*graph.inputs, batch_dims=len(batch_shape))  # type: ignore
 
 
 @given(input=input_types, indices=indices_types, batch_dims=n_batch_dims)
@@ -195,7 +195,7 @@ def test_gather_nd__index_too_long(
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
-            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)
+            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore
 
 
 @given(
@@ -221,4 +221,4 @@ def test_gather_nd__non_int_indices(
 
     with Graph("gather_nd", input_types=[input, indices]) as graph:
         with pytest.raises(ValueError):
-            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)
+            ops.gather_nd(*graph.inputs, batch_dims=batch_dims)  # type: ignore

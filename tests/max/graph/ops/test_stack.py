@@ -29,7 +29,7 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
 )
 def test_stack(type: TensorType, stack_size: int, axis: int) -> None:
     with Graph("stack", input_types=[type] * stack_size) as graph:
-        out = ops.stack(graph.inputs, axis)
+        out = ops.stack(graph.inputs, axis)  # type: ignore
         target_shape = list(type.shape)
         target_shape.insert(
             axis + type.rank + 1 if axis < 0 else axis, StaticDim(stack_size)
@@ -43,7 +43,7 @@ def test_stack_error_with_empty_list() -> None:
         with pytest.raises(
             ValueError, match="Expected at least one value to stack"
         ):
-            ops.stack(graph.inputs)
+            ops.stack(graph.inputs)  # type: ignore
 
 
 def test_stack_error_with_different_ranks() -> None:
@@ -61,7 +61,7 @@ def test_stack_error_with_different_ranks() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must be the same rank"
         ):
-            ops.stack(graph.inputs)
+            ops.stack(graph.inputs)  # type: ignore
 
 
 def test_stack_error_with_different_dtypes() -> None:
@@ -77,7 +77,7 @@ def test_stack_error_with_different_dtypes() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must have the same dtype"
         ):
-            ops.stack(graph.inputs)
+            ops.stack(graph.inputs)  # type: ignore
 
 
 def test_stack_error_with_different_devices() -> None:
@@ -95,7 +95,7 @@ def test_stack_error_with_different_devices() -> None:
         with pytest.raises(
             ValueError, match="All inputs to stack must have the same device"
         ):
-            ops.stack(graph.inputs)
+            ops.stack(graph.inputs)  # type: ignore
 
 
 shared_static_dim = st.shared(static_dims())

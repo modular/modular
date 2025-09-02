@@ -69,7 +69,7 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:  # 
             out_dim="new_dim",
         )
         target_shape = list(type.shape)
-        target_shape[axis] = out_dim
+        target_shape[axis] = out_dim  # type: ignore
         assert out.shape == target_shape
         assert out.dtype == type.dtype
         graph.output(out)

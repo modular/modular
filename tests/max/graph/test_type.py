@@ -164,7 +164,7 @@ def test_tensor_type_layout(mlir_context) -> None:  # noqa: ANN001
     t._layout = FilterLayout.RSCF
     t2 = Type.from_mlir(t.to_mlir())
     assert t._layout == FilterLayout.RSCF
-    assert t2._layout == FilterLayout.RSCF
+    assert t2._layout == FilterLayout.RSCF  # type: ignore
     assert t == t2
     # layout is not considered for equality checks
     assert t == t_copy

@@ -5,8 +5,7 @@ modular_py_test(
     srcs = glob(["**/*.py"]),
     data = ["//SDK/lib/API/python/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
-    imports = ["pytests"],
-    tags = ["no-mypy"],  # TODO: fix and remove
+    imports = ["."],
     deps = [
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",

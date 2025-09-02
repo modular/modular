@@ -149,7 +149,7 @@ def all_shapes(
     generated_include_dims = draw(
         st.tuples(
             *(
-                dim if isinstance(dim, st.SearchStrategy) else st.just(dim)
+                dim if isinstance(dim, st.SearchStrategy) else st.just(dim)  # type: ignore
                 for dim in include_dims
             )
         )
@@ -163,7 +163,7 @@ def all_shapes(
 
 
 def small_shapes(*args, **kwargs):
-    return all_shapes(*args, dims=small_dims, **kwargs)
+    return all_shapes(*args, dims=small_dims, **kwargs)  # type: ignore
 
 
 def shapes(*args, **kwargs):
@@ -184,7 +184,7 @@ def tensor_types(
     dtypes=dtypes,  # noqa: ANN001
     shapes=shapes(),  # noqa: ANN001
     device=DeviceRef.CPU(),  # noqa: ANN001
-) -> st.Strategy[TensorType]:
+) -> st.Strategy[TensorType]:  # type: ignore
     return st.builds(TensorType, dtypes, shapes, st.just(device))
 
 
@@ -207,7 +207,7 @@ def buffer_types(
     dtypes=dtypes,  # noqa: ANN001
     shapes=shapes(),  # noqa: ANN001
     device=DeviceRef.CPU(),  # noqa: ANN001
-) -> st.Strategy[BufferType]:
+) -> st.Strategy[BufferType]:  # type: ignore
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
@@ -220,7 +220,8 @@ def axes(shapes):  # noqa: ANN001
 
 
 def axes_of(
-    shapes: st.Strategy[Shape | TensorType], pred: Callable[[Dim], bool]
+    shapes: st.Strategy[Shape | TensorType],  # type: ignore
+    pred: Callable[[Dim], bool],
 ):
     """Samples the axes satisfying the given predicate for the  dimensions of
     the given shapes.

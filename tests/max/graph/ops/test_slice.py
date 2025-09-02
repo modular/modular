@@ -383,10 +383,10 @@ def test_slice_none_dims(
 
     (result_type,) = graph.output_types
     # Check that the output rank is correctly expanded by the None indices.
-    assert result_type.rank == expected_length
+    assert result_type.rank == expected_length  # type: ignore
 
     # Check that all the expanded dims are 1.
-    assert all(result_type.shape[i] == 1 for i in expected_none_indices)
+    assert all(result_type.shape[i] == 1 for i in expected_none_indices)  # type: ignore
 
 
 @pytest.mark.parametrize(
@@ -500,10 +500,10 @@ def test_slice_int_dims(
     (result_type,) = graph.output_types
 
     # Check that the output rank is correctly expanded by the None indices.
-    assert result_type.rank == len(expected_shape)
+    assert result_type.rank == len(expected_shape)  # type: ignore
     assert all(
         dim == expected_dim
-        for dim, expected_dim in zip(result_type.shape, expected_shape)
+        for dim, expected_dim in zip(result_type.shape, expected_shape)  # type: ignore
         if isinstance(expected_dim, int)
     )
 

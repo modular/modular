@@ -18,7 +18,11 @@ from typing import Optional
 
 import numpy as np
 import pytest
-from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
+from conftest import (
+    broadcast_shapes,
+    broadcastable_tensor_types,
+    tensor_types,
+)
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -31,9 +35,9 @@ def test_where(input_types: list[TensorType]) -> None:
 
     with Graph("where", input_types=input_types) as graph:
         cond, x, y = graph.inputs
-        out = ops.where(cond, x, y)
+        out = ops.where(cond, x, y)  # type: ignore
 
-        expected = reduce(broadcast_shapes, (t.shape for t in input_types))
+        expected = reduce(broadcast_shapes, (t.shape for t in input_types))  # type: ignore
         assert out.shape == expected
         assert out.dtype in (t.dtype for t in input_types)
 
@@ -85,7 +89,7 @@ def test_where_with_non_broadcastable_shapes(
     with Graph("where", input_types=[condition, x, y]) as graph:
         cond, x, y = graph.inputs
         with pytest.raises(ValueError):
-            ops.where(cond, x, y)
+            ops.where(cond, x, y)  # type: ignore
 
 
 def test_where_error_message_with_non_bool_condition() -> None:
@@ -102,7 +106,7 @@ def test_where_error_message_with_non_bool_condition() -> None:
             ValueError,
             match="Expected condition to be a boolean tensor, but got a tensor with dtype DType.float32",
         ):
-            ops.where(cond, x, y)
+            ops.where(cond, x, y)  # type: ignore
 
 
 def test_where_error_message_with_mismatched_condition_shape() -> None:
@@ -119,7 +123,7 @@ def test_where_error_message_with_mismatched_condition_shape() -> None:
             ValueError,
             match="are neither equivalent nor broadcastable",
         ):
-            ops.where(cond, x, y)
+            ops.where(cond, x, y)  # type: ignore
 
 
 def test_where_error_message_with_mismatched_devices() -> None:
@@ -138,7 +142,7 @@ def test_where_error_message_with_mismatched_devices() -> None:
                 "All tensors must be on the same device, but got devices: cpu:0, cpu:0, gpu:0"
             ),
         ):
-            ops.where(cond, x, y)
+            ops.where(cond, x, y)  # type: ignore
 
 
 # The next two tests for dtype promotion rules are pretty non-trivial. Using Cursor AI,
@@ -558,15 +562,15 @@ def test_where_with_python_scalars(
 
         # Test successful promotions
         # Python int -> float32 (safe case)
-        out = ops.where(cond, safe_int, float32_tensor1)
+        out = ops.where(cond, safe_int, float32_tensor1)  # type: ignore
         assert out.dtype == DType.float32
 
         # Python float -> float32 (safe case)
-        out = ops.where(cond, float32_tensor2, safe_float)
+        out = ops.where(cond, float32_tensor2, safe_float)  # type: ignore
         assert out.dtype == DType.float32
 
         # Python int -> int32 (safe case)
-        out = ops.where(cond, safe_int, int32_tensor)
+        out = ops.where(cond, safe_int, int32_tensor)  # type: ignore
         assert out.dtype == DType.int32
 
         # Test failed promotions
@@ -574,13 +578,13 @@ def test_where_with_python_scalars(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.where(cond, unsafe_int_float16, float16_tensor)
+            ops.where(cond, unsafe_int_float16, float16_tensor)  # type: ignore
 
         # Python int too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.where(cond, unsafe_int_float32, float32_tensor3)
+            ops.where(cond, unsafe_int_float32, float32_tensor3)  # type: ignore
 
 
 @given(
@@ -643,15 +647,15 @@ def test_where_with_numpy_arrays(
 
         # Test successful promotions
         # NumPy int32 -> float32
-        out = ops.where(cond, safe_int32, float32_tensor1)
+        out = ops.where(cond, safe_int32, float32_tensor1)  # type: ignore
         assert out.dtype == DType.float32
 
         # NumPy float64 -> float32
-        out = ops.where(cond, safe_float64, float32_tensor2)
+        out = ops.where(cond, safe_float64, float32_tensor2)  # type: ignore
         assert out.dtype == DType.float32
 
         # NumPy int32 -> int64
-        out = ops.where(cond, safe_int32, int64_tensor)
+        out = ops.where(cond, safe_int32, int64_tensor)  # type: ignore
         assert out.dtype == DType.int64
 
         # Test failed promotions
@@ -659,10 +663,10 @@ def test_where_with_numpy_arrays(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.where(cond, unsafe_int64, float32_tensor3)
+            ops.where(cond, unsafe_int64, float32_tensor3)  # type: ignore
 
         # NumPy uint64 too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.where(cond, unsafe_uint64, float32_tensor4)
+            ops.where(cond, unsafe_uint64, float32_tensor4)  # type: ignore

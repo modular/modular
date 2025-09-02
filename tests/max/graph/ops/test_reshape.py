@@ -38,12 +38,12 @@ def test_reshape() -> None:
             ),
         ],
     ) as graph:
-        static_reshape = graph.inputs[0].reshape((3, 10))
-        static_reshape_neg_one = graph.inputs[0].reshape((2, -1))
+        static_reshape = graph.inputs[0].reshape((3, 10))  # type: ignore
+        static_reshape_neg_one = graph.inputs[0].reshape((2, -1))  # type: ignore
         assert static_reshape_neg_one.shape == [2, 15]
 
-        symbolic_reshape = graph.inputs[1].reshape(("channels", "batch"))
-        symbolic_reshape_neg_one = graph.inputs[1].reshape(("channels", -1))
+        symbolic_reshape = graph.inputs[1].reshape(("channels", "batch"))  # type: ignore
+        symbolic_reshape_neg_one = graph.inputs[1].reshape(("channels", -1))  # type: ignore
         assert symbolic_reshape_neg_one.shape == ["channels", "batch"]
 
         graph.output(
@@ -84,7 +84,7 @@ def test_reshape__can_permute_input_shape(
     input_type: TensorType, output_shape: list[Dim]
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(output_shape)
+        out = graph.inputs[0].reshape(output_shape)  # type: ignore
         assert out.shape == output_shape
         graph.output(out)
 
@@ -98,7 +98,7 @@ def test_reshapes__can_replace_any_dims_with_negative_one(
     input_type: TensorType, reshape_shape: list[Dim]
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(reshape_shape)
+        out = graph.inputs[0].reshape(reshape_shape)  # type: ignore
         assert out.dtype == input_type.dtype
         for dim, expected in zip(out.shape, reshape_shape):
             if expected != -1:
@@ -123,7 +123,7 @@ def test_reshapes__zero_dim(
         )
     )
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(reshape_shape)
+        out = graph.inputs[0].reshape(reshape_shape)  # type: ignore
         assert out.dtype == input_type.dtype
         assert out.shape == reshape_shape
         graph.output(out)
@@ -143,7 +143,7 @@ def test_reshapes__unsqueeze(
     input_type: TensorType, reshape_shape: list[Dim]
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(reshape_shape)
+        out = graph.inputs[0].reshape(reshape_shape)  # type: ignore
         assert out.dtype == input_type.dtype
         assert out.shape == reshape_shape
         graph.output(out)
@@ -157,7 +157,7 @@ def test_reshapes__squeeze(
     input_type: TensorType, reshape_shape: list[Dim]
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(reshape_shape)
+        out = graph.inputs[0].reshape(reshape_shape)  # type: ignore
         assert out.dtype == input_type.dtype
         assert out.shape == reshape_shape
         graph.output(out)
@@ -177,7 +177,7 @@ def test_reshape__fails_with_different_symbolic_dim(
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].reshape([*output_shape, dim])
+            graph.inputs[0].reshape([*output_shape, dim])  # type: ignore
 
 
 @given(
@@ -201,7 +201,7 @@ def test_reshape__fails_with_different_number_of_elements(
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].reshape(output_shape)
+            graph.inputs[0].reshape(output_shape)  # type: ignore
 
 
 @given(
@@ -213,7 +213,7 @@ def test_reshape__can_reshape_single_element_tensors(
     output_shape: list[Dim],
 ) -> None:
     with Graph("reshape", input_types=[input_type]) as graph:
-        out = graph.inputs[0].reshape(output_shape)
+        out = graph.inputs[0].reshape(output_shape)  # type: ignore
         assert out.dtype == input_type.dtype
         assert out.shape == output_shape
         graph.output(out)

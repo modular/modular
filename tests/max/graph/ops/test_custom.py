@@ -77,7 +77,7 @@ class TestCustomOp:
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
                     out_types=[input_type],
-                    parameters={"invalid": [1, 2, 3]},  # List not supported
+                    parameters={"invalid": [1, 2, 3]},  # type: ignore  # List not supported
                 )
 
             # Should mention unsupported parameter type
@@ -140,7 +140,7 @@ class TestCustomOp:
                 ops.custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
-                    values=None,  # None values
+                    values=None,  # type: ignore  # None values
                     out_types=[output_type],
                 )
 
@@ -154,7 +154,7 @@ class TestCustomOp:
                     name="test_kernel",
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
-                    out_types=None,  # None outputs
+                    out_types=None,  # type: ignore  # None outputs
                 )
 
 
@@ -204,7 +204,7 @@ class TestInplaceCustomOp:
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
                     parameters={
-                        "invalid": {"nested": "dict"}
+                        "invalid": {"nested": "dict"}  # type: ignore
                     },  # Dict not supported
                 )
 
@@ -241,7 +241,7 @@ class TestInplaceCustomOp:
                 ops.inplace_custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
-                    values=None,  # None values
+                    values=None,  # type: ignore  # None values
                 )
 
     def test_inplace_custom__basic_chain_behavior(self, graph_builder) -> None:  # noqa: ANN001
@@ -497,7 +497,7 @@ class TestCustomGraphStateConsistency:
                             device=DeviceRef.CPU(),
                             values=[graph.inputs[0]],
                             out_types=[input_type],
-                            parameters=params,
+                            parameters=params,  # type: ignore
                         )
                 else:
                     # This should fail at kernel verification
@@ -507,7 +507,7 @@ class TestCustomGraphStateConsistency:
                             device=DeviceRef.CPU(),
                             values=[graph.inputs[0]],
                             out_types=[input_type],
-                            parameters=params,
+                            parameters=params,  # type: ignore
                         )
 
                 # Verify graph state remains consistent after each failure
