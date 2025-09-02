@@ -1359,9 +1359,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (diagShared)
-      printKGENType(os, demangleIfNeeded(type));
+      printKGENType(os, type);
     else
-      os << "__mlir_type." << (diagShared ? demangleIfNeeded(type) : type);
+      os << "__mlir_type." << type;
   }
 }
 

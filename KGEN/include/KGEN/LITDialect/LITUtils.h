@@ -52,20 +52,9 @@ bool isTypeExpr(TypedAttr attr);
 // Parameter Mangling
 //===----------------------------------------------------------------------===//
 
-/// Demangle a mangled parameter name if it is mangled.
+/// Demangle a mangled parameter name if it is has a "`" postfix and and
+/// trailing depth and unique ID.
 StringRef demangleParameterName(StringRef name);
-
-namespace impl {
-Attribute demangleIfNeeded(Attribute arg);
-Type demangleIfNeeded(Type arg);
-} // namespace impl
-
-/// Recursively demangle the parameter names (declaration of references) in the
-/// given mlir type or attribute, if necessary.
-template <typename AttrOrType>
-AttrOrType demangleIfNeeded(AttrOrType arg) {
-  return cast<AttrOrType>(impl::demangleIfNeeded(arg));
-}
 
 //===----------------------------------------------------------------------===//
 // Parsing and Printing
