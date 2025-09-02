@@ -135,8 +135,6 @@ ErrorOr<std::filesystem::path> M::writeFileUnderLock(
 ErrorOrSuccess M::readFileUnderLock(
     const std::filesystem::path &filePath,
     llvm::function_ref<void(const std::filesystem::path &)> read) {
-  std::string filePathStr = filePath.string();
-
   ErrorOr<Detail::Empty> err =
       doLockedFileOperation<Detail::Empty>(filePath, [&]() {
         read(filePath);

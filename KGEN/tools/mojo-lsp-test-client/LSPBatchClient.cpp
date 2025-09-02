@@ -303,7 +303,6 @@ ErrorOrSuccess LSPBatchClient::dispatchResponses(StringRef serverStdout) {
   StringRef output = buffer.getBuffer();
 
   size_t contentLength;
-  std::string header;
   while (output.consume_front("Content-Length: ") &&
          !output.consumeInteger(10, contentLength) &&
          output.consume_front("\r\n\r\n")) {
