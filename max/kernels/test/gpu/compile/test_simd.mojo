@@ -14,7 +14,7 @@
 
 from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
-from testing import assert_true
+from testing import assert_false, assert_true
 from sys.info import _is_sm_100x_or_newer
 from gpu.host.info import B200, GPUInfo
 from sys.info import _accelerator_arch
@@ -109,21 +109,37 @@ def test_fma[dtype: DType]():
     ](x: SIMD[dtype, width], y: __type_of(x), z: __type_of(x)) -> __type_of(x):
         return x.fma(y, z)
 
+    # Ensure `_mul_with_fastmath_none` threads fastmath flags through to
+    # pop.mul.
+    fn _mul_with_fastmath_none[
+        width: Int
+    ](x: SIMD[DType.float32, width], y: __type_of(x)) -> __type_of(x):
+        return x._mul_with_fastmath_none(y)
+
     @parameter
     if dtype is DType.bfloat16:
         assert_true("fma.rn.bf16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.bf16x2 " in _compile_code[fma[width=8]]())
 
+        # Check that `_mul_with_fastmath_none` disables FMA contraction.
+        assert_false(
+            "fma.rn.bf16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
+        )
     elif dtype is DType.float32:
         assert_true("fma.rn.f32 " in _compile_code[fma_manual[width=1]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=2]]())
         assert_true("fma.rn.f32x2 " in _compile_code[fma_manual[width=8]]())
-
+        assert_false(
+            "fma.rn.f32 " in _compile_code[_mul_with_fastmath_none[width=1]]()
+        )
     else:
         assert_true("fma.rn.f16 " in _compile_code[fma[width=1]]())
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=2]]())
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]())
+        assert_false(
+            "fma.rn.16 " in _compile_code[_mul_with_fastmath_none[width=1]]()
+        )
 
 
 def test_cast():
