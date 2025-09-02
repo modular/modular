@@ -144,8 +144,12 @@ def test_kernel_logging_detailed_output() -> None:
     )
 
     # Should contain kernel logs when enabled (logs go to stderr)
-    kernel_launch_logs = re.findall(r"\[KERNEL\] LAUNCH.*", stderr)
-    kernel_complete_logs = re.findall(r"\[KERNEL\] COMPLETE.*", stderr)
+    kernel_launch_logs = re.findall(
+        r"\[KERNEL\] (?:SYNC|ASYNC) LAUNCH.*", stderr
+    )
+    kernel_complete_logs = re.findall(
+        r"\[KERNEL\] (?:SYNC|ASYNC) COMPLETE.*", stderr
+    )
 
     # We expect to see some kernel logs when logging is enabled
     # Note: The exact number may vary based on model execution and caching
@@ -156,15 +160,37 @@ def test_kernel_logging_detailed_output() -> None:
     # Validate log format for actual logs we captured
     # Both LAUNCH and COMPLETE logs should have the same format: [KERNEL] ACTION ... on DEVICE at +TIME
     for log in kernel_launch_logs[:5]:  # Check first few logs
-        # Should match the expected format: [KERNEL] LAUNCH ... on DEVICE at +TIME
+        # Should match the expected format: [KERNEL] SYNC/ASYNC LAUNCH ... on DEVICE [id=N] at +TIME
         assert re.match(
-            r"\[KERNEL\] LAUNCH .+ on (CPU|GPU:\d+|Multi\(.+\)) at \+[\d\.]+ms",
+            r"\[KERNEL\] (SYNC|ASYNC) LAUNCH .+ on (CPU|GPU:\d+|Multi\(.+\)) \[id=\d+\] at \+[\d\.]+ms",
             log,
         ), f"LAUNCH log should match expected format: {log}"
 
     for log in kernel_complete_logs[:5]:  # Check first few logs
-        # Should match the expected format: [KERNEL] COMPLETE ... on DEVICE at +TIME
+        # Should match the expected format: [KERNEL] SYNC/ASYNC COMPLETE ... on DEVICE [id=N] at +TIME
         assert re.match(
-            r"\[KERNEL\] COMPLETE .+ on (CPU|GPU:\d+|Multi\(.+\)) at \+[\d\.]+ms",
+            r"\[KERNEL\] (SYNC|ASYNC) COMPLETE .+ on (CPU|GPU:\d+|Multi\(.+\)) \[id=\d+\] at \+[\d\.]+ms",
             log,
         ), f"COMPLETE log should match expected format: {log}"
+
+    # Validate that launch and complete IDs match
+    # Extract kernel IDs from launch and complete logs
+    launch_ids = set()
+    for log in kernel_launch_logs:
+        id_match = re.search(r"\[id=(\d+)\]", log)
+        if id_match:
+            launch_ids.add(int(id_match.group(1)))
+
+    complete_ids = set()
+    for log in kernel_complete_logs:
+        id_match = re.search(r"\[id=(\d+)\]", log)
+        if id_match:
+            complete_ids.add(int(id_match.group(1)))
+
+    # Every launched kernel should have a corresponding completion
+    # (allowing for some kernels to still be running if async)
+    assert complete_ids.issubset(launch_ids), (
+        f"All completed kernels should have been launched. "
+        f"Launched IDs: {sorted(launch_ids)}, "
+        f"Completed IDs: {sorted(complete_ids)}"
+    )
