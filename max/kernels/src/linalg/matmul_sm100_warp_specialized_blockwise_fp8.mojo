@@ -748,7 +748,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # For ld from TMEM, use same per-stage stride in column field.
     alias TMEM_N = 512
-    var stage_stride_cols = TMEM_N // num_accum_pipeline_stages
+    alias stage_stride_cols = TMEM_N // num_accum_pipeline_stages
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -1127,6 +1127,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
                         ),
+                        stage_stride_cols=stage_stride_cols,
                     ](
                         tmem_addr,
                         a_smem,
@@ -1138,7 +1139,6 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         elect_one_warp,
                         0,
                         accum_index,
-                        stage_stride_cols,
                     )
                     consumer_phase.step()
 
