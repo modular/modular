@@ -37,7 +37,7 @@ what we publish.
           ...
 
       fn __ne__(self, other: Self) -> Bool:
-          return not self.__eq__(other)
+          return not self == other
 
   @value
   struct Point(EqualityComparable):
