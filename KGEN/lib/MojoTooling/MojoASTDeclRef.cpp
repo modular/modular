@@ -160,7 +160,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
   }
 
   if (auto paramRef = getIfParameter(*this))
-    return demangleIfNeeded(paramRef).getName().getValue();
+    return demangleParameterName(paramRef.getName());
 
   return getFromOp(getDefiningOpFromIR(*this));
 }
@@ -305,7 +305,7 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
     if constexpr (isApproximateResult) {
       return PublicDeclKind::DK_PublicParameterDecl;
     } else {
-      auto name = demangleIfNeeded(param).getName().getValue();
+      auto name = demangleParameterName(param.getName());
       // The parent PublicFunctionDecl or PublicStructDecl is the one who owns
       // the docstring of this parameter, so it's easier to construct that view
       // and extract the parameter from it.

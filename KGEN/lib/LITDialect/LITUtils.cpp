@@ -39,32 +39,11 @@ bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 // Parameter Mangling
 //===----------------------------------------------------------------------===//
 
+/// Demangle a mangled parameter name if it is has a "`" postfix and and
+/// trailing depth and unique ID.
 StringRef LIT::demangleParameterName(StringRef name) {
-  // Strip the "`" postfix and and trailing depth and unique ID.
   return name.empty() ? name : name.take_front(name.find('`'));
 }
-
-/// Hide the implementation of `demangleIfNeeded` from the header file by
-/// putting the combined type and attribute implementation in the source file.
-template <typename AttrOrType>
-static AttrOrType demangleIfNeededImpl(AttrOrType arg) {
-  auto demangle = [](auto declOrRef) {
-    return decltype(declOrRef)::get(demangleParameterName(declOrRef.getName()),
-                                    demangleIfNeeded(declOrRef.getType()));
-  };
-
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](ParamDeclRefAttr declRef) { return demangle(declRef); });
-  replacer.addReplacement([&](ParamDeclAttr decl) { return demangle(decl); });
-  return replacer.replace(arg);
-}
-
-Attribute LIT::impl::demangleIfNeeded(Attribute arg) {
-  return demangleIfNeededImpl(arg);
-}
-
-Type LIT::impl::demangleIfNeeded(Type arg) { return demangleIfNeededImpl(arg); }
 
 //===----------------------------------------------------------------------===//
 // Parsing and Printing

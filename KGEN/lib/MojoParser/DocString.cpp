@@ -689,7 +689,7 @@ private:
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, const char *> seenParameters;
     for (ParamDeclAttr decl : structOp.getParams())
-      seenParameters.insert({demangleIfNeeded(decl).getName(), nullptr});
+      seenParameters.insert({demangleParameterName(decl.getName()), nullptr});
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
@@ -861,7 +861,7 @@ private:
     // Grab the parameters to the struct.
     SmallVector<StringAttr> paramNames;
     for (ParamDeclAttr decl : structOp.getParams())
-      paramNames.push_back(demangleIfNeeded(decl).getName());
+      paramNames.push_back(decl.getName());
     processParameters(paramNames);
   }
 
