@@ -133,14 +133,27 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
     The `pop.mul` operation takes two `!pop.simd` values and returns their
     product. The operand and result types must be the same. This operation is
     only valid on integer, index, and floating point dtypes.
+    Request [fastmath policies](https://llvm.org/docs/LangRef.html#fast-math-flags)
+    with the `fastmathFlags` attribute, which defaults to `contract`.
+    Default to `contract` because fused multiply add is important for performance, and
+    we want to write `a + b*c` instead of `a.fma(b, c)` everywhere.
 
     Example:
 
     ```mlir
     %c = pop.mul %a, %b : !pop.scalar<type>
     %c = pop.mul %a, %b : !pop.simd<size, type>
+    %c = pop.mul %a, %b {fastmathFlags = #pop<fmf fast>} : !pop.simd<size, type>
     ```
   }];
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrIndexOrArithmeticSIMD:$rhs,
+                       // Use `contract` as the default value so that we can
+                       // write a + b*c instead of a.fma(b, c).
+                       DefaultValuedAttr<POP_FastmathFlagsAttr,
+                         "FastmathFlags::contract">:$fastmathFlags);
+  let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
 }
 
 //===----------------------------------------------------------------------===//
