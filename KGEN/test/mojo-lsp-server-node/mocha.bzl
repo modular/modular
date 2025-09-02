@@ -14,10 +14,12 @@ def mocha_test(name, srcs, args = [], data = [], env = {}, **kwargs):
         name = name,
         args = [
             "--parallel",
+            # NodeJS has to be explicitly told to enable source map support.
+            "--node-option enable-source-maps",
             "--reporter",
             native.package_name() + "/src/reporter.js",
             "--config=$(location //KGEN/test/mojo-lsp-server-node:.mocharc.json)",
-            native.package_name() + "/src/**/*.spec.js",
+            native.package_name() + "/src/definitions.spec.js",
         ] + args,
         data = data + srcs + [
             "//KGEN/test/mojo-lsp-server-node:.mocharc.json",

@@ -10,15 +10,23 @@ import {
   CompletionList,
   CompletionParams,
   CompletionRequest,
+  Definition,
+  DefinitionParams,
+  DefinitionRequest,
+  Diagnostic,
   DidOpenTextDocumentNotification,
   DocumentSymbol,
   DocumentSymbolRequest,
+  Emitter,
+  Event,
   Hover,
   HoverRequest,
   InitializeParams,
   Location,
+  LocationLink,
   MessageConnection,
   Position,
+  PublishDiagnosticsNotification,
   PublishDiagnosticsParams,
   Range,
   ReferencesRequest,
@@ -30,6 +38,8 @@ export class LanguageServer {
   public connection: MessageConnection;
   private serverProcess: ChildProcess;
   private alive: boolean = true;
+  private diagnosticEmitter: Emitter<PublishDiagnosticsParams>;
+  public onDiagnosticsPublished: Event<PublishDiagnosticsParams>;
 
   constructor() {
     this.serverProcess = spawn(
@@ -53,6 +63,12 @@ export class LanguageServer {
     this.connection.onDispose(() => (this.alive = false));
     this.serverProcess.on("exit", () => (this.alive = false));
     this.serverProcess.on("error", () => (this.alive = false));
+
+    this.diagnosticEmitter = new Emitter();
+    this.onDiagnosticsPublished = this.diagnosticEmitter.event;
+    this.connection.onNotification(PublishDiagnosticsNotification.type, (p) =>
+      this.diagnosticEmitter.fire(p)
+    );
 
     this.connection.listen();
   }
@@ -112,12 +128,22 @@ export class Document {
 
   private _content: string;
   private _lines: string[] = [];
+  private _diagnostics?: Diagnostic[] = undefined;
+  private _diagnosticsReceived: Emitter<Diagnostic[]> = new Emitter();
   private version = 0;
 
   constructor(private server: LanguageServer, uri: string, content: string) {
     this.uri = uri;
     this._content = content;
     this._lines = content.split("\n");
+    this._diagnosticsReceived = new Emitter();
+
+    server.onDiagnosticsPublished((p) => {
+      if (p.uri !== this.uri) return;
+
+      this._diagnostics = p.diagnostics;
+      this._diagnosticsReceived.fire(p.diagnostics);
+    });
   }
 
   public static async fromFile(
@@ -251,6 +277,45 @@ export class Document {
       );
 
       return response.items;
+    }
+  }
+
+  public async diagnostics(): Promise<Diagnostic[]> {
+    if (this._diagnostics !== undefined) return this._diagnostics;
+
+    return new Promise((resolve) => {
+      const conn = this._diagnosticsReceived.event((d) => {
+        resolve(d);
+        conn.dispose();
+      });
+    });
+  }
+
+  public async definition(position: Position): Promise<Location[] | null> {
+    const result = await this.server.connection.sendRequest(
+      DefinitionRequest.type,
+      {
+        textDocument: {
+          uri: this.uri,
+        },
+        position,
+      }
+    );
+
+    if (result === null) return result;
+    else if (!Array.isArray(result)) {
+      // textDocument/definition can return a Location | Location[]. For
+      // simplicity's sake, just wrap the Location in an array.
+      return [result];
+    } else {
+      // LocationLink is an augmented version of Location returned when client
+      // and server both support it. The Mojo language server doesn't support it
+      // right now, so to simplify our current tests we want to return Location[].
+      if (LocationLink.is(result[0])) {
+        assert.fail("Tests cannot handle LocationLink results yet");
+      }
+
+      return result as Location[];
     }
   }
 }
