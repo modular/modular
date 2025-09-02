@@ -3850,8 +3850,8 @@ struct ResizeNearest:
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
@@ -3886,8 +3886,8 @@ struct ResizeLinear:
         resize_linear[
             CoordinateTransformationMode(coordinate_transform_mode), antialias
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
