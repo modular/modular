@@ -1825,14 +1825,18 @@ struct StaticReshape:
         ],
     ):
         var view_buffer = reshape(
-            managed_tensor_slice_to_ndbuffer(input),
+            input.to_layout_tensor(),
             shape,
         )
 
         return __type_of(result)(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
+            view_buffer.ptr,
+            rebind[IndexList[output_rank]](
+                view_buffer.runtime_layout.shape.value.canonicalize()
+            ),
+            rebind[IndexList[output_rank]](
+                view_buffer.runtime_layout.stride.value.canonicalize()
+            ),
         )
 
     @staticmethod
@@ -1876,8 +1880,8 @@ struct Reshape:
         return reshape_shape[
             output_rank=output_rank, single_thread_blocking_override=True
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(shape),
+            input.to_layout_tensor(),
+            shape.to_layout_tensor(),
         )
 
 
