@@ -16,6 +16,7 @@ from math import sqrt
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from nn.normalization import *
+from random import rand
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
@@ -24,10 +25,13 @@ from utils.index import Index, IndexList
 fn compute_rms[
     dtype: DType
 ](data: NDBuffer[dtype, 1], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
-    var sum_of_squares = Scalar[dtype]()
+    alias accum_type = get_accum_type[dtype]()
+    var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
-        sum_of_squares += data[i] * data[i]
-    return sqrt((sum_of_squares / len(data)) + eps).cast[dtype]()
+        var val = data[i].cast[accum_type]()
+        sum_of_squares += val * val
+    var result = sqrt((sum_of_squares / len(data)) + eps.cast[accum_type]())
+    return result.cast[dtype]()
 
 
 fn run_rms_norm_gpu[
@@ -42,9 +46,7 @@ fn run_rms_norm_gpu[
     var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
     var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
 
-    for i in range(rows * cols):
-        var val = Scalar[dtype](i)
-        data_h[i] = val
+    rand[dtype](data_h, rows * cols)
 
     for i in range(cols):
         gamma_h[i] = ((i + cols) / cols).cast[dtype]()
@@ -112,3 +114,5 @@ def main():
         run_rms_norm_gpu[DType.float32](ctx, Index(2, 8192))
         run_rms_norm_gpu[DType.float32](ctx, Index(2, 16384))
         run_rms_norm_gpu[DType.float32](ctx, Index(2, 16385))
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(3000, 32, 128), rtol=2e-2)
+        run_rms_norm_gpu[DType.bfloat16](ctx, Index(2999, 31, 128), rtol=2e-2)

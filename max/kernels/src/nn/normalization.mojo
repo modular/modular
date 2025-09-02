@@ -867,7 +867,7 @@ fn rms_norm_gpu_warp_tiling_128[
             weight_offset_accum,
             num_cols,
         )
-        if idx < num_cols:
+        if row < num_rows and idx < num_cols:
             output_fn[simd_width, align](row, idx, norm_val)
 
 
