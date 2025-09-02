@@ -768,7 +768,7 @@ fn kernel_8[
         cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
-        swizzle_size=1,
+        block_swizzle_size=1,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     var work_info = scheduler.initial_work_info()

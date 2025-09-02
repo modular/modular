@@ -75,6 +75,7 @@ from layout.tma_async import (
 )
 from linalg.mmaop_sm100 import MmaOpSM100_SS
 from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from linalg.matmul_tile_scheduler import RasterOrder
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -805,6 +806,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
+    block_swizzle_size: Int = 8,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
@@ -1033,6 +1036,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
+        block_swizzle_size=block_swizzle_size,
+        rasterize_order=rasterize_order,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     var work_info = scheduler.initial_work_info()
@@ -1260,6 +1265,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
+    block_swizzle_size: Int = 8,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1411,6 +1418,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         num_accum_pipeline_stages=max_accum_pipeline_stages,
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
+        block_swizzle_size=block_swizzle_size,
+        rasterize_order=rasterize_order,
     ]
 
     var grid_dim = (
