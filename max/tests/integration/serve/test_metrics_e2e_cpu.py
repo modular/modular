@@ -20,9 +20,6 @@ from max.serve.schemas.openai import CreateChatCompletionResponse
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 
-@pytest.mark.skip(
-    "TODO(AITLIB-351): Still sometimes failing on m7g, disabled until cause identified"
-)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -65,19 +62,20 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         assert "maxserve_model_load_time_milliseconds_bucket" in response.text
         assert "maxserve_request_time_milliseconds_bucket" not in response.text
 
-        # Make a request
-        raw_response = await client.post(
-            "/v1/chat/completions",
-            json={
-                "model": MODEL_NAME,
-                "messages": [{"role": "user", "content": "tell me a joke"}],
-                "stream": False,
-            },
-        )
-        # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.model_validate(
-            raw_response.json()
-        )
+        # Make a few requests
+        for _ in range(5):
+            raw_response = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": MODEL_NAME,
+                    "messages": [{"role": "user", "content": "tell me a joke"}],
+                    "stream": False,
+                },
+            )
+            # This is not a streamed completion - There is no [DONE] at the end.
+            response = CreateChatCompletionResponse.model_validate(
+                raw_response.json()
+            )
 
         response = requests.get("http://localhost:8001/metrics", timeout=1)
 
@@ -99,9 +97,6 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         assert "maxserve_cache_hit_rate" in response.text
 
 
-@pytest.mark.skip(
-    "TODO(AITLIB-351): Still sometimes failing on m7g, disabled until cause identified"
-)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -141,19 +136,21 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
 
         assert "maxserve_pipeline_load_total" in raw_response.text
 
-        # Make a request
-        raw_response = await client.post(
-            "/v1/chat/completions",
-            json={
-                "model": MODEL_NAME,
-                "messages": [{"role": "user", "content": "tell me a joke"}],
-                "stream": False,
-            },
-        )
-        # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.model_validate(
-            raw_response.json()
-        )
+        # Make a few requests
+        for _ in range(5):
+            raw_response = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": MODEL_NAME,
+                    "messages": [{"role": "user", "content": "tell me a joke"}],
+                    "stream": False,
+                },
+            )
+
+            # This is not a streamed completion - There is no [DONE] at the end.
+            response = CreateChatCompletionResponse.model_validate(
+                raw_response.json()
+            )
 
         # Endpoint exists
         raw_response = requests.get("http://localhost:8001/metrics", timeout=1)
