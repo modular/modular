@@ -1278,7 +1278,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // Generate nicer error message for common cases.
-  if (!valueType.isCopyable(exprLoc, shared)) {
+  if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
     if (valueType.isMovableFrom(value, shared) &&
         !valueType.isRegisterPassable(exprLoc, shared)) {
       emitError(exprLoc, "value of type ")
@@ -1287,7 +1287,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
           << value.expr->getRange();
     } else {
       emitError(exprLoc) << valueType
-                         << " is not copyable because it has no '__copyinit__'"
+                         << " is not implicitly copyable because it does not "
+                            "conform to 'ImplicitlyCopyable'"
                          << value.expr->getRange();
     }
     return {};
@@ -1417,8 +1418,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // value is an RValue, then this is because the type isn't implementing
     // either the copy or move init.  Complain precisely, instead of just
     // complaining about copying.
-    if (!valueType.isCopyable(exprLoc, shared) && value.ir.getIfRValue() &&
-        !value.ir.getIfPValue()) {
+    if (!valueType.isImplicitlyCopyable(exprLoc, shared) &&
+        value.ir.getIfRValue() && !value.ir.getIfPValue()) {
       emitError(exprLoc) << valueType
                          << " is not copyable or movable because it has no "
                             "'__copyinit__' or '__moveinit__' member"

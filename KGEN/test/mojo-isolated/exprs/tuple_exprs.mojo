@@ -10,7 +10,10 @@
 # RValue tests
 ##===----------------------------------------------------------------------===##
 
-fn use[T: AnyType](a: T): pass
+
+fn use[T: AnyType](a: T):
+    pass
+
 
 # CHECK-LABEL: lit.fn @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
@@ -55,9 +58,10 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: %t2 = lit.var.decl "t2"
     # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %t2)
-    var t2 = a,
+    var t2 = (a,)
     use(t2)
     # CHECK: lit.call {{.*}}tuple_exprs::@"use
+
 
 ##===----------------------------------------------------------------------===##
 # LValue tests
@@ -119,7 +123,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
 ##===----------------------------------------------------------------------===##
 
 
-trait CollectionType(Copyable, Movable):
+trait CollectionType(ImplicitlyCopyable, Movable):
     pass
 
 
@@ -199,9 +203,9 @@ fn returnTup2b() -> (Int, FloatDyn):
     return Int(4), 2.0
 
 
-# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !Copyable>
-# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!Copyable T>, !kgen.param<:!Copyable T>]>
-fn takesSugarTuple[T: Copyable](elements: (T, T)):
+# CHECK-LABEL: lit.fn @"takesSugarTuple{{.*}}<T: !ImplicitlyCopyable>
+# CHECK-SAME: @Tuple<:variadic<!AnyType> [!kgen.param<:!ImplicitlyCopyable T>, !kgen.param<:!ImplicitlyCopyable T>]>
+fn takesSugarTuple[T: ImplicitlyCopyable](elements: (T, T)):
     pass
 
 

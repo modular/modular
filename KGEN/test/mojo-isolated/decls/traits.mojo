@@ -205,7 +205,7 @@ trait StaticMethodTrait:
         pass
 
 
-struct StaticMethodStruct(StaticMethodTrait, Copyable):
+struct StaticMethodStruct(StaticMethodTrait, ImplicitlyCopyable):
     @staticmethod
     fn foobar():
         pass
@@ -221,12 +221,12 @@ fn trait_static_method[T: StaticMethodTrait]():
 
 
 # CHECK-LABEL: lit.fn @"copy_me
-# CHECK-SAME: <T: !Copyable
-# CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> read_mem, ?,
-# CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
-fn copy_me[T: Copyable](value: T) -> T:
+# CHECK-SAME: <T: !ImplicitlyCopyable
+# CHECK-SAME: %value: !lit.ref<:!ImplicitlyCopyable T, imm {{.*}}> read_mem, ?,
+# CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
+fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
     # CHECK-NEXT: call[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!Copyable T, "stdlib::builtin::stubs::Copyable", "__copyinit__">]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::ExplicitlyCopyable", "__copyinit__">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -480,7 +480,7 @@ fn bind_regpassable_required_type():
 
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 @register_passable("trivial")
-struct RegTrivialSpecial(AnyType, Copyable, Movable):
+struct RegTrivialSpecial(AnyType, ImplicitlyCopyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__moveinit__
@@ -489,7 +489,7 @@ struct RegTrivialSpecial(AnyType, Copyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
-struct RegSpecial(AnyType, Copyable, Movable):
+struct RegSpecial(AnyType, ImplicitlyCopyable, Movable):
     fn __copyinit__(out self, existing: Self):
         pass
 
@@ -498,14 +498,14 @@ struct RegSpecial(AnyType, Copyable, Movable):
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
-struct MemoryOnlySpecial(AnyType, Copyable, Movable):
+struct MemoryOnlySpecial(AnyType, ImplicitlyCopyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none
     # CHECK: return %none
 
 
-fn copy[T: Copyable](x: T):
+fn copy[T: ImplicitlyCopyable](x: T):
     pass
 
 
@@ -698,7 +698,7 @@ struct TraitMember[T: Movable]:
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
 @fieldwise_init
-struct MyPointer[T: AnyType](Copyable, Movable):
+struct MyPointer[T: AnyType](ImplicitlyCopyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__init__
@@ -937,7 +937,7 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: : !lit.generator<("value": !lit.ref<:!kgen.param<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref) -> !kgen.none>
     take_anytype_ref(a)
 
-alias _CollectionElementMetaType = __type_of(Copyable & Movable)
+alias _CollectionElementMetaType = __type_of(ImplicitlyCopyable & Movable)
 
 struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,
@@ -954,13 +954,13 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 fn take_movable_pointer[T: Movable](ptr: UnsafePointer[T]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <:!AnyType !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
 fn test_parametric_anytype_movable[element_trait: _CollectionElementMetaType,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
-        # CHECK-SAME: <:!Movable !kgen.param<:!kgen.param<:!lit.anytrait<!Copyable_Movable> element_trait>
+        # CHECK-SAME: <:!Movable !kgen.param<:!kgen.param<:!lit.anytrait<!ImplicitlyCopyable_Movable> element_trait>
         take_movable_pointer(ptr)
 
 

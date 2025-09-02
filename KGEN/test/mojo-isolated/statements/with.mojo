@@ -21,10 +21,7 @@ fn raise_string() raises:
     raise "thing"
 
 
-struct ExampleCM:
-    fn __copyinit__(out self, existing: Self):
-        pass
-
+struct ExampleCM(ImplicitlyCopyable):
     fn __enter__(self) -> Int:
         return 42
 
@@ -33,6 +30,7 @@ struct ExampleCM:
 
     fn __exit__(self, err: Error) -> Bool:
         return True  # Raise
+
 
 # Cannot use mutating __enter__
 # https://github.com/modularml/modular/issues/27371
@@ -293,6 +291,7 @@ fn testCMWithoutExit():
         with CMWithoutExit() as b:
             b.method()
 
+
 # CHECK-LABEL: lit.fn @"testMultiClauseWith
 fn testMultiClauseWith():
     # Tests that multiple-clause `with` statements (like below) are interpreted
@@ -322,6 +321,7 @@ fn testMultiClauseWith():
     # Make sure that we destroy them in the right order.
     # CHECK:   lit.ownership.use %b
     # CHECK:   lit.ownership.use %a
+
 
 # CHECK-LABEL: lit.fn @"testAmbiguousMultiContextWith
 fn testAmbiguousMultiContextWith():
@@ -387,7 +387,7 @@ fn unconditional_exit() raises:
     # CHECK:     call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
 
 
-struct ExampleCMTuple:
+struct ExampleCMTuple(ImplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         pass
 
@@ -400,16 +400,17 @@ struct ExampleCMTuple:
     fn __exit__(self, err: Error) -> Bool:
         return True  # Raise
 
+
 # CHECK-LABEL: lit.fn @"testExampleCMTuple
 fn testExampleCMTuple(cm: ExampleCMTuple):
     # CHECK: %a = lit.var.decl "a"
     # CHECK: %b = lit.var.decl "b"
     # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
-    with cm as (a,b):
+    with cm as (a, b):
         # Captures the refs from the tuple.
         # CHECK: [[A:%.*]] = lit.ref.load %a
         # CHECK: [[B:%.*]] = lit.ref.load %b
         # CHECK: [[A2:%.*]] = lit.ref.load [[A]]
         # CHECK: [[B2:%.*]] = lit.ref.load [[B]]
         # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A2]], [[B2]])
-        _ = a+b
+        _ = a + b

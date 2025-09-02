@@ -14,7 +14,7 @@ from collections.string import StaticString
 fn noop(): pass
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyInt
-struct MemoryOnlyInt:
+struct MemoryOnlyInt(ImplicitlyCopyable):
   var x: Int
 
   # CHECK-LABEL: lit.fn @"__init__
@@ -44,7 +44,7 @@ struct MemoryOnlyFloat64:
     self.x = 1.0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
-struct MemoryOnlyPair:
+struct MemoryOnlyPair(ImplicitlyCopyable):
   var x: MemoryOnlyInt
   var y: Int
 
@@ -189,7 +189,7 @@ fn implicit_func_conversion():
 
 # CHECK-LABEL: lit.struct.decl @RegPassable
 @register_passable
-struct RegPassable:
+struct RegPassable(ImplicitlyCopyable):
   var value: Int
   # CHECK-LABEL: lit.fn @"__init__
   # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
@@ -201,7 +201,6 @@ struct RegPassable:
   fn __init__(out self, value: Int):
     self.value = value
 
-  fn __copyinit__(out self, existing: Self): pass
   fn __del__(deinit self): pass
   fn __neg__(self) -> Self: pass
   fn __add__(self, rhs: Self) -> Self: pass
@@ -403,11 +402,11 @@ fn comparisons(a: Int, b: Int):
    res = a != b
 
 @register_passable
-struct Boolish(Boolable):
+struct Boolish(Boolable, ImplicitlyCopyable):
   fn __copyinit__(out self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 
-struct MemBoolish:
+struct MemBoolish(ImplicitlyCopyable):
   @implicit
   fn __init__(out self, value: Boolish): pass
   fn __copyinit__(out self, other: Self): pass
@@ -1030,9 +1029,8 @@ alias fn_type_alias = fn() -> None
 fn func_with_decorator(): pass
 
 
-struct TwoParamsStruct[a: Int, b: Int]:
-    fn __copyinit__(out self, other: Self):
-        pass
+struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
+    pass
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):

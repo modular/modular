@@ -10,13 +10,16 @@
 # Support types
 # ===----------------------------------------------------------------------=== #
 
+
 @register_passable("trivial")
 trait RPTTrait:
     pass
 
+
 # ===----------------------------------------------------------------------=== #
 # Destructor tests
 # ===----------------------------------------------------------------------=== #
+
 
 # CHECK-LABEL: lit.struct.decl @DtorExample1
 # Shouldn't have a registered destructor because it's trivial and not explicit.
@@ -25,7 +28,8 @@ trait RPTTrait:
 # CHECK: lit.fn @"__del__
 @register_passable("trivial")
 struct DtorExample1(AnyType):
-  var a: Int
+    var a: Int
+
 
 # CHECK-LABEL: lit.struct.decl @DtorExample2
 # Shouldn't have a registered destructor because it's trivial and not explicit
@@ -33,7 +37,8 @@ struct DtorExample1(AnyType):
 # CHECK: lit.fn @"__del__
 @register_passable("trivial")
 struct DtorExample2(AnyType):
-  var a: Int
+    var a: Int
+
 
 # CHECK-LABEL: lit.struct.decl @DtorExample3
 # Should have a registered destructor because it's explicit.
@@ -41,10 +46,11 @@ struct DtorExample2(AnyType):
 # CHECK: lit.fn @"__del__
 @register_passable
 struct DtorExample3(AnyType):
-  var a: Int
+    var a: Int
 
-  fn __del__(deinit self):
-    pass
+    fn __del__(deinit self):
+        pass
+
 
 # CHECK-LABEL: lit.struct.decl @DtorExample4
 # Shouldn't have a registered destructor because it's trivial and not explicit
@@ -53,6 +59,7 @@ struct DtorExample3(AnyType):
 struct DtorExample4[T: RPTTrait]:
     var thing: T
 
+
 # CHECK-LABEL: lit.struct.decl @DtorExample5
 # Should have a registered destructor because T has a destructor.
 # CHECK-NEXT: destructor :!lit.generator
@@ -60,56 +67,63 @@ struct DtorExample4[T: RPTTrait]:
 struct DtorExample5[T: AnyType]:
     var thing: T
 
+
 # ===----------------------------------------------------------------------=== #
 # Copy/Move synthesis tests
 # ===----------------------------------------------------------------------=== #
 
-struct IntPair(Copyable, Movable, ExplicitlyCopyable):
-  var x: Int
-  var y: Int
 
-struct IntPairWrapper(Copyable, Movable, ExplicitlyCopyable):
-  var value: IntPair
+struct IntPair(ImplicitlyCopyable, Movable):
+    var x: Int
+    var y: Int
+
+
+struct IntPairWrapper(ImplicitlyCopyable, Movable):
+    var value: IntPair
 
 
 # CHECK-LABEL: lit.struct.decl @IntPairWrapper
 # CHECK-LABEL: lit.fn @"copy
-# CHECK-SAME: (%existing: !lit.ref<!IntPairWrapper{{.*}}> read_mem,
+# CHECK-SAME: (%self: !lit.ref<!IntPairWrapper{{.*}}> read_mem,
 # CHECK-SAME: %__result__: !lit.ref<!IntPairWrapper{{.*}}> byref_result)
-# CHECK-NEXT: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}(%existing, %__result__)
+# CHECK-NEXT: lit.call {{.*}}@ExplicitlyCopyable::@"copy($0){{.*}}(%self, %__result__)
+
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth
 fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
-  # CHECK: lit.call {{.*}}IntPair::@"__copyinit__{{.*}}({{.*}}, %aCopy)
-  var aCopy = a
+    # CHECK: lit.call {{.*}}IntPair::@"__copyinit__{{.*}}({{.*}}, %aCopy)
+    var aCopy = a
 
-  # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
-  var aMove = a^
+    # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
+    var aMove = a^
 
-  # CHECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
-  var aExCopy = a.copy()
+    # CHECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
+    var aExCopy = a.copy()
 
-  # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
-  var bCopy = b
+    # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
+    var bCopy = b
 
-  # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
-  var bMove = b^
+    # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
+    var bMove = b^
 
-  # CHECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
-  var bExCopy = b.copy()
+    # CHECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
+    var bExCopy = b.copy()
+
 
 # ===----------------------------------------------------------------------=== #
 # Fieldwise init tests
 # ===----------------------------------------------------------------------=== #
 
+
 @fieldwise_init
 struct FieldwiseInitExample1[T: Movable]:
-  var x: Int
-  var y: T
+    var x: Int
+    var y: T
 
-  fn __moveinit__(out self, deinit other: Self):
-    self.x = other.x
-    self.y = other.y^
+    fn __moveinit__(out self, deinit other: Self):
+        self.x = other.x
+        self.y = other.y^
+
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample1
 # CHECK: lit.fn @"__init__
@@ -125,16 +139,18 @@ struct FieldwiseInitExample1[T: Movable]:
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample2
 @fieldwise_init("implicit")
 struct FieldwiseInitExample2:
-  var x: Int
+    var x: Int
+
 
 # CHECK-LABEL: lit.fn @"testFieldwiseInitExample2
 # CHECK: FieldwiseInitExample2::@"__init__{{.*}}(%a, %b)
 fn testFieldwiseInitExample2(a: Int):
-  var b : FieldwiseInitExample2 = a
+    var b: FieldwiseInitExample2 = a
+
 
 # Register passable example.
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample3
 @fieldwise_init("implicit")
 @register_passable
 struct FieldwiseInitExample3:
-  var x: Int
+    var x: Int

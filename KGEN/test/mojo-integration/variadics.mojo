@@ -48,7 +48,7 @@ struct TalkativeReg(Stringable, Writable):
 
 # This is copyable, movable, and talkative!  It doesn't print on move.
 @register_passable
-struct TalkativeCopableReg(Stringable, Writable):
+struct TalkativeCopableReg(ImplicitlyCopyable, Stringable, Writable):
     var state: Int
 
     @implicit

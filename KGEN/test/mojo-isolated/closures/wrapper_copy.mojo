@@ -56,7 +56,7 @@
 
 
 @fieldwise_init
-struct MemType(Copyable, Movable):
+struct MemType(ImplicitlyCopyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

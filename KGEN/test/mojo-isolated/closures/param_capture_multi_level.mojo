@@ -8,7 +8,7 @@
 
 @fieldwise_init
 @register_passable
-struct Foo[a: Int](Copyable):
+struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get(self) -> Int:
@@ -23,10 +23,10 @@ fn bar[a: Int, b: Int]() -> Int:
 # CHECK: lit.fn @"__call__{{.*}}(
 # CHECK: constant: !Int = <{{.*}} X)> Y, "b">
 fn parameter_capture_multiple_levels[
-    a: Int, X: fn()->Int, Y: Foo[X()]
+    a: Int, X: fn () -> Int, Y: Foo[X()]
 ](c: Int) -> fn (x: Int) escaping -> Int:
-    #alias X = bar[a, a]
-    #alias Y = Foo[X()](2)
+    # alias X = bar[a, a]
+    # alias Y = Foo[X()](2)
 
     fn p_capture(x: Int) -> Int:
         return Y.b + c

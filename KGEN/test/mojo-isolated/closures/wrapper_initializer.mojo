@@ -60,7 +60,7 @@
 
 
 @fieldwise_init
-struct MemType(Copyable, Movable):
+struct MemType(ImplicitlyCopyable, Movable):
     pass
 
 

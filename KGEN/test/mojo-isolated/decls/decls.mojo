@@ -66,14 +66,14 @@ fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
 
 # Varargs + traits are a thing.
 # https://github.com/modular/mojo/issues/1443
-fn variadic_trait_elt[T: Copyable](*xs: T):
+fn variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
     pass
 
 
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack_vararg)
-fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
+# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, {{.*}}origin<0> = *"rest`1"}, :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :variadic<!ImplicitlyCopyable> Ts>, imm *"rest`2"> read_mem|pack_vararg)
+fn trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
 
 
@@ -809,7 +809,7 @@ struct StructWithInit:
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
-struct StructExample:
+struct StructExample(ImplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -929,10 +929,10 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_ExplicitlyCopyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 # CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @fieldwise_init
-struct ValueMem(Copyable, Movable, ExplicitlyCopyable):
+struct ValueMem(ImplicitlyCopyable, Movable):
     var a: Int  # Trivial
     var b: StructExample  # Copy ctor
 
@@ -975,9 +975,9 @@ struct ValueMem(Copyable, Movable, ExplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_ExplicitlyCopyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 @fieldwise_init
-struct ValueMemHasCopy(Copyable, Movable, ExplicitlyCopyable):
+struct ValueMemHasCopy(ImplicitlyCopyable, Movable):
     var a: Int
     var b: StructExample
 
@@ -986,15 +986,15 @@ struct ValueMemHasCopy(Copyable, Movable, ExplicitlyCopyable):
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_ExplicitlyCopyable_ImplicitlyCopyable_Movable_UnknownDestructibility)
 @fieldwise_init
-struct ValueMemHasMove(Movable, Copyable, ExplicitlyCopyable):
+struct ValueMemHasMove(Movable, ImplicitlyCopyable):
     var a: Int
     var b: StructExample
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
+# CHECK-SAME: (!AnyType_ExplicitlyCopyable_ImplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
 
 # CHECK: lit.fn @"__moveinit__{{.*}}"[{{.*}}](%other: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
@@ -1020,7 +1020,7 @@ struct ValueRegTrivial(ExplicitlyCopyable):
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @fieldwise_init
 @register_passable
-struct ValueReg(Copyable):
+struct ValueReg(ImplicitlyCopyable):
     var a: Int
     var b: StructExample
 
@@ -1054,9 +1054,9 @@ struct ValueReg(Copyable):
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_ExplicitlyCopyable_ImplicitlyCopyable_Movable_UnknownDestructibility) attributes
 @fieldwise_init
-struct Foo(Copyable, Movable, ExplicitlyCopyable):
+struct Foo(ImplicitlyCopyable, Movable):
     var a: Int
     var self: Int
 
@@ -1073,7 +1073,7 @@ struct ParamVarArg[*I: Int]:
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
 @fieldwise_init
-struct TraitMember[T: Copyable](Copyable, Movable):
+struct TraitMember[T: ImplicitlyCopyable](ImplicitlyCopyable, Movable):
     var value: T
     # CHECK: lit.fn @"__moveinit__
     # CHECK: call{{.*}}__copyinit__
@@ -1086,7 +1086,7 @@ struct TraitMember[T: Copyable](Copyable, Movable):
 # CHECK: lit.fn @"__copyinit__{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic
 @fieldwise_init
-struct NotSynthetic(Copyable, Movable, ExplicitlyCopyable):
+struct NotSynthetic(ImplicitlyCopyable, Movable):
     var member: __mlir_type.`index`
 
     fn notSynthetic(self):
@@ -1109,13 +1109,13 @@ struct VarArgInit:
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
-# COM: trait requirements for Copyable and Movable are generated early.
-struct BoxCopyable[T: Copyable]:
+# COM: trait requirements for ImplicitlyCopyable and Movable are generated early.
+struct BoxCopyable[T: ImplicitlyCopyable]:
     pass
 
 
 @fieldwise_init
-struct Node(Copyable, Movable):
+struct Node(ImplicitlyCopyable, Movable):
     var id: RecursiveCopyable.ID
 
 
@@ -1123,12 +1123,12 @@ struct Node(Copyable, Movable):
 struct RecursiveCopyable:
     alias ID = Int
     # CHECK: lit.struct.field recurse
-    # CHECK-SAME: <:!Copyable !Node>
+    # CHECK-SAME: <:!ImplicitlyCopyable !Node>
     var recurse: BoxCopyable[Node]
 
 
 # CHECK-LABEL: lit.struct.decl @RaisingFieldwiseInit
-struct RaisingFieldwiseInit(Copyable, Movable):
+struct RaisingFieldwiseInit(ImplicitlyCopyable, Movable):
     var x: Int
 
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
@@ -1668,7 +1668,7 @@ struct BarSelf(BarTrait):
 
 # CHECK-LABEL: lit.struct.decl @RegPassableInitSelfInit
 @register_passable
-struct RegPassableInitSelfInit:
+struct RegPassableInitSelfInit(ImplicitlyCopyable):
     var a: Int
 
     # CHECK: lit.fn @"__init__

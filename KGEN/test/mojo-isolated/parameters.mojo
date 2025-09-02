@@ -407,7 +407,7 @@ fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
 # Memory-only parameters
 ##===----------------------------------------------------------------------===##
 
-struct MemoryType(Copyable, Movable):
+struct MemoryType(ImplicitlyCopyable, Movable):
     var value: Int
 
     @always_inline("nodebug")
@@ -789,7 +789,7 @@ fn init_self_memory_variadics():
     # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]
     alias x = MyList[Int](1, 2)
 
-struct MyList[T: Copyable]:
+struct MyList[T: ImplicitlyCopyable]:
     @implicit
     fn __init__(out self, *values: T): pass
 
@@ -1623,7 +1623,7 @@ fn call_variadic_pack_with_function():
 @fieldwise_init
 struct MOCO1065[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     o: Origin[mut]._mlir_type,
 ]:
     fn __init__(out self: MOCO1065[UInt8, o], ref [o] string: Empty):

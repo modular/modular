@@ -15,9 +15,8 @@ trait SomeTrait:
     pass
 
 
-struct SomeMem(SomeTrait):
-    fn __copyinit__(out self, existing: Self):
-        pass
+struct SomeMem(ImplicitlyCopyable, SomeTrait):
+    pass
 
 
 @register_passable

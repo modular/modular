@@ -113,7 +113,7 @@ fn propagateErrorInTry():
         # CHECK: %__call_result_tmp__ = lit.var.decl
         # CHECK-NEXT: lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %__call_result_tmp__)
         # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %__call_result_tmp__
-        # CHECK-NEXT: lit.ref.store [[TMP]], %a 
+        # CHECK-NEXT: lit.ref.store [[TMP]], %a
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield
     except:
@@ -171,7 +171,7 @@ fn rethrowsToRethrow():
         return
 
 
-struct S:
+struct S(ImplicitlyCopyable):
     var v: Int
 
     @implicit
@@ -180,9 +180,6 @@ struct S:
 
     fn __init__(out self) raises:
         self.v = 1
-
-    fn __copyinit__(out self, existing: Self):
-        self.v = existing.v
 
 
 fn fail() raises -> S:

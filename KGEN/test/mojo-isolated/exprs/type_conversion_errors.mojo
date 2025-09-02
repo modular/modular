@@ -65,7 +65,7 @@ fn init_self_conversion():
     alias f: fn () -> None = Constructible.__init__
 
 
-struct ConvertibleFromInt(Copyable, Movable):
+struct ConvertibleFromInt(ImplicitlyCopyable, Movable):
     @implicit
     fn __init__(out self, arg: Int):
         pass

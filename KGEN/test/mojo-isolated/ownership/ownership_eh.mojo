@@ -26,7 +26,7 @@ def use_and_raise(x: Int):
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}RegExample::@"__del__
 @register_passable
-struct RegExample:
+struct RegExample(ImplicitlyCopyable):
     fn __init__(out self):
         return
 
@@ -53,7 +53,7 @@ struct RegExample:
         pass
 
 
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
     var x: Int
 
     fn __init__(out self):
@@ -298,7 +298,7 @@ fn testErrorReturn() raises:
 
 
 # COM: Test partial destruction of initialized fields upon an error return.
-struct Field:
+struct Field(ImplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         pass
     fn __del__(deinit self):

@@ -35,7 +35,7 @@ fn `use()weird[]`() -> `weird()struct[]`:
 
 
 @fieldwise_init
-struct ParameterizedType[value: Index](Copyable, Movable):
+struct ParameterizedType[value: Index](ImplicitlyCopyable, Movable):
     pass
 
 

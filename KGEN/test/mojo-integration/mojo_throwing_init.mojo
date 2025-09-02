@@ -8,7 +8,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 
-struct MemType1:
+struct MemType1(ImplicitlyCopyable):
     var value: Int
 
     @implicit

@@ -642,6 +642,24 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   return failure();
 }
 
+static TraitType getDeclProvidedTrait(ASTDecl *decl) {
+  // Collect all the symbols that the type explicitly provides.
+  TraitType providedCanonTrait;
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
+    providedCanonTrait = structOp.getCanonicalTrait();
+  } else if (auto traitOp =
+                 dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation())) {
+    providedCanonTrait = traitOp.getCanonicalTrait();
+  } else if (TraitType canonTraitType =
+                 dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
+    providedCanonTrait = canonTraitType;
+  } else {
+    llvm_unreachable("Invalid decl kind");
+  }
+
+  return providedCanonTrait;
+}
+
 /// Given a decl for a struct or trait type, return true if this type conforms
 /// to the specified trait type.  On failure, this may set 'diag' to an
 /// inflight diagnostic that explains why this doesn't conform.  It can be
@@ -652,22 +670,9 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
     return false; // Error emitted.
 
   // Collect all the symbols that the type explicitly provides.
-  TraitType providedCanonTrait;
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
-    providedCanonTrait = structOp.getCanonicalTrait();
-  } else if (auto traitOp =
-                 dyn_cast_or_null<TraitDeclOp>(this->getIfOperation())) {
-    providedCanonTrait = traitOp.getCanonicalTrait();
-    if (providedCanonTrait == trait)
-      return true;
-  } else if (TraitType canonTraitType =
-                 dyn_cast_or_null<TraitType>(getIfTypeValue())) {
-    providedCanonTrait = canonTraitType;
-    if (providedCanonTrait == trait)
-      return true;
-  } else {
-    llvm_unreachable("Invalid decl kind");
-  }
+  TraitType providedCanonTrait = getDeclProvidedTrait(this);
+  if (providedCanonTrait == trait)
+    return true;
 
   ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
 

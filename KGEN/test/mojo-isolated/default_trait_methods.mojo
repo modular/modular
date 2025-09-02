@@ -59,12 +59,12 @@ struct Bar(Foo):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Zork(Copyable, Movable):
+struct Zork(ImplicitlyCopyable, Movable):
     pass
 
 
 trait AA1:
-    alias X: Copyable
+    alias X: ImplicitlyCopyable
 
     fn zork(self, x: Self.X) -> Self.X:
         return x

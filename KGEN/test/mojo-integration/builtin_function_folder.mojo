@@ -10,7 +10,7 @@
 from utils._select import _select_register_value as select
 
 
-struct IntT[x: Int]:
+struct IntT[x: Int](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
@@ -18,7 +18,7 @@ struct IntT[x: Int]:
         pass
 
 
-struct UIntT[x: UInt]:
+struct UIntT[x: UInt](ImplicitlyCopyable):
     fn __init__(out self):
         pass
 

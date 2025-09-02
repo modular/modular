@@ -10,7 +10,7 @@
 
 
 @fieldwise_init
-struct MemType(Copyable, Movable):
+struct MemType(ImplicitlyCopyable, Movable):
     fn __del__(deinit self):
         pass
 

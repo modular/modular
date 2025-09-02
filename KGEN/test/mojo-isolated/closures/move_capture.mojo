@@ -11,7 +11,7 @@
 
 
 @fieldwise_init
-struct Thing(Copyable, Movable):
+struct Thing(ImplicitlyCopyable, Movable):
     pass
 
 

@@ -12,7 +12,7 @@
 
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
     var x: Int
 
     fn __init__(out self):
@@ -37,7 +37,7 @@ struct MemExample:
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
-struct RegExample:
+struct RegExample(ImplicitlyCopyable):
     fn __init__(out self):
         return
 
@@ -79,7 +79,7 @@ struct MemoryUniqueMovable:
 
 # This type is copyable/moveable.
 # CHECK-LABEL: lit.struct.decl @MemoryMovableCopyable
-struct MemoryMovableCopyable:
+struct MemoryMovableCopyable(ImplicitlyCopyable):
     var state: MemExample
 
     fn __init__(out self):
@@ -132,7 +132,7 @@ struct RegUniqueMovable:
 
 
 @register_passable
-struct RegMovableCopyable:
+struct RegMovableCopyable(ImplicitlyCopyable):
     fn __init__(out self):
         return
 

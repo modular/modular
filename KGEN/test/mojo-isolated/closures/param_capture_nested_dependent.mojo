@@ -25,7 +25,7 @@
 
 
 @fieldwise_init
-struct Foo[C: Int, D: Int](Copyable, Movable):
+struct Foo[C: Int, D: Int](ImplicitlyCopyable, Movable):
     var x: Int
 
     fn get(self) -> Int:
@@ -34,7 +34,7 @@ struct Foo[C: Int, D: Int](Copyable, Movable):
 
 @fieldwise_init
 @register_passable
-struct Bat[A: Int](Copyable):
+struct Bat[A: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get_test[B: Int](self) -> fn (y: Int) escaping -> Foo[B, A]:

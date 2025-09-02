@@ -13,9 +13,9 @@ alias Composition = Movable & Copyable
 fn mlir_type_trait_conformance():
     # CHECK: !AnyType = <[{{.*}}::@__MLIRType<:type index>, index]>
     alias Any: AnyType = __mlir_type.index
-    # CHECK: !Copyable = <[{{.*}}::@__MLIRType<:type index>, index]>
+    # CHECK: !ImplicitlyCopyable = <[{{.*}}::@__MLIRType<:type index>, index]>
     alias Copy: Copyable = __mlir_type.index
     # CHECK: !Movable = <[{{.*}}::@__MLIRType<:type index>, index]>
     alias Move: Movable = __mlir_type.index
-    # CHECK: !Movable_Copyable = <[{{.*}}::@__MLIRType<:type index>, index]>
+    # CHECK: !Movable_ImplicitlyCopyable = <[{{.*}}::@__MLIRType<:type index>, index]>
     alias Comp: Composition = __mlir_type.index

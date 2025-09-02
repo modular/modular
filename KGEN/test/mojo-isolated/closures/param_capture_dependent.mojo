@@ -8,7 +8,7 @@
 
 @fieldwise_init
 @register_passable
-struct Foo[a: Int](Copyable):
+struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
 
@@ -18,7 +18,6 @@ struct Foo[a: Int](Copyable):
 # CHECK-NEXT: [[VAR2:%.*]] = lit.ref.load [[VAR1]]
 # CHECK-NEXT: kgen.param.constant: !Int = <#lit.struct.extract<:[[FOO]]<:!Int [[a]]> X, "b">>
 fn parameter_capture[a: Int, X: Foo[a]](c: Int) -> fn (x: Int) escaping -> Int:
-
     fn p_capture(x: Int) -> Int:
         return X.b + c
 

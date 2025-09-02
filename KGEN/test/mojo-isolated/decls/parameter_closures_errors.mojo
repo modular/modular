@@ -61,7 +61,7 @@ struct NoCopyType:
 fn makeClosure(x: MemType):
     var rp: NoCopyType = NoCopyType(x.a)
 
-    # expected-error @below {{'NoCopyType' is not copyable because it has no '__copyinit__'}}
+    # expected-error @below {{'NoCopyType' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
     @__copy_capture(rp)
     @parameter
     fn writer() -> Index:

@@ -28,7 +28,7 @@ fn use_mut(mut a: MemExample):
 
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
     var x: Int
 
     fn __init__(out self):

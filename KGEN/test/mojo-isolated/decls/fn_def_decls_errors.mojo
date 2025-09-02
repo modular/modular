@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics -o /dev/null
 
 @fieldwise_init
-struct MemoryType(Copyable, Movable):
+struct MemoryType(ImplicitlyCopyable, Movable):
     pass
 
 fn test_never_declared_fn():

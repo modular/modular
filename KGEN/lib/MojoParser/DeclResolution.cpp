@@ -2221,7 +2221,8 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
       if (isTrivialRegisterPassable(callNode)) {
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         if (ASTDecl *decl = shared.lookupBuiltinTrait(
-                "Copyable", structDecl.getParentDecl(), decorator->getLoc()))
+                "ImplicitlyCopyable", structDecl.getParentDecl(),
+                decorator->getLoc()))
           traits.push_back(decl->getSymbolRef());
         if (ASTDecl *decl = shared.lookupBuiltinTrait(
                 "Movable", structDecl.getParentDecl(), decorator->getLoc()))
@@ -2710,14 +2711,15 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
     synthesizeTrivialFlagIfNeeded("__moveinit__");
   }
-  if (conformsToTrait("Copyable")) {
+  if (conformsToTrait("ExplicitlyCopyable")) {
+    // TODO: this should synthesize a keyword only copy argument:
+    // __copyinit__(out self, *, copy=others)
     if (!shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
       StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+    // NOTE: We don't need to synthesize copy() here, there should be a default
+    // implementation.
     synthesizeTrivialFlagIfNeeded("__copyinit__");
   }
-  if (conformsToTrait("ExplicitlyCopyable") &&
-      !shared.typeHasMember(structDecl, "copy", structDecl.getLoc()))
-    StructEmitter(structDecl).synthesizeEmptyExplicitCopy(structDecl);
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.

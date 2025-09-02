@@ -6,32 +6,33 @@
 
 # RUN: %parse-mojo-isolated --mojo-disable-builtins -split-input-file -verify-diagnostics %s
 
-
-trait Copyable:
-    fn __copyinit__(out self, other: Self):
-        ...
-
-
 trait Movable:
     fn __moveinit__(out self, deinit other: Self):
         ...
 
 
 trait ExplicitlyCopyable:
-    fn copy(self) -> Self:
+    fn __copyinit__(out self, other: Self):
         ...
+
+    fn copy(self) -> Self:
+        return Self.__copyinit__(self)
+
+
+trait ImplicitlyCopyable(ExplicitlyCopyable):
+    pass
 
 
 # expected-error @below {{only traits may contain an alias without an initializer}}
 alias K: Int
 
 
-struct Int(Copyable, Movable):
+struct Int(ImplicitlyCopyable, Movable):
     fn __init__(out self):
         pass
 
 
-struct Bool(Copyable, Movable):
+struct Bool(ImplicitlyCopyable, Movable):
     fn __init__(out self):
         pass
 

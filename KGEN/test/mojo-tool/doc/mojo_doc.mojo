@@ -756,14 +756,14 @@ struct HMyUnsafePointer[
 # CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = AddressSpace(0)]",
 
 
-struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
+struct HList[T: ImplicitlyCopyable & Movable, hint_trivial_type: Bool = False]:
     # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
     fn __getitem__(ref self, idx: Int) -> ref [self] T:
         pass
 
 
-# FIXME(MOTO-692): This should say `T: Copyable & Movable`.
-# CHECK: "signature": "struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]",
+# FIXME(MOTO-692): This should say `T: ImplicitlyCopyable & Movable`.
+# CHECK: "signature": "struct HList[T: ImplicitlyCopyable & Movable, hint_trivial_type: Bool = False]",
 
 
 # Check that we don't generate any synthesized thunk methods
@@ -810,6 +810,14 @@ struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
 # CHECK-NEXT:     "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "ExplicitlyCopyable",
+# CHECK-NEXT:     "path": "/stdlib/builtin/value/ExplicitlyCopyable"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
+# CHECK-NEXT:     "name": "ImplicitlyCopyable",
+# CHECK-NEXT:     "path": "/stdlib/builtin/value/ImplicitlyCopyable"
+# CHECK-NEXT:   },
+# CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Sized",
 # CHECK-NEXT:     "path": "/stdlib/builtin/len/Sized"
 # CHECK-NEXT:   },
@@ -820,7 +828,7 @@ struct HList[T: Copyable & Movable, hint_trivial_type: Bool = False]:
 # CHECK:  "signature": "struct InMemoryStruct"
 
 
-struct InMemoryStruct(Sized):
+struct InMemoryStruct(ImplicitlyCopyable, Sized):
     fn __init__(out self):
         pass
 
