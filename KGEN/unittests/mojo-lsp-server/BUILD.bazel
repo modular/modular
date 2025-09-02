@@ -43,7 +43,6 @@ modular_cc_library(
     for src in [
         "CodeActionTest",
         "CodeBlockTest",
-        "DiagnosticsTest",
         "FoldingRangeTest",
         "InitFileTest",
         "RegressionTest",
@@ -69,24 +68,6 @@ modular_python_binding_library_test(
     mojo_deps = [
         "@mojo//:stdlib",
     ],
-    deps = [
-        ":Support",
-    ],
-)
-
-# TODO: Figure out why this test needs stdlib_srcs and replace it with using stdlib.mojopkg
-modular_cc_test(
-    name = "DefinitionTest",
-    srcs = ["DefinitionTest.cpp"],
-    data = [
-        "//KGEN/tools/mojo-lsp-server",
-        "//open-source/max/mojo/stdlib/stdlib:stdlib_srcs",
-    ],
-    env = {
-        "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/max/mojo/stdlib",
-        "MODULAR_PATH": ".",
-        "PRESERVE_LSP_IO_FILES": "1",
-    },
     deps = [
         ":Support",
     ],

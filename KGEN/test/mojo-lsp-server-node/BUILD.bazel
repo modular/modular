@@ -28,6 +28,9 @@ ts_project(
     tsconfig = {
         "compilerOptions": {
             "inlineSourceMap": True,
+            "esModuleInterop": True,
+            "strict": True,
+            "forceConsistentCasingInFileNames": True,
         },
     },
     deps = [
