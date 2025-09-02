@@ -81,7 +81,7 @@ comptime words_ar = """
 """
 
 # Source: https://github.com/tkaitchuck/ahash/blob/7d5c661a74b12d5bc5448b0b83fdb429190db1a3/tests/map_tests.rs#L9
-comptime words_en: String = """
+alias words_en = """
     a, ability, able, about, above, accept, according, account, across, act, action,
     activity, actually, add, address, administration, admit, adult, affect, after,
     again, against, age, agency, agent, ago, agree, agreement, ahead, air, all,
@@ -565,7 +565,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+fn gen_word_pairs[words: StaticString = words_en]() -> List[String]:
     """Generates all pairwise combinations of words from a word list.
 
     Parameters:
@@ -574,11 +574,9 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
     Returns:
         List of all word pair combinations as "word1 word2" strings.
     """
-    var result = List[String]()
-    var list = words.split(", ")
-    for w in list:
-        var w1 = String(w.strip())
-        for w in list:
-            var w2 = w.strip()
-            result.append(w1 + " " + w2)
+    var list = words.split(",")
+    var result = List[String](capacity=len(list) ** 2)
+    for w1 in list:
+        for w2 in list:
+            result.append(String(w1.strip(), " ", w2.strip()))
     return result^
