@@ -155,8 +155,8 @@ platform(
     ],
     exec_properties = {
         "OSFamily": "Linux",
-        "Pool": "oci-h100-executors",
-        "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-gpu",
+        "Pool": "h100-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
@@ -177,7 +177,7 @@ platform(
     exec_properties = {
         "OSFamily": "Linux",
         "Pool": "b200-executors",
-        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
