@@ -58,18 +58,21 @@ benchmark_config:
   ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
 
   # Dataset-specific parameters (serving workloads)
+  arxiv_summarization_input_len: 15000
+  obfuscated_conversations_average_output_len: 175
+  obfuscated_conversations_coefficient_of_variation: 0.1
+  obfuscated_conversations_shuffle: false
+  random_coefficient_of_variation: "0.3,0.7"
+  random_distribution_type: "normal"  # choices: uniform, normal
+  random_first_turn_ratio: 1.0
+  random_image_size: ""
+  random_input_len: 1024
+  random_max_num_unique_sys_prompt: 1
+  random_num_turns: 1
+  random_output_len: 128
+  random_sys_prompt_ratio: 0.0
   sonnet_input_len: 550
   sonnet_prefix_len: 200
-  arxiv_summarization_input_len: 15000
-  random_input_len: 1024
-  random_output_len: 128
-  random_coefficient_of_variation: "0.3,0.7"
-  random_image_size: ""
-  random_sys_prompt_ratio: 0.0
-  random_first_turn_ratio: 1.0
-  random_max_num_unique_sys_prompt: 1
-  random_distribution_type: "normal"  # choices: uniform, normal
-  random_num_turns: 1
 
   # Control flags (serving-specific)
   skip_test_prompt: false
@@ -82,4 +85,3 @@ benchmark_config:
   result_dir: null # Directory to save results
   result_filename: null  # Custom filename (auto-generated if null)
   metadata: []  # Key-value pairs for metadata (format: ["key=value", ...])
-  
