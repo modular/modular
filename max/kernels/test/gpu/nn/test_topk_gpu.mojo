@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 from algorithm.reduction import max as reduce_max
@@ -111,6 +112,8 @@ fn test_case_batched[
     ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
     ctx.synchronize()
 
+    var k_lt = K_device_buffer.to_layout_tensor()
+
     @parameter
     if DEBUG_BENCH:
 
@@ -120,12 +123,24 @@ fn test_case_batched[
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
-                device_in.tensor,
-                device_local_topk_vals.tensor,
-                device_local_topk_idxs.tensor,
-                device_out_vals.tensor,
-                device_out_idxs.tensor,
-                k=K_device_buffer.tensor,
+                device_in.to_layout_tensor(),
+                device_local_topk_vals.to_layout_tensor(),
+                device_local_topk_idxs.to_layout_tensor(),
+                device_out_vals.to_layout_tensor(),
+                device_out_idxs.to_layout_tensor(),
+                k=OptionalReg(
+                    LayoutTensor[
+                        K_device_buffer.dtype,
+                        Layout.row_major(UNKNOWN_VALUE),
+                        MutableAnyOrigin,
+                    ](
+                        k_lt.ptr,
+                        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                            k_lt.runtime_layout.shape.value.canonicalize(),
+                            k_lt.runtime_layout.stride.value.canonicalize(),
+                        ),
+                    )
+                ),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -139,12 +154,24 @@ fn test_case_batched[
     _topk_gpu[sampling=sampling, largest=largest](
         ctx,
         max_k,  # max_k
-        device_in.tensor,
-        device_local_topk_vals.tensor,
-        device_local_topk_idxs.tensor,
-        device_out_vals.tensor,
-        device_out_idxs.tensor,
-        k=K_device_buffer.tensor,
+        device_in.to_layout_tensor(),
+        device_local_topk_vals.to_layout_tensor(),
+        device_local_topk_idxs.to_layout_tensor(),
+        device_out_vals.to_layout_tensor(),
+        device_out_idxs.to_layout_tensor(),
+        k=OptionalReg(
+            LayoutTensor[
+                K_device_buffer.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ](
+                k_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                    k_lt.runtime_layout.shape.value.canonicalize(),
+                    k_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
+        ),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -175,6 +202,8 @@ fn test_case_batched[
             DimList(batch_size, K)
         )
 
+        var k_lt = K_host_buffer.to_layout_tensor()
+
         @parameter
         if DEBUG_BENCH:
 
@@ -182,34 +211,55 @@ fn test_case_batched[
             @parameter
             fn run_func_cpu(ctx: DeviceContext) raises:
                 _top_k_cpu[
-                    rank=rank,
                     dtype=dtype,
                     out_idx_type = DType.int64,
                     largest=largest,
                 ](
-                    in_buffer.tensor,
+                    in_buffer.to_layout_tensor(),
                     max_k,
                     rank - 1,
-                    topk_vals_cpu.tensor,
-                    topk_idxs_cpu.tensor,
+                    topk_vals_cpu.to_layout_tensor(),
+                    topk_idxs_cpu.to_layout_tensor(),
                     1,
                     True,
-                    k=K_host_buffer.tensor,
+                    k=OptionalReg(
+                        LayoutTensor[
+                            K_host_buffer.dtype,
+                            Layout.row_major(UNKNOWN_VALUE),
+                            MutableAnyOrigin,
+                        ](
+                            k_lt.ptr,
+                            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                                k_lt.runtime_layout.shape.value.canonicalize(),
+                                k_lt.runtime_layout.stride.value.canonicalize(),
+                            ),
+                        )
+                    ),
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
-        _top_k_cpu[
-            rank=rank, dtype=dtype, out_idx_type = DType.int64, largest=largest
-        ](
-            in_buffer.tensor,
+        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+            in_buffer.to_layout_tensor(),
             max_k,
             rank - 1,
-            topk_vals_cpu.tensor,
-            topk_idxs_cpu.tensor,
+            topk_vals_cpu.to_layout_tensor(),
+            topk_idxs_cpu.to_layout_tensor(),
             1,
             True,
-            k=K_host_buffer.tensor,
+            k=OptionalReg(
+                LayoutTensor[
+                    K_device_buffer.dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ](
+                    k_lt.ptr,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                        k_lt.runtime_layout.shape.value.canonicalize(),
+                        k_lt.runtime_layout.stride.value.canonicalize(),
+                    ),
+                )
+            ),
         )
 
         for i in range(topk_vals.tensor.num_elements()):
@@ -298,13 +348,27 @@ fn test_case_multi_rank[
     ctx.synchronize()
     var max_k = Int(reduce_max(K_host_buffer.tensor))
 
+    var k_lt = K_device_buffer.to_layout_tensor()
+
     topk_gpu[sampling=sampling, largest=largest](
         ctx,
         max_k,
-        device_in.tensor,
-        device_out_vals.tensor,
-        device_out_idxs.tensor,
-        k=K_device_buffer.tensor,
+        device_in.to_layout_tensor(),
+        device_out_vals.to_layout_tensor(),
+        device_out_idxs.to_layout_tensor(),
+        k=OptionalReg(
+            LayoutTensor[
+                K_device_buffer.dtype,
+                Layout.row_major(UNKNOWN_VALUE),
+                MutableAnyOrigin,
+            ](
+                k_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                    k_lt.runtime_layout.shape.value.canonicalize(),
+                    k_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
+        ),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -319,18 +383,29 @@ fn test_case_multi_rank[
     if not sampling:
         var topk_vals_cpu = HostNDBuffer[dtype, rank](out_vals_shape)
         var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
+        var k_lt = K_host_buffer.to_layout_tensor()
 
-        _top_k_cpu[
-            rank=rank, dtype=dtype, out_idx_type = DType.int64, largest=largest
-        ](
-            in_buffer.tensor,
+        _top_k_cpu[dtype=dtype, out_idx_type = DType.int64, largest=largest](
+            in_buffer.to_layout_tensor(),
             max_k,
             rank - 1,
-            topk_vals_cpu.tensor,
-            topk_idxs_cpu.tensor,
+            topk_vals_cpu.to_layout_tensor(),
+            topk_idxs_cpu.to_layout_tensor(),
             1,
             True,
-            k=K_host_buffer.tensor,
+            k=OptionalReg(
+                LayoutTensor[
+                    K_host_buffer.dtype,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    MutableAnyOrigin,
+                ](
+                    k_lt.ptr,
+                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)](
+                        k_lt.runtime_layout.shape.value.canonicalize(),
+                        k_lt.runtime_layout.stride.value.canonicalize(),
+                    ),
+                )
+            ),
         )
 
         for i in range(topk_vals.tensor.num_elements()):
