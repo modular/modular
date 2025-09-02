@@ -672,7 +672,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Returns:
             The string representation of the type.
         """
-        return "DimList(" + String(self) + ")"
+        return String("DimList(", self, ")")
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:

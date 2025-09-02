@@ -67,22 +67,19 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             can be specified to satisfy Mojo type checking.
         """
 
-        alias note_text = " Note: " + note.value() if note else ""
+        alias note_text = String(" Note: ", note.value() if note else "")
+        alias msg = "Current compilation target does not support"
 
         @parameter
         if operation:
             constrained[
                 False,
-                "Current compilation target does not support operation: "
-                + operation.value()
-                + "."
-                + note_text,
+                String(msg, " operation: ", operation.value(), ".", note_text),
             ]()
         else:
             constrained[
                 False,
-                "Current compilation target does not support this operation."
-                + note_text,
+                String(msg, " this operation.", note_text),
             ]()
 
         return os.abort[result]()

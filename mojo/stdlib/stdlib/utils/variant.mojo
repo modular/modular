@@ -87,7 +87,7 @@ struct Variant[*Ts: ExplicitlyCopyable & Movable](
     fn process_data(data: String) -> Result:
         if len(data) == 0:
             return Result(Error("Empty data"))
-        return Result("Processed: " + data)
+        return Result(String("Processed: ", data))
 
     var result = process_data("Hello")
     if result.isa[String]():
