@@ -80,8 +80,10 @@ struct _Enumerate[InnerIteratorType: Iterator](
         self._count += 1
         return count, next(self._inner)
 
-    fn copy(self) -> Self:
-        return Self(self._inner.copy(), start=self._count)
+    # TODO(MOCO-2376): compiler should be able synthesize the following function.
+    fn __copyinit__(out self, other: Self):
+        self._inner = other._inner.copy()
+        self._count = other._count
 
 
 @always_inline

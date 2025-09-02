@@ -17,7 +17,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyPet:
+struct MyPet(Copyable):
     var name: String
     var age: Int
 

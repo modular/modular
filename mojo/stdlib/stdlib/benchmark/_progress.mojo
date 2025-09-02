@@ -55,7 +55,7 @@ fn _end():
     print("\033[0m\r", end="")
 
 
-struct Progress:
+struct Progress(ImplicitlyCopyable):
     """
     Implements a basic progress bar with the following usage.
 
