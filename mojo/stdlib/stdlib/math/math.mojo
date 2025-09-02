@@ -306,7 +306,7 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         @parameter
         if dtype in (DType.float16, DType.float32, DType.float64):
             return _call_amdgcn_intrinsic[
-                "llvm.amdgcn.rsq." + _get_amdgcn_type_suffix[dtype]()
+                String("llvm.amdgcn.rsq.", _get_amdgcn_type_suffix[dtype]())
             ](x)
 
         return isqrt(x.cast[DType.float32]()).cast[dtype]()
@@ -365,7 +365,7 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         @parameter
         if dtype in (DType.float16, DType.float32, DType.float64):
             return _call_amdgcn_intrinsic[
-                "llvm.amdgcn.rcp." + _get_amdgcn_type_suffix[dtype]()
+                String("llvm.amdgcn.rcp.", _get_amdgcn_type_suffix[dtype]())
             ](x)
 
         return recip(x.cast[DType.float32]()).cast[dtype]()
@@ -430,7 +430,7 @@ fn exp2[
     @parameter
     if is_amd_gpu() and dtype in (DType.float16, DType.float32):
         return _call_amdgcn_intrinsic[
-            "llvm.amdgcn.exp2." + _get_amdgcn_type_suffix[dtype]()
+            String("llvm.amdgcn.exp2.", _get_amdgcn_type_suffix[dtype]())
         ](x)
 
     @parameter

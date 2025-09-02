@@ -40,12 +40,12 @@ struct _POpenHandle:
         ]()
 
         if mode != "r" and mode != "w":
-            raise "the mode specified `" + mode + "` is not valid"
+            raise Error("the mode specified `", mode, "` is not valid")
 
         self._handle = popen(cmd.unsafe_cstr_ptr(), mode.unsafe_cstr_ptr())
 
         if not self._handle:
-            raise "unable to execute the command `" + cmd + "`"
+            raise Error("unable to execute the command `", cmd, "`")
 
     fn __del__(deinit self):
         """Closes the handle opened via popen."""

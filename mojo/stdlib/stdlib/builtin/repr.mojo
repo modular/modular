@@ -31,7 +31,9 @@ trait Representable:
         var age: Int
 
         fn __repr__(self) -> String:
-            return "Dog(name=" + repr(self.name) + ", age=" + repr(self.age) + ")"
+            return String(
+                "Dog(name=", repr(self.name), ", age=", repr(self.age), ")"
+            )
 
     var dog = Dog("Rex", 5)
     print(repr(dog))

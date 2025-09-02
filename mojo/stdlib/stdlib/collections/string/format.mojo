@@ -297,12 +297,12 @@ struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
             raise Error("Automatic indexing require more args in *args")
         elif raised_kwarg_field:
             var val = raised_kwarg_field.value()
-            raise Error("Index " + val + " not in kwargs")
+            raise Error("Index ", val, " not in kwargs")
         elif manual_indexing_count and automatic_indexing_count:
             raise Error("Cannot both use manual and automatic indexing")
         elif raised_manual_index:
             var val = String(raised_manual_index.value())
-            raise Error("Index " + val + " not in *args")
+            raise Error("Index ", val, " not in *args")
         elif start:
             raise Error(l_err)
         return entries^, total_estimated_entry_byte_width

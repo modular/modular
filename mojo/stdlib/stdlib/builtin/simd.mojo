@@ -437,7 +437,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             This type's name.
         """
-        return "SIMD[" + repr(dtype) + ", " + repr(size) + "]"
+        return String("SIMD[", repr(dtype), ", ", repr(size), "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -1870,7 +1870,7 @@ struct SIMD[dtype: DType, size: Int](
             The representation of the SIMD value.
         """
         var output = String()
-        output.write("SIMD[" + dtype.__repr__() + ", ", size, "](")
+        output.write("SIMD[", repr(dtype), ", ", size, "](")
         # Write each element.
         for i in range(size):
             var element = self[i]

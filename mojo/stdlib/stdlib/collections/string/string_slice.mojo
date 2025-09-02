@@ -735,9 +735,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     result += s
 
         if use_dquote:
-            return '"' + result + '"'
+            return String('"', result, '"')
         else:
-            return "'" + result + "'"
+            return String("'", result, "'")
 
     @always_inline
     fn __len__(self) -> Int:

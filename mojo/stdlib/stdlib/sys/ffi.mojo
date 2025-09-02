@@ -536,9 +536,7 @@ fn _try_find_dylib[
             # loaded from any of the paths provided.
             pass
 
-    raise Error(
-        String("Failed to load " + dylib_name + " from " + " or ".join(paths))
-    )
+    raise Error("Failed to load ", dylib_name, " from ", " or ".join(paths))
 
 
 fn _try_find_dylib[

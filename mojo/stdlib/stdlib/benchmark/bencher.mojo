@@ -115,11 +115,13 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "\n",
             sep,
             sep,
-            "Couldn't match metric [" + name + "]\n",
+            "Couldn't match metric [",
+            name,
+            "]\n",
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
         for m in metric_list:
-            err += String("    metric: [" + m.name.lower(), "]\n")
+            err += String("    metric: [", m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
         )
@@ -908,7 +910,7 @@ struct Bench(Stringable, Writable):
 
         var full_name = bench_id.func_name
         if bench_id.input_id:
-            full_name += "/" + bench_id.input_id.value()
+            full_name.write("/", bench_id.input_id.value())
 
         if self.config.show_progress:
             print("Running", full_name)

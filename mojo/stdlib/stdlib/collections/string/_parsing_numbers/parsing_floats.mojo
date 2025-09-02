@@ -297,7 +297,7 @@ fn _atof(x: StringSlice) raises -> Float64:
         An floating point value that represents the string, or otherwise raises.
     """
     if x == "" or x == ".":
-        raise Error("String is not convertible to float: " + repr(x))
+        raise Error("String is not convertible to float: ", repr(x))
     stripped = strip_unused_characters(x)
     sign_and_stripped = get_sign(stripped)
     sign = sign_and_stripped[0]
@@ -310,9 +310,7 @@ fn _atof(x: StringSlice) raises -> Float64:
     try:
         w_and_q = _get_w_and_q_from_float_string(stripped)
     except e:
-        raise Error(
-            "String is not convertible to float: " + repr(x) + ". " + String(e)
-        )
+        raise Error("String is not convertible to float: ", repr(x), ". ", e)
     w = w_and_q[0]
     q = w_and_q[1]
 
