@@ -686,7 +686,7 @@ def test_dict_delitem():
     assert_equal(len(dict), 2)
     assert_equal(dict["mojo"], "lang")
 
-    dict.del("mojo")  # del dict["mojo"]
+    dict.delete("mojo")  # del dict["mojo"]
 
     assert_equal(len(dict), 1)
 
