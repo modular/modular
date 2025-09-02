@@ -53,7 +53,6 @@ fn next[
     return iterator.__next__()
 
 
-@fieldwise_init
 struct _Enumerate[InnerIteratorType: Iterator](
     ExplicitlyCopyable, Iterable, Iterator, Movable
 ):
@@ -69,9 +68,9 @@ struct _Enumerate[InnerIteratorType: Iterator](
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
-    fn __init__(out self, var iterator: InnerIteratorType):
+    fn __init__(out self, var iterator: InnerIteratorType, *, start: Int = 0):
         self._inner = iterator^
-        self._count = 0
+        self._count = start
 
     fn __has_next__(self) -> Bool:
         return self._inner.__has_next__()
@@ -82,17 +81,21 @@ struct _Enumerate[InnerIteratorType: Iterator](
         return count, next(self._inner)
 
     fn copy(self) -> Self:
-        return Self(self._inner.copy(), self._count)
+        return Self(self._inner.copy(), start=self._count)
 
 
 @always_inline
 fn enumerate[
     IterableType: Iterable
-](ref iterable: IterableType) -> _Enumerate[
+](ref iterable: IterableType, *, start: Int = 0) -> _Enumerate[
     IterableType.IteratorType[__origin_of(iterable)]
 ]:
     """The `enumerate` function returns an iterator that yields tuples of the
     index and the element of the original iterator.
+
+    Args:
+        iterable: An iterable object (e.g., list, string, etc.).
+        start: The starting index for enumeration (default is 0).
 
     # Examples
     ```mojo
@@ -101,4 +104,4 @@ fn enumerate[
         print(i, elem)
     ```
     """
-    return _Enumerate(iter(iterable))
+    return _Enumerate(iter(iterable), start=start)
