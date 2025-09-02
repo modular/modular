@@ -235,8 +235,8 @@ class GptOssMoE(MoE):
         gate_up_output = gate_up_output + bias_per_token
 
         # Split gate and up projections
-        gate = gate_up_output[:, : self.moe_dim]
-        up = gate_up_output[:, self.moe_dim :]
+        gate = gate_up_output[:, 0::2]
+        up = gate_up_output[:, 1::2]
 
         # Apply clamping (NOTE: This is specific to GptOss)
         gate = ops.min(gate, self.limit)
