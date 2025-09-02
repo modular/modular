@@ -109,7 +109,9 @@ fn test_missing_kw_only_param[x: Index]():
 
 
 # expected-note @below {{declared here}}
-fn missing_keyword_only_params_tricky[a: Index, /, *, b: Index, c: Index = `3`]():
+fn missing_keyword_only_params_tricky[
+    a: Index, /, *, b: Index, c: Index = `3`
+]():
     pass
 
 
@@ -119,7 +121,9 @@ fn test_missing_keyword_only_params_tricky[x: Index]():
 
 
 # expected-note @+1 {{function declared here}}
-fn takes_kw_only_args(a: Index, b: Index, *args: Index, c: Index, d: Index = `2`):
+fn takes_kw_only_args(
+    a: Index, b: Index, *args: Index, c: Index, d: Index = `2`
+):
     pass
 
 
@@ -132,7 +136,7 @@ fn test_missing_keyword_arg_with_vararg_keyword(x: Index):
     takes_kw_only_args(x, x, c=`2`)
 
 
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
@@ -142,26 +146,36 @@ struct MemExample:
 
 fn mutateMem(mut a: MemExample):
     pass
+
+
 fn mutateInt(mut a: Int):
     pass
 
-fn initialize_in_addrspace(memptr: UnsafePointer[MemExample, address_space=AddressSpace(1)],
-                           regptr: UnsafePointer[Int, address_space=AddressSpace(1)]):
+
+fn initialize_in_addrspace(
+    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
     memptr[] = MemExample()
     # ok
     regptr[] = Int()
 
 
-fn mutate_in_addrspace(memptr: UnsafePointer[MemExample, address_space=AddressSpace(1)],
-                       regptr: UnsafePointer[Int, address_space=AddressSpace(1)]):
+fn mutate_in_addrspace(
+    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+):
     # expected-error @+1 {{non-trivial value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
     # ok
     mutateInt(regptr[])
 
-fn variadic_addr_space(memptr: UnsafePointer[MemExample, address_space=AddressSpace(1)],
-                       regptr: UnsafePointer[Int, address_space=AddressSpace(1)]):
+
+fn variadic_addr_space(
+    memptr: UnsafePointer[MemExample, address_space = AddressSpace(1)],
+    regptr: UnsafePointer[Int, address_space = AddressSpace(1)],
+):
     # expected-error @below {{non-trivial value cannot be copied from a non-default address space}}
     pack_func(memptr[])
     # Ok.
@@ -203,7 +217,7 @@ fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
 
 
 @fieldwise_init
-struct MyStruct(Copyable, Movable):
+struct MyStruct(ImplicitlyCopyable, Movable):
     var a: Int
     var b: Int
 
@@ -225,22 +239,28 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
     pass
 
+
 fn take_two_owned[A: AnyType, B: AnyType](var a: A, var b: B):
     pass
 
+
 fn mutate_one_read_one[A: AnyType, B: AnyType](mut a: A, b: B):
     pass
+
 
 fn mutate_two_AnyLifetime(
     ref [MutableAnyOrigin]a: Int, ref [MutableAnyOrigin]b: Int
 ):
     pass
 
-fn mutate_variadic_any[T: AnyType](mut *values: T):
+
+fn mutate_variadic_any[T: AnyType](mut*values: T):
     pass
 
-fn mutate_pack[*Ts: AnyType](mut *strs: *Ts):
+
+fn mutate_pack[*Ts: AnyType](mut*strs: *Ts):
     pass
+
 
 fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # This is ok.
@@ -355,6 +375,8 @@ struct MyRPStruct2:
 
 fn take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
     pass
+
+
 fn rp_exclusivity(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
@@ -363,42 +385,63 @@ fn rp_exclusivity(mut x: MyRPStruct2):
 
 fn take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
     pass
+
+
 fn rp_exclusivity2(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
 
 
-
 # MOCO-1242 - [QoI] Improve error message on trait failure for variadics (e.g. print with Formattable)
 
+
 # expected-note @below {{function declared here}}
-fn my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts): pass
+fn my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts):
+    pass
+
+
 # expected-note @below {{function declared here}}
-fn my_print_single[T: MyWritable](value: T): pass
+fn my_print_single[T: MyWritable](value: T):
+    pass
+
 
 fn test_print_errors(s: MyStruct):
-  # expected-error @below {{invalid call to 'my_print_variadic': could not deduce parameter 'Ts' of callee 'my_print_variadic'}}
-  # expected-note @below {{failed to infer parameter 'Ts', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
-  my_print_variadic(1, s)
+    # expected-error @below {{invalid call to 'my_print_variadic': could not deduce parameter 'Ts' of callee 'my_print_variadic'}}
+    # expected-note @below {{failed to infer parameter 'Ts', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+    my_print_variadic(1, s)
 
-  # expected-error @below {{invalid call to 'my_print_single': could not deduce parameter 'T' of callee 'my_print_single'}}
-  # expected-note @below {{failed to infer parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
-  my_print_single(s)
+    # expected-error @below {{invalid call to 'my_print_single': could not deduce parameter 'T' of callee 'my_print_single'}}
+    # expected-note @below {{failed to infer parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+    my_print_single(s)
+
 
 trait MyWritable:
-  fn method(self):
-     pass
+    fn method(self):
+        pass
+
 
 # Issue #4499: https://github.com/modular/modular/issues/4499
 # Traits with ref self cause issues when used as parameter
 trait MyTrait4499:
-  fn method(ref self): ...
+    fn method(ref self):
+        ...
+
+
 struct MyStruct4499(MyTrait4499):
-  fn method(ref self): pass
+    fn method(ref self):
+        pass
+
+
 struct Owner4499[T: MyTrait4499]:
-  fn __init__(out self): pass
-fn my_func4499(arg0: Owner4499, arg1: Owner4499): pass
+    fn __init__(out self):
+        pass
+
+
+fn my_func4499(arg0: Owner4499, arg1: Owner4499):
+    pass
+
+
 fn test_4499_exclusivity():
     # Should be ok.
     my_func4499(Owner4499[MyStruct4499](), Owner4499[MyStruct4499]())

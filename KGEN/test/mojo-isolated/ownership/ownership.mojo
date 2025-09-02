@@ -9,7 +9,7 @@
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
   var x : Int
   fn __init__(out self): self.x = 42; pass
   fn noop(self): pass
@@ -41,7 +41,7 @@ struct MemPair:
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}@RegExample::@"__del__
 @register_passable
-struct RegExample:
+struct RegExample(ImplicitlyCopyable):
   fn __init__(out self):
     return
 
@@ -258,7 +258,7 @@ fn testCondGetAsUninitializedObject(exit_early: __mlir_type.i1,
 
 
 # CHECK-LABEL: lit.struct.decl @FieldSensitiveMemExample
-struct FieldSensitiveMemExample:
+struct FieldSensitiveMemExample(ImplicitlyCopyable):
   var f1 : MemExample
   var f2 : MemExample
 
@@ -494,7 +494,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
 @register_passable
-struct BigRegExample:
+struct BigRegExample(ImplicitlyCopyable):
   var a: RegExample
   var b: RegExample
 
@@ -703,7 +703,7 @@ struct MemoryNoDtor:
 # https://github.com/modularml/modular/issues/26410
 @fieldwise_init
 @register_passable
-struct RegExampleValue(Copyable):
+struct RegExampleValue(ImplicitlyCopyable):
   var x: RegExample
   fn __init__(out self):
     self.x = RegExample()
@@ -941,14 +941,14 @@ struct HasMemExample:
       pass
 
 @fieldwise_init
-struct Dim(Copyable, Movable):
+struct Dim(ImplicitlyCopyable, Movable):
   var dim: Int
 
 fn maybeDim() raises -> Dim:
    return Dim(3)
 
 @fieldwise_init
-struct List(Copyable, Movable):
+struct List(ImplicitlyCopyable, Movable):
   fn append(self, d: MemExample):
      pass
 
@@ -1027,7 +1027,7 @@ fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExampl
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
+struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Movable]:
     var a: T
     var b: T
 
@@ -1383,7 +1383,7 @@ def origin_of_def_arg(a: String):
 
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
-struct MyParameterizedField[T: Copyable & Movable](Copyable, Movable):
+struct MyParameterizedField[T: ImplicitlyCopyable & Movable](ImplicitlyCopyable, Movable):
   var a: T
   var b: T
 
@@ -1424,7 +1424,7 @@ struct SomeStruct:
     fn __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: Copyable & Movable]:
+struct SomeValue[T: ImplicitlyCopyable & Movable]:
     var value: T
     var name: String
     var tmp: Int

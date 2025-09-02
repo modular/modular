@@ -138,7 +138,7 @@ fn toy(A: String, B: String, mut C: String, mut D: String):
 
 # COM: Ensure multiple references to the same capture result in a single copy
 
-struct MyCopyableType(Copyable):
+struct MyCopyableType(ImplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         pass
 

@@ -7,15 +7,12 @@
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics
 
 
-struct Empty:
+struct Empty(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
-    fn __copyinit__(out self, existing: Self):
-        pass
 
-
-struct MemExample:
+struct MemExample(ImplicitlyCopyable):
     var x: Int
     var y: Int
 
@@ -49,7 +46,7 @@ fn use_inout(mut x: MemExample):
 
 
 @register_passable
-struct RegExample:
+struct RegExample(ImplicitlyCopyable):
     var regstate: Int
 
     fn __init__(out self):
@@ -246,7 +243,7 @@ fn uninitialized_result(c: Bool, out out: MemExample):
 ##===----------------------------------------------------------------------===##
 
 
-struct TwoRegs:
+struct TwoRegs(ImplicitlyCopyable):
     var reg1: RegExample
     var reg2: RegExample
 
@@ -273,7 +270,7 @@ struct TwoRegsRP:
         self.reg2 = existing.reg2
 
 
-struct MoreComplexExample:
+struct MoreComplexExample(ImplicitlyCopyable):
     var mem: MemExample
     var reg: TwoRegs
 
@@ -396,7 +393,7 @@ fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
 # https://github.com/modular/mojo/issues/1535
 @fieldwise_init
-struct NestedInt(Copyable, Movable):
+struct NestedInt(ImplicitlyCopyable, Movable):
     var y: Int
 
 
@@ -407,7 +404,7 @@ struct WrapperNestedInt:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange(Copyable, Iterator):
+struct TrivialRange(ImplicitlyCopyable, Iterator):
     alias Element = Int
 
     fn __iter__(self) -> Self:

@@ -436,7 +436,7 @@ fn test_cond_conformance(exclude: Bool):
 
 # MOCO-1442: Unnecessary copies being generated from owned values in constructors
 @fieldwise_init  # This is copyable, but we don't want to.
-struct Heavy(Copyable, Movable):
+struct Heavy(ImplicitlyCopyable, Movable):
   pass
 
 # This is intended to be a lightweight view of Heavy.

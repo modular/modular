@@ -8,12 +8,8 @@
 # COM: Capture type cannot be moved.
 
 
-struct StringNoMove:
-    fn __copyinit__(out self, existing: Self):
-        pass
-
-    fn __del__(deinit self):
-        pass
+struct StringNoMove(ImplicitlyCopyable):
+    pass
 
 
 fn use(x: StringNoMove):

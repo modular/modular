@@ -6,15 +6,21 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+
 @register_passable("trivial")
 struct SimpleIntRange:
-    fn __init__(out self): pass
+    fn __init__(out self):
+        pass
+
     fn __has_next__(self) -> Bool:
         pass
+
     fn __len__(self) -> Int:
         pass
+
     fn __next__(mut self) -> Int:
         pass
+
     fn __iter__(self) -> Self:
         pass
 
@@ -61,18 +67,24 @@ fn var_let_decls():
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
 
+
 # ===----------------------------------------------------------------------=== #
 # List Literals
 # ===----------------------------------------------------------------------=== #
 
+
 @register_passable("trivial")
 struct IntList:
-   fn __init__(out self, *list_elements: Int, __list_literal__: () = ()): pass
+    fn __init__(out self, *list_elements: Int, __list_literal__: () = ()):
+        pass
 
-   fn append(mut self, value: Int): pass
+    fn append(mut self, value: Int):
+        pass
+
 
 fn inspect(list: List[_]):
     pass
+
 
 # CHECK-LABEL: lit.fn @"test_list_literal
 fn test_list_literal():
@@ -91,14 +103,14 @@ fn test_list_literal():
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
-    var b : IntList = [1, 2, 3]
+    var b: IntList = [1, 2, 3]
 
     # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!Int> = <[]>
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
-    var c : IntList = []
+    var c: IntList = []
 
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!AnyType !FloatDyn>
     inspect([1.0, 2])
@@ -122,7 +134,7 @@ fn test_list_comprehension():
     # CHECK:      lit.call {{.*}}@List::@"append
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
-    var a_collection = [i1*2 for i1 in SimpleIntRange()]
+    var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
     # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType !Int>
     # CHECK: } body {
@@ -135,7 +147,9 @@ fn test_list_comprehension():
     # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %i3
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@List::@"append
-    var b_collection = [i2*i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()]
+    var b_collection = [
+        i2 * i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()
+    ]
 
     # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
@@ -153,19 +167,25 @@ fn test_list_comprehension():
     # CHECK-NEXT: } then {
     # CHECK-NEXT: [[RES:%.*]] = lit.ref.load %i4
     # CHECK-NEXT  lit.call {{.*}}@IntList::@"append{{.*}}(%c_collection, [[RES]])
-    var c_collection : IntList = [i4 for i4 in SimpleIntRange() if i4]
+    var c_collection: IntList = [i4 for i4 in SimpleIntRange() if i4]
 
 
 # ===----------------------------------------------------------------------=== #
 # Dictionary Literals
 # ===----------------------------------------------------------------------=== #
 
+
 struct MyDict[K: Movable, V: AnyType]:
-    fn __init__(out self, var keys: List[K], var values: List[V], __dict_literal__: ()):
+    fn __init__(
+        out self, var keys: List[K], var values: List[V], __dict_literal__: ()
+    ):
         pass
 
+
 struct IntDict:
-    fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: () = ()):
+    fn __init__(
+        out self, keys: IntList, values: IntList, __dict_literal__: () = ()
+    ):
         pass
 
 
@@ -179,17 +199,17 @@ fn test_dict_literal(aBool: Bool):
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[KEYS_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[VALUES_LIST:%.*]]) :
     # CHECK: lit.call {{.*}}@MyDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %b) :
-    var b : MyDict[Int, Bool] = {1: aBool, 2: aBool}
+    var b: MyDict[Int, Bool] = {1: aBool, 2: aBool}
 
     # CHECK: [[KEYS_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
     # CHECK: [[VALUES_LIST:%.*]] = lit.call {{.*}}@IntList::@"__init__
     # CHECK: lit.call {{.*}}@IntDict::@"__init__{{.*}}([[KEYS_LIST]], [[VALUES_LIST]], {{.*}}, %c) :
-    var c : IntDict = {1: 7, 2: 8}
+    var c: IntDict = {1: 7, 2: 8}
 
 
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 fn test_dict_comprehension():
-    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType !Int, :!Copyable_Movable !String>
+    # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@Dict<:!AnyType !Int, :!ImplicitlyCopyable_Movable !String>
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
@@ -203,15 +223,20 @@ fn test_dict_comprehension():
     # CHECK: }
     var a_collection = {i: String() for i in SimpleIntRange()}
 
+
 # ===----------------------------------------------------------------------=== #
 # Set Literals
 # ===----------------------------------------------------------------------=== #
+
 
 struct MySet[T: AnyType]:
     fn __init__(out self, var *values: T, __set_literal__: ()):
         pass
 
-fn param_infer_equal[T: AnyType](a: T, b: T): pass
+
+fn param_infer_equal[T: AnyType](a: T, b: T):
+    pass
+
 
 # CHECK-LABEL: lit.fn @"test_set_literal
 fn test_set_literal():
@@ -230,7 +255,7 @@ fn test_set_literal():
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %b)
-    var b : MySet[Int] = {1, 2}
+    var b: MySet[Int] = {1, 2}
 
 
 # CHECK-LABEL: lit.fn @"test_set_comprehension
@@ -248,88 +273,105 @@ fn test_set_comprehension():
     # CHECK:      lit.call {{.*}}@Set::@"add
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
-    var a_collection = {i1*2 for i1 in SimpleIntRange()}
+    var a_collection = {i1 * 2 for i1 in SimpleIntRange()}
 
 
 # ===----------------------------------------------------------------------=== #
 # Initializer Lists
 # ===----------------------------------------------------------------------=== #
 
+
 struct InitType[T: AnyType]:
     fn __init__(out self, value: T):
         pass
+
     fn __init__(out self, value: T, value2: Int):
         pass
+
 
 # CHECK-LABEL: lit.fn @"test_initializer_list
 fn test_initializer_list():
     # CHECK: [[TMP:%.*]] = lit.ref.immut
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], %a)
-    var a : InitType[Int] = {1}
+    var a: InitType[Int] = {1}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
     # CHECK: [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[TWO]], %b)
-    var b : InitType[Int] = {1, 2}
+    var b: InitType[Int] = {1, 2}
     # CHECK: [[TMP:%.*]] = lit.ref.immut
     # CHECK: [[INT:%.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: lit.call {{.*}}@InitType::@"__init__{{.*}}([[TMP]], [[INT]], %c)
-    var c : InitType[String] = {"foo", 42}
+    var c: InitType[String] = {"foo", 42}
+
 
 # ===----------------------------------------------------------------------=== #
 # Ambiguity for e.g. PythonObject
 # ===----------------------------------------------------------------------=== #
 
+
 # This can be formed with any collection and has its own initializer list too.
 struct AnyCollection:
     fn __init__(out self):
         pass
+
     fn __init__(out self, value: AnyType):
         pass
+
     fn __init__(out self, var *values: Int, __list_literal__: ()):
         pass
+
     fn __init__(out self, var *values: Int, __set_literal__: ()):
         pass
+
     fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
         pass
+
 
 # CHECK-LABEL: lit.fn @"test_any_collection
 fn test_any_collection():
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %a){{.*}}__dict_literal__
-    var a : AnyCollection = {}
+    var a: AnyCollection = {}
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %b){{.*}}__set_literal__
-    var b : AnyCollection = {1}
+    var b: AnyCollection = {1}
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %c){{.*}}__set_literal__
-    var c : AnyCollection = {1, 2}
+    var c: AnyCollection = {1, 2}
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %d){{.*}}__dict_literal__
-    var d : AnyCollection = {1: 2}
+    var d: AnyCollection = {1: 2}
+
 
 # ===----------------------------------------------------------------------=== #
 # Interesting unpack operations
 # ===----------------------------------------------------------------------=== #
 
+
 @register_passable("trivial")
 struct IntPairRange:
-    fn __init__(out self): pass
+    fn __init__(out self):
+        pass
+
     fn __has_next__(self) -> Bool:
         pass
+
     fn __len__(self) -> Int:
         pass
+
     fn __next__(mut self) -> (Int, Int):
         pass
+
     fn __iter__(self) -> Self:
         pass
 
+
 # CHECK-LABEL: lit.fn @"test_unpack
 fn test_unpack():
-    var elts = [a*b for (a,b) in IntPairRange()]
-
+    var elts = [a * b for (a, b) in IntPairRange()]
 
 
 # COM: Check that a list comprehension can be used inside a for loop.
 
 
 @fieldwise_init
-struct IterRange(Copyable, Iterator):
+struct IterRange(ImplicitlyCopyable, Iterator):
     alias Element = Int
 
     var value: Int

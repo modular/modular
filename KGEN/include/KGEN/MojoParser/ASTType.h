@@ -116,9 +116,10 @@ public:
   /// types like Int.  Note: this resolves the body of a struct type.
   bool hasNontrivialDestructor(llvm::SMLoc loc, SharedState &shared) const;
 
-  /// Return true if this type is copyable, either because it is trivial or has
-  /// a copy constructor. Note: this resolves the body of a struct type.
-  bool isCopyable(llvm::SMLoc loc, SharedState &shared) const;
+  /// Return true if this type is implicitly copyable, either because it is
+  /// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
+  /// body of a struct type.
+  bool isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is movable from its own type, either because it
   /// is trivial or has a move constructor from self. Note: this resolves the

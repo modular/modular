@@ -35,7 +35,9 @@ fn invalid_trait_bind():
     alias Bound: FooTrait = ParamType
 
 
-fn different_trait_types[T: Copyable, U: Copyable](x: T) -> U:
+fn different_trait_types[
+    T: ImplicitlyCopyable, U: ImplicitlyCopyable
+](x: T) -> U:
     # expected-error @below {{cannot implicitly convert 'T' value to 'U' in return value}}
     return x
 
@@ -48,13 +50,14 @@ trait SimpleTrait:
 
 
 # expected-error @below {{'TraitStruct' does not implement all requirements for 'MyMovable'}}
-struct TraitStruct(SimpleTrait, MyMovable):
+struct TraitStruct(MyMovable, SimpleTrait):
     fn some_method(self):
         pass
 
 
-fn test_many_things_of_specified_trait[element_type: __type_of(AnyType),
-                                       *element_types: element_type]():
+fn test_many_things_of_specified_trait[
+    element_type: __type_of(AnyType), *element_types: element_type
+]():
     pass
 
 
@@ -73,66 +76,78 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     test_many_things_of_specified_trait[
         SimpleTrait,
         TraitStruct,
-         # This will succeed, the error will be raised when resolving `DoesNotConform`.
+        # This will succeed, the error will be raised when resolving `DoesNotConform`.
         DoesNotConform,
     ]()
+
 
 @register_passable("trivial")
 trait TrivialTrait:
     fn doSomething(self):
         ...
 
+
 trait MemTraitViolation(TrivialTrait):
     fn bar(self):
         ...
+
 
 @register_passable
 trait NonTrivialRGTrait:
     fn bar(self):
         ...
 
+
 # expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
 struct StructViolation1(NonTrivialRGTrait):
     pass
 
+
 # expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
 struct StructViolation2(TrivialTrait):
     pass
+
 
 # expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
 struct StructViolation3(MemTraitViolation):
     fn bar(self):
         pass
 
+
 @explicit_destroy
-trait TFoo():
+trait TFoo:
     fn foo(self):
         ...
 
+
 @fieldwise_init
-struct Bar[T:TFoo]:
+struct Bar[T: TFoo]:
     pass
+
 
 fn bindAnyTraitToTrait():
     # expected-error @+1 {{cannot implicitly convert 'TFoo' type as a value to an instance of 'TFoo' in type parameter; did you mean to instantiate 'TFoo'?}}
     var _list = Bar[TFoo]()
 
-fn anytrait_assignment():
-    # expected-error @below {{cannot implicitly convert 'AnyTrait[Copyable]' value to 'AnyTrait[Movable]' in alias initializer}}
-    alias t: __type_of(Movable) = Copyable
 
+fn anytrait_assignment():
+    # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[Movable]' in alias initializer}}
+    alias t: __type_of(Movable) = ImplicitlyCopyable
 
 
 trait SomeTrait:
     alias A: Int
 
+
 @fieldwise_init
 struct TakeInt[A: Int]:
     pass
 
+
 # expected-note @below {{function declared here}}
 fn take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
     pass
+
 
 fn call_take_two_inferred_params[T: SomeTrait](x: T):
     # expected-error @below {{invalid call to 'take_two_inferred_params': could not deduce parameter 'Size' of callee 'take_two_inferred_params'}}

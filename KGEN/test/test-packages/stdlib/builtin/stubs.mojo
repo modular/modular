@@ -95,7 +95,7 @@ alias KeyElement = ExplicitlyCopyable & Movable
 
 
 @register_passable
-struct Error:
+struct Error(ImplicitlyCopyable):
     fn __init__(out self):
         pass
 
@@ -457,7 +457,7 @@ fn get_static_string[
     return StringLiteral(_get_kgen_string[string, extra]())
 
 
-struct String(Copyable, KeyElement):
+struct String(ImplicitlyCopyable, KeyElement):
     fn __init__(out self):
         pass
 
@@ -537,7 +537,7 @@ struct Slice:
         pass
 
 
-struct List[T: AnyType](Copyable, Movable):
+struct List[T: AnyType](ImplicitlyCopyable, Movable):
     fn __init__(out self, *elements: T, __list_literal__: () = ()):
         pass
 
@@ -586,14 +586,24 @@ trait UnknownDestructibility:
 @explicit_destroy
 trait ExplicitlyDestroyedCopyable:
     fn __copyinit__(out self, existing: Self, /):
-        pass
+        ...
 
 
-trait Copyable:
+trait ExplicitlyCopyable:
     fn __copyinit__(out self, existing: Self, /):
-        pass
+        ...
+
+    fn copy(self) -> Self:
+        return Self.__copyinit__(self)
 
     alias __copyinit__is_trivial: Bool
+
+
+trait ImplicitlyCopyable(ExplicitlyCopyable):
+    pass
+
+
+alias Copyable = ImplicitlyCopyable
 
 
 @explicit_destroy
@@ -607,11 +617,6 @@ trait Movable:
         pass
 
     alias __moveinit__is_trivial: Bool
-
-
-trait ExplicitlyCopyable:
-    fn copy(self) -> Self:
-        ...
 
 
 trait AnyType:
@@ -777,7 +782,7 @@ struct VariadicPack[
 @register_passable
 struct __ParameterClosureCaptureList[
     fn_type: AnyTrivialRegType, fn_ref: fn_type
-]:
+](ImplicitlyCopyable):
     alias type = __mlir_type.`!kgen.pointer<none>`
     var value: Self.type
 
@@ -1003,7 +1008,7 @@ trait Iterator(Movable):
 
 
 fn paramfor_next_iter[
-    IteratorType: Iterator & Copyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter
@@ -1016,7 +1021,7 @@ fn paramfor_next_iter[
 
 
 fn paramfor_next_value[
-    IteratorType: Iterator & Copyable
+    IteratorType: Iterator & Copyable & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter

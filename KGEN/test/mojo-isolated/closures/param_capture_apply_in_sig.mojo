@@ -8,7 +8,7 @@
 
 @fieldwise_init
 @register_passable
-struct Foo[x: Index](Copyable):
+struct Foo[x: Index](ImplicitlyCopyable):
     var b: Index
 
     fn get(self) -> Index:
@@ -21,7 +21,7 @@ struct Foo[x: Index](Copyable):
 
 
 fn alias_ref_apply_in_sig[a: Index, Y: Foo[a]]():
-    #alias Y = Foo[a](__mlir_attr.`2 : index`)
+    # alias Y = Foo[a](__mlir_attr.`2 : index`)
 
     fn p_capture(x: Index, y: Foo[Y.get()]) escaping -> Index:
         return Foo[a](x).get()

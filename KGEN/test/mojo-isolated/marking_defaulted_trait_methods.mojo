@@ -54,6 +54,6 @@ trait Foo:
         return Int()
 
     # CHECK: lit.fn @"bar
-    # CHECK-NOT: defaultedTraitFn
+    # CHECK-SAME: attributes {sourceName = "bar", specialFnKind = 0 : i8}
     fn bar(self, x: Int) capturing raises -> Int:
         ...

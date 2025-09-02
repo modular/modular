@@ -25,7 +25,7 @@ fn memcpy(
         pass
 
 
-struct Data(Stringable):
+struct Data(ImplicitlyCopyable, Stringable):
     var _data: UnsafePointer[Int]
     var _size: Int
 

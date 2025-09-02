@@ -106,7 +106,7 @@ fn test_static_overload():
 # COM: Test that the number of implicit conversions is more important than
 # COM: convention mismatches.
 @register_passable("trivial")
-struct MyElement(Copyable):
+struct MyElement(ImplicitlyCopyable):
     pass
 
 
@@ -116,7 +116,7 @@ struct ConvertibleFromInt:
         pass
 
 
-struct MyContainer[T: Copyable]:
+struct MyContainer[T: ImplicitlyCopyable]:
     var v: T
 
     fn foo(self, limits: ConvertibleFromInt):

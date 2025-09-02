@@ -7,20 +7,20 @@
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
 
-struct X_T(Copyable, Movable):
+struct X_T(ImplicitlyCopyable, Movable):
     pass
 
 
-struct Y_T(Copyable, Movable):
+struct Y_T(ImplicitlyCopyable, Movable):
     pass
 
 
-struct X_N(Copyable, Movable):
+struct X_N(ImplicitlyCopyable, Movable):
     fn __del__(deinit self):
         pass
 
 
-struct X_T_U(Copyable, Movable):
+struct X_T_U(ImplicitlyCopyable, Movable):
     fn __del__(deinit self):
         pass
 
@@ -30,7 +30,9 @@ struct X_T_U(Copyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: Copyable & Movable, Y: Copyable & Movable](Copyable, Movable):
+struct C[X: ImplicitlyCopyable & Movable, Y: ImplicitlyCopyable & Movable](
+    ImplicitlyCopyable, Movable
+):
     var x: X
     var y: Y
 
@@ -41,12 +43,16 @@ struct C[X: Copyable & Movable, Y: Copyable & Movable](Copyable, Movable):
     # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::AnyType", "__del__is_trivial">,
     # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::AnyType", "__del__is_trivial">)
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::Copyable" {
-    # CHECK-NEXT:    kgen.witness "__copyinit__"
-    # CHECK-NEXT:    kgen.witness "__copyinit__is_trivial" : !Bool = {_mlir_value: i1 = cond(
-    # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::Copyable", "__copyinit__is_trivial">)
+    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ExplicitlyCopyable" {
+    # CHECK-NEXT:      kgen.witness "__copyinit__"
+    # CHECK-NEXT:      kgen.witness "copy"
+    # CHECK-NEXT:      kgen.witness "__copyinit__is_trivial" : !Bool = {_mlir_value: i1 = cond(
+    # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::ExplicitlyCopyable", "__copyinit__is_trivial">,
+    # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "stdlib::builtin::stubs::ExplicitlyCopyable", "__copyinit__is_trivial">,
+    # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "stdlib::builtin::stubs::ExplicitlyCopyable", "__copyinit__is_trivial">)
+
+    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
+    # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
     # CHECK-NEXT:    kgen.witness "__moveinit__"
@@ -57,7 +63,7 @@ struct C[X: Copyable & Movable, Y: Copyable & Movable](Copyable, Movable):
 
 
 # CHECK-LABEL: lit.struct.decl @StructMLIRTypeOnly
-struct StructMLIRTypeOnly(Copyable & Movable):
+struct StructMLIRTypeOnly(ImplicitlyCopyable & Movable):
     var x: __mlir_type.index
     var y: __mlir_type.index
 

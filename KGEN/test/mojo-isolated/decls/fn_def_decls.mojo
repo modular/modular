@@ -119,13 +119,13 @@ fn inferred_params_kw_only[x: Index, //, *, y: Index]():
 
 
 @fieldwise_init
-struct MemoryOnly(Copyable, Movable):
+struct MemoryOnly(ImplicitlyCopyable, Movable):
     pass
 
 
 @fieldwise_init
 @register_passable
-struct NonTrivialReg(Copyable):
+struct NonTrivialReg(ImplicitlyCopyable):
     pass
 
 

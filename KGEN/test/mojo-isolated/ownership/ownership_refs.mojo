@@ -16,7 +16,7 @@ fn use_any[*Ts: AnyType](*args: *Ts): pass
 # ===----------------------------------------------------------------------=== #
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample:
+struct MemExample(ImplicitlyCopyable, Movable):
   fn __init__(out self): pass
   fn __moveinit__(out self, deinit existing: Self): pass
   fn __copyinit__(out self, existing: Self): pass
@@ -297,7 +297,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 
 # CHECK-LABEL: lit.fn @"ref_copyability
-fn ref_copyability[*element_types: Copyable](*args: *element_types):
+fn ref_copyability[*element_types: ImplicitlyCopyable](*args: *element_types):
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
   # CHECK: %_x = lit.var.decl
   # CHECK: lit.call[{{.*}}#kgen.get_witness<{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)

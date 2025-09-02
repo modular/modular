@@ -598,7 +598,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     ASTDecl &fieldASTDecl = *fieldEntries[0];
 
     // Verify that this will work so we get a tailored error message.
-    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
+    if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
         !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
       auto diag = emitError(fieldASTDecl.getLoc())
                   << "cannot synthesize fieldwise init because field '"
@@ -786,7 +786,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       return failure();
 
     // Verify that this will work so we get a tailored error message.
-    if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared) &&
+    if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
         !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
       auto diag = emitError(fieldASTDecl.getLoc())
                   << "cannot synthesize " << fn.getSpecialFunctionInfo().name
@@ -888,7 +888,8 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
   // If the struct is copyable, then just generate a call to the copy
   // constructor to reduce code size.
   Value resultToReturn;
-  if (structDecl.getTypeDeclSelf().isCopyable(fnDecl.getLoc(), shared)) {
+  if (structDecl.getTypeDeclSelf().isImplicitlyCopyable(fnDecl.getLoc(),
+                                                        shared)) {
     if (structDeclOp.isRegisterPassableTrivial()) {
       resultToReturn = fn.getArgument(0);
     } else if (structDeclOp.isRegisterPassable()) {
@@ -967,7 +968,7 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
 
   if (!valueInfo->copyinit && !structDeclOp.isRegisterPassableTrivial())
     valueInfo->copyinit = synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
-  addCopyOrMoveBuiltinTrait("Copyable");
+  addCopyOrMoveBuiltinTrait("ImplicitlyCopyable");
 
   if (!valueInfo->moveinit && !structDeclOp.isRegisterPassable())
     valueInfo->moveinit = synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
@@ -979,10 +980,8 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
   // then it doesn't get added, even if it has nothing to do with
   // ExplicitlyCopyable.
   // We should just remove @value.
-  if (!valueInfo->copy) {
+  if (!valueInfo->copy)
     valueInfo->copy = synthesizeEmptyExplicitCopy(structDecl);
-    addCopyOrMoveBuiltinTrait("ExplicitlyCopyable");
-  }
 
   return valueInfo;
 }
@@ -1050,7 +1049,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     if (kind == SpecialFunctionKind::kDel)
       return "AnyType";
     else if (kind == SpecialFunctionKind::kCopyInit)
-      return "Copyable";
+      return "ExplicitlyCopyable"; // TODO: change to Copyable
     return "Movable";
   }();
 

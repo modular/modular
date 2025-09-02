@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-fn marker(): pass
+
+fn marker():
+    pass
+
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 struct Unmovable:
@@ -20,84 +23,89 @@ fn literal_promotion[cond: Bool]():
     # This needs to coerce to the materialization type of float literal
     alias a = 2.0 if cond else 3
 
+
 ##===----------------------------------------------------------------------===##
 # Assignment operator
 ##===----------------------------------------------------------------------===##
+
 
 struct RHSInferenceStruct:
     var field: List[Int]
 
     fn __setitem__(self, value: List[Int]):
-      pass
+        pass
+
 
 # None of these should be ambiguous.
 fn test_rhs_inference():
     var a: List[Int]
-    a = [] # DeclRefNode
-    (a) = [] # ParenNode
+    a = []  # DeclRefNode
+    (a) = []  # ParenNode
 
-    var lf : RHSInferenceStruct
-    (lf).field = [] # AttributeRefNode
+    var lf: RHSInferenceStruct
+    (lf).field = []  # AttributeRefNode
 
-    lf[] = [] # SubscriptNode
+    lf[] = []  # SubscriptNode
 
-    a, lf.field = [], [] # TupleNode
+    a, lf.field = [], []  # TupleNode
+
 
 # CHECK-LABEL: lit.fn @"test_var_decl_patterns
 def test_var_decl_patterns(c: Bool):
-  # CHECK-NEXT: lit.call {{.*}}marker
-  marker()
+    # CHECK-NEXT: lit.call {{.*}}marker
+    marker()
 
-  # Var patterns in a def are emitted inline, not at top of function.
+    # Var patterns in a def are emitted inline, not at top of function.
 
-  # CHECK-NEXT: %x = lit.var.decl "x"
-  # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
-  # CHECK-NEXT: lit.ref.store [[VAL]], %x
-  (var x) = 42
-
-  # This var inside the cond is scoped correctly even though we're in a def.
-  # CHECK: lit.call {{.*}}marker
-  marker()
-
-  # CHECK: hlcf.elif {
-  # CHECK: } then {
-  # CHECK-NEXT: [[X2:%.*]] = lit.var.decl "x"
-  # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
-  # CHECK-NEXT: lit.ref.store [[VAL]], [[X2]]
-  if c:
+    # CHECK-NEXT: %x = lit.var.decl "x"
+    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: lit.ref.store [[VAL]], %x
     (var x) = 42
 
-  # This must load X to add to it.
-  # CHECK: lit.ref.load %x
-  # CHECK: lit.call {{.*}}Int::@"__add__{{.*}}
-  (var _) = x+1
+    # This var inside the cond is scoped correctly even though we're in a def.
+    # CHECK: lit.call {{.*}}marker
+    marker()
 
-  # This should not load X.
-  # CHECK-NOT: lit.ref.load %x
-  (var _) = x
+    # CHECK: hlcf.elif {
+    # CHECK: } then {
+    # CHECK-NEXT: [[X2:%.*]] = lit.var.decl "x"
+    # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+    # CHECK-NEXT: lit.ref.store [[VAL]], [[X2]]
+    if c:
+        (var x) = 42
 
-  var lf : RHSInferenceStruct
-  # expected-warning @+1 {{'var' pattern didn't declare a new variable, it can be removed}}
-  (var lf.field) = []
+    # This must load X to add to it.
+    # CHECK: lit.ref.load %x
+    # CHECK: lit.call {{.*}}Int::@"__add__{{.*}}
+    (var _) = x + 1
 
-  # CHECK: lit.call {{.*}}marker
-  marker()
+    # This should not load X.
+    # CHECK-NOT: lit.ref.load %x
+    (var _) = x
 
-  # CHECK that the var pattern covers both tup1 and tup2
-  # CHECK: lit.var.decl "tup1" var
-  # CHECK-NEXT: lit.var.decl "tup2" var
-  (var tup1, tup2) = 1, 2
+    var lf: RHSInferenceStruct
+    # expected-warning @+1 {{'var' pattern didn't declare a new variable, it can be removed}}
+    (var lf.field) = []
 
-  # Check that trailing commas work.
-  # https://github.com/modular/modular/issues/1649
-  x, x = 1, 2 # worked
-  x, x, = 1, 2 # failed
+    # CHECK: lit.call {{.*}}marker
+    marker()
 
-  # Verify that we stop parsing at the end of the statement - we shouldn't parse
-  # the "fn" as part of the list (a function expression).
-  _ = 1,
-  fn test():
-    pass
+    # CHECK that the var pattern covers both tup1 and tup2
+    # CHECK: lit.var.decl "tup1" var
+    # CHECK-NEXT: lit.var.decl "tup2" var
+    (var tup1, tup2) = 1, 2
+
+    # Check that trailing commas work.
+    # https://github.com/modular/modular/issues/1649
+    x, x = 1, 2  # worked
+    x, x, = 1, 2  # failed
+
+    # Verify that we stop parsing at the end of the statement - we shouldn't parse
+    # the "fn" as part of the list (a function expression).
+    _ = (1,)
+
+    fn test():
+        pass
 
 
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
@@ -145,6 +153,7 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: %r5 = lit.var.decl "r5" ref
     ref r5: Int
 
+
 # CHECK-LABEL: lit.fn @"test_type_patterns
 fn test_type_patterns():
     # Implicitly declared variables go at the top.
@@ -155,7 +164,7 @@ fn test_type_patterns():
     marker()
 
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!Int,
-    (var a) : Int
+    (var a): Int
 
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}int_literal 4>
     # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}UInt8::@"__init__{{.*}}([[TMP]])
@@ -170,16 +179,18 @@ fn test_type_patterns():
     # declare multiple variables at once.
     # CHECK: %d = lit.var.decl "d" var : !lit.ref<!Int,
     # CHECK: %e = lit.var.decl "e" var : !lit.ref<!Int,
-    (var d, e) : (Int, Int)
+    (var d, e): (Int, Int)
 
 
 ##===----------------------------------------------------------------------===##
 # Test return slot optimization
 ##===----------------------------------------------------------------------===##
 
+
 # NOTE: Don't remove this argument, this was defeating return slot opzn.
 fn getUnmovable(a: Unmovable) -> Unmovable:
     return Unmovable()
+
 
 # This can only be codegen'd directly into x.
 # CHECK-LABEL: lit.fn @"testUnmovable
@@ -247,6 +258,7 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
 # in / not in
 ##===----------------------------------------------------------------------===##
 
+
 # CHECK-LABEL: lit.fn @"test_in
 fn test_in(a: String, b: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
@@ -258,41 +270,49 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
 
+
 ##===----------------------------------------------------------------------===##
 # String literals
 ##===----------------------------------------------------------------------===##
 
+
 # CHECK-LABEL: lit.fn @"test_string_literal1
 fn test_string_literal1(cond: Bool):
-  _ = 4
+    _ = 4
 
-  # String literals should be fine at start of expression.
-  # expected-warning @+1 {{'Bool' value is unused}}
-  "a" == "abc"
+    # String literals should be fine at start of expression.
+    # expected-warning @+1 {{'Bool' value is unused}}
+    "a" == "abc"
 
-  # String literals should merge.
-  var _ss: StaticString = "T" if cond else "F"
+    # String literals should merge.
+    var _ss: StaticString = "T" if cond else "F"
+
 
 ##===----------------------------------------------------------------------===##
 # MergeWith
 ##===----------------------------------------------------------------------===##
 
+
 @register_passable("trivial")
 struct TypeA:
     fn __merge_with__[other_type: __type_of(TypeB)](self) -> TypeB:
         pass
+
     fn __merge_with__[other_type: __type_of(TypeC)](self) -> Int:
         pass
+
 
 @register_passable("trivial")
 struct TypeB:
     fn __merge_with__[other_type: __type_of(Int)](self) -> Int:
         pass
 
+
 @register_passable("trivial")
 struct TypeC:
     fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
         pass
+
     fn __merge_with__[other_type: __type_of(TypeD)](self) -> TypeE:
         pass
 
@@ -301,6 +321,7 @@ struct TypeC:
 struct TypeD:
     fn __merge_with__[other_type: __type_of(TypeA)](self) -> Int:
         pass
+
 
 @register_passable("trivial")
 struct TypeE:
@@ -311,45 +332,45 @@ struct TypeE:
 
 # CHECK-LABEL: lit.fn @"test_mergewith
 fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
+    # One merges to the other.
+    _ = a if cond else b
+    # CHECK: hlcf.if %cond
+    # CHECK-NEXT:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
+    # CHECK-NEXT:   hlcf.yield [[ARES]]
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   hlcf.yield %b
+    # CHECK-NEXT: }
 
-  # One merges to the other.
-  _ = a if cond else b
-  # CHECK: hlcf.if %cond
-  # CHECK-NEXT:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
-  # CHECK-NEXT:   hlcf.yield [[ARES]]
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   hlcf.yield %b
-  # CHECK-NEXT: }
+    # This merge with two merge_with
+    _ = a if cond else c
+    # CHECK: hlcf.if %cond
+    # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
+    # CHECK:   hlcf.yield [[ARES]]
+    # CHECK: } else {
+    # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
+    # CHECK:   hlcf.yield [[CRES]]
+    # CHECK: }
 
-  # This merge with two merge_with
-  _ = a if cond else c
-  # CHECK: hlcf.if %cond
-  # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
-  # CHECK:   hlcf.yield [[ARES]]
-  # CHECK: } else {
-  # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
-  # CHECK:   hlcf.yield [[CRES]]
-  # CHECK: }
+    # One merge and one implicit conversion.
+    _ = c if cond else d
+    # CHECK: hlcf.if %cond
+    # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
+    # CHECK:   hlcf.yield [[CRES]]
+    # CHECK: } else {
+    # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeE::@"__init__
+    # CHECK:   hlcf.yield [[ARES]]
+    # CHECK: }
 
-  # One merge and one implicit conversion.
-  _ = c if cond else d
-  # CHECK: hlcf.if %cond
-  # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
-  # CHECK:   hlcf.yield [[CRES]]
-  # CHECK: } else {
-  # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeE::@"__init__
-  # CHECK:   hlcf.yield [[ARES]]
-  # CHECK: }
-
-  # Infer UValues from CValues.
-  # https://github.com/modular/modular/issues/5239
-  _ = Int() if cond else {}
-  _ = {} if cond else Int()
+    # Infer UValues from CValues.
+    # https://github.com/modular/modular/issues/5239
+    _ = Int() if cond else {}
+    _ = {} if cond else Int()
 
 
 ##===----------------------------------------------------------------------===##
 # Chained comparisons.
 ##===----------------------------------------------------------------------===##
+
 
 # CHECK-LABEL: lit.fn @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
@@ -390,6 +411,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: lit.ref.store %[[IF]], %res
     res = a < b < c and d < e
 
+
 # Test chained comparison op in parameter domain for issue
 # https://github.com/modularml/modular/issues/22050
 # CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}{:i1 0}
@@ -402,74 +424,81 @@ alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 
 # CHECK-LABEL: lit.fn @"chainedCmpSemiDyn
 fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
-  # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
-  # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
-  # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
-  # CHECK-NEXT:   [[CMPRESULT1:%.*]] = {{.*}}__lt__{{.*}}([[PV]], %x)
-  # CHECK-NEXT:   [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT1]])
-  # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
-  # CHECK-NEXT:     [[PV:%.*]] = {{.*}}constant{{.*}}105
-  # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
-  # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
-  # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
-  # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
-  # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
-  # CHECK-NEXT:     } else {
-  # CHECK-NEXT:       hlcf.yield [[CMPRESULT2]]
-  # CHECK-NEXT:     }
-  # CHECK-NEXT:     hlcf.yield [[MOSTINNERRESULT]]
-  # CHECK-NEXT:   } else {
-  # CHECK-NEXT:     hlcf.yield [[CMPRESULT1]]
-  # CHECK-NEXT:   }
-  # CHECK-NEXT:   hlcf.yield [[INNERRESULT]]
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
-  # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
-  # CHECK-NEXT: }
-  # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"
-  # CHECK-NEXT: lit.ref.store [[FINALRESULT]], [[XCMP]]
-  var xCmp = 5 < 77 < x < 105 < 177
-  # A fully deep check of this would be a lot of work, but this at least
-  # shows that its not choking during parsing on a mix of dynamic and
-  # parameter comparisons.  It required some care with the interaction
-  # between recursive calls of emitNextCmp calls to get this to work.
-  var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
+    # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+    # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
+    # CHECK-NEXT:   [[CMPRESULT1:%.*]] = {{.*}}__lt__{{.*}}([[PV]], %x)
+    # CHECK-NEXT:   [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT1]])
+    # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+    # CHECK-NEXT:     [[PV:%.*]] = {{.*}}constant{{.*}}105
+    # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
+    # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
+    # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+    # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
+    # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
+    # CHECK-NEXT:     } else {
+    # CHECK-NEXT:       hlcf.yield [[CMPRESULT2]]
+    # CHECK-NEXT:     }
+    # CHECK-NEXT:     hlcf.yield [[MOSTINNERRESULT]]
+    # CHECK-NEXT:   } else {
+    # CHECK-NEXT:     hlcf.yield [[CMPRESULT1]]
+    # CHECK-NEXT:   }
+    # CHECK-NEXT:   hlcf.yield [[INNERRESULT]]
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
+    # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
+    # CHECK-NEXT: }
+    # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"
+    # CHECK-NEXT: lit.ref.store [[FINALRESULT]], [[XCMP]]
+    var xCmp = 5 < 77 < x < 105 < 177
+    # A fully deep check of this would be a lot of work, but this at least
+    # shows that its not choking during parsing on a mix of dynamic and
+    # parameter comparisons.  It required some care with the interaction
+    # between recursive calls of emitNextCmp calls to get this to work.
+    var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
+
 
 ##===----------------------------------------------------------------------===##
 # or/and
 ##===----------------------------------------------------------------------===##
 
+
 # MOCO-1987: Parser error when temporary PythonObject appears in or expression
 @register_passable
-struct RPType(Copyable, Movable):
-  fn __init__(out self): pass
+struct RPType(ImplicitlyCopyable, Movable):
+    fn __init__(out self):
+        pass
 
-  fn __bool__(self) -> Bool:
-      return Bool()
+    fn __bool__(self) -> Bool:
+        return Bool()
+
 
 # CHECK-LABEL: lit.fn @"test_rp_and_or
 fn test_rp_and_or():
-  # Evaluate the LHS, but materialize the rvalue into a memory slot.
+    # Evaluate the LHS, but materialize the rvalue into a memory slot.
 
-  # CHECK-NEXT: [[LHS:%.*]] = lit.call {{.*}}RPType::@"__init__()
-  # CHECK-NEXT: [[TMPMEM:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: lit.ref.store [[LHS]], [[TMPMEM]]
+    # CHECK-NEXT: [[LHS:%.*]] = lit.call {{.*}}RPType::@"__init__()
+    # CHECK-NEXT: [[TMPMEM:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.ref.store [[LHS]], [[TMPMEM]]
 
-  # CHECK-NEXT: [[IMMTMP:%.*]] = lit.ref.immut [[TMPMEM]]
-  # CHECK-NEXT: lit.call {{.*}}RPType::@"__bool__{{.*}}([[IMMTMP]])
-  # CHECK:      hlcf.if
-  # CHECK-NEXT:     [[LHS:%.*]] = lit.load.consume [[TMPMEM]]
-  # CHECK-NEXT:     hlcf.yield [[LHS]] : !RPType
+    # CHECK-NEXT: [[IMMTMP:%.*]] = lit.ref.immut [[TMPMEM]]
+    # CHECK-NEXT: lit.call {{.*}}RPType::@"__bool__{{.*}}([[IMMTMP]])
+    # CHECK:      hlcf.if
+    # CHECK-NEXT:     [[LHS:%.*]] = lit.load.consume [[TMPMEM]]
+    # CHECK-NEXT:     hlcf.yield [[LHS]] : !RPType
 
-  _ = RPType() or RPType()
+    _ = RPType() or RPType()
+
 
 ##===----------------------------------------------------------------------===##
 # Keywords as identifiers
 ##===----------------------------------------------------------------------===##
 
+
 struct MatchExample:
     fn match(self):
         pass
+
 
 fn test_match(a: MatchExample):
     a.match()

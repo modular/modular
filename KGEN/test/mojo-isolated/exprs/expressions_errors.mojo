@@ -104,7 +104,7 @@ fn test_takes_mem_type():
     takes_type(SomeType)
 
 # MOCO-56: Mojo produces weird error when mut function is used in non mutating function
-struct SomethingWithInferredParam[T: Copyable & Movable]:
+struct SomethingWithInferredParam[T: ImplicitlyCopyable & Movable]:
   pass
 # expected-note @+1 {{function declared here}}
 fn SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):
@@ -272,8 +272,8 @@ def testLValuesRvalues() -> None:
   var nc1 = NonCopyable()
   var nc2 = NonCopyable()
 
-  var nc3 = nc1 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
-  var nc4 = nc2 # expected-error {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
+  var nc3 = nc1 # expected-error {{'NonCopyable' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+  var nc4 = nc2 # expected-error {{'NonCopyable' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
 
   var mpPair = MemoryOnlyPair()
 
@@ -624,7 +624,7 @@ def testInExpr(x: Int, y: Int):
 # References and Transfer
 ##===----------------------------------------------------------------------===##
 
-struct CopyAndInitMemType:
+struct CopyAndInitMemType(ImplicitlyCopyable):
   fn __init__(out self): pass
   fn __copyinit__(out self, other: Self): pass
   # expected-note @+1 {{function declared here}}

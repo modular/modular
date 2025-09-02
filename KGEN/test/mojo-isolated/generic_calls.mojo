@@ -12,7 +12,7 @@
 
 @fieldwise_init
 @register_passable
-struct RegPassable(Copyable):
+struct RegPassable(ImplicitlyCopyable):
     pass
 
 

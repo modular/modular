@@ -290,9 +290,10 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
   return structOp.getDestructorAttr() != TypedAttr();
 }
 
-/// Return true if this type is copyable, either because it is trivial or has
-/// a copy constructor. Note: this resolves the body of a struct type.
-bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
+/// Return true if this type is implicitly copyable, either because it is
+/// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
+/// body of a struct type.
+bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR Types are copyable.
@@ -301,8 +302,15 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared) const {
   if (isTrivial(loc, shared))
     return true;
 
-  // Look for a copy constructor.
-  return shared.typeHasMember(*typeDecl, "__copyinit__", loc);
+  // Check whether the type conforms to `ImplicitlyCopyable` trait.
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait("ImplicitlyCopyable", typeDecl,
+                                                 typeDecl->getLoc());
+  if (!traitDecl)
+    return false;
+  auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
+  if (!trait)
+    return false;
+  return typeDecl->doesNominalTypeConformTo(trait.bindReference());
 }
 
 /// Return true if this type is movable from its own type, either because it
@@ -318,6 +326,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
     return true;
 
   // Look for a move constructor.
+  // TODO: this should be changed to trait conformance check as well.
   return shared.typeHasMember(*typeDecl, "__moveinit__", loc);
 }
 
