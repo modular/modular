@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout.int_tuple import fill_like
 
 from utils.index import IndexList
 
@@ -56,19 +56,21 @@ struct Image2DLayout(Copyable, Movable):
 
 @register_passable("trivial")
 struct ImageData[
-    shape: DimList,
+    layout: Layout,
     dtype: DType,
-    static_layout: Image2DLayout,
+    static_image_layout: Image2DLayout,
     origin: MutableOrigin,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: NDBuffer[dtype, 4, origin, shape]
-    var dynamic_layout: Image2DLayout
+    var data: LayoutTensor[dtype, layout, origin]
+    var dynamic_image_layout: Image2DLayout
 
     fn __init__(
-        out self, data: NDBuffer[dtype, 4, origin, shape], layout: Image2DLayout
+        out self,
+        data: LayoutTensor[dtype, layout, origin],
+        layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
 
@@ -76,39 +78,39 @@ struct ImageData[
             data: A 4d buffer containing the actual data.
             layout: Data layout tag.
         """
-        constrained[static_layout == Image2DLayout.UNKNOWN]()
+        constrained[static_image_layout == Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_layout = layout
+        self.dynamic_image_layout = layout
 
-    fn __init__(out self, data: NDBuffer[dtype, 4, origin, shape]):
-        constrained[static_layout != Image2DLayout.UNKNOWN]()
+    fn __init__(out self, data: LayoutTensor[dtype, layout, origin]):
+        constrained[static_image_layout != Image2DLayout.UNKNOWN]()
         self.data = data
-        self.dynamic_layout = static_layout
+        self.dynamic_image_layout = static_image_layout
 
     fn to_static_layout[
-        new_static_layout: Image2DLayout
-    ](self) -> ImageData[shape, dtype, new_static_layout, origin]:
+        new_static_image_layout: Image2DLayout
+    ](self) -> ImageData[layout, dtype, new_static_image_layout, origin]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
 
         Returns:
             The image data with static data layout.
         """
-        constrained[static_layout == Image2DLayout.UNKNOWN]()
-        return ImageData[shape, dtype, new_static_layout](self.data)
+        constrained[static_image_layout == Image2DLayout.UNKNOWN]()
+        return ImageData[layout, dtype, new_static_image_layout](self.data)
 
-    fn get_layout(self) -> Image2DLayout:
+    fn get_image_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
         either statically or dynamically provided information.
 
         Returns:
             The resolved data layout tag for this image instance.
         """
-        if static_layout == Image2DLayout.UNKNOWN:
-            return self.dynamic_layout
-        return static_layout
+        if static_image_layout == Image2DLayout.UNKNOWN:
+            return self.dynamic_image_layout
+        return static_image_layout
 
-    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> IndexList[4]:
+    fn _get_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the general index to the actual index into the underlying
         data based on the tensor layout.
 
@@ -122,11 +124,29 @@ struct ImageData[
             A IndexList containing the index based on the underlying
             data layout.
         """
-        if self.get_layout() == Image2DLayout.NCHW:
-            return IndexList[4](n, c, h, w)
-        if self.get_layout() == Image2DLayout.RSCF:
-            return IndexList[4](h, w, c, n)
-        return IndexList[4](n, h, w, c)
+        if self.get_image_layout() == Image2DLayout.NCHW:
+            return Int(
+                self.data.runtime_layout(
+                    RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
+                        IndexList[4](n, c, h, w)
+                    )
+                )
+            )
+        if self.get_image_layout() == Image2DLayout.RSCF:
+            return Int(
+                self.data.runtime_layout(
+                    RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
+                        IndexList[4](h, w, c, n)
+                    )
+                )
+            )
+        return Int(
+            self.data.runtime_layout(
+                RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
+                    IndexList[4](n, h, w, c)
+                )
+            )
+        )
 
     fn get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying
@@ -168,9 +188,9 @@ struct ImageData[
             return idx
 
         @parameter
-        if static_layout == Image2DLayout.NCHW:
+        if static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
-        elif static_layout == Image2DLayout.NHWC:
+        elif static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
@@ -220,9 +240,9 @@ struct ImageData[
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @parameter
-        if static_layout == Image2DLayout.NCHW:
+        if static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
-        elif static_layout == Image2DLayout.NHWC:
+        elif static_image_layout == Image2DLayout.NHWC:
             return _compute_index_nhwc()
 
         debug_assert(False, "Invalid layout")
@@ -241,7 +261,7 @@ struct ImageData[
         Returns:
             The value stored at the given index position.
         """
-        return self.data[self._get_index(n, c, h, w)]
+        return self.data.ptr[self._get_index(n, c, h, w)]
 
     fn __setitem__(self, n: Int, c: Int, h: Int, w: Int, value: Scalar[dtype]):
         """Writes the underlying data buffer based on the tensor index and under-
@@ -254,7 +274,7 @@ struct ImageData[
             w: Index on the width dimension.
             value: The value to store at the given index position.
         """
-        self.data[self._get_index(n, c, h, w)] = value
+        self.data.ptr[self._get_index(n, c, h, w)] = value
 
     fn num_elements(self) -> Int:
         return self.data.size()
@@ -270,10 +290,10 @@ struct ImageShape(Copyable, Movable):
     var W: Int
 
     fn __init__[
-        shape: DimList,
+        layout: Layout,
         dtype: DType,
-        layout: Image2DLayout,
-    ](out self, image_data: ImageData[shape, dtype, layout]):
+        image_layout: Image2DLayout,
+    ](out self, image_data: ImageData[layout, dtype, image_layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:
@@ -281,13 +301,13 @@ struct ImageShape(Copyable, Movable):
               info from.
         """
 
-        if image_data.get_layout() == Image2DLayout.NCHW:
+        if image_data.get_image_layout() == Image2DLayout.NCHW:
             self.N = image_data.data.dim[0]()
             self.C = image_data.data.dim[1]()
             self.H = image_data.data.dim[2]()
             self.W = image_data.data.dim[3]()
 
-        elif image_data.get_layout() == Image2DLayout.NHWC:
+        elif image_data.get_image_layout() == Image2DLayout.NHWC:
             self.N = image_data.data.dim[0]()
             self.C = image_data.data.dim[3]()
             self.H = image_data.data.dim[1]()
@@ -295,7 +315,8 @@ struct ImageShape(Copyable, Movable):
 
         else:
             debug_assert(
-                image_data.get_layout() == Image2DLayout.RSCF, "Invalid layout"
+                image_data.get_image_layout() == Image2DLayout.RSCF,
+                "Invalid layout",
             )
             self.N = image_data.data.dim[3]()
             self.C = image_data.data.dim[2]()
