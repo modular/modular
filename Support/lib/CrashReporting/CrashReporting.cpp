@@ -25,13 +25,7 @@ static constexpr llvm::StringLiteral kDefaultURL =
     "https://crash-reporting.modular.com";
 
 std::filesystem::path
-M::getCrashDatabasePath(Config *settings,
-                        const std::filesystem::path &dataFolder) {
-  if (settings) {
-    auto path = settings->getValue("crash_reporting.database_path");
-    if (!path.empty())
-      return std::string_view(path);
-  }
+M::getCrashDatabasePath(const std::filesystem::path &dataFolder) {
   return dataFolder / "crashdb";
 }
 
@@ -65,8 +59,7 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Config *settings) {
   auto dataFolderOr = Config::getModularDataFolderPath();
   if (dataFolderOr.isError())
     return dataFolderOr.takeError();
-  std::filesystem::path databasePath =
-      getCrashDatabasePath(settings, *dataFolderOr);
+  std::filesystem::path databasePath = getCrashDatabasePath(*dataFolderOr);
 
   auto handlerPathOr = getCrashpadHandlerPath(settings);
   if (handlerPathOr)

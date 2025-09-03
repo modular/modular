@@ -30,11 +30,9 @@ ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Config *settings);
 
 /// Pick a location to store crash data in.
 ///
-/// Prefers a value from the "crash_reporting.database_path" configuration
-/// option, but will fall back to a "crashdb" directory inside of the modular
-/// home directory.
+/// Returns the "crashdb" directory inside of the modular passed dataPath
 std::filesystem::path
-getCrashDatabasePath(Config *settings, const std::filesystem::path &dataPath);
+getCrashDatabasePath(const std::filesystem::path &dataPath);
 
 /// Initialize crash reporting for currently running executable.
 ///
