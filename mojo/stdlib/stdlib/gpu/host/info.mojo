@@ -772,6 +772,47 @@ alias GTX1080Ti = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# Tesla P100
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_teslap100_target() -> _TargetType:
+    """
+    Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
+
+    Returns:
+        MLIR target configuration for Tesla P100.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_60", `,
+        `features = "+ptx50,+sm_60", `,
+        `tune_cpu = "sm_60", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias TeslaP100 = GPUInfo(
+    name="NVIDIA Tesla P100",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="pascal",
+    compute=6.0,
+    version="sm_60",
+    sm_count=56,
+    warp_size=32,
+    threads_per_sm=2048,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=65536,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # RTX2060
 # ===-----------------------------------------------------------------------===#
 
@@ -1298,6 +1339,8 @@ struct GPUInfo(Stringable, Writable):
         Returns:
             MLIR target configuration for the GPU.
         """
+        if self.name == "NVIDIA Tesla P100":
+            return _get_teslap100_target()
         if self.name == "NVIDIA GeForce GTX 1080 Ti":
             return _get_gtx1080ti_target()
         if self.name == "RTX2060":
@@ -1564,6 +1607,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         in (
             # NVIDIA
             StaticString("cuda"),
+            StaticString("60"),
             StaticString("61"),
             StaticString("75"),
             StaticString("80"),

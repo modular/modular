@@ -307,6 +307,10 @@ language across multiple phases.
 `gfx1151`, and `gfx1152` architectures. Representative configurations have been
 added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
+- Added support for NVIDIA GTX 1080 Ti consumer-grade GPUs.
+
+- Added support for NVIDIA Tesla P100 datacenter GPUs.
+
 - Updated `layout_tensor` copy related functions to support 2D and 3D
   threadblock dimensions.
 
