@@ -44,6 +44,7 @@ from nn.mha_mask import (
     SlidingWindowCausalMask,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
@@ -127,6 +128,7 @@ struct MHAConfig(Copyable, Movable, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
+    var padded_depth: UInt
     var num_queries_per_block: UInt
     var num_keys_per_block: UInt
     var BK: UInt  # tile size in depth dimension
@@ -174,21 +176,21 @@ struct MHAConfig(Copyable, Movable, Writable):
         )
 
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
-        q_size = self.block_m() * self.depth
+        q_size = self.block_m() * self.padded_depth
         num_q = 2 if fa3 and persistent else 1
         return UInt(num_q * q_size)
 
     fn kv_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
-            return self.num_pipeline_stages * self.block_n() * self.depth
+            return self.num_pipeline_stages * self.block_n() * self.padded_depth
         else:
-            return self.block_n() * self.depth
+            return self.block_n() * self.padded_depth
 
     fn k_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
             return self.kv_smem_size(True)
         else:
-            return self.block_n() * self.depth
+            return self.block_n() * self.padded_depth
 
     fn v_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
@@ -255,10 +257,17 @@ struct MHAConfig(Copyable, Movable, Writable):
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
+        padded_depth: OptionalReg[UInt] = None,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
         self.type = type
         self.num_heads = num_heads
         self.depth = depth
+        swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
+        padded_depth_default = (
+            ceildiv(depth, swizzle_granularity) * swizzle_granularity
+        )
+        self.padded_depth = padded_depth.or_else(padded_depth_default)
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(type)
@@ -350,6 +359,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         writer.write(self.block_k(), "x")
         writer.write(self.num_pipeline_stages)
         writer.write(",depth = ", self.depth)
+        writer.write(",padded_depth = ", self.padded_depth)
         writer.write(",num_attention_heads = ", self.num_heads)
 
 

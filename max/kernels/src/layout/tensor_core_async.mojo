@@ -60,6 +60,7 @@ from layout.layout import (
 
 from utils import IndexList, StaticTuple
 from sys._assembly import inlined_assembly
+from collections import OptionalReg
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -739,6 +740,7 @@ struct TensorCoreAsync[
         scale_c: Int = 1,
         scale_a: Int = 1,
         scale_b: Int = 1,
+        num_k_iters: OptionalReg[Int] = None,
     ](
         a_smem_tile: LayoutTensor[
             a_type, _, _, address_space = AddressSpace.SHARED, *_, **_
@@ -760,6 +762,7 @@ struct TensorCoreAsync[
             scale_c: Scale factor for matrix C. Valid values are 1 or 0 (default: 1).
             scale_a: Scale factor for matrix A. Valid values are 1 or -1 (default: 1).
             scale_b: Scale factor for matrix B. Valid values are 1 or -1 (default: 1).
+            num_k_iters: Number of iterations for the K dimension. This is useful to save computation when we pad shared memory. (default: None which is just `a_smem_layout[1].size() // mma_shape[2]`).
 
         Args:
             a_smem_tile: Matrix A in shared memory.
@@ -821,7 +824,7 @@ struct TensorCoreAsync[
 
         alias num_m_mmas = a_canonical_layout[0].size() // mma_shape[0] // num_warp_groups
         alias num_n_mmas = b_canonical_layout[0].size() // mma_shape[1]
-        alias num_k_mmas = a_smem_layout[1].size() // mma_shape[2]
+        alias num_k_mmas = num_k_iters.or_else(a_smem_layout[1].size() // mma_shape[2])
 
         # Number of wgmma per canonical layout. There can be multiple canonical layouts
         # per K dim e.g. BF16 128B swizzle has BK = 64 while input K = 128.
@@ -937,7 +940,13 @@ struct TensorCoreAsync[
         alias b_stride01 = b_canonical_layout[0].stride[1].value()
         alias b_stride11 = b_canonical_layout[1].stride[1].value()
         # Strides between WGMMA tiles
-        constrained[mma_shape[1] % b_shape00 == 0]()
+        constrained[
+            mma_shape[1] % b_shape00 == 0,
+            "b_shape00 = ",
+            String(b_shape00),
+            ", mma_shape[1] = ",
+            String(mma_shape[1]),
+        ]()
         # fmt: off
         alias b_n_stride = b_stride01 * (mma_shape[1] // b_shape00) * size_of[b_type]()
         # K dim is stepped by 2 core matrices.

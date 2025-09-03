@@ -1636,7 +1636,7 @@ fn create_nested_tma_tile[
             String(swizzle_mode.bytes()),
             "B. K dim is now ",
             String(tile_n * size_of[dtype]()),
-            " bytes.",
+            " bytes. tile_m: " + String(tile_m) + " tile_n: " + String(tile_n),
         ]()
 
     res = create_tma_descriptor[dtype, 2, swizzle_mode](

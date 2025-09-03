@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from random import rand
+from random import rand, seed
 from sys import argv, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, H100, GPUInfo, Vendor
+from gpu.host.info import A100, B200, H100, GPUInfo, Vendor
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -145,6 +145,7 @@ fn test[
                         )
 
     else:
+        seed(1234567890)
         rand[qkv_type](q_ptr, q_size)
         rand[qkv_type](k_ptr, k_size)
         rand[qkv_type](v_ptr, v_size)
@@ -365,13 +366,22 @@ fn test[
     flash_output_ptr.free()
 
 
+fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
+    var depths = [64, 128]
+    if info is H100 or info is B200:
+        depths.append(80)
+    return depths
+
+
 fn test_context_encoding(ctx: DeviceContext) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
 
+    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+
     @parameter
-    for d in range(2):
-        alias depth = 64 * (d + 1)
+    for d in range(len(depths)):
+        alias depth = depths[d]
         # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
         test[
             4,
@@ -482,9 +492,11 @@ fn test_decoding[
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
+    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+
     @parameter
-    for d in range(2):
-        alias depth = 64 * (d + 1)
+    for d in range(len(depths)):
+        alias depth = depths[d]
         test[
             3,
             qkv_type,
@@ -558,9 +570,11 @@ fn test_decoding_large_group[
     split_k: Bool = False,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
+    alias depths = test_depth_supported_by_gpu(ctx.default_device_info)
+
     @parameter
-    for d in range(2):
-        alias depth = 64 * (d + 1)
+    for d in range(len(depths)):
+        alias depth = depths[d]
         test[
             4,
             qkv_type,
