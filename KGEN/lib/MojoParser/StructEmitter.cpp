@@ -774,6 +774,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   // Otherwise, memory and register passable values are both passed by-reference
   // so we need to copy/move them fieldwise, invoking the copy/move ctors as
   // appropriate.
+  bool isImplicitlyCopyableStruct =
+      structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
+                                                        shared);
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
 
@@ -786,7 +789,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       return failure();
 
     // Verify that this will work so we get a tailored error message.
-    if (!fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
+    if (!fieldType.isExplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
         !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
       auto diag = emitError(fieldASTDecl.getLoc())
                   << "cannot synthesize " << fn.getSpecialFunctionInfo().name
@@ -799,8 +802,18 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
     CValue src =
         isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-    emitter.emitStoreToLValue({src, SyntheticNode(location)},
-                              MLValue(targetFieldOp), EC_AttributeRefBase);
+
+    // We only systhesize __copyinit__ for `ImplicitlyCopyable` object iff all
+    // its fields are `ImplicitlyCopyable`. That is, we won't synthesize for the
+    // following struct:
+    // ```
+    // struct T(ImplicitlyCopyable):
+    //   var f : some ExplicitlyCopyable
+    // ```
+    emitter.emitStoreToLValue(
+        {src, SyntheticNode(location)}, MLValue(targetFieldOp),
+        EC_AttributeRefBase,
+        /*allowExplicitCopy=*/!isImplicitlyCopyableStruct);
   }
 
   SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());

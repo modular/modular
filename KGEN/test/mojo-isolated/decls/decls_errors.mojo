@@ -902,9 +902,31 @@ struct StructWithoutBody:
 
 @fieldwise_init
 @register_passable
+# TODO(MOCO-2385)
 # expected-error @below {{'StructWithoutBody' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
 struct OkayStruct(ImplicitlyCopyable):
     var begin: StructWithoutBody
+
+
+@fieldwise_init
+@register_passable
+# TODO(MOCO-2385)
+# expected-error @below {{'StructWithoutBody' is not explicitly copyable because it does not conform to 'ExplicitlyCopyable'}}
+struct ExplicitlyCopyableStructWithNonCopyableBody(ExplicitlyCopyable):
+    var begin: StructWithoutBody
+
+
+@register_passable
+struct ExplicitlyCopyableStructWithoutBody(ExplicitlyCopyable):
+    pass
+
+@fieldwise_init
+@register_passable
+# TODO(MOCO-2385)
+# expected-error @below {{'ExplicitlyCopyableStructWithoutBody' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable):
+    var begin: ExplicitlyCopyableStructWithoutBody
+
 
 
 struct CheckImplicit:
