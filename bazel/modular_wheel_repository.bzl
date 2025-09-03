@@ -7,14 +7,29 @@ _PLATFORM_MAPPINGS = {
 }
 
 _WHEELS = [
-    "max",
     "max_core",
     "mojo_compiler",
 ]
 
+PYTHON_VERSIONS = [
+    "39",
+    "310",
+    "311",
+    "312",
+    "313",
+]
+
 def _rebuild_wheel(rctx):
+    for py_version in PYTHON_VERSIONS:
+        rctx.download_and_extract(
+            url = "{base_url}/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
+                base_url = rctx.attr.base_url,
+                version = rctx.attr.version,
+                py = py_version,
+                platform = _PLATFORM_MAPPINGS[rctx.attr.platform],
+            ),
+        )
     for name in _WHEELS:
-        strip_prefix = "" if name == "max" else "{}-{}.data/platlib/".format(name, rctx.attr.version)
         rctx.download_and_extract(
             url = "{}/{}-{}-py3-none-{}.whl".format(
                 rctx.attr.base_url,
@@ -22,7 +37,7 @@ def _rebuild_wheel(rctx):
                 rctx.attr.version,
                 _PLATFORM_MAPPINGS[rctx.attr.platform],
             ),
-            strip_prefix = strip_prefix,
+            strip_prefix = "{}-{}.data/platlib/".format(name, rctx.attr.version),
         )
 
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
