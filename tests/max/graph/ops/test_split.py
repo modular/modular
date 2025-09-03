@@ -65,12 +65,12 @@ def test_split_valid_inputs(
         output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
         assert len(output) == len(split_sizes)
 
-        for output, size in zip(output, split_sizes):  # noqa: B020
+        for output, size in zip(output, split_sizes):  # type: ignore  # noqa: B020
             expected_shape = list(input_type.shape)
             expected_shape[axis] = size
-            assert output.shape == expected_shape
-            assert output.dtype == input_type.dtype
-            assert output.device == input_type.device
+            assert output.shape == expected_shape  # type: ignore
+            assert output.dtype == input_type.dtype  # type: ignore
+            assert output.device == input_type.device  # type: ignore
 
 
 @given(

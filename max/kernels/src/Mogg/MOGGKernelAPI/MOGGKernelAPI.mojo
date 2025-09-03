@@ -60,7 +60,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import IntTuple
+from layout import IntTuple, UNKNOWN_VALUE
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.distributed_matmul import matmul_allreduce
@@ -1825,14 +1825,18 @@ struct StaticReshape:
         ],
     ):
         var view_buffer = reshape(
-            managed_tensor_slice_to_ndbuffer(input),
+            input.to_layout_tensor(),
             shape,
         )
 
         return __type_of(result)(
-            view_buffer.data,
-            view_buffer.get_shape(),
-            view_buffer.get_strides(),
+            view_buffer.ptr,
+            rebind[IndexList[output_rank]](
+                view_buffer.runtime_layout.shape.value.canonicalize()
+            ),
+            rebind[IndexList[output_rank]](
+                view_buffer.runtime_layout.stride.value.canonicalize()
+            ),
         )
 
     @staticmethod
@@ -1876,8 +1880,8 @@ struct Reshape:
         return reshape_shape[
             output_rank=output_rank, single_thread_blocking_override=True
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(shape),
+            input.to_layout_tensor(),
+            shape.to_layout_tensor(),
         )
 
 
@@ -2261,15 +2265,13 @@ struct ArgMax:
                     raise Error("axis other than -1 not supported on GPU")
 
                 # Has no static shape info
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
 
                 # TODO(KERN-1045): Add support for taking advantage of static_shapes
                 var cuda_ctx = ctx.get_device_context()
                 argmax_gpu(
                     cuda_ctx,
-                    input_ndbuffer,
-                    output_ndbuffer,
+                    input.to_layout_tensor(),
+                    output.to_layout_tensor(),
                 )
 
 
@@ -2301,16 +2303,12 @@ struct ArgMin:
                 if axis_val != rank - 1:
                     raise Error("axis other than -1 not supported on GPU")
 
-                # Has no static shape info
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-
                 # TODO(KERN-1045): Add support for taking advantage of static_shapes
                 var cuda_ctx = ctx.get_device_context()
                 argmin_gpu(
                     cuda_ctx,
-                    input_ndbuffer,
-                    output_ndbuffer,
+                    input.to_layout_tensor(),
+                    output.to_layout_tensor(),
                 )
 
 
@@ -3517,11 +3515,11 @@ struct BottomK:
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=False, target=target](
-            managed_tensor_slice_to_ndbuffer(input),
+            input.to_layout_tensor(),
             Int(k),
             Int(axis),
-            managed_tensor_slice_to_ndbuffer(values),
-            managed_tensor_slice_to_ndbuffer(indices),
+            values.to_layout_tensor(),
+            indices.to_layout_tensor(),
             sorted,
             ctx,
         )
@@ -3533,10 +3531,12 @@ struct BottomK:
         axis: Scalar,
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
-        return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            Int(k),
-            Int(axis),
+        return rebind[IndexList[input.rank]](
+            top_k_shape_impl[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
 
 
@@ -3559,11 +3559,11 @@ struct TopK:
     ) raises:
         with Trace[TraceLevel.OP, target=target](_trace_name):
             top_k[largest=True, target=target](
-                managed_tensor_slice_to_ndbuffer(input),
+                input.to_layout_tensor(),
                 Int(k),
                 Int(axis),
-                managed_tensor_slice_to_ndbuffer(values),
-                managed_tensor_slice_to_ndbuffer(indices),
+                values.to_layout_tensor(),
+                indices.to_layout_tensor(),
                 sorted,
                 ctx,
             )
@@ -3575,10 +3575,12 @@ struct TopK:
         axis: Scalar,
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
-        return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            Int(k),
-            Int(axis),
+        return rebind[IndexList[input.rank]](
+            top_k_shape_impl[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                Int(k),
+                Int(axis),
+            )
         )
 
 
@@ -3850,8 +3852,8 @@ struct ResizeNearest:
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
@@ -3886,8 +3888,8 @@ struct ResizeLinear:
         resize_linear[
             CoordinateTransformationMode(coordinate_transform_mode), antialias
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
         )
 
     @staticmethod
@@ -7983,19 +7985,48 @@ struct Struct_fused_token_sampling:
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
-        var K_buf = OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]](
-            managed_tensor_slice_to_ndbuffer(K)
+        var input_buf = input.to_layout_tensor()
+        var out_idxs_buf = out_idxs.to_layout_tensor()
+        var k_lt = K.to_layout_tensor()
+        alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+        var K_buf = OptionalReg(
+            LayoutTensor[DType.int64, layout_1d](
+                k_lt.ptr,
+                RuntimeLayout[layout_1d](
+                    k_lt.runtime_layout.shape.value.canonicalize(),
+                    k_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
         )
-        var temperature_buf = OptionalReg[
-            NDBuffer[DType.float32, 1, MutableAnyOrigin]
-        ](managed_tensor_slice_to_ndbuffer(temperature))
-        var top_p_buf = OptionalReg[
-            NDBuffer[DType.float32, 1, MutableAnyOrigin]
-        ](managed_tensor_slice_to_ndbuffer(top_p))
-        var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
-            managed_tensor_slice_to_ndbuffer(seed)
+        var temp_lt = temperature.to_layout_tensor()
+        var temperature_buf = OptionalReg(
+            LayoutTensor[DType.float32, layout_1d](
+                temp_lt.ptr,
+                RuntimeLayout[layout_1d](
+                    temp_lt.runtime_layout.shape.value.canonicalize(),
+                    temp_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
+        )
+        var top_p_lt = top_p.to_layout_tensor()
+        var top_p_buf = OptionalReg(
+            LayoutTensor[DType.float32, layout_1d](
+                top_p_lt.ptr,
+                RuntimeLayout[layout_1d](
+                    top_p_lt.runtime_layout.shape.value.canonicalize(),
+                    top_p_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
+        )
+        var seed_lt = seed.to_layout_tensor()
+        var seed_buf = OptionalReg(
+            LayoutTensor[DType.uint64, layout_1d](
+                seed_lt.ptr,
+                RuntimeLayout[layout_1d](
+                    seed_lt.runtime_layout.shape.value.canonicalize(),
+                    seed_lt.runtime_layout.stride.value.canonicalize(),
+                ),
+            )
         )
         with Trace[TraceLevel.OP, target=target](_trace_name):
 

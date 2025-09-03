@@ -29,8 +29,8 @@ def test_case_nearest[
     dtype: DType,
 ](input: TestTensor[dtype, rank], output: TestTensor[dtype, rank]):
     resize_nearest_neighbor[coord_transform, round_mode](
-        input.ndbuffer,
-        output.ndbuffer,
+        input.to_managed_tensor_slice().to_layout_tensor(),
+        output.to_managed_tensor_slice().to_layout_tensor(),
     )
 
     for i in range(output.num_elements):
@@ -48,7 +48,10 @@ def test_case_linear[
     output: TestTensor[dtype, rank],
     reference: TestTensor[dtype, rank],
 ):
-    resize_linear[coord_transform, antialias](input.ndbuffer, output.ndbuffer)
+    resize_linear[coord_transform, antialias](
+        input.to_managed_tensor_slice().to_layout_tensor(),
+        output.to_managed_tensor_slice().to_layout_tensor(),
+    )
 
     for i in range(output.num_elements):
         assert_almost_equal(

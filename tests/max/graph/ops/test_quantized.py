@@ -129,7 +129,9 @@ def test_dequantize(
                 (int(n) // encoding.block_size) * encoding.elements_per_block,
             )
             assert out.type == TensorType(
-                DType.float32, expected_shape, base_type.device
+                DType.float32,
+                expected_shape,  # type: ignore
+                base_type.device,
             )
         graph.output(out)
 

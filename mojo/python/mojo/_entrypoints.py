@@ -20,6 +20,14 @@ from ._package_root import get_package_root
 from .run import _mojo_env
 
 
+def _entrypoint(file: str) -> None:
+    root = get_package_root()
+    assert root
+    env = _mojo_env()
+
+    os.execve(root / "bin" / file, sys.argv, env)
+
+
 def exec_mojo() -> None:
     env = _mojo_env()
 
@@ -27,12 +35,8 @@ def exec_mojo() -> None:
 
 
 def exec_lld() -> None:
-    root = get_package_root()
-    assert root
-    os.execv(root / "bin" / "lld", sys.argv)
+    _entrypoint("lld")
 
 
 def exec_modular_crashpad_handler() -> None:
-    root = get_package_root()
-    assert root
-    os.execv(root / "bin" / "modular-crashpad-handler", sys.argv)
+    _entrypoint("modular-crashpad-handler")

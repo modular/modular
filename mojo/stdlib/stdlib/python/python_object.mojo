@@ -604,7 +604,7 @@ struct PythonObject(
     ) raises:
         var callable_obj: PythonObject
         try:
-            callable_obj = self.__getattr__("__i" + method_name[2:])
+            callable_obj = self.__getattr__(String("__i", method_name[2:]))
         except:
             self = self.__getattr__(method_name^)(rhs)
             return

@@ -29,6 +29,7 @@ fn set_and_shift_kernel(
     num_elems: UInt,
     mype: Int32,
     npes: Int32,
+    use_nbi: Bool,
 ):
     var thread_idx = global_idx.x
 
@@ -43,15 +44,23 @@ fn set_and_shift_kernel(
     # one RMA message for every element, and it cannot leverage multiple threads
     # to copy the data to the destination GPU.
 
-    shmem_put[SHMEMScope.block](
-        recv_data + block_offset,
-        send_data + block_offset,
-        min(block_dim.x, num_elems - block_offset),
-        peer,
-    )
+    if use_nbi:
+        shmem_put_nbi[SHMEMScope.block](
+            recv_data + block_offset,
+            send_data + block_offset,
+            min(block_dim.x, num_elems - block_offset),
+            peer,
+        )
+    else:
+        shmem_put[SHMEMScope.block](
+            recv_data + block_offset,
+            send_data + block_offset,
+            min(block_dim.x, num_elems - block_offset),
+            peer,
+        )
 
 
-def main():
+fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     alias num_elems: UInt = 8192
     alias threads_per_block: UInt = 1024
     debug_assert(
@@ -59,8 +68,6 @@ def main():
         "num_elems must be divisible by threads_per_block",
     )
     alias num_blocks = num_elems // threads_per_block
-
-    var ctx = SHMEMContext()
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
@@ -76,6 +83,7 @@ def main():
         num_elems,
         mype,
         npes,
+        use_nbi,
         grid_dim=num_blocks,
         block_dim=threads_per_block,
     )
@@ -83,6 +91,8 @@ def main():
     var host = ctx.enqueue_create_host_buffer[DType.float32](num_elems)
     recv_data.enqueue_copy_to(host)
 
+    # The completion of the non-blocking version of `shmem_put` is
+    # guaranteed by the `nvshmem_barrier_all_on_stream` call.
     ctx.barrier_all()
     ctx.synchronize()
 
@@ -96,4 +106,13 @@ def main():
             String("unexpected value on PE: ", mype, " at idx: ", i),
         )
 
-    print("[", mype, "of", npes, "] run complete")
+    print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
+
+
+def main():
+    with SHMEMContext() as ctx:
+        test_shmem_put[False](ctx)
+
+        # Test the non-blocking version of `shmem_put` primitive, which returns
+        # after initiating the operation.
+        test_shmem_put[True](ctx)

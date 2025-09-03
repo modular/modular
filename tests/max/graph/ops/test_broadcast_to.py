@@ -36,7 +36,7 @@ def test_broadcast_to_shape_attr(input_shapes: list[ShapeLike]) -> None:
     """Tests broadcast_to with a shape attribute."""
     from_shape, to_shape = _sorted_by_rank(*input_shapes)
     assume(from_shape and to_shape)
-    to_shape = broadcast_shapes(from_shape, to_shape)
+    to_shape = broadcast_shapes(from_shape, to_shape)  # type: ignore
 
     graph = Graph(
         "broadcast_to_shape_attr",

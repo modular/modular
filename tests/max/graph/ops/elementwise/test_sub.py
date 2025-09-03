@@ -29,7 +29,7 @@ def test_sub__same_type(tensor_type: TensorType) -> None:
 @given(tensor_type=...)
 def test_sub__same_type__operator(tensor_type: TensorType) -> None:
     with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
-        op = graph.inputs[0] - graph.inputs[1]
+        op = graph.inputs[0] - graph.inputs[1]  # type: ignore
         assert op.type == tensor_type
 
 
@@ -43,9 +43,9 @@ def test_sub__promoted_dtype__operator(
     with Graph("sub", input_types=[t1, t2]) as graph:
         i0, i1 = graph.inputs
         try:
-            assert (i0 - i1).dtype in (d1, d2)
-            assert (i1 - i0).dtype in (d1, d2)
-            assert (i0 - i1).type == (i1 - i0).type
+            assert (i0 - i1).dtype in (d1, d2)  # type: ignore
+            assert (i1 - i0).dtype in (d1, d2)  # type: ignore
+            assert (i0 - i1).type == (i1 - i0).type  # type: ignore
             event("types promote")
         except ValueError as e:
             assert "Unsafe cast" in str(e)
@@ -58,12 +58,12 @@ def test_sub__broadcast__operator(types: list[TensorType]) -> None:
     broadcast_shape = broadcast_shapes(t1.shape, t2.shape)
     with Graph("sub", input_types=[t1, t2]) as graph:
         i0, i1 = graph.inputs
-        assert (i0 - i1).shape == broadcast_shape
-        assert (i1 - i0).shape == broadcast_shape
+        assert (i0 - i1).shape == broadcast_shape  # type: ignore
+        assert (i1 - i0).shape == broadcast_shape  # type: ignore
 
 
 @given(tensor_type=...)
 def test_sub__python_int__operator(tensor_type: TensorType) -> None:
     with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
-        op = graph.inputs[0] - 1
-        assert op.type == tensor_type
+        op = graph.inputs[0] - 1  # type: ignore
+        assert op.type == tensor_type  # type: ignore

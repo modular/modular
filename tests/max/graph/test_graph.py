@@ -66,7 +66,7 @@ def test_elementwise_add_graph() -> None:
             )
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + 1)
+        graph.output(graph.inputs[0] + 1)  # type: ignore
 
 
 def test_elementwise_add_graph_with_device_prop() -> None:
@@ -86,7 +86,7 @@ def test_elementwise_add_graph_with_device_prop() -> None:
             ),
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + graph.inputs[1])
+        graph.output(graph.inputs[0] + graph.inputs[1])  # type: ignore
         # Ensure input tensor has cuda
         for input in graph.inputs:
             assert "gpu" in str(input)
@@ -108,7 +108,7 @@ def test_transpose_graph_with_device_prop() -> None:
             )
         ],
     ) as graph:
-        graph.output(ops.transpose(graph.inputs[0], -1, -2))
+        graph.output(ops.transpose(graph.inputs[0], -1, -2))  # type: ignore
         for input in graph.inputs:
             assert "gpu" in str(input)
         assert " -> !mo.tensor<[channels, batch], f32, gpu:0>" in str(
@@ -128,8 +128,8 @@ def test_location() -> None:
         loc = foo()
 
         frames = _graph.get_frame(loc)
-        assert "foo" == frames[-1].name
-        assert "test_location" == frames[-2].name
+        assert "foo" == frames[-1].name  # type: ignore
+        assert "test_location" == frames[-2].name  # type: ignore
 
 
 def test_location_no_stack() -> None:
@@ -216,7 +216,7 @@ def test_parfor() -> None:
 
         with Graph._async_region() as parallel:
             for buffer in parallel.each(buffers):
-                ops.buffer_store(buffer, tensor)
+                ops.buffer_store(buffer, tensor)  # type: ignore
 
         graph.output()
 
@@ -241,9 +241,9 @@ def test_fork_join() -> None:
         with Graph._async_region() as parallel:
             for buffer in buffers[:-1]:
                 with parallel:
-                    ops.buffer_store(buffer, tensor)
+                    ops.buffer_store(buffer, tensor)  # type: ignore
 
-            ops.buffer_store(buffers[-1], tensor)
+            ops.buffer_store(buffers[-1], tensor)  # type: ignore
 
         graph.output()
 

@@ -1,0 +1,19 @@
+diff --git a/python/private/py_wheel.bzl b/python/private/py_wheel.bzl
+index e6352efc..79ae9b4f 100644
+--- a/python/private/py_wheel.bzl
++++ b/python/private/py_wheel.bzl
+@@ -516,10 +516,13 @@ def _py_wheel_impl(ctx):
+                     filename,
+                 ),
+             )
++
++        final_filename = filename + target_files[0].basename if filename.endswith("/") else filename
++
+         other_inputs.extend(target_files)
+         args.add(
+             "--data_files",
+-            filename + ";" + target_files[0].path,
++            final_filename + ";" + target_files[0].path,
+         )
+ 
+     ctx.actions.run(

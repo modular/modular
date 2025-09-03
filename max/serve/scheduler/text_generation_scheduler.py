@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import logging
-import queue
 import time
 from typing import Union
 
@@ -29,7 +28,7 @@ from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Tracer, traced
+from max.profiler import Tracer
 from max.serve.config import Settings
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -129,34 +128,15 @@ class TokenGenerationScheduler(Scheduler):
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
 
-        # handle cancelled requests
+        self._handle_cancelled_requests()
+
+    def _handle_cancelled_requests(self) -> None:
         release_cancelled_requests(
             self.cancel_q,
             self.response_q,
             self.batch_constructor.tg_reqs,
             self.pipeline,
         )
-
-    @traced
-    def _handle_cancelled_requests(self) -> None:
-        """Handle cancelled requests"""
-        if not self.scheduler_config.enable_chunked_prefill:
-            return
-
-        while True:
-            try:
-                req_ids = self.cancel_q.get_nowait()
-            except queue.Empty:
-                break
-            for req_id in req_ids:
-                if req_id not in self.batch_constructor.tg_reqs:
-                    continue
-                self.pipeline.release(req_id)
-                del self.batch_constructor.tg_reqs[req_id]
-
-                self.response_q.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
-                )
 
     def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0

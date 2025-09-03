@@ -37,7 +37,7 @@ what we publish.
           ...
 
       fn __ne__(self, other: Self) -> Bool:
-          return not self.__eq__(other)
+          return not self == other
 
   @value
   struct Point(EqualityComparable):
@@ -283,23 +283,20 @@ language across multiple phases.
   ```
 
 - Deprecated the following functions with `flatcase` names in `sys.info`:
-  - `simdbitwidth`
-  - `simdbytewidth`
-  - `sizeof`
   - `alignof`
   - `bitwidthof`
-  - `bitwidthof`
+  - `simdbitwidth`
+  - `simdbytewidth`
   - `simdwidthof`
-  - `simdwidthof`
+  - `sizeof`
+
   in favor of `snake_case` counterparts, respectively:
-  - `simd_bit_width`
-  - `simd_byte_width`
-  - `size_of`
   - `align_of`
   - `bit_width_of`
-  - `bit_width_of`
+  - `simd_bit_width`
+  - `simd_byte_width`
   - `simd_width_of`
-  - `simd_width_of`
+  - `size_of`
 
 - Added support for AMD RX 6900 XT consumer-grade GPU.
 

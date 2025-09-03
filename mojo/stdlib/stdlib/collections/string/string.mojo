@@ -84,7 +84,7 @@ from collections.string.string_slice import (
 )
 from hashlib.hasher import Hasher
 from os import PathLike, abort
-from os.atomic import Atomic
+from os.atomic import Atomic, Consistency, fence
 from sys import bit_width_of, size_of
 from sys.info import is_32bit
 from sys.ffi import c_char
@@ -113,8 +113,8 @@ struct String(
     ConvertibleFromPython,
     ConvertibleToPython,
     Defaultable,
-    ExplicitlyCopyable,
     FloatableRaising,
+    ImplicitlyCopyable,
     IntableRaising,
     KeyElement,
     PathLike,
@@ -640,7 +640,11 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return self._refcount().load() == 1
+            # TODO: use `load[MONOTONIC]` once load supports memory orderings.
+            return (
+                self._refcount().fetch_sub[ordering = Consistency.MONOTONIC](0)
+                == 1
+            )
         else:
             return False
 
@@ -648,7 +652,9 @@ struct String(
     fn _add_ref(mut self):
         """Atomically increment the refcount."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            _ = self._refcount().fetch_add(1)
+            # See `ArcPointer`'s refcount implementation for more details on the
+            # use of memory orderings.
+            _ = self._refcount().fetch_add[ordering = Consistency.MONOTONIC](1)
 
     @always_inline("nodebug")
     fn _drop_ref(mut self):
@@ -658,7 +664,8 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.index]]()
-            if refcount[].fetch_sub(1) == 1:
+            if refcount[].fetch_sub[ordering = Consistency.RELEASE](1) == 1:
+                fence[Consistency.ACQUIRE]()
                 ptr.free()
 
     @staticmethod
@@ -1997,9 +2004,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return '"' + result + '"'
+        return String('"', result, '"')
     else:
-        return "'" + result + "'"
+        return String("'", result, "'")
 
 
 # ===----------------------------------------------------------------------=== #

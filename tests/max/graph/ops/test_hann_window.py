@@ -111,7 +111,7 @@ def test_hann_window_non_integer_length_raises(graph_builder) -> None:  # noqa: 
     with pytest.raises(TypeError):
         with graph_builder(input_types=[]) as graph:
             ops.hann_window(
-                window_length=5.5,  # float instead of int
+                window_length=5.5,  # type: ignore  # float instead of int
                 device=DeviceRef.CPU(),
                 periodic=True,
                 dtype=DType.float32,
@@ -125,7 +125,7 @@ def test_hann_window_non_integer_length_error_message(graph_builder) -> None:  #
     ):
         with graph_builder(input_types=[]) as graph:
             ops.hann_window(
-                window_length=5.5,
+                window_length=5.5,  # type: ignore
                 device=DeviceRef.CPU(),
                 periodic=True,
                 dtype=DType.float32,

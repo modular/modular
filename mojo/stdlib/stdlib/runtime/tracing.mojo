@@ -330,7 +330,7 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     Returns:
         A string representation of the argument with its shape and data type.
     """
-    return trace_arg(name, shape) + "x" + String(dtype)
+    return String(trace_arg(name, shape), "x", dtype)
 
 
 @always_inline
@@ -440,7 +440,7 @@ struct Trace[
             if target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += "target=" + target.value()
+                self.detail += String("target=", target.value())
             self.int_payload = task_id
         else:
             self._name_value = StaticString("")
@@ -548,8 +548,10 @@ struct Trace[
                 # registration.
                 self.event_id = Int(
                     _start_gpu_range(
-                        message=self.name()
-                        + (("/" + self.detail) if self.detail else ""),
+                        message=String(
+                            self.name(),
+                            (String("/", self.detail) if self.detail else ""),
+                        ),
                         category=Int(category),
                         color=self.color,
                     )
@@ -657,7 +659,7 @@ struct Trace[
             @parameter
             if _gpu_is_enabled_details():
                 if self.detail:
-                    message += "/" + self.detail
+                    message += String("/", self.detail)
 
             _mark_gpu(message=message)
 

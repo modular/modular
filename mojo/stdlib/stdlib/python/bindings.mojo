@@ -209,7 +209,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
     if self.is_initialized:
         repr_str = repr(self.mojo_value)
     else:
-        repr_str = "<uninitialized " + get_type_name[T]() + ">"
+        repr_str = String("<uninitialized ", get_type_name[T](), ">")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 

@@ -3,7 +3,6 @@ load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":lib_toolchain.bzl", "lib_toolchain")
 
 exports_files([
-    "asan-suppressions.txt",
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])

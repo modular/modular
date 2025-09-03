@@ -76,8 +76,8 @@ def test_fence_variadic_returns_list_ordered() -> None:
     ) as graph:
         x, y = graph.inputs
         # Create distinct values to track ordering.
-        x2 = ops.mul(x, 2.0)  # x * 2
-        y3 = ops.mul(y, 3.0)  # y * 3
+        x2 = ops.mul(x, 2.0)  # x * 2  # type: ignore
+        y3 = ops.mul(y, 3.0)  # y * 3  # type: ignore
 
         # Fence multiple values.
         result = ops.fence(x2, y3)

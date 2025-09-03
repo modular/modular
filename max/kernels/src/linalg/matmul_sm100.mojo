@@ -75,6 +75,7 @@ from layout.tma_async import (
 )
 from linalg.mmaop_sm100 import MmaOpSM100_SS
 from linalg.matmul_tile_scheduler_sm100 import TileScheduler, WorkInfo
+from linalg.matmul_tile_scheduler import RasterOrder
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -253,6 +254,7 @@ fn consumer_main_loop[
     *,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
+    stage_stride_cols: UInt,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ](
@@ -294,7 +296,6 @@ fn consumer_main_loop[
     elect_one_warp: Bool,
     iter_idx: UInt,
     accum_index: UInt,
-    stage_stride_cols: UInt,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -360,6 +361,7 @@ fn multi_stage_store_C[
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
+    stage_stride_cols: UInt,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: UInt = 4,
@@ -383,7 +385,6 @@ fn multi_stage_store_C[
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
-    stage_stride_cols: UInt,
 ):
     # WAIT FOR MMA TO FINISH AND STORE RESULT
     # scheduler fetch next work
@@ -805,6 +806,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
+    block_swizzle_size: Int = 8,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
@@ -825,8 +828,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     )
 
     # For ld from TMEM, use same per-stage stride in column field.
-    alias TMEM_N = 512
-    var stage_stride_cols = TMEM_N // num_accum_pipeline_stages
+    alias NUM_TMEM_COLS = 512
+    alias stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -1033,6 +1036,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         cluster_shape = Index[dtype = DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
+        block_swizzle_size=block_swizzle_size,
+        rasterize_order=rasterize_order,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
 
     var work_info = scheduler.initial_work_info()
@@ -1175,6 +1180,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
+                        stage_stride_cols=stage_stride_cols,
                         cta_group=cta_group,
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
@@ -1190,7 +1196,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         elect_one_warp,
                         i,
                         accum_index,
-                        stage_stride_cols,
                     )
                     consumer_phase.step()
 
@@ -1221,6 +1226,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
+                stage_stride_cols=stage_stride_cols,
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1234,7 +1240,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 tmem_addr,
                 work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                 elect_one_warp=elect_one_warp,
-                stage_stride_cols=stage_stride_cols,
             )
             accum_pipeline_consumer_state.step()
 
@@ -1260,6 +1265,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
+    block_swizzle_size: Int = 8,
+    rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1411,6 +1418,8 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         num_accum_pipeline_stages=max_accum_pipeline_stages,
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
+        block_swizzle_size=block_swizzle_size,
+        rasterize_order=rasterize_order,
     ]
 
     var grid_dim = (

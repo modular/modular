@@ -214,21 +214,21 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Ignore the first turn statistics in multiturn chat sessions."""
 
     # Dataset-specific parameters (serving workloads)
+    arxiv_summarization_input_len: int = 15000
+    obfuscated_conversations_average_output_len: int = 175
+    obfuscated_conversations_coefficient_of_variation: float = 0.1
+    obfuscated_conversations_shuffle: bool = False
+    random_coefficient_of_variation: str = "0.3,0.7"
+    random_distribution_type: str = "normal"  # choices: uniform, normal
+    random_first_turn_ratio: float = 1.0
+    random_image_size: str = ""
+    random_input_len: int = 1024
+    random_max_num_unique_sys_prompt: int = 1
+    random_num_turns: int = 1
+    random_output_len: int = 128
+    random_sys_prompt_ratio: float = 0.0
     sonnet_input_len: int = 550
     sonnet_prefix_len: int = 200
-    arxiv_summarization_input_len: int = 15000
-    random_input_len: int = 1024
-    random_output_len: int = 128
-    random_coefficient_of_variation: str = "0.3,0.7"
-    random_image_size: str = ""
-    random_sys_prompt_ratio: float = 0.0
-    random_first_turn_ratio: float = 1.0
-    random_max_num_unique_sys_prompt: int = 1
-    random_distribution_type: str = "normal"  # choices: uniform, normal
-    random_num_turns: int = 1
-    obfuscated_conversations_coefficient_of_variation: float = 0.1
-    obfuscated_conversations_average_output_len: int = 175
-    obfuscated_conversations_shuffle: bool = False
 
     # Control flags (serving-specific)
     skip_test_prompt: bool = False
@@ -283,18 +283,18 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
             "arxiv_summarization_input_len": "Number of input tokens per request, used only for arxiv-summarization dataset.",
-            "random_input_len": "Number of input tokens per request, used only for random sampling.",
-            "random_output_len": "Number of output tokens per request, used only for random sampling.",
-            "random_coefficient_of_variation": "Coefficient of variation for input/output length, used only for random sampling.",
-            "random_image_size": "Size of random images to generate.",
-            "random_sys_prompt_ratio": "Ratio to determine the system prompt length, used only for random sampling.",
-            "random_first_turn_ratio": "Ratio of the length of the first turn to the length of subsequent turns.",
-            "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
-            "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal",
-            "random_num_turns": "Number of turns per session, used only for random sampling and --num-chat-sessions.",
-            "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
+            "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
             "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
+            "random_coefficient_of_variation": "Coefficient of variation for input/output length, used only for random sampling.",
+            "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal",
+            "random_first_turn_ratio": "Ratio of the length of the first turn to the length of subsequent turns.",
+            "random_image_size": "Size of random images to generate.",
+            "random_input_len": "Number of input tokens per request, used only for random sampling.",
+            "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
+            "random_num_turns": "Number of turns per session, used only for random sampling and --num-chat-sessions.",
+            "random_output_len": "Number of output tokens per request, used only for random sampling.",
+            "random_sys_prompt_ratio": "Ratio to determine the system prompt length, used only for random sampling.",
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "server_args": "Server arguments string.",

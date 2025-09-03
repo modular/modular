@@ -128,11 +128,11 @@ def test_range_tensor_inputs() -> None:
     ) as graph:
         start, stop, step = graph.inputs
         out = ops.range(
-            start,
-            stop,
-            step,
+            start,  # type: ignore
+            stop,  # type: ignore
+            step,  # type: ignore
             out_dim=10,
-            dtype=start.dtype,
+            dtype=start.dtype,  # type: ignore
             device=DeviceRef.CPU(),
         )
         graph.output(out)
@@ -278,7 +278,10 @@ def test_range_missing_out_dim_with_dynamic_inputs() -> None:
         ) as graph:
             start_val = graph.inputs[0]  # Dynamic input
             out = ops.range(
-                start_val, 5, dtype=DType.int32, device=DeviceRef.CPU()
+                start_val,  # type: ignore
+                5,
+                dtype=DType.int32,
+                device=DeviceRef.CPU(),
             )
             graph.output(out)
 

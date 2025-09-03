@@ -43,7 +43,7 @@ fn _fill[
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
-struct _NestedLoopIter[n_loops: Int]:
+struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable):
     """
     Helper iterable for padding functions meant to represent an n-level loop nest of
     the form:

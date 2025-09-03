@@ -27,9 +27,9 @@ def test_tensor_prints(
     with Graph("print_tensors", input_types=[input_type]) as graph:
         out = graph.inputs[0]
         chain_0 = graph._current_chain
-        out.print(label1)
+        out.print(label1)  # type: ignore
         chain_1 = graph._current_chain
-        out.print(label2)
+        out.print(label2)  # type: ignore
         chain_2 = graph._current_chain
 
         graph.output(out)

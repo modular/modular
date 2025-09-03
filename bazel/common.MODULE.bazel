@@ -16,7 +16,7 @@ bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "31.1")
-bazel_dep(name = "rules_cc", version = "0.1.4")
+bazel_dep(name = "rules_cc", version = "0.2.3")
 bazel_dep(name = "rules_foreign_cc", version = "0.13.0")
 bazel_dep(name = "rules_mojo", version = "0.5.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
@@ -70,6 +70,15 @@ single_version_override(
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazel-contrib/rules_python/pull/3233
+        "//bazel/public-patches:rules_python_wheel.patch",
     ],
 )
 
@@ -271,6 +280,7 @@ mojo.gpu_toolchains(
         "RTX 4080 SUPER": "",
         "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 3090": "rtx3090",
+        "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
@@ -297,6 +307,7 @@ mojo.gpu_toolchains(
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
         "rtx3090": "nvidia:86",
+        "gtx1080ti": "nvidia:61",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
         "rx6900xt": "amdgpu:gfx1030",

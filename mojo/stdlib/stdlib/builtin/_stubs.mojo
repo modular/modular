@@ -31,7 +31,7 @@ struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
 
 
 fn paramfor_next_iter[
-    IteratorType: Iterator & Copyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter
@@ -44,7 +44,7 @@ fn paramfor_next_iter[
 
 
 fn paramfor_next_value[
-    IteratorType: Iterator & Copyable
+    IteratorType: Iterator & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter

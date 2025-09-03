@@ -29,6 +29,29 @@ fn test_enumerate() raises:
     assert_true(not it.__has_next__())
 
 
+fn test_enumerate_with_start() raises:
+    var l = ["hey", "hi", "hello"]
+    var it = enumerate(l, start=1)
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], "hey")
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], "hi")
+    elem = next(it)
+    assert_equal(elem[0], 3)
+    assert_equal(elem[1], "hello")
+    assert_true(not it.__has_next__())
+    # Check negative start
+    it = enumerate(l, start=-1)
+    elem = next(it)
+    assert_equal(elem[0], -1)
+    assert_equal(elem[1], "hey")
+    elem = next(it)
+    assert_equal(elem[0], 0)
+    assert_equal(elem[1], "hi")
+
+
 fn test_enumerate_destructure() raises:
     var l = ["hey", "hi", "hello"]
     var count = 0

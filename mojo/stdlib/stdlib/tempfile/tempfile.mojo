@@ -179,7 +179,7 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
         ignore_errors: Whether to ignore errors.
     """
     if os.path.islink(path):
-        raise Error("`path`can not be a symbolic link: " + path)
+        raise Error("`path`can not be a symbolic link: ", path)
 
     for file_or_dir in os.listdir(path):
         var curr_path = os.path.join(path, file_or_dir)

@@ -19,7 +19,7 @@ from memory import ArcPointer
 ```
 """
 
-from os.atomic import Atomic
+from os.atomic import Atomic, Consistency, fence
 
 
 struct _ArcPointerInner[T: Movable]:
@@ -33,12 +33,33 @@ struct _ArcPointerInner[T: Movable]:
 
     fn add_ref(mut self):
         """Atomically increment the refcount."""
-        _ = self.refcount.fetch_add(1)
+
+        # `MONOTONIC` is ok here since this ArcPointer is currently being copied
+        # from an existing ArcPointer inside of __copyinit__. This means any
+        # other ArcPointer in different threads running their destructors will
+        # not see a refcount of 0 and will not delete the shared data.
+        #
+        # This is further explained in the [boost documentation]
+        # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
+        _ = self.refcount.fetch_add[ordering = Consistency.MONOTONIC](1)
 
     fn drop_ref(mut self) -> Bool:
         """Atomically decrement the refcount and return true if the result
         hits zero."""
-        return self.refcount.fetch_sub(1) == 1
+
+        # `RELEASE` is needed to ensure that all data access happens before
+        # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
+        # don't need the guarantees of `ACQUIRE` on the load portion of
+        # fetch_sub if the recount does not reach zero.
+        if self.refcount.fetch_sub[ordering = Consistency.RELEASE](1) != 1:
+            return False
+
+        # However, if the refcount results in zero, this `ACQUIRE` fence is
+        # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
+        # that use of data happens before the fence and therefore before the
+        # deletion of the data.
+        fence[ordering = Consistency.ACQUIRE]()
+        return True
 
 
 @register_passable
@@ -155,7 +176,16 @@ struct ArcPointer[T: Movable](
         Returns:
             The current amount of references to the pointee.
         """
-        return self._inner[].refcount.load()
+        # TODO: this should use `load[MONOTONIC]()` once load supports memory
+        # orderings.
+        #
+        # MONOTONIC is okay here - reading refcount simply needs to be atomic.
+        # No synchronization is needed as this is not attempting to free the
+        # shared data and it is not possible for the data to be freed until
+        # this ArcPointer is destroyed.
+        return self._inner[].refcount.fetch_sub[
+            ordering = Consistency.MONOTONIC
+        ](0)
 
     fn __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same

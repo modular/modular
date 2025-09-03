@@ -43,13 +43,13 @@ def test_scatter(
         "scatter", input_types=[input_type, updates_type, indices_type]
     ) as graph:
         input_tensor, updates, indices = graph.inputs
-        scatter_result = ops.scatter(input_tensor, updates, indices, axis=axis)
+        scatter_result = ops.scatter(input_tensor, updates, indices, axis=axis)  # type: ignore
         graph.output(scatter_result)
 
-        assert scatter_result.type.dtype == input_tensor.type.dtype, (
+        assert scatter_result.type.dtype == input_tensor.type.dtype, (  # type: ignore
             "DType should be preserved."
         )
-        assert scatter_result.type.shape == input_tensor.type.shape, (
+        assert scatter_result.type.shape == input_tensor.type.shape, (  # type: ignore
             "Shape should be preserved."
         )
 
@@ -77,7 +77,7 @@ def test_scatter_input_and_updates_different_dtypes(
     ) as graph:
         input_tensor, updates, indices = graph.inputs
         with pytest.raises(ValueError):
-            ops.scatter(input_tensor, updates, indices, axis=axis)
+            ops.scatter(input_tensor, updates, indices, axis=axis)  # type: ignore
 
 
 def test_scatter_input_and_updates_different_dtypes_specific_error_message() -> (
@@ -98,7 +98,7 @@ def test_scatter_input_and_updates_different_dtypes_specific_error_message() -> 
                 "The input dtype 'DType.float32' and updates dtype 'DType.float64' must match."
             ),
         ):
-            ops.scatter(graph.inputs[0], graph.inputs[1], graph.inputs[2])
+            ops.scatter(graph.inputs[0], graph.inputs[1], graph.inputs[2])  # type: ignore
 
 
 @given(
@@ -122,7 +122,7 @@ def test_scatter_invalid_indices_type(
     ) as graph:
         input_tensor, updates, indices = graph.inputs
         with pytest.raises(ValueError):
-            ops.scatter(input_tensor, updates, indices, axis=axis)
+            ops.scatter(input_tensor, updates, indices, axis=axis)  # type: ignore
 
 
 def test_scatter_invalid_indices_type_specific_error_message() -> None:
@@ -141,7 +141,7 @@ def test_scatter_invalid_indices_type_specific_error_message() -> None:
                 "Invalid indices dtype: 'DType.float32'. Indices must be of type int32 or int64."
             ),
         ):
-            ops.scatter(graph.inputs[0], graph.inputs[1], graph.inputs[2])
+            ops.scatter(graph.inputs[0], graph.inputs[1], graph.inputs[2])  # type: ignore
 
 
 @given(
@@ -167,7 +167,7 @@ def test_scatter_invalid_axis(
     ) as graph:
         input_tensor, updates, indices = graph.inputs
         with pytest.raises(ValueError):
-            ops.scatter(input_tensor, updates, indices, axis=axis)
+            ops.scatter(input_tensor, updates, indices, axis=axis)  # type: ignore
 
 
 def test_scatter_invalid_axis_specific_error_message() -> None:
@@ -187,7 +187,10 @@ def test_scatter_invalid_axis_specific_error_message() -> None:
             ),
         ):
             ops.scatter(
-                graph.inputs[0], graph.inputs[1], graph.inputs[2], axis=100
+                graph.inputs[0],  # type: ignore
+                graph.inputs[1],  # type: ignore
+                graph.inputs[2],  # type: ignore
+                axis=100,
             )
 
 

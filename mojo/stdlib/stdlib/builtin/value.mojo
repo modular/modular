@@ -68,10 +68,10 @@ trait Movable:
     """
 
 
-trait Copyable(ExplicitlyCopyable):
-    """The Copyable trait denotes a type whose value can be copied.
+trait ExplicitlyCopyable:
+    """The ExplicitlyCopyable trait denotes a type whose value can be explicitly copied.
 
-    Example implementing the `Copyable` trait on `Foo` which requires the `__copyinit__`
+    Example implementing the `ExplicitlyCopyable` trait on `Foo` which requires the `__copyinit__`
     method:
 
     ```mojo
@@ -110,6 +110,14 @@ trait Copyable(ExplicitlyCopyable):
         """
         ...
 
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return Self.__copyinit__(self)
+
     alias __copyinit__is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
     of `__copyinit__` is trivial.
@@ -123,55 +131,15 @@ trait Copyable(ExplicitlyCopyable):
     """
 
 
-trait ExplicitlyCopyable:
-    """The ExplicitlyCopyable trait denotes a type whose value can be copied
-    explicitly.
-
-    Unlike `Copyable`, which denotes types that are _implicitly_ copyable, an
-    explicitly copyable type can only be copied when the explicit copy
-    initializer is called intentionally by the programmer.
-
-    An explicit copy initializer is just a normal `__init__` method that takes
-    a `read-only` argument of `Self`.
-
-    Example implementing the `ExplicitlyCopyable` trait on `Foo` which requires
-    the `fn(self) -> Self` method:
-
-    ```mojo
-    struct Foo(ExplicitlyCopyable):
-        var s: String
-
-        fn __init__(out self, s: String):
-            self.s = s
-
-        fn copy(self) -> Self:
-            print("explicitly copying value")
-            return Foo(self.s)
-    ```
-
-    You can now copy objects inside a generic function:
-
-    ```mojo
-    fn copy_return[T: ExplicitlyCopyable](foo: T) -> T:
-        var copy = foo.copy()
-        return copy
-
-    var foo = Foo("test")
-    var res = copy_return(foo)
-    ```
-
-    ```plaintext
-    explicitly copying value
-    ```
+trait ImplicitlyCopyable(ExplicitlyCopyable):
+    """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
+    in order to make a copy of the object when needed.
     """
 
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
+    pass
 
-        Returns:
-            A copy of this value.
-        """
-        ...
+
+alias Copyable = ImplicitlyCopyable
 
 
 trait Defaultable:

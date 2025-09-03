@@ -29,7 +29,10 @@ def test_cumsum(
 ) -> None:
     with Graph("cumsum", input_types=[input_type]) as graph:
         out = ops.cumsum(
-            graph.inputs[0], axis=axis, exclusive=exclusive, reverse=reverse
+            graph.inputs[0],  # type: ignore
+            axis=axis,
+            exclusive=exclusive,
+            reverse=reverse,
         )
         assert out.type == input_type
 
@@ -42,5 +45,8 @@ def test_cumsum__invalid_axis(
     with Graph("cumsum", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
             ops.cumsum(
-                graph.inputs[0], axis=axis, exclusive=exclusive, reverse=reverse
+                graph.inputs[0],  # type: ignore
+                axis=axis,
+                exclusive=exclusive,
+                reverse=reverse,
             )

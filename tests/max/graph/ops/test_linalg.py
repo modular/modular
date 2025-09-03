@@ -54,8 +54,8 @@ def assert_matmul_properties(
     """
     assert "rmo.matmul" in str(graph._mlir_op)
     (result_type,) = graph.output_types
-    assert Shape(expected_output_shape) == result_type.shape
-    assert dtype in (None, result_type.dtype)
+    assert Shape(expected_output_shape) == result_type.shape  # type: ignore
+    assert dtype in (None, result_type.dtype)  # type: ignore
 
 
 # TODO(MSDK-1234): add f8e5m2 and f8e4m3fn to test date types

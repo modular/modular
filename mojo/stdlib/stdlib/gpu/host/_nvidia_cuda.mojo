@@ -240,7 +240,7 @@ struct TensorMapFloatOOBFill:
 
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
-struct TMADescriptor:
+struct TMADescriptor(ImplicitlyCopyable):
     var data: StaticTuple[UInt8, 128]
 
     @always_inline

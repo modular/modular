@@ -75,7 +75,7 @@ struct TileScheduler[
         dtype = DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
-    swizzle_size: Int = 8,
+    block_swizzle_size: Int = 8,
 ]:
     alias cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
     alias log_cluster_m = FastDiv[DType.uint32](cluster_shape[0])
@@ -112,8 +112,8 @@ struct TileScheduler[
         ],
     ):
         constrained[
-            swizzle_size in [0, 1, 2, 4, 8],
-            "swizzle_size must be 0, 1, 2, 4, or 8",
+            block_swizzle_size in [0, 1, 2, 4, 8],
+            "block_swizzle_size must be 0, 1, 2, 4, or 8",
         ]()
 
         self.cluster_dim = cluster_dim
@@ -164,7 +164,9 @@ struct TileScheduler[
         var normalized_m = Int(work_info.m) / Self.log_cluster_m
         var normalized_n = Int(work_info.n) / Self.log_cluster_n
         var normalized_k = Int(work_info.k_start) / Self.log_cluster_k
-        alias log_swizzle_size = FastDiv[DType.uint32](Self.swizzle_size)
+        alias log_block_swizzle_size = FastDiv[DType.uint32](
+            Self.block_swizzle_size
+        )
 
         var linear_cluster_id = (
             normalized_m * Int(cluster_dim[1]) + normalized_n
@@ -180,21 +182,25 @@ struct TileScheduler[
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
         @parameter
-        if Self.swizzle_size != 0:
+        if Self.block_swizzle_size != 0:
             var m_bound = (
-                Int(cluster_dim[0]) / log_swizzle_size * Self.swizzle_size
+                Int(cluster_dim[0])
+                / log_block_swizzle_size
+                * Self.block_swizzle_size
             )
             var n_bound = (
-                Int(cluster_dim[1]) / log_swizzle_size * Self.swizzle_size
+                Int(cluster_dim[1])
+                / log_block_swizzle_size
+                * Self.block_swizzle_size
             )
-            var m_local = (new_normalized_m / log_swizzle_size) + (
-                (Int(cluster_dim[0]) / log_swizzle_size)
-                * (new_normalized_n % log_swizzle_size)
+            var m_local = (new_normalized_m / log_block_swizzle_size) + (
+                (Int(cluster_dim[0]) / log_block_swizzle_size)
+                * (new_normalized_n % log_block_swizzle_size)
             )
-            var n_local = new_normalized_m % log_swizzle_size
+            var n_local = new_normalized_m % log_block_swizzle_size
 
             var is_even_subtile = Int(
-                (new_normalized_n / log_swizzle_size) % 2 == 0
+                (new_normalized_n / log_block_swizzle_size) % 2 == 0
             )
 
             if new_normalized_m < m_bound and new_normalized_n < n_bound:
@@ -202,7 +208,8 @@ struct TileScheduler[
                     1 - is_even_subtile
                 ) * (Int(cluster_dim[0]) - m_local - 1)
                 new_n_global = n_local + (
-                    Int(new_normalized_n / log_swizzle_size) * Self.swizzle_size
+                    Int(new_normalized_n / log_block_swizzle_size)
+                    * Self.block_swizzle_size
                 )
             else:
                 new_m_global = new_normalized_m

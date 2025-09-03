@@ -238,7 +238,9 @@ struct _DeviceBufferMode:
         return self._mode == other._mode
 
 
-struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
+struct HostBuffer[dtype: DType](
+    ImplicitlyCopyable, Sized, Stringable, Writable
+):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -1904,7 +1906,7 @@ struct DeviceFunction[
         target
     ].default_compile_options(),
     _ptxas_info_verbose: Bool = False,
-]:
+](ImplicitlyCopyable):
     """Represents a compiled device function for GPU execution.
 
     This struct encapsulates a compiled GPU function that can be launched on a device.

@@ -77,7 +77,9 @@ fn make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
 from bit import pop_count, bit_width
 
 
-struct KeysContainer[KeyEndType: DType = DType.uint32](Sized):
+struct KeysContainer[KeyEndType: DType = DType.uint32](
+    ImplicitlyCopyable, Sized
+):
     var keys: UnsafePointer[UInt8]
     var allocated_bytes: Int
     var keys_end: UnsafePointer[Scalar[KeyEndType]]

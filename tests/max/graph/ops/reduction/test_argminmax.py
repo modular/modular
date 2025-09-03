@@ -20,10 +20,10 @@ from max.dtype import DType
 from max.graph import TensorType, ops
 
 input_types = st.shared(tensor_types())
-ops = st.sampled_from([ops.argmax, ops.argmin])
+ops = st.sampled_from([ops.argmax, ops.argmin])  # type: ignore
 
 
-@given(input_type=input_types, op=ops, axis=axes(input_types))
+@given(input_type=input_types, op=ops, axis=axes(input_types))  # type: ignore
 def test_argminmax(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
@@ -34,11 +34,11 @@ def test_argminmax(
         out = op(graph.inputs[0], axis=axis)
         assert out.dtype == DType.int64
         expected_shape = list(input_type.shape)
-        expected_shape[axis] = 1
+        expected_shape[axis] = 1  # type: ignore
         assert out.shape == expected_shape
 
 
-@given(input_type=input_types, op=ops, axis=...)
+@given(input_type=input_types, op=ops, axis=...)  # type: ignore
 def test_argminmax__invalid_axis(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,

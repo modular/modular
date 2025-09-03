@@ -25,7 +25,7 @@ input_types = st.shared(
 )
 
 
-def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:
+def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:  # type: ignore
     expected_shape = Shape(shape)
     if n is None:
         n = 2 * (int(shape[axis]) - 1)
@@ -69,9 +69,9 @@ def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:
 def test_irfft(
     graph_builder,  # noqa: ANN001
     input_type: TensorType,
-    n: int | None,
+    n: int | None,  # type: ignore
     axis: int,
-    normalization: Normalization | str,
+    normalization: Normalization | str,  # type: ignore
 ) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.dtype == DType.float32)

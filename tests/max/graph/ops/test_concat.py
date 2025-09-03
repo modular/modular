@@ -62,7 +62,7 @@ def test_concat__static_dim(
 
     with graph_builder(input_types=input_types) as graph:
         out = ops.concat(graph.inputs, axis)
-        assert out.shape == with_dim(base_type.shape, axis, merged_size)
+        assert out.shape == with_dim(base_type.shape, axis, merged_size)  # type: ignore
         graph.output(out)
 
 
@@ -97,7 +97,7 @@ def test_concat__bad_dtype(
     assert type_a.shape == type_b.shape
     assume(
         not isinstance(type_a.shape[axis], StaticDim)
-        or 2 * type_a.shape[axis].dim < 2**63
+        or 2 * type_a.shape[axis].dim < 2**63  # type: ignore
     )
 
     with graph_builder(input_types=[type_a, type_b]) as graph:
@@ -196,7 +196,7 @@ def test_concat__symbolic__algebraic_result(
     input_types = [
         TensorType(
             base_type.dtype,
-            with_dim(base_type.shape, axis, dim),
+            with_dim(base_type.shape, axis, dim),  # type: ignore
             DeviceRef.CPU(),
         )
         for dim in axis_dims
@@ -204,7 +204,7 @@ def test_concat__symbolic__algebraic_result(
 
     with graph_builder(input_types=input_types) as graph:
         out = ops.concat(graph.inputs, axis)
-        assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))
+        assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))  # type: ignore
 
 
 def test_concat_different_devices(graph_builder) -> None:  # noqa: ANN001

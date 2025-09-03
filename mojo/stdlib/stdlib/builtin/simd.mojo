@@ -437,7 +437,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             This type's name.
         """
-        return "SIMD[" + repr(dtype) + ", " + repr(size) + "]"
+        return String("SIMD[", repr(dtype), ", ", repr(size), "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -916,6 +916,32 @@ struct SIMD[dtype: DType, size: Int](
 
         return Self(
             mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
+        )
+
+    @always_inline("nodebug")
+    fn _mul_with_fastmath_none(self, rhs: Self) -> Self:
+        """Multiplies with fastmath='none'.
+
+        This is sometimes needed to circumvent the default fastmath='contract',
+        for numerical reasons.
+
+        Args:
+            rhs: The rhs value.
+
+        Returns:
+            A new vector whose element at position `i` is computed as
+            `self[i] * rhs[i]`, with fastmath='none'.
+        """
+
+        constrained[
+            dtype.is_floating_point(),
+            "expected mul {fastmath = none} is only used for float operands",
+        ]()
+
+        return Self(
+            mlir_value=__mlir_op.`pop.mul`[
+                fastmathFlags = __mlir_attr.`#pop<fmf none>`
+            ](self._mlir_value, rhs._mlir_value)
         )
 
     @always_inline("nodebug")
@@ -1870,7 +1896,7 @@ struct SIMD[dtype: DType, size: Int](
             The representation of the SIMD value.
         """
         var output = String()
-        output.write("SIMD[" + dtype.__repr__() + ", ", size, "](")
+        output.write("SIMD[", repr(dtype), ", ", size, "](")
         # Write each element.
         for i in range(size):
             var element = self[i]

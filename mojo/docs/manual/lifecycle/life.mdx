@@ -530,8 +530,8 @@ implicit_copy = original
 ```
 
 ```output
-error: 'ExplicitCopyOnly[BigExpensiveStruct]' is not copyable because it
-    has no '__copyinit__'
+error: 'ExplicitCopyOnly[BigExpensiveStruct]' is not implicitly copyable because
+it does not conform to 'ImplicitlyCopyable'
 ```
 
 Note that a type can be *both* `Copyable` and `ExplicitlyCopyable`. If your type
