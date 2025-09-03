@@ -64,7 +64,7 @@ trait Indexer:
 
 
 @always_inline("nodebug")
-fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
+fn index[T: Indexer](idx: T, /) -> Int:
     """Returns the value of `__index__` for the given value.
 
     Parameters:
@@ -76,7 +76,7 @@ fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return idx.__index__()
+    return Int(value=idx.__index__())
 
 
 # ===----------------------------------------------------------------------=== #

@@ -1768,7 +1768,7 @@ struct LayoutTensor[
 
         @parameter
         for arg_idx in range(arg_count):
-            index_list[arg_idx] = Int(index(args[arg_idx]))
+            index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset[rank=arg_count](strides, index_list)
@@ -1828,7 +1828,7 @@ struct LayoutTensor[
 
         @parameter
         for arg_idx in range(arg_count):
-            index_list[arg_idx] = Int(index(args[arg_idx]))
+            index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset(strides, index_list)

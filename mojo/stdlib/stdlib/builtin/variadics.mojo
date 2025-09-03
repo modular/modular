@@ -170,7 +170,7 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         Returns:
             The element on the list corresponding to the given index.
         """
-        return __mlir_op.`pop.variadic.get`(self.value, index(idx))
+        return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
     @always_inline
     fn __iter__(self) -> Self.IterType:

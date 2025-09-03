@@ -172,6 +172,9 @@ language across multiple phases.
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 
+- The `index()` free function now returns an `Int`, instead of a raw MLIR
+  `__mlir_type.index` value.
+
 - There is now an `iter` module which exposes the `next`, `iter`,
   and `enumerate` methods.
 
