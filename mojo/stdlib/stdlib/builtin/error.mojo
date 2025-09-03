@@ -21,7 +21,7 @@ from sys import external_call, is_gpu, _libc
 from sys.ffi import c_char
 
 from memory import memcpy, ArcPointer
-from io.write import _WriteBufferStack
+from io.write import _WriteBufferStack, _TotalWritableBytes
 
 
 # ===-----------------------------------------------------------------------===#
@@ -100,6 +100,23 @@ struct StackTrace(Copyable, Stringable):
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+struct _UnsafeWriteToErrorPtr(Writer):
+    var data: UnsafePointer[UInt8]
+    var length: Int
+    var capacity: Int
+
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
+        var count = min(len(bytes), self.capacity - self.length)
+        memcpy(self.data + self.length, bytes.unsafe_ptr(), count)
+        self.length += count
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
 @register_passable
 struct Error(
     Boolable,
@@ -158,61 +175,36 @@ struct Error(
         self.loaded_length = value.byte_length()
         self.stack_trace = StackTrace(depth=0)
 
-    @implicit
-    fn __init__(out self, src: String):
-        """Construct an Error object with a given string.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
-
-    @implicit
-    fn __init__(out self, src: StringSlice):
-        """Construct an Error object with a given string ref.
-
-        Args:
-            src: The error message.
-        """
-        var length = src.byte_length()
-        var dest = UnsafePointer[UInt8].alloc(length + 1)
-        memcpy(dest, src.unsafe_ptr(), length)
-        dest[length] = 0
-        self.data = dest
-        self.loaded_length = -length
-        self.stack_trace = StackTrace(depth=0)
-
     @no_inline
-    fn __init__[
-        *Ts: Writable
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = "",):
-        """
-        Construct an Error by concatenating a sequence of Writable arguments.
+    fn __init__[*Ts: Writable](out self, *args: *Ts):
+        """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
 
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        var output = String()
-        var buffer = _WriteBufferStack(output)
+
+        # Count the total length of bytes to allocate only once
+        var arg_bytes = _TotalWritableBytes()
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(arg_bytes)
+        var ptr = UnsafePointer[Byte].alloc(arg_bytes.size + 1)
+        var writer = _UnsafeWriteToErrorPtr(ptr, 0, arg_bytes.size)
+        var buffer = _WriteBufferStack(writer)
 
         @parameter
         for i in range(args.__len__()):
             args[i].write_to(buffer)
-
         buffer.flush()
-        self = Error(output)
+        ptr[arg_bytes.size] = 0
+        self.data = ptr
+        self.loaded_length = -arg_bytes.size
+        self.stack_trace = StackTrace(depth=0)
 
     fn __del__(deinit self):
         """Releases memory if allocated."""
