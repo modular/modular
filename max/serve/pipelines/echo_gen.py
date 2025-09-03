@@ -161,7 +161,7 @@ class EchoTokenGenerator(
             if request_id not in self._echo_indices:
                 self._echo_indices[request_id] = 0
 
-            for step in range(inputs.num_steps):  # noqa: B007
+            for _ in range(inputs.num_steps):
                 echo_idx = self._echo_indices[request_id]
                 prompt_tokens = context.prompt_tokens
 
