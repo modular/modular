@@ -207,6 +207,7 @@ export class MAXSDKManager extends DisposableContext {
         '0',
         '0',
         '0',
+        '0',
         modularHomePath,
       ),
     };
@@ -404,6 +405,7 @@ export class MAXSDKManager extends DisposableContext {
             '-1',
             '-1',
             '-1',
+            '-1',
             modularHomePath,
           ),
         };
@@ -471,6 +473,7 @@ export class MAXSDKManager extends DisposableContext {
       modularHomePath,
       version: new MAXSDKVersion(
         'Modular Repo',
+        '0',
         '0',
         '0',
         '0',

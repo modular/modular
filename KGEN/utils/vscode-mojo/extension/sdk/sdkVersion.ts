@@ -14,12 +14,14 @@ export class MAXSDKVersion {
     major: string,
     minor: string,
     patch: string,
+    tweak: string,
     modularHomePath: string,
   ) {
     this.title = title;
     this.minor = minor;
     this.major = major;
     this.patch = patch;
+    this.tweak = tweak;
     this.modularHomePath = modularHomePath;
   }
 
@@ -27,14 +29,14 @@ export class MAXSDKVersion {
    * Return if this is a dev version.
    */
   isDev(): boolean {
-    return this.minor === '0' && this.major === '0' && this.patch === '0';
+    return this.minor === '0' && this.major === '0' && this.patch === '0' && this.tweak === '0';
   }
 
   /**
    * Return if this is a user-provided spec
    */
   isUserProvided(): boolean {
-    return this.minor === '-1' && this.major === '-1' && this.patch === '-1';
+    return this.minor === '-1' && this.major === '-1' && this.patch === '-1' && this.tweak === '-1';
   }
 
   /**
@@ -52,7 +54,7 @@ export class MAXSDKVersion {
     }
 
     // Otherwise, just format the version number.
-    return `${this.title} - ${this.major}.${this.minor}.${this.patch}`;
+    return `${this.title} - ${this.major}.${this.minor}.${this.patch}.${this.tweak}`;
   }
 
   /**
@@ -69,5 +71,6 @@ export class MAXSDKVersion {
   minor: string;
   major: string;
   patch: string;
+  tweak: string;
   modularHomePath: string;
 }
