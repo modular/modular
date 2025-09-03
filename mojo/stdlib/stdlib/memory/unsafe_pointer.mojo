@@ -535,7 +535,7 @@ struct UnsafePointer[
         Returns:
           The address of the pointer as an Int.
         """
-        return __mlir_op.`pop.pointer_to_index`(self.address)
+        return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
     @no_inline
     fn __str__(self) -> String:

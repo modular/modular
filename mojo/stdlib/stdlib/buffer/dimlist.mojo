@@ -85,7 +85,7 @@ struct Dim(
         Args:
             value: The static dimension value.
         """
-        self._value_or_missing = Int(value)
+        self._value_or_missing = Int(mlir_value=value)
 
     @always_inline("builtin")
     @implicit

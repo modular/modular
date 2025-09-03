@@ -319,7 +319,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Notes:
             This does not include the trailing null terminator in the count.
         """
-        return __mlir_op.`pop.string.size`(self.value)
+        return Int(mlir_value=__mlir_op.`pop.string.size`(self.value))
 
     @always_inline("nodebug")
     fn unsafe_ptr(

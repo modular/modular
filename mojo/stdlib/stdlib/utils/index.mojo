@@ -217,7 +217,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         constrained[
             element_type.is_integral(), "Element type must be of integral type."
         ]()
-        self = Int(value)
+        self = Int(mlir_value=value)
 
     @always_inline
     @implicit

@@ -270,5 +270,5 @@ fn compile_info[
         asm=StaticString(offload.asm),
         function_name=get_linkage_name[target, func](),
         module_name=StaticString(offload.module_name),
-        num_captures=offload.num_captures,
+        num_captures=Int(mlir_value=offload.num_captures),
     )

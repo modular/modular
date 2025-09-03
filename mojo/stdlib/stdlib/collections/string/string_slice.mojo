@@ -522,7 +522,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
-        var length: Int = __mlir_op.`pop.string.size`(_kgen)
+        var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
             Byte
         ]()

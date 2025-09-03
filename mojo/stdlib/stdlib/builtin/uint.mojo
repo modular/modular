@@ -726,7 +726,7 @@ struct UInt(
         Returns:
             The value as an integer.
         """
-        return self._mlir_value
+        return Int(mlir_value=self._mlir_value)
 
     @always_inline("builtin")
     fn __abs__(self) -> Self:
