@@ -106,6 +106,7 @@ alias shape_16x16x4 = IndexList[3](16, 16, 4)
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
 alias shape_16x16x32 = IndexList[3](16, 16, 32)
 alias shape_32x32x8 = IndexList[3](32, 32, 8)
+alias shape_32x32x16 = IndexList[3](32, 32, 16)
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
