@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ctypes
 import itertools
 import json
 import logging
 import os
+import platform
 import random
 import resource
 import sys
@@ -66,6 +68,38 @@ from transformers import (
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 logger = logging.getLogger("benchmark_serving")
+
+
+# TODO: This should be refactored into a common utility lib so it can be reused
+# in other internal benchmarking tools.
+def is_nvml_available() -> bool:
+    """Check if NVML (NVIDIA Management Library) is available on the system.
+
+    Returns:
+        bool: True if NVML is available, False otherwise.
+    """
+    try:
+        if platform.system() == "Linux":
+            # Try to load libnvidia-ml.so.1
+            try:
+                ctypes.CDLL("libnvidia-ml.so.1")
+                return True
+            except OSError:
+                return False
+        elif platform.system() == "Windows":
+            # Try to load nvml.dll
+            try:
+                ctypes.CDLL("nvml.dll")
+                return True
+            except OSError:
+                return False
+        elif platform.system() == "Darwin":
+            # macOS doesn't support NVML
+            return False
+        else:
+            return False
+    except Exception:
+        return False
 
 
 @dataclass
@@ -606,16 +640,12 @@ def calculate_metrics(
     available_gpu_memory_mib = []
     gpu_utilization = []
     if collect_gpu_stats:
-        from nvitop import Device
-        from nvitop.libnvml import NVMLError  # type: ignore
+        if is_nvml_available():
+            from nvitop import Device
 
-        try:
             device_count = Device.count()
-        except NVMLError as e:
-            logging.warning(f"Failed to get GPU device count: {e}")
-            logging.warning(
-                "GPU stats collection is only supported on NVIDIA GPUs."
-            )
+        else:
+            logger.warning("NVML not available, skipping GPU stats collection")
             device_count = 0
 
         for i in range(device_count):
@@ -871,10 +901,14 @@ async def benchmark(
     semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
     if collect_gpu_stats:
-        from nvitop import ResourceMetricCollector
+        if is_nvml_available():
+            from nvitop import ResourceMetricCollector
 
-        collector = ResourceMetricCollector()
-        collector.start("benchmark")
+            collector = ResourceMetricCollector()
+            collector.start("benchmark")
+        else:
+            logger.warning("NVML not available, skipping GPU stats collection")
+            collector = None
 
     benchmark_start_time = time.perf_counter_ns()
     if max_benchmark_duration_s is None:
@@ -1026,7 +1060,7 @@ async def benchmark(
                 }
             )
 
-    if collect_gpu_stats:
+    if collect_gpu_stats and collector is not None:
         gpu_metrics = collector.collect()
         collector.stop()
     else:
