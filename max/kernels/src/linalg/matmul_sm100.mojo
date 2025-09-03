@@ -310,7 +310,7 @@ fn consumer_main_loop[
         mma_op.mma(
             a_smem_tile,
             b_smem_tile,
-            tmem_addr | tmem_offset,
+            tmem_addr + tmem_offset,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
@@ -428,14 +428,14 @@ fn multi_stage_store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols
+    var tmem_offset = index * stage_stride_cols + tmem_addr
 
     @parameter
     for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = tmem_addr + (stage * stageN) + tmem_offset
+        var stage_tmem_addr = tmem_offset + (stage * stageN)
         var upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -450,7 +450,7 @@ fn multi_stage_store_C[
             repeat=rep,
             dtype=accum_type,
             pack=False,
-        ](stage_tmem_addr | (16 << 16))
+        ](stage_tmem_addr + (16 << 16))
 
         tcgen05_load_wait()
 
