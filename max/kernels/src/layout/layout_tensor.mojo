@@ -776,6 +776,50 @@ struct LayoutTensor[
             host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(
+            LayoutTensor[
+                dtype,
+                layout,
+                _,
+                address_space=address_space,
+                alignment=alignment,
+                element_layout=element_layout,
+                layout_int_type=layout_int_type,
+                linear_idx_type=linear_idx_type,
+                masked=masked,
+            ]
+        ),
+    ](
+        self,
+        out result: LayoutTensor[
+            mut = mut & other_type.origin.mut,
+            dtype,
+            layout,
+            __origin_of(origin, other_type.origin),
+            alignment=alignment,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+        ],
+    ):
+        """Returns a tensor merged with the specified `other_type`.
+
+        Parameters:
+            other_type: The type of the tensor to merge with.
+
+        Returns:
+            A tensor merged with the specified `other_type`.
+        """
+        return {
+            self.ptr.origin_cast[result.mut, result.origin](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
     alias BitcastType[
         new_dtype: DType,
         /,

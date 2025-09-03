@@ -1993,6 +1993,17 @@ fn test_tensor_size() raises:
     assert_equal(runtime_tensor.size(), 16)
 
 
+# This test doesn't need to run, it just needs to compile
+fn test_merge():
+    alias layout = Layout.row_major(4, 4)
+    var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
+    var tensor = LayoutTensor[DType.uint32, layout](stack)
+    var stack2 = InlineArray[UInt32, layout.size()](uninitialized=True)
+    var tensor2 = LayoutTensor[DType.uint32, layout](stack2)
+    var a = tensor if tensor.size() > 1 else tensor2
+    print(a)
+
+
 fn main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
