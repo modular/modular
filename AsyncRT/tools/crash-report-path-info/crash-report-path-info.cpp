@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
 
   switch (clOptions.property) {
   case Property::CrashDBPath: {
-    auto path = getCrashDatabasePath((*ctxOr)->get<Config>(), *modularHomeOr);
+    auto path = getCrashDatabasePath(*modularHomeOr);
     llvm::outs() << path.native() << '\n';
     break;
   }
