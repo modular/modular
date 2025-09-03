@@ -178,7 +178,7 @@ struct TensorCore[
     alias supported_half = in_type.is_half_float() and (
         shape
         == shape_16x8x16 if is_nvidia_gpu() else shape
-        in (shape_16x16x16, shape_16x16x32, shape_32x32x8)
+        in (shape_16x16x16, shape_16x16x32, shape_32x32x8, shape_32x32x16)
     )
     alias supported_fp8 = (
         in_type

@@ -16,6 +16,7 @@ from math import ceildiv, recip
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of
 from sys.intrinsics import readfirstlane
+from sys.info import _cdna_4_or_newer
 from buffer import NDBuffer
 
 from algorithm.functional import unswitch
@@ -279,7 +280,10 @@ struct KBuffer[
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
         self.load_tile = __type_of(self.load_tile).stack_allocation()
         self.mma_tile = __type_of(self.mma_tile).stack_allocation()
         self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
@@ -496,7 +500,11 @@ struct VBuffer[
         ],
     ):
         constrained[depth in (64, 128, 256), "depth must be 64, 128, or 256"]()
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
+
         self.global_base_tile = global_tile
         self.global_iterator = global_tile.tiled_iterator[BK, depth, axis=0](
             0, 0
@@ -733,7 +741,10 @@ struct QRegisterBuffer[
             linear_idx_type=linear_idx_type,
         ],
     ):
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
         self.gmem_tensor = tensor
         self.mma_tile = __type_of(self.mma_tile).stack_allocation()
 
@@ -1260,7 +1271,11 @@ fn mha_single_batch_amd[
     constrained[BN == depth, "BN must be equal to depth"]()
     alias simd_width = simd_width_of[q_type]()
 
-    alias mma_shape = IndexList[3](32, 32, 8)
+    alias mma_shape = IndexList[3](32, 32, 16) if (
+        _cdna_4_or_newer()
+        and depth != 64
+        # will deal with 64 later
+    ) else IndexList[3](32, 32, 8)
 
     alias fragment_layout = Layout.row_major(1, 16)
     alias fragment_layout_nested = Layout(
@@ -1268,7 +1283,7 @@ fn mha_single_batch_amd[
     )
     alias warp_layout = Layout.col_major(32, 2)
     alias swap_a_b = True
-    alias k_group_size = 2
+    alias k_group_size = 16 // mma_shape[2]
 
     alias output_frag_size = fragment_layout.size()
     alias accum_type = get_accum_type[q_type]()
