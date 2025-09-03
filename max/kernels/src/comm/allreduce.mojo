@@ -94,7 +94,7 @@ For the naive allreduce (no P2P) per‑device flow and staging details, see the
 from collections import InlineArray
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of, is_amd_gpu
-from sys.ffi import _get_global_or_null, external_call
+from sys.ffi import external_call, _Global
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
@@ -229,6 +229,32 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
+fn _p2p_cache_init_wrapper() -> OpaquePointer:
+    """Initializer for the indexed global caching P2P availability.
+
+    Returns an OpaquePointer encoding a small integer tag:
+      1 => p2p_not_available
+      2 => p2p_available
+    """
+    alias p2p_not_available = Scalar[DType.index](1)
+    alias p2p_available = Scalar[DType.index](2)
+
+    try:
+        DeviceContext.enable_all_peer_access()
+        return _unsafe_aliasing_address_to_pointer[DType.index](
+            p2p_available
+        ).bitcast[NoneType]()
+    except:
+        return _unsafe_aliasing_address_to_pointer[DType.index](
+            p2p_not_available
+        ).bitcast[NoneType]()
+
+
+fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
+    # No resources to free for tagged-pointer encoding.
+    pass
+
+
 fn can_enable_p2p() raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
@@ -239,34 +265,17 @@ fn can_enable_p2p() raises -> Bool:
     alias p2p_not_available = Scalar[DType.index](1)
     alias p2p_available = Scalar[DType.index](2)
 
-    var cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
-
-    # We use 0 to indicate that the cache is not found, 1 to indicate that it is
-    # found and p2p is not present and 2 to indicate that the cache is found and
-    # that p2p is present.
-    var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
-    if found == p2p_available:
-        # If p2p was previously enabled, then return available.
-        return True
-
-    # Otherwise try to enable P2P.
-    is_peer_to_peer_enabled: Bool
-    try:
-        DeviceContext.enable_all_peer_access()
-        is_peer_to_peer_enabled = True
-    except e:
-        # If enabling fails, P2P is not available.
-        is_peer_to_peer_enabled = False
-
-    # Cache the result.
-    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_name),
-        _unsafe_aliasing_address_to_pointer[DType.index](
-            p2p_available if is_peer_to_peer_enabled else p2p_not_available
-        ).bitcast[OpaquePointer](),
+    # Initialize once per process via indexed global, then reuse the tag.
+    var cached = external_call[
+        "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+    ](
+        _Global._gpu_comm_p2p_idx,
+        _p2p_cache_init_wrapper,
+        _p2p_cache_destroy_wrapper,
     )
 
-    return is_peer_to_peer_enabled
+    var tag = Scalar[DType.index](Int(cached))
+    return tag == p2p_available
 
 
 fn _naive_reduce_kernel_with_lambda[
@@ -1001,7 +1010,7 @@ fn allreduce[
 
     Notes:
       - Inputs must have identical shape/dtype across GPUs.
-      - Signal buffers must be sized at least `sizeof(Signal) + payload_bytes` for the P2P 2‑stage path,
+      - Signal buffers must be sized at least `size_of(Signal) + payload_bytes` for the P2P 2‑stage path,
         where `payload_bytes` equals the input tensor bytecount.
       - The naive path is automatically selected if P2P cannot be enabled.
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
