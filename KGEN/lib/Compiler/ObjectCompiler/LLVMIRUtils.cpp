@@ -31,6 +31,8 @@
 using namespace M;
 using namespace KGEN;
 
+const char *M::KGEN::kMetalKernelAttr = "metal.kernel";
+
 #define DEBUG_TYPE "llvm-module-split"
 
 //===----------------------------------------------------------------------===//
