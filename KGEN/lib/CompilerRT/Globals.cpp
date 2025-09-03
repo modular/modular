@@ -67,7 +67,7 @@ struct AtomicGlobalEntry {
 } // namespace
 
 /// Keep this as big as the indexed globals in ffi.mojo.
-#define NUM_INDEXED_GLOBALS 2
+#define NUM_INDEXED_GLOBALS 3
 static AtomicGlobalEntry indexedTable[NUM_INDEXED_GLOBALS];
 
 /// A faster version of GetOrCreateGlobal that doesn't need to lock the table
