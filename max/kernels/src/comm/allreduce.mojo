@@ -426,7 +426,7 @@ fn _multi_gpu_barrier[
     ]()
     var bid = block_idx.x
 
-    if thread_idx.x < ngpus:
+    if thread_idx.x < UInt(ngpus):
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples

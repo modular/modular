@@ -2263,7 +2263,9 @@ fn _mha_sm100[
             decoding and PartitionType.do_partition
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
-                if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
+                if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                    4 * group + 128
+                ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
                     )
@@ -2468,7 +2470,7 @@ fn _mha_sm100[
 
         @parameter
         if decoding and PartitionType.do_partition:
-            if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
+            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group + 128):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )

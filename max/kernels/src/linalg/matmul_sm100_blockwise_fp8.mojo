@@ -319,26 +319,30 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             a_tma_op.async_copy_3d(
                 a_smem_tile_3D_view,
                 tma_mbar[0],
-                (UInt(k_iter) * BK, block_idx.y * BM, UInt(block_idx.z)),
+                (
+                    UInt(k_iter) * UInt(BK),
+                    block_idx.y * UInt(BM),
+                    UInt(block_idx.z),
+                ),
             )
 
             a_scales_tma_op.async_copy_3d(
                 a_scales_smem_tile_3D_view,
                 tma_mbar[0],
-                (block_idx.y * BM, UInt(k_iter), UInt(block_idx.z)),
+                (block_idx.y * UInt(BM), UInt(k_iter), UInt(block_idx.z)),
             )
 
             b_tma_op.async_copy_3d(
                 b_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    UInt(k_iter) * BK,
-                    block_idx.x * BN,
-                    UInt(block_idx.z),
+                    UInt(k_iter) * UInt(BK),
+                    block_idx.x * UInt(BN),
+                    block_idx.z,
                 ) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(k_iter) * BK,
-                    UInt(block_idx.z),
+                    block_idx.x * UInt(BN),
+                    UInt(k_iter) * UInt(BK),
+                    block_idx.z,
                 ),
             )
 
@@ -420,7 +424,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = UInt(thread_idx.x // WARP_SIZE)
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x

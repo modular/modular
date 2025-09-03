@@ -148,7 +148,7 @@ fn _allgather_p2p_kernel[
         if remainder > 0:
             var tail_start = num_simd_vectors * simd_width
             # Use first warp to handle tail to minimize divergence.
-            if global_tid < WARP_SIZE:
+            if global_tid < UInt(WARP_SIZE):
                 for i in range(global_tid, remainder, WARP_SIZE):
                     var elem_idx = tail_start + i
                     outputs[src_gpu][elem_idx] = src_ptrs[src_gpu][elem_idx]

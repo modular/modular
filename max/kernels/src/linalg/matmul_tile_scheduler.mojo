@@ -198,7 +198,9 @@ struct TileScheduler[
             )
         else:
             m, n = self._index_to_mn()
-            is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
+            is_valid = m < UInt(self.prob_shape[0]) and n < UInt(
+                self.prob_shape[1]
+            )
             return WorkInfo(
                 m, n, 0, ceildiv(self.prob_shape[2], tile_shape[2]), is_valid
             )
@@ -271,8 +273,9 @@ struct TileScheduler[
 
     @always_inline
     fn num_output_tiles(self) -> UInt:
-        return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
-            self.prob_shape[1], Self.wave_shape[1]
+        return UInt(
+            ceildiv(self.prob_shape[0], Self.wave_shape[0])
+            * ceildiv(self.prob_shape[1], Self.wave_shape[1])
         )
 
     @always_inline

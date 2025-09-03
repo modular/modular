@@ -34,7 +34,7 @@ from utils import Index, IndexList
 @parameter
 fn _strides_from_shape[shape: DimList, *, skip: Int = 0]() -> DimList:
     alias rank = len(shape)
-    var strides = List[Dim](length=rank, fill=Dim())
+    var strides = List[Dim](length=UInt(rank), fill=Dim())
     var stride = Dim(1)
 
     # Skip over dimensions that are not contiguous. This occurs when computing the

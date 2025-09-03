@@ -303,21 +303,21 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (k_start, a_m_start),
+                (UInt(k_start), UInt(a_m_start)),
             )
 
             a_scales_tma_op.async_copy(
                 a_scales_smem_tile,
                 tma_mbar[0],
-                (a_m_start, UInt(k_iter)),
+                (UInt(a_m_start), UInt(k_iter)),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (k_start, b_n_start) if transpose_b else (
-                    b_n_start,
-                    k_start,
+                (UInt(k_start), UInt(b_n_start)) if transpose_b else (
+                    UInt(b_n_start),
+                    UInt(k_start),
                 ),
             )
 
@@ -398,7 +398,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = UInt(thread_idx.x // WARP_SIZE)
 
     alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     alias c_gmem_type = LayoutTensor[

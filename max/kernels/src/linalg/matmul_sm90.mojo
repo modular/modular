@@ -574,7 +574,7 @@ fn warp_specialized_gemm_output[
                 if use_tma_store and not needs_x2:
                     fence_async_view_proxy()
 
-                    if local_thread_idx < WG_BN // TMA_BN:
+                    if local_thread_idx < UInt(WG_BN // TMA_BN):
                         var smem_offset = c_smem_tile.ptr.offset(
                             WG_BM * TMA_BN * local_thread_idx
                         )
@@ -616,7 +616,7 @@ fn warp_specialized_gemm_output[
                             num_consumer_threads // (WG_BN // simd_size),
                             WG_BN // simd_size // 2,
                         )
-                        if local_thread_idx < num_consumer_threads // 2:
+                        if local_thread_idx < UInt(num_consumer_threads // 2):
                             copy_sram_to_dram[
                                 thread_layout=thread_layout_v2,
                                 swizzle=st_matrix_swizzle,
@@ -644,7 +644,7 @@ fn warp_specialized_gemm_output[
         ):
             # Output dimensions in global memory.
             alias N = c_layout.shape[1].value()
-            var M: UInt = c.dim[0]()
+            var M: UInt = UInt(c.dim[0]())
 
             lane = lane_id()
 
@@ -1083,8 +1083,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 b_tma_op,
                 a_smem_iter,
                 b_smem_iter,
-                m_coord,
-                n_coord,
+                UInt(m_coord),
+                UInt(n_coord),
                 0,
                 rank_n,
                 rank_m,
@@ -1145,8 +1145,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             full,
             empty,
             wgmma_op,
-            local_warp_group_idx,
-            warp_group_thread_idx,
+            UInt(local_warp_group_idx),
+            UInt(warp_group_thread_idx),
         )
 
         var output_reg_tile = (
@@ -1166,9 +1166,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             c,
             c_smem_tile,
             output_reg_tile,
-            warp_group_thread_idx,
-            local_warp_group_idx,
-            thread_idx.x - WARPGROUP_SIZE,
+            UInt(warp_group_thread_idx),
+            UInt(local_warp_group_idx),
+            UInt(thread_idx.x - WARPGROUP_SIZE),
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )
@@ -1460,8 +1460,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 full,
                 empty,
                 wgmma_op,
-                local_warp_group_idx,
-                warp_group_thread_idx,
+                UInt(local_warp_group_idx),
+                UInt(warp_group_thread_idx),
             )
 
             var block_y = UInt(ceildiv(work_info.m, BM))
@@ -1484,9 +1484,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 c,
                 c_smem_tile,
                 output_reg_tile,
-                warp_group_thread_idx,
-                local_warp_group_idx,
-                thread_idx.x - WARPGROUP_SIZE,
+                UInt(warp_group_thread_idx),
+                UInt(local_warp_group_idx),
+                UInt(thread_idx.x - WARPGROUP_SIZE),
                 Int(block_y),
                 Int(block_x),
             )
@@ -1614,13 +1614,13 @@ fn hopper_matmul_tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (UInt(i) * BK, block_idx.y * BM),
+                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
-                (UInt(i) * BK, block_idx.x * BN),
+                (UInt(i) * UInt(BK), block_idx.x * UInt(BN)),
             )
         barrier()
 
@@ -2001,8 +2001,8 @@ fn cpasync_wgmma_kernel[
         ](
             a,
             b,
-            block_idx_swizzle[1],
-            block_idx_swizzle[0],
+            UInt(block_idx_swizzle[1]),
+            UInt(block_idx_swizzle[0]),
             a_smem_iter,
             b_smem_iter,
             write_pipeline_states,
@@ -2057,8 +2057,8 @@ fn cpasync_wgmma_kernel[
             full,
             empty,
             wgmma_op,
-            local_warp_group_idx,
-            warp_group_thread_idx,
+            UInt(local_warp_group_idx),
+            UInt(warp_group_thread_idx),
         )
 
         var output_reg_tile = (
@@ -2078,9 +2078,9 @@ fn cpasync_wgmma_kernel[
             c,
             c_smem_tile,
             output_reg_tile,
-            warp_group_thread_idx,
-            local_warp_group_idx,
-            thread_idx.x - WARPGROUP_SIZE,
+            UInt(warp_group_thread_idx),
+            UInt(local_warp_group_idx),
+            UInt(thread_idx.x - WARPGROUP_SIZE),
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )

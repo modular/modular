@@ -158,12 +158,14 @@ struct MHAConfig(Copyable, Movable, Writable):
         return self.block_n() // self.warp_n()
 
     fn num_consumer_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
 
     fn num_producer_threads[
         producer_consumer_kernel: Bool = False
     ](self) -> UInt:
-        return 128 if (producer_consumer_kernel and self.algorithm == 3) else 0
+        return UInt(128) if (
+            producer_consumer_kernel and self.algorithm == 3
+        ) else UInt(0)
 
     fn num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
         return (
@@ -174,7 +176,7 @@ struct MHAConfig(Copyable, Movable, Writable):
     fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
         q_size = self.block_m() * self.depth
         num_q = 2 if fa3 and persistent else 1
-        return num_q * q_size
+        return UInt(num_q * q_size)
 
     fn kv_smem_size(self, fa3: Bool = False) -> UInt:
         if fa3:
@@ -200,7 +202,7 @@ struct MHAConfig(Copyable, Movable, Writable):
 
     fn warp_scratch_smem_size(self) -> UInt:
         n_warps_n = self.num_warps_n()
-        return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
+        return UInt(2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0)
 
     fn shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
@@ -238,7 +240,7 @@ struct MHAConfig(Copyable, Movable, Writable):
                 4 * i64_size + 2 * size_of[DType.uint32]() if persistent
                 != 0 else 0
             )
-        return num_smem_bytes
+        return UInt(num_smem_bytes)
 
     fn __init__(
         out self,
@@ -304,8 +306,8 @@ struct MHAConfig(Copyable, Movable, Writable):
                     min(reg_upper_bound, smem_upper_bound) // 16
                 )
                 # FIXME: add support for non-power-of-twos?
-                self.num_keys_per_block = max(
-                    prev_power_of_two(min_upper_bound), 64
+                self.num_keys_per_block = UInt(
+                    max(prev_power_of_two(min_upper_bound), 64)
                 )
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
@@ -314,18 +316,24 @@ struct MHAConfig(Copyable, Movable, Writable):
             self.num_keys_per_block = num_keys_per_block.or_else(depth)
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
-                32 if type
-                is DType.float32 else (128 if has_amd_gpu_accelerator() else 64)
+                UInt(
+                    32 if type
+                    is DType.float32 else (
+                        128 if has_amd_gpu_accelerator() else 64
+                    )
+                )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if type is DType.float32 else 2
             self.BK = BK.or_else(
-                16 * bk_arch_factor * bk_type_factor
+                UInt(16 * bk_arch_factor * bk_type_factor)
             ) if has_nvidia_gpu_accelerator() else 32
             self.WN = WN.or_else(32 if type is DType.float32 else depth)
         self.WM = WM.or_else(
-            32 if type
-            is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
+            UInt(
+                32 if type
+                is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
+            )
         )
 
     fn __str__(self) -> String:

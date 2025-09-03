@@ -6010,7 +6010,9 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
@@ -6074,7 +6076,9 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         layer_idx: UInt32,
         ctx: DeviceContextPtr,
@@ -6171,7 +6175,9 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6210,7 +6216,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         weight: InputTensor[dtype=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6253,7 +6261,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6296,7 +6306,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
         weight_scale: InputTensor[dtype=scale_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             kv_type,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6337,7 +6349,9 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         weight: InputTensor[dtype=weight_type, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6421,7 +6435,9 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
         q_proj: InputTensor[dtype=dtype, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         freqs_cis: InputTensor[dtype=dtype, rank=2],
         layer_idx: UInt32,
@@ -6501,7 +6517,9 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged_with_position_id[
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         position_ids: InputTensor[dtype = DType.uint32, rank=2],
@@ -6543,7 +6561,9 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         layer_idx: UInt32,
@@ -6624,7 +6644,9 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
@@ -6668,7 +6690,9 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
@@ -6716,7 +6740,9 @@ struct Struct_mha_padded_continuous_batching_tensor_mask:
         q: InputTensor[dtype=dtype, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         layer_idx: UInt32,
         mask: InputTensor[dtype=dtype],
@@ -6756,7 +6782,9 @@ struct Struct_mha_padded_continuous_batching:
         q: InputTensor[dtype=dtype, rank=4],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         layer_idx: UInt32,
         valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
@@ -6797,7 +6825,9 @@ struct Struct_mha_ragged_continuous_batching:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         layer_idx: UInt32,
         scale: Float32,
@@ -6838,7 +6868,9 @@ struct Struct_mha_ragged_paged:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6880,7 +6912,9 @@ struct Struct_mha_ragged_paged_sink_weights:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6933,7 +6967,9 @@ struct Struct_mla_decode_ragged_paged:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -6979,7 +7015,9 @@ struct Struct_mla_prefill_init_ragged_paged:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7032,7 +7070,9 @@ struct Struct_mla_prefill_ragged_paged:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7088,7 +7128,9 @@ struct Struct_mla_prefill_ragged_plan:
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7126,7 +7168,9 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7159,7 +7203,9 @@ struct Struct_kv_cache_get_max_seq_len_paged:
         max_seq_len: OutputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         context: DeviceContextPtr,
@@ -7198,7 +7244,9 @@ struct Struct_cross_attention_ragged_paged:
         kv_input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7329,10 +7377,10 @@ struct Struct_kv_collection_ctor_continuous_batching:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
     ) -> ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads, head_dim),
+        KVCacheStaticParams(UInt(num_heads), UInt(head_dim)),
     ]:
         return generic_get_continuous_cache[
-            kv_params = KVCacheStaticParams(num_heads, head_dim)
+            kv_params = KVCacheStaticParams(UInt(num_heads), UInt(head_dim))
         ](
             managed_tensor_slice_to_ndbuffer(blocks),
             managed_tensor_slice_to_ndbuffer(cache_lengths),
@@ -7644,7 +7692,9 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
     ](
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
         ],
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype],
@@ -7685,7 +7735,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
     ](
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         gamma: InputTensor[dtype=dtype, rank=1],
@@ -7793,7 +7845,9 @@ struct Struct_print_kv_cache_paged:
         valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7833,10 +7887,10 @@ struct Struct_kv_collection_ctor_paged:
         lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
     ) -> PagedKVCacheCollection[
-        dtype, KVCacheStaticParams(num_heads, head_dim), page_size
+        dtype, KVCacheStaticParams(UInt(num_heads), UInt(head_dim)), page_size
     ]:
         return generic_get_paged_cache[
-            kv_params = KVCacheStaticParams(num_heads, head_dim),
+            kv_params = KVCacheStaticParams(UInt(num_heads), UInt(head_dim)),
             page_size=page_size,
         ](
             managed_tensor_slice_to_ndbuffer(blocks),
@@ -7870,7 +7924,9 @@ struct Struct_kv_matmul_ragged_paged:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7910,7 +7966,9 @@ struct Struct_k_matmul_ragged_paged:
         weight: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -7946,7 +8004,9 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
         v_weight: InputTensor[dtype = DType.uint8, rank=2],
         kv_collection: PagedKVCacheCollection[
             DType.float32,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         layer_idx: UInt32,
@@ -9035,7 +9095,9 @@ struct Struct_kv_cache_ragged_paged_radd:
         a: InputTensor[dtype=dtype, rank=2],
         kv_collection: PagedKVCacheCollection[
             dtype,
-            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            KVCacheStaticParams(
+                num_heads=UInt(num_heads), head_size=UInt(head_dim)
+            ),
             page_size,
         ],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],

@@ -28,7 +28,7 @@ fn test_svg_nvidia_shape() raises:
     var tensor_list = List[__type_of(tensor_dist)]()
     for i in range(32):
         tensor_list.append(
-            tensor.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](i)
+            tensor.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](UInt(i))
         )
 
     fn color_map(t: Int, v: Int) -> String:

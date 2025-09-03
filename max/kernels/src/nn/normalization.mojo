@@ -79,7 +79,7 @@ fn block_reduce[
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < max_warps_per_block:
+    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
         var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )
@@ -214,7 +214,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < (block_dim.x // WARP_SIZE):
+        if thread_idx.x < UInt(block_dim.x // WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -283,7 +283,7 @@ fn layer_norm_gpu_warp_tiling[
     var thread_count = Scalar[accum_type]()
 
     with PDL():
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             # every thread computes its own simd width of mean and variance
@@ -302,7 +302,7 @@ fn layer_norm_gpu_warp_tiling[
         var row_var = max(row_m2 / row_count, 0.0)
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             var gamma_val = gamma_fn[simd_width](Index(idx))
             var beta_val = beta.load[width=simd_width, alignment=align](
                 Index(idx)
@@ -333,7 +333,7 @@ fn layer_norm_gpu_block[
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var num_cols: UInt = shape[1]
+    var num_cols: UInt = UInt(shape[1])
     var tid = thread_idx.x
     var row = block_idx.x
 
@@ -478,7 +478,7 @@ fn layer_norm_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             ctx.enqueue_function[
                 layer_norm_gpu_warp_tiling[
-                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
+                    UInt(simd_width), input_fn_2d, gamma_fn, output_fn_2d
                 ]
             ](
                 flattened_shape,
@@ -491,7 +491,7 @@ fn layer_norm_gpu[
         else:
             ctx.enqueue_function[
                 layer_norm_gpu_block[
-                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
+                    UInt(simd_width), input_fn_2d, gamma_fn, output_fn_2d
                 ]
             ](
                 flattened_shape,
@@ -2016,7 +2016,7 @@ fn group_norm_gpu_warp_tiling[
     var num_cols = output.shape.get[1]()
 
     with PDL():
-        if idx + simd_width <= group_size:
+        if idx + simd_width <= UInt(group_size):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             @parameter
@@ -2032,7 +2032,7 @@ fn group_norm_gpu_warp_tiling[
         var row_var = row_m2 / row_count
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx + simd_width <= group_size:
+        if idx + simd_width <= UInt(group_size):
             var g = row % num_groups
             var c_base = g * channels_per_group
             var norm_val = SIMD[accum_type, simd_width]()
@@ -2221,7 +2221,7 @@ fn group_norm_gpu[
             ctx.enqueue_function[
                 group_norm_gpu_warp_tiling[
                     dtype=dtype,
-                    simd_width=simd_width,
+                    simd_width = UInt(simd_width),
                     input_fn=input_fn_2d,
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,
@@ -2240,7 +2240,7 @@ fn group_norm_gpu[
             ctx.enqueue_function[
                 group_norm_gpu_block[
                     dtype=dtype,
-                    simd_width=simd_width,
+                    simd_width = UInt(simd_width),
                     input_fn=input_fn_2d,
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,

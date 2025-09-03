@@ -30,7 +30,7 @@ struct Table[type: TuningConfig](Stringable):
     fn __init__(out self, configs: List[type], name: String):
         self.configs = configs
         self.name = name
-        self.num_configs = len(configs)
+        self.num_configs = UInt(len(configs))
 
         if not self.check():
             abort(String("Failed to Compile Table: [", self.name, "]"))

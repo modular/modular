@@ -343,7 +343,7 @@ fn _top_k_cpu[
                         var ptr = idxs.unsafe_ptr() + i
                         sort(
                             Span[idxs.T, __origin_of(idxs)](
-                                ptr=ptr, length=num_equal
+                                ptr=ptr, length=UInt(num_equal)
                             )
                         )
                     i += num_equal
@@ -774,7 +774,7 @@ fn _block_reduce_topk[
     var warp_accum: TopK_2[T, largest] = _warp_reduce_topk[T, largest](val)
 
     # Store warp-level results in shared memory
-    if lane_id() == 0 and warp < num_warps_needed:
+    if lane_id() == 0 and warp < UInt(num_warps_needed):
         # Note: Potential bank conflict for sub 4 byte data elements
         p_sram[Int(warp) * p_width] = Scalar[DType.index](warp_accum.p)
         u_sram[Int(warp) * u_width] = warp_accum.u
@@ -782,7 +782,7 @@ fn _block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = thread_idx.x < (block_dim.x // WARP_SIZE)
+    var thread_in_final_warp = thread_idx.x < UInt(block_dim.x // WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
@@ -991,11 +991,11 @@ fn _topk_stage2[
         if K:
             k_batch = Int(K[batch_id])
         if num_blocks_per_input == 1 and not sampling:
-            if tid < k_batch:
+            if tid < UInt(k_batch):
                 batch_i_topk_vals[tid] = _local_topk_vals[tid]
                 # cast to out_idx_type
                 batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            elif tid >= k_batch and tid < max_k:
+            elif tid >= UInt(k_batch) and tid < UInt(max_k):
                 # Fill unused positions with sentinel values
                 batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
                 batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)

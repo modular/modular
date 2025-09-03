@@ -99,8 +99,8 @@ fn distribute[
         alias stride_i = Int(thread_layout.stride[i].value())
         alias shape_i = Int(thread_layout.shape[i].value())
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        offset += thread_coord_i * Int(
-            data_layout_tensor.layout.stride[i].value()
+        offset += UInt(
+            thread_coord_i * Int(data_layout_tensor.layout.stride[i].value())
         )
 
     alias shape = MixedTuple(
@@ -182,7 +182,7 @@ fn tile[
 
     @parameter
     for i in range(MixedTuple[*coord_types].__len__()):
-        offset += (
+        offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
             * Int(data_layout_tensor.layout.stride[i].value())

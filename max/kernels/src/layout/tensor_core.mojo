@@ -1312,7 +1312,8 @@ fn _load_matrix_frag[
     )
 
     var lane_offset = (
-        eval_composed[ldmatrix_layout](Int(lane), offset) * simd_size
+        eval_composed[ldmatrix_layout](UInt(Int(lane)), UInt(offset))
+        * simd_size
     )
 
     return ld_matrix[res.size, transpose=transposed](

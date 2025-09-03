@@ -244,7 +244,7 @@ fn non_max_suppression[
                 sort[_greater_than](
                     Span[box_idxs.T, __origin_of(box_idxs)](
                         ptr=box_idxs.unsafe_ptr() + pred_idx,
-                        length=num_boxes_curr_pred,
+                        length=UInt(num_boxes_curr_pred),
                     )
                 )
 

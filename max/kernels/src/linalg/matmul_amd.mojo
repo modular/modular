@@ -188,7 +188,7 @@ struct MMATileBuffers[
         self.gmem_iter = tensor.tile[block_rows, stride](
             block_idx, 0
         ).tiled_iterator[block_rows, mma_type.BK, axis=1](0, 0)
-        self.global_offset = stride * (block_rows * block_idx)
+        self.global_offset = UInt(stride * (block_rows * block_idx))
         # TODO: remove rebind once MOCO-1905 is fixed
         self.tensor = rebind[Pointer[tensor_type, tensor_origin]](
             Pointer(to=tensor)
@@ -222,7 +222,7 @@ struct MMATileBuffers[
             self.tensor[],
             self.global_offset,
         )
-        self.global_offset += mma_type.BK
+        self.global_offset += UInt(mma_type.BK)
         self.gmem_iter._incr()
 
     @always_inline
@@ -248,7 +248,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[num_mmas, mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, mma_type.simd_width](),
-                k_tile_idx,
+                UInt(k_tile_idx),
             )
         else:
             mma_type.tensor_core_mma.mma_op.load_b[swizzle = mma_type.swizzle](
@@ -256,7 +256,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[num_mmas, mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, mma_type.simd_width](),
-                k_tile_idx,
+                UInt(k_tile_idx),
             )
 
 
@@ -685,7 +685,7 @@ fn gemm_kernel_amd[
         @parameter
         for i in range(c_gmem_fragment.layout.size()):
             alias src_idx = c_reg_fragment.layout(i)
-            alias dst_static_idx: UInt = c_gmem_fragment.layout(i)
+            alias dst_static_idx: UInt = UInt(c_gmem_fragment.layout(i))
             var dst_idx: Int
 
             @parameter

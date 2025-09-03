@@ -346,7 +346,7 @@ struct KBuffer[
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
             warp_tile,
             self.get_mma_tile().vectorize[1, Self.simd_width](),
-            k_mma,
+            UInt(k_mma),
         )
 
 
@@ -1275,9 +1275,9 @@ fn mha_single_batch_amd[
 
     alias WM = config.warp_m()
     alias WN = config.warp_n()
-    alias num_m_mmas = ceildiv(WM, mma_shape[0])
-    alias num_n_mmas = ceildiv(WN, mma_shape[1])
-    alias num_k_mmas2 = ceildiv(BK, mma_shape[2] * k_group_size)
+    alias num_m_mmas = ceildiv(WM, UInt(mma_shape[0]))
+    alias num_n_mmas = ceildiv(WN, UInt(mma_shape[1]))
+    alias num_k_mmas2 = ceildiv(BK, UInt(mma_shape[2] * k_group_size))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
@@ -1647,9 +1647,9 @@ fn mma[
         transpose_b=transpose_b,
     ]()
 
-    alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(WN, MMA_N)
-    alias num_k_mmas2 = ceildiv(BK, (MMA_K * k_group_size))
+    alias num_m_mmas = ceildiv(WM, UInt(MMA_M))
+    alias num_n_mmas = ceildiv(WN, UInt(MMA_N))
+    alias num_k_mmas2 = ceildiv(BK, UInt(MMA_K * k_group_size))
 
     alias a_frag_size = num_matrix_reg[MMA_M, MMA_K]()
     alias b_frag_size = num_matrix_reg[MMA_N, MMA_K]()
@@ -1809,8 +1809,8 @@ fn mha_decoding_single_batch_amd[
 
     alias WM = config.warp_m()
     alias WN = config.warp_n()
-    alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(WN, MMA_N)
+    alias num_m_mmas = ceildiv(WM, UInt(MMA_M))
+    alias num_n_mmas = ceildiv(WN, UInt(MMA_N))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
@@ -2146,7 +2146,7 @@ fn mha_decoding_single_batch_amd[
     ](out_reg_tile, rowsum)
 
     if num_partitions > 1:
-        if thread_idx.x < group:
+        if thread_idx.x < UInt(group):
             var row_sum = rowsum[0, 0][0]
             var row_max = rowmax[0, 0][0]
 

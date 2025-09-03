@@ -737,4 +737,4 @@ fn eval_composed[
     # # swizzle
     # else:
     alias layout_b = composed_layout.layout_b
-    return layout_b(b_idx)
+    return UInt(layout_b(b_idx))

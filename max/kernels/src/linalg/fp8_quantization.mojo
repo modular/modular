@@ -94,9 +94,9 @@ fn quantize_static_scaled_fp8[
         in_dtype, target = get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
-        IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context
-    )
+    _elementwise_impl_gpu[
+        func=scaled_fp8_quant, simd_width = UInt(target_simd_width)
+    ](IndexList[2](in_buffer.dim[0](), in_buffer.dim[1]()), context)
 
 
 ########################################################
@@ -524,7 +524,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     var x = global_idx.x
     var y = global_idx.y
 
-    if x >= M or y >= N:
+    if x >= UInt(M) or y >= UInt(N):
         return
 
     var a_scale_0 = a_scales.dim(0)

@@ -241,8 +241,8 @@ fn moe_create_indices[
         alias registers_per_thread = 255
         alias registers_per_block = hw_info.max_registers_per_block
         alias block_size_unrounded = registers_per_block // registers_per_thread
-        alias block_size: UInt = block_size_unrounded - (
-            block_size_unrounded % 2
+        alias block_size: UInt = UInt(
+            block_size_unrounded - (block_size_unrounded % 2)
         )
 
         alias kernel = moe_create_indices_kernel[

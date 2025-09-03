@@ -266,7 +266,7 @@ struct TileScheduler[
     ) -> PipelineState[num_stages]:
         alias multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred: UInt32 = 1 if lane_id < Self.cluster_size else 0
+        var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
             size_of[UInt128](),

@@ -289,7 +289,7 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](size_of[dtype]() * size)
+        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * size))
     else:
         CompilationTarget.unsupported_target_error[operation="shmem_malloc"]()
         return UnsafePointer[Scalar[dtype]]()
@@ -297,7 +297,9 @@ fn shmem_malloc[dtype: DType](size: UInt) -> UnsafePointer[Scalar[dtype]]:
 
 fn shmem_calloc[
     dtype: DType
-](count: UInt, size: UInt = size_of[dtype]()) -> UnsafePointer[Scalar[dtype]]:
+](count: UInt, size: UInt = UInt(size_of[dtype]())) -> UnsafePointer[
+    Scalar[dtype]
+]:
     """Collectively allocate a zeroed block of symmetric memory.
 
     Parameters:

@@ -226,14 +226,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, a_gmem_slice_coord),
+            (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, b_gmem_slice_coord),
+            (UInt(iter_idx) * UInt(BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
@@ -495,8 +495,8 @@ fn multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_split,
                 (
-                    coord_n,
-                    work_tile_coord[0] * BM,
+                    UInt(coord_n),
+                    UInt(work_tile_coord[0] * BM),
                 ),
             )
             c_tma_op.commit_group()
@@ -759,7 +759,7 @@ fn store_C[
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
     # #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
         var row_start = work_tile_coord[0] * BM
         var col_start = work_tile_coord[1] * MMA_N + thread_idx.x * TMA_BN
 
@@ -774,7 +774,7 @@ fn store_C[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
+        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
@@ -1047,8 +1047,8 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % cta_group,
-        rank_m // cta_group,
+        UInt(rank_m % cta_group),
+        UInt(rank_m // cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1195,7 +1195,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         mma_op,
                         elect_one_warp,
                         i,
-                        accum_index,
+                        UInt(accum_index),
                     )
                     consumer_phase.step()
 
@@ -1413,10 +1413,10 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=max_pipeline_stages,
+        num_pipeline_stages = UInt(max_pipeline_stages),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        num_accum_pipeline_stages=max_accum_pipeline_stages,
-        num_output_stages=num_output_stages,
+        num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
+        num_output_stages = UInt(num_output_stages),
         output_tile_shape=output_tile_shape,
         block_swizzle_size=block_swizzle_size,
         rasterize_order=rasterize_order,
@@ -1609,14 +1609,17 @@ fn matmul_sm100_fallback_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.y * BM),
+                (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (
+                    UInt(i) * UInt(BK),
+                    block_idx.x * UInt(BN),
+                ) if transpose_b else (
+                    block_idx.x * UInt(BN),
+                    UInt(i) * UInt(BK),
                 ),
             )
 

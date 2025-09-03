@@ -83,7 +83,7 @@ fn _bmm0_bs[
     debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
     debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
 
-    if x >= kv_max_seq_len + max_cache_size or y >= q_max_seq_len:
+    if x >= UInt(kv_max_seq_len + max_cache_size) or y >= UInt(q_max_seq_len):
         return
 
     var q = q_ptr + q_offset
@@ -95,7 +95,7 @@ fn _bmm0_bs[
     var accum = SIMD[p_type, 1](0.0)
 
     # Set total KV length: KV written previous to and during this forward.
-    if x < num_keys and y < cur_query_len:
+    if x < UInt(num_keys) and y < UInt(cur_query_len):
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
@@ -178,7 +178,7 @@ fn _bmm1_bs[
     debug_assert(cur_query_len <= q_max_seq_len, "Invalid cur_query_len")
     debug_assert(cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len")
 
-    if x >= depth or y >= cur_query_len:
+    if x >= UInt(depth) or y >= UInt(cur_query_len):
         return
 
     var p = p_ptr + p_offset
@@ -256,7 +256,7 @@ fn mha_cross_gpu_naive[
     ]()
 
     alias config = MHAConfig(
-        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     )
 
     alias num_heads = Int(config.num_heads)

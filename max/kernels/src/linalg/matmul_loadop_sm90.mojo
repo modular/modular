@@ -140,8 +140,9 @@ fn async_load_AB[
                         a_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_coord + k_iter * pipeline_stages + j) * BK,
-                            a_gmem_slice_coord,
+                            UInt(k_coord + k_iter * pipeline_stages + j)
+                            * UInt(BK),
+                            UInt(a_gmem_slice_coord),
                         ),
                         UInt16(multicast_row_mask),
                     )
@@ -153,7 +154,7 @@ fn async_load_AB[
                             full_mbar[write_idx],
                             (
                                 UInt(k_coord + k_iter * pipeline_stages + j)
-                                * BK,
+                                * UInt(BK),
                                 m_coord,
                             ),
                             UInt16(multicast_row_mask),
@@ -164,7 +165,7 @@ fn async_load_AB[
                     a_smem_tile,
                     full_mbar[write_idx],
                     (
-                        UInt(k_coord + k_iter * pipeline_stages + j) * BK,
+                        UInt(k_coord + k_iter * pipeline_stages + j) * UInt(BK),
                         m_coord,
                     ),
                 )
@@ -183,8 +184,9 @@ fn async_load_AB[
                         b_smem_slice,
                         full_mbar[write_idx],
                         (
-                            UInt(k_coord + k_iter * pipeline_stages + j) * BK,
-                            b_gmem_slice_coord,
+                            UInt(k_coord + k_iter * pipeline_stages + j)
+                            * UInt(BK),
+                            UInt(b_gmem_slice_coord),
                         ),
                         UInt16(multicast_column_mask << rank_n),
                     )
@@ -196,7 +198,7 @@ fn async_load_AB[
                             full_mbar[write_idx],
                             (
                                 UInt(k_coord + k_iter * pipeline_stages + j)
-                                * BK,
+                                * UInt(BK),
                                 n_coord,
                             ),
                             UInt16(multicast_column_mask << rank_n),
@@ -207,7 +209,7 @@ fn async_load_AB[
                     b_smem_tile,
                     full_mbar[write_idx],
                     (
-                        UInt(k_coord + k_iter * pipeline_stages + j) * BK,
+                        UInt(k_coord + k_iter * pipeline_stages + j) * UInt(BK),
                         n_coord,
                     ),
                 )

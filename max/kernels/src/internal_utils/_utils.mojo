@@ -754,7 +754,7 @@ fn init_vector_gpu[
 
             @parameter
             if i == 3:
-                if tid >= len:
+                if tid >= UInt(len):
                     return
             x[tid] = Scalar[dtype](values[i])
             tid += stride

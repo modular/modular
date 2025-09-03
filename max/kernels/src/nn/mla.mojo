@@ -106,7 +106,7 @@ fn flare_mla_decoding[
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
@@ -207,7 +207,9 @@ fn flare_mla_decoding[
     type: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    config: MHAConfig = MHAConfig(
+        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+    ),
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
@@ -267,7 +269,7 @@ fn flare_mla_decoding_dispatch[
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     # Work arounds to unify KVCache and NDBuffer inputs:
@@ -298,13 +300,13 @@ fn flare_mla_decoding_dispatch[
     alias num_heads = config.num_heads
     alias depth = config.depth
     alias group = config.num_heads // kv_num_heads
-    constrained[num_heads == q.shape.get[rank - 2]()]()
+    constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     alias has_enough_smem = ctx.default_device_info is A100 or ctx.default_device_info is H100
 
     constrained[
-        depth == q.shape.get[rank - 1]() == 576,
+        depth == UInt(q.shape.get[rank - 1]()) == 576,
         "flareMLA_decoding only supports head_dim == 576.",
     ]()
     constrained[
@@ -367,16 +369,16 @@ fn flare_mla_decoding_dispatch[
         output.dtype,
         mask_t,
         score_mod_t,
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
+        BM = UInt(BM),
+        BN = UInt(BN),
+        BK = UInt(BK),
+        WM = UInt(WM),
+        WN = UInt(WN),
         depth=depth,
         num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
+        num_threads = UInt(num_threads),
+        num_pipeline_stages = UInt(num_pipeline_stages),
+        group = UInt(group),
         use_score_mod=use_score_mod,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
@@ -519,9 +521,9 @@ fn mla_decoding[
         exp_sum_batch_ptr,
         qk_max_batch_ptr,
         scale,
-        num_keys,
-        num_partitions,
-        max_cache_valid_length,
+        UInt(num_keys),
+        UInt(num_partitions),
+        UInt(max_cache_valid_length),
         mask,
         score_mod,
         batch_idx,
@@ -577,7 +579,7 @@ fn mla_decoding_single_batch[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -997,9 +999,9 @@ fn mla_decoding_single_batch[
         # warp_split_k does not need the copy as warps don't perform reduction
         # iterating across tiles, but use extra registers to perform MMAs
         # with warp-local data.
-        _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth](
-            p_smem_iter, p_reg_tile, warp_x, warp_y
-        )
+        _copy_frag_to_smem[
+            BM, BN, BK, WM, WN, UInt(MMA_M), UInt(MMA_N), UInt(p_frag_simdwidth)
+        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
 
         async_copy_wait_all()
         barrier()
@@ -1211,8 +1213,8 @@ fn flare_mla_prefill[
 
         alias mha_config = MHAConfig(
             type,
-            q_shape.get[rank - 2](),  # num_heads
-            k.shape.get[rank - 1](),  # depth
+            UInt(q_shape.get[rank - 2]()),  # num_heads
+            UInt(k.shape.get[rank - 1]()),  # depth
             num_keys_per_block=UInt(64),
             WN=UInt(64),
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
@@ -1318,8 +1320,8 @@ fn flare_mla_prefill[
 
         alias mha_config = MHAConfig(
             type,
-            q_shape.get[rank - 2](),
-            k.shape.get[rank - 1](),
+            UInt(q_shape.get[rank - 2]()),
+            UInt(k.shape.get[rank - 1]()),
             num_keys_per_block=UInt(64),
             WN=UInt(64),
             algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
@@ -1375,7 +1377,7 @@ fn flare_mla_prefill_dispatch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     _ndbuffer_mha_operand: Bool = False,
 ](
@@ -1408,7 +1410,7 @@ fn flare_mla_prefill_dispatch[
     alias group = config.num_heads // kv_num_heads
 
     constrained[q_depth == q.shape.get[rank - 1]()]()
-    constrained[num_heads == q.shape.get[rank - 2]()]()
+    constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
     constrained[
         has_nvidia_gpu_accelerator(),
         "flareMLA_prefill currently only supports Nvidia GPUs.",
@@ -1661,7 +1663,7 @@ fn mla_prefill_single_batch[
     alias cache_num_heads = num_heads // group
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -2212,7 +2214,14 @@ fn mla_prefill_single_batch[
         if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
-                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                UInt(MMA_M),
+                UInt(MMA_N),
+                UInt(p_frag_simdwidth),
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
 
             async_copy_wait_all()
@@ -2572,7 +2581,7 @@ fn mla_prefill_plan_kernel[
 
     alias MAX_CHUNKS = buffer_lengths.shape.get[0]()
 
-    if seq_idx >= batch_size:
+    if seq_idx >= UInt(batch_size):
         return
 
     # Calculate starting position for this sequence
@@ -2609,7 +2618,7 @@ fn mla_prefill_plan_kernel[
         seq_len_left -= chunk_len
 
     # If this is the last sequence in the batch
-    if seq_idx == batch_size - 1:
+    if seq_idx == UInt(batch_size - 1):
         seq_end_pos = seq_start_pos + curr_seq_len
         var end_chunk = seq_end_pos // buffer_size
 
@@ -2684,6 +2693,6 @@ fn _k_cache_to_buffer[
     )
     alias target_simd_width = simd_width_of[type, target = get_gpu_target()]()
 
-    _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
+    _elementwise_impl_gpu[func=copy_fn, simd_width = UInt(target_simd_width)](
         launch_shape, context
     )

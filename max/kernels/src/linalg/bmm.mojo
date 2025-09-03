@@ -560,7 +560,7 @@ fn _batched_matmul_cpu[
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume_uint[2](
-                batch, c_buf.get_shape()
+                UInt(batch), c_buf.get_shape()
             )
 
             @parameter
@@ -624,10 +624,10 @@ fn naive_batched_matmul_kernel[
     b_tensor: LayoutTensor[b_type, b_layout, MutableAnyOrigin],  # 1 * k
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
-    var batch_size: UInt = c_tensor.dim(0)
-    var m: UInt = c_tensor.dim(1)
-    var n: UInt = c_tensor.dim(2)
-    var k: UInt = a_tensor.dim(2)
+    var batch_size: UInt = UInt(c_tensor.dim(0))
+    var m: UInt = UInt(c_tensor.dim(1))
+    var n: UInt = UInt(c_tensor.dim(2))
+    var k: UInt = UInt(a_tensor.dim(2))
 
     var x = Int(global_idx.x)
     var y = Int(global_idx.y)
@@ -647,7 +647,7 @@ fn naive_batched_matmul_kernel[
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
         var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
-            z, c_buff_nd_shape
+            UInt(z), c_buff_nd_shape
         )
         nd_corrds[rank - 1] = x
         nd_corrds[rank - 2] = y
@@ -852,7 +852,7 @@ fn _batched_matmul_gpu[
             elementwise_epilogue_fn,
         ]
 
-        var grid_dim = kernels.ampere_128x128_4.grid_dim(m, n)
+        var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
 
         ctx.enqueue_function[batched_matmul_type](
             c_tensor_reshaped,

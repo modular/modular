@@ -3376,8 +3376,8 @@ struct LayoutTensor[
                 alias fragments_stride_i: UInt = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = Int(thread_projected_shape[i])
-                alias stride_i: UInt = Int(thread_projected_stride[i])
+                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
+                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3551,8 +3551,8 @@ struct LayoutTensor[
                 alias fragments_stride_i: UInt = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = Int(thread_projected_shape[i])
-                alias stride_i: UInt = Int(thread_projected_stride[i])
+                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
+                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
@@ -5479,7 +5479,7 @@ fn copy_dram_to_sram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -5607,7 +5607,7 @@ fn copy_dram_to_sram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6098,7 +6098,7 @@ fn copy_dram_to_sram_async[
     # of input tensors. Return if current thread doesn't have work.
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     alias row_size = dst.stride[0]()
@@ -6317,7 +6317,7 @@ fn copy_sram_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[thread_layout](worker_idx)
@@ -6570,7 +6570,7 @@ fn copy_local_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -6684,7 +6684,7 @@ fn copy_local_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -6794,7 +6794,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -6838,7 +6838,7 @@ fn copy_dram_to_local[
         offset_helper(offset.value())
     else:
         offset_helper(
-            (Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]()
+            UInt((Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]())
         )
 
 
@@ -6898,7 +6898,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6975,7 +6975,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7114,7 +7114,7 @@ fn copy_local_to_shared[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     constrained[

@@ -470,7 +470,7 @@ fn _apply_mask[
 
     @parameter
     if decoding:
-        if warp.broadcast((thread_idx.x - 128) // 32) > ((group - 1) // 16):
+        if warp.broadcast((thread_idx.x - 128) // 32) > UInt((group - 1) // 16):
             return
         if lane >= 4 * group:
             return
