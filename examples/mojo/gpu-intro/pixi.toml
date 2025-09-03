@@ -7,7 +7,7 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
 
 [dependencies]
-mojo = "*"
+mojo = "<1.0.0"
 
 [tasks]
 vector_addition = "mojo run vector_addition.mojo"

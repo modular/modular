@@ -9,4 +9,4 @@ tests = "./stdlib/scripts/run-tests.sh"
 format = "mojo format ./stdlib"
 
 [dependencies]
-mojo = "*"
+mojo = "<1.0.0"

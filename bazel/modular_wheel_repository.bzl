@@ -30,14 +30,16 @@ def _rebuild_wheel(rctx):
             ),
         )
     for name in _WHEELS:
+        version_prefix = "0." if name.startswith("mojo") else ""
+        version = version_prefix + rctx.attr.version
         rctx.download_and_extract(
             url = "{}/{}-{}-py3-none-{}.whl".format(
                 rctx.attr.base_url,
                 name,
-                rctx.attr.version,
+                version,
                 _PLATFORM_MAPPINGS[rctx.attr.platform],
             ),
-            strip_prefix = "{}-{}.data/platlib/".format(name, rctx.attr.version),
+            strip_prefix = "{}-{}.data/platlib/".format(name, version),
         )
 
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])

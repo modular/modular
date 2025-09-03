@@ -365,6 +365,11 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
   pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
   ```
 
+- In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
+now have a `0.` prefixed to the version. Until the previous nightly packages
+and 25.5 on Conda have been removed or yanked, we recommend specifying `<1.0.0`
+as the version for these packages.
+
 ### Kernels changes
 
 - A fast matmul for SM100 is available in Mojo. Please check it out in `matmul_sm100.mojo`.
