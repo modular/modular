@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/IR/ModuleSummaryIndex.h"
 #include <filesystem>
 #include <string>
 
@@ -158,6 +159,34 @@ private:
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
+
+/// Write the specified module to the specified raw output stream using
+/// bitcode format version 5.0.
+///
+/// For streams where it matters, the given stream should be in "binary"
+/// mode.
+///
+/// If \c ShouldPreserveUseListOrder, encode the use-list order for each \a
+/// Value in \c M.  These will be reconstructed exactly when \a M is
+/// deserialized.
+///
+/// If \c Index is supplied, the bitcode will contain the summary index
+/// (currently for use in ThinLTO optimization).
+///
+/// \p GenerateHash enables hashing the Module and including the hash in the
+/// bitcode (currently for use in ThinLTO incremental build).
+///
+/// If \p ModHash is non-null, when GenerateHash is true, the resulting
+/// hash is written into ModHash. When GenerateHash is false, that value
+/// is used as the hash instead of computing from the generated bitcode.
+/// Can be used to produce the same module hash for a minimized bitcode
+/// used just for the thin link as in the regular full bitcode that will
+/// be used in the backend.
+void WriteBitcodeToFile(const llvm::Module &M, llvm::raw_ostream &Out,
+                        bool ShouldPreserveUseListOrder = false,
+                        const llvm::ModuleSummaryIndex *Index = nullptr,
+                        bool GenerateHash = false,
+                        llvm::ModuleHash *ModHash = nullptr);
 
 } // namespace M::KGEN
 

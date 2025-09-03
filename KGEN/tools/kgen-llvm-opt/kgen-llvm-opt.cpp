@@ -18,6 +18,7 @@
 //  2. It requires to define passes in LLVM directory.
 
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/CommonCLOptions.h"
@@ -287,7 +288,9 @@ int main(int argc, char **argv) {
   std::string cpuStr, featuresStr;
   std::unique_ptr<TargetMachine> targetMachine;
 
-  if (M::KGEN::isMetalTriple(moduleTriple) || moduleTriple.getArch()) {
+  const bool isMetalTriple = M::KGEN::isMetalTriple(moduleTriple);
+
+  if (isMetalTriple || moduleTriple.getArch()) {
     const TargetOptions options =
         codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
     cpuStr = codegen::getCPUStr();
@@ -327,10 +330,13 @@ int main(int argc, char **argv) {
                                 /*EmitSummaryIndex=*/false));
     break;
   case OK_OutputBitcode:
-    mpm.addPass(BitcodeWriterPass(out->os(),
-                                  /*ShouldPreserveBitcodeUseListOrder=*/false,
-                                  /*EmitSummaryIndex=*/false,
-                                  /*EmitModuleHash=*/false));
+    // For metal use custom bitcode writer that emits AIR. That helps to test it
+    // too.
+    if (!isMetalTriple)
+      mpm.addPass(BitcodeWriterPass(out->os(),
+                                    /*ShouldPreserveBitcodeUseListOrder=*/false,
+                                    /*EmitSummaryIndex=*/false,
+                                    /*EmitModuleHash=*/false));
     break;
   case OK_OutputThinLTOBitcode:
     llvm_unreachable("Not implemented.");
@@ -350,6 +356,17 @@ int main(int argc, char **argv) {
   pb.registerLoopAnalyses(lam);
   pb.crossRegisterProxies(lam, fam, cgam, mam);
   mpm.run(*module, mam);
+
+  if (verifyModule(*module, &llvm::errs()))
+    return 1;
+
+  if (isMetalTriple) {
+    M::KGEN::WriteBitcodeToFile(*module, out->os(),
+                                /*ShouldPreserveUseListOrder = */ false,
+                                /*ModuleSummaryIndex =*/nullptr,
+                                /*GenerateHash = */ false,
+                                /*ModuleHash = */ nullptr);
+  }
 
   // Declare success.
   if (outputKind != OK_NoOutput)
