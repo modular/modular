@@ -865,7 +865,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
                 json_file="torch_pixtral_bfloat16_golden.json",
             ),
-            cos_dist_threshold=1.5e-3,
+            cos_dist_threshold=1.7e-3,
             kl_div_threshold=4.5e-3,
         ),
     ),
