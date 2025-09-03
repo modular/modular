@@ -32,8 +32,7 @@ modular_py_binary(
     deps = ["_core.stubfile_generator_library"],
 )
 
-# Strip "_core/"
-stubfiles = [file[6:] for file in glob(["**/*.pyi"])]
+stubfiles = glob(["**/*.pyi"])
 
 modular_genrule(
     name = "_core.stubfiles",
@@ -51,8 +50,8 @@ modular_genrule(
     export MODULAR_ENABLE_PROFILING=OFF
     export BAZEL_TEST=1
 
-    export folder=$(dirname $(location stubfiles/dtype.pyi))
-    $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
+    export folder=$(dirname $(location stubfiles/_core/dtype.pyi))
+    $(execpath {stubgen}) -r -m max._core -O $folder/.. -p $(location :patterns.nb) --include-private --quiet
 
     # Add copyright headers
     header="
@@ -70,9 +69,6 @@ modular_genrule(
 
     # Lint and format the files
     BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) fix
-
-    # Fix file name
-    mv $folder/_core.pyi $folder/__init__.pyi
     """.format(
         ruff = "//open-source/max/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
@@ -111,7 +107,7 @@ modular_py_library(
         `./utils/sync-stubfiles.py` and commit the results.
         """.format(file),
         file1 = "//SDK/lib/API/python/max:stubfiles/{}".format(file),
-        file2 = "_core/{}".format(file),
+        file2 = file,
         tags = ["stubfiles"],
     )
     for file in stubfiles
