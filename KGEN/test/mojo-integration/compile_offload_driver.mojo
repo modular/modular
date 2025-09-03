@@ -50,7 +50,7 @@ fn _compile_info[
     return Info(
         kernel=StaticString(info.kernel),
         name=StaticString(info.name),
-        num_captures=info.num_captures,
+        num_captures=Int(mlir_value=info.num_captures),
     )
 
 
