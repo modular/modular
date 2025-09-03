@@ -95,8 +95,8 @@ int main(int argc, char **argv) {
   case options::OPT_version: {
     // Print the version and exit.
     ModularVersion version = getModularVersion();
-    llvm::outs() << llvm::formatv("Mojo {0}.{1}.{2}{3} ({4})\n", version.major,
-                                  version.minor, version.patch, version.label,
+    const char *versionStr = getModularVersionString();
+    llvm::outs() << llvm::formatv("Mojo 0.{0} ({1})\n", versionStr,
                                   version.revision);
     return 0;
   }

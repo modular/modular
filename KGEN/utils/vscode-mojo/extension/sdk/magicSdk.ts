@@ -88,6 +88,7 @@ type DownloadSpec = {
   major: string;
   minor: string;
   patch: string;
+  tweak: string;
 };
 
 /**
@@ -188,18 +189,18 @@ async function findVersionToDownload(
   isNightly: boolean,
   logger: Logger,
   privateDir: string,
-): Promise<Optional<[string, string, string]>> {
+): Promise<Optional<[string, string, string, string]>> {
   const nightlyMaxVersionToComponents = (
     nightlyVersion: Optional<string>,
-  ): Optional<[string, string, string]> => {
+  ): Optional<[string, string, string, string]> => {
     if (nightlyVersion === undefined) {
       return undefined;
     }
-    let [major, minor, patch, dev] = nightlyVersion.split('.');
-    return [major, minor, patch + `.${dev}`];
+    let [major, minor, patch, tweak, dev] = nightlyVersion.split('.');
+    return [major, minor, patch, tweak + `.${dev}`];
   };
 
-  if (extVersion === '0.0.0') {
+  if (extVersion === '0.0.0.0') {
     if (!isNightly) {
       vscode.window.showErrorMessage(
         'Invalid extension version: ' + extVersion,
@@ -217,9 +218,9 @@ async function findVersionToDownload(
     );
   }
   // stable
-  const [major, minor, patch] =
+  const [major, minor, patch, tweak] =
     context.extension.packageJSON.sdkVersion.split('.');
-  return [major, minor, patch];
+  return [major, minor, patch, tweak];
 }
 
 async function createDownloadSpec(
@@ -246,8 +247,8 @@ async function createDownloadSpec(
   if (!versionToDownload) {
     return undefined;
   }
-  const [major, minor, patch] = versionToDownload;
-  const version = `${major}.${minor}.${patch}`;
+  const [major, minor, patch, tweak] = versionToDownload;
+  const version = `${major}.${minor}.${patch}.${tweak}`;
   const versionDoneDirParent = path.join(privateDir, 'versionDone');
   const versionDoneDir = path.join(versionDoneDirParent, version);
   return {
@@ -262,6 +263,7 @@ async function createDownloadSpec(
     major,
     minor,
     patch,
+    tweak,
   };
 }
 
@@ -467,6 +469,7 @@ export async function findMagicSDKSpec(
       downloadSpec.major,
       downloadSpec.minor,
       downloadSpec.patch,
+      downloadSpec.tweak,
       modularHomePath,
     ),
   };

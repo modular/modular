@@ -94,7 +94,7 @@ export class MAXSDKConfig {
         return undefined;
       }
 
-      let match = stdout.toString().match(/mojo\s+([0-9]+)\.([0-9]+)\.(.*)/);
+      let match = stdout.toString().match(/mojo\s+([0-9]+)\.([0-9]+)\.([0-9]+)\.(.*)/);
 
       if (!match) {
         return undefined;
@@ -112,6 +112,7 @@ export class MAXSDKConfig {
         `${match[1]}`,
         `${match[2]}`,
         `${match[3]}`,
+        `${match[4]}`,
         driverPath,
       );
     } catch (e) {

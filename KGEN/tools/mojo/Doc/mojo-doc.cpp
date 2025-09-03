@@ -145,12 +145,10 @@ static int doc(const State &subcommandState) {
 
   llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
 
-  ModularVersion version = getModularVersion();
+  const char *version = getModularVersionString();
   jsonOS.value(llvm::json::Object({
       {"decl", publicDecl->toJSON(parserContext)},
-      {"version", llvm::formatv("{0}.{1}.{2}{3}", version.major, version.minor,
-                                version.patch, version.label)
-                      .str()},
+      {"version", llvm::formatv("0.{0}", version).str()},
   }));
 
   out->keep();
