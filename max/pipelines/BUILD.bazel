@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "pkg_filegroup", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -19,25 +19,5 @@ modular_py_library(
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),
-    ],
-)
-
-pkg_files(
-    name = "python_files",
-    srcs = glob(
-        [
-            "*.py",
-        ],
-    ) + ["requirements.txt"],
-)
-
-pkg_filegroup(
-    name = "pipelines_python",
-    srcs = [
-        ":python_files",
-        "//SDK/lib/API/python/max/pipelines/architectures:python_files",
-        "//SDK/lib/API/python/max/pipelines/core:python_files",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing:python_files",
-        "//SDK/lib/API/python/max/pipelines/lib:python_files",
     ],
 )
