@@ -6,6 +6,7 @@
 
 # CI
 /.github/ @modular/sdlc
+/bazel/ @modular/sdlc
 
 # Standard Library
 /mojo/stdlib/         @modular/stdlib
