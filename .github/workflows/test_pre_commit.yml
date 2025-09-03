@@ -42,10 +42,5 @@ jobs:
           # Add pixi to PATH
           echo "$HOME/.pixi/bin" >> $GITHUB_PATH
 
-      - name: Install pre-commit
-        run: |
-          pip install pre-commit
-          pre-commit install
-
       - name: Run pre-commit
-        run: pixi run --manifest-path mojo pre-commit run --all-files
+        run: pixi x pre-commit run --all-files
