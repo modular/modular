@@ -10,9 +10,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: rm -rf %T/package-rename && mkdir -p %T/package-rename
-# RUN: mojo package %S/inputs/test_package -o %T/package-rename/renamed-package.mojopkg
-# RUN: %mojo -I %T/package-rename %s | FileCheck %s
+# RUN: rm -rf %t.package-rename && mkdir -p %t.package-rename
+# RUN: mojo package %S/inputs/test_package -o %t.package-rename/renamed-package.mojopkg
+# RUN: %mojo -I %t.package-rename %s | FileCheck %s
 
 from `renamed-package`.module import identity
 

@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo package %S/inputs/test_package -o %T/test_package_trait.mojopkg
-# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s --kgen-print-inline-type-values | FileCheck %s
+# RUN: mkdir -p %t.packaged-trait
+# RUN: mojo package %S/inputs/test_package -o %t.packaged-trait/test_package_trait.mojopkg
+# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.packaged-trait %s --kgen-print-inline-type-values | FileCheck %s
 
 from test_package_trait.module import (
     PackageTrait,

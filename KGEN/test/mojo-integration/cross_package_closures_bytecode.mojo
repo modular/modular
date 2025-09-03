@@ -3,9 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo package %S/inputs/closure -o %T/closure.mojopkg
-# RUN: mojo -I %T %s 4 | FileCheck %s
-# RUN: kgen-opt %T/closure.mojopkg | FileCheck %s -check-prefix=CHECK-PACK
+# RUN: mkdir -p %t.closure-dir
+# RUN: mojo package %S/inputs/closure -o %t.closure-dir/closure.mojopkg
+# RUN: mojo -I %t.closure-dir %s 4 | FileCheck %s
+# RUN: kgen-opt %t.closure-dir/closure.mojopkg | FileCheck %s -check-prefix=CHECK-PACK
 
 # CHECK-PACK-NOT: lit.trait.decl @"fn(x: Int) -> Int"
 # CHECK-PACK-NOT: definesClosure

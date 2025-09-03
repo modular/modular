@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
+# RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 
 from utils._select import _select_register_value as select
