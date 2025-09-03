@@ -3,6 +3,13 @@ load("//bazel:api.bzl", "modular_cc_binary")
 modular_cc_binary(
     name = "crash-test-dummy",
     srcs = glob(["*.cpp"]),
+    data = [
+        "@crashpad//:modular-crashpad-handler",
+    ],
+    env = {
+        "MODULAR_CRASH_REPORTING_ENABLED": "true",
+        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
+    },
     visibility = ["//visibility:public"],
     deps = [
         "//AsyncRT:RuntimeGlobals",
