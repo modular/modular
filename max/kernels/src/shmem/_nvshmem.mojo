@@ -445,6 +445,21 @@ fn nvshmem_put[
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
 
+fn nvshmem_put_nbi[
+    dtype: DType, //,
+    scope: SHMEMScope,
+](
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
+    nelems: c_size_t,
+    pe: c_int,
+):
+    alias symbol = _dtype_to_nvshmem_type[
+        _get_prefix[scope](), dtype, "_put_nbi", scope.value
+    ]()
+    external_call[symbol, NoneType](dest, source, nelems, pe)
+
+
 fn nvshmem_p[
     dtype: DType
 ](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int):
@@ -463,6 +478,21 @@ fn nvshmem_get[
 ):
     alias symbol = _dtype_to_nvshmem_type[
         _get_prefix[scope](), dtype, "_get", scope.value
+    ]()
+    external_call[symbol, NoneType](dest, source, nelems, pe)
+
+
+fn nvshmem_get_nbi[
+    dtype: DType, //,
+    scope: SHMEMScope,
+](
+    dest: UnsafePointer[Scalar[dtype]],
+    source: UnsafePointer[Scalar[dtype]],
+    nelems: c_size_t,
+    pe: c_int,
+):
+    alias symbol = _dtype_to_nvshmem_type[
+        _get_prefix[scope](), dtype, "_get_nbi", scope.value
     ]()
     external_call[symbol, NoneType](dest, source, nelems, pe)
 
