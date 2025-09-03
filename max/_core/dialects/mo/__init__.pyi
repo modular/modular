@@ -1257,18 +1257,27 @@ class DistributedAllreduceSumOp(max._core.Operation):
     """
     Allreduce takes in inputs each coming from a different device with
     the same shape as the final output and performs a sum reduction
-    across the devices. The output is replicated across the same devices.
+    across the devices. This op instance executes on a specific device
+    (specified by the device attribute) and produces the output for that device.
+
+    Multiple instances of this op are created (one per device) to enable
+    multi-threaded execution.
+
+    NOTE: the created instances comprise a synchronous group and currently must
+    be followed by a mo.fence op to ensure correctness when mixed with other
+    multi-device ops such as mo.transfer.
     """
 
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value[max._core.Type]],
+        output: TensorType,
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1276,6 +1285,10 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
+    @device.setter
+    def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
 
 class AndOp(max._core.Operation):
     """
