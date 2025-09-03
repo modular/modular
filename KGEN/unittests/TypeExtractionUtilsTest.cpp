@@ -136,6 +136,24 @@ TEST_F(TypeExtractionUtilsTest, GenerateDocPath_EdgeCases) {
   EXPECT_EQ(generateDocPath("", "Type", ""), "//Type");
 }
 
+/// Test generateDocPath with __init__ module removal.
+/// Should remove __init__ components from module paths for cleaner
+/// documentation URLs.
+TEST_F(TypeExtractionUtilsTest, GenerateDocPath_InitModuleRemoval) {
+  // __init__ at the end of a path should be removed
+  EXPECT_EQ(generateDocPath("stdlib.collections.__init__", "List", ""),
+            "/stdlib/collections/List");
+
+  // __init__ in the middle of a path should be removed
+  EXPECT_EQ(generateDocPath("stdlib.__init__.collections", "Dict", ""),
+            "/stdlib/collections/Dict");
+
+  // __init__ with aliases should work correctly
+  EXPECT_EQ(
+      generateDocPath("stdlib.builtin.__init__", "MutableOrigin", "", true),
+      "/stdlib/builtin/#mutableorigin");
+}
+
 /// Test generateDocPath dot-to-slash conversion for nested modules.
 /// Should properly convert module.submodule notation to path separators.
 TEST_F(TypeExtractionUtilsTest, GenerateDocPath_DotToSlashConversion) {

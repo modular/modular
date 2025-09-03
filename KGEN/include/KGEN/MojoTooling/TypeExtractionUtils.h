@@ -58,10 +58,14 @@ tryResolveTypeToDecl(llvm::StringRef typeName,
 /// Generates a documentation path from module info for cross-linking.
 /// Uses the docsBasePath and moduleStr to construct a path.
 /// For aliases, adds a fragment identifier with the lowercase alias name.
+/// Automatically removes __init__ components from module paths since APIs
+/// defined in __init__.mojo files should link to their parent package/module.
 ///
-/// Example:
+/// Examples:
 /// - generateDocPath("stdlib.collections", "List", "") ->
-/// "stdlib/collections/List"
+/// "/stdlib/collections/List"
+/// - generateDocPath("stdlib.collections.__init__", "List", "") ->
+/// "/stdlib/collections/List"
 std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
                             llvm::StringRef docsBasePath, bool isAlias = false);
 
