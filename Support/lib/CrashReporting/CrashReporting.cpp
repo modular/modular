@@ -102,7 +102,7 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Config *settings) {
           base::FilePath(handlerPath), base::FilePath(databasePath),
           /*metrics_dir=*/base::FilePath(databasePath), std::string(url),
           /*annotations=*/annotations,
-          /*arguments=*/{}, /*restartable=*/true,
+          /*arguments=*/{"--no-rate-limit"}, /*restartable=*/true,
           /*asynchronous_start=*/false))
     return Error("crashpad failed to start handler");
   return success();
