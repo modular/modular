@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from max import mlir
@@ -111,8 +111,8 @@ def custom(
 def inplace_custom(
     name: str,
     device: DeviceRef,
-    values: Iterable[Value[Any]],
-    out_types: Iterable[Type[Any]] | None = None,
+    values: Sequence[Value[Any]],
+    out_types: Sequence[Type[Any]] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
 ) -> list[Value[Any]]:
     """Creates a node to execute an in-place custom graph operation in the graph.

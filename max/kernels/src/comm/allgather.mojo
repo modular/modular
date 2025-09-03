@@ -110,7 +110,7 @@ fn _allgather_p2p_kernel[
 ](
     outputs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     lengths: StaticTuple[Int, ngpus],
     max_num_blocks: Int,
 ):
@@ -275,7 +275,7 @@ fn allgather[
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
 
-    # Default max blocks if not specified
+    # Default max blocks if not specified.
     var max_num_blocks = _max_num_blocks.or_else(216)
 
     # Check P2P availability.
