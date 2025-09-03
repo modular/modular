@@ -616,6 +616,23 @@ class PagedKVCacheManager(KVCacheManager):
         devices: Sequence[Device] | None = None,
         num_layers: int | None = None,
     ) -> Sequence[PagedCacheInputSymbols]:
+        return self._input_symbols(devices, num_layers, dynamic_dim_prefix="")
+
+    def _input_symbols(
+        self,
+        devices: Sequence[Device] | None = None,
+        num_layers: int | None = None,
+        dynamic_dim_prefix: str = "",
+    ) -> Sequence[PagedCacheInputSymbols]:
+        """Returns the input symbols for the paged KV cache.
+
+        Args:
+            devices: The devices to use for the input symbols.
+            num_layers: The number of layers to use for the input symbols.
+            dynamic_dim_prefix: The prefix to use for the dynamic dimensions.
+                This is used to differentiate between the different inputs
+                between replicas.
+        """
         if devices is None:
             devices = self.devices
 
@@ -633,17 +650,20 @@ class PagedKVCacheManager(KVCacheManager):
                 ),
                 cache_lengths=TensorType(
                     DType.uint32,
-                    shape=["batch_size"],
+                    shape=[dynamic_dim_prefix + "batch_size"],
                     device=DeviceRef(device.label, device.id),
                 ),
                 lookup_table=TensorType(
                     DType.uint32,
-                    shape=["batch_size", "max_num_pages"],
+                    shape=[
+                        dynamic_dim_prefix + "batch_size",
+                        dynamic_dim_prefix + "max_num_pages",
+                    ],
                     device=DeviceRef(device.label, device.id),
                 ),
                 max_lengths=TensorType(
                     DType.uint32,
-                    shape=["steps_remaining", 2],
+                    shape=[dynamic_dim_prefix + "steps_remaining", 2],
                     device=DeviceRef.CPU(),
                 ),
             )
@@ -677,15 +697,15 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_manager.step(ctx)
 
     @property
-    def free_blocks(self) -> set[int]:
+    def num_free_blocks(self) -> int:
         """Get the set of free blocks."""
-        return self.block_manager.device_block_pool.free_blocks
+        return len(self.block_manager.device_block_pool.free_blocks)
 
     @property
     def used_blocks_pct(self) -> float:
         """Get the percentage of blocks that are in usee."""
         pct = (
-            self.total_num_pages - len(self.free_blocks)
+            self.total_num_pages - self.num_free_blocks
         ) / self.total_num_pages
         assert 0 <= pct <= 1
         return pct
@@ -705,7 +725,7 @@ class PagedKVCacheManager(KVCacheManager):
     @property
     def free_blocks_pct(self) -> float:
         """Get the percentage of blocks that are free."""
-        pct = len(self.free_blocks) / self.total_num_pages
+        pct = self.num_free_blocks / self.total_num_pages
         assert 0 <= pct <= 1
         return pct
 

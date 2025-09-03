@@ -39,6 +39,13 @@ class BlockCopyMetrics:
         self.h2d = 0
         self.d2h = 0
 
+    def __add__(self, other: BlockCopyMetrics) -> BlockCopyMetrics:
+        new_metrics = BlockCopyMetrics()
+        new_metrics.d2d = self.d2d + other.d2d
+        new_metrics.h2d = self.h2d + other.h2d
+        new_metrics.d2h = self.d2h + other.d2h
+        return new_metrics
+
 
 class BlockCopyEngine:
     def __init__(

@@ -195,7 +195,7 @@ class SchedulerLogger:
                 blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D | "
             paged_cache.reset_num_blocks_copied()
 
-        used_blocks = paged_cache.total_num_pages - len(paged_cache.free_blocks)
+        used_blocks = paged_cache.total_num_pages - paged_cache.num_free_blocks
 
         METRICS.cache_num_used_blocks(used_blocks)
         METRICS.cache_num_total_blocks(total_blocks)
