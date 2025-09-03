@@ -13,7 +13,14 @@
 
 from math import sqrt
 
-from buffer import NDBuffer
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
 from nn.normalization import *
 from testing import assert_almost_equal
 from sys.info import CompilationTarget
@@ -23,14 +30,15 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: NDBuffer[dtype, 1], size: Int, eps: Scalar[dtype]) -> Scalar[
+](data: LayoutTensor[dtype, **_], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
 ]:
+    constrained[data.rank == 1, "data.rank must be 1"]()
     var sum_of_squares = Scalar[DType.float32]()
     for i in range(size):
-        var d = data[i].cast[DType.float32]()
+        var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / len(data)) + eps.cast[DType.float32]())
+    return sqrt((sum_of_squares / data.size()) + eps.cast[DType.float32]())
 
 
 fn run_rms_norm_cpu[
@@ -51,9 +59,17 @@ fn run_rms_norm_cpu[
 
     var param_shape = Index(cols)
 
-    var input_buf = NDBuffer[dtype, rank](input_ptr, shape)
-    var output_buf = NDBuffer[dtype, rank](output_ptr, shape)
-    var gamma = NDBuffer[dtype, 1](gamma_ptr, param_shape)
+    alias layout = Layout.row_major[rank]()
+    var input_buf = LayoutTensor[dtype, layout](
+        input_ptr, RuntimeLayout[layout].row_major(shape)
+    )
+    var output_buf = LayoutTensor[dtype, layout](
+        output_ptr, RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
+        gamma_ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(param_shape),
+    )
     var epsilon = Scalar[dtype](0.0001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -62,16 +78,26 @@ fn run_rms_norm_cpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return input_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = input_buf.runtime_layout(
+            RuntimeTuple[fill_like(input_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        return input_buf.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(output_buf)
     @parameter
     fn identity_output_fn[
         width: Int, alignment: Int
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        output_buf.store[width=width, alignment=alignment](idx, val)
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var idx = output_buf.runtime_layout(
+            RuntimeTuple[fill_like(output_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        output_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape,
@@ -81,7 +107,12 @@ fn run_rms_norm_cpu[
     )
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](input_ptr + r * cols, cols)
+        var vec = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
+            input_ptr + r * cols,
+            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                IndexList[1](cols)
+            ),
+        )
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c

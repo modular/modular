@@ -25,6 +25,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -760,7 +761,22 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             key_cache_output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
-        ](shape, gamma, epsilon, weight_offset, context)
+        ](
+            shape,
+            LayoutTensor[
+                gamma.type,
+                Layout.row_major(UNKNOWN_VALUE),
+                address_space = gamma.address_space,
+            ](
+                gamma.data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    gamma.dynamic_shape.canonicalize()
+                ),
+            ),
+            epsilon,
+            weight_offset,
+            context,
+        )
 
 
 def rms_norm_kv_cache_ragged_paged[
@@ -915,7 +931,22 @@ def rms_norm_kv_cache_ragged_paged[
             key_cache_output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
-        ](shape, gamma, epsilon, weight_offset, context)
+        ](
+            shape,
+            LayoutTensor[
+                gamma.type,
+                Layout.row_major(UNKNOWN_VALUE),
+                address_space = gamma.address_space,
+            ](
+                gamma.data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    gamma.dynamic_shape.canonicalize()
+                ),
+            ),
+            epsilon,
+            weight_offset,
+            context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#

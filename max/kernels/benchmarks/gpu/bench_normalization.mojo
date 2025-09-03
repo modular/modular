@@ -15,9 +15,16 @@ from random import random_float64
 from sys import env_get_dtype
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
-from buffer import NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from utils.index import IndexList
@@ -53,9 +60,17 @@ fn bench_layer_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
+    var beta = LayoutTensor[dtype, layout_1d](
+        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -67,26 +82,42 @@ fn bench_layer_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+
+        return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](idx[0])
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var idx = gamma.runtime_layout(
+            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
+                coords[0]
+            )
+        )
+
+        return gamma.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(beta)
     @parameter
     fn output_fn[
         width: Int, rank_: Int, alignment: Int
-    ](idx: IndexList[rank_], val: SIMD[dtype, width]) -> None:
-        data_buf.store[width=width, alignment=alignment](
-            rebind[IndexList[rank]](idx), val
+    ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
         )
+
+        data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     @always_inline
     @__copy_capture(shape, beta, epsilon, data_buf)
@@ -144,8 +175,14 @@ fn bench_rms_norm_gpu[
 
     var param_shape = IndexList[1](cols)
 
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -157,18 +194,27 @@ fn bench_rms_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+
+        return data_buf.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
     @parameter
     fn identity_output_fn[
         width: Int, alignment: Int
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        data_buf.store[width=width, alignment=alignment](
-            rebind[IndexList[rank]](idx), val
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
         )
+        data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     @always_inline
     @__copy_capture(shape, gamma, epsilon, weight_offset)

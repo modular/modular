@@ -3249,12 +3249,10 @@ struct LayerNorm:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-
         layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
             input.shape(),
             gamma.shape(),
-            beta_buf,
+            beta.to_layout_tensor(),
             epsilon,
             ctx,
         )
@@ -3339,9 +3337,6 @@ struct RMSNormFusedResidualAdd:
                 rebind[SIMD[residual_output.dtype, width]](val),
             )
 
-        var gamma1_buf = managed_tensor_slice_to_ndbuffer(gamma1)
-        var gamma2_buf = managed_tensor_slice_to_ndbuffer(gamma2)
-
         rms_norm_fused_residual_add[
             input_fn,
             residual_input_fn,
@@ -3351,10 +3346,10 @@ struct RMSNormFusedResidualAdd:
             multiply_before_cast=multiply_before_cast,
         ](
             input.shape(),
-            gamma1_buf,
+            gamma1.to_layout_tensor(),
             epsilon1,
             weight_offset1,
-            gamma2_buf,
+            gamma2.to_layout_tensor(),
             epsilon2,
             weight_offset2,
             ctx,
@@ -3415,8 +3410,6 @@ struct RMSNorm:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
-
         rms_norm[
             dtype,
             rank,
@@ -3426,7 +3419,7 @@ struct RMSNorm:
             multiply_before_cast=multiply_before_cast,
         ](
             input.shape(),
-            gamma_buf,
+            gamma.to_layout_tensor(),
             epsilon,
             weight_offset,
             ctx,
@@ -3480,13 +3473,11 @@ struct GroupNorm:
         fn beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
 
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
         group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
             shape=input.shape(),
             epsilon=epsilon,
             groups=num_groups,
-            output=output_buf,
+            output=output.to_layout_tensor(),
             ctx=ctx,
         )
 

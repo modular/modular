@@ -13,8 +13,8 @@
 
 from math import sqrt
 
-from buffer import NDBuffer
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
 from random import rand
 from testing import assert_almost_equal
@@ -24,13 +24,16 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: NDBuffer[dtype, 1], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
+](data: LayoutTensor[dtype, **_], size: Int, eps: Scalar[dtype]) -> Scalar[
+    dtype
+]:
+    constrained[data.rank == 1, "data.rank must be 1"]()
     alias accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
-        var val = data[i].cast[accum_type]()
+        var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
-    var result = sqrt((sum_of_squares / len(data)) + eps.cast[accum_type]())
+    var result = sqrt((sum_of_squares / data.size()) + eps.cast[accum_type]())
     return result.cast[dtype]()
 
 
@@ -56,8 +59,14 @@ fn run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -69,16 +78,26 @@ fn run_rms_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        return data_buf.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
     @parameter
     fn identity_output_fn[
         width: Int, alignment: Int
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        data_buf.store[width=width, alignment=alignment](idx, val)
+    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape, gamma, epsilon, weight_offset, ctx
@@ -87,7 +106,10 @@ fn run_rms_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = LayoutTensor[dtype, layout_1d](
+            data_h + r * cols,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+        )
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c
