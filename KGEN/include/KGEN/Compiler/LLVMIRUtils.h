@@ -23,6 +23,8 @@ enum MetalAddressSpace : unsigned {
   ThreadGroup = 3,
 };
 
+extern const char *kMetalKernelAttr;
+
 //===----------------------------------------------------------------------===//
 // LLVMModuleAndContext
 //===----------------------------------------------------------------------===//

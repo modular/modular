@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -511,7 +512,12 @@ public:
       } else if (target.getTriple().isAMDGPU()) {
         funcOp.setCConv(mlir::LLVM::cconv::CConv::AMDGPU_KERNEL);
       } else if (isMetalTriple(target.getTriple())) {
-        // Nothing to do
+        SmallVector<Attribute> passthrough =
+            llvm::to_vector(funcOp.getPassthroughAttr());
+        Builder b(funcOp.getContext());
+        passthrough.push_back(b.getArrayAttr(
+            {b.getStringAttr(kMetalKernelAttr), b.getStringAttr("true")}));
+        funcOp.setPassthroughAttr(b.getArrayAttr(passthrough));
       } else if (target.isGPU()) {
         llvm::report_fatal_error(
             "Unknown GPU target. Which Calling Convention to use ?");
