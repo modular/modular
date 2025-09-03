@@ -581,8 +581,9 @@ tryGetSymbolNameAndParams(TypedAttr param) {
 }
 
 /// Pretty print a parameter value.
-static void printDemangledParam(raw_ostream &os, TypedAttr param,
-                                SharedState *diagShared) {
+void ASTType::printParam(raw_ostream &os, TypedAttr param,
+                         SharedState *diagShared) {
+
   auto printOperands =
       [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
           StringRef lSeparator = "(", StringRef rSeparator = ")") -> void {
@@ -593,14 +594,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
           // Don't print extracts out of Int.value.
           if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
             value = extract.getStructValue();
-          printDemangledParam(os, value, diagShared);
+          printParam(os, value, diagShared);
         },
         separator);
     os << rSeparator;
   };
 
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
-    printDemangledParam(os, bindParams.getGenerator(), diagShared);
+    printParam(os, bindParams.getGenerator(), diagShared);
     printOperands(bindParams.getParamValues(), ", ", "[", "]");
     return;
   }
@@ -612,7 +613,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
     llvm::interleaveComma(refPack.getValues(), os, [&](TypedAttr value) {
-      printDemangledParam(os, value, diagShared);
+      printParam(os, value, diagShared);
     });
     return;
   }
@@ -631,7 +632,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       if (!nameAttr) {
         // If we're calling a parameter of function type, print it as a normal
         // call.
-        printDemangledParam(os, operands.front(), diagShared);
+        printParam(os, operands.front(), diagShared);
         return printOperands(operands.drop_front());
       }
 
@@ -639,7 +640,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
       // Don't print conversions of boolean's to i1.
       if (name == "__mlir_i1__" && operands.size() == 2)
-        return printDemangledParam(os, operands.back(), diagShared);
+        return printParam(os, operands.back(), diagShared);
 
       // Print arithmetic functions using their mathematical form rather than
       // as dunder method calls.
@@ -661,12 +662,11 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
       // Print `x.__getitem__(args...)` as `x[args...]`
       if (name == "__getitem__" && !operandsToPrint.empty()) {
-        printDemangledParam(os, operandsToPrint.front(), diagShared);
+        printParam(os, operandsToPrint.front(), diagShared);
         os << '[';
-        llvm::interleaveComma(operandsToPrint.slice(1), os,
-                              [&](const TypedAttr &value) {
-                                printDemangledParam(os, value, diagShared);
-                              });
+        llvm::interleaveComma(
+            operandsToPrint.slice(1), os,
+            [&](const TypedAttr &value) { printParam(os, value, diagShared); });
         os << ']';
         return;
       }
@@ -687,7 +687,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
       // If we can tell that this is a method call, print the receiver first.
       if (!operandsToPrint.empty() && calleeIsMethod && !calleeIsStatic) {
-        printDemangledParam(os, operandsToPrint.front(), diagShared);
+        printParam(os, operandsToPrint.front(), diagShared);
         os << '.';
         operandsToPrint = operandsToPrint.drop_front();
       }
@@ -704,7 +704,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         // Helper function to try printing just the literal value
         auto tryPrintLiteralValue = [&](ArrayRef<TypedAttr> args) -> bool {
           if (args.size() == 1) {
-            printDemangledParam(os, args[0], diagShared);
+            printParam(os, args[0], diagShared);
             return true;
           }
           return false;
@@ -749,25 +749,25 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       return printOperands(operandsToPrint);
     }
     case POC::Cond: {
-      printDemangledParam(os, operands[1], diagShared);
+      printParam(os, operands[1], diagShared);
       os << " if ";
       auto cond = operands[0];
       // Don't print extracts of Bool.value.
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(cond))
         cond = extract.getStructValue();
-      printDemangledParam(os, cond, diagShared);
+      printParam(os, cond, diagShared);
       os << " else ";
-      printDemangledParam(os, operands[2], diagShared);
+      printParam(os, operands[2], diagShared);
       return;
     }
     case POC::Rebind:
       // Just omit the types.
-      printDemangledParam(os, operands.front(), diagShared);
+      printParam(os, operands.front(), diagShared);
       return;
     case POC::VariadicGet:
-      printDemangledParam(os, operands.front(), diagShared);
+      printParam(os, operands.front(), diagShared);
       os << '[';
-      printDemangledParam(os, operands.back(), diagShared);
+      printParam(os, operands.back(), diagShared);
       os << ']';
       return;
     default:
@@ -824,7 +824,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
   }
   if (auto getWitness = dyn_cast<GetWitnessAttr>(param)) {
-    printDemangledParam(os, getWitness.getTypeValue(), diagShared);
+    printParam(os, getWitness.getTypeValue(), diagShared);
     os << "." << getWitness.getWitnessName().strref();
     return;
   }
@@ -833,10 +833,10 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto upcast = dyn_cast<UpcastAttr>(param))
-    return printDemangledParam(os, upcast.getInputTypeValue(), diagShared);
+    return printParam(os, upcast.getInputTypeValue(), diagShared);
 
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
-    printDemangledParam(os, extractAttr.getStructValue(), diagShared);
+    printParam(os, extractAttr.getStructValue(), diagShared);
     os << '.' << extractAttr.getField().getValue();
     return;
   }
@@ -844,7 +844,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     // VariadicAttr appears in a pack list, so it doesn't need extra []'s around
     // it.
     llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
-      printDemangledParam(os, value, diagShared);
+      printParam(os, value, diagShared);
     });
     return;
   }
@@ -856,7 +856,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
-    return printDemangledParam(os, memAttr.getValue(), diagShared);
+    return printParam(os, memAttr.getValue(), diagShared);
 
   if (auto dtypeAttr = dyn_cast<DTypeConstantAttr>(param)) {
     if (diagShared)
@@ -892,21 +892,21 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       }
     }
 
-    printDemangledParam(os, originField.getBase(), diagShared);
+    printParam(os, originField.getBase(), diagShared);
     os << '.' << originField.getField().str();
     return;
   }
   if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
     os << '{';
     llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr param) {
-      printDemangledParam(os, param, diagShared);
+      printParam(os, param, diagShared);
     });
     os << '}';
     return;
   }
 
   if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
-    printDemangledParam(os, indirect.getBase(), diagShared);
+    printParam(os, indirect.getBase(), diagShared);
     os << "[]";
     return;
   }
@@ -916,7 +916,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       os << "(muttoimm ";
     else
       os << "(mutcast ";
-    printDemangledParam(os, mutcast.getOperand(), diagShared);
+    printParam(os, mutcast.getOperand(), diagShared);
     os << ")";
     return;
   }
@@ -953,7 +953,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
           typeName == "DType") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
-        printDemangledParam(os, elt, diagShared);
+        printParam(os, elt, diagShared);
         return;
       }
     }
@@ -965,14 +965,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       TypedAttr value = std::get<1>(elt);
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
         value = extract.getStructValue();
-      printDemangledParam(os, value, diagShared);
+      printParam(os, value, diagShared);
     });
     os << ')';
     return;
   }
 
   if (auto convert = dyn_cast<POP::IntLiteralConvertAttr>(param)) {
-    printDemangledParam(os, convert.getInput(), diagShared);
+    printParam(os, convert.getInput(), diagShared);
     return;
   }
 
@@ -1053,7 +1053,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         typeName == "StringLiteral") {
       auto structType = cast<LIT::StructType>(param.getType());
       if (structType.getParamValues().size() == 1) {
-        printDemangledParam(os, structType.getParamValues()[0], diagShared);
+        printParam(os, structType.getParamValues()[0], diagShared);
         return;
       }
     }
@@ -1072,14 +1072,9 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   }
 
   // Handle other KGEN parameters that it knows about with an ugly fallback.
-  os << getParamAsString(param);
-}
-
-/// Pretty print a parameter value and optionally demangle it.
-/// TODO(16040): Remove this overload when symbol names are name-erased.
-void ASTType::printParam(raw_ostream &os, TypedAttr param,
-                         SharedState *diagShared) {
-  printDemangledParam(os, param, diagShared);
+  // TODO: Remove this - we should cover all attrs here, anything that falls
+  // back should be an error/assertion.
+  os << KGEN::getParamAsString(param);
 }
 
 /// Given a parameter value of MLIR wrapper type like Bool or Int or DType, dig
@@ -1359,7 +1354,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       os << "ImmutableOrigin";
     else {
       os << "Origin[";
-      printDemangledParam(os, originType.isMutable(), diagShared);
+      printParam(os, originType.isMutable(), diagShared);
       os << ']';
     }
   } else if (isa<OriginSetType>(type)) {
