@@ -173,9 +173,23 @@ std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
     return "";
   }
 
-  std::string moduleStr = module.str();
-  std::string path;
+  // Remove __init__ components from the module path since they shouldn't appear
+  // in documentation URLs (APIs defined in __init__.mojo files should link to
+  // the parent package/module)
+  llvm::SmallVector<llvm::StringRef> components;
+  module.split(components, '.');
 
+  std::string moduleStr;
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (components[i] != "__init__") {
+      if (!moduleStr.empty()) {
+        moduleStr += ".";
+      }
+      moduleStr += components[i].str();
+    }
+  }
+
+  std::string path;
   bool isStdlibType = moduleStr.starts_with("stdlib.");
 
   // If this is a stdlib type, use the module path as-is
