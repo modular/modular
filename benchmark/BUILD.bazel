@@ -97,6 +97,9 @@ pkg_files(
         [
             "**/*.yaml",
         ],
+        exclude = [
+            "serving-benchmarking/**",
+        ],
     ),
     prefix = "benchmark",
     visibility = ["//visibility:public"],

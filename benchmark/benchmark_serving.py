@@ -499,6 +499,7 @@ def set_ulimit(target_soft_limit: int = 65535) -> None:
 async def get_request(
     input_requests: Sequence[SampledRequest],
     request_rate: float,
+    timing_data: dict[str, list[float]],
     burstiness: float = 1.0,
 ) -> AsyncGenerator[SampledRequest, None]:
     """
@@ -518,6 +519,9 @@ async def get_request(
             A lower burstiness value (0 < burstiness < 1) results
             in more bursty requests, while a higher burstiness value
             (burstiness > 1) results in a more uniform arrival of requests.
+        timing_data:
+            Dictionary where timing data will be collected with keys:
+            - 'intervals': List of actual time intervals between requests
     """
 
     # Calculate scale parameter theta to maintain the desired request_rate.
@@ -526,8 +530,26 @@ async def get_request(
     )
     theta = 1.0 / (request_rate * burstiness)
 
+    # Initialize timing data collection - always enabled
+    if timing_data is None:
+        timing_data = {}
+    timing_data.setdefault("intervals", [])
+
+    start_time = time.perf_counter()
+    last_request_time = start_time
+
     for request in input_requests:
+        current_time = time.perf_counter()
+
+        # Record timestamp when request is yielded
+        if last_request_time != start_time:
+            actual_interval = current_time - last_request_time
+            timing_data["intervals"].append(actual_interval)
+
         yield request
+
+        # Update last_request_time for next iteration
+        last_request_time = current_time
 
         if request_rate == float("inf"):
             # If the request rate is infinity, then we don't need to wait.
@@ -820,6 +842,7 @@ async def benchmark(
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
     ignore_first_turn_stats: bool = False,
+    timing_data: Optional[dict[str, list[float]]] = None,
 ):
     if ignore_first_turn_stats and ttft_skip_requests:
         logger.warning(
@@ -921,6 +944,8 @@ async def benchmark(
     outputs: list[RequestFuncOutput] = []
     if not num_chat_sessions:
         # single-turn chat scenario
+        if timing_data is None:
+            timing_data = {}
         pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
         async def limited_request_func(
@@ -939,7 +964,7 @@ async def benchmark(
                 )
 
         async for request in get_request(
-            input_requests, request_rate, burstiness
+            input_requests, request_rate, timing_data, burstiness
         ):
             # If the request length is pinned, then we use ignore_eos+max_tokens
             # to force the model's hand into the given request length. Otherwise,
@@ -1075,6 +1100,14 @@ async def benchmark(
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
     )
+    achieved_request_rate = 0.0
+    if timing_data and timing_data.get("intervals"):
+        mean_interval = sum(timing_data["intervals"]) / len(
+            timing_data["intervals"]
+        )
+        achieved_request_rate = (
+            round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
+        )
 
     print_section(title=" Serving Benchmark Result ", char="=")
     print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
@@ -1095,6 +1128,11 @@ async def benchmark(
         "{:<40} {:<10}".format(
             "Total nonempty serving response chunks:",
             metrics.nonempty_response_chunks,
+        )
+    )
+    print(
+        "{:<40} {:<10.5f}".format(
+            "Request rate (req/s):", achieved_request_rate
         )
     )
     print(
