@@ -16,10 +16,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: rm -rf %T/package-link && mkdir -p %T/package-link
-# RUN: mojo package %S/inputs/test_package -o %T/package-link/test_package.mojopkg
-# RUN: mojo package -I %T/package-link %S/inputs/test_package_2 -o %T/package-link/test_package_2.mojopkg
-# RUN: %mojo -I %T/package-link %s | FileCheck %s
+# RUN: rm -rf %t.package-link && mkdir -p %t.package-link
+# RUN: mojo package %S/inputs/test_package -o %t.package-link/test_package.mojopkg
+# RUN: mojo package -I %t.package-link %S/inputs/test_package_2 -o %t.package-link/test_package_2.mojopkg
+# RUN: %mojo -I %t.package-link %s | FileCheck %s
 
 from test_package_2.module import dont_inline_me_either
 

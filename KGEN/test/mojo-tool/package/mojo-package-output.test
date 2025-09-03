@@ -7,19 +7,21 @@
 
 // Test that, given a `-o` output argument, a package is created with the given
 // name:
-// RUN: mojo package %S/test_package -o %T/foo.mojopkg
-// RUN: kgen-opt -mlir-print-debuginfo %T/foo.mojopkg \
+// RUN: mkdir -p %t.dir
+// RUN: mojo package %S/test_package -o %t.dir/foo.mojopkg
+// RUN: kgen-opt -mlir-print-debuginfo %t.dir/foo.mojopkg \
 // RUN:   | FileCheck %s --check-prefix=CHECK-O
 // CHECK-O: lit.package @foo
-// RUN: rm %T/foo.mojopkg
+// RUN: rm %t.dir/foo.mojopkg
 
 // Test that, given an `-o` argument for an existing directory, a package is
 // created within that directory:
-// RUN: mojo package %S/test_package -o %T
-// RUN: kgen-opt -mlir-print-debuginfo %T/test_package.mojopkg \
+// RUN: mkdir -p %t.dir
+// RUN: mojo package %S/test_package -o %t.dir
+// RUN: kgen-opt -mlir-print-debuginfo %t.dir/test_package.mojopkg \
 // RUN:   | FileCheck %s --check-prefix=CHECK-O-DIR
 // CHECK-O-DIR: lit.package @test_package
-// RUN: rm %T/test_package.mojopkg
+// RUN: rm -rf %t.dir
 
 // Test that if input path is "." for current directory, we get the package name
 // of `current_directory_name.mojopkg` instead of `..mojopkg`.

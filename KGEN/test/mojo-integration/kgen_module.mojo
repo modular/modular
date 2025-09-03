@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo package -kgenModule -disable-builtins -I %S/inputs/test_dependency %S/inputs/target -o %T/target.mlirbc
-# RUN: kgen-opt %T/target.mlirbc | FileCheck %s
+# RUN: mojo package -kgenModule -disable-builtins -I %S/inputs/test_dependency %S/inputs/target -o %t.target.mlirbc
+# RUN: kgen-opt %t.target.mlirbc | FileCheck %s
 
 # CHECK: kgen.generator export @anchor() -> index
 # CHECK: kgen.generator @"test_dependency::impl::use_me()"() -> index

@@ -20,10 +20,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: rm -rf %T/package-link-2 && mkdir -p %T/package-link-2
-# RUN: mojo package %S/inputs/test_package -o %T/package-link-2/test_package.mojopkg
-# RUN: mojo package -I %T/package-link-2 %S/inputs/test_package_2 -o %T/package-link-2/test_package_2.mojopkg
-# RUN: %mojo -I %T/package-link-2 %s | FileCheck %s
+# RUN: rm -rf %t.package-link-2 && mkdir -p %t.package-link-2
+# RUN: mojo package %S/inputs/test_package -o %t.package-link-2/test_package.mojopkg
+# RUN: mojo package -I %t.package-link-2 %S/inputs/test_package_2 -o %t.package-link-2/test_package_2.mojopkg
+# RUN: %mojo -I %t.package-link-2 %s | FileCheck %s
 
 from test_package.module import dont_inline_me
 from test_package_2.module import dont_inline_me_either

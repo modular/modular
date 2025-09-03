@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo package -kgenModule %S/inputs/remove_unused_params -o %T/target.mlirbc
-# RUN: kgen-opt %T/target.mlirbc | FileCheck %s
+# RUN: mojo package -kgenModule %S/inputs/remove_unused_params -o %t.target.mlirbc
+# RUN: kgen-opt %t.target.mlirbc | FileCheck %s
 
 # Test for MOCO-956
 # https://linear.app/modularml/issue/MOCO-956/[bug]-segfault-on-struct-recursive-methods
