@@ -284,7 +284,6 @@ EOF
     } | GPU_TEST_ENV | get_default_test_env(exec_properties)
 
     extra_data = [
-        "//bazel/internal:asan-suppressions.txt",
         "//bazel/internal:lsan-suppressions.txt",
     ]
     default_args = ["--config-prefix=" + name]

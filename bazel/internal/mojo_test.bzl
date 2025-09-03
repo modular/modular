@@ -35,7 +35,6 @@ def mojo_test(
         name = name,
         tags = tags,
         data = data + [
-            "//bazel/internal:asan-suppressions.txt",
             "//bazel/internal:lsan-suppressions.txt",
         ],
         target_compatible_with = target_compatible_with,

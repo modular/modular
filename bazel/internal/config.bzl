@@ -4,7 +4,7 @@ load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements") 
 load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")  # buildifier: disable=bzl-visibility
 
 GPU_TEST_ENV = {
-    "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),suppressions=$(execpath //bazel/internal:asan-suppressions.txt)",
+    "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS)",
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
     "LSAN_OPTIONS": "suppressions=$(execpath //bazel/internal:lsan-suppressions.txt)",
 }

@@ -37,7 +37,6 @@ def modular_run_binary_test(
         name = name,
         binary = binary,
         data = data + [
-            "//bazel/internal:asan-suppressions.txt",
             "//bazel/internal:lsan-suppressions.txt",
         ],
         env = GPU_TEST_ENV | get_default_test_env(exec_properties) | env_for_available_tools() | env,
