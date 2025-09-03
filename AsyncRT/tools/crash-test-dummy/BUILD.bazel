@@ -9,6 +9,7 @@ modular_cc_binary(
     env = {
         "MODULAR_CRASH_REPORTING_ENABLED": "true",
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
+        "MODULAR_CRASH_REPORTING_URL": "https://crash-reporting.dev.modular.com",
     },
     visibility = ["//visibility:public"],
     deps = [
