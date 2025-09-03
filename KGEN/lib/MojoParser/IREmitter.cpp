@@ -1200,7 +1200,8 @@ CValue IREmitter::emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest) {
 /// Emit a copy of the specified value, producing a new owned instance of the
 /// value in the specified destination.  This returns an RValue if
 /// there is no consuming dest, otherwise a BValue.
-CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
+CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
+                                  bool allowExplicitCopy) {
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
   if (!value.ir)
@@ -1278,7 +1279,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // Generate nicer error message for common cases.
-  if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
+  if (!valueType.isCopyable(exprLoc, shared, !allowExplicitCopy)) {
     if (valueType.isMovableFrom(value, shared) &&
         !valueType.isRegisterPassable(exprLoc, shared)) {
       emitError(exprLoc, "value of type ")
@@ -1286,10 +1287,11 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
           << " can only be moved, but source value can only be copied"
           << value.expr->getRange();
     } else {
-      emitError(exprLoc) << valueType
-                         << " is not implicitly copyable because it does not "
-                            "conform to 'ImplicitlyCopyable'"
-                         << value.expr->getRange();
+      emitError(exprLoc) << valueType << " is not "
+                         << (allowExplicitCopy ? "explicitly" : "implicitly")
+                         << " copyable because it does not conform to '"
+                         << (allowExplicitCopy ? "Explicitly" : "Implicitly")
+                         << "Copyable'" << value.expr->getRange();
     }
     return {};
   }
@@ -1315,7 +1317,8 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                    ExprContext context) {
+                                    ExprContext context,
+                                    bool allowExplicitCopy) {
   // Convert nonmaterializables.
   if (auto nmTarget =
           value.ir.getRValueType().getNonmaterializableTarget(shared)) {
@@ -1418,8 +1421,13 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // value is an RValue, then this is because the type isn't implementing
     // either the copy or move init.  Complain precisely, instead of just
     // complaining about copying.
-    if (!valueType.isImplicitlyCopyable(exprLoc, shared) &&
-        value.ir.getIfRValue() && !value.ir.getIfPValue()) {
+    auto isCopyable = [&](ASTType valueType) {
+      return allowExplicitCopy
+                 ? valueType.isExplicitlyCopyable(exprLoc, shared)
+                 : valueType.isImplicitlyCopyable(exprLoc, shared);
+    };
+    if (!isCopyable(valueType) && value.ir.getIfRValue() &&
+        !value.ir.getIfPValue()) {
       emitError(exprLoc) << valueType
                          << " is not copyable or movable because it has no "
                             "'__copyinit__' or '__moveinit__' member"
@@ -1428,7 +1436,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     }
 
     ValueDest dest(destLV, context);
-    auto result = emitCopyOfValue(value, dest);
+    auto result = emitCopyOfValue(value, dest, allowExplicitCopy);
     if (!result)
       dest.resetForError(*this);
     return result;

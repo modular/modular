@@ -290,10 +290,8 @@ bool ASTType::hasNontrivialDestructor(llvm::SMLoc loc,
   return structOp.getDestructorAttr() != TypedAttr();
 }
 
-/// Return true if this type is implicitly copyable, either because it is
-/// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
-/// body of a struct type.
-bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
+bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared,
+                         bool isImplicit) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return true; // MLIR Types are copyable.
@@ -302,15 +300,32 @@ bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
   if (isTrivial(loc, shared))
     return true;
 
+  StringRef traitName =
+      isImplicit ? "ImplicitlyCopyable" : "ExplicitlyCopyable";
+
   // Check whether the type conforms to `ImplicitlyCopyable` trait.
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait("ImplicitlyCopyable", typeDecl,
-                                                 typeDecl->getLoc());
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait(traitName, typeDecl, typeDecl->getLoc());
   if (!traitDecl)
     return false;
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
   if (!trait)
     return false;
   return typeDecl->doesNominalTypeConformTo(trait.bindReference());
+}
+
+/// Return true if this type is implicitly copyable, either because it is
+/// trivial or conforms to ImplicitlyCopyable trait. Note: this resolves the
+/// body of a struct type.
+bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
+  return isCopyable(loc, shared, /*isImplicit=*/true);
+}
+
+/// Return true if this type is explicitly copyable, either because it is
+/// trivial or conforms to ExplicitlyCopyable trait. Note: this resolves the
+/// body of a struct type.
+bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
+  return isCopyable(loc, shared, /*isImplicit=*/false);
 }
 
 /// Return true if this type is movable from its own type, either because it

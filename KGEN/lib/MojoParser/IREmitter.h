@@ -536,13 +536,18 @@ public:
   /// Emit a copy of the specified value, producing a new owned instance of the
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
-  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
+  /// When `allowExplicitCopy = true`, compiler is allowed to emit call to
+  /// `__copyinit__` even when the type of the value is `ExplicitlyCopyable`
+  /// only (not `ImplicitlyCopyable`). It can only happen when we are
+  /// synthesizing __copyinit__ itself.
+  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
+                         bool allowExplicitCopy = false);
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.  The
   /// types must match for this call, or be a nonmaterializable conversion.
   CValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                           ExprContext context);
+                           ExprContext context, bool allowExplicitCopy = false);
 
   /// Emit IR for the specified expression without adding it to the current
   /// execution context.  This even allows evaluating dynamic expressions in a
