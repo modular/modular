@@ -7,7 +7,10 @@ _DATA = [
 filegroup(
     name = "fixtures",
     testonly = True,
-    srcs = glob(["inputs/**/*.mojo"]),
+    srcs = glob([
+        "inputs/**/*.ll",
+        "inputs/**/*.mojo",
+    ]),
 )
 
 lit_tests(

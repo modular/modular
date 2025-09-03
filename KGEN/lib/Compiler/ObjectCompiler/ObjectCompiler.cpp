@@ -1553,7 +1553,7 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
   return success();
 }
 
-static ErrorOr<std::pair<uint64_t, llvm::Function *>>
+static std::optional<std::pair<uint64_t, llvm::Function *>>
 getKernelIDFromLLVMModule(llvm::Module &module) {
   for (llvm::Function &func : module) {
     if (func.isDeclaration())
@@ -1581,7 +1581,7 @@ getKernelIDFromLLVMModule(llvm::Module &module) {
     }
   }
 
-  return Error("Can't find kgen.offload.kernelid from the llvm split.");
+  return std::nullopt;
 }
 
 static void attachGPUCodeGenAttributes(llvm::Function *kernelEntry) {
@@ -2020,7 +2020,8 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     std::string &linker) {
   auto resultBufs =
       AsyncRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
-  auto resultKernelId = AsyncRT::AsyncValueRef<uint64_t>::allocate(runtime);
+  auto resultKernelId =
+      AsyncRT::AsyncValueRef<std::optional<uint64_t>>::allocate(runtime);
 
   runtime.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
                                    resultKernelId = resultKernelId.copy(),
@@ -2033,14 +2034,14 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     // Materialize the module.
     LLVMModuleAndContext module = produceModule();
 
-    ErrorOr<std::pair<uint64_t, llvm::Function *>> kernelIdFuncOr =
+    std::optional<std::pair<uint64_t, llvm::Function *>> kernelIdFuncOr =
         getKernelIDFromLLVMModule(*module);
-    if (kernelIdFuncOr) {
-      std::move(resultBufs)
-          .setToError(AsyncRT::getMLIRDiagnostic("Can't find kernelId", loc));
-      std::move(resultKernelId)
-          .setToError(
-              AsyncRT::getMLIRDiagnostic(kernelIdFuncOr.takeError(), loc));
+    if (!kernelIdFuncOr) {
+      // No kernel found in this split: return empty buffers and an error kernel
+      // id result, which emitGPUKernels will ignore for GPU backends.
+      DenseMap<EmitAs, BufferRef> emptyResults;
+      std::move(resultBufs).emplace(std::move(emptyResults));
+      std::move(resultKernelId).emplace(std::nullopt);
       return;
     }
 
@@ -2196,7 +2197,11 @@ ObjectCompiler::emitGPUKernels(
           if (bufs.isError())
             return std::move(result).setToError(bufs.takeDiagnostic());
 
-          results.insert({kernelId.get<uint64_t>(),
+          auto maybeKernelId = kernelId.get<std::optional<uint64_t>>();
+          if (!maybeKernelId)
+            continue;
+
+          results.insert({*maybeKernelId,
                           std::move(bufs.get<DenseMap<EmitAs, BufferRef>>())});
         }
         std::move(result).emplace(std::move(results));
