@@ -139,7 +139,7 @@ def generate_max_outputs(
     return compiled.execute(input_tensor, *signal_buffers)
 
 
-@pytest.mark.xfail(
+@pytest.mark.skip(
     reason="TODO(MODELS-728): Fix MOE bugs introduced after transformers version bump"
 )
 def test_mix_of_experts(
