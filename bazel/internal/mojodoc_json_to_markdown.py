@@ -170,6 +170,29 @@ def generateMarkdown(
     is_nested=False,  # noqa: ANN001
     namespace=None,  # noqa: ANN001
 ) -> None:
+    """Generate markdown docs from `mojo doc` JSON data.
+
+    This function recursively processes Mojo documentation JSON data and generates
+    corresponding markdown files using Jinja2 templates. It handles packages, modules,
+    structs, traits, and functions, applying various transformations to the data
+    before rendering.
+
+    Args:
+        mojo_json: The JSON data structure containing Mojo documentation information.
+        version: The version string to be included in the generated documentation.
+        output: The base output directory path where generated markdown files will be written.
+        environment: The Jinja2 environment configured with template loaders and settings.
+            Used to load and render documentation templates.
+        template: The Jinja2 template to use for rendering the current JSON data.
+        parent_json: The parent JSON data structure when processing nested elements.
+            Used for context when generating documentation for child modules, structs, etc.
+            Defaults to None.
+        is_nested: Flag indicating whether this is a nested call within a package/module hierarchy.
+            Affects path generation and namespace handling. Defaults to False.
+        namespace: The current namespace path (dot-separated).
+            Used to generate fully qualified names and proper cross-references.
+            Defaults to None.
+    """
     name = mojo_json["name"]
 
     # Skip private modules.
@@ -215,8 +238,13 @@ def generateMarkdown(
         ]:
             transformation(mojo_json)
 
-        # If we don't have an output path, we use the slug for the module.
-        output = output / Path(mojo_json["slug"])
+        # Use the member name as the `slug` for Docusaurus URLs (case sensitive).
+        # But don't use the `__init__` name in the path. Normally this doesn't
+        # matter, because the init module is just the index file and has no
+        # descendant members. But in the event that the `__init__.mojo` file does
+        # include code, we don't want the `__init__` name in the path.
+        if name != "__init__":
+            output = output / Path(mojo_json["slug"])
         struct_template = environment.get_template("mojodoc_struct.md")
         function_template = environment.get_template("mojodoc_function.md")
 
@@ -276,7 +304,7 @@ def generateMarkdown(
         if name == "__init__" and parent_json:
             # The init module is generated as the index file in the output
             # directory.
-            output = output.with_name("index.md")
+            output = output / Path("index.md")
 
             # Add links to the public modules and packages in the parent.
             mojo_json["modules"] = [

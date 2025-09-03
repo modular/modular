@@ -18,7 +18,7 @@ description: {% if decl.summary
   %}"{{ macros.escape_quotes(decl.summary) }}"
   {% else %}"Mojo {%
     if decl.packages or decl.modules %}package{% else %}module{%
-    endif %} `{{ decl.namespace }}.{{ decl.name }}` documentation"
+    endif %} {{ decl.namespace }}.{{ decl.name }} documentation"
   {% endif %}
 ---
 
