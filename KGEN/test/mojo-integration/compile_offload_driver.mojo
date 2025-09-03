@@ -41,7 +41,7 @@ fn _compile_info[
 ]() -> Info:
     var info = __mlir_op.`kgen.compile_offload`[
         target_type=target,
-        emission_kind = index(emission_kind),
+        emission_kind = emission_kind._mlir_value,
         emission_option = _get_kgen_string[compile_options](),
         func=func,
         _type=_Info,
