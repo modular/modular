@@ -195,6 +195,11 @@ def generateMarkdown(
     """
     name = mojo_json["name"]
 
+    # Add the module name to the JSON only if the parent is "__init__"
+    # so we can create the proper "view source" link.
+    if parent_json and parent_json["name"] == "__init__":
+        mojo_json["module_name"] = parent_json["name"]
+
     # Skip private modules.
     if name != "__init__" and name.startswith("_"):
         return
@@ -302,8 +307,7 @@ def generateMarkdown(
 
         # Handle the init module.
         if name == "__init__" and parent_json:
-            # The init module is generated as the index file in the output
-            # directory.
+            mojo_json["module_name"] = name  # For the "view source" link.
             output = output / Path("index.md")
 
             # Add links to the public modules and packages in the parent.

@@ -99,7 +99,8 @@ fn enumerate[
         iterable: An iterable object (e.g., list, string, etc.).
         start: The starting index for enumeration (default is 0).
 
-    # Examples
+    Example:
+
     ```mojo
     var l = ["hey", "hi", "hello"]
     for i, elem in enumerate(l):
