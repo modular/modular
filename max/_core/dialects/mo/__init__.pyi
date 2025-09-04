@@ -32,15 +32,6 @@ from . import passes as passes
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
-# This is a bug I haven't yet chased down in Nanobind's type renderings.
-# - In some circumstances, `max._core.dialicts.mosh.ShapeType` is being shortened
-#   to `h.ShapeType`, which obviously doesn't exist.
-# - I haven't figured out a clean repro or workaround, I suspect it's some awkward case
-#   with `nb_func_render_signature` because for instance adding garbage characters to the
-#   `const_name` in the type caster will cause it to repro in different places.
-# - For now, really hacky thing to work around.
-import max._core.dialects.mosh as h
-
 class BufferType(max._core.Type):
     """
     This is a close analogue of the existing mo.tensor type but is meant
@@ -1015,7 +1006,7 @@ class ShapeFromTensorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: h.ShapeType,
+        result: max._core.dialects.mosh.ShapeType,
         input: max._core.Value[TensorType],
     ) -> None: ...
     @property
@@ -1038,10 +1029,10 @@ class ShapeToTensorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        input: max._core.Value[h.ShapeType],
+        input: max._core.Value[max._core.dialects.mosh.ShapeType],
     ) -> None: ...
     @property
-    def input(self) -> max._core.Value[h.ShapeType]: ...
+    def input(self) -> max._core.Value[max._core.dialects.mosh.ShapeType]: ...
 
 class StaticBroadcastToOp(max._core.Operation):
     """
