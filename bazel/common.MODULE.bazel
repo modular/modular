@@ -350,17 +350,17 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-nq0vgIPVwMmExFFXd5UgmbLxYMnUbZ72s8oTJrwNYvY=",
+    integrity = "sha256-/gPauKjoBn4Wuy7UEYKKAQpqLHjohlf9U5XEH7bNM64=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/4/9ead2f8083d5c0c984c4515777952099b2f160c9d46d9ef6b3ca1326bc0d62f6/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/5/fe03dab8a8e8067e16bb2ed411828a010a6a2c78e88657fd5395c41fb6cd33ae/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-NyQeusV/yls9rw+uDrqs3E3zn1xGjQbXtWw3ClaHXQA=",
+    integrity = "sha256-6SU7cW9SeAMp1L2SbyxlUjebYa5nQ2ZwroqTnh5Mb1c=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/4/37241ebac57fca5b3daf0fae0ebaacdc4df39f5c468d06d7b56c370a56875d00/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/5/e9253b716f52780329d4bd926f2c6552379b61ae67436670ae8a939e1e4c6f57/sysroot-jammy-x86_64.tar.xz",
     ],
 )
