@@ -29,7 +29,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 @fieldwise_init
 @register_passable("trivial")
-struct Attribute(Writable):
+struct Attribute(Identifiable, Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried

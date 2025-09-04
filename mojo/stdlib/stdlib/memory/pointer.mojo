@@ -26,7 +26,9 @@ from memory import Pointer
 
 
 @register_passable("trivial")
-struct _GPUAddressSpace(EqualityComparable, ImplicitlyCopyable, Movable):
+struct _GPUAddressSpace(
+    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
+):
     var _value: Int
 
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
@@ -146,6 +148,7 @@ struct _GPUAddressSpace(EqualityComparable, ImplicitlyCopyable, Movable):
 @register_passable("trivial")
 struct AddressSpace(
     EqualityComparable,
+    Identifiable,
     ImplicitlyCopyable,
     Intable,
     Movable,

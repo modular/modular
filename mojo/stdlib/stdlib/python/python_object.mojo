@@ -115,6 +115,7 @@ struct PythonObject(
     Boolable,
     ConvertibleToPython,
     Defaultable,
+    Identifiable,
     ImplicitlyCopyable,
     Movable,
     SizedRaising,

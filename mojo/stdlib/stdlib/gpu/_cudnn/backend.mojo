@@ -595,7 +595,7 @@ fn cudnnBackendSetAttribute(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendBehaviorNote_t(Writable):
+struct cudnnBackendBehaviorNote_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION = Self(0)
     alias CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER = Self(1)
@@ -647,7 +647,7 @@ struct cudnnBackendBehaviorNote_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendLayoutType_t(Writable):
+struct cudnnBackendLayoutType_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_LAYOUT_TYPE_PREFERRED_NCHW = Self(0)
     alias CUDNN_LAYOUT_TYPE_PREFERRED_NHWC = Self(1)
@@ -698,7 +698,7 @@ struct cudnnBackendLayoutType_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendNormFwdPhase_t(Writable):
+struct cudnnBackendNormFwdPhase_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_NORM_FWD_INFERENCE = Self(0)
     alias CUDNN_NORM_FWD_TRAINING = Self(1)
@@ -740,7 +740,7 @@ struct cudnnBackendNormFwdPhase_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendHeurMode_t(Writable):
+struct cudnnBackendHeurMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_HEUR_MODE_INSTANT = Self(0)
     alias CUDNN_HEUR_MODE_B = Self(1)
@@ -1003,7 +1003,7 @@ struct cudnnBackendAttributeType_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnRngDistribution_t(Writable):
+struct cudnnRngDistribution_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_RNG_DISTRIBUTION_BERNOULLI = Self(0)
     alias CUDNN_RNG_DISTRIBUTION_UNIFORM = Self(1)
@@ -1054,7 +1054,7 @@ fn cudnnBackendFinalize(descriptor: OpaquePointer) -> cudnnStatus_t:
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendTensorReordering_t(Writable):
+struct cudnnBackendTensorReordering_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_TENSOR_REORDERING_NONE = Self(0)
     alias CUDNN_TENSOR_REORDERING_INT8x32 = Self(1)
@@ -1867,7 +1867,7 @@ struct cudnnBackendAttributeName_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBackendNormMode_t(Writable):
+struct cudnnBackendNormMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_LAYER_NORM = Self(0)
     alias CUDNN_INSTANCE_NORM = Self(1)
@@ -1918,7 +1918,7 @@ struct cudnnBackendNormMode_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnSignalMode_t(Writable):
+struct cudnnSignalMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_SIGNAL_SET = Self(0)
     alias CUDNN_SIGNAL_WAIT = Self(1)
@@ -1963,7 +1963,7 @@ alias cudnnBackendDescriptor_t = OpaquePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnBnFinalizeStatsMode_t(Writable):
+struct cudnnBnFinalizeStatsMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_BN_FINALIZE_STATISTICS_TRAINING = Self(0)
     alias CUDNN_BN_FINALIZE_STATISTICS_INFERENCE = Self(1)
@@ -2005,7 +2005,7 @@ struct cudnnBnFinalizeStatsMode_t(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnGenStatsMode_t(Writable):
+struct cudnnGenStatsMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_GENSTATS_SUM_SQSUM = Self(0)
 
@@ -2068,7 +2068,7 @@ fn cudnnBackendExecute(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnResampleMode_t(Writable):
+struct cudnnResampleMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_RESAMPLE_NEAREST = Self(0)
     alias CUDNN_RESAMPLE_BILINEAR = Self(1)
@@ -2153,7 +2153,7 @@ fn cudnnBackendGetAttribute(
 
 @fieldwise_init
 @register_passable("trivial")
-struct cudnnPaddingMode_t(Writable):
+struct cudnnPaddingMode_t(Identifiable, Writable):
     var _value: Int8
     alias CUDNN_ZERO_PAD = Self(0)
     alias CUDNN_NEG_INF_PAD = Self(1)

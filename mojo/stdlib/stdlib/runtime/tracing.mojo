@@ -43,7 +43,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TraceCategory(EqualityComparable, Intable):
+struct TraceCategory(EqualityComparable, Identifiable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     alias OTHER = Self(0)
@@ -120,7 +120,9 @@ struct TraceCategory(EqualityComparable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(EqualityComparable, ImplicitlyCopyable, Movable):
+struct TraceLevel(
+    EqualityComparable, Identifiable, ImplicitlyCopyable, Movable
+):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)

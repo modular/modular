@@ -47,7 +47,7 @@ struct LibraryProperty:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(Stringable, Writable):
+struct Status(Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_INVALID_PLAN = Self(1)
     alias CUFFT_SUCCESS = Self(0)
@@ -137,7 +137,7 @@ struct Status(Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Type(Stringable, Writable):
+struct Type(Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_R2C = Self(0x2A)
     alias CUFFT_C2R = Self(0x2C)
@@ -191,7 +191,7 @@ struct Type(Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Compatibility(Stringable, Writable):
+struct Compatibility(Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
@@ -230,7 +230,7 @@ struct Compatibility(Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Property(Stringable, Writable):
+struct Property(Identifiable, Stringable, Writable):
     var _value: Int8
     alias NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     alias NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)

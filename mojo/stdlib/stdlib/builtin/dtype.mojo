@@ -32,6 +32,7 @@ alias _mIsFloat = UInt8(1 << 6)
 struct DType(
     EqualityComparable,
     Hashable,
+    Identifiable,
     ImplicitlyCopyable,
     KeyElement,
     Movable,

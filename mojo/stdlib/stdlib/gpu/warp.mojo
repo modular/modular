@@ -774,7 +774,7 @@ fn sum[
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReductionMethod:
+struct ReductionMethod(Identifiable):
     """Enumerates the supported reduction methods."""
 
     var _value: Int

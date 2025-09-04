@@ -31,7 +31,7 @@ alias _KB = 1024
 
 @fieldwise_init
 @register_passable
-struct Vendor(Writable):
+struct Vendor(Identifiable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -1287,7 +1287,7 @@ alias Radeon860m = GPUInfo(
 
 @fieldwise_init
 @register_passable
-struct GPUInfo(Stringable, Writable):
+struct GPUInfo(Identifiable, Stringable, Writable):
     """
     Comprehensive information about a GPU architecture.
 
