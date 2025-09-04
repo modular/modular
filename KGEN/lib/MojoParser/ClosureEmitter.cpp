@@ -1621,10 +1621,10 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
                                .concat(closureType.getName().getValue()));
   ParamClosureType paramClosureType =
       KGEN::ParamClosureType::get(ctx, parentSymbolRef, closureType.getName());
-  ClosureAttr packedParamCaptures =
-      KGEN::ClosureAttr::get(ctx, paramClosureType);
+
   SmallVector<ParamDeclAttr> closureParams;
-  closureParams.push_back(ParamDeclAttr::get("CAPTURES", paramClosureType));
+  auto capturesParam = ParamDeclAttr::get("CAPTURES", paramClosureType);
+  closureParams.push_back(capturesParam);
   ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPointToStart(
@@ -1674,7 +1674,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
     });
     for (Type paramType : sig.getInputParamTypes())
       paramValues.push_back(UnboundAttr::get(replacer.replace(paramType)));
-    paramValues.push_back(packedParamCaptures);
+    paramValues.push_back(ParamDeclRefAttr::get(capturesParam));
 
     TypedAttr symbol = ClosureSymbolAttr::get(
         ctx, parentSymbolRef, closureType.getName(),
@@ -1692,6 +1692,8 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(ASTDecl &moduleDecl,
       cast<mlir::SymbolOpInterface>(structGen.getOperation()));
   // Type value contains the reference to the struct gen op with the witness
   // table.
+  ClosureAttr packedParamCaptures =
+      KGEN::ClosureAttr::get(ctx, paramClosureType);
   auto typeValue = KGEN::TypeValueType::get(
       ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
                                      {packedParamCaptures}, traitType));

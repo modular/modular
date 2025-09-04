@@ -73,19 +73,11 @@ struct ClosureLifter {
                 bool debugBuild)
       : counter(0), symtab(symtab), paramCache(paramCache),
         debugBuild(debugBuild) {}
-  /// Given components of the lifted function, generate a closure symbol, which
-  /// is an abstraction of a symbol used to reference functions that do not yet
-  /// exist.
-  ClosureSymbolAttr createClosureSymbolAttr(
-      GeneratorOp parent, StringRef name, ClosureMethod method,
-      ArrayRef<Type> argTypes, ArrayRef<Type> resultTypes,
-      ClosureType closureType, ArrayRef<Type> params,
-      ParamClosureType closureParamType, ArrayRef<ArgConvention> argConventions,
-      FnEffects effects);
   /// Given a closure init op, generate functions for call, copy, move, and del
   /// + struct instance to store captures.
   LogicalResult liftClosureInit(ClosureInitOp closureInit,
-                                GeneratorOp generator);
+                                GeneratorOp generator,
+                                StructGeneratorOp generatorOp);
 
   /// Symbol name uniquer requires a counter.
   unsigned counter;
@@ -116,13 +108,14 @@ struct ClosureLifter {
   /// Pair the closure type with the struct type of the generated capture struct
   /// so that the closure types can be replaced.
   DenseMap<ClosureType, Type> closureTypeToStructTypes;
+  DenseMap<ClosureType, Type> packedClosureType;
 
   /// True if built with debug metadata.
   bool debugBuild;
   struct ClosureInitData {
     ClosureInitData(llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
                     ClosureType closureType, ClosureInitOp closureInit,
-                    GeneratorOp generator,
+                    StructGeneratorOp structGeneratorOp, GeneratorOp generator,
                     SmallVector<SymbolConstantAttr> &&moveSymbols);
     Type selfType(Type loweredClosureType) const {
       return closureType.getClosureMemoryKind() ==
@@ -138,6 +131,7 @@ struct ClosureLifter {
     GeneratorOp getGenerator() const { return generator; }
     ClosureType getClosureType() const { return closureType; }
     ClosureInitOp getClosureInit() const { return closureInit; }
+    StringRef getCapturesParamName() const { return capturedParametersName; }
     bool isEscaping() const {
       return closureType.getClosureMemoryKind() == ClosureMemoryKind::ESCAPING;
     }
@@ -153,9 +147,14 @@ struct ClosureLifter {
     }
     ParamDeclAttr getSelfParam() const { return selfParam; }
     ParamClosureType getParamClosureType() const { return paramClosureType; }
+    ClosureSymbolAttr closureSymbolForSourceName(StringRef sourceName) const;
 
   private:
     llvm::SetVector<ParamDeclAttr> capturedParamDecls;
+    /// The map of symbols to replace.
+    DenseMap<StringRef, ClosureSymbolAttr> abstractSymbolMap;
+    /// The name of the captures parameter in the corresponding struct generator
+    StringRef capturedParametersName;
     ClosureType closureType;
     ClosureInitOp closureInit;
     GeneratorOp generator;
@@ -188,7 +187,7 @@ private:
   /// Given closure metadata, lift the region of the closure init into a top
   /// level function.
   void liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
-                        TypedAttr capturedInstance);
+                        TypedAttr capturedInstance, Type loweredClosureType);
   void liftMoveFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
                         Type loweredClosureType,
                         ArrayRef<Capture> captureMechanisms,
@@ -228,7 +227,8 @@ private:
 
 ClosureLifter::ClosureInitData::ClosureInitData(
     llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
-    ClosureType closureType, ClosureInitOp closureInit, GeneratorOp generator,
+    ClosureType closureType, ClosureInitOp closureInit,
+    StructGeneratorOp structGeneratorOp, GeneratorOp generator,
     SmallVector<SymbolConstantAttr> &&moveSymbols)
     : capturedParamDecls(std::move(capturedParamDecls)),
       closureType(closureType), closureInit(closureInit), generator(generator),
@@ -258,6 +258,22 @@ ClosureLifter::ClosureInitData::ClosureInitData(
   paramClosureType =
       ParamClosureType::get(cxt, SymbolRefAttr::get(generator.getSymNameAttr()),
                             StringAttr::get(cxt, regionName()));
+  structGeneratorOp->walk([&](WitnessOp witness) {
+    if (auto closureSym = dyn_cast<ClosureSymbolAttr>(witness.getValue()))
+      abstractSymbolMap[witness.getName()] = closureSym;
+  });
+
+  // Captures parameter is always last.
+  capturedParametersName = structGeneratorOp.getInputParams().back().getName();
+}
+
+ClosureSymbolAttr ClosureLifter::ClosureInitData::closureSymbolForSourceName(
+    StringRef sourceName) const {
+  auto sym = abstractSymbolMap.find(sourceName);
+  assert(sym != abstractSymbolMap.end() &&
+         "the front end did not generate a conformance table for all expected "
+         "methods of a closure");
+  return sym->getSecond();
 }
 
 /// Given a region of a function assumed to have a parameter of the closure self
@@ -356,37 +372,6 @@ remapFuncType(ImplicitLocOpBuilder &b, Region &region, FunctionType oldFuncType,
                            resultTypes);
 }
 
-ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
-    GeneratorOp parent, StringRef name, ClosureMethod method,
-    ArrayRef<Type> argTypes, ArrayRef<Type> resultTypes,
-    ClosureType closureType, ArrayRef<Type> params,
-    ParamClosureType closureParamType, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects) {
-  MLIRContext *cxt = parent->getContext();
-  SmallVector<Type> originalArgTypes;
-  Type selfType =
-      closureType.getClosureMemoryKind() == ClosureMemoryKind::REGISTER_PASSABLE
-          ? (Type)closureType
-          : PointerType::get(closureType);
-  originalArgTypes.push_back(selfType);
-  llvm::append_range(originalArgTypes, argTypes);
-  FunctionType originalFuncType =
-      FunctionType::get(cxt, originalArgTypes, resultTypes);
-  M::KGEN::FuncTypeGeneratorType originalfuncGenType =
-      M::KGEN::FuncTypeGeneratorType::get(params, originalFuncType,
-                                          argConventions, effects);
-  SmallVector<TypedAttr> boundParams;
-  llvm::append_range(boundParams,
-                     llvm::map_to_vector(params, [&](Type type) -> TypedAttr {
-                       return UnboundAttr::get(parent.getContext(), type);
-                     }));
-  boundParams.push_back(ClosureAttr::get(cxt, closureParamType));
-  return ClosureSymbolAttr::get(
-      cxt, SymbolRefAttr::get(parent.getSymNameAttr()),
-      StringAttr::get(cxt, name), ClosureMethodAttr::get(cxt, method),
-      boundParams, originalfuncGenType);
-}
-
 /// A closure init op has two possible types: pointer<closure_type> or
 /// closure_type. The closure type encodes where the captures are stored, which
 /// is necessary for lowering. Extract the closure type from the result type of
@@ -420,10 +405,10 @@ void ClosureLifter::createClosureGenerator(
   switch (method) {
   case ClosureMethod::MOVE:
     argTypes.push_back(PointerType::get(closureInitData.getClosureType()));
-    baseName = "_move_";
+    baseName = "__moveinit__";
     break;
   case ClosureMethod::DEL:
-    baseName = "_del_";
+    baseName = "__del__";
     break;
   default:
     llvm_unreachable("Invalid closure method");
@@ -447,17 +432,16 @@ void ClosureLifter::createClosureGenerator(
 
   // Map from synthesized function to abstracted symbols.
   SmallVector<TypedAttr> boundParams;
-  boundParams.push_back(capturedInstance);
+  boundParams.push_back(ParamDeclRefAttr::get(
+      closureInitData.getCapturesParamName(), capturedInstance.getType()));
   auto sym = SymbolConstantAttr::get(
       closureGenerator,
       FuncTypeGeneratorType::get({}, newFuncType, /*argConv=*/argConventions,
                                  /*effects=*/{},
                                  /*fnMetadata=*/{}, /*genMetadata=*/{}),
       boundParams);
-  ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
-      closureInitData.getGenerator(), closureInitData.regionName(), method,
-      argTypes, resultTypes, closureInitData.getClosureType(), {},
-      closureInitData.getParamClosureType(), argConventions, {});
+  ClosureSymbolAttr closureAttr =
+      closureInitData.closureSymbolForSourceName(baseName);
   liftedClosureSymbols[closureAttr] = sym;
 }
 
@@ -533,7 +517,8 @@ void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
 
 void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
                                      ClosureInitData &closureInitData,
-                                     TypedAttr capturedInstance) {
+                                     TypedAttr capturedInstance,
+                                     Type loweredClosureType) {
   Region &region = closureInitData.region();
   GeneratorOp generator = closureInitData.getGenerator();
   SmallVector<Type> argTypes;
@@ -575,19 +560,33 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
       [&](ParamDeclAttr attr) -> TypedAttr {
         return UnboundAttr::get(b.getContext(), attr.getType());
       });
-  boundParams.push_back(capturedInstance);
-  auto sym = SymbolConstantAttr::get(
-      liftedWrapper,
-      FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          closureInitData.getClosureInit().getInputParams(), funcType,
-          /*argConv=*/conventions, /*effects=*/effects,
-          /*fnMetadata=*/{}, /*genMetadata=*/{}),
-      boundParams);
+  boundParams.push_back(ParamDeclRefAttr::get(
+      closureInitData.getCapturesParamName(), capturedInstance.getType()));
+
   Region &body = liftedWrapper.getBodyRegion();
   body.takeBody(region);
+  /// Get a map from a captured parameter "T" to the expression with respect to
+  /// the packed parameter value, i.e. "struct.extract<CAPTURES, 0>"
   auto fromParamToExtractExpr = unpackCapturesInto(b, body, closureInitData);
-  liftedWrapper.setFunctionType(
-      remapFuncType(b, body, funcType, fromParamToExtractExpr));
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr paramDeclRefAttr) -> TypedAttr {
+    auto ptr = fromParamToExtractExpr.find(paramDeclRefAttr.getName());
+    if (ptr != fromParamToExtractExpr.end())
+      return ptr->getSecond();
+    return paramDeclRefAttr;
+  });
+  /// Save the closure type in terms of the packed parameter since we cannot
+  /// reference undeclared parameters in the struct generator op. That is,
+  /// instead of mapping the closure struct to something like
+  /// `kgen.struct<(A,B)>` map the closure struct to
+  /// `kgen.struct<(struct.extract<CAPTURES, 0>, struct.extract<CAPTURES, 1>)>`
+  /// so that the verifier does not complain that the struct generator op did
+  /// not declare A or B.
+  packedClosureType[closureInitData.getClosureType()] =
+      replacer.replace(loweredClosureType);
+  FunctionType remappedFuncType =
+      remapFuncType(b, body, funcType, fromParamToExtractExpr);
+  liftedWrapper.setFunctionType(remappedFuncType);
 
   // The closure symbol does not have the implicit argument; remove it
   argTypes.erase(argTypes.begin());
@@ -596,11 +595,15 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
                             .getFuncTypeGenerator()
                             .getInputParamTypes())
     paramsUnmapped.push_back(paramType);
-  ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
-      closureInitData.getGenerator(), closureInitData.regionName(),
-      ClosureMethod::CALL, argTypes, closureInitData.results(),
-      closureInitData.getClosureType(), paramsUnmapped,
-      closureInitData.getParamClosureType(), conventions, effects);
+  ClosureSymbolAttr closureAttr =
+      closureInitData.closureSymbolForSourceName("__call__");
+  auto sym = SymbolConstantAttr::get(
+      liftedWrapper,
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          closureInitData.getClosureInit().getInputParams(), remappedFuncType,
+          /*argConv=*/conventions, /*effects=*/effects,
+          /*fnMetadata=*/{}, /*genMetadata=*/{}),
+      boundParams);
   liftedClosureSymbols[closureAttr] = sym;
 }
 
@@ -640,7 +643,7 @@ Value ClosureLifter::liftClosure(
                                replacementFn(capture, index, captureStructArg),
                                region);
   // Synthesize methods.
-  liftCallFunction(b, closureInitData, capturedInstance);
+  liftCallFunction(b, closureInitData, capturedInstance, loweredClosureType);
 
   // Instantiate capture struct.
   b.setInsertionPoint(closureInitData.getClosureInit());
@@ -701,7 +704,7 @@ Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
   region.insertArgument((unsigned)0, selfType, region.getLoc());
-  liftCallFunction(b, closureInitData, capturedInstance);
+  liftCallFunction(b, closureInitData, capturedInstance, loweredClosureType);
   // TODO: create thunks for register passable closures (MOCO-2242).
   if (!isRegisterPassable) {
     liftMoveFunction(b, closureInitData, loweredClosureType, {},
@@ -793,8 +796,9 @@ createCaptureAttribute(ImplicitLocOpBuilder &b,
   return capturedInstance;
 }
 
-LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
-                                             GeneratorOp generator) {
+LogicalResult
+ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
+                               StructGeneratorOp structGeneratorOp) {
   ImplicitLocOpBuilder b(closureInit->getLoc(), closureInit.getContext());
   ClosureType closureType = getClosureType(closureInit);
   StringRef regionName = closureType.getName();
@@ -856,7 +860,7 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   }
   bool isThin = fieldTypes.empty();
   ClosureInitData closureInitData(std::move(capturedParamDecls), closureType,
-                                  closureInit, generator,
+                                  closureInit, structGeneratorOp, generator,
                                   std::move(moveSymbols));
   // Replace parameter abstractions.
   TypedAttr capturedInstance = createCaptureAttribute(b, closureInitData);
@@ -915,19 +919,26 @@ void OutlineClosuresNewPass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
-  ClosureLifter lifter(symtab, paramCache, debugBuild);
-  SmallVector<StructGeneratorOp> structGenerators;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
+    ClosureLifter lifter(symtab, paramCache, debugBuild);
+    SmallVector<std::pair<ClosureType, StructGeneratorOp>> structGenerators;
     bool hasFailure = false;
     generator.walk([&](ClosureInitOp closureInit) {
-      StringAttr symbol =
-          getFullName(getClosureType(closureInit).getName(), generator);
-      if (StructGeneratorOp generatorOp =
-              symtab.lookup<StructGeneratorOp>(symbol))
-        structGenerators.push_back(generatorOp);
-
-      hasFailure =
-          hasFailure | failed(lifter.liftClosureInit(closureInit, generator));
+      ClosureType closureType = getClosureType(closureInit);
+      StringAttr symbol = getFullName(closureType.getName(), generator);
+      if (StructGeneratorOp structGeneratorOp =
+              symtab.lookup<StructGeneratorOp>(symbol)) {
+        hasFailure =
+            hasFailure | failed(lifter.liftClosureInit(closureInit, generator,
+                                                       structGeneratorOp));
+        structGenerators.push_back(std::pair<ClosureType, StructGeneratorOp>(
+            closureType, structGeneratorOp));
+      } else {
+        mlir::emitError(theModule.getLoc())
+            << "missing struct generator op for closure "
+            << getClosureType(closureInit).getName();
+        hasFailure = true;
+      }
     });
     if (hasFailure)
       return signalPassFailure();
@@ -936,16 +947,16 @@ void OutlineClosuresNewPass::runOnOperation() {
     // types.
     mlir::AttrTypeReplacer replacer;
     hasFailure = false;
-    replacer.addReplacement([&](ClosureSymbolAttr attr) -> Attribute {
-      auto ptr = lifter.liftedClosureSymbols.find(attr);
-      if (ptr != lifter.liftedClosureSymbols.end())
+    auto paramTypeReplacement = [&](ParamClosureType type) -> Type {
+      auto ptr = lifter.paramClosureTypeToType.find(type);
+      if (ptr != lifter.paramClosureTypeToType.end())
         return ptr->second;
       mlir::emitError(theModule.getLoc())
-          << "no lifted closure method found for closure symbol " << attr;
-      hasFailure = true;
-      return attr;
-    });
-    replacer.addReplacement([&](ClosureType type) -> Type {
+          << "no type found for paramclosure type " << type;
+      return type;
+    };
+    mlir::AttrTypeReplacer generatorReplacer;
+    generatorReplacer.addReplacement([&](ClosureType type) -> Type {
       auto ptr = lifter.closureTypeToStructTypes.find(type);
       if (ptr != lifter.closureTypeToStructTypes.end())
         return ptr->second;
@@ -954,7 +965,7 @@ void OutlineClosuresNewPass::runOnOperation() {
       hasFailure = true;
       return type;
     });
-    replacer.addReplacement([&](ClosureAttr attr) -> Attribute {
+    generatorReplacer.addReplacement([&](ClosureAttr attr) -> Attribute {
       auto ptr = lifter.paramCaptureToStructAttr.find(attr);
       if (ptr != lifter.paramCaptureToStructAttr.end())
         return ptr->second;
@@ -962,23 +973,32 @@ void OutlineClosuresNewPass::runOnOperation() {
           << "no capture struct attr found for closure attr " << attr;
       return attr;
     });
-    replacer.addReplacement([&](ParamClosureType type) -> Type {
-      auto ptr = lifter.paramClosureTypeToType.find(type);
-      if (ptr != lifter.paramClosureTypeToType.end())
-        return ptr->second;
-      mlir::emitError(theModule.getLoc())
-          << "no type found for paramclosure type " << type;
-      return type;
-    });
-    generator.walk([&](Operation *op) {
-      replacer.recursivelyReplaceElementsIn(op, true, true, true);
-    });
-    for (auto structGenerator : structGenerators) {
-      structGenerator.walk([&](Operation *op) {
-        replacer.recursivelyReplaceElementsIn(op, true, true, true);
-      });
-    }
+    generatorReplacer.addReplacement(paramTypeReplacement);
+    generatorReplacer.recursivelyReplaceElementsIn(generator, true, true, true);
 
+    for (auto [closureType, structGenerator] : structGenerators) {
+      SmallVector<ParamDeclAttr> newParams;
+      for (auto param : structGenerator.getInputParams()) {
+        if (auto abstractType = dyn_cast<ParamClosureType>(param.getType())) {
+          newParams.push_back(ParamDeclAttr::get(
+              param.getName(), paramTypeReplacement(abstractType)));
+          continue;
+        }
+        newParams.push_back(param);
+      }
+      structGenerator.setInputParams(newParams);
+      structGenerator.walk([&](WitnessOp w) {
+        if (auto sym = dyn_cast<ClosureSymbolAttr>(w.getValue())) {
+          auto it = lifter.liftedClosureSymbols.find(sym);
+          assert(it != lifter.liftedClosureSymbols.end());
+          w.setValueAttr(it->second);
+        }
+      });
+
+      auto packedClosureType = lifter.packedClosureType[closureType];
+      assert(packedClosureType && "expected a replaced closure type");
+      structGenerator.setValueDomainType(packedClosureType);
+    }
     if (hasFailure)
       return signalPassFailure();
   }
