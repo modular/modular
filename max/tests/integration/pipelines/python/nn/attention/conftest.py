@@ -6,7 +6,7 @@
 
 import pytest
 from hypothesis import settings
-from max.driver import CPU
+from max.driver import CPU, Accelerator
 from max.engine import InferenceSession
 
 # When running in CI, graph tests can take around 300ms for a single run.
@@ -21,3 +21,8 @@ settings.load_profile("graph_tests")
 @pytest.fixture(scope="session")
 def session() -> InferenceSession:
     return InferenceSession(devices=[CPU()])
+
+
+@pytest.fixture(scope="module")
+def gpu_session() -> InferenceSession:
+    return InferenceSession(devices=[Accelerator()])

@@ -27,7 +27,10 @@ modular_py_test(
 modular_py_test(
     name = "attention_gpu_tests",
     timeout = "long",
-    srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    srcs = glob(
+        ["*_gpu.py"],
+        exclude = ["test_attention_fp8_amd_gpu.py"],
+    ) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
@@ -67,5 +70,28 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "attention_amd_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_attention_fp8_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("torch"),
+        requirement("numpy"),
     ],
 )
