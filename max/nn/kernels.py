@@ -1999,7 +1999,10 @@ def needs_fp8_fnuz_conversion() -> bool:
     Returns:
         True if running on AMD GPU with CDNA3 architecture, False otherwise.
     """
-    return "gfx94" in accelerator_architecture_name()
+    try:
+        return "gfx94" in accelerator_architecture_name()
+    except Exception:
+        return False
 
 
 def normalize_e4m3fn_to_e4m3fnuz(
