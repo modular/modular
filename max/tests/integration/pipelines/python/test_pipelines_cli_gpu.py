@@ -48,6 +48,7 @@ def test_pipelines_cli__smollm_bfloat16(
                 "--devices=gpu",
                 "--huggingface-model-revision",
                 REVISION,
+                "--top-k=1",
             ]
         )
     captured = capsys.readouterr()
@@ -86,6 +87,7 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
                 # schema provided does not change the outputs of the base
                 # chat experience.
                 "--enable-structured-output",
+                "--top-k=1",
             ]
         )
     captured = capsys.readouterr()
@@ -122,6 +124,7 @@ def test_pipelines_cli__smollm_with_lora(
                 "--max-lora-rank=16",
                 f"--lora-paths={lora_path}",
                 "--max-new-tokens=50",
+                "--top-k=1",
             ]
         )
     captured = capsys.readouterr()
@@ -174,6 +177,7 @@ def test_pipelines_cli__smollm_with_multiple_loras(
                 f"--lora-paths={lora_paths[0]}",
                 f"--lora-paths={lora_paths[1]}",
                 "--max-new-tokens=100",
+                "--top-k=1",
             ]
         )
     captured = capsys.readouterr()

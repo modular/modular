@@ -45,6 +45,7 @@ def test_pipelines_cli__smollm_float32(
                 "--device-memory-utilization=0.1",
                 "--huggingface-model-revision",
                 REVISION,
+                "--top-k=1",
             ]
         )
     captured = capsys.readouterr()
@@ -86,5 +87,6 @@ def test_pipelines_cli__custom_model() -> None:
                 f"--custom-architectures={path}",
                 "--huggingface-model-revision",
                 REVISION,
+                "--top-k=1",
             ]
         )
