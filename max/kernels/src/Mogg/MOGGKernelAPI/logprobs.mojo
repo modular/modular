@@ -15,7 +15,7 @@ from algorithm.functional import parallelize
 from compiler_internal import register
 from gpu import global_idx
 from gpu.host.info import is_cpu, is_gpu
-from math import ceildiv, exp, inf, log
+from math import ceildiv, exp, log
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, OutputTensor
@@ -109,7 +109,7 @@ fn compute_log_probabilities_1tok[
         post_heap_idx = 0
     else:
         var heap = FixedHeightMinHeap[token_dtype, logit_dtype, levels](
-            fill_k=vocab_size, fill_v=-inf[logit_dtype]()
+            fill_k=vocab_size, fill_v=-DType.inf[logit_dtype]()
         )
         for token_value in range(vocab_size):
             var logit_value = logits[logit_index, token_value]
