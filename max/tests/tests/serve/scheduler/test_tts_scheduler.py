@@ -28,7 +28,7 @@ from max.interfaces import (
 )
 from max.interfaces.request import RequestID
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
-from max.pipelines.core import TextContext, TTSContext
+from max.pipelines.core import TTSContext
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
@@ -47,6 +47,7 @@ def rand(length: int) -> np.ndarray:
 
 
 def create_text_context(
+    request_id: RequestID,
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -59,6 +60,7 @@ def create_text_context(
         tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TTSContext(
+        request_id=request_id,
         max_length=max_seq_len,
         tokens=tokens,
         streaming=False,
@@ -142,7 +144,9 @@ def create_paged_scheduler(
     min_batch_size_tg: int | None = None,
     ce_delay_ms: float = 0.0,
     enable_prioritize_first_decode: bool = False,
-) -> tuple[AudioGenerationScheduler, ZmqPushSocket[tuple[str, TTSContext]]]:
+) -> tuple[
+    AudioGenerationScheduler, ZmqPushSocket[tuple[RequestID, TTSContext]]
+]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
@@ -206,7 +210,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
         self._prev_num_steps: int | None = None
 
     def next_chunk(
-        self, batch: dict[str, TTSContext]
+        self, batch: dict[RequestID, TTSContext]
     ) -> dict[str, AudioGeneratorOutput]:
         needs_ce = next(iter(batch.values())).needs_ce
 
@@ -380,12 +384,13 @@ def enqueue_request(
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
 ) -> None:
+    req_id = f"req{uuid4()}"
     context = create_text_context(
+        request_id=req_id,
         prompt_len=prompt_len,
         max_seq_len=max_seq_len,
         shared_prefix=shared_prefix,
     )
-    req_id = f"req{uuid4()}"
     assert context.active_length == prompt_len
     socket.put_nowait((req_id, context))
 
@@ -395,11 +400,13 @@ def enqueue_request_with_prompt(
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:
-    context = TextContext(
+    req_id = f"req{uuid4()}"
+    context = TTSContext(
+        request_id=req_id,
         max_length=max_seq_len,
         tokens=tokens,
+        streaming=False,
     )
-    req_id = f"req{uuid4()}"
 
     socket.put_nowait((req_id, context))
 

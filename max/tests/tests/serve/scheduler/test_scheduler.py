@@ -146,7 +146,7 @@ def test_should_schedule_ce_full_batch() -> None:
             mock_request
         )
     mock_request = create_mock_request()
-    request_push_socket.put((mock_request.request_id, mock_request))
+    request_push_socket.put_nowait((mock_request.request_id, mock_request))
     time.sleep(1)
     assert not scheduler.batch_constructor._should_schedule_ce()
 
@@ -250,7 +250,7 @@ def test_handle_cancelled_requests() -> None:
         {mock_request.request_id: mock_request}
     )
 
-    cancel_push_socket.put([mock_request.request_id])
+    cancel_push_socket.put_nowait([mock_request.request_id])
     time.sleep(1)
 
     scheduler._handle_cancelled_requests()
@@ -292,7 +292,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     mock_request = create_mock_request(seq_len=30)
 
-    request_push_socket.put((mock_request.request_id, mock_request))
+    request_push_socket.put_nowait((mock_request.request_id, mock_request))
     time.sleep(1)
     scheduler._retrieve_pending_requests()
     assert len(scheduler.batch_constructor.ce_reqs) == 1
@@ -353,7 +353,9 @@ def test_schedule_mixed_ce_tg() -> None:
     # req1 has been put in `active_batch`
 
     mock_request_ce = create_mock_request(seq_len=30)
-    request_push_socket.put((mock_request_ce.request_id, mock_request_ce))
+    request_push_socket.put_nowait(
+        (mock_request_ce.request_id, mock_request_ce)
+    )
     time.sleep(1)
     scheduler._retrieve_pending_requests()
     batch = scheduler.batch_constructor.construct_batch().batch_inputs

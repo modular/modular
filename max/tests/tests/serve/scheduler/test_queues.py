@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+import time
 import uuid
 
 import numpy as np
@@ -33,8 +34,9 @@ def test_serialization_and_deserialization_through_queue_with_pickle() -> None:
 
     context = (1, TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)))
 
-    push_socket.put(context)
-    received_context = pull_socket.get()
+    push_socket.put_nowait(context)
+    time.sleep(1)
+    received_context = pull_socket.get_nowait()
 
     assert context[0] == received_context[0]
     assert msgpack_eq(context[1], received_context[1])
@@ -56,8 +58,9 @@ def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
         TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)),
     )
 
-    push_socket.put(context)
-    received_context = pull_socket.get()
+    push_socket.put_nowait(context)
+    time.sleep(1)
+    received_context = pull_socket.get_nowait()
 
     assert context[0] == received_context[0]
     assert msgpack_eq(context[1], received_context[1])
