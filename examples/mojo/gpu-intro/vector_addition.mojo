@@ -51,30 +51,18 @@ def main():
         # Get the context for the attached GPU
         ctx = DeviceContext()
 
-        # Create HostBuffers for input vectors
-        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
-        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
-        ctx.synchronize()
-
-        # Initialize the input vectors
-        for i in range(vector_size):
-            lhs_host_buffer[i] = Float32(i)
-            rhs_host_buffer[i] = Float32(i * 0.5)
-
-        print("LHS buffer: ", lhs_host_buffer)
-        print("RHS buffer: ", rhs_host_buffer)
-
         # Create DeviceBuffers for the input vectors
         lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
         rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
 
-        # Copy the input vectors from the HostBuffers to the DeviceBuffers
-        ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
-        ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
+        with lhs_device_buffer.map_to_host() as lhs_host_buffer:
+            with rhs_device_buffer.map_to_host() as rhs_host_buffer:
+                for i in range(vector_size):
+                    lhs_host_buffer[i] = Float32(i)
+                    rhs_host_buffer[i] = Float32(i * 0.5)
+
+                print("LHS buffer: ", lhs_host_buffer)
+                print("RHS buffer: ", rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
         result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
@@ -95,17 +83,5 @@ def main():
             block_dim=block_size,
         )
 
-        # Create a HostBuffer for the result vector
-        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
-            vector_size
-        )
-
-        # Copy the result vector from the DeviceBuffer to the HostBuffer
-        ctx.enqueue_copy(
-            dst_buf=result_host_buffer, src_buf=result_device_buffer
-        )
-
-        # Finally, synchronize the DeviceContext to run all enqueued operations
-        ctx.synchronize()
-
-        print("Result vector:", result_host_buffer)
+        with result_device_buffer.map_to_host() as result_host_buffer:
+            print("Result buffer: ", result_host_buffer)

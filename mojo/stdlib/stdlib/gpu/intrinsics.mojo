@@ -446,6 +446,24 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
     return ai64 * bi64
 
 
+@always_inline
+fn get_ib_sts() -> Int32:
+    """Returns the IB status of the current thread.
+
+    Returns:
+        The IB status of the current thread.
+    """
+    if is_amd_gpu():
+        return inlined_assembly[
+            "s_getreg_b32 $0, hwreg(HW_REG_IB_STS);",
+            Int32,
+            constraints="=r",
+            has_side_effect=False,
+        ]()
+    else:
+        return 0
+
+
 # ===-----------------------------------------------------------------------===#
 # threadfence
 # ===-----------------------------------------------------------------------===#
