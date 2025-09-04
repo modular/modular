@@ -337,7 +337,7 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        var idx = Int(index(i))
+        var idx = index(i)
         var current = self._get_node_ptr(idx)
 
         if current:
@@ -478,7 +478,7 @@ struct LinkedList[
         """
 
         # TODO: use normalize_index
-        var i = Int(index(idx))
+        var i = index(idx)
         i = max(0, i if i >= 0 else i + len(self))
 
         if i == 0:

@@ -2,7 +2,7 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", 
 
 modular_py_binary(
     name = "benchmark_serving",
-    testonly = True,
+    testonly = True,  # this is marked testonly because nvitop is marked testonly.
     srcs = ["benchmark_serving.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
@@ -96,6 +96,9 @@ pkg_files(
     srcs = glob(
         [
             "**/*.yaml",
+        ],
+        exclude = [
+            "serving-benchmarking/**",
         ],
     ),
     prefix = "benchmark",

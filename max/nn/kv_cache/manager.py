@@ -18,11 +18,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, Generic, TypeVar, cast, overload
 
 from max.driver import Device, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.interfaces.request import RequestID
 from typing_extensions import TypeGuard
@@ -161,10 +162,45 @@ class KVCacheInputSymbols:
         return list(self)[index]
 
 
+@dataclass
+class ClaimedSlot:
+    """A class that represents a claimed sequence.
+
+    It is used to track the sequence ID and the replica index that claimed it.
+    replica refers to the data parallelism replica of the cache that claimed
+    the slot.
+    """
+
+    seq_id: int
+    replica_idx: int
+
+
 T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 class KVCacheManager(ABC, Generic[T]):
+    """The base class for KV cache managers.
+
+    It is responsible for managing the KV cache for a given model.
+
+    Parameters:
+        params: The parameters for the KV cache manager.
+        max_batch_size: The maximum batch size. This should be the total overall
+            maximum batch size, so if data parallelism is enabled, the sum of
+            the batch size over all replicas will be equal to this value.
+        max_seq_len: The maximum sequence length.
+        num_layers: The number of layers.
+        devices: The devices to use for the KV cache manager.
+        session: The session to use for the KV cache manager.
+        is_ragged: Whether the KV cache manager is using ragged tensors.
+
+    Attributes:
+        params: The parameters for the KV cache manager.
+        max_batch_size: The maximum batch size.
+        max_seq_len: The maximum sequence length.
+        num_layers: The number of layers.
+    """
+
     def __init__(
         self,
         params: KVCacheParams,
@@ -179,6 +215,7 @@ class KVCacheManager(ABC, Generic[T]):
         self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
         self.num_layers = num_layers
+
         self.devices = devices
         self.session = session
 
@@ -189,12 +226,6 @@ class KVCacheManager(ABC, Generic[T]):
         self._request_to_seq_id: dict[RequestID, int] = {}
 
         self.is_ragged = is_ragged
-        increment_cache_lengths_graph = (
-            self._create_increment_cache_lengths_graph()
-        )
-        self.increment_cache_lengths_model = session.load(
-            increment_cache_lengths_graph
-        )
 
     @classmethod
     @abstractmethod
@@ -290,6 +321,10 @@ class KVCacheManager(ABC, Generic[T]):
             True if the request ID is active in the cache, False otherwise.
         """
         return request_id in self._request_to_seq_id
+
+    @cached_property
+    def increment_cache_lengths_model(self) -> Model:
+        return self.session.load(self._create_increment_cache_lengths_graph())
 
     def increment_cache_lengths(
         self,

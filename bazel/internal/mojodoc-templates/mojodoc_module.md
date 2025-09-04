@@ -9,6 +9,8 @@ title: {{ decl.name }}
 version: {{ decl.version }}
 {% if decl.packages or decl.modules %}type: package
 {% else %}type: module
+{% if decl.module_name %}module_name: {{ decl.module_name }}
+{% endif %}
 namespace: {{ decl.namespace }}
 {% endif %}
 {% if decl.packages and not decl.modules %}sidebar_position: 1

@@ -67,7 +67,9 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
 
         bind_address: str = "tcp://127.0.0.1:5555"
         instance_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-        default_destination_address: str | None = None
+        # We cannot use | syntax here, since this is parsed by pydantic, which doesn't
+        # support that syntax on 3.9. See https://github.com/pydantic/pydantic/issues/7109
+        default_destination_address: Optional[str] = None
 
     @staticmethod
     def create_dynamic_zmq_transport(

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import KVCacheParams, KVCacheStrategy
+from .context import KVCacheAwareContext
 from .manager import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -25,6 +26,7 @@ from .paged_cache import (
     FetchPagedKVCacheCollection,
     KVTransferEngine,
     KVTransferEngineMetadata,
+    MultiPagedKVCacheManager,
     PagedKVCacheCollection,
     PagedKVCacheManager,
     PagedKVCacheType,
@@ -41,6 +43,7 @@ from .utils import build_max_lengths_tensor
 __all__ = [
     "BlockCopyType",
     "FetchPagedKVCacheCollection",
+    "KVCacheAwareContext",
     "KVCacheInputSymbols",
     "KVCacheInputs",
     "KVCacheInputsSequence",
@@ -49,6 +52,7 @@ __all__ = [
     "KVCacheStrategy",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "MultiPagedKVCacheManager",
     "PaddedKVCacheInputs",
     "PagedKVCacheCollection",
     "PagedKVCacheManager",

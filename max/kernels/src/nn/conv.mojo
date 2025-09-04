@@ -3068,7 +3068,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var h = block_idx.y * block_dim.y + thread_idx.y
     var w = block_idx.x * block_dim.x + thread_idx.x
 
-    if h >= H_out or w >= W_out:
+    if h >= UInt(H_out) or w >= UInt(W_out):
         return
 
     for co in range(C_out):
@@ -3516,7 +3516,12 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     var d_out_idx = block_idx.y * block_dim.y + thread_idx.y
 
     # bounds check
-    if n >= N or d_out_idx >= D_out or h_out_idx >= H_out or w_out_idx >= W_out:
+    if (
+        n >= UInt(N)
+        or d_out_idx >= UInt(D_out)
+        or h_out_idx >= H_out
+        or w_out_idx >= W_out
+    ):
         return
 
     # ============= convolution =============

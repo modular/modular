@@ -26,7 +26,7 @@ fn _fill_gpu_kernel[
     dtype: DType
 ](dst: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
     var tid = thread_idx.x + block_idx.x * block_dim.x
-    if tid < count:
+    if tid < UInt(count):
         dst[tid] = value
 
 
@@ -38,7 +38,7 @@ fn _copy_gpu_kernel[
     count: Int,
 ):
     var tid = thread_idx.x + block_idx.x * block_dim.x
-    if tid < count:
+    if tid < UInt(count):
         dst[tid] = src[tid]
 
 

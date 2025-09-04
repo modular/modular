@@ -637,7 +637,7 @@ fn _concat_inner_most_single_dim[
 ):
     var idx = block_idx.x * block_size + thread_idx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, output.dynamic_shape
+        UInt(idx), output.dynamic_shape
     )
 
     if index > output.num_elements():
@@ -871,7 +871,7 @@ fn _fused_concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, output.dynamic_shape
+        UInt(idx), output.dynamic_shape
     )
 
     @parameter

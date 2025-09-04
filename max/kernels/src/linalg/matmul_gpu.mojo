@@ -141,10 +141,12 @@ fn matmul_kernel[
         @parameter
         if not full_tile:
             a_val = a[Int(row), Int(offset + localCol)] if (
-                row < m and offset + localCol < k
+                row < UInt(m) and offset + localCol < k
             ) else 0.0
         else:
-            a_val = a[Int(row), Int(offset + localCol)] if row < m else 0.0
+            a_val = (
+                a[Int(row), Int(offset + localCol)] if row < UInt(m) else 0.0
+            )
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -153,10 +155,12 @@ fn matmul_kernel[
         @parameter
         if not full_tile:
             b_val = b[Int(offset + localRow), Int(col)] if (
-                col < n and offset + localRow < k
+                col < UInt(n) and offset + localRow < k
             ) else 0.0
         else:
-            b_val = b[Int(offset + localRow), Int(col)] if col < n else 0.0
+            b_val = (
+                b[Int(offset + localRow), Int(col)] if col < UInt(n) else 0.0
+            )
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -173,7 +177,7 @@ fn matmul_kernel[
         0, k, VariadicList[Int](tile_size, K_remainder)
     )
 
-    if row < m and col < n:
+    if row < UInt(m) and col < UInt(n):
 
         @parameter
         if elementwise_lambda_fn:
@@ -589,8 +593,8 @@ fn _matmul_gpu[
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
                         mma_shape=mma_shape_helper(),
-                        num_pipeline_stages=num_pipeline_stages,
-                        num_k_partitions=num_k_partitions,
+                        num_pipeline_stages=UInt(num_pipeline_stages),
+                        num_k_partitions=UInt(num_k_partitions),
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
@@ -1025,7 +1029,7 @@ fn multistage_gemm[
                 tensor_b,
                 work_space,
                 runtime_config.num_k_partitions,
-                grid_dim=runtime_config.grid_dim(M, N),
+                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
             )
         else:
@@ -1035,7 +1039,7 @@ fn multistage_gemm[
                 tensor_b,
                 work_space,
                 runtime_config.num_k_partitions,
-                grid_dim=runtime_config.grid_dim(M, N),
+                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1079,7 +1083,7 @@ fn multistage_gemm[
             tensor_c,
             tensor_a,
             tensor_b,
-            grid_dim=runtime_config.grid_dim(M, N),
+            grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
             block_dim=runtime_config.block_dim(),
         )
 
@@ -1107,7 +1111,7 @@ fn multistage_gemm[
             tensor_c,
             tensor_a,
             tensor_b,
-            grid_dim=runtime_config.grid_dim(M, N),
+            grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

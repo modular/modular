@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "architectures",
@@ -22,12 +22,4 @@ modular_py_library(
         "//SDK/lib/API/python/max/profiler",
         "//SDK/lib/API/python/max/serve",
     ],
-)
-
-pkg_files(
-    name = "python_files",
-    srcs = glob(["**/*.py"]),
-    prefix = "architectures",
-    strip_prefix = strip_prefix.from_pkg(""),
-    visibility = ["//visibility:public"],
 )

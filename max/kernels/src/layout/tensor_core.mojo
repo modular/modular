@@ -106,6 +106,7 @@ alias shape_16x16x4 = IndexList[3](16, 16, 4)
 alias shape_16x16x16 = IndexList[3](16, 16, 16)
 alias shape_16x16x32 = IndexList[3](16, 16, 32)
 alias shape_32x32x8 = IndexList[3](32, 32, 8)
+alias shape_32x32x16 = IndexList[3](32, 32, 16)
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
@@ -177,7 +178,7 @@ struct TensorCore[
     alias supported_half = in_type.is_half_float() and (
         shape
         == shape_16x8x16 if is_nvidia_gpu() else shape
-        in (shape_16x16x16, shape_16x16x32, shape_32x32x8)
+        in (shape_16x16x16, shape_16x16x32, shape_32x32x8, shape_32x32x16)
     )
     alias supported_fp8 = (
         in_type
@@ -1312,7 +1313,8 @@ fn _load_matrix_frag[
     )
 
     var lane_offset = (
-        eval_composed[ldmatrix_layout](Int(lane), offset) * simd_size
+        eval_composed[ldmatrix_layout](UInt(Int(lane)), UInt(offset))
+        * simd_size
     )
 
     return ld_matrix[res.size, transpose=transposed](

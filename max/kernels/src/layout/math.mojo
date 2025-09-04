@@ -16,6 +16,10 @@ import math
 
 from builtin.math import max as b_max
 from layout import LayoutTensor
+import algorithm.reduction
+from sys.info import simd_width_of
+from utils.index import IndexList
+from algorithm import vectorize
 
 
 @always_inline
@@ -355,3 +359,118 @@ fn sum[
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
+
+
+fn mean(src: LayoutTensor[**_]) raises -> Scalar[src.dtype]:
+    """Computes the mean value of the elements in a buffer.
+
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+    """
+    constrained[src.rank == 1, "src must be of rank 1"]()
+
+    debug_assert(src.size() != 0, "input must not be empty")
+
+    @parameter
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.runtime_layout(
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+        )
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.mean[src.dtype, input_fn_1d](src.size())
+
+
+fn mean[
+    reduce_axis: Int
+](src: LayoutTensor[**_], dst: LayoutTensor[mut=True, src.dtype, **_]) raises:
+    """Computes the mean across reduce_axis of an NDBuffer.
+
+    Parameters:
+        reduce_axis: The axis to reduce across.
+
+    Args:
+        src: The input buffer.
+        dst: The output buffer.
+    """
+    alias simd_width = simd_width_of[dst.dtype]()
+    sum[reduce_axis](src, dst)
+
+    var n = src.dim[reduce_axis]()
+    var dst_1d = LayoutTensor[
+        dst.dtype,
+        Layout.row_major(UNKNOWN_VALUE),
+        address_space = dst.address_space,
+    ](
+        dst.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](dst.size())
+        ),
+    )
+
+    @parameter
+    if dst.dtype.is_integral():
+
+        @always_inline
+        @__copy_capture(dst_1d, n)
+        @parameter
+        fn normalize_integral[simd_width: Int](idx: Int):
+            var idx_1d = dst_1d.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+            )
+            var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
+            var to_store = elem // n
+            dst_1d.ptr.store(idx_1d, to_store)
+
+        vectorize[normalize_integral, simd_width](dst_1d.size())
+    else:
+        var n_recip = Scalar[dst.dtype](1) / n
+
+        @always_inline
+        @__copy_capture(dst_1d, n, n_recip)
+        @parameter
+        fn normalize_floating[simd_width: Int](idx: Int):
+            var idx_1d = dst_1d.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+            )
+            var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
+            var to_store = elem * n_recip
+            dst_1d.ptr.store(idx_1d, to_store)
+
+        vectorize[normalize_floating, simd_width](dst_1d.size())
+
+
+fn variance(
+    src: LayoutTensor[**_], correction: Int = 1
+) raises -> Scalar[src.dtype]:
+    """Computes the variance value of the elements in a buffer.
+
+    ```
+    variance(x) = sum((x - E(x))^2) / (size - correction)
+    ```
+
+    Args:
+        src: The buffer.
+        correction: Normalize variance by size - correction (Default=1).
+
+    Returns:
+        The variance value of the elements in a buffer.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.runtime_layout(
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+        )
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)

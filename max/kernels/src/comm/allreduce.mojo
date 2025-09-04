@@ -31,16 +31,70 @@ automatically selects between two approaches based on hardware capabilities:
 The implementation is tuned for common GPU architectures (A100, H100) and includes
 parameters that can be adjusted for different hardware configurations.
 
+## Per-Device Architecture
+
+The allreduce operation follows a per-device execution model:
+
+1. **Single-Device Instances**: Each GPU runs its own instance of the allreduce
+   operation.
+
+2. **Parallel Execution**: The Python/Graph API layer is responsible for:
+   - Creating one allreduce op instance per participating GPU.
+   - Ensuring all instances execute in parallel.
+   - Ensuring correctness by staging mo.fence.
+
+3. **Device Affinity**: Each allreduce instance:
+   - Executes on its assigned GPU (specified via device context).
+   - Reads from all GPUs' input buffers (requires P2P access).
+   - Writes only to its own output buffer.
+   - Uses the same synchronization signals as other instances.
+
+4. **Requirements**:
+   - Peer-to-peer access must be enabled between all participating GPUs.
+   - All instances must launch before any can complete (for synchronization).
+   - The device context determines which GPU executes each instance.
+
 Limitations:
-- Number of elements must be a multiple of SIMD width
-- Maximum of 8 GPUs supported
-- All input/output buffers must have identical shapes
+- Number of elements must be a multiple of SIMD width.
+- Maximum of 8 GPUs supported.
+- All input/output buffers must have identical shapes.
+
+## Visual Overview
+
+1) 1‑Stage P2P (latency-bound)
+
+   Each GPU r reads its portion from every peer buffer directly (via P2P),
+   accumulates, then writes to its result using the epilogue:
+
+       GPU r (result_r)
+       src_ptrs[0] ─┐
+       src_ptrs[1] ─┼──► Σ (high-precision accum) ──► output_lambda ──► result_r
+       ...         ─┘
+
+   Notes:
+   - Vectorized loads from global memory on each GPU.
+   - Good for small/latency‑bound tensors.
+
+2) 2-Stage P2P (bandwidth-bound)
+
+   Stage 1 (reduce-scatter): Each GPU r reduces its assigned partition and writes
+   into its own signal payload (the bytes after the Signal header).
+
+       src_ptrs[*]  ──►  reduce(partition r)  ──►  rank_sigs[r].payload  (per‑GPU)
+
+   Stage 2 (all-gather): Each GPU r gathers all partitions from peers' payloads
+   and writes them to its result using the epilogue.
+
+       [payload_0], [payload_1], ..., [payload_{ngpus-1}]  ──►  result_r (via output_lambda)
+
+For the naive allreduce (no P2P) per‑device flow and staging details, see the
+`_allreduce_naive_single` docstring in this file.
 """
 
 from collections import InlineArray
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of, is_amd_gpu
-from sys.ffi import _get_global_or_null, external_call
+from sys.ffi import external_call, _Global
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
@@ -70,18 +124,18 @@ from gpu.memory import (
     AddressSpace,
 )
 from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
+from gpu.memory import AddressSpace as GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
 alias elementwise_epilogue_type = fn[
-    input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
+    dtype: DType, rank: Int, width: Int, *, alignment: Int
 ] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
 # to the performance.
-alias _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
+alias _target_address_space = GPUAddressSpace.GLOBAL if is_amd_gpu() else GPUAddressSpace.GENERIC
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -175,6 +229,32 @@ fn _naive_reduce_kernel[
         dst_buf[i] += src_buf[i]
 
 
+fn _p2p_cache_init_wrapper() -> OpaquePointer:
+    """Initializer for the indexed global caching P2P availability.
+
+    Returns an OpaquePointer encoding a small integer tag:
+      1 => p2p_not_available
+      2 => p2p_available
+    """
+    alias p2p_not_available = Scalar[DType.index](1)
+    alias p2p_available = Scalar[DType.index](2)
+
+    try:
+        DeviceContext.enable_all_peer_access()
+        return _unsafe_aliasing_address_to_pointer[DType.index](
+            p2p_available
+        ).bitcast[NoneType]()
+    except:
+        return _unsafe_aliasing_address_to_pointer[DType.index](
+            p2p_not_available
+        ).bitcast[NoneType]()
+
+
+fn _p2p_cache_destroy_wrapper(ptr: OpaquePointer) -> None:
+    # No resources to free for tagged-pointer encoding.
+    pass
+
+
 fn can_enable_p2p() raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
@@ -185,44 +265,26 @@ fn can_enable_p2p() raises -> Bool:
     alias p2p_not_available = Scalar[DType.index](1)
     alias p2p_available = Scalar[DType.index](2)
 
-    var cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
-
-    # We use 0 to indicate that the cache is not found, 1 to indicate that it is
-    # found and p2p is not present and 2 to indicate that the cache is found and
-    # that p2p is present.
-    var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
-    if found == p2p_available:
-        # If p2p was previously enabled, then return available.
-        return True
-
-    # Otherwise try to enable P2P.
-    is_peer_to_peer_enabled: Bool
-    try:
-        DeviceContext.enable_all_peer_access()
-        is_peer_to_peer_enabled = True
-    except e:
-        # If enabling fails, P2P is not available.
-        is_peer_to_peer_enabled = False
-
-    # Cache the result.
-    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_name),
-        _unsafe_aliasing_address_to_pointer[DType.index](
-            p2p_available if is_peer_to_peer_enabled else p2p_not_available
-        ).bitcast[OpaquePointer](),
+    # Initialize once per process via indexed global, then reuse the tag.
+    var cached = external_call[
+        "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+    ](
+        _Global._gpu_comm_p2p_idx,
+        _p2p_cache_init_wrapper,
+        _p2p_cache_destroy_wrapper,
     )
 
-    return is_peer_to_peer_enabled
+    var tag = Scalar[DType.index](Int(cached))
+    return tag == p2p_available
 
 
 fn _naive_reduce_kernel_with_lambda[
     dtype: DType,
     rank: Int,
     *,
-    my_rank: Int,
     width: Int,
     alignment: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype]],
@@ -235,155 +297,141 @@ fn _naive_reduce_kernel_with_lambda[
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
-        outputs_lambda[
-            input_index=my_rank, width=simd_width, alignment=alignment
-        ](
+        output_lambda[width=simd_width, alignment=alignment](
             dst_buf.get_nd_index(elem_idx),
             src_buf.load[width=simd_width, alignment=alignment](elem_idx),
         )
 
 
 @always_inline
-fn _allreduce_naive[
+fn _allreduce_naive_single[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
     ],
-    list_of_out_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
-    ],
+    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
     max_num_blocks: Int,
-    ctxs: List[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
-    """Performs allreduce across GPUs without using peer-to-peer access.
+    """Naive per-device allreduce using a local temporary staging buffer.
 
-    Implementation Steps (per GPU):
-    1. Create accumulation buffer initialized to zero
-    2. For each other GPU:
-       a. Allocate temporary buffer on current GPU
-       b. Copy remote GPU's data to temporary buffer
-    3. Reduce all buffers into accumulation buffer:
-       - Local buffer
-       - All temporary buffers
-    4. Apply output lambda to write accumulation buffer to final output
+    Overview
+    - One op instance runs per GPU ("device r").
+    - Each instance builds its local result by summing all inputs into a local
+      accumulation buffer, then writes to its own output.
+    - To stage remote inputs for accumulation (no P2P), it allocates a temporary
+      buffer on the current device.
 
-    Data Flow (3 GPU example):
+    Memory layout per device (r):
 
-    GPU0 Input  GPU1 Input  GPU2 Input
-          |         |         |
-          |         |         |
-          v         v         v
-    +---------------------------------+
-    | Temporary Buffers per GPU       |
-    | GPU0: [Temp01][Temp02]          |
-    | GPU1: [Temp10][Temp12]          |
-    | GPU2: [Temp20][Temp21]          |
-    +---------------------------------+
-                   |
-                   v
-    +---------------------------------+
-    | Accumulation Buffer per GPU     |
-    | GPU0: sum(Input0 + Temp01 + Temp02) |
-    | GPU1: sum(Input1 + Temp10 + Temp12) |
-    | GPU2: sum(Input2 + Temp20 + Temp21) |
-    +---------------------------------+
-                   |
-                   v
-    +---------------------------------+
-    | Output Lambda Application       |
-    | (Writes to final output buffers)|
-    +---------------------------------+
+        tmp_r  (device-local buffer, length = N elements)
 
     Parameters:
         dtype: The data type of tensor elements.
         rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in allreduce.
-        outputs_lambda: An elementwise output lambda function.
+        output_lambda: An elementwise output lambda function.
         num_buffers: Number of buffers to process (defaults to ngpus).
 
-    Args:
-        list_of_in_bufs: Input buffers from each GPU.
-        list_of_out_bufs: Output buffers for each GPU.
-        max_num_blocks: Maximum number of thread blocks to launch.
-        ctxs: List of device contexts for participating GPUs.
+    Per-device flow (device r):
 
-    This implementation copies all data to each GPU and performs local reduction.
-    Used as fallback when P2P access is not available.
+        in_r  ───────►  accumulate into A_r
+        for each i != r:
+          in_i  ──copy──►  S_r  ──accumulate──►  A_r
+        A_r  ──output_lambda──► out_r
+
+    ASCII for a 3‑GPU example (naive path, no P2P):
+
+        GPU0:  in0  →  A0 += in0
+               in1  →  tmp0 → A0 += tmp0
+               in2  →  tmp0 → A0 += tmp0
+               A0   →  out0 (via output_lambda)
+
+        GPU1:  in1  →  A1 += in1
+               in0  →  tmp1 → A1 += tmp1
+               in2  →  tmp1 → A1 += tmp1
+               A1   →  out1 (via output_lambda)
+
+        GPU2:  in2  →  A2 += in2
+               in0  →  tmp2 → A2 += tmp2
+               in1  →  tmp2 → A2 += tmp2
+               A2   →  out2 (via output_lambda)
+
+    Requirements
+    - Inputs across GPUs must be identical shape and dtype.
+    - Each op instance only writes to its own temporary buffer and its own
+      output buffer (`out_r`).
     """
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+    alias BLOCK_SIZE = 256
     var num_elements = list_of_in_bufs[0].num_elements()
 
-    var device_buffers = List[DeviceBuffer[dtype]](capacity=ngpus)
-    # Assemble input buffer structures from all devices
+    # Wrap ALL input buffers as DeviceBuffer with their respective device contexts.
+    var dev_inputs = List[DeviceBuffer[dtype]](capacity=ngpus)
     for i in range(ngpus):
-        device_buffers.append(
-            DeviceBuffer(
-                ctxs[i], list_of_in_bufs[i].data, num_elements, owning=False
+        var rctx = DeviceContext(device_id=i)
+        dev_inputs.append(
+            DeviceBuffer[dtype](
+                rctx, list_of_in_bufs[i].data, num_elements, owning=False
             )
         )
 
-    # Process each device
-    @parameter
-    for device_idx in range(ngpus):
-        var curr_ctx = ctxs[device_idx]
+    # Accumulation buffer on this device.
+    var accum = ctx.enqueue_create_buffer[dtype](num_elements)
+    ctx.enqueue_memset(accum, 0)
 
-        # Create temporary accumulation buffer.
-        var accum_buffer = curr_ctx.enqueue_create_buffer[dtype](num_elements)
-        curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
+    # Resolve this device's rank and allocate a temp staging buffer.
+    var my_rank: Int = Int(ctx.id())
+    var scratch = ctx.enqueue_create_buffer[dtype](num_elements)
 
-        # Create temporary buffers for remote data.
-        var tmp_buffers = List[DeviceBuffer[dtype]]()
-        for i in range(ngpus):
-            if i != device_idx:
-                var tmp = curr_ctx.enqueue_create_buffer[dtype](num_elements)
-                curr_ctx.enqueue_copy(tmp, device_buffers[i])
-                tmp_buffers.append(tmp)
+    # Grid configuration for naive kernels.
+    var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
-        # Reduce all buffers into accumulation buffer.
-        alias BLOCK_SIZE = 256
-        var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
+    # Reduce local buffer first.
+    ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+        accum,
+        dev_inputs[my_rank],
+        num_elements,
+        grid_dim=grid_size,
+        block_dim=BLOCK_SIZE,
+    )
 
-        # First reduce local buffer.
-        curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
-            accum_buffer,
-            device_buffers[device_idx],
+    # Reduce contributions from peers via scratch.
+    for i in range(ngpus):
+        if i == my_rank:
+            continue
+
+        # Copy remote input into device-local scratch, then accumulate.
+        ctx.enqueue_copy(scratch, dev_inputs[i])
+        ctx.enqueue_function[_naive_reduce_kernel[dtype]](
+            accum,
+            scratch,
             num_elements,
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
         )
 
-        # Reduce remote buffers.
-        for tmp in tmp_buffers:
-            curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
-                accum_buffer,
-                tmp,
-                num_elements,
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-            )
-
-        # Apply output lambda to final accumulated buffer.
-        curr_ctx.enqueue_function[
-            _naive_reduce_kernel_with_lambda[
-                dtype,
-                rank,
-                my_rank=device_idx,
-                width=simd_width,
-                alignment = align_of[SIMD[dtype, simd_width]](),
-                outputs_lambda=outputs_lambda,
-            ]
-        ](
-            list_of_out_bufs[device_idx],
-            accum_buffer,
-            num_elements,
-            grid_dim=grid_size,
-            block_dim=BLOCK_SIZE,
-        )
+    # Apply elementwise epilogue to write into the output buffer.
+    ctx.enqueue_function[
+        _naive_reduce_kernel_with_lambda[
+            dtype,
+            rank,
+            width=simd_width,
+            alignment = align_of[SIMD[dtype, simd_width]](),
+            output_lambda=output_lambda,
+        ]
+    ](
+        out_buf,
+        accum,
+        num_elements,
+        grid_dim=grid_size,
+        block_dim=BLOCK_SIZE,
+    )
 
 
 @always_inline
@@ -392,7 +440,7 @@ fn _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     self_sg: UnsafePointer[Signal],
     my_rank: Int,
 ):
@@ -426,7 +474,7 @@ fn _multi_gpu_barrier[
     ]()
     var bid = block_idx.x
 
-    if thread_idx.x < ngpus:
+    if thread_idx.x < UInt(ngpus):
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples
@@ -504,7 +552,7 @@ fn _load_reduce[
             scope = Scope.GPU,
             consistency = Consistency.RELAXED,
             accum_type=accum_type,
-        ]((ptrs[0] + elem_idx).address_space_cast[AddressSpace.GLOBAL]())
+        ]((ptrs[0] + elem_idx).address_space_cast[GPUAddressSpace.GLOBAL]())
     else:
         # Regular mode: manual accumulation
         var accum: SIMD[accum_type, simd_width]
@@ -538,18 +586,17 @@ fn _allreduce_2stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    my_rank: Int,
     *,
     BLOCK_SIZE: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
-    max_num_blocks: Int,
+    my_rank: Int,
 ):
     """2-stage allreduce algorithm for bandwidth-bound transfers.
 
@@ -562,9 +609,8 @@ fn _allreduce_2stage_kernel[
             Note that `rank` is overloaded here to mean both device id and
             number of dimensions.
         ngpus: Number of GPUs participating.
-        my_rank: Current GPU rank.
         BLOCK_SIZE: Number of threads per block.
-        outputs_lambda: An elementwise output lambda function.
+        output_lambda: An elementwise output lambda function.
         pdl_level: Control PDL behavior for the kernel.
         num_buffers: Number of buffers to process (defaults to ngpus).
 
@@ -576,7 +622,7 @@ fn _allreduce_2stage_kernel[
             communication, which must be at least `ngpus * size_of(payload)`.
             | -- size_of(Signal) -- | ------ a few MB ----- |
         num_elements: Number of elements to reduce.
-        max_num_blocks: Maximum number of thread blocks to launch.
+        my_rank: Current GPU rank.
     """
     alias accum_type = get_accum_type[dtype]()
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
@@ -625,7 +671,7 @@ fn _allreduce_2stage_kernel[
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
         tmps[i] = (
-            rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
+            rank_sigs[target].address_space_cast[GPUAddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
     @parameter
@@ -686,9 +732,7 @@ fn _allreduce_2stage_kernel[
                 var dst_idx = (gather_from_rank * part) + idx
                 var elem_dst_idx = dst_idx * simd_width
 
-                outputs_lambda[
-                    input_index=my_rank, width=simd_width, alignment=alignment
-                ](
+                output_lambda[width=simd_width, alignment=alignment](
                     result.get_nd_index(elem_dst_idx),
                     tmps[gpu_idx]
                     .address_space_cast[_target_address_space]()
@@ -703,17 +747,16 @@ fn _allreduce_1stage_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    my_rank: Int,
     *,
     BLOCK_SIZE: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
     num_buffers: Int = ngpus,
 ](
     result: NDBuffer[dtype, rank, MutableAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[dtype]], num_buffers],
-    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
+    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
-    max_num_blocks: Int,
+    my_rank: Int,
 ):
     """
     Kernel implementing allreduce using peer-to-peer access between GPUs.
@@ -722,9 +765,8 @@ fn _allreduce_1stage_kernel[
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
-        my_rank: Current GPU rank
         BLOCK_SIZE: Number of threads per block.
-        outputs_lambda: An elementwise output lambda function.
+        output_lambda: An elementwise output lambda function.
         num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
@@ -732,7 +774,7 @@ fn _allreduce_1stage_kernel[
         src_ptrs: Input buffers from all GPUs
         rank_sigs: Signal pointers for synchronization
         num_elements: Number of elements to reduce
-        max_num_blocks: Maximum number of thread blocks to launch.
+        my_rank: Current GPU rank
 
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using _multi_gpu_barrier before and after reduction.
@@ -773,10 +815,9 @@ fn _allreduce_1stage_kernel[
             accum_type=accum_type,
         ](elem_idx, ptrs)
 
-        # Direct output for 1-stage kernel
-        outputs_lambda[
-            input_index=my_rank, width=simd_width, alignment=alignment
-        ](result.get_nd_index(elem_idx), reduced_result)
+        output_lambda[width=simd_width, alignment=alignment](
+            result.get_nd_index(elem_idx), reduced_result
+        )
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
@@ -786,39 +827,37 @@ fn _allreduce_p2p[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     num_buffers: Int = ngpus,
 ](
     list_of_in_bufs: InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
     ],
-    list_of_out_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
-    ],
+    out_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
-    ctxs: List[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     """
-    Performs allreduce using peer-to-peer access between GPUs.
+    Performs allreduce using peer-to-peer access for a single GPU.
 
     Parameters:
         dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
-        outputs_lambda: An output elementwise lambda.
+        output_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
         num_buffers: Number of buffers to process (defaults to ngpus).
 
     Args:
-        list_of_in_bufs: Input buffers from each GPU
-        list_of_out_bufs: Output buffers for each GPU
+        list_of_in_bufs: Input buffers from ALL GPUs (peer access required)
+        out_buf: Output buffer for THIS GPU
         rank_sigs: Signal pointers for synchronization
         max_num_blocks: Maximum number of thread blocks to launch.
-        ctxs: List of device contexts for participating GPUs
+        ctx: Device context for THIS GPU
 
-    Launches P2P reduction kernel on each GPU to perform direct reduction.
+    Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
     alias simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
@@ -843,80 +882,63 @@ fn _allreduce_p2p[
     alias rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = list_of_in_bufs[0].bytecount()
 
-    # TODO(MOCO-1736): fix kernel interface codegen issue so that we can pass
-    # `InlineArray` here.
-    var rank_sigs_array = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        uninitialized=True
-    )
+    if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
+        rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
+    ):
+        # Define grid size for 1-stage, which processes all elements.
+        var grid_size = min(
+            max_num_blocks,
+            ceildiv(num_elements // simd_width, BLOCK_SIZE),
+        )
 
-    @parameter
-    for i in range(ngpus):
-        rank_sigs_array[i] = rank_sigs[i]
+        # Use the 1-stage allreduce when transfer is latency bound.
+        ctx.enqueue_function[
+            _allreduce_1stage_kernel[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                num_buffers=num_buffers,
+            ]
+        ](
+            out_buf,
+            list_of_in_ptrs,
+            rank_sigs,
+            num_elements,
+            ctx.id(),
+            grid_dim=grid_size,
+            block_dim=BLOCK_SIZE,
+        )
+    else:
+        # Define grid size for 2-stage, which processes 1/ngpus of the
+        # number of elements.
+        var grid_size = min(
+            max_num_blocks,
+            ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
+        )
 
-    @parameter
-    for i in range(ngpus):
-        var curr_ctx = ctxs[i]
-        var curr_out_buf = list_of_out_bufs[i]
-
-        if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
-            rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
-        ):
-            # Define grid size for 1-stage, which processes all elements.
-            var grid_size = min(
-                max_num_blocks,
-                ceildiv(num_elements // simd_width, BLOCK_SIZE),
-            )
-
-            # Use the 1-stage allreduce when transfer is latency bound.
-            curr_ctx.enqueue_function[
-                _allreduce_1stage_kernel[
-                    dtype,
-                    rank,
-                    ngpus,
-                    my_rank=i,
-                    BLOCK_SIZE=BLOCK_SIZE,
-                    outputs_lambda=outputs_lambda,
-                    num_buffers=num_buffers,
-                ]
-            ](
-                curr_out_buf,
-                list_of_in_ptrs,
-                rank_sigs_array,
-                num_elements,
-                max_num_blocks,
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-            )
-        else:
-            # Define grid size for 2-stage, which processes 1/ngpus of the
-            # number of elements.
-            var grid_size = min(
-                max_num_blocks,
-                ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
-            )
-
-            # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
-            curr_ctx.enqueue_function[
-                _allreduce_2stage_kernel[
-                    dtype,
-                    rank,
-                    ngpus,
-                    my_rank=i,
-                    BLOCK_SIZE=BLOCK_SIZE,
-                    outputs_lambda=outputs_lambda,
-                    pdl_level=pdl_level,
-                    num_buffers=num_buffers,
-                ]
-            ](
-                curr_out_buf,
-                list_of_in_ptrs,
-                rank_sigs_array,
-                num_elements,
-                max_num_blocks,
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
+        # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
+        ctx.enqueue_function[
+            _allreduce_2stage_kernel[
+                dtype,
+                rank,
+                ngpus,
+                BLOCK_SIZE=BLOCK_SIZE,
+                output_lambda=output_lambda,
+                pdl_level=pdl_level,
+                num_buffers=num_buffers,
+            ]
+        ](
+            out_buf,
+            list_of_in_ptrs,
+            rank_sigs,
+            num_elements,
+            ctx.id(),
+            grid_dim=grid_size,
+            block_dim=BLOCK_SIZE,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
 
 
 @always_inline
@@ -932,50 +954,66 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    outputs_lambda: elementwise_epilogue_type,
+    output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], 1 if use_multimem else ngpus
     ],
-    output_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    output_buffer: NDBuffer[dtype, rank, MutableAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
-    ctxs: List[DeviceContext],
+    ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
-    """Performs an allreduce operation across multiple GPUs.
+    """Per-device allreduce: one instance per GPU builds its own output.
 
-    This function serves as the main entry point for performing allreduce operations
-    across multiple GPUs. It automatically selects between two implementations:
-    - A peer-to-peer (P2P) based implementation when P2P access is possible between GPUs
-    - A naive implementation as fallback when P2P access is not available
+    High-level model
+    - Each GPU runs one instance of this function in parallel with the others.
+    - Every instance reads all inputs but writes only its own output buffer.
+    - A Python-level fence is inserted across the outputs to prevent reordering.
 
-    The allreduce operation combines values from all GPUs using element-wise addition
-    and distributes the result back to all GPUs.
+    Two execution paths
+    1) P2P fast path (when peer access is available)
+       - 1‑stage kernel (latency‑bound): each thread vector‑loads from all GPUs,
+         accumulates in higher precision, and writes directly to the result.
+       - 2‑stage kernel (bandwidth‑bound): reduce‑scatter then all‑gather.
+         Uses each GPU’s `rank_sigs[*]` payload as a staging area for partitions.
+
+         Diagram (per GPU r, 2‑stage):
+           - Stage 1: write reduced partition r into payload of `rank_sigs[r]`.
+           - Stage 2: gather partitions from all peers’ payloads into `out_r`.
+
+    2) Naive fallback (no P2P)
+       - For GPU r: create local accumulator A_r, allocate a temporary buffer S_r,
+         copy each peer input into S_r and accumulate into A_r, then apply the epilogue
+         into `out_r`.
+
+         Diagram (per GPU r, naive):
+           in_r → A_r += in_r; for i≠r: in_i → tmp_r → A_r += tmp_r; A_r → out_r
 
     Parameters:
-        dtype: The data type of the tensor elements (e.g. DType.float32).
-        rank: The number of dimensions in the input/output tensors.
-        ngpus: The number of GPUs participating in the allreduce.
-        outputs_lambda: An output elementwise lambda.
-        pdl_level: Control PDL behavior for the kernel.
+        dtype: Data type of the tensor elements.
+        rank: Number of dimensions in the tensors.
+        ngpus: Number of GPUs participating in the allreduce.
+        output_lambda: Elementwise epilogue applied on the device result.
+        pdl_level: Controls PDL behavior for P2P kernels.
         use_multimem: Whether to use multimem mode for improved performance.
 
     Args:
-        input_buffers: Array of input tensors from each GPU, one per GPU.
-        output_buffers: Array of output tensors for each GPU to store results.
-        rank_sigs: Array of Signal pointers used for cross-GPU synchronization.
-        ctxs: List of device contexts for each participating GPU.
-        _max_num_blocks: Optional maximum number of blocks used to compute grid
-            configuration.
-            If not passed a dispatch table sets the grid configuration.
+        input_buffers: Inputs from ALL GPUs (for P2P, these must be peer accessible).
+        output_buffer: Output for THIS GPU.
+        rank_sigs: Per‑GPU `Signal*`; header plus payload. Payload is used as scratch
+            for the P2P 2‑stage path.
+        ctx: Device context for THIS GPU (device id → rank).
+        _max_num_blocks: Optional grid limit (dispatch selects a default otherwise).
 
-    Note:
-        - Input and output buffers must have identical shapes across all GPUs.
-        - The number of elements must be identical across all input/output buffers.
-        - Performance is typically better with P2P access enabled between GPUs.
-        - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
+    Notes:
+      - Inputs must have identical shape/dtype across GPUs.
+      - Signal buffers must be sized at least `size_of(Signal) + payload_bytes` for the P2P 2‑stage path,
+        where `payload_bytes` equals the input tensor bytecount.
+      - The naive path is automatically selected if P2P cannot be enabled.
+      - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
     var max_num_blocks = _max_num_blocks.or_else(
         _dispatch_max_num_blocks[ngpus](input_buffers[0].bytecount())
@@ -996,28 +1034,22 @@ fn allreduce[
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"
             )
-        return _allreduce_naive[
-            dtype=dtype,
-            rank=rank,
+        return _allreduce_naive_single[
             ngpus=ngpus,
-            outputs_lambda=outputs_lambda,
+            output_lambda=output_lambda,
             num_buffers=ngpus,
         ](
             rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
                 input_buffers
             ),
-            rebind[InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus]](
-                output_buffers
-            ),
+            output_buffer,
             max_num_blocks,
-            ctxs,
+            ctx,
         )
-    else:
-        return _allreduce_p2p[
-            dtype=dtype,
-            rank=rank,
-            ngpus=ngpus,
-            outputs_lambda=outputs_lambda,
-            pdl_level=pdl_level,
-            num_buffers= 1 if use_multimem else ngpus,
-        ](input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs)
+
+    return _allreduce_p2p[
+        ngpus=ngpus,
+        output_lambda=output_lambda,
+        pdl_level=pdl_level,
+        num_buffers= 1 if use_multimem else ngpus,
+    ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx)

@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ctypes
 import itertools
 import json
 import logging
 import os
+import platform
 import random
 import resource
 import sys
@@ -66,6 +68,38 @@ from transformers import (
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
 logger = logging.getLogger("benchmark_serving")
+
+
+# TODO: This should be refactored into a common utility lib so it can be reused
+# in other internal benchmarking tools.
+def is_nvml_available() -> bool:
+    """Check if NVML (NVIDIA Management Library) is available on the system.
+
+    Returns:
+        bool: True if NVML is available, False otherwise.
+    """
+    try:
+        if platform.system() == "Linux":
+            # Try to load libnvidia-ml.so.1
+            try:
+                ctypes.CDLL("libnvidia-ml.so.1")
+                return True
+            except OSError:
+                return False
+        elif platform.system() == "Windows":
+            # Try to load nvml.dll
+            try:
+                ctypes.CDLL("nvml.dll")
+                return True
+            except OSError:
+                return False
+        elif platform.system() == "Darwin":
+            # macOS doesn't support NVML
+            return False
+        else:
+            return False
+    except Exception:
+        return False
 
 
 @dataclass
@@ -465,6 +499,7 @@ def set_ulimit(target_soft_limit: int = 65535) -> None:
 async def get_request(
     input_requests: Sequence[SampledRequest],
     request_rate: float,
+    timing_data: dict[str, list[float]],
     burstiness: float = 1.0,
 ) -> AsyncGenerator[SampledRequest, None]:
     """
@@ -484,6 +519,9 @@ async def get_request(
             A lower burstiness value (0 < burstiness < 1) results
             in more bursty requests, while a higher burstiness value
             (burstiness > 1) results in a more uniform arrival of requests.
+        timing_data:
+            Dictionary where timing data will be collected with keys:
+            - 'intervals': List of actual time intervals between requests
     """
 
     # Calculate scale parameter theta to maintain the desired request_rate.
@@ -492,8 +530,26 @@ async def get_request(
     )
     theta = 1.0 / (request_rate * burstiness)
 
+    # Initialize timing data collection - always enabled
+    if timing_data is None:
+        timing_data = {}
+    timing_data.setdefault("intervals", [])
+
+    start_time = time.perf_counter()
+    last_request_time = start_time
+
     for request in input_requests:
+        current_time = time.perf_counter()
+
+        # Record timestamp when request is yielded
+        if last_request_time != start_time:
+            actual_interval = current_time - last_request_time
+            timing_data["intervals"].append(actual_interval)
+
         yield request
+
+        # Update last_request_time for next iteration
+        last_request_time = current_time
 
         if request_rate == float("inf"):
             # If the request rate is infinity, then we don't need to wait.
@@ -606,16 +662,12 @@ def calculate_metrics(
     available_gpu_memory_mib = []
     gpu_utilization = []
     if collect_gpu_stats:
-        from nvitop import Device
-        from nvitop.libnvml import NVMLError  # type: ignore
+        if is_nvml_available():
+            from nvitop import Device
 
-        try:
             device_count = Device.count()
-        except NVMLError as e:
-            logging.warning(f"Failed to get GPU device count: {e}")
-            logging.warning(
-                "GPU stats collection is only supported on NVIDIA GPUs."
-            )
+        else:
+            logger.warning("NVML not available, skipping GPU stats collection")
             device_count = 0
 
         for i in range(device_count):
@@ -790,6 +842,7 @@ async def benchmark(
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
     ignore_first_turn_stats: bool = False,
+    timing_data: Optional[dict[str, list[float]]] = None,
 ):
     if ignore_first_turn_stats and ttft_skip_requests:
         logger.warning(
@@ -871,10 +924,14 @@ async def benchmark(
     semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
     if collect_gpu_stats:
-        from nvitop import ResourceMetricCollector
+        if is_nvml_available():
+            from nvitop import ResourceMetricCollector
 
-        collector = ResourceMetricCollector()
-        collector.start("benchmark")
+            collector = ResourceMetricCollector()
+            collector.start("benchmark")
+        else:
+            logger.warning("NVML not available, skipping GPU stats collection")
+            collector = None
 
     benchmark_start_time = time.perf_counter_ns()
     if max_benchmark_duration_s is None:
@@ -887,6 +944,8 @@ async def benchmark(
     outputs: list[RequestFuncOutput] = []
     if not num_chat_sessions:
         # single-turn chat scenario
+        if timing_data is None:
+            timing_data = {}
         pbar = None if disable_tqdm else tqdm(total=len(input_requests))
 
         async def limited_request_func(
@@ -905,7 +964,7 @@ async def benchmark(
                 )
 
         async for request in get_request(
-            input_requests, request_rate, burstiness
+            input_requests, request_rate, timing_data, burstiness
         ):
             # If the request length is pinned, then we use ignore_eos+max_tokens
             # to force the model's hand into the given request length. Otherwise,
@@ -1026,9 +1085,12 @@ async def benchmark(
                 }
             )
 
-    if collect_gpu_stats:
+    if collect_gpu_stats and collector is not None:
         gpu_metrics = collector.collect()
         collector.stop()
+        # Delete the collector.
+        # Leaving it to be cleaned up later can lead to segfaults.
+        del collector
     else:
         gpu_metrics = {}
 
@@ -1041,6 +1103,14 @@ async def benchmark(
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
     )
+    achieved_request_rate = 0.0
+    if timing_data and timing_data.get("intervals"):
+        mean_interval = sum(timing_data["intervals"]) / len(
+            timing_data["intervals"]
+        )
+        achieved_request_rate = (
+            round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
+        )
 
     print_section(title=" Serving Benchmark Result ", char="=")
     print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
@@ -1061,6 +1131,11 @@ async def benchmark(
         "{:<40} {:<10}".format(
             "Total nonempty serving response chunks:",
             metrics.nonempty_response_chunks,
+        )
+    )
+    print(
+        "{:<40} {:<10.5f}".format(
+            "Request rate (req/s):", achieved_request_rate
         )
     )
     print(

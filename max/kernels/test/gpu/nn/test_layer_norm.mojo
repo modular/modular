@@ -14,8 +14,15 @@
 from math import ceildiv, isqrt
 from sys import simd_width_of
 
-from algorithm import mean, variance
-from buffer import NDBuffer
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
+from layout.math import mean, variance
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
@@ -52,9 +59,17 @@ fn run_layer_norm_block[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[dtype, 2](data_d.unsafe_ptr(), data_shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[2]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
+    var beta = LayoutTensor[dtype, layout_1d](
+        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -65,15 +80,25 @@ fn run_layer_norm_block[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](Index(row, col))
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                IndexList[2](row, col)
+            )
+        )
+        return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](idx[0])
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var idx = gamma.runtime_layout(
+            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
+                IndexList[1](coords[0])
+            )
+        )
+        return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -81,8 +106,13 @@ fn run_layer_norm_block[
     fn output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        data_buf.store[width=width, alignment=alignment](
-            IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                IndexList[2](row, col)
+            )
+        )
+        data_buf.ptr.store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
         )
 
     var max_warps_per_block = (
@@ -93,9 +123,16 @@ fn run_layer_norm_block[
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        ctx.enqueue_function[
-            layer_norm_gpu_block[simd_width, input_fn, gamma_fn, output_fn]
-        ](
+        alias kernel = layer_norm_gpu_block[
+            mut = beta.mut,
+            origin = beta.origin,
+            layout = beta.layout,
+            simd_width,
+            input_fn,
+            gamma_fn,
+            output_fn,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -111,7 +148,10 @@ fn run_layer_norm_block[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = LayoutTensor[dtype, layout_1d](
+            data_h + r * cols,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+        )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -159,9 +199,17 @@ fn run_layer_norm_gpu[
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
+    var beta = LayoutTensor[dtype, layout_1d](
+        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -173,25 +221,41 @@ fn run_layer_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+
+        return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](idx[0])
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var idx = gamma.runtime_layout(
+            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
+                coords[0]
+            )
+        )
+        return gamma.ptr.load[width=width](idx[0])
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     fn output_fn[
         width: Int, rank_: Int, alignment: Int
-    ](idx: IndexList[rank_], val: SIMD[dtype, width]):
-        data_buf.store[width=width, alignment=alignment](
-            rebind[IndexList[rank]](idx), rebind[SIMD[dtype, width]](val)
+    ](coords: IndexList[rank_], val: SIMD[dtype, width]):
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+        data_buf.ptr.store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
         )
 
     layer_norm_gpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon, ctx=ctx)
@@ -199,7 +263,10 @@ fn run_layer_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = LayoutTensor[dtype, layout_1d](
+            data_h + r * cols,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+        )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)
@@ -247,9 +314,17 @@ fn run_layer_norm_warp_tiling[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[dtype, 2](data_d._unsafe_ptr(), data_shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d._unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d._unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[2]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d._unsafe_ptr(), RuntimeLayout[layout].row_major(data_shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
+    var beta = LayoutTensor[dtype, layout_1d](
+        beta_d._unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -260,15 +335,26 @@ fn run_layer_norm_warp_tiling[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](Index(row, col))
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                IndexList[2](row, col)
+            )
+        )
+
+        return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](idx[0])
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var idx = gamma.runtime_layout(
+            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
+                IndexList[1](coords[0])
+            )
+        )
+        return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -276,8 +362,13 @@ fn run_layer_norm_warp_tiling[
     fn output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        data_buf.store[width=width, alignment=alignment](
-            IndexList[2](row, col), rebind[SIMD[dtype, width]](val)
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                IndexList[2](row, col)
+            )
+        )
+        data_buf.ptr.store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
         )
 
     var max_warps_per_block = (
@@ -288,11 +379,16 @@ fn run_layer_norm_warp_tiling[
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
-        ctx.enqueue_function[
-            layer_norm_gpu_warp_tiling[
-                simd_width, input_fn, gamma_fn, output_fn
-            ]
-        ](
+        alias kernel = layer_norm_gpu_warp_tiling[
+            mut = beta.mut,
+            origin = beta.origin,
+            layout = beta.layout,
+            simd_width,
+            input_fn,
+            gamma_fn,
+            output_fn,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -308,7 +404,10 @@ fn run_layer_norm_warp_tiling[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = LayoutTensor[dtype, layout_1d](
+            data_h + r * cols,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+        )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)

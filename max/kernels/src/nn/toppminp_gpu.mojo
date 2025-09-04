@@ -104,7 +104,7 @@ fn topk_wrapper[
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset: UInt = block_lane * block_size
+    var block_offset: UInt = UInt(block_lane * block_size)
     var stride = block_size * num_blocks_per_input
     topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):
@@ -122,7 +122,7 @@ fn topk_wrapper[
 
         if tid == 0:
             # Store the local top-K values and indices in global memory
-            var vector_idx: UInt = total.p
+            var vector_idx: UInt = UInt(total.p)
             local_topk_vals[bid * K + k] = total.u
             local_topk_idxs[bid * K + k] = Scalar[DType.index](vector_idx).cast[
                 out_idx_type
@@ -350,7 +350,7 @@ fn radix_sort_pairs_kernel[
     barrier()
 
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
-    if tid < NUM_BUCKETS:
+    if tid < UInt(NUM_BUCKETS):
         var sum = Int32(0)
         bucket_offset = tid
 
@@ -385,7 +385,7 @@ fn radix_sort_pairs_kernel[
         while offset < BLOCK_SIZE:
             # Initialize a temporary variable to store the value from the neighboring thread.
             var val = Int32(0)
-            if tid >= offset:
+            if tid >= UInt(offset):
                 # If the current thread ID is greater than or equal to the offset,
                 # fetch the value from the neighboring thread that is 'offset' positions behind.
                 val = s_thread_offsets[(tid - offset) * NUM_BUCKETS + radix]
@@ -412,7 +412,7 @@ fn radix_sort_pairs_kernel[
     # Compute total_offsets_descending[NUM_BUCKETS] if needed
     @parameter
     if not ascending:
-        if tid < NUM_BUCKETS:
+        if tid < UInt(NUM_BUCKETS):
             total_offsets_descending[tid] = (
                 total_offsets[NUM_BUCKETS] - total_offsets[tid + 1]
             )

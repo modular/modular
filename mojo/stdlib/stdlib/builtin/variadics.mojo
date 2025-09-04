@@ -34,7 +34,7 @@ fn variadic_size[T: AnyType](seq: Variadic[T]) -> Int:
     Returns:
         The length of the variadic sequence.
     """
-    return __mlir_op.`pop.variadic.size`(seq)
+    return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
 
 @always_inline("nodebug")
@@ -47,7 +47,7 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
     Returns:
         The length of the variadic sequence.
     """
-    return __mlir_op.`pop.variadic.size`(seq)
+    return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -155,7 +155,7 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
             The number of elements on the variadic list.
         """
 
-        return __mlir_op.`pop.variadic.size`(self.value)
+        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     @always_inline
     fn __getitem__[I: Indexer](self, idx: I) -> type:
@@ -170,7 +170,7 @@ struct VariadicList[type: AnyTrivialRegType](Sized):
         Returns:
             The element on the list corresponding to the given index.
         """
-        return __mlir_op.`pop.variadic.get`(self.value, index(idx))
+        return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
@@ -331,7 +331,7 @@ struct VariadicListMem[
         Returns:
             The number of elements on the variadic list.
         """
-        return __mlir_op.`pop.variadic.size`(self.value)
+        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

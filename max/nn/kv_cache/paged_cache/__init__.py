@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from .block_copy_engine import BlockCopyEngine, BlockCopyType
+from .multi_cache_manager import MultiPagedKVCacheManager
 from .paged_cache import (
     FetchPagedKVCacheCollection,
     PagedKVCacheCollection,
@@ -31,6 +32,7 @@ __all__ = [
     "FetchPagedKVCacheCollection",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
+    "MultiPagedKVCacheManager",
     "PagedKVCacheCollection",
     "PagedKVCacheManager",
     "PagedKVCacheType",

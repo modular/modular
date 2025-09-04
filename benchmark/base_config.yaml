@@ -33,9 +33,8 @@ benchmark_config:
 
   # Basic workload parameters
   num_prompts: 1000  # Number of prompts to process
-  seed: 42  # Random seed for reproducibility
+  seed: 0  # Random seed for reproducibility
 
   # Control flags
   disable_tqdm: false
   print_inputs_and_outputs: false
-

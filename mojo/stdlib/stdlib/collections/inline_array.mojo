@@ -415,7 +415,7 @@ struct InlineArray[
             counting backwards from the end of the array.
         """
         constrained[
-            -size <= Int(index(idx)) < size, "Index must be within bounds."
+            -size <= index(idx) < size, "Index must be within bounds."
         ]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
         return self.unsafe_get(normalized_index)
@@ -481,15 +481,15 @@ struct InlineArray[
         """
         var i = index(idx)
         debug_assert(
-            0 <= Int(i) < size,
+            0 <= i < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            Int(i),
+            i,
             " should be greater than or equal to 0 and less than ",
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._array).address,
-            i,
+            i._mlir_value,
         )
         return UnsafePointer(ptr)[]
 

@@ -1,11 +1,35 @@
 load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
 load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "mojo_binary")
 
 exports_files(["mblack-wrapper.py"])
+
+_BUILDIFIER_IGNORES = [
+    "./.derived/*",
+    "./.git/*",
+    "./CloudInfra/go/pkg/*",
+    "./third-party/llvm-project/*",
+]
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "warn",
+    mode = "diff",
+    visibility = ["//visibility:public"],
+)
+
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "fix",
+    mode = "fix",
+    visibility = ["//visibility:public"],
+)
 
 npm_link_all_packages(
     name = "node_modules",
@@ -115,6 +139,7 @@ multirun(
     name = "lint",
     buffer_output = True,
     commands = [
+        ":buildifier.check",
         ":check_licenses.check",
         ":markdownlint.check",
         ":mblack.check",
@@ -128,6 +153,7 @@ multirun(
     name = "fix",
     buffer_output = True,
     commands = [
+        ":buildifier.fix",
         ":check_licenses.fix",
         ":markdownlint.fix",
         ":mblack.fix",

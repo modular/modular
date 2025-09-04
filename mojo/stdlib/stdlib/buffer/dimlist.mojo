@@ -85,7 +85,7 @@ struct Dim(
         Args:
             value: The static dimension value.
         """
-        self._value_or_missing = Int(value)
+        self._value_or_missing = Int(mlir_value=value)
 
     @always_inline("builtin")
     @implicit
@@ -327,7 +327,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Args:
             values: The initial dim values list.
         """
-        self.value = VariadicList[Dim](Int(index(values[0])))
+        self.value = VariadicList[Dim](index(values[0]))
 
     @always_inline("nodebug")
     fn __init__[
@@ -343,9 +343,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         Args:
             values: The initial dim values list.
         """
-        self.value = VariadicList[Dim](
-            Int(index(values[0])), Int(index(values[1]))
-        )
+        self.value = VariadicList[Dim](index(values[0]), index(values[1]))
 
     @always_inline("nodebug")
     fn __init__[
@@ -364,7 +362,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
             values: The initial dim values list.
         """
         self.value = VariadicList[Dim](
-            Int(index(values[0])), Int(index(values[1])), Int(index(values[2]))
+            index(values[0]), index(values[1]), index(values[2])
         )
 
     @always_inline("nodebug")
@@ -382,7 +380,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
             val0: The initial dim value.
             val1: The initial dim value.
         """
-        self.value = VariadicList[Dim](Int(index(val0)), Int(index(val1)))
+        self.value = VariadicList[Dim](index(val0), index(val1))
 
     @always_inline("nodebug")
     fn __init__[
@@ -400,9 +398,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
             val1: The initial dim value.
             val2: The initial dim value.
         """
-        self.value = VariadicList[Dim](
-            Int(index(val0)), Int(index(val1)), Int(index(val2))
-        )
+        self.value = VariadicList[Dim](index(val0), index(val1), index(val2))
 
     @always_inline("nodebug")
     fn __init__[
@@ -424,10 +420,7 @@ struct DimList(Representable, Sized, Stringable, Writable):
         """
         self = Self(
             VariadicList[Dim](
-                Int(index(val0)),
-                Int(index(val1)),
-                Int(index(val2)),
-                Int(index(val3)),
+                index(val0), index(val1), index(val2), index(val3)
             )
         )
 

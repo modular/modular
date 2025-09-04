@@ -381,8 +381,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
                 full,
                 empty,
                 wgmma_op,
-                local_warp_group_idx,
-                warp_group_thread_idx,
+                UInt(local_warp_group_idx),
+                UInt(warp_group_thread_idx),
             )
 
             var output_reg_tile = (
@@ -416,9 +416,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent_splitk[
                     c,
                     c_smem_tile,
                     output_reg_tile,
-                    warp_group_thread_idx,
-                    local_warp_group_idx,
-                    thread_idx.x - WARPGROUP_SIZE,
+                    UInt(warp_group_thread_idx),
+                    UInt(local_warp_group_idx),
+                    UInt(thread_idx.x - WARPGROUP_SIZE),
                     Int(block_y),
                     Int(block_x),
                 )

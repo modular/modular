@@ -14,8 +14,8 @@
 from math import isqrt
 from sys import simd_width_of
 
-from buffer import NDBuffer
 from gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
 
@@ -26,12 +26,16 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: NDBuffer[t, 1], size: Int, eps: Scalar[t]) -> (Scalar[t], Scalar[t]):
+](vec: LayoutTensor[t, **_], size: Int, eps: Scalar[t]) -> (
+    Scalar[t],
+    Scalar[t],
+):
+    constrained[vec.rank == 1, "vec must be rank 1"]()
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
     for i in range(size):
-        sum_val += vec[i]
-        sum_sq += vec[i] * vec[i]
+        sum_val += vec[i][0]
+        sum_sq += vec[i][0] * vec[i][0]
     var mean = sum_val / size
     var variance = max((sum_sq / size) - (mean * mean), 0.0)
     return (mean, isqrt(variance + eps))
@@ -72,9 +76,17 @@ fn run_group_norm_gpu[
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    alias layout = Layout.row_major[rank]()
+    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
+    var data_buf = LayoutTensor[dtype, layout](
+        data_d.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    )
+    var gamma = LayoutTensor[dtype, layout_1d](
+        gamma_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
+    var beta = LayoutTensor[dtype, layout_1d](
+        beta_d.unsafe_ptr(), RuntimeLayout[layout_1d].row_major(param_shape)
+    )
     var epsilon = Scalar[dtype](1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -86,20 +98,32 @@ fn run_group_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.runtime_layout(
+            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
+                coords
+            )
+        )
+
+        return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](rebind[IndexList[1]](idx))
+    fn gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        var idx = gamma.runtime_layout(
+            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](coords)
+        )
+        return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
-    fn beta_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
-        return beta.load[width=width](rebind[IndexList[1]](idx))
+    fn beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        var idx = beta.runtime_layout(
+            RuntimeTuple[fill_like(beta.layout.shape, UNKNOWN_VALUE)](coords)
+        )
+        return beta.ptr.load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
         shape, epsilon, num_groups, data_buf, ctx=ctx
@@ -108,7 +132,10 @@ fn run_group_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = LayoutTensor[dtype, layout_1d](
+            data_h + r * cols,
+            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+        )
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]
         var norm_factor = stats[1]

@@ -231,7 +231,9 @@ struct String(
         Args:
             data: The static constant string to refer to.
         """
-        self._len_or_data = __mlir_op.`pop.string.size`(data.value)
+        self._len_or_data = Int(
+            mlir_value=__mlir_op.`pop.string.size`(data.value)
+        )
         self._ptr_or_data = UnsafePointer(
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()

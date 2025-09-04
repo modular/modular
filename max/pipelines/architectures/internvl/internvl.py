@@ -1280,19 +1280,26 @@ class InternVisionEncoderLayer(Module):
         attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # 3. Apply layer scaling and first residual
+        # TODO(KERN-1989): casting the following layer scaling and residual add
+        # to float32 here is load bearing for correctness.
+        # The issue appears related to elementwise fusion.
+        # Remove the casts and subsequent cast back to `orig_dtype` once fixed.
         attn_outs_scaled = self._layer_scaling(
-            attn_outs, self.ls1, [x.device for x in xs]
+            [a.cast(DType.float32) for a in attn_outs],
+            self.ls1.cast(DType.float32),
+            [x.device for x in xs],
         )
 
         # First residual connection
+        orig_dtype = original_hidden_states[0].dtype
         hidden_states = [
-            out + orig
+            out + orig.cast(DType.float32)
             for out, orig in zip(attn_outs_scaled, original_hidden_states)
         ]
 
         # 4. Apply second normalization per device
         norm2_outs = [
-            norm(hidden)
+            norm(hidden).cast(orig_dtype)
             for norm, hidden in zip(self.norm2_per_device, hidden_states)
         ]
 
@@ -1319,7 +1326,8 @@ class InternVisionEncoderLayer(Module):
 
         # Second residual connection
         outputs = [
-            out + hidden for out, hidden in zip(mlp_outs_scaled, hidden_states)
+            out + hidden.cast(orig_dtype)
+            for out, hidden in zip(mlp_outs_scaled, hidden_states)
         ]
 
         return outputs

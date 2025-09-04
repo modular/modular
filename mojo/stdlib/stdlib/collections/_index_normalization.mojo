@@ -64,9 +64,9 @@ fn normalize_index[
         )
         return i
     else:
-        var mlir_index = index(idx)
-        var i = UInt(mlir_index)
-        if Int(mlir_index) < 0:
+        var mlir_index = index(idx)._mlir_value
+        var i = UInt(mlir_value=mlir_index)
+        if Int(mlir_value=mlir_index) < 0:
             i += length
         # Checking the bounds after the normalization saves a comparison
         # while allowing negative indexing into containers with length > Int.MAX.
@@ -85,7 +85,7 @@ fn normalize_index[
             i < length,
             container_name,
             " index out of bounds: index (",
-            Int(mlir_index),
+            Int(mlir_value=mlir_index),
             ") valid range: -",  # can't print -UInt.MAX
             length,
             " <= index < ",

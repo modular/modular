@@ -126,11 +126,13 @@ fn env_get_int[name: StaticString]() -> Int:
     Returns:
         An integer parameter value.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        _get_kgen_string[name](),
-        `> : index`,
-    ]
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_env, `,
+            _get_kgen_string[name](),
+            `> : index`,
+        ]
+    )
 
 
 fn env_get_int[name: StaticString, default: Int]() -> Int:

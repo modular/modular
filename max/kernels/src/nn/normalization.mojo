@@ -22,8 +22,6 @@ from algorithm.functional import (
 )
 from algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from bit import log2_floor
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import (
     WARP_SIZE,
     barrier,
@@ -39,6 +37,15 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace, external_memory
+from layout import (
+    LayoutTensor,
+    Layout,
+    IntTuple,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import fill_like
 from memory import stack_allocation
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -79,7 +86,7 @@ fn block_reduce[
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < max_warps_per_block:
+    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
         var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )
@@ -214,7 +221,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < (block_dim.x // WARP_SIZE):
+        if thread_idx.x < UInt(block_dim.x // WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -247,6 +254,9 @@ fn welford_block_all_reduce[
 
 
 fn layer_norm_gpu_warp_tiling[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout,
     dtype: DType, //,
     simd_width: UInt,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
@@ -260,9 +270,10 @@ fn layer_norm_gpu_warp_tiling[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: NDBuffer[dtype, 1, MutableAnyOrigin],
+    beta: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
 ):
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -283,7 +294,7 @@ fn layer_norm_gpu_warp_tiling[
     var thread_count = Scalar[accum_type]()
 
     with PDL():
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             # every thread computes its own simd width of mean and variance
@@ -302,10 +313,13 @@ fn layer_norm_gpu_warp_tiling[
         var row_var = max(row_m2 / row_count, 0.0)
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx < num_cols:
+        if idx < UInt(num_cols):
             var gamma_val = gamma_fn[simd_width](Index(idx))
-            var beta_val = beta.load[width=simd_width, alignment=align](
-                Index(idx)
+            var beta_idx = beta.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+            )
+            var beta_val = beta.ptr.load[width=simd_width, alignment=align](
+                beta_idx
             )
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
@@ -314,6 +328,9 @@ fn layer_norm_gpu_warp_tiling[
 
 
 fn layer_norm_gpu_block[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout,
     dtype: DType, //,
     simd_width: UInt,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
@@ -327,13 +344,14 @@ fn layer_norm_gpu_block[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: NDBuffer[dtype, 1, MutableAnyOrigin],
+    beta: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
 ):
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var num_cols: UInt = shape[1]
+    var num_cols: UInt = UInt(shape[1])
     var tid = thread_idx.x
     var row = block_idx.x
 
@@ -382,8 +400,11 @@ fn layer_norm_gpu_block[
 
             if offset < num_cols:
                 var gamma_val = gamma_fn[simd_width](Index(offset))
-                var beta_val = beta.load[width=simd_width, alignment=align](
-                    offset
+                var beta_offset = beta.runtime_layout(
+                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset)
+                )
+                var beta_val = beta.ptr.load[width=simd_width, alignment=align](
+                    beta_offset
                 )
 
                 var vec_data = input_fn[simd_width](row, offset).cast[
@@ -425,11 +446,12 @@ fn layer_norm_gpu[
     ) capturing -> None,
 ](
     shape: IndexList[rank, **_],
-    beta: NDBuffer[dtype, 1],
+    beta: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     *,
     ctx: DeviceContext,
 ) raises:
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     if rank == 0:
         return
 
@@ -476,11 +498,16 @@ fn layer_norm_gpu[
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            ctx.enqueue_function[
-                layer_norm_gpu_warp_tiling[
-                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
-                ]
-            ](
+            alias kernel = layer_norm_gpu_warp_tiling[
+                mut = beta.mut,
+                origin = beta.origin,
+                layout = beta.layout,
+                UInt(simd_width),
+                input_fn_2d,
+                gamma_fn,
+                output_fn_2d,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -489,11 +516,16 @@ fn layer_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            ctx.enqueue_function[
-                layer_norm_gpu_block[
-                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
-                ]
-            ](
+            alias kernel = layer_norm_gpu_block[
+                mut = beta.mut,
+                origin = beta.origin,
+                layout = beta.layout,
+                UInt(simd_width),
+                input_fn_2d,
+                gamma_fn,
+                output_fn_2d,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -502,9 +534,16 @@ fn layer_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        ctx.enqueue_function[
-            layer_norm_gpu_block[1, input_fn_2d, gamma_fn, output_fn_2d]
-        ](
+        alias kernel = layer_norm_gpu_block[
+            mut = beta.mut,
+            origin = beta.origin,
+            layout = beta.layout,
+            1,
+            input_fn_2d,
+            gamma_fn,
+            output_fn_2d,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             flattened_shape,
             beta,
             epsilon,
@@ -536,7 +575,7 @@ fn layer_norm_cpu[
 ](
     num_rows: Int,
     num_cols: Int,
-    beta: NDBuffer[dtype, 1],
+    beta: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
@@ -557,6 +596,7 @@ fn layer_norm_cpu[
         beta: The beta value to use in the layernorm calculation.
         epsilon: The eps value to use in the layernorm calculation.
     """
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     alias simd_width = simd_width_of[dtype]()
 
     for row in range(num_rows):
@@ -601,9 +641,15 @@ fn layer_norm_cpu[
         fn _normalize[simd_width: Int](col: Int):
             var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](col)
+            var beta_col = beta.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
+            )
+
             var norm_val = (
                 out_val - mean_val
-            ) * norm_factor * gamma_val + beta.load[width=simd_width](col)
+            ) * norm_factor * gamma_val + beta.ptr.load[width=simd_width](
+                beta_col
+            )
             output_fn[simd_width, 1](
                 row, col, rebind[SIMD[dtype, simd_width]](norm_val)
             )
@@ -623,7 +669,12 @@ fn layer_norm_cpu[
     output_fn: fn[width: Int, rank: Int, alignment: Int] (
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-](shape: IndexList[rank], beta: NDBuffer[dtype, 1], epsilon: Scalar[dtype],):
+](
+    shape: IndexList[rank],
+    beta: LayoutTensor[dtype, **_],
+    epsilon: Scalar[dtype],
+):
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     var last_dim = shape[rank - 1]
 
     var prod_all_but_last_dim = 1
@@ -692,15 +743,16 @@ fn layer_norm[
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
-    beta: NDBuffer[dtype, 1],
+    beta: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[beta.rank == 1, "beta must have rank 1"]()
     # Note: we only support reduction along the last dimension
     if gamma_shape[0] != shape[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if beta.dynamic_shape[0] != shape[rank - 1]:
+    if beta.runtime_layout.shape.value[0] != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
 
     @always_inline
@@ -734,20 +786,18 @@ fn layer_norm[
 @always_inline
 fn layer_norm_shape[
     dtype: DType,
-    rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[dtype, rank],
-    gamma: NDBuffer[dtype, 1, _, DimList(1)],
-    beta: NDBuffer[dtype, 1, _, DimList(1)],
+    input: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, Layout.row_major(1)],
+    beta: LayoutTensor[dtype, Layout.row_major(1)],
     epsilon: Scalar[dtype],
-) -> IndexList[rank]:
+) -> IndexList[input.rank]:
     """
     Compute the output shape of a `layer_norm` operation.
 
     Parameters:
         dtype: Type of the input tensors.
-        rank: Rank of the input tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
 
@@ -760,7 +810,9 @@ fn layer_norm_shape[
     Returns:
         The output shape.
     """
-    return input.get_shape()
+    return rebind[IndexList[input.rank]](
+        input.runtime_layout.shape.value.canonicalize()
+    )
 
 
 @always_inline
@@ -775,11 +827,12 @@ fn _rms_norm_warp_tiling_subkernel[
     row: Int,
     idx: Int,
     vec_data: SIMD[accum_type, simd_width],
-    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[accum_type],
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
     alias align = align_of[SIMD[dtype, simd_width]]()
 
     # To utilize simd vector load.
@@ -799,8 +852,11 @@ fn _rms_norm_warp_tiling_subkernel[
     var norm_factor = isqrt((row_m2 / num_cols) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
-        var gamma_val = gamma.load[width=simd_width, alignment=align](
-            Index(idx)
+        var gamma_idx = gamma.runtime_layout(
+            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
+        )
+        var gamma_val = gamma.ptr.load[width=simd_width, alignment=align](
+            gamma_idx
         )
 
         @parameter
@@ -816,6 +872,9 @@ fn _rms_norm_warp_tiling_subkernel[
 
 
 fn rms_norm_gpu_warp_tiling_128[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout,
     dtype: DType, //,
     simd_width: Int,
     warps_per_block: Int,
@@ -827,12 +886,13 @@ fn rms_norm_gpu_warp_tiling_128[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_rows: Int,
     num_cols: Int,
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
     alias half_warp_size = WARP_SIZE // 2
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
@@ -872,6 +932,9 @@ fn rms_norm_gpu_warp_tiling_128[
 
 
 fn rms_norm_gpu_warp_tiling[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout,
     dtype: DType, //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -883,11 +946,13 @@ fn rms_norm_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -932,11 +997,13 @@ fn _rms_norm_gpu_block_subkernel[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -965,8 +1032,12 @@ fn _rms_norm_gpu_block_subkernel[
         if offset < num_cols:
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             var norm_val: SIMD[dtype, simd_width]
-            var gamma_val = gamma.load[width=simd_width, alignment=align](
-                Index(offset)
+            var gamma_offset = gamma.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset)
+            )
+
+            var gamma_val = gamma.ptr.load[width=simd_width, alignment=align](
+                gamma_offset
             )
 
             if multiply_before_cast:
@@ -983,6 +1054,9 @@ fn _rms_norm_gpu_block_subkernel[
 
 
 fn rms_norm_gpu_block[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout,
     dtype: DType, //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -994,11 +1068,13 @@ fn rms_norm_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     with PDL():
         _rms_norm_gpu_block_subkernel[
             simd_width,
@@ -1021,11 +1097,12 @@ fn rms_norm_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, **_],
-    gamma: NDBuffer[dtype, 1],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
     if rank == 0:
         return
 
@@ -1077,15 +1154,17 @@ fn rms_norm_gpu[
             block_dim = warps_per_block * WARP_SIZE
             grid_dim = ceildiv(rows, warps_per_block * 2)
 
-            ctx.enqueue_function[
-                rms_norm_gpu_warp_tiling_128[
-                    simd_width,
-                    warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-            ](
+            alias kernel = rms_norm_gpu_warp_tiling_128[
+                mut = gamma.mut,
+                origin = gamma.origin,
+                layout = gamma.layout,
+                simd_width,
+                warps_per_block,
+                input_fn_2d,
+                output_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1096,15 +1175,17 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            ctx.enqueue_function[
-                rms_norm_gpu_warp_tiling[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-            ](
+            alias kernel = rms_norm_gpu_warp_tiling[
+                mut = gamma.mut,
+                origin = gamma.origin,
+                layout = gamma.layout,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                output_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1114,15 +1195,17 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            ctx.enqueue_function[
-                rms_norm_gpu_block[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    output_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-            ](
+            alias kernel = rms_norm_gpu_block[
+                mut = gamma.mut,
+                origin = gamma.origin,
+                layout = gamma.layout,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                output_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1132,15 +1215,17 @@ fn rms_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        ctx.enqueue_function[
-            rms_norm_gpu_block[
-                1,
-                max_warps_per_block,
-                input_fn_2d,
-                output_fn_2d,
-                multiply_before_cast=multiply_before_cast,
-            ]
-        ](
+        alias kernel = rms_norm_gpu_block[
+            mut = gamma.mut,
+            origin = gamma.origin,
+            layout = gamma.layout,
+            1,
+            max_warps_per_block,
+            input_fn_2d,
+            output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -1159,11 +1244,13 @@ fn rms_norm_cpu[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: NDBuffer[dtype, 1],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     out_shape: IndexList[2],
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     alias simd_width = simd_width_of[dtype]()
 
     var num_rows = out_shape[0]
@@ -1194,7 +1281,11 @@ fn rms_norm_cpu[
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
-            var gamma_val = gamma.load[width=simd_width](col)
+            var gamma_col = gamma.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](col)
+            )
+
+            var gamma_val = gamma.ptr.load[width=simd_width](gamma_col)
             var norm_val: SIMD[dtype, simd_width]
 
             if multiply_before_cast:
@@ -1224,10 +1315,12 @@ fn rms_norm_cpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank],
-    gamma: NDBuffer[dtype, 1],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
 ):
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
 
@@ -1299,16 +1392,18 @@ fn _rms_norm_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: NDBuffer[dtype, 1],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     # Note: we only support reduction along the last dimension
-    if gamma.dynamic_shape[0] != shape[rank - 1]:
+    if gamma.runtime_layout.shape.value[0] != shape[rank - 1]:
         raise Error(
             "Gamma size "
-            + String(gamma.dynamic_shape[0])
+            + String(gamma.runtime_layout.shape.value[0])
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
@@ -1338,6 +1433,12 @@ fn _rms_norm_impl[
 
 
 fn rms_norm_fused_residual_add_gpu_warp_tiling[
+    mut1: Bool,
+    origin1: Origin[mut1],
+    layout1: Layout,
+    mut2: Bool,
+    origin2: Origin[mut2],
+    layout2: Layout,
     dtype: DType, //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -1355,14 +1456,17 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma1: LayoutTensor[dtype, layout1, origin1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma2: LayoutTensor[dtype, layout2, origin2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -1414,6 +1518,12 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
 
 
 fn rms_norm_fused_residual_add_gpu_block[
+    mut1: Bool,
+    origin1: Origin[mut1],
+    layout1: Layout,
+    mut2: Bool,
+    origin2: Origin[mut2],
+    layout2: Layout,
     dtype: DType, //,
     simd_width: Int,
     max_warps_per_block: Int,
@@ -1431,14 +1541,17 @@ fn rms_norm_fused_residual_add_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma1: LayoutTensor[dtype, layout1, origin1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1, MutableAnyOrigin],
+    gamma2: LayoutTensor[dtype, layout2, origin2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
 ):
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     var shared_mem = external_memory[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
@@ -1506,14 +1619,17 @@ fn rms_norm_fused_residual_add_gpu[
     multiply_before_cast: Bool,
 ](
     shape: IndexList[rank, **_],
-    gamma1: NDBuffer[dtype, 1],
+    gamma1: LayoutTensor[dtype, **_],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1],
+    gamma2: LayoutTensor[dtype, **_],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     if rank == 0:
         return
 
@@ -1579,17 +1695,22 @@ fn rms_norm_fused_residual_add_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            ctx.enqueue_function[
-                rms_norm_fused_residual_add_gpu_warp_tiling[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    residual_input_fn_2d,
-                    output_fn_2d,
-                    output_residual_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-            ](
+            alias kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
+                mut1 = gamma1.mut,
+                origin1 = gamma1.origin,
+                layout1 = gamma1.layout,
+                mut2 = gamma2.mut,
+                origin2 = gamma2.origin,
+                layout2 = gamma2.layout,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                residual_input_fn_2d,
+                output_fn_2d,
+                output_residual_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -1606,17 +1727,22 @@ fn rms_norm_fused_residual_add_gpu[
                 ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
             )
 
-            ctx.enqueue_function[
-                rms_norm_fused_residual_add_gpu_block[
-                    simd_width,
-                    max_warps_per_block,
-                    input_fn_2d,
-                    residual_input_fn_2d,
-                    output_fn_2d,
-                    output_residual_fn_2d,
-                    multiply_before_cast=multiply_before_cast,
-                ]
-            ](
+            alias kernel = rms_norm_fused_residual_add_gpu_block[
+                mut1 = gamma1.mut,
+                origin1 = gamma1.origin,
+                layout1 = gamma1.layout,
+                mut2 = gamma2.mut,
+                origin2 = gamma2.origin,
+                layout2 = gamma2.layout,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                residual_input_fn_2d,
+                output_fn_2d,
+                output_residual_fn_2d,
+                multiply_before_cast=multiply_before_cast,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -1636,17 +1762,22 @@ fn rms_norm_fused_residual_add_gpu[
     else:
         var shared_mem_size = Int(cols * size_of[dtype]())
 
-        ctx.enqueue_function[
-            rms_norm_fused_residual_add_gpu_block[
-                1,
-                max_warps_per_block,
-                input_fn_2d,
-                residual_input_fn_2d,
-                output_fn_2d,
-                output_residual_fn_2d,
-                multiply_before_cast=multiply_before_cast,
-            ]
-        ](
+        alias kernel = rms_norm_fused_residual_add_gpu_block[
+            mut1 = gamma1.mut,
+            origin1 = gamma1.origin,
+            layout1 = gamma1.layout,
+            mut2 = gamma2.mut,
+            origin2 = gamma2.origin,
+            layout2 = gamma2.layout,
+            1,
+            max_warps_per_block,
+            input_fn_2d,
+            residual_input_fn_2d,
+            output_fn_2d,
+            output_residual_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             gamma1,
             epsilon1,
             weight_offset1,
@@ -1683,18 +1814,22 @@ fn rms_norm_fused_residual_add_cpu[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: NDBuffer[dtype, 1],
+    gamma1: LayoutTensor[dtype, **_],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1],
+    gamma2: LayoutTensor[dtype, **_],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
 ) raises:
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     var intermediate_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(
         shape.flattened_length()
     )
-    var intermediate_buffer = NDBuffer[dtype, rank](
-        intermediate_buffer_ptr, shape
+    var intermediate_buffer = LayoutTensor[dtype, Layout.row_major[rank]()](
+        intermediate_buffer_ptr,
+        RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
     )
 
     @parameter
@@ -1707,8 +1842,13 @@ fn rms_norm_fused_residual_add_cpu[
 
         var residual_add_val = val + residual_val
         output_residual_fn[width, alignment](idx, residual_add_val)
-        intermediate_buffer.store[width=width, alignment=alignment](
-            idx, residual_add_val
+        var intermediate_idx = intermediate_buffer.runtime_layout(
+            RuntimeTuple[
+                fill_like(intermediate_buffer.layout.shape, UNKNOWN_VALUE)
+            ](idx)
+        )
+        intermediate_buffer.ptr.store[width=width, alignment=alignment](
+            intermediate_idx, residual_add_val
         )
 
     rms_norm_cpu[
@@ -1723,7 +1863,12 @@ fn rms_norm_fused_residual_add_cpu[
     fn intermediate_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        return intermediate_buffer.load[width=width](idx)
+        var intermediate_idx = intermediate_buffer.runtime_layout(
+            RuntimeTuple[
+                fill_like(intermediate_buffer.layout.shape, UNKNOWN_VALUE)
+            ](idx)
+        )
+        return intermediate_buffer.ptr.load[width=width](intermediate_idx)
 
     rms_norm_cpu[
         intermediate_input_fn,
@@ -1750,11 +1895,13 @@ fn rms_norm[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma: NDBuffer[dtype, 1],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
     @always_inline
     @parameter
     fn output_fn_wrapper[
@@ -1801,28 +1948,31 @@ fn _rms_norm_fused_residual_add_impl[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: NDBuffer[dtype, 1],
+    gamma1: LayoutTensor[dtype, **_],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1],
+    gamma2: LayoutTensor[dtype, **_],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     # Note: we only support reduction along the last dimension
-    if gamma1.dynamic_shape[0] != shape[rank - 1]:
+    if gamma1.runtime_layout.shape.value[0] != shape[rank - 1]:
         raise Error(
             "Gamma1 size "
-            + String(gamma1.dynamic_shape[0])
+            + String(gamma1.runtime_layout.shape.value[0])
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
         )
 
-    if gamma2.dynamic_shape[0] != shape[rank - 1]:
+    if gamma2.runtime_layout.shape.value[0] != shape[rank - 1]:
         raise Error(
             "Gamma2 size "
-            + String(gamma2.dynamic_shape[0])
+            + String(gamma2.runtime_layout.shape.value[0])
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
@@ -1890,14 +2040,17 @@ fn rms_norm_fused_residual_add[
     multiply_before_cast: Bool = True,
 ](
     shape: IndexList[rank],
-    gamma1: NDBuffer[dtype, 1],
+    gamma1: LayoutTensor[dtype, **_],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: NDBuffer[dtype, 1],
+    gamma2: LayoutTensor[dtype, **_],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[gamma1.rank == 1, "gamma1 must have rank 1"]()
+    constrained[gamma2.rank == 1, "gamma2 must have rank 1"]()
+
     @always_inline
     @parameter
     fn output_fn_wrapper[
@@ -1945,15 +2098,18 @@ fn rms_norm_fused_residual_add[
 @always_inline
 fn rms_norm_shape[
     dtype: DType,
-    rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[dtype, rank],
-    gamma: NDBuffer[dtype, 1],
+    input: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-) -> IndexList[rank]:
-    return input.get_shape()
+) -> IndexList[input.rank]:
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
+    return rebind[IndexList[input.rank]](
+        input.runtime_layout.shape.value.canonicalize()
+    )
 
 
 fn group_norm_reshape[
@@ -1961,10 +2117,15 @@ fn group_norm_reshape[
     rank: Int,
 ](
     shape: IndexList[rank, **_],
-    buf: NDBuffer[dtype, rank, *_],
+    buf: LayoutTensor[dtype, **_],
     channels_per_group: Int,
     spatial: Int,
-    out result: NDBuffer[dtype, 2, buf.origin],
+    out result: LayoutTensor[
+        dtype,
+        Layout.row_major[2](),
+        buf.origin,
+        address_space = buf.address_space,
+    ],
 ):
     """
     Reshapes an input buffer for group normalization by flattening all
@@ -1972,6 +2133,7 @@ fn group_norm_reshape[
     (num_groups * N, group_size), where group_size is the product of
     channels_per_group and spatial.
     """
+    constrained[buf.rank == rank, "buf.rank must equal rank"]()
     var group_size = channels_per_group * spatial
     var prod_all_but_group_dim = shape.flattened_length() // group_size
     var new_shape = IndexList[2](prod_all_but_group_dim, group_size)
@@ -1980,6 +2142,9 @@ fn group_norm_reshape[
 
 
 fn group_norm_gpu_warp_tiling[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout, //,
     dtype: DType,
     simd_width: UInt,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
@@ -1988,12 +2153,13 @@ fn group_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: NDBuffer[dtype, 2, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
     spatial: Int,
 ):
+    constrained[output.rank == 2, "output.rank must be 2"]()
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -2012,11 +2178,11 @@ fn group_norm_gpu_warp_tiling[
     var thread_m2 = Scalar[accum_type]()
     var thread_count = Scalar[accum_type]()
 
-    var num_rows = output.shape.get[0]()
-    var num_cols = output.shape.get[1]()
+    var num_rows = output.runtime_layout.shape.value[0]
+    var num_cols = output.runtime_layout.shape.value[1]
 
     with PDL():
-        if idx + simd_width <= group_size:
+        if idx + simd_width <= UInt(group_size):
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             @parameter
@@ -2032,7 +2198,7 @@ fn group_norm_gpu_warp_tiling[
         var row_var = row_m2 / row_count
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-        if idx + simd_width <= group_size:
+        if idx + simd_width <= UInt(group_size):
             var g = row % num_groups
             var c_base = g * channels_per_group
             var norm_val = SIMD[accum_type, simd_width]()
@@ -2047,12 +2213,20 @@ fn group_norm_gpu_warp_tiling[
                     accum_type
                 ]()
 
-            output.store[alignment=align](
-                Index(row, idx), norm_val.cast[dtype]()
+            var output_idx = output.runtime_layout(
+                RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](
+                    Index(row, idx)
+                )
+            )
+            output.ptr.store[alignment=align](
+                output_idx, norm_val.cast[dtype]()
             )
 
 
 fn group_norm_gpu_block[
+    mut: Bool,
+    origin: Origin[mut],
+    layout: Layout, //,
     dtype: DType,
     simd_width: UInt,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
@@ -2061,12 +2235,13 @@ fn group_norm_gpu_block[
     gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: NDBuffer[dtype, 2, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, origin],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
     spatial: Int,
 ):
+    constrained[output.rank == 2, "output.rank must be 2"]()
     alias align = align_of[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
@@ -2132,8 +2307,13 @@ fn group_norm_gpu_block[
                         accum_type
                     ]()
 
-                output.store[alignment=align](
-                    Index(row, offset), norm_val.cast[dtype]()
+                var output_row_offset = output.runtime_layout(
+                    RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](
+                        Index(row, offset)
+                    )
+                )
+                output.ptr.store[alignment=align](
+                    output_row_offset, norm_val.cast[dtype]()
                 )
 
 
@@ -2148,10 +2328,11 @@ fn group_norm_gpu[
 ](
     shape: IndexList[rank, **_],
     epsilon: Scalar[dtype],
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
+    constrained[output.rank == rank, "output.rank must be the same as rank"]()
     alias accum_type = get_accum_type[dtype]()
 
     var N = shape[0]
@@ -2218,15 +2399,17 @@ fn group_norm_gpu[
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if num_cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            ctx.enqueue_function[
-                group_norm_gpu_warp_tiling[
-                    dtype=dtype,
-                    simd_width=simd_width,
-                    input_fn=input_fn_2d,
-                    gamma_fn=gamma_fn,
-                    beta_fn=beta_fn,
-                ]
-            ](
+            alias kernel = group_norm_gpu_warp_tiling[
+                mut = output_rs.mut,
+                origin = output_rs.origin,
+                layout = output_rs.layout,
+                dtype=dtype,
+                simd_width = UInt(simd_width),
+                input_fn=input_fn_2d,
+                gamma_fn=gamma_fn,
+                beta_fn=beta_fn,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 output_rs,
                 epsilon,
                 num_groups,
@@ -2237,15 +2420,17 @@ fn group_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
         else:
-            ctx.enqueue_function[
-                group_norm_gpu_block[
-                    dtype=dtype,
-                    simd_width=simd_width,
-                    input_fn=input_fn_2d,
-                    gamma_fn=gamma_fn,
-                    beta_fn=beta_fn,
-                ]
-            ](
+            alias kernel = group_norm_gpu_block[
+                mut = output_rs.mut,
+                origin = output_rs.origin,
+                layout = output_rs.layout,
+                dtype=dtype,
+                simd_width = UInt(simd_width),
+                input_fn=input_fn_2d,
+                gamma_fn=gamma_fn,
+                beta_fn=beta_fn,
+            ]
+            ctx.enqueue_function_checked[kernel, kernel](
                 output_rs,
                 epsilon,
                 num_groups,
@@ -2256,15 +2441,17 @@ fn group_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        ctx.enqueue_function[
-            group_norm_gpu_block[
-                dtype=dtype,
-                simd_width=1,
-                input_fn=input_fn_2d,
-                gamma_fn=gamma_fn,
-                beta_fn=beta_fn,
-            ]
-        ](
+        alias kernel = group_norm_gpu_block[
+            mut = output_rs.mut,
+            origin = output_rs.origin,
+            layout = output_rs.layout,
+            dtype=dtype,
+            simd_width=1,
+            input_fn=input_fn_2d,
+            gamma_fn=gamma_fn,
+            beta_fn=beta_fn,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             output_rs,
             epsilon,
             num_groups,
@@ -2291,9 +2478,10 @@ fn group_norm[
     shape: IndexList[rank],
     epsilon: Scalar[dtype],
     groups: Int32,
-    output: NDBuffer[mut=True, dtype, rank, *_],
+    output: LayoutTensor[mut=True, dtype, **_],
     ctx: DeviceContextPtr,
 ) raises:
+    constrained[output.rank == rank, "output.rank must be the same as rank"]()
     constrained[
         rank > 2 and rank < 5, "group_norm requires input rank of 3 or 4"
     ]()
@@ -2301,7 +2489,9 @@ fn group_norm[
         is_gpu[target](), "group_norm only supports GPU targets at this point"
     ]()
 
-    if shape.canonicalize() != output.dynamic_shape.canonicalize():
+    if shape.canonicalize() != rebind[IndexList[rank]](
+        output.runtime_layout.shape.value.canonicalize()
+    ):
         raise Error(
             "Input/output shape mismatch: input = {shape}, output ="
             " {output.dynamic_shape}"
@@ -2343,13 +2533,17 @@ fn group_norm[
 @always_inline
 fn group_norm_shape[
     dtype: DType,
-    rank: Int,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[dtype, rank],
-    gamma: NDBuffer[dtype, 1],
-    beta: NDBuffer[dtype, 1],
+    input: LayoutTensor[dtype, **_],
+    gamma: LayoutTensor[dtype, **_],
+    beta: LayoutTensor[dtype, **_],
     epsilon: Scalar[dtype],
     num_groups: Int32,
-) -> IndexList[rank]:
-    return input.get_shape()
+) -> IndexList[input.rank]:
+    constrained[beta.rank == 1, "beta must have rank 1"]()
+    constrained[gamma.rank == 1, "gamma must have rank 1"]()
+
+    return rebind[IndexList[input.rank]](
+        input.runtime_layout.shape.value.canonicalize()
+    )

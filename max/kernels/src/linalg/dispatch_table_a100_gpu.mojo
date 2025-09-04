@@ -56,9 +56,9 @@ fn get_dispatch_table[
         tile_configs[name] = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=IndexList[3](block_tile_shape),
             warp_tile_shape=IndexList[3](warp_tile_shape),
-            num_pipeline_stages=num_pipeline_stages,
-            num_k_partitions=num_k_partitions,
-            num_warp_k_partitions=num_warp_k_partitions,
+            num_pipeline_stages=UInt(num_pipeline_stages),
+            num_k_partitions=UInt(num_k_partitions),
+            num_warp_k_partitions=UInt(num_warp_k_partitions),
         )
 
     # ===------------------------------------------------------------------=== #

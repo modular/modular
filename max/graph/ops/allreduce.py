@@ -21,6 +21,7 @@ from max.mlir.dialects import mo
 from ..graph import Graph
 from ..type import _ChainType
 from ..value import BufferValue, TensorType, TensorValue
+from .fence import fence
 
 
 def sum(
@@ -82,19 +83,44 @@ def sum(
         devices.append(input.device)
 
     in_chain = Graph.current._current_chain
-    *results, out_chain = Graph.current._add_op(
-        mo.distributed_allreduce_sum,
-        # Types for 2 outputs: chain, list of tensors
-        [x.type.to_mlir() for x in inputs],
-        _ChainType().to_mlir(),
-        inputs,
-        signal_buffers,
-        in_chain,
-    )
 
-    Graph.current._update_chain(out_chain)
+    # Per-device execution model:
+    # Create one allreduce op per device, all using the same input chain.
+    # Each op instance:
+    # - Executes on its assigned device (improving thread affinity)
+    # - Reads from ALL devices' inputs (requires P2P access)
+    # - Writes only to its own output buffer
+    # - Synchronizes with other instances via shared signals
+    # This allows the runtime to schedule work more efficiently across GPUs.
+    results = []
+    out_chains = []
+    for input_tensor, device in zip(inputs, devices):
+        # Each op takes all inputs but only produces output for its device.
+        (result, out_chain), allreduce_op = (
+            Graph.current._add_op_get_op_with_results(
+                mo.distributed_allreduce_sum,
+                # Single output tensor type.
+                input_tensor.type.to_mlir(),
+                # Output chain type.
+                _ChainType().to_mlir(),
+                inputs,
+                signal_buffers,
+                in_chain,
+                device.to_mlir(),
+            )
+        )
 
-    return [res.tensor for res in results]
+        results.append(result.tensor)
+        out_chains.append(out_chain)
+
+    # Merge all output chains to ensure proper synchronization.
+    Graph.current._merge_chains(out_chains)
+
+    # Enforce that the per-device allreduce ops execute as a sync group:
+    # before any result is used, all must be ready.
+    results = fence(*results)
+
+    return [val.tensor for val in results]
 
 
 def matmul_allreduce(

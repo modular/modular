@@ -25,6 +25,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -194,7 +195,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     alias N = weight_shape.get[0]()
     alias K = weight_shape.get[1]()
 
-    var SEQ_LEN: UInt = hidden_state.dim[1]()
+    var SEQ_LEN: UInt = UInt(hidden_state.dim[1]())
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -223,12 +224,14 @@ fn _fused_qkv_matmul_kv_cache_impl[
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+            )
 
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - qk_offset, kv_params.head_size
+                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
         var valid_len = cache.cache_length(b_idx)
@@ -615,7 +618,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
     ],
     gamma: NDBuffer[dtype, 1, *_],
     epsilon: Scalar[dtype],
@@ -756,7 +761,22 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             key_cache_output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
-        ](shape, gamma, epsilon, weight_offset, context)
+        ](
+            shape,
+            LayoutTensor[
+                gamma.type,
+                Layout.row_major(UNKNOWN_VALUE),
+                address_space = gamma.address_space,
+            ](
+                gamma.data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    gamma.dynamic_shape.canonicalize()
+                ),
+            ),
+            epsilon,
+            weight_offset,
+            context,
+        )
 
 
 def rms_norm_kv_cache_ragged_paged[
@@ -769,7 +789,9 @@ def rms_norm_kv_cache_ragged_paged[
 ](
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
     ],
     gamma: NDBuffer[dtype, 1, *_],
     epsilon: Scalar[dtype],
@@ -909,7 +931,22 @@ def rms_norm_kv_cache_ragged_paged[
             key_cache_output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
-        ](shape, gamma, epsilon, weight_offset, context)
+        ](
+            shape,
+            LayoutTensor[
+                gamma.type,
+                Layout.row_major(UNKNOWN_VALUE),
+                address_space = gamma.address_space,
+            ](
+                gamma.data,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    gamma.dynamic_shape.canonicalize()
+                ),
+            ),
+            epsilon,
+            weight_offset,
+            context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -952,7 +989,7 @@ def _print_cache[
                         ),
                         end=", ",
                     )
-                if kv_params.head_size > num_to_print:
+                if kv_params.head_size > UInt(num_to_print):
                     print("...", end=", ")
             if total_cache_length > num_to_print:
                 print("\n...", end=",")

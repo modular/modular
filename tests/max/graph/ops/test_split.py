@@ -16,6 +16,7 @@ import re
 
 import pytest
 from conftest import (
+    GraphBuilder,
     new_axes,
     non_static_axes,
     shapes,
@@ -50,7 +51,7 @@ def with_dim(base_type: TensorType, dim: Dim, axis: int):
     axis=new_axes(shared_shapes),
 )
 def test_split_valid_inputs(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -65,12 +66,12 @@ def test_split_valid_inputs(
         output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
         assert len(output) == len(split_sizes)
 
-        for output, size in zip(output, split_sizes):  # type: ignore  # noqa: B020
+        for out_value, size in zip(output, split_sizes):
             expected_shape = list(input_type.shape)
             expected_shape[axis] = size
-            assert output.shape == expected_shape  # type: ignore
-            assert output.dtype == input_type.dtype  # type: ignore
-            assert output.device == input_type.device  # type: ignore
+            assert out_value.shape == expected_shape
+            assert out_value.dtype == input_type.dtype
+            assert out_value.device == input_type.device
 
 
 @given(
@@ -80,7 +81,7 @@ def test_split_valid_inputs(
     axis=new_axes(shared_shapes),
 )
 def test_split__non_static_split_dims(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     split_sizes: list[Dim],
     dim: StaticDim,
@@ -99,7 +100,7 @@ def test_split__non_static_split_dims(
     axis=...,
 )
 def test_split__invalid_axis(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -117,7 +118,7 @@ def test_split__invalid_axis(
     axis=new_axes(shared_shapes),
 )
 def test_split__splits_dont_sum_to_dim(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     split_sizes: list[StaticDim],
     split_dim: StaticDim,
@@ -137,7 +138,7 @@ def test_split__splits_dont_sum_to_dim(
     axis=non_static_axes(shared_shapes),
 )
 def test_split__non_static_dim(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
@@ -157,7 +158,7 @@ def test_split__non_static_dim(
     axis=new_axes(shared_shapes),
 )
 def test_split__negative_split_sizes(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     split_sizes: list[int],
     split_dim: StaticDim,
@@ -190,7 +191,7 @@ def test_split__negative_split_sizes(
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_split_full_error_message(graph_builder) -> None:  # noqa: ANN001
+def test_invalid_split_full_error_message(graph_builder: GraphBuilder) -> None:
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 0
@@ -201,7 +202,7 @@ def test_invalid_split_full_error_message(graph_builder) -> None:  # noqa: ANN00
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_axis_full_error_message(graph_builder) -> None:  # noqa: ANN001
+def test_invalid_axis_full_error_message(graph_builder: GraphBuilder) -> None:
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 2
@@ -212,7 +213,9 @@ def test_invalid_axis_full_error_message(graph_builder) -> None:  # noqa: ANN001
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_negative_split_size_full_error_message(graph_builder) -> None:  # noqa: ANN001
+def test_negative_split_size_full_error_message(
+    graph_builder: GraphBuilder,
+) -> None:
     input_shape = [4]
     split_sizes = [10, -6]
     axis = 0

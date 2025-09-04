@@ -37,7 +37,7 @@ fn get_batch_from_row_offsets(
     )
 
     var low: UInt = 0
-    var high: UInt = row_offsets_size - 1
+    var high: UInt = UInt(row_offsets_size - 1)
     while low + 1 != high:
         var mid = (low + high) // 2
 
@@ -63,7 +63,7 @@ fn get_batch_from_row_offsets(
     )
 
     var low: UInt = 0
-    var high: UInt = row_offsets_size - 1
+    var high: UInt = UInt(row_offsets_size - 1)
     while low + 1 != high:
         var mid = (low + high) // 2
 

@@ -136,7 +136,7 @@ fn test_copy_from_nd_buffer_scalars():
     for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.distribute[
             threads_layout
-        ](th_id)
+        ](UInt(th_id))
         copy_from_nd_buffer[thread_layout=threads_layout](
             thread_local_layout_tensor, buff, th_id
         )
@@ -169,7 +169,7 @@ fn test_copy_to_nd_buffer_scalars():
     for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.distribute[
             threads_layout
-        ](th_id)
+        ](UInt(th_id))
         copy_to_nd_buffer[thread_layout=threads_layout](
             buff, thread_local_layout_tensor, th_id
         )
@@ -201,7 +201,7 @@ fn test_copy_from_nd_buffer_vectors():
     for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             1, 4
-        ]().distribute[threads_layout](th_id)
+        ]().distribute[threads_layout](UInt(th_id))
         copy_from_nd_buffer[thread_layout=threads_layout](
             thread_local_layout_tensor, buff, th_id
         )
@@ -228,7 +228,7 @@ fn test_copy_from_nd_buffer_vectors():
     for th_id in range(16):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             4, 4
-        ]().distribute[threads_layout](th_id)
+        ]().distribute[threads_layout](UInt(th_id))
         copy_from_nd_buffer[thread_layout=threads_layout](
             thread_local_layout_tensor, buff, th_id
         )
@@ -260,7 +260,7 @@ fn test_copy_to_nd_buffer_vectors():
     for th_id in range(threads_layout.size()):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             1, 4
-        ]().distribute[threads_layout](th_id)
+        ]().distribute[threads_layout](UInt(th_id))
         copy_to_nd_buffer[thread_layout=threads_layout](
             buff, thread_local_layout_tensor, th_id
         )
@@ -287,7 +287,7 @@ fn test_copy_to_nd_buffer_vectors():
     for th_id in range(threads_layout.size()):
         var thread_local_layout_tensor = layout_tensor.vectorize[
             4, 4
-        ]().distribute[threads_layout](th_id)
+        ]().distribute[threads_layout](UInt(th_id))
         copy_to_nd_buffer[thread_layout=threads_layout](
             buff, thread_local_layout_tensor, th_id
         )
@@ -1224,7 +1224,7 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
                 )
                 var tensor_thread_local = tensor_tile_4x4.distribute[
                     thread_layout
-                ](th_i)
+                ](UInt(th_i))
 
                 var distribute_mask = _distribute_mask[
                     thread_layout=thread_layout
@@ -1296,7 +1296,7 @@ fn test_copy_from_nd_buffer_masked_scalar():
             alias thread_layout = Layout.row_major(2, 2)
             for th_id in range(4):
                 copy_from_nd_buffer_masked[thread_layout=thread_layout](
-                    tensor_tile_4x4.distribute[thread_layout](th_id),
+                    tensor_tile_4x4.distribute[thread_layout](UInt(th_id)),
                     buff_tile_4x4,
                     tile_mask,
                     th_id,
@@ -1333,7 +1333,7 @@ fn test_copy_to_nd_buffer_masked_scalar():
             for th_id in range(4):
                 copy_to_nd_buffer_masked[thread_layout=thread_layout](
                     buff_tile_4x4,
-                    tensor_tile_4x4.distribute[thread_layout](th_id),
+                    tensor_tile_4x4.distribute[thread_layout](UInt(th_id)),
                     tile_mask,
                     th_id,
                 )

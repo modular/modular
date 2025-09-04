@@ -319,7 +319,7 @@ struct UnsafePointer[
         Returns:
             The new constructed UnsafePointer.
         """
-        return __mlir_op.`pop.offset`(self.address, index(idx))
+        return __mlir_op.`pop.offset`(self.address, index(idx)._mlir_value)
 
     @always_inline("nodebug")
     fn __getitem__[
@@ -535,7 +535,7 @@ struct UnsafePointer[
         Returns:
           The address of the pointer as an Int.
         """
-        return __mlir_op.`pop.pointer_to_index`(self.address)
+        return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
     @no_inline
     fn __str__(self) -> String:

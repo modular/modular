@@ -34,7 +34,7 @@ struct SHMEMBuffer[dtype: DType](Sized):
     ) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
-            self._data = shmem_malloc[dtype](size)
+            self._data = shmem_malloc[dtype](UInt(size))
             self._ctx_ptr = ctx._handle
             self._size = size
         else:

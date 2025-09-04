@@ -10,6 +10,8 @@ title: {{ decl.name }}
 version: {{ decl.version }}
 slug: {{ decl.slug }}
 type: function
+{% if decl.module_name %}module_name: {{ decl.module_name }}
+{% endif %}
 namespace: {{ decl.namespace }}
 lang: mojo
 description: {% if decl.overloads[0].summary

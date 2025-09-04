@@ -15,7 +15,7 @@
 import re
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import GraphBuilder, axes, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -139,7 +139,7 @@ def invalid_axes(rank: int):
     valid_axis=axes(shared_shapes_rank_gt_0),
 )
 def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     valid_axis: int,
     invalid_axis: int,
@@ -147,11 +147,11 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
     """Test that transpose raises an error when an axis is out of bounds."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(valid_axis, invalid_axis)
+            graph.inputs[0].transpose(valid_axis, invalid_axis)  # type: ignore
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(invalid_axis, valid_axis)
+            graph.inputs[0].transpose(invalid_axis, valid_axis)  # type: ignore
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(invalid_axis, invalid_axis)
+            graph.inputs[0].transpose(invalid_axis, invalid_axis)  # type: ignore
 
 
 @given(
@@ -159,7 +159,7 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
     axis=st.integers().filter(lambda x: x != 0 and x != -1),
 )
 def test_transpose_error_out_of_bounds_rank_zero(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     base_type: TensorType,
     axis: int,
 ) -> None:
@@ -168,8 +168,8 @@ def test_transpose_error_out_of_bounds_rank_zero(
     assume(axis not in (0, -1))
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(0, axis)
+            graph.inputs[0].transpose(0, axis)  # type: ignore
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(axis, 0)
+            graph.inputs[0].transpose(axis, 0)  # type: ignore
         with pytest.raises(IndexError, match="out of range"):
-            graph.inputs[0].transpose(axis, axis)
+            graph.inputs[0].transpose(axis, axis)  # type: ignore

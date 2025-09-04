@@ -16,6 +16,7 @@ from math import ceildiv, recip
 from math.constants import log2e
 from sys import align_of, simd_width_of, size_of
 from sys.intrinsics import readfirstlane
+from sys.info import _cdna_4_or_newer
 from buffer import NDBuffer
 
 from algorithm.functional import unswitch
@@ -279,7 +280,10 @@ struct KBuffer[
             address_space = AddressSpace.SHARED, **_,
         ],
     ):
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
         self.load_tile = __type_of(self.load_tile).stack_allocation()
         self.mma_tile = __type_of(self.mma_tile).stack_allocation()
         self.smem_iter = __type_of(self.smem_iter)(shared_ptr, 0)
@@ -346,7 +350,7 @@ struct KBuffer[
         tensor_core_mma.mma_op.load_b[swizzle=swizzle](
             warp_tile,
             self.get_mma_tile().vectorize[1, Self.simd_width](),
-            k_mma,
+            UInt(k_mma),
         )
 
 
@@ -496,7 +500,11 @@ struct VBuffer[
         ],
     ):
         constrained[depth in (64, 128, 256), "depth must be 64, 128, or 256"]()
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
+
         self.global_base_tile = global_tile
         self.global_iterator = global_tile.tiled_iterator[BK, depth, axis=0](
             0, 0
@@ -733,7 +741,10 @@ struct QRegisterBuffer[
             linear_idx_type=linear_idx_type,
         ],
     ):
-        constrained[k_group_size == 2, "k_group_size must be 2"]()
+        constrained[
+            mma_shape[2] * k_group_size == 16,
+            "mma_shape[2] * k_group_size must be 16",
+        ]()
         self.gmem_tensor = tensor
         self.mma_tile = __type_of(self.mma_tile).stack_allocation()
 
@@ -1260,7 +1271,11 @@ fn mha_single_batch_amd[
     constrained[BN == depth, "BN must be equal to depth"]()
     alias simd_width = simd_width_of[q_type]()
 
-    alias mma_shape = IndexList[3](32, 32, 8)
+    alias mma_shape = IndexList[3](32, 32, 16) if (
+        _cdna_4_or_newer()
+        and depth != 64
+        # will deal with 64 later
+    ) else IndexList[3](32, 32, 8)
 
     alias fragment_layout = Layout.row_major(1, 16)
     alias fragment_layout_nested = Layout(
@@ -1268,16 +1283,16 @@ fn mha_single_batch_amd[
     )
     alias warp_layout = Layout.col_major(32, 2)
     alias swap_a_b = True
-    alias k_group_size = 2
+    alias k_group_size = 16 // mma_shape[2]
 
     alias output_frag_size = fragment_layout.size()
     alias accum_type = get_accum_type[q_type]()
 
     alias WM = config.warp_m()
     alias WN = config.warp_n()
-    alias num_m_mmas = ceildiv(WM, mma_shape[0])
-    alias num_n_mmas = ceildiv(WN, mma_shape[1])
-    alias num_k_mmas2 = ceildiv(BK, mma_shape[2] * k_group_size)
+    alias num_m_mmas = ceildiv(WM, UInt(mma_shape[0]))
+    alias num_n_mmas = ceildiv(WN, UInt(mma_shape[1]))
+    alias num_k_mmas2 = ceildiv(BK, UInt(mma_shape[2] * k_group_size))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
@@ -1647,9 +1662,9 @@ fn mma[
         transpose_b=transpose_b,
     ]()
 
-    alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(WN, MMA_N)
-    alias num_k_mmas2 = ceildiv(BK, (MMA_K * k_group_size))
+    alias num_m_mmas = ceildiv(WM, UInt(MMA_M))
+    alias num_n_mmas = ceildiv(WN, UInt(MMA_N))
+    alias num_k_mmas2 = ceildiv(BK, UInt(MMA_K * k_group_size))
 
     alias a_frag_size = num_matrix_reg[MMA_M, MMA_K]()
     alias b_frag_size = num_matrix_reg[MMA_N, MMA_K]()
@@ -1809,8 +1824,8 @@ fn mha_decoding_single_batch_amd[
 
     alias WM = config.warp_m()
     alias WN = config.warp_n()
-    alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(WN, MMA_N)
+    alias num_m_mmas = ceildiv(WM, UInt(MMA_M))
+    alias num_n_mmas = ceildiv(WN, UInt(MMA_N))
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     var out_reg_tile = (
@@ -2146,7 +2161,7 @@ fn mha_decoding_single_batch_amd[
     ](out_reg_tile, rowsum)
 
     if num_partitions > 1:
-        if thread_idx.x < group:
+        if thread_idx.x < UInt(group):
             var row_sum = rowsum[0, 0][0]
             var row_max = rowmax[0, 0][0]
 

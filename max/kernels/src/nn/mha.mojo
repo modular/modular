@@ -44,7 +44,7 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.host import Dim as LaunchDim
 from gpu.host import FuncAttribute
-from gpu.host.info import A100, H100, B200
+from gpu.host.info import A100, H100, B200, GPUInfo
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -120,7 +120,9 @@ fn flash_attention[
     type: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    config: MHAConfig = MHAConfig(
+        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+    ),
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
@@ -198,6 +200,30 @@ fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     )
 
 
+fn depth_supported_by_gpu[
+    depth: Int,
+    mask_t: MHAMask,
+    config: MHAConfig,
+    info: GPUInfo,
+]() -> Bool:
+    alias is_sm90or100 = (info is H100) or (info is B200)
+    alias head_depth_supported = depth == 128 or (
+        depth == 64
+        and (is_sm90or100 or info is A100 or has_amd_gpu_accelerator())
+    ) or (
+        depth == 256
+        and (
+            has_amd_gpu_accelerator()
+            or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)
+        )
+    ) or (
+        depth == 80
+        and is_sm90or100
+        and config.algorithm == FlashAttentionAlgorithm(3)
+    )
+    return head_depth_supported
+
+
 # Entry point for flash_attention with batch_size > 1.
 @always_inline
 fn flash_attention[
@@ -209,7 +235,7 @@ fn flash_attention[
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     sink: Bool = False,
@@ -306,8 +332,9 @@ fn flash_attention[
         # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
-        alias is_sm90or100 = (ctx.default_device_info is H100) or (ctx.default_device_info is B200)
-        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.default_device_info is A100 or has_amd_gpu_accelerator())) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
+        alias depth = q.shape.get[rank-1]()
+        alias gpu_info = ctx.default_device_info
+        alias head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
         alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -368,7 +395,7 @@ fn flash_attention_dispatch[
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     sink: Bool = False,
@@ -410,8 +437,8 @@ fn flash_attention_dispatch[
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     alias is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
-    constrained[depth == q.shape.get[rank - 1]()]()
-    constrained[num_heads == q.shape.get[rank - 2]()]()
+    constrained[depth == UInt(q.shape.get[rank - 1]())]()
+    constrained[num_heads == UInt(q.shape.get[rank - 2]())]()
     var batch_size: Int
 
     @parameter
@@ -594,282 +621,309 @@ fn flash_attention_dispatch[
                 and config.algorithm == FlashAttentionAlgorithm(3)
             )
 
-            alias kernel = mha_decoding[
-                q.dtype,
-                k_t,
-                v_t,
-                output.dtype,
-                mask_t,
-                score_mod_t,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                depth=depth,
-                num_heads=num_heads,
-                num_threads=num_threads,
-                num_pipeline_stages=num_pipeline_stages,
-                group=group,
-                use_score_mod=use_score_mod,
-                ragged=ragged,
-                is_shared_kv=is_shared_kv,
-                sink=sink,
-                _use_valid_length=_use_valid_length,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-                decoding_warp_split_k=decoding_warp_split_k,
-            ]
-
-            if num_partitions_value == 1:
-
-                @parameter
-                if use_fa3_kernel:
-                    num_rows_q = q_num_matrix_view_rows[
-                        decoding=True, depth=depth
-                    ](q)
-
-                    @parameter
-                    if is_sm90:
-                        mha_sm90_dispatch[
-                            config=config,
-                            group=group,
-                            use_score_mod=use_score_mod,
-                            ragged=ragged,
-                            sink=sink,
-                            _is_cache_length_accurate=_is_cache_length_accurate,
-                        ](
-                            output.data,
-                            q.data,
-                            k,
-                            rebind[k_t](v),
-                            num_rows_q,
-                            mask_functor,
-                            score_mod_functor,
-                            valid_length,
-                            StaticInt[1](),
-                            max_cache_valid_length,
-                            scale,
-                            kv_input_row_offsets,
-                            batch_size,
-                            NoPartition[accum_type](),
-                            ctx,
-                            sink_weights,
-                        )
-                    else:
-                        mha_sm100_dispatch[
-                            config=config,
-                            group=group,
-                            use_score_mod=use_score_mod,
-                            ragged=ragged,
-                            sink=sink,
-                            _is_cache_length_accurate=_is_cache_length_accurate,
-                        ](
-                            output.data,
-                            q.data,
-                            k,
-                            rebind[k_t](v),
-                            num_rows_q,
-                            mask_functor,
-                            score_mod_functor,
-                            valid_length,
-                            StaticInt[1](),
-                            max_cache_valid_length,
-                            scale,
-                            kv_input_row_offsets,
-                            batch_size,
-                            NoPartition[accum_type](),
-                            ctx,
-                            sink_weights,
-                        )
-                else:
-                    alias nullptr = UnsafePointer[Scalar[accum_type]]()
-                    ctx.enqueue_function[kernel](
-                        q.data,
-                        k,
-                        v,
-                        output.data,
-                        nullptr,
-                        nullptr,
-                        scale,
-                        batch_size,
-                        num_partitions_value,
-                        max_cache_valid_length,
-                        valid_length,
-                        sink_weights,
-                        mask_functor,
-                        score_mod_functor,
-                        grid_dim=(
-                            1,
-                            Int(num_blocks_y),
-                            Int(batch_size),
-                        ),
-                        block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            (
-                                ctx.default_device_info.shared_memory_per_multiprocessor
-                                - 4096
-                            ) if has_nvidia_gpu_accelerator() else 0
-                        ),
-                    )
-                return
-
-            else:
-                # We split partitions and then reduce
-                # allocate memory for intermediate results
-                # q # [B, S, H, D]
-                var output_intermediate_data = ctx.enqueue_create_buffer[
-                    output.dtype
-                ](num_heads * depth * batch_size * num_partitions_value)
-
-                var output_intermediate = NDBuffer[output.dtype, 4](
-                    output_intermediate_data._unsafe_ptr(),
-                    Index(
-                        num_partitions_value,
-                        batch_size,
-                        Int(num_heads),
-                        Int(depth),
-                    ),
-                )
-
-                var data_len = num_heads * batch_size * num_partitions_value
-                var data_dim = Index(
-                    num_partitions_value,
+            @parameter
+            if (not use_fa3_kernel) and (depth % 64) != 0:
+                # FA2 kernel only supports depth % 64 == 0
+                # Assumes BSHD.
+                mha_gpu_naive[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length,
+                    scale,
                     batch_size,
-                    Int(num_heads),
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
                 )
-                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
-                    2 * data_len
-                )
-
-                var exp_sum = NDBuffer[accum_type, 3](
-                    exp_sum_qk_max_data._unsafe_ptr(), data_dim
-                )
-
-                var qk_max = NDBuffer[accum_type, 3](
-                    exp_sum_qk_max_data._unsafe_ptr().offset(data_len), data_dim
-                )
-
-                @parameter
-                if use_fa3_kernel:
-                    num_rows_q = q_num_matrix_view_rows[
-                        decoding=True, depth=depth
-                    ](q)
-
-                    @parameter
-                    if is_sm90:
-                        mha_sm90_dispatch[
-                            config=config,
-                            group=group,
-                            use_score_mod=use_score_mod,
-                            ragged=ragged,
-                            sink=sink,
-                            _is_cache_length_accurate=_is_cache_length_accurate,
-                        ](
-                            output_intermediate.data,
-                            q.data,
-                            k,
-                            rebind[k_t](v),
-                            num_rows_q,
-                            mask_functor,
-                            score_mod_functor,
-                            valid_length,
-                            StaticInt[1](),
-                            max_cache_valid_length,
-                            scale,
-                            kv_input_row_offsets,
-                            batch_size,
-                            SplitKPartition(
-                                exp_sum_qk_max_data._unsafe_ptr(),
-                                num_partitions_value,
-                            ),
-                            ctx,
-                            sink_weights,
-                        )
-                    else:
-                        mha_sm100_dispatch[
-                            config=config,
-                            group=group,
-                            use_score_mod=use_score_mod,
-                            ragged=ragged,
-                            sink=sink,
-                            _is_cache_length_accurate=_is_cache_length_accurate,
-                        ](
-                            output_intermediate.data,
-                            q.data,
-                            k,
-                            rebind[k_t](v),
-                            num_rows_q,
-                            mask_functor,
-                            score_mod_functor,
-                            valid_length,
-                            StaticInt[1](),
-                            max_cache_valid_length,
-                            scale,
-                            kv_input_row_offsets,
-                            batch_size,
-                            SplitKPartition(
-                                exp_sum_qk_max_data._unsafe_ptr(),
-                                num_partitions_value,
-                            ),
-                            ctx,
-                            sink_weights,
-                        )
-                else:
-                    ctx.enqueue_function[kernel](
-                        q.data,
-                        k,
-                        v,
-                        output_intermediate.data,
-                        exp_sum.data,
-                        qk_max.data,
-                        scale,
-                        batch_size,
-                        num_partitions_value,
-                        max_cache_valid_length,
-                        valid_length,
-                        sink_weights,
-                        mask_functor,
-                        score_mod_functor,
-                        grid_dim=(
-                            num_partitions_value,
-                            Int(num_blocks_y),
-                            Int(batch_size),
-                        ),
-                        block_dim=(num_threads, 1, 1),
-                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            ctx.default_device_info.shared_memory_per_multiprocessor
-                            - 4096 if has_nvidia_gpu_accelerator() else 0
-                        ),
-                    )
-
-                alias kernel_reduce = mha_splitk_reduce[
+            else:
+                alias kernel = mha_decoding[
+                    q.dtype,
+                    k_t,
+                    v_t,
                     output.dtype,
+                    mask_t,
+                    score_mod_t,
+                    BM=BM,
+                    BN=BN,
+                    BK = UInt(BK),
+                    WM=WM,
+                    WN=WN,
                     depth=depth,
                     num_heads=num_heads,
-                    num_threads=WARP_SIZE,
-                    group=group,
-                    use_exp2=use_fa3_kernel,
+                    num_threads = UInt(num_threads),
+                    num_pipeline_stages = UInt(num_pipeline_stages),
+                    group = UInt(group),
+                    use_score_mod=use_score_mod,
+                    ragged=ragged,
+                    is_shared_kv=is_shared_kv,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    decoding_warp_split_k=decoding_warp_split_k,
                 ]
 
-                ctx.enqueue_function[kernel_reduce](
-                    output_intermediate.data,
-                    output.data,
-                    exp_sum.data,
-                    qk_max.data,
-                    batch_size,
-                    num_partitions_value,
-                    grid_dim=(
-                        1,
-                        Int(num_heads),
-                        batch_size,
-                    ),
-                    block_dim=(WARP_SIZE, 1, 1),
-                )
-                _ = exp_sum_qk_max_data^
-                _ = output_intermediate_data^
+                if num_partitions_value == 1:
 
+                    @parameter
+                    if use_fa3_kernel:
+                        num_rows_q = q_num_matrix_view_rows[
+                            decoding=True, depth=depth
+                        ](q)
+
+                        @parameter
+                        if is_sm90:
+                            mha_sm90_dispatch[
+                                config=config,
+                                group=group,
+                                use_score_mod=use_score_mod,
+                                ragged=ragged,
+                                sink=sink,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                            ](
+                                output.data,
+                                q.data,
+                                k,
+                                rebind[k_t](v),
+                                num_rows_q,
+                                mask_functor,
+                                score_mod_functor,
+                                valid_length,
+                                StaticInt[1](),
+                                max_cache_valid_length,
+                                scale,
+                                kv_input_row_offsets,
+                                batch_size,
+                                NoPartition[accum_type](),
+                                ctx,
+                                sink_weights,
+                            )
+                        else:
+                            mha_sm100_dispatch[
+                                config=config,
+                                group=group,
+                                use_score_mod=use_score_mod,
+                                ragged=ragged,
+                                sink=sink,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                            ](
+                                output.data,
+                                q.data,
+                                k,
+                                rebind[k_t](v),
+                                num_rows_q,
+                                mask_functor,
+                                score_mod_functor,
+                                valid_length,
+                                StaticInt[1](),
+                                max_cache_valid_length,
+                                scale,
+                                kv_input_row_offsets,
+                                batch_size,
+                                NoPartition[accum_type](),
+                                ctx,
+                                sink_weights,
+                            )
+                    else:
+                        alias nullptr = UnsafePointer[Scalar[accum_type]]()
+                        ctx.enqueue_function[kernel](
+                            q.data,
+                            k,
+                            v,
+                            output.data,
+                            nullptr,
+                            nullptr,
+                            scale,
+                            batch_size,
+                            num_partitions_value,
+                            max_cache_valid_length,
+                            valid_length,
+                            sink_weights,
+                            mask_functor,
+                            score_mod_functor,
+                            grid_dim=(
+                                1,
+                                Int(num_blocks_y),
+                                Int(batch_size),
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
+                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                                (
+                                    ctx.default_device_info.shared_memory_per_multiprocessor
+                                    - 4096
+                                ) if has_nvidia_gpu_accelerator() else 0
+                            ),
+                        )
+                    return
+
+                else:
+                    # We split partitions and then reduce
+                    # allocate memory for intermediate results
+                    # q # [B, S, H, D]
+                    var output_intermediate_data = ctx.enqueue_create_buffer[
+                        output.dtype
+                    ](num_heads * depth * batch_size * num_partitions_value)
+
+                    var output_intermediate = NDBuffer[output.dtype, 4](
+                        output_intermediate_data._unsafe_ptr(),
+                        Index(
+                            num_partitions_value,
+                            batch_size,
+                            Int(num_heads),
+                            Int(depth),
+                        ),
+                    )
+
+                    var data_len = num_heads * batch_size * num_partitions_value
+                    var data_dim = Index(
+                        num_partitions_value,
+                        batch_size,
+                        Int(num_heads),
+                    )
+                    var exp_sum_qk_max_data = ctx.enqueue_create_buffer[
+                        accum_type
+                    ](2 * data_len)
+
+                    var exp_sum = NDBuffer[accum_type, 3](
+                        exp_sum_qk_max_data._unsafe_ptr(), data_dim
+                    )
+
+                    var qk_max = NDBuffer[accum_type, 3](
+                        exp_sum_qk_max_data._unsafe_ptr().offset(data_len),
+                        data_dim,
+                    )
+
+                    @parameter
+                    if use_fa3_kernel:
+                        num_rows_q = q_num_matrix_view_rows[
+                            decoding=True, depth=depth
+                        ](q)
+
+                        @parameter
+                        if is_sm90:
+                            mha_sm90_dispatch[
+                                config=config,
+                                group=group,
+                                use_score_mod=use_score_mod,
+                                ragged=ragged,
+                                sink=sink,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                            ](
+                                output_intermediate.data,
+                                q.data,
+                                k,
+                                rebind[k_t](v),
+                                num_rows_q,
+                                mask_functor,
+                                score_mod_functor,
+                                valid_length,
+                                StaticInt[1](),
+                                max_cache_valid_length,
+                                scale,
+                                kv_input_row_offsets,
+                                batch_size,
+                                SplitKPartition(
+                                    exp_sum_qk_max_data._unsafe_ptr(),
+                                    num_partitions_value,
+                                ),
+                                ctx,
+                                sink_weights,
+                            )
+                        else:
+                            mha_sm100_dispatch[
+                                config=config,
+                                group=group,
+                                use_score_mod=use_score_mod,
+                                ragged=ragged,
+                                sink=sink,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                            ](
+                                output_intermediate.data,
+                                q.data,
+                                k,
+                                rebind[k_t](v),
+                                num_rows_q,
+                                mask_functor,
+                                score_mod_functor,
+                                valid_length,
+                                StaticInt[1](),
+                                max_cache_valid_length,
+                                scale,
+                                kv_input_row_offsets,
+                                batch_size,
+                                SplitKPartition(
+                                    exp_sum_qk_max_data._unsafe_ptr(),
+                                    num_partitions_value,
+                                ),
+                                ctx,
+                                sink_weights,
+                            )
+                    else:
+                        ctx.enqueue_function[kernel](
+                            q.data,
+                            k,
+                            v,
+                            output_intermediate.data,
+                            exp_sum.data,
+                            qk_max.data,
+                            scale,
+                            batch_size,
+                            num_partitions_value,
+                            max_cache_valid_length,
+                            valid_length,
+                            sink_weights,
+                            mask_functor,
+                            score_mod_functor,
+                            grid_dim=(
+                                num_partitions_value,
+                                Int(num_blocks_y),
+                                Int(batch_size),
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
+                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                                ctx.default_device_info.shared_memory_per_multiprocessor
+                                - 4096 if has_nvidia_gpu_accelerator() else 0
+                            ),
+                        )
+
+                    alias kernel_reduce = mha_splitk_reduce[
+                        output.dtype,
+                        depth=depth,
+                        num_heads=num_heads,
+                        num_threads = UInt(WARP_SIZE),
+                        group = UInt(group),
+                        use_exp2=use_fa3_kernel,
+                    ]
+
+                    ctx.enqueue_function[kernel_reduce](
+                        output_intermediate.data,
+                        output.data,
+                        exp_sum.data,
+                        qk_max.data,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(
+                            1,
+                            Int(num_heads),
+                            batch_size,
+                        ),
+                        block_dim=(WARP_SIZE, 1, 1),
+                    )
+                    _ = exp_sum_qk_max_data^
+                    _ = output_intermediate_data^
         # Not supported by contexting and decoding, e.g cross-attention or depth != 128
         else:
             # Assumes BSHD.
@@ -930,7 +984,9 @@ fn flash_attention[
     type: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    config: MHAConfig = MHAConfig(
+        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+    ),
     decoding_warp_split_k: Bool = False,
     _use_valid_length: Bool = False,
     _padded_ndbuffer: Bool = False,
@@ -968,8 +1024,9 @@ fn flash_attention[
     # H and D are always known.
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
-    alias is_sm90or100 = (ctx.default_device_info is H100) or (ctx.default_device_info is B200)
-    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.default_device_info is A100 or has_amd_gpu_accelerator())) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
+    alias depth = q.shape.get[rank-1]()
+    alias gpu_info = ctx.default_device_info
+    alias head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.dtype in (DType.float16, DType.bfloat16)
@@ -1258,7 +1315,7 @@ fn mha_single_batch[
     alias depth = config.depth
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -1756,7 +1813,14 @@ fn mha_single_batch[
         if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
-                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                UInt(MMA_M),
+                UInt(MMA_N),
+                UInt(p_frag_simdwidth),
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
 
             async_copy_wait_all()
@@ -1964,7 +2028,7 @@ fn mha_single_batch_pipelined[
     alias depth = config.depth
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -2427,7 +2491,14 @@ fn mha_single_batch_pipelined[
         if num_warps_n > 1:
             # Pack the per-thread fragments in shared memory for 2nd mma.
             _copy_frag_to_smem[
-                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                UInt(MMA_M),
+                UInt(MMA_N),
+                UInt(p_frag_simdwidth),
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
             barrier()
 
@@ -2701,9 +2772,9 @@ fn mha_decoding[
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
-                num_keys,
-                num_partitions,
-                max_cache_valid_length,
+                UInt(num_keys),
+                UInt(num_partitions),
+                UInt(max_cache_valid_length),
                 sink_weights,
                 mask,
                 score_mod,
@@ -2732,9 +2803,9 @@ fn mha_decoding[
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 scale,
-                num_keys,
-                num_partitions,
-                max_cache_valid_length,
+                UInt(num_keys),
+                UInt(num_partitions),
+                UInt(max_cache_valid_length),
                 mask,
                 score_mod,
                 batch_idx,
@@ -2813,7 +2884,7 @@ fn scale_and_mask_helper[
     # TODO: check if the explicit index calculation can be avoided.
 
     # For mma output, thread 0-3 are on the first row, 4-7 second row, etc.
-    if lane >= 4 * group:
+    if lane >= UInt(4 * group):
         return
     var batch_cache_valid_length = num_keys - 1
     var warp_offset = warp * WN
@@ -2941,7 +3012,7 @@ fn mha_decoding_single_batch[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -3062,7 +3133,7 @@ fn mha_decoding_single_batch[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
-            if thread_idx.x < 4 * group:
+            if thread_idx.x < UInt(4 * group):
                 rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
                     accum_type
                 ]()
@@ -3259,9 +3330,9 @@ fn mha_decoding_single_batch[
             p_reg_tile,
             scale_log2e,
             num_keys,
-            kv_tile_num_rows,
+            UInt(kv_tile_num_rows),
             lane,
-            warp_id,
+            UInt(warp_id),
             mask,
             score_mod,
             kv_tile_start_row,
@@ -3370,7 +3441,14 @@ fn mha_decoding_single_batch[
             # iterating across tiles, but use extra registers to perform MMAs
             # with warp-local data.
             _copy_frag_to_smem[
-                BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                UInt(MMA_M),
+                UInt(MMA_N),
+                UInt(p_frag_simdwidth),
             ](p_smem_iter, p_reg_tile, warp_x, warp_y)
 
         async_copy_wait_all()
@@ -3491,7 +3569,7 @@ fn mha_decoding_single_batch[
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 3] *= rowsum_inv
 
     if num_partitions > 1:
-        if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group:
+        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group):
             var row_sum = rowsum[0]
             var row_max = rowmax[0]
             exp_sum_ptr[q_head_idx] = row_sum
@@ -3614,7 +3692,7 @@ fn mha_decoding_single_batch_pipelined[
     alias num_warps_n = BN // WN
 
     constrained[
-        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        num_warps_m * num_warps_n == UInt(num_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -3725,7 +3803,7 @@ fn mha_decoding_single_batch_pipelined[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
-            if thread_idx.x < 4 * group:
+            if thread_idx.x < UInt(4 * group):
                 rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
                     accum_type
                 ]()
@@ -3882,9 +3960,9 @@ fn mha_decoding_single_batch_pipelined[
             p_reg_tile,
             scale_log2e,
             num_keys,
-            kv_tile_num_rows,
+            UInt(kv_tile_num_rows),
             lane,
-            warp_id,
+            UInt(warp_id),
             mask,
             score_mod,
             kv_tile_start_row,
@@ -3930,9 +4008,9 @@ fn mha_decoding_single_batch_pipelined[
 
         # Copy score fragments to shared memory with swizzling to resolve bank
         # conflicts for ldmatrix in the 2nd matmul.
-        _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth](
-            p_smem_iter, p_reg_tile, warp_x, warp_y
-        )
+        _copy_frag_to_smem[
+            BM, BN, BK, WM, WN, UInt(MMA_M), UInt(MMA_N), UInt(p_frag_simdwidth)
+        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
         barrier()
 
         multistage_mma[
@@ -3969,7 +4047,7 @@ fn mha_decoding_single_batch_pipelined[
             output_reg_tile[n_mma, 1] *= rowsum_inv0
 
     if num_partitions > 1:
-        if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group:
+        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group):
             var row_sum = rowsum[0]
             var row_max = rowmax[0]
             var q_head_idx = kv_head_idx * group + thread_idx.x // 4
@@ -4043,14 +4121,15 @@ fn mha_splitk_reduce[
 ):
     # we only reduce over a warp so limit number of warps to 1
     constrained[
-        num_threads == WARP_SIZE,
+        num_threads == UInt(WARP_SIZE),
         "num_threads: "
         + String(num_threads)
         + " should be equal to the warp_size:"
         + String(WARP_SIZE),
     ]()
     debug_assert(
-        block_dim.x == WARP_SIZE, "block_dim.x should be equal to the warp_size"
+        block_dim.x == UInt(WARP_SIZE),
+        "block_dim.x should be equal to the warp_size",
     )
 
     alias accum_type = get_accum_type[output_type]()
@@ -4063,7 +4142,7 @@ fn mha_splitk_reduce[
     )
     var partition_idx = lane_id()
     var l = min_or_neg_inf[accum_type]()
-    if partition_idx < num_partitions:
+    if partition_idx < UInt(num_partitions):
         var qk_max_offset = (
             num_heads * batch_idx
             + num_heads * batch_size * partition_idx
@@ -4095,7 +4174,7 @@ fn mha_splitk_reduce[
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
     alias exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
-    if partition_idx < num_partitions:
+    if partition_idx < UInt(num_partitions):
         var qk_max_offset = (
             num_heads * batch_idx
             + num_heads * batch_size * partition_idx
@@ -4112,7 +4191,7 @@ fn mha_splitk_reduce[
 
     var inv_global_exp_sum = 1.0 / exp_sum
     # TODO: vectorize load and store operations
-    alias width = Int(depth // num_threads)
+    alias width = Int(ceildiv(depth, num_threads))
     acc = tb[accum_type]().layout[width]().local().alloc().fill(0)
     for partition_idx in range(num_partitions):
         var partition_exp_sum = exp_sums[partition_idx]
@@ -4121,19 +4200,21 @@ fn mha_splitk_reduce[
             @parameter
             for w in range(width):
                 d = thread_idx.x + w * num_threads
-                var x = (
-                    intermediate_output[
-                        partition_idx, batch_idx, q_head_idx, d
-                    ].cast[accum_type]()
-                    * inv_global_exp_sum
-                    * partition_exp_sum
-                )
-                acc[w] += x[0]
+                if d < depth:
+                    var x = (
+                        intermediate_output[
+                            partition_idx, batch_idx, q_head_idx, d
+                        ].cast[accum_type]()
+                        * inv_global_exp_sum
+                        * partition_exp_sum
+                    )
+                    acc[w] += x[0]
 
     @parameter
     for w in range(width):
         d = thread_idx.x + w * num_threads
-        output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
+        if d < depth:
+            output[batch_idx, q_head_idx, d] = acc[w].cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4331,7 +4412,7 @@ fn _bmm0_bs[
         "Invalid cur_cache_len",
     )
 
-    if x >= padded_num_keys or y >= max_prompt_len:
+    if x >= UInt(padded_num_keys) or y >= UInt(max_prompt_len):
         return
 
     var q = q_ptr + q_offset
@@ -4342,7 +4423,7 @@ fn _bmm0_bs[
 
     var accum = SIMD[p_type, 1](0.0)
 
-    if x < cur_cache_len and y < cur_query_len:
+    if x < UInt(cur_cache_len) and y < UInt(cur_query_len):
         var k_ptr = k.block_paged_ptr[1](batch, x, kv_head, 0)
 
         # TODO: The AMD-specific path is to handle Llama shapes, similar
@@ -4389,7 +4470,7 @@ fn _bmm0_bs[
         accum * scale.cast[p_type](),
     )
 
-    if x >= cur_cache_len or y >= cur_query_len:
+    if x >= UInt(cur_cache_len) or y >= UInt(cur_query_len):
         p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
 
 
@@ -4449,7 +4530,7 @@ fn _bmm1_bs[
 
     debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
 
-    if x >= depth or y >= cur_query_len:
+    if x >= UInt(depth) or y >= UInt(cur_query_len):
         return
 
     var p = p_ptr + p_offset

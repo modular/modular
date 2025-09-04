@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
+from math import align_up, ceildiv
 from sys import size_of, argv
 from hashlib import default_comp_time_hasher
 from buffer.buffer import NDBuffer
@@ -322,7 +322,7 @@ fn consumer_main_loop[
         mma_op.mma(
             a_smem_tile,
             b_smem_tile,
-            tmem_addr | tmem_offset,
+            tmem_addr + tmem_offset,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
@@ -439,16 +439,14 @@ fn multi_stage_store_C[
     var phase = accum_pipeline_consumer_state.phase()
     accum_full_mbar[index].wait(phase)
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
-    var tmem_offset = index * stage_stride_cols
+    var tmem_offset = index * stage_stride_cols + tmem_addr
 
     @parameter
     for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = (
-            (tmem_addr | (warp_id * 32 << 16)) + (stage * stageN) + tmem_offset
-        )
+        var stage_tmem_addr = tmem_offset + (stage * stageN)
         var upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -463,7 +461,7 @@ fn multi_stage_store_C[
             repeat=rep,
             dtype=accum_type,
             pack=False,
-        ](stage_tmem_addr | (16 << 16))
+        ](stage_tmem_addr + (16 << 16))
 
         tcgen05_load_wait()
 
@@ -701,6 +699,9 @@ fn kernel_8[
     alias max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
+        a_tma_op.prefetch_descriptor()
+        b_tma_op.prefetch_descriptor()
+        c_tma_op.prefetch_descriptor()
 
         @parameter
         for i in range(num_pipeline_stages):
@@ -998,7 +999,6 @@ fn blackwell_kernel_8[
     cluster_shape: StaticTuple[Int32, 3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
 ](
@@ -1042,12 +1042,12 @@ fn blackwell_kernel_8[
     ](ctx, b)
 
     alias output_tile_shape = Index(BM, 32)
-    alias c_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+    alias c_swizzle = TensorMapSwizzle.SWIZZLE_64B
     var c_tma_op = create_tma_tile[
         c_type,
         2,
         output_tile_shape,
-        swizzle_mode=c_swizzle_mode,
+        swizzle_mode=c_swizzle,
     ](ctx, c)
 
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
@@ -1139,8 +1139,8 @@ fn blackwell_kernel_8[
     ]
 
     var grid_dim = (
-        align_up(M // BM, Int(cluster_shape[0])),
-        align_up(N // BN // cta_group, Int(cluster_shape[1])),
+        align_up(ceildiv(M, BM), Int(cluster_shape[0])),
+        align_up(ceildiv(N, MMA_N), Int(cluster_shape[1])),
         1,
     )
 

@@ -13,7 +13,7 @@
 """test the max.graph python bindings."""
 
 import pytest
-from conftest import tensor_types
+from conftest import GraphBuilder, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -22,21 +22,23 @@ from max.graph.ops import logical_not
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_logical_not__same_type(graph_builder, tensor_type: TensorType) -> None:  # noqa: ANN001
+def test_logical_not__same_type(
+    graph_builder: GraphBuilder, tensor_type: TensorType
+) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
         x = graph.inputs[0]
         op = logical_not(x)
         assert op.type == tensor_type
-        assert op.shape == x.shape
+        assert op.shape == x.shape  # type: ignore
 
-        op2 = ~x
+        op2 = ~x  # type: ignore
         assert op2.type == tensor_type
-        assert op2.shape == x.shape
+        assert op2.shape == x.shape  # type: ignore
 
 
 @given(tensor_type=...)
 def test_logical_not__invalid_dtype(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     tensor_type: TensorType,
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
@@ -46,4 +48,4 @@ def test_logical_not__invalid_dtype(
             logical_not(x)
 
         with pytest.raises(ValueError):
-            ~x  # noqa: B018
+            ~x  # type: ignore  # noqa: B018

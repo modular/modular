@@ -41,8 +41,11 @@ class KVCacheParams:
     cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED
     page_size: Optional[int] = None
     n_devices: int = 1
+
     pipeline_parallel_degree: int = 1
     total_num_layers: Optional[int] = None  # Total layers in the model
+
+    data_parallel_degree: int = 1
 
     # Computed fields (set in __post_init__)
     n_kv_heads_per_device: int = 0  # Will be computed
@@ -59,6 +62,11 @@ class KVCacheParams:
             self.n_kv_heads_per_device = self.n_kv_heads
             self.n_layers_per_stage = max(
                 self.total_num_layers // self.pipeline_parallel_degree, 1
+            )
+        elif self.data_parallel_degree > 1:
+            self.n_kv_heads_per_device = self.n_kv_heads
+            self.n_layers_per_stage = (
+                self.total_num_layers if self.total_num_layers else None
             )
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device

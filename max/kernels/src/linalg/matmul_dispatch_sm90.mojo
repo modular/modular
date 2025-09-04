@@ -565,8 +565,8 @@ fn matmul_dispatch_sm90_fp8[
             block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
             mma_shape=Index(64, WGMMA_N, 32),
             cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
-            num_pipeline_stages=NUM_PIPELINE_STAGES,
-            num_consumer=NUM_CONSUMER,
+            num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
+            num_consumer=UInt(NUM_CONSUMER),
             partitioned_multicast=False,
             pdl_level=pdl_level,
         )

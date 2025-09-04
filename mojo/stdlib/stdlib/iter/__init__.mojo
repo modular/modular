@@ -80,11 +80,6 @@ struct _Enumerate[InnerIteratorType: Iterator](
         self._count += 1
         return count, next(self._inner)
 
-    # TODO(MOCO-2376): compiler should be able synthesize the following function.
-    fn __copyinit__(out self, other: Self):
-        self._inner = other._inner.copy()
-        self._count = other._count
-
 
 @always_inline
 fn enumerate[
@@ -99,7 +94,8 @@ fn enumerate[
         iterable: An iterable object (e.g., list, string, etc.).
         start: The starting index for enumeration (default is 0).
 
-    # Examples
+    Example:
+
     ```mojo
     var l = ["hey", "hi", "hello"]
     for i, elem in enumerate(l):

@@ -15,4 +15,4 @@ reduction = "mojo run reduction.mojo"
 test = { depends-on = ["vector_addition", "grayscale", "naive_matrix_multiplication", "mandelbrot", "reduction"] }
 
 [dependencies]
-mojo = ">=24.6.0.dev2024090821"
+mojo = "<1.0.0"

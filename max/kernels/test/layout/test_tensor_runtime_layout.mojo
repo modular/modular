@@ -233,7 +233,9 @@ fn test_tile_and_distribute():
             var tile_4x4 = tensor.tile[4, 4](tile_i, tile_j)
             print(tile_4x4)
             for th_i in range(4):
-                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
+                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
+                    UInt(th_i)
+                )
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
 

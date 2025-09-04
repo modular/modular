@@ -135,6 +135,7 @@ fn mha_sm90_dispatch[
         config.type == KVType.dtype and config.type == q_type,
         "config, kv, and q types must all match for FA3.",
     ]()
+    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
@@ -146,14 +147,14 @@ fn mha_sm90_dispatch[
         BK=OptionalReg[UInt](config.BK),
     ) if decoding else config
     alias BM = new_config.block_m()
-    alias BK = new_config.block_k()
+    alias BK = new_config.padded_depth
     constrained[
         BM % 64 == 0,
         "SM90 requires BM%64==0, but BM==",
         String(BM),
     ]()
     constrained[
-        BK == 64,
+        BK % 64 == 0,
         "H100 requires BK%64==0 as it uses 128B swizzles, but BK==",
         String(BK),
     ]()
@@ -184,20 +185,20 @@ fn mha_sm90_dispatch[
     alias num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
     # if decoding,
     alias scheduler_tile_shape = 1 if decoding else BM
-    alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q_tma = q_out_tma[
         group if decoding else Int(BM),
-        config.depth,
+        new_config.depth,
+        new_config.padded_depth,
         swizzle_mode,
         q_num_heads=q_num_heads,
         decoding=decoding,
     ](ctx, q, num_rows_q)
-    k_tma = k.create_tma_tile[BN, config.depth, swizzle_mode, is_k_major=True](
-        ctx
-    )
-    v_tma = v.create_tma_tile[BN, config.depth, swizzle_mode, is_k_major=False](
-        ctx
-    )
+    k_tma = k.create_tma_tile[
+        BN, new_config.padded_depth, swizzle_mode, is_k_major=True
+    ](ctx)
+    v_tma = v.create_tma_tile[
+        BN, new_config.padded_depth, swizzle_mode, is_k_major=False
+    ](ctx)
 
     @parameter
     if persistent == 0:
@@ -592,6 +593,32 @@ fn mha_sm90_dispatch[
         _ = schedule
 
 
+# Q is the same as the output
+# kv_head_idx = q_head_idx // group
+# thread block loads num_keys and depth
+# Q, K, K, V, K, V, K, ..., K, V, V
+#
+# Q: BM x depth  (producer loads it once)  K: BN x depth (producer)
+# S = Q @ K^T                   # reg in H100
+# P = sm(S)         # shape(P::BF16) = shape(S::F32)
+# inner loop: num_keys by BN
+#    Q: BM x depth  (producer loads it once)  K: BN x depth (producer)
+#    S = Q @ K^T                   # reg in H100
+#    O += P @ V
+#    P, correction = sm(S)         # shape(P::BF16) = shape(S::F32)
+#    O = Diagonal(correction) @ O
+# O += P @ V
+# O = Diagonal(correction_2) @ O
+#
+# Encoding:
+# (s, q_heads, depth)
+# h (q_heads) is divided among block ids. s, d is divided among
+# threads
+#
+# Decoding:
+# q_heads = kv_heads x group
+# (1 x q_heads x depth) -> (kv_heads x group x depth)
+# kv_heads is divided among block ids.
 @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
@@ -622,21 +649,21 @@ fn _mha_sm90[
         max(group, 8) if _is_decoding[MaxSeqLenType]() else Int(
             config.block_m()
         ),
-        64 if _is_decoding[MaxSeqLenType]() else config.depth,
+        64 if _is_decoding[MaxSeqLenType]() else config.padded_depth,
         swizzle_mode,
         is_k_major=True,
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
         config.block_n(),
-        config.depth,
+        config.padded_depth,
         swizzle_mode,
         is_k_major=True,
     ],
     v_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
         config.block_n(),
-        config.depth,
+        config.padded_depth,
         swizzle_mode,
         is_k_major=False,
     ],
@@ -685,7 +712,7 @@ fn _mha_sm90[
     var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
 
     constrained[
-        num_warps_m == (num_consumer_threads // WARP_SIZE),
+        num_warps_m == UInt(num_consumer_threads // WARP_SIZE),
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
@@ -697,7 +724,7 @@ fn _mha_sm90[
     alias warp_x: UInt32 = 0  # warp_id % num_warps_n
 
     alias q_smem_layout_consumer = tile_layout_k_major[
-        DType.bfloat16, BM, depth, swizzle_mode=swizzle_mode
+        DType.bfloat16, BM, config.padded_depth, swizzle_mode=swizzle_mode
     ]()
     alias k_smem_layout = k_tma_op.layout
     alias v_smem_layout = v_tma_op.layout
@@ -728,7 +755,7 @@ fn _mha_sm90[
 
     alias MMA_M = 16  # per warp
     alias MMA_N0 = BN
-    alias MMA_N1 = depth
+    alias MMA_N1 = config.padded_depth
     alias MMA_K = 16
     alias WM = config.WM
     alias num_m_mmas = WM // MMA_M
@@ -930,7 +957,9 @@ fn _mha_sm90[
                 produced_mbar_q[i].init(1)
                 consumed_mbar_q[i].init(num_consumer_threads)
 
-    alias PositionType = MHAPosition[BM, BN, depth, num_heads, group, decoding]
+    alias PositionType = MHAPosition[
+        BM, BN, config.depth, config.padded_depth, num_heads, group, decoding
+    ]
 
     @parameter
     @always_inline
@@ -946,7 +975,7 @@ fn _mha_sm90[
             alignment=128,
         ],
     ):
-        alias sz = BN * depth
+        alias sz = BN * config.padded_depth
         k_smem = __type_of(k_smem)(kv_smem + sz * idx)
 
     @parameter
@@ -963,14 +992,21 @@ fn _mha_sm90[
             alignment=128,
         ],
     ):
-        alias sz = BN * depth
+        alias sz = BN * config.padded_depth
         v_smem = __type_of(v_smem)(kv_smem + sz * idx)
 
     @parameter
     @always_inline
     fn get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
-            BM, BN, depth, num_heads, group, ragged, _is_cache_length_accurate
+            BM,
+            BN,
+            config.depth,
+            config.padded_depth,
+            num_heads,
+            group,
+            ragged,
+            _is_cache_length_accurate,
         ](
             seq_info,
             kv_lut,
@@ -1127,6 +1163,13 @@ fn _mha_sm90[
             or MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
             * log2e
         )
+        constrained[
+            depth % wgmma_0.mma_shape[2] == 0,
+            "depth: "
+            + String(depth)
+            + "is not divisible by mma_shape: "
+            + String(wgmma_0.mma_shape),
+        ]()
 
         @parameter
         @always_inline
@@ -1136,7 +1179,11 @@ fn _mha_sm90[
             produced_mbar_kv[read_idx].wait(read_phase)
             warpgroup_fence(p_reg_tile)
             wgmma_0.arrive()
-            wgmma_0.wgmma[num_consumer, scale_c=0](
+            wgmma_0.wgmma[
+                num_consumer,
+                scale_c=0,
+                num_k_iters = OptionalReg[Int](depth // wgmma_0.mma_shape[2]),
+            ](
                 q_smem_sub,
                 k_smem_sub,
                 p_reg_tile,
@@ -1266,7 +1313,7 @@ fn _mha_sm90[
                 BM,
                 BN,
                 WM,
-                depth,
+                config.padded_depth,
                 kv_type,
                 output_type,
                 accum_type,
@@ -1293,8 +1340,8 @@ fn _mha_sm90[
             # vector and stored using 16B store instruction.
             copy_sram_to_dram[
                 thread_layout = Layout.row_major(
-                    num_consumer_threads * simd_size // depth,
-                    depth // simd_size,
+                    num_consumer_threads * simd_size // config.depth,
+                    config.depth // simd_size,
                 ),
                 swizzle=swizzle,
             ](
@@ -1309,7 +1356,9 @@ fn _mha_sm90[
         @parameter
         if decoding and PartitionType.do_partition:
             if kv_tile_start_row >= end:
-                if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
+                if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                    4 * group + 128
+                ):
                     exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
                     )
@@ -1469,9 +1518,8 @@ fn _mha_sm90[
 
                     @parameter
                     if decoding and PartitionType.do_partition:
-                        if (
-                            thread_idx.x % 4 == 0
-                            and thread_idx.x < 4 * group + 128
+                        if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
+                            4 * group + 128
                         ):
                             exp_sum_ptr, qk_max_ptr = (
                                 position_prev.exp_sum_qk_max_ptr(
@@ -1605,7 +1653,7 @@ fn _mha_sm90[
 
         @parameter
         if decoding and PartitionType.do_partition:
-            if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group + 128:
+            if thread_idx.x % 4 == 0 and thread_idx.x < UInt(4 * group + 128):
                 exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )

@@ -83,7 +83,7 @@ class BaseBenchmarkConfig(MAXConfig):
     num_prompts: int = 1000
     """Number of prompts to process."""
 
-    seed: int = 42
+    seed: int = 0
     """Random seed for reproducibility."""
 
     # Control flags

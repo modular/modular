@@ -624,10 +624,14 @@ struct _Global[
             name, Self._init_wrapper, Self._deinit_wrapper
         ]().bitcast[StorageType]()
 
-    # Currently known values for get_or_create_indexed_ptr.  See
+    # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
+    # 0: Python runtime context
+    # 1: GPU comm P2P availability cache
+    # 2: Intentionally unused (reserved for prototyping / future use)
     alias _python_idx = 0
-    alias _unused = 1  # Intentionally unused (enabled for prototyping).
+    alias _gpu_comm_p2p_idx = 1
+    alias _unused = 2  # Intentionally unused (enabled for prototyping).
 
     # This accesses a well-known global with a fixed index rather than using a
     # name to unique the value.  The index table is above.

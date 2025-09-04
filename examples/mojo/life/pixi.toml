@@ -7,7 +7,7 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
 
 [dependencies]
-mojo = "*"
+mojo = "<1.0.0"
 python = ">=3.11,<3.14"
 pygame = ">=2.6.1,<3"
 

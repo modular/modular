@@ -71,7 +71,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
 
     # Construct backing buffer and the KV cache itself.
     kv_cache_block_buffer = List[Scalar[dtype]](
-        length=block_shape.flattened_length(), fill=0
+        length=UInt(block_shape.flattened_length()), fill=0
     )
     kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
@@ -148,7 +148,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     )
 
     # Create output buffer.
-    q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
+    q_out_buffer = List[Scalar[dtype]](length=UInt(len(q_buffer)), fill=0)
     q_out = NDBuffer[dtype, rank=4](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
     fused_qk_rope[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")

@@ -13,7 +13,7 @@
 """Test the max.graph Python bindings."""
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import GraphBuilder, axes, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import TensorType
@@ -28,7 +28,7 @@ shared_shapes = st.shared(shapes())
     ),
 )
 def test_permute_success(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     dims: list[int],
 ) -> None:
@@ -37,7 +37,7 @@ def test_permute_success(
         input_type.dtype, target_shape, input_type.device
     )
     with graph_builder(input_types=[input_type]) as graph:
-        out = graph.inputs[0].permute(dims)
+        out = graph.inputs[0].permute(dims)  # type: ignore
         assert out.type == expected_type
 
         graph.output(out)
@@ -52,7 +52,7 @@ rank_sized_list_ints = shared_shapes.flatmap(
 
 @given(input_type=tensor_types(shapes=shared_shapes), dims=rank_sized_list_ints)
 def test_permute_out_of_range(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     dims: list[int],
 ) -> None:
@@ -60,12 +60,12 @@ def test_permute_out_of_range(
     assume(any(d >= rank or d < -rank for d in dims))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(IndexError):
-            graph.inputs[0].permute(dims)
+            graph.inputs[0].permute(dims)  # type: ignore
 
 
 @given(input_type=..., dims=...)
 def test_permute_wrong_rank(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     dims: list[int],
 ) -> None:
@@ -73,7 +73,7 @@ def test_permute_wrong_rank(
     assume(len(dims) != rank)
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].permute(dims)
+            graph.inputs[0].permute(dims)  # type: ignore
 
 
 shared_nontrivial_shapes = st.shared(shapes(min_rank=2))
@@ -88,11 +88,11 @@ shared_nontrivial_shapes = st.shared(shapes(min_rank=2))
     ),
 )
 def test_permute_duplicates(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     dims: list[int],
 ) -> None:
     assume(len(set(dims)) < len(dims))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].permute(dims)
+            graph.inputs[0].permute(dims)  # type: ignore

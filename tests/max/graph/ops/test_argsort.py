@@ -13,7 +13,7 @@
 """ops.argsort tests."""
 
 import pytest
-from conftest import shapes, tensor_types
+from conftest import GraphBuilder, shapes, tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -29,7 +29,7 @@ supported_tensor_types = tensor_types(
     input_type=supported_tensor_types,
 )
 def test_argsort_output_tensor_types(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
 ) -> None:
     expected_type = input_type.cast(DType.int64)
@@ -40,7 +40,9 @@ def test_argsort_output_tensor_types(
         assert idx_tensor.type == expected_type
 
 
-def test_argsort_with_input_rank_greater_than_1(graph_builder) -> None:  # noqa: ANN001
+def test_argsort_with_input_rank_greater_than_1(
+    graph_builder: GraphBuilder,
+) -> None:
     input_shape = [0, 1, 2, 3, 4, 5]
     ascending = True
 

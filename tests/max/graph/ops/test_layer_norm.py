@@ -13,7 +13,7 @@
 """Tests for ops.layer_norm."""
 
 import pytest
-from conftest import shapes, static_positive_dims, tensor_types
+from conftest import GraphBuilder, shapes, static_positive_dims, tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -28,7 +28,7 @@ from max.graph import Shape, StaticDim, TensorType, ops
     epsilon=st.floats(min_value=1e-6, max_value=1.0),
 )
 def test_layer_norm__valid(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     epsilon: float,
 ) -> None:
@@ -42,9 +42,9 @@ def test_layer_norm__valid(
         input_types=[input_type, gamma_type, beta_type]
     ) as graph:
         out = ops.layer_norm(
-            graph.inputs[0],
-            graph.inputs[1],  # gamma
-            graph.inputs[2],  # beta
+            graph.inputs[0],  # type: ignore
+            graph.inputs[1],  # type: ignore  # gamma
+            graph.inputs[2],  # type: ignore  # beta
             epsilon,
         )
         assert out.type == input_type
@@ -61,7 +61,7 @@ static_shapes = st.shared(shapes(dims=static_positive_dims))
     ),
 )
 def test_layer_norm__error__gamma_shape_mismatch(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
 ) -> None:
     """Test that layer_norm raises an error when gamma shape doesn't match the last dimension."""
@@ -82,9 +82,9 @@ def test_layer_norm__error__gamma_shape_mismatch(
             ValueError, match="does not match dimension of reduction"
         ):
             ops.layer_norm(
-                graph.inputs[0],
-                graph.inputs[1],  # gamma
-                graph.inputs[2],  # beta
+                graph.inputs[0],  # type: ignore
+                graph.inputs[1],  # type: ignore  # gamma
+                graph.inputs[2],  # type: ignore  # beta
                 1e-5,
             )
 
@@ -96,7 +96,7 @@ def test_layer_norm__error__gamma_shape_mismatch(
     ),
 )
 def test_layer_norm__error__beta_shape_mismatch(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
 ) -> None:
     """Test that layer_norm raises an error when beta shape doesn't match the last dimension."""
@@ -115,9 +115,9 @@ def test_layer_norm__error__beta_shape_mismatch(
             ValueError, match="does not match dimension of reduction"
         ):
             ops.layer_norm(
-                graph.inputs[0],
-                graph.inputs[1],  # gamma
-                graph.inputs[2],  # beta
+                graph.inputs[0],  # type: ignore
+                graph.inputs[1],  # type: ignore  # gamma
+                graph.inputs[2],  # type: ignore  # beta
                 1e-5,
             )
 
@@ -130,7 +130,7 @@ def test_layer_norm__error__beta_shape_mismatch(
     epsilon=st.floats(max_value=0.0),
 )
 def test_layer_norm__error__non_positive_epsilon(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     epsilon: float,
 ) -> None:
@@ -144,9 +144,9 @@ def test_layer_norm__error__non_positive_epsilon(
     ) as graph:
         with pytest.raises(ValueError, match="epsilon must be positive"):
             ops.layer_norm(
-                graph.inputs[0],
-                graph.inputs[1],  # gamma
-                graph.inputs[2],  # beta
+                graph.inputs[0],  # type: ignore
+                graph.inputs[1],  # type: ignore  # gamma
+                graph.inputs[2],  # type: ignore  # beta
                 epsilon,
             )
 
@@ -158,7 +158,7 @@ def test_layer_norm__error__non_positive_epsilon(
     ),
 )
 def test_layer_norm__error__zero_last_dim(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
 ) -> None:
     """Test that layer_norm handles zero-sized last dimension gracefully."""
@@ -175,9 +175,9 @@ def test_layer_norm__error__zero_last_dim(
     ) as graph:
         # Should not raise an error for zero-sized last dimension
         out = ops.layer_norm(
-            graph.inputs[0],
-            graph.inputs[1],  # gamma
-            graph.inputs[2],  # beta
+            graph.inputs[0],  # type: ignore
+            graph.inputs[1],  # type: ignore  # gamma
+            graph.inputs[2],  # type: ignore  # beta
             1e-5,
         )
         assert out.type == zero_last_dim_type

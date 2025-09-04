@@ -243,8 +243,8 @@ fn test[
     _ = output_ref_device_ptr
 
     var rtol = 1e-2
-    for h in range(num_heads):
-        for s in range(seq_len):
+    for s in range(seq_len):
+        for h in range(num_heads):
             for d in range(depth):
                 var expect = output_ptr.load(
                     d + depth * (h + s * num_heads)
@@ -253,8 +253,33 @@ fn test[
                     d + depth * (h + s * num_heads)
                 ).cast[DType.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
+                    var next_expect = 0 * expect
+                    var next_actual = 0 * actual
+                    if h < num_heads and s < seq_len and d < depth - 1:
+                        next_expect = output_ptr.load(
+                            d + depth * (h + s * num_heads) + 1
+                        ).cast[DType.float64]()
+                        next_actual = flash_output_ptr.load(
+                            d + depth * (h + s * num_heads) + 1
+                        ).cast[DType.float64]()
                     var rerr = abs((actual - expect) / expect)
-                    print(h, s, d, actual, expect, rerr)
+                    print(
+                        "s, h, d = ",
+                        "(" + String(s),
+                        h,
+                        String(d) + ")",
+                        "actual =",
+                        actual,
+                        "expect =",
+                        expect,
+                        "rerr =",
+                        rerr,
+                        "next_expect =",
+                        next_expect,
+                        "next_actual =",
+                        next_actual,
+                    )
+
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
@@ -271,17 +296,22 @@ fn test[
     flash_output_ptr.free()
 
 
+fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
+    var depths = [64, 128]
+    if is_sm90orsm100:
+        depths.append(80)
+        depths.append(256)
+    return depths
+
+
 def main():
     with DeviceContext() as ctx:
         alias is_sm90orsm100 = ctx.default_device_info is H100 or ctx.default_device_info is B200
-        alias min_depth = 64
-        alias max_depth = 256 if is_sm90orsm100 else 128
+        alias depths = construct_depths(is_sm90orsm100)
 
         @parameter
-        for d in range(
-            count_trailing_zeros(min_depth), count_trailing_zeros(max_depth) + 1
-        ):
-            alias depth = 1 << d
+        for d in range(len(depths)):
+            alias depth = depths[d]
 
             @parameter
             if depth <= 128:

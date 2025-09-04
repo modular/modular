@@ -273,9 +273,7 @@ fn test_tensor_tile_and_distribute() raises:
             for th_i in range(4):
                 var fragment_2x2 = tile_4x4.distribute[
                     Layout(IntTuple(2, 2), IntTuple(2, 1))
-                ](
-                    th_i,
-                )
+                ](UInt(th_i))
                 print("----fragments-data[", th_i, "]----")
                 print_tile_tensor(fragment_2x2)
     _ = managed_tensor^
@@ -503,7 +501,9 @@ fn test_distribute_with_tile_size():
 
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
-        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
+        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](
+            UInt(tid)
+        )
         print(tile)
     var tensor8x1 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 1)), MutableAnyOrigin
@@ -545,7 +545,7 @@ fn test_distribute_with_tile_size():
         print("----thread[", tid, "]----")
         var tile = tensor8x1.vectorize[2, 1]().distribute[
             thread_layout, axis=0
-        ](tid)
+        ](UInt(tid))
         print(tile)
 
 
@@ -1991,6 +1991,17 @@ fn test_tensor_size() raises:
         RuntimeLayout[layout2].row_major(IndexList[2](4, 4)),
     )
     assert_equal(runtime_tensor.size(), 16)
+
+
+# This test doesn't need to run, it just needs to compile
+fn test_merge():
+    alias layout = Layout.row_major(4, 4)
+    var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
+    var tensor = LayoutTensor[DType.uint32, layout](stack)
+    var stack2 = InlineArray[UInt32, layout.size()](uninitialized=True)
+    var tensor2 = LayoutTensor[DType.uint32, layout](stack2)
+    var a = tensor if tensor.size() > 1 else tensor2
+    print(a)
 
 
 fn main() raises:

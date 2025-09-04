@@ -64,7 +64,7 @@ trait Indexer:
 
 
 @always_inline("nodebug")
-fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
+fn index[T: Indexer](idx: T, /) -> Int:
     """Returns the value of `__index__` for the given value.
 
     Parameters:
@@ -76,7 +76,7 @@ fn index[T: Indexer](idx: T, /) -> __mlir_type.index:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return idx.__index__()
+    return Int(mlir_value=idx.__index__())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -299,13 +299,13 @@ struct Int(
     @doc_private
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.index):
+    fn __init__(out self, mlir_value: __mlir_type.index):
         """Construct Int from the given index value.
 
         Args:
-            value: The init value.
+            mlir_value: The init value.
         """
-        self._mlir_value = value
+        self._mlir_value = mlir_value
 
     @doc_private
     @always_inline("nodebug")
@@ -541,7 +541,9 @@ struct Int(
         Returns:
             `self + rhs` value.
         """
-        return __mlir_op.`index.add`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.add`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __sub__(self, rhs: Int) -> Int:
@@ -553,7 +555,9 @@ struct Int(
         Returns:
             `self - rhs` value.
         """
-        return __mlir_op.`index.sub`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.sub`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __mul__(self, rhs: Int) -> Int:
@@ -565,7 +569,9 @@ struct Int(
         Returns:
             `self * rhs` value.
         """
-        return __mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
+        )
 
     fn __truediv__(self, rhs: Int) -> Float64:
         """Return the floating point division of `self` and `rhs`.
@@ -668,7 +674,13 @@ struct Int(
             `self << rhs`.
         """
         return select(
-            rhs < 0, 0, __mlir_op.`index.shl`(self._mlir_value, rhs._mlir_value)
+            rhs < 0,
+            0,
+            Int(
+                mlir_value=__mlir_op.`index.shl`(
+                    self._mlir_value, rhs._mlir_value
+                )
+            ),
         )
 
     @always_inline("builtin")
@@ -684,7 +696,11 @@ struct Int(
         return select(
             rhs < 0,
             0,
-            __mlir_op.`index.shrs`(self._mlir_value, rhs._mlir_value),
+            Int(
+                mlir_value=__mlir_op.`index.shrs`(
+                    self._mlir_value, rhs._mlir_value
+                )
+            ),
         )
 
     @always_inline("builtin")
@@ -697,7 +713,9 @@ struct Int(
         Returns:
             `self & rhs`.
         """
-        return __mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.and`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __xor__(self, rhs: Int) -> Int:
@@ -709,7 +727,9 @@ struct Int(
         Returns:
             `self ^ rhs`.
         """
-        return __mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.xor`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn __or__(self, rhs: Int) -> Int:
@@ -721,7 +741,9 @@ struct Int(
         Returns:
             `self | rhs`.
         """
-        return __mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.or`(self._mlir_value, rhs._mlir_value)
+        )
 
     # ===-------------------------------------------------------------------===#
     # In place operations.
@@ -1188,7 +1210,9 @@ struct Int(
         Returns:
             The integer division of `self` and `rhs` .
         """
-        return __mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("builtin")
     fn _positive_rem(self, rhs: Int) -> Int:
@@ -1201,7 +1225,9 @@ struct Int(
         Returns:
             The integer modulus of `self` and `rhs` .
         """
-        return __mlir_op.`index.rems`(self._mlir_value, rhs._mlir_value)
+        return Int(
+            mlir_value=__mlir_op.`index.rems`(self._mlir_value, rhs._mlir_value)
+        )
 
     fn _decimal_digit_count(self) -> Int:
         """

@@ -776,6 +776,50 @@ struct LayoutTensor[
             host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
+    @always_inline("nodebug")
+    fn __merge_with__[
+        other_type: __type_of(
+            LayoutTensor[
+                dtype,
+                layout,
+                _,
+                address_space=address_space,
+                alignment=alignment,
+                element_layout=element_layout,
+                layout_int_type=layout_int_type,
+                linear_idx_type=linear_idx_type,
+                masked=masked,
+            ]
+        ),
+    ](
+        self,
+        out result: LayoutTensor[
+            mut = mut & other_type.origin.mut,
+            dtype,
+            layout,
+            __origin_of(origin, other_type.origin),
+            alignment=alignment,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+        ],
+    ):
+        """Returns a tensor merged with the specified `other_type`.
+
+        Parameters:
+            other_type: The type of the tensor to merge with.
+
+        Returns:
+            A tensor merged with the specified `other_type`.
+        """
+        return {
+            self.ptr.origin_cast[result.mut, result.origin](),
+            self.runtime_layout,
+            self.runtime_element_layout,
+        }
+
     alias BitcastType[
         new_dtype: DType,
         /,
@@ -1768,7 +1812,7 @@ struct LayoutTensor[
 
         @parameter
         for arg_idx in range(arg_count):
-            index_list[arg_idx] = Int(index(args[arg_idx]))
+            index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset[rank=arg_count](strides, index_list)
@@ -1828,7 +1872,7 @@ struct LayoutTensor[
 
         @parameter
         for arg_idx in range(arg_count):
-            index_list[arg_idx] = Int(index(args[arg_idx]))
+            index_list[arg_idx] = index(args[arg_idx])
 
         var strides = self.runtime_layout.stride.value
         var offset = Self._get_offset(strides, index_list)
@@ -3376,8 +3420,8 @@ struct LayoutTensor[
                 alias fragments_stride_i: UInt = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = Int(thread_projected_shape[i])
-                alias stride_i: UInt = Int(thread_projected_stride[i])
+                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
+                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -3551,8 +3595,8 @@ struct LayoutTensor[
                 alias fragments_stride_i: UInt = UInt(
                     mlir_value=Int(fragments_layout_stride[i])._mlir_value
                 )
-                alias shape_i: UInt = Int(thread_projected_shape[i])
-                alias stride_i: UInt = Int(thread_projected_stride[i])
+                alias shape_i: UInt = UInt(Int(thread_projected_shape[i]))
+                alias stride_i: UInt = UInt(Int(thread_projected_stride[i]))
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset_coords[i] = Int(thread_coord_i)
                 offset += thread_coord_i * fragments_stride_i
@@ -5479,7 +5523,7 @@ fn copy_dram_to_sram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -5607,7 +5651,7 @@ fn copy_dram_to_sram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6098,7 +6142,7 @@ fn copy_dram_to_sram_async[
     # of input tensors. Return if current thread doesn't have work.
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     alias row_size = dst.stride[0]()
@@ -6317,7 +6361,7 @@ fn copy_sram_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[thread_layout](worker_idx)
@@ -6570,7 +6614,7 @@ fn copy_local_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -6684,7 +6728,7 @@ fn copy_local_to_dram[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
@@ -6794,7 +6838,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -6838,7 +6882,7 @@ fn copy_dram_to_local[
         offset_helper(offset.value())
     else:
         offset_helper(
-            (Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]()
+            UInt((Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]())
         )
 
 
@@ -6898,7 +6942,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
@@ -6975,7 +7019,7 @@ fn copy_dram_to_local[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
@@ -7114,7 +7158,7 @@ fn copy_local_to_shared[
 
     @parameter
     if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
             return
 
     constrained[

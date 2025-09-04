@@ -67,7 +67,11 @@ fn __source_location() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, StaticString(file_name))
+    return _SourceLocation(
+        Int(mlir_value=line),
+        Int(mlir_value=col),
+        StaticString(file_name),
+    )
 
 
 @always_inline("nodebug")
@@ -104,4 +108,8 @@ fn __call_location[*, inline_count: Int = 1]() -> _SourceLocation:
         ),
     ]()
 
-    return _SourceLocation(line, col, StaticString(file_name))
+    return _SourceLocation(
+        Int(mlir_value=line),
+        Int(mlir_value=col),
+        StaticString(file_name),
+    )

@@ -157,7 +157,7 @@ fn naive_grouped_matmul_kernel[
     n = global_idx.x
     m = global_idx.y
 
-    if n >= N or m >= M:
+    if n >= UInt(N) or m >= UInt(M):
         return
 
     alias accum_type = get_accum_type[a_type]()
@@ -548,8 +548,8 @@ fn grouped_matmul_kernel[
                 b_tma_op,
                 a_smem_iter,
                 b_smem_iter,
-                m_coord,
-                n_coord,
+                UInt(m_coord),
+                UInt(n_coord),
                 0,
                 rank_n,
                 rank_m,
@@ -613,8 +613,8 @@ fn grouped_matmul_kernel[
                 full,
                 empty,
                 wgmma_op,
-                local_warp_group_idx,
-                warp_group_thread_idx,
+                UInt(local_warp_group_idx),
+                UInt(warp_group_thread_idx),
             )
 
         # C layout for current expert
@@ -661,9 +661,9 @@ fn grouped_matmul_kernel[
             c_by_expert,
             c_smem_tile,
             c_reg_tile,
-            warp_group_thread_idx,
-            local_warp_group_idx,
-            thread_idx.x - WARPGROUP_SIZE,
+            UInt(warp_group_thread_idx),
+            UInt(local_warp_group_idx),
+            UInt(thread_idx.x - WARPGROUP_SIZE),
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )
@@ -891,13 +891,13 @@ fn grouped_matmul_kernel_sm100[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (k_start, a_m_start),
+                    (UInt(k_start), UInt(a_m_start)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (k_start, b_n_start),
+                    (UInt(k_start), UInt(b_n_start)),
                 )
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)

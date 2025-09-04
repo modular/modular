@@ -67,7 +67,7 @@ fn _argsort_cpu[
         Span[
             Scalar[indices.dtype],
             indices.origin,
-        ](ptr=indices.ptr, length=indices.size())
+        ](ptr=indices.ptr, length=UInt(indices.size()))
     )
 
 
@@ -141,7 +141,7 @@ fn _argsort_gpu_impl[
         """
         var i = global_idx.x
 
-        if i >= n:
+        if i >= UInt(n):
             return
 
         var partner = i ^ step

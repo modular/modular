@@ -590,11 +590,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+            )
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - qk_offset, kv_params.head_size
+                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -728,11 +730,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         var cache: cache_t
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+            )
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - qk_offset, kv_params.head_size
+                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -895,11 +899,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         var cache: cache_t
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+            )
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - qk_offset, kv_params.head_size
+                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
             )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -1021,7 +1027,9 @@ fn kv_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ],
     layer_idx: UInt32,
@@ -1143,8 +1151,8 @@ fn _matmul_kv_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N: UInt = weight.shape.get[0]()
-    alias K: UInt = weight.shape.get[1]()
+    alias N: UInt = UInt(weight.shape.get[0]())
+    alias K: UInt = UInt(weight.shape.get[1]())
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1231,7 +1239,9 @@ fn k_matmul_ragged_paged[
     weight: NDBuffer[dtype, 2, *_],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ],
     layer_idx: UInt32,
@@ -1348,8 +1358,8 @@ fn _matmul_k_cache_ragged_impl[
         return
 
     alias kv_params = cache_t.kv_params
-    alias N: UInt = weight.shape.get[0]()
-    alias K: UInt = weight.shape.get[1]()
+    alias N: UInt = UInt(weight.shape.get[0]())
+    alias K: UInt = UInt(weight.shape.get[1]())
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1412,7 +1422,9 @@ fn unfused_qkv_matmul_ragged_paged_gguf_quantized[
     v_weight: NDBuffer[DType.uint8, 2, _, _],
     kv_collection: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ],
     layer_idx: UInt32,
@@ -1592,8 +1604,8 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     k_or_v_cache: cache_t,
 ) raises:
     alias kv_params = cache_t.kv_params
-    alias N: UInt = k_or_v_weight.shape.get[0]()
-    alias K: UInt = k_or_v_weight.shape.get[1]()
+    alias N: UInt = UInt(k_or_v_weight.shape.get[0]())
+    alias K: UInt = UInt(k_or_v_weight.shape.get[1]())
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -2702,10 +2714,10 @@ fn generic_kv_cache_radd_dispatch[
         var corrected_dim: UInt
         if idx[1] < hidden_size:
             cache = k_cache
-            corrected_dim = idx[1]
+            corrected_dim = UInt(idx[1])
         else:
             cache = v_cache
-            corrected_dim = idx[1] - hidden_size
+            corrected_dim = UInt(idx[1] - hidden_size)
 
         var h_idx: UInt
         var hd_idx: UInt

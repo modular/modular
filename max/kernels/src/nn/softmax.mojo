@@ -1556,7 +1556,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # ](0, 0).vectorize[1, p_frag_size // 2]()
     alias frag_size = output_reg_tile.element_layout.size()
     constrained[
-        WM * WN == (2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas
+        WM * WN == UInt((2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas)
     ]()
     # alias num_m_mmas = WM // MMA_M
     # alias num_n_mmas = WN // MMA_N

@@ -19,6 +19,7 @@ from typing import Optional
 import numpy as np
 import pytest
 from conftest import (
+    GraphBuilder,
     broadcast_shapes,
     broadcastable_tensor_types,
     tensor_types,
@@ -80,7 +81,7 @@ shared_dtypes = st.shared(st.from_type(DType))
     y=tensor_types(dtypes=shared_dtypes),
 )
 def test_where_with_non_broadcastable_shapes(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     condition,  # noqa: ANN001
     x,  # noqa: ANN001
     y,  # noqa: ANN001
@@ -195,7 +196,7 @@ def test_where_error_message_with_mismatched_devices() -> None:
     ),
 )
 def test_where_with_promotable_dtypes(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     condition,  # noqa: ANN001
     x_dtype,  # noqa: ANN001
     y_dtype,  # noqa: ANN001
@@ -342,8 +343,8 @@ def test_where_with_promotable_dtypes(
     y = TensorType(y_dtype, condition.shape, condition.device)
 
     with graph_builder(input_types=[condition, x, y]) as graph:
-        cond, x, y = graph.inputs
-        out = ops.where(cond, x, y)
+        cond, x, y = graph.inputs  # type: ignore
+        out = ops.where(cond, x, y)  # type: ignore
 
         # Bool always promotes to other type
         if x_dtype == DType.bool:
@@ -425,7 +426,7 @@ def test_where_with_promotable_dtypes(
     ),
 )
 def test_where_with_incompatible_dtypes(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     condition,  # noqa: ANN001
     x_dtype,  # noqa: ANN001
     y_dtype,  # noqa: ANN001
@@ -504,11 +505,11 @@ def test_where_with_incompatible_dtypes(
     y = TensorType(y_dtype, condition.shape, condition.device)
 
     with graph_builder(input_types=[condition, x, y]) as graph:
-        cond, x, y = graph.inputs
+        cond, x, y = graph.inputs  # type: ignore
         with pytest.raises(
             ValueError, match="Failed to resolve valid dtype: Unsafe cast from"
         ):
-            ops.where(cond, x, y)
+            ops.where(cond, x, y)  # type: ignore
 
 
 # Like the Dtype promotion tests above, these two tests validate the behavior of

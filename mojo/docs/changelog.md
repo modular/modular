@@ -172,6 +172,9 @@ language across multiple phases.
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 
+- The `index()` free function now returns an `Int`, instead of a raw MLIR
+  `__mlir_type.index` value.
+
 - There is now an `iter` module which exposes the `next`, `iter`,
   and `enumerate` methods.
 
@@ -304,6 +307,10 @@ language across multiple phases.
 `gfx1151`, and `gfx1152` architectures. Representative configurations have been
 added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
+- Added support for NVIDIA GTX 1080 Ti consumer-grade GPUs.
+
+- Added support for NVIDIA Tesla P100 datacenter GPUs.
+
 - Updated `layout_tensor` copy related functions to support 2D and 3D
   threadblock dimensions.
 
@@ -364,6 +371,11 @@ enforce `Raises` docs for `def` functions (to avoid noisy false positives).
   ```sh
   pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
   ```
+
+- In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
+now have a `0.` prefixed to the version. Until the previous nightly packages
+and 25.5 on Conda have been removed or yanked, we recommend specifying `<1.0.0`
+as the version for these packages.
 
 ### Kernels changes
 
