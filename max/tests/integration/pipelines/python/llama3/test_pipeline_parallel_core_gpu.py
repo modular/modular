@@ -70,7 +70,6 @@ def mock_llama3_config(mock_hf_config: LlamaConfig) -> Llama3Config:
         tie_word_embeddings=False,
         stacked_mlp=False,
         stacked_qkv=False,
-        logits_postprocessor=None,
         attention_multiplier=1.0,
         embedding_multiplier=1.0,
         residual_multiplier=1.0,
