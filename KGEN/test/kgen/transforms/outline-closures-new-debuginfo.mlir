@@ -11,7 +11,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
     kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
   }
   kgen.conformance @"closure_trait" {
-    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>> read_mem) -> !kgen.none = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@foo, "fn" escaping>> read_mem) -> () = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
   }
 }
 

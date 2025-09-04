@@ -15,10 +15,9 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
-
-#include "mlir/IR/BuiltinOps.h"
 
 using namespace M;
 using namespace KGEN;
@@ -186,8 +185,9 @@ private:
                                   Type loweredClosureType);
   /// Given closure metadata, lift the region of the closure init into a top
   /// level function.
-  void liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
-                        TypedAttr capturedInstance, Type loweredClosureType);
+  LogicalResult liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+                                 TypedAttr capturedInstance,
+                                 Type loweredClosureType);
   void liftMoveFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
                         Type loweredClosureType,
                         ArrayRef<Capture> captureMechanisms,
@@ -515,10 +515,86 @@ void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
                          {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
 }
 
-void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
-                                     ClosureInitData &closureInitData,
-                                     TypedAttr capturedInstance,
-                                     Type loweredClosureType) {
+static bool typesMatch(FuncTypeGeneratorType closureSymbolAttrType,
+                       FuncTypeGeneratorType liftedFunctionType,
+                       Type loweredClosureType,
+                       ClosureLifter::ClosureInitData closureInitData) {
+
+  /// (1) First map the ClosureType to the lowered struct type in the closure
+  /// symbol attribute's type.
+  ArrayRef<Type> args = closureSymbolAttrType.getBody().getArguments();
+  MLIRContext *cxt = closureSymbolAttrType.getContext();
+  /// Expected at least one self argument.
+  if (args.size() < 1) {
+    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
+                    "expected at least one argument in the struct method ")
+        << closureSymbolAttrType;
+    return false;
+  }
+  Type selfType;
+  if (closureInitData.isMem()) {
+    /// Expected pointer semantics for in memory closure
+    if (!isa<KGEN::PointerType>(args.front())) {
+      mlir::emitError(
+          closureInitData.getClosureInit()->getLoc(),
+          "expected a pointer type in the first argument of the method ")
+          << closureSymbolAttrType;
+      return false;
+    }
+
+    selfType = cast<PointerType>(args.front()).getElementType();
+  } else {
+    selfType = args.front();
+  }
+  auto closureTypeOfGiven = dyn_cast<ClosureType>(selfType);
+  if (!closureTypeOfGiven) {
+    mlir::emitError(
+        closureInitData.getClosureInit()->getLoc(),
+        "expected a closure type in the first argument of the method ")
+        << closureSymbolAttrType;
+    return false;
+  }
+
+  ClosureType closureType = closureInitData.getClosureType();
+  if (closureTypeOfGiven.getParentSymbol() != closureType.getParentSymbol() ||
+      closureTypeOfGiven.getName() != closureType.getName() ||
+      closureTypeOfGiven.getClosureMemoryKind() !=
+          closureType.getClosureMemoryKind()) {
+    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
+                    "unexpected closure type. Got ")
+        << closureTypeOfGiven << " but expected " << closureType;
+    return false;
+  }
+  SmallVector<Type> loweredArgTypes;
+  loweredArgTypes.push_back(closureInitData.isMem()
+                                ? PointerType::get(loweredClosureType)
+                                : loweredClosureType);
+  llvm::append_range(loweredArgTypes, args.drop_front());
+  SmallVector<ParamDeclAttr> parameters;
+
+  FunctionType givenFuncType = FunctionType::get(
+      cxt, loweredArgTypes, closureSymbolAttrType.getBody().getResults());
+  // (2) Next, remap from the struct generator op parameters to the parameters
+  // of the lifted function.
+  M::KGEN::FuncTypeGeneratorType givenFuncGenTypeRemappedParams =
+      closureSymbolAttrType.remapToFuncTypeGenerator(
+          closureInitData.getClosureInit().getInputParams(), givenFuncType,
+          closureSymbolAttrType.getBody().getArgConventions(),
+          closureSymbolAttrType.getBody().getFnEffects());
+
+  bool isMatch = givenFuncGenTypeRemappedParams == liftedFunctionType;
+  if (!isMatch) {
+    mlir::emitError(closureInitData.getClosureInit()->getLoc(),
+                    "Type mismatch: ")
+        << givenFuncGenTypeRemappedParams << " vs " << liftedFunctionType;
+  }
+  return isMatch;
+}
+
+LogicalResult ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
+                                              ClosureInitData &closureInitData,
+                                              TypedAttr capturedInstance,
+                                              Type loweredClosureType) {
   Region &region = closureInitData.region();
   GeneratorOp generator = closureInitData.getGenerator();
   SmallVector<Type> argTypes;
@@ -582,8 +658,9 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   /// `kgen.struct<(struct.extract<CAPTURES, 0>, struct.extract<CAPTURES, 1>)>`
   /// so that the verifier does not complain that the struct generator op did
   /// not declare A or B.
+  auto loweredClosureTypeMapped = replacer.replace(loweredClosureType);
   packedClosureType[closureInitData.getClosureType()] =
-      replacer.replace(loweredClosureType);
+      loweredClosureTypeMapped;
   FunctionType remappedFuncType =
       remapFuncType(b, body, funcType, fromParamToExtractExpr);
   liftedWrapper.setFunctionType(remappedFuncType);
@@ -604,7 +681,14 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
           /*argConv=*/conventions, /*effects=*/effects,
           /*fnMetadata=*/{}, /*genMetadata=*/{}),
       boundParams);
+  /// We are replacing symbol A with symbol B. Ensure the types match.
+  if (debugBuild) {
+    if (!typesMatch(closureAttr.getType(), sym.getType(),
+                    loweredClosureTypeMapped, closureInitData))
+      return failure();
+  }
   liftedClosureSymbols[closureAttr] = sym;
+  return success();
 }
 
 void ClosureLifter::storeCaptures(ImplicitLocOpBuilder &b, Value captureStruct,
@@ -643,7 +727,9 @@ Value ClosureLifter::liftClosure(
                                replacementFn(capture, index, captureStructArg),
                                region);
   // Synthesize methods.
-  liftCallFunction(b, closureInitData, capturedInstance, loweredClosureType);
+  if (failed(liftCallFunction(b, closureInitData, capturedInstance,
+                              loweredClosureType)))
+    return {};
 
   // Instantiate capture struct.
   b.setInsertionPoint(closureInitData.getClosureInit());
@@ -672,6 +758,8 @@ Value ClosureLifter::liftRegPassableClosure(ImplicitLocOpBuilder &b,
   Value captureStruct =
       liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
                   loweredClosureType, replacementFn);
+  if (!captureStruct)
+    return {};
   return b.create<POP::LoadOp>(captureStruct);
 }
 
@@ -688,6 +776,8 @@ Value ClosureLifter::liftNonRegPassableClosure(
   Value captureStruct =
       liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
                   loweredClosureType, replacementFn);
+  if (!captureStruct)
+    return {};
   liftMoveFunction(b, closureInitData, loweredClosureType, captureMechanisms,
                    capturedInstance);
   liftDelFunction(b, closureInitData, loweredClosureType, captureMechanisms,
@@ -704,7 +794,9 @@ Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
   region.insertArgument((unsigned)0, selfType, region.getLoc());
-  liftCallFunction(b, closureInitData, capturedInstance, loweredClosureType);
+  if (failed(liftCallFunction(b, closureInitData, capturedInstance,
+                              loweredClosureType)))
+    return {};
   // TODO: create thunks for register passable closures (MOCO-2242).
   if (!isRegisterPassable) {
     liftMoveFunction(b, closureInitData, loweredClosureType, {},
@@ -894,6 +986,8 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
       break;
     }
   }
+  if (!replacement)
+    return failure();
   closureInit.getResult().replaceAllUsesWith(replacement);
   closureInit.erase();
   return success();
