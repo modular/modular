@@ -28,7 +28,7 @@ struct ReduceBuffers:
 
 @fieldwise_init
 @register_passable
-struct SIMDPair[S0: Int, S1: Int](Copyable, Movable):
+struct SIMDPair[S0: Int, S1: Int](ImplicitlyCopyable, Movable):
     var x: SIMD[DType.int32, S0]
     var y: SIMD[DType.int32, S1]
 
