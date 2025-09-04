@@ -118,9 +118,6 @@ struct cudnnBackendKnobType_t(Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K:
@@ -279,9 +276,6 @@ struct cudnnPointwiseMode_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -454,9 +448,6 @@ struct cudnnBackendDescriptorType_t(Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BACKEND_POINTWISE_DESCRIPTOR:
@@ -614,9 +605,6 @@ struct cudnnBackendBehaviorNote_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION:
@@ -667,9 +655,6 @@ struct cudnnBackendLayoutType_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NCHW:
@@ -715,9 +700,6 @@ struct cudnnBackendNormFwdPhase_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_FWD_INFERENCE:
@@ -759,9 +741,6 @@ struct cudnnBackendHeurMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -821,9 +800,6 @@ struct cudnnBackendNumericalNote_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -922,9 +898,6 @@ struct cudnnBackendAttributeType_t(Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TYPE_HANDLE:
@@ -1021,9 +994,6 @@ struct cudnnRngDistribution_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_RNG_DISTRIBUTION_BERNOULLI:
@@ -1071,9 +1041,6 @@ struct cudnnBackendTensorReordering_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1327,9 +1294,6 @@ struct cudnnBackendAttributeName_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1887,9 +1851,6 @@ struct cudnnBackendNormMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LAYER_NORM:
@@ -1935,9 +1896,6 @@ struct cudnnSignalMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SIGNAL_SET:
@@ -1980,9 +1938,6 @@ struct cudnnBnFinalizeStatsMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_TRAINING:
@@ -2020,9 +1975,6 @@ struct cudnnGenStatsMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2088,9 +2040,6 @@ struct cudnnResampleMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2170,9 +2119,6 @@ struct cudnnPaddingMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

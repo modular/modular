@@ -157,18 +157,6 @@ struct Attribute(Identifiable, Writable):
         """
         return self == other
 
-    @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Negative identity comparison operator for Attribute instances.
-
-        Args:
-            other: The Attribute to compare with.
-
-        Returns:
-            True if the attributes are not identical, False otherwise.
-        """
-        return not (self is other)
-
     fn write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 

@@ -90,17 +90,6 @@ struct Vendor(Identifiable, Writable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Negative identity comparison for vendors.
-
-        Args:
-            other: The Vendor to compare with.
-
-        Returns:
-            True if vendors are not identical, False otherwise.
-        """
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes vendor information to a writer.
@@ -1521,18 +1510,6 @@ struct GPUInfo(Identifiable, Stringable, Writable):
             True if both instances represent the same GPU model.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """
-        Negative identity comparison operator for `GPUInfo` instances.
-
-        Args:
-            other: Another `GPUInfo` instance to compare against.
-
-        Returns:
-            True if instances represent different GPU models.
-        """
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

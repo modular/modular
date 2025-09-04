@@ -93,9 +93,6 @@ struct cudnnSoftmaxMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SOFTMAX_MODE_INSTANCE:
@@ -155,9 +152,6 @@ struct cudnnReduceTensorIndices_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -349,9 +343,6 @@ struct cudnnReduceTensorOp_t(Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_REDUCE_TENSOR_ADD:
@@ -455,9 +446,6 @@ struct cudnnDeterminism_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NON_DETERMINISTIC:
@@ -514,9 +502,6 @@ struct cudnnStatus_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -583,9 +568,6 @@ struct cudnnCTCLossAlgo_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CTC_LOSS_ALGO_DETERMINISTIC:
@@ -648,9 +630,6 @@ struct cudnnTensorFormat_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -816,9 +795,6 @@ struct cudnnNormAlgo_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_ALGO_STANDARD:
@@ -861,9 +837,6 @@ struct cudnnOpTensorOp_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1162,9 +1135,6 @@ struct cudnnActivationMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_ACTIVATION_SIGMOID:
@@ -1246,9 +1216,6 @@ struct cudnnConvolutionBwdDataAlgo_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1347,9 +1314,6 @@ struct cudnnSamplerType_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SAMPLER_BILINEAR:
@@ -1413,9 +1377,6 @@ struct cudnnNormMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1531,9 +1492,6 @@ struct cudnnNormOps_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_NORM_OPS_NORM:
@@ -1607,9 +1565,6 @@ struct cudnnSoftmaxAlgorithm_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1697,9 +1652,6 @@ struct cudnnBatchNormOps_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_OPS_BN:
@@ -1747,9 +1699,6 @@ struct cudnnConvolutionFwdAlgo_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1993,9 +1942,6 @@ struct cudnnLRNMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_LRN_CROSS_CHANNEL_DIM1:
@@ -2118,9 +2064,6 @@ struct cudnnFoldingDirection_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_TRANSFORM_FOLD:
@@ -2181,9 +2124,6 @@ struct cudnnErrQueryMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2342,9 +2282,6 @@ struct cudnnBatchNormMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_BATCHNORM_PER_ACTIVATION:
@@ -2432,9 +2369,6 @@ struct cudnnSeverity_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_SEV_FATAL:
@@ -2483,9 +2417,6 @@ struct cudnnMathType_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_DEFAULT_MATH:
@@ -2528,9 +2459,6 @@ struct cudnnNanPropagation_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2576,9 +2504,6 @@ struct cudnnRNNAlgo_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2715,9 +2640,6 @@ struct cudnnDataType_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -2905,9 +2827,6 @@ struct cudnnIndicesType_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -3195,9 +3114,6 @@ struct cudnnConvolutionBwdFilterAlgo_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0:
@@ -3351,9 +3267,6 @@ struct cudnnPoolingMode_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_POOLING_MAX:
@@ -3448,9 +3361,6 @@ struct cudnnDivNormMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

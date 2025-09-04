@@ -93,18 +93,6 @@ struct TraceCategory(EqualityComparable, Identifiable, Intable):
         return self == rhs
 
     @always_inline("nodebug")
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self != rhs
-
-    @always_inline("nodebug")
     fn __int__(self) -> Int:
         """Converts the trace category to an integer.
 
@@ -194,18 +182,6 @@ struct TraceLevel(
             True if they are equal.
         """
         return self == rhs
-
-    @always_inline("nodebug")
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Compares for inequality.
-
-        Args:
-            rhs: The value to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self != rhs
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

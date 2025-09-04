@@ -121,18 +121,6 @@ struct _GPUAddressSpace(
         return self.value() == other.value()
 
     @always_inline("nodebug")
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the two address spaces are not equal.
-
-        Args:
-          other: The other address space value.
-
-        Returns:
-          True if the two address spaces are not equal and False otherwise.
-        """
-        return self.value() != other.value()
-
-    @always_inline("nodebug")
     fn __isnot__(self, other: AddressSpace) -> Bool:
         """Checks if the two address spaces are not equal.
 

@@ -197,16 +197,3 @@ struct ArcPointer[T: Movable](Identifiable, ImplicitlyCopyable, Movable):
             False otherwise.
         """
         return self._inner == rhs._inner
-
-    fn __isnot__(self, rhs: Self) -> Bool:
-        """Returns True if the two `ArcPointer` instances point at different
-        objects.
-
-        Args:
-            rhs: The other `ArcPointer`.
-
-        Returns:
-            True if the two `ArcPointer` instances point at different objects
-            and False otherwise.
-        """
-        return self._inner != rhs._inner

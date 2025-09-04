@@ -211,9 +211,6 @@ struct curandRngType(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_RNG_TEST:
@@ -565,9 +562,6 @@ struct curandMethod(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_CHOOSE_BEST:
@@ -728,9 +722,6 @@ struct curandStatus(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CURAND_STATUS_SUCCESS:
@@ -797,9 +788,6 @@ struct curandDirectionVectorSet(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1268,9 +1256,6 @@ struct curandOrdering(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

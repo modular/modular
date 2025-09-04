@@ -120,18 +120,6 @@ struct Consistency(
         """
         return self == other
 
-    @always_inline
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if the Consistency object is not the same as another.
-
-        Args:
-            other: The other Consistency object to compare with.
-
-        Returns:
-            True if the objects are not the same, False otherwise.
-        """
-        return self != other
-
     fn __repr__(self) -> String:
         """Returns a string representation of a `Consistency`.
 

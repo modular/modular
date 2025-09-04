@@ -79,9 +79,6 @@ struct Status(Identifiable, Stringable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_SUCCESS:
@@ -158,9 +155,6 @@ struct Type(Identifiable, Stringable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_R2C:
@@ -207,9 +201,6 @@ struct Compatibility(Identifiable, Stringable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUFFT_COMPATIBILITY_FFTW_PADDING:
@@ -246,9 +237,6 @@ struct Property(Identifiable, Stringable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

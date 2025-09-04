@@ -379,9 +379,6 @@ struct cudnnFusedOpsConstParamLabel_t(Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_PARAM_XDESC:
@@ -506,9 +503,6 @@ struct cudnnReorderType_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -653,9 +647,6 @@ struct cudnnFusedOps_t(Identifiable, Writable):
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
-
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         if self is Self.CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS:
@@ -727,9 +718,6 @@ struct cudnnFusedOpsPointerPlaceHolder_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -864,9 +852,6 @@ struct cudnnFusedOpsVariantParamLabel_t(Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1352,9 +1337,6 @@ struct cudnnConvolutionMode_t(Identifiable, Writable):
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        return self != other
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

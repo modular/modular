@@ -159,17 +159,6 @@ struct CacheOperation(Identifiable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are not identical.
-
-        Args:
-            other: The CacheOperation to compare against.
-
-        Returns:
-            True if the operations are not identical, False otherwise.
-        """
-        return self != other
-
     @always_inline
     fn mnemonic(self) -> StaticString:
         """Returns the PTX mnemonic string for this cache operation.
@@ -295,17 +284,6 @@ struct CacheEviction(Identifiable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two CacheEviction instances are not identical.
-
-        Args:
-            other: The CacheEviction to compare against.
-
-        Returns:
-            True if the eviction policies are not identical, False otherwise.
-        """
-        return self != other
-
     @always_inline
     fn mnemonic(self) -> StaticString:
         """Returns the string mnemonic for this cache eviction policy.
@@ -387,17 +365,6 @@ struct Fill(Identifiable):
             True if the fill patterns are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two Fill instances are not identical.
-
-        Args:
-            other: The Fill instance to compare against.
-
-        Returns:
-            True if the fill patterns are not identical, False otherwise.
-        """
-        return self != other
 
     @no_inline
     fn __str__(self) -> String:
@@ -482,17 +449,6 @@ struct Consistency(
             True if the consistency levels are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two Consistency instances are not identical.
-
-        Args:
-            other: The Consistency instance to compare against.
-
-        Returns:
-            True if the consistency levels are not identical, False otherwise.
-        """
-        return self != other
 
     fn __str__(self) -> String:
         """Returns a string representation of the consistency level.
@@ -600,17 +556,6 @@ struct ReduceOp(Identifiable):
             True if the reduction operations are identical, False otherwise.
         """
         return self == other
-
-    fn __isnot__(self, other: Self) -> Bool:
-        """Tests if two ReduceOp instances are not identical.
-
-        Args:
-            other: The ReduceOp instance to compare against.
-
-        Returns:
-            True if the reduction operations are not identical, False otherwise.
-        """
-        return self != other
 
     @no_inline
     fn __str__(self) -> String:

@@ -159,17 +159,6 @@ struct Level(Identifiable, ImplicitlyCopyable, Movable, Stringable, Writable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Returns True if this level is not identical to the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if this level is not identical to the other level, False otherwise.
-        """
-        return self != other
-
     @staticmethod
     fn _from_str(name: StringSlice) -> Self:
         """Converts a string level name to a Level value.

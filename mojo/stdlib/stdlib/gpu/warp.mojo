@@ -817,17 +817,6 @@ struct ReductionMethod(Identifiable):
         """
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are not identical.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are not identical, false otherwise.
-        """
-        return self != other
-
 
 @always_inline
 fn sum[

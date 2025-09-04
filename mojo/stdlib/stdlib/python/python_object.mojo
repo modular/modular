@@ -495,18 +495,6 @@ struct PythonObject(
         ref cpy = Python().cpython()
         return cpy.Py_Is(self._obj_ptr, other._obj_ptr) != 0
 
-    fn __isnot__(self, other: PythonObject) -> Bool:
-        """Test if the PythonObject is not the `other` PythonObject, the same as `x is not y` in
-        Python.
-
-        Args:
-            other: The right-hand-side value in the comparison.
-
-        Returns:
-            True if they are not the same object and False otherwise.
-        """
-        return not (self is other)
-
     fn __getitem__(self, *args: PythonObject) raises -> PythonObject:
         """Return the value for the given key or keys.
 

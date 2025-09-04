@@ -532,17 +532,6 @@ struct Scope(
         """
         return self._value == other._value
 
-    fn __isnot__(self, other: Self) -> Bool:
-        """Checks if two `Scope` instances have different values.
-
-        Args:
-            other: The other `Scope` instance to compare with.
-
-        Returns:
-            True if the values are different, False otherwise.
-        """
-        return not (self is other)
-
     @no_inline
     fn write_to(self, mut w: Some[Writer]):
         """Writes the string representation of the scope to a writer.
