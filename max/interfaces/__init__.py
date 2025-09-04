@@ -34,7 +34,7 @@ from .pipeline_variants import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
 )
-from .queue import MAXPullQueue, MAXPushQueue, drain_queue
+from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
 from .request import Request, RequestID
 from .scheduler import SchedulerResult
 from .status import GenerationStatus
@@ -95,6 +95,7 @@ __all__ = [
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
     "drain_queue",
+    "get_blocking",
     "msgpack_eq",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
