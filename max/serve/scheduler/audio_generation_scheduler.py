@@ -212,17 +212,19 @@ class AudioGenerationScheduler(Scheduler):
         self.pipeline = pipeline
 
         self.request_q = ZmqPullSocket[tuple[RequestID, TTSContext]](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[RequestID, TTSContext]),
         )
+
         self.response_q = ZmqPushSocket[
             dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
         ](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
+
         self.cancel_q = ZmqPullSocket[list[RequestID]](
-            zmq_endpoint=cancel_zmq_endpoint,
+            endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(list[RequestID]),
         )
 

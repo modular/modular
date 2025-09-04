@@ -51,13 +51,13 @@ class EmbeddingsScheduler(Scheduler):
         self.pipeline = pipeline
 
         self.request_q = ZmqPullSocket[tuple[str, TextContext]](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
         )
         self.response_q = ZmqPushSocket[
             dict[str, SchedulerResult[EmbeddingsOutput]]
         ](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
 

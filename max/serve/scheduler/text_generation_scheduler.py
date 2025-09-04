@@ -70,7 +70,7 @@ class TokenGenerationScheduler(Scheduler):
         self.request_q = ZmqPullSocket[
             tuple[RequestID, Union[TextContext, TextAndVisionContext]]
         ](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
                 tuple[RequestID, Union[TextContext, TextAndVisionContext]]
             ),
@@ -78,11 +78,11 @@ class TokenGenerationScheduler(Scheduler):
         self.response_q = ZmqPushSocket[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
         self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_endpoint=cancel_zmq_endpoint,
+            endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(list[str]),
         )
 

@@ -61,14 +61,14 @@ class LoRARequestProcessor(Generic[ReqId]):
         self.manager = manager
 
         self._request_socket = ZmqPullSocket[tuple[ReqId, LoRARequest]](
-            zmq_endpoint=zmq_request_endpoint,
+            endpoint=zmq_request_endpoint,
             deserialize=msgspec.msgpack.Decoder(
                 type=tuple[ReqId, LoRARequest]
             ).decode,
         )
 
         self._response_socket = ZmqPushSocket[tuple[ReqId, LoRAResponse]](
-            zmq_endpoint=zmq_response_endpoint,
+            endpoint=zmq_response_endpoint,
             serialize=msgspec.msgpack.Encoder().encode,
         )
 

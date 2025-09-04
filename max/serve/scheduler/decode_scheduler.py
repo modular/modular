@@ -83,7 +83,7 @@ class DecodeScheduler(Scheduler):
         self.request_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
                 tuple[str, Union[TextContext, TextAndVisionContext]]
             ),
@@ -91,11 +91,11 @@ class DecodeScheduler(Scheduler):
         self.response_push_socket = ZmqPushSocket[
             dict[str, SchedulerResult[TextGenerationOutput]]
         ](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
         self.cancel_pull_socket = ZmqPullSocket[list[RequestID]](
-            zmq_endpoint=cancel_zmq_endpoint,
+            endpoint=cancel_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
                 list[RequestID],
             ),

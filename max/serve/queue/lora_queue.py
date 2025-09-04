@@ -41,11 +41,11 @@ class LoRAQueue(Generic[ReqId]):
         response_zmq_endpoint: str,
     ):
         self._request_socket = ZmqPushSocket[tuple[ReqId, LoRARequest]](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             serialize=msgspec.msgpack.Encoder().encode,
         )
         self._response_socket = ZmqPullSocket[tuple[ReqId, LoRAResponse]](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             deserialize=msgspec.msgpack.Decoder(
                 type=tuple[ReqId, LoRAResponse]
             ).decode,

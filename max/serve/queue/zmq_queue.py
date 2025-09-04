@@ -21,11 +21,13 @@ import queue
 import tempfile
 import uuid
 import weakref
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional, TypeVar, cast
 
 import psutil
 import zmq
 import zmq.constants
+from max.interfaces import msgpack_numpy_decoder, msgpack_numpy_encoder
+from max.interfaces.queue import MAXPushQueue
 
 logger = logging.getLogger("max.serve")
 
@@ -138,33 +140,84 @@ def _open_zmq_socket(
     return socket
 
 
-class ZmqPushSocket(Generic[T]):
+class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
+    """
+    ZeroMQ-based push socket implementation using PUSH socket.
+
+    This class implements the MAXPushQueue protocol using ZeroMQ PUSH sockets
+    for efficient inter-process communication. It supports only push (producer)
+    operations for adding items to the queue with lazy socket initialization.
+
+    The socket uses a single ZMQ endpoint where the PUSH socket binds to
+    send messages, following standard ZeroMQ PUSH semantics.
+    """
+
     def __init__(
         self,
         *,
-        serialize: Callable[[Any], bytes],
-        zmq_endpoint: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        serialize: Callable[[T], bytes] = pickle.dumps,
+        lazy: bool = True,
     ) -> None:
-        self.zmq_endpoint = (
-            zmq_endpoint
-            if zmq_endpoint is not None
-            else generate_zmq_ipc_path()
+        """
+        Initialize ZmqPushSocket with lazy PUSH socket initialization.
+
+        Args:
+            endpoint: ZMQ endpoint for the push socket. If None, generates unique IPC path.
+            serialize: Function to serialize messages before sending.
+            lazy: If True (default), socket initialization is deferred until first use.
+                  If False, socket is initialized immediately during construction.
+        """
+        # Initialize endpoint
+        self._endpoint = (
+            endpoint if endpoint is not None else generate_zmq_ipc_path()
         )
-        self.push_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PUSH)
-        self.serialize = serialize
+
+        # Validate endpoint
+        if not is_valid_zmq_address(self._endpoint):
+            raise ValueError(f"Invalid endpoint: {self._endpoint}")
+
+        # Store serialization function
+        self._serialize = serialize
+
+        # Initialize socket (lazily)
+        self._push_socket: Optional[zmq.Socket] = None
+
+        # State management
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
+        if not lazy:
+            self.initialize_socket()
+
+    def initialize_socket(self) -> zmq.Socket:
+        """
+        Initialize the push socket if needed and return it.
+
+        This allows external users to initialize the socket before use,
+        which can be useful for setup or testing scenarios. The socket
+        is lazily initialized on first call.
+
+        Returns:
+            The initialized ZMQ push socket.
+        """
+        if self._push_socket is None:
+            self._push_socket = _open_zmq_socket(self._endpoint, mode=zmq.PUSH)
+        return self._push_socket
+
     def _cleanup(self) -> None:
-        if not self.push_socket.closed:
-            self.push_socket.close()
+        """Clean up resources during garbage collection."""
+        if self._push_socket is not None and not self._push_socket.closed:
+            self._push_socket.close()
 
     def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
+        """Explicitly close the socket."""
         if not self._closed:
             self._closed = True
-            if not self.push_socket.closed:
-                self.push_socket.close()
+
+            if self._push_socket is not None and not self._push_socket.closed:
+                self._push_socket.close()
+
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
@@ -175,15 +228,17 @@ class ZmqPushSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        push_socket = self.initialize_socket()
+
         while True:
             try:
-                serialized_msg = self.serialize(item)
+                serialized_msg = self._serialize(item)
             except Exception as e:
                 logger.exception(f"Failed to serialize message: {e}")
                 raise
 
             try:
-                self.push_socket.send(serialized_msg, flags=zmq.NOBLOCK)
+                push_socket.send(serialized_msg, flags=zmq.NOBLOCK)
 
                 # Exit since we succeeded
                 break
@@ -203,32 +258,84 @@ class ZmqPushSocket(Generic[T]):
 
 
 class ZmqPullSocket(Generic[T]):
+    """
+    ZeroMQ-based pull socket implementation using PULL socket.
+
+    This class provides a consumer interface for receiving messages from ZMQ PUSH
+    sockets using ZeroMQ PULL semantics for efficient inter-process communication.
+    It supports only pull (consumer) operations for retrieving items from the queue
+    with lazy socket initialization.
+
+    The socket uses a single ZMQ endpoint where the PULL socket connects to
+    receive messages, following standard ZeroMQ PULL semantics.
+    """
+
     def __init__(
         self,
         *,
-        deserialize: Callable[[Any], Any],
-        zmq_endpoint: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        deserialize: Callable[[bytes], T] = pickle.loads,
+        lazy: bool = True,
     ) -> None:
-        self.zmq_endpoint = (
-            zmq_endpoint
-            if zmq_endpoint is not None
-            else generate_zmq_ipc_path()
+        """
+        Initialize ZmqPullSocket with lazy PULL socket initialization.
+
+        Args:
+            endpoint: ZMQ endpoint for the pull socket. If None, generates unique IPC path.
+            deserialize: Function to deserialize received messages.
+            lazy: If True (default), socket initialization is deferred until first use.
+                  If False, socket is initialized immediately during construction.
+        """
+        # Initialize endpoint
+        self._endpoint = (
+            endpoint if endpoint is not None else generate_zmq_ipc_path()
         )
-        self.pull_socket = _open_zmq_socket(self.zmq_endpoint, mode=zmq.PULL)
-        self.deserialize = deserialize
+
+        # Validate endpoint
+        if not is_valid_zmq_address(self._endpoint):
+            raise ValueError(f"Invalid endpoint: {self._endpoint}")
+
+        # Store serialization function
+        self._deserialize = deserialize
+
+        # Initialize socket (lazily)
+        self._pull_socket: Optional[zmq.Socket] = None
+
+        # State management
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
+        if not lazy:
+            self.initialize_socket()
+
+    def initialize_socket(self) -> zmq.Socket:
+        """
+        Initialize the pull socket if needed and return it.
+
+        This allows external users to initialize the socket before use,
+        which can be useful for setup or testing scenarios. The socket
+        is lazily initialized on first call.
+
+        Returns:
+            The initialized ZMQ pull socket.
+        """
+        if self._pull_socket is None:
+            self._pull_socket = _open_zmq_socket(self._endpoint, mode=zmq.PULL)
+        return self._pull_socket
+
     def _cleanup(self) -> None:
-        if not self.pull_socket.closed:
-            self.pull_socket.close()
+        """Clean up resources during garbage collection."""
+        if self._pull_socket is not None and not self._pull_socket.closed:
+            self._pull_socket.close()
 
     def close(self) -> None:
-        """Explicitly close the ZMQ socket."""
+        """Explicitly close the socket."""
         if not self._closed:
             self._closed = True
-            if not self.pull_socket.closed:
-                self.pull_socket.close()
+
+            if self._pull_socket is not None and not self._pull_socket.closed:
+                self._pull_socket.close()
+
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
@@ -236,10 +343,12 @@ class ZmqPullSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        pull_socket = self.initialize_socket()
+
         try:
-            msg = self.pull_socket.recv(flags=zmq.NOBLOCK)
+            msg = pull_socket.recv(flags=zmq.NOBLOCK)
         except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
+            if e.errno == zmq.constants.EAGAIN:
                 raise queue.Empty()  # noqa: B904
 
             logger.exception(
@@ -248,9 +357,9 @@ class ZmqPullSocket(Generic[T]):
             raise
 
         try:
-            return self.deserialize(msg)
+            return self._deserialize(msg)
         except Exception as e:
-            logger.exception(e)
+            logger.exception(f"Failed to deserialize message: {e}")
             raise
 
 
@@ -266,7 +375,7 @@ class ZmqRouterSocket(Generic[T]):
     ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.router_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
+            self.zmq_endpoint, mode=zmq.constants.ROUTER, bind=bind
         )
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
@@ -303,7 +412,7 @@ class ZmqRouterSocket(Generic[T]):
                 [identity, serialized_msg], flags=flags
             )
         except zmq.ZMQError as e:
-            if e.errno != zmq.EAGAIN:
+            if e.errno != zmq.constants.EAGAIN:
                 logger.exception(f"Failed to send multipart message: {e}")
             raise
 
@@ -317,7 +426,7 @@ class ZmqRouterSocket(Generic[T]):
                 flags=flags
             )
         except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
+            if e.errno == zmq.constants.EAGAIN:
                 raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive multipart message: {e}")
             raise
@@ -331,7 +440,7 @@ class ZmqRouterSocket(Generic[T]):
 
     def recv_multipart_nowait(self) -> tuple[bytes, T]:
         """Non-blocking receive."""
-        return self.recv_multipart(flags=zmq.NOBLOCK)
+        return self.recv_multipart(flags=zmq.constants.NOBLOCK)
 
 
 class ZmqDealerSocket(Generic[T]):
@@ -346,7 +455,7 @@ class ZmqDealerSocket(Generic[T]):
     ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.dealer_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.DEALER, bind=bind
+            self.zmq_endpoint, mode=zmq.constants.DEALER, bind=bind
         )
         self.serialize = serialize
         self.deserialize = deserialize
@@ -379,7 +488,7 @@ class ZmqDealerSocket(Generic[T]):
         try:
             self.dealer_socket.send(serialized_msg, flags=flags)
         except zmq.ZMQError as e:
-            if e.errno != zmq.EAGAIN:
+            if e.errno != zmq.constants.EAGAIN:
                 logger.exception(f"Failed to send message: {e}")
             raise
 
@@ -391,7 +500,7 @@ class ZmqDealerSocket(Generic[T]):
         try:
             message = self.dealer_socket.recv(flags=flags)
         except zmq.ZMQError as e:
-            if e.errno == zmq.EAGAIN:
+            if e.errno == zmq.constants.EAGAIN:
                 raise queue.Empty()  # noqa: B904
             logger.exception(f"Failed to receive message: {e}")
             raise
@@ -404,4 +513,62 @@ class ZmqDealerSocket(Generic[T]):
 
     def recv_pyobj_nowait(self) -> T:
         """Non-blocking receive."""
-        return self.recv_pyobj(flags=zmq.NOBLOCK)
+        return self.recv_pyobj(flags=zmq.constants.NOBLOCK)
+
+
+def create_zmq_push_pull_queues(
+    payload_type: type[T],
+    endpoint: Optional[str] = None,
+    use_pickle: bool = False,
+    lazy: bool = True,
+) -> tuple[ZmqPushSocket[T], ZmqPullSocket[T]]:
+    """
+    Factory method to create a matched pair of ZMQ push and pull sockets.
+
+    This factory creates both a ZmqPushSocket and ZmqPullSocket that share the same
+    endpoint, allowing them to communicate with each other. The push socket can
+    send messages that the pull socket will receive. Both sockets support lazy
+    initialization for efficient resource management.
+
+    Args:
+        payload_type: Type of the payload that will be sent through the queue.
+        endpoint: ZMQ endpoint for both sockets. If None, generates unique IPC path.
+        use_pickle: Whether to use pickle for serialization. If False, uses msgpack.
+        lazy: If True (default), socket initialization is deferred until first use.
+              If False, both sockets are initialized immediately during construction.
+
+    Returns:
+        A tuple containing (ZmqPushSocket, ZmqPullSocket) configured to communicate
+        with each other using the same endpoint.
+
+    Example:
+        >>> push_socket, pull_socket = create_zmq_push_pull_queues(str)
+        >>> push_socket.put_nowait("hello")
+        >>> message = pull_socket.get_nowait()
+        >>> print(message)  # "hello"
+    """
+    # Use the same endpoint for both sockets so they can communicate
+    actual_endpoint = (
+        endpoint if endpoint is not None else generate_zmq_ipc_path()
+    )
+
+    if use_pickle:
+        serialize = cast(Callable[[T], bytes], pickle.dumps)
+        deserialize = cast(Callable[[bytes], T], pickle.loads)
+    else:
+        serialize = msgpack_numpy_encoder()
+        deserialize = msgpack_numpy_decoder(payload_type)
+
+    push_socket = ZmqPushSocket[T](
+        endpoint=actual_endpoint,
+        serialize=serialize,
+        lazy=lazy,
+    )
+
+    pull_socket = ZmqPullSocket[T](
+        endpoint=actual_endpoint,
+        deserialize=deserialize,
+        lazy=lazy,
+    )
+
+    return push_socket, pull_socket

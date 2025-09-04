@@ -64,17 +64,17 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
         self.request_push_socket = ZmqPushSocket[
             tuple[RequestID, BaseContextType]
         ](
-            zmq_endpoint=request_zmq_endpoint,
+            endpoint=request_zmq_endpoint,
             serialize=msgpack_numpy_encoder(use_shared_memory=True),
         )
 
         self.response_pull_socket = ZmqPullSocket[dict[RequestID, ReqOutput]](
-            zmq_endpoint=response_zmq_endpoint,
+            endpoint=response_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
         )
 
         self.cancel_push_socket = ZmqPushSocket[list[str]](
-            zmq_endpoint=cancel_zmq_endpoint,
+            endpoint=cancel_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
 
