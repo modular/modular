@@ -84,7 +84,7 @@ fn matmul(
         for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Int
-            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
+            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
                 a_reg = Int(a[row, tile_idx * TILE_SZ_RATIO + idx])
             else:
                 a_reg = 0
@@ -98,7 +98,7 @@ fn matmul(
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < m and col + out_idx < n:
+        if row < UInt(m) and col + out_idx < n:
             c[Index(row, col + out_idx)] = c_reg.load(out_idx)
 
 

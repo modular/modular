@@ -49,7 +49,7 @@ fn _histogram_gpu(
     ):
         var tid = global_idx.x
 
-        if tid >= n:
+        if tid >= UInt(n):
             return
 
         # Allocate shared memory for the histogram

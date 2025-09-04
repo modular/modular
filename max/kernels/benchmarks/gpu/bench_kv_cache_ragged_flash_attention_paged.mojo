@@ -95,7 +95,9 @@ def execute_kv_cache_ragged_flash_attention[
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
     alias CollectionType = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
+        ),
         page_size,
     ]
 

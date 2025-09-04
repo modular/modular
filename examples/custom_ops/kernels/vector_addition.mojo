@@ -55,7 +55,7 @@ fn _vector_addition_gpu(
     @parameter
     fn vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
-        if tid < length:
+        if tid < UInt(length):
             var idx = IndexList[output.rank](tid)
             var result = lhs.load[1](idx) + rhs.load[1](idx)
             output.store[1](idx, result)

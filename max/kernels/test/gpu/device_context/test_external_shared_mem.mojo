@@ -95,7 +95,7 @@ fn shared_memory_kernel(
     ]()
 
     # Load data into shared memory
-    if tid < len:
+    if tid < UInt(len):
         shared_data[thread_id] = input[tid]
     else:
         shared_data[thread_id] = 0.0
@@ -111,7 +111,7 @@ fn shared_memory_kernel(
         result += shared_data[thread_id + 1]
 
     # Write result back
-    if tid < len:
+    if tid < UInt(len):
         output[tid] = result
 
 
@@ -123,7 +123,7 @@ fn occupancy_test_kernel(
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = input[tid] * 2.0
 

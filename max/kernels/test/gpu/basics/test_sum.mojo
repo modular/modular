@@ -28,7 +28,7 @@ fn warp_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= size:
+    if tid >= UInt(size):
         return
     output[tid] = warp.sum(input[tid])
 
@@ -89,7 +89,7 @@ fn block_sum_kernel[
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= size:
+    if tid >= UInt(size):
         return
     output[tid] = block.sum[block_size=block_size, broadcast=True](input[tid])
 

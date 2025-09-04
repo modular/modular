@@ -264,8 +264,8 @@ struct MHAConfig(Copyable, Movable, Writable):
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        padded_depth_default = (
-            ceildiv(depth, swizzle_granularity) * swizzle_granularity
+        padded_depth_default = UInt(
+            ceildiv(depth, UInt(swizzle_granularity)) * swizzle_granularity
         )
         self.padded_depth = padded_depth.or_else(padded_depth_default)
         self.num_pipeline_stages = num_pipeline_stages

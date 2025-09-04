@@ -164,7 +164,7 @@ fn multicast_tma_wgmma_kernel[
                     a_tma_op.async_multicast_load(
                         a_smem_slice,
                         mbar[0],
-                        (UInt(i) * BK, a_gmem_slice_coord),
+                        (UInt(i) * UInt(BK), UInt(a_gmem_slice_coord)),
                         multicast_mask.cast[DType.uint16](),
                     )
 
@@ -173,13 +173,15 @@ fn multicast_tma_wgmma_kernel[
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
                             mbar[0],
-                            (UInt(i) * BK, block_idx.y * BM),
+                            (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
                             multicast_mask.cast[DType.uint16](),
                         )
 
             else:
                 a_tma_op.async_copy(
-                    a_smem_tile, mbar[0], (UInt(i) * BK, block_idx.y * BM)
+                    a_smem_tile,
+                    mbar[0],
+                    (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
                 )
 
             @parameter
@@ -200,9 +202,12 @@ fn multicast_tma_wgmma_kernel[
                     b_tma_op.async_multicast_load(
                         b_smem_slice,
                         mbar[0],
-                        (UInt(i) * BK, b_gmem_slice_coord) if transpose_b else (
-                            block_idx.x * BN,
-                            UInt(i) * BK,
+                        (
+                            UInt(i) * UInt(BK),
+                            UInt(b_gmem_slice_coord),
+                        ) if transpose_b else (
+                            block_idx.x * UInt(BN),
+                            UInt(i) * UInt(BK),
                         ),
                         (multicast_mask << rank_n).cast[DType.uint16](),
                     )
@@ -213,11 +218,11 @@ fn multicast_tma_wgmma_kernel[
                             b_smem_tile,
                             mbar[0],
                             (
-                                UInt(i) * BK,
-                                block_idx.x * BN,
+                                UInt(i) * UInt(BK),
+                                block_idx.x * UInt(BN),
                             ) if transpose_b else (
-                                block_idx.x * BN,
-                                UInt(i) * BK,
+                                block_idx.x * UInt(BN),
+                                UInt(i) * UInt(BK),
                             ),
                             (multicast_mask << rank_n).cast[DType.uint16](),
                         )
@@ -226,9 +231,12 @@ fn multicast_tma_wgmma_kernel[
                 b_tma_op.async_copy(
                     b_smem_tile,
                     mbar[0],
-                    (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                        block_idx.x * BN,
-                        UInt(i) * BK,
+                    (
+                        UInt(i) * UInt(BK),
+                        block_idx.x * UInt(BN),
+                    ) if transpose_b else (
+                        block_idx.x * UInt(BN),
+                        UInt(i) * UInt(BK),
                     ),
                 )
 

@@ -23,7 +23,7 @@ fn add_constant_fn(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = input[tid] + constant
 

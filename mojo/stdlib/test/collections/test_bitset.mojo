@@ -88,8 +88,8 @@ def test_bitset_toggle_all():
 
     # set random enough pattern in both BitSets
     for idx in [0, 1, 10, 19, 22, 37, 56, 63]:
-        bs1.set(idx)
-        bs2.set(idx)
+        bs1.set(UInt(idx))
+        bs2.set(UInt(idx))
 
     # toggle all in one BitSet
     bs1.toggle_all()
@@ -97,12 +97,12 @@ def test_bitset_toggle_all():
     # assert that they differ in all idx
     for idx in range(64):
         assert_not_equal(
-            bs1.test(idx),
-            bs2.test(idx),
+            bs1.test(UInt(idx)),
+            bs2.test(UInt(idx)),
             msg="Bit "
             + String(idx)
             + " should be "
-            + String(not bs2.test(idx))
+            + String(not bs2.test(UInt(idx)))
             + " after toggle",
         )
 
@@ -114,14 +114,14 @@ def test_bitset_set_all():
 
     # set random enough pattern in BitSet
     for idx in [0, 1, 10, 19, 22, 37, 56, 63]:
-        bs.set(idx)
+        bs.set(UInt(idx))
 
     bs.set_all()
 
     # assert 1 in all idx
     for idx in range(64):
         assert_true(
-            bs.test(idx),
+            bs.test(UInt(idx)),
             msg="Bit " + String(idx) + " should be True (1) after set all",
         )
 
@@ -240,7 +240,7 @@ def test_bitset_consecutive_operations():
 
     # Set multiple bits and check count
     for i in range(0, 10):
-        bs.set(i)
+        bs.set(UInt(i))
     assert_equal(len(bs), 10, msg="Count should be 10 after setting 10 bits")
 
     # Clear all and verify
@@ -272,7 +272,7 @@ def test_bitset_word_boundaries():
 
     # Set bits across multiple words and check count
     for i in range(60, 70):
-        bs.set(i)
+        bs.set(UInt(i))
 
     assert_equal(
         len(bs),
@@ -575,7 +575,7 @@ def test_bitset_len():
     # 6. Bulk pattern insertion (every 3rd index)
     for i in range(128):
         if i % 3 == 0:
-            bs.set(i)
+            bs.set(UInt(i))
     expected = 43  # floor(128 / 3) + 1
     assert_equal(len(bs), expected, msg="Len: Pattern insertion")
 
@@ -647,7 +647,7 @@ def test_bitset_small_size():
     # Test BitSet with size 8 (byte boundary)
     var bs8 = BitSet[8]()
     for i in range(8):
-        bs8.set(i)
+        bs8.set(UInt(i))
     assert_equal(len(bs8), 8, msg="BitSet[8]: Should have all 8 bits set")
     bs8.clear_all()
     assert_equal(len(bs8), 0, msg="BitSet[8]: Should be empty after clear_all")

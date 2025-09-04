@@ -20,7 +20,7 @@ fn dependent_type[dtype: DType, //, value: Scalar[dtype]]():
 def mutate_span(span: Span[mut=True, Byte]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(i, i + 1)
+            span.swap_elements(UInt(i), UInt(i + 1))
 
 
 def main():

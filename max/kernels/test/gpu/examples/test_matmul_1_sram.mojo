@@ -93,10 +93,10 @@ fn matmul_sram(
         @parameter
         if not full_tile:
             a_val = a[row, offset + localCol] if (
-                row < M and offset + localCol < K
+                row < UInt(M) and offset + localCol < K
             ) else 0.0
         else:
-            a_val = a[row, offset + localCol] if row < M else 0.0
+            a_val = a[row, offset + localCol] if row < UInt(M) else 0.0
         a_shared[localRow * tile_size + localCol] = a_val
 
         # Load B tile into shared memory.
@@ -105,10 +105,10 @@ fn matmul_sram(
         @parameter
         if not full_tile:
             b_val = b[offset + localRow, col] if (
-                col < N and offset + localRow < K
+                col < UInt(N) and offset + localRow < K
             ) else 0.0
         else:
-            b_val = b[offset + localRow, col] if col < N else 0.0
+            b_val = b[offset + localRow, col] if col < UInt(N) else 0.0
         b_shared[localRow * tile_size + localCol] = b_val
 
         barrier()
@@ -124,7 +124,7 @@ fn matmul_sram(
         0, K, VariadicList[Int](tile_size, K_remainder)
     )
 
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         c[Index(row, col)] = result
 
 

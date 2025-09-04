@@ -1180,7 +1180,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
-                        stage_stride_cols=stage_stride_cols,
+                        stage_stride_cols = UInt(stage_stride_cols),
                         cta_group=cta_group,
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
@@ -1226,7 +1226,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols=stage_stride_cols,
+                stage_stride_cols = UInt(stage_stride_cols),
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,

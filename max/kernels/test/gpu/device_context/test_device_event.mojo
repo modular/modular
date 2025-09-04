@@ -31,7 +31,7 @@ fn simple_kernel(
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = input[tid] * multiplier
 
@@ -45,7 +45,7 @@ fn heavy_kernel(
 ):
     """Kernel that does multiple iterations of work."""
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
 
     var value = input[tid]

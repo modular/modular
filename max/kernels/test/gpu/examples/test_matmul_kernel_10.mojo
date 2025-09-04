@@ -303,7 +303,7 @@ fn matmul_naive(
     var x: UInt = global_idx.x
     var y: UInt = global_idx.y
 
-    if x >= m or y >= n:
+    if x >= UInt(m) or y >= UInt(n):
         return
 
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))

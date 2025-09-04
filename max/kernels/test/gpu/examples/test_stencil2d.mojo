@@ -42,7 +42,12 @@ fn stencil2d(
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
-    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
+    if (
+        tidy > 0
+        and tidx > 0
+        and tidy < UInt(num_rows - 1)
+        and tidx < UInt(num_cols - 1)
+    ):
         b[tidy * num_cols + tidx] = (
             coeff0 * a[tidy * num_cols + tidx - 1]
             + coeff1 * a[tidy * num_cols + tidx]
@@ -111,7 +116,12 @@ fn stencil2d_smem(
 
     barrier()
 
-    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
+    if (
+        tidy > 0
+        and tidx > 0
+        and tidy < UInt(num_rows - 1)
+        and tidx < UInt(num_cols - 1)
+    ):
         b[tidy * num_cols + tidx] = (
             coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
             + coeff1 * a_shared[Index(lindex_y, lindex_x)]

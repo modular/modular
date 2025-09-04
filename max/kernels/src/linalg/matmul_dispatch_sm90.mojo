@@ -1391,8 +1391,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
             ),
             mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
             cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
-            num_pipeline_stages=NUM_PIPELINE_STAGES,
-            num_consumer=NUM_CONSUMER,
+            num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
+            num_consumer=UInt(NUM_CONSUMER),
             partitioned_multicast=False,
             pdl_level=pdl_level,
         )

@@ -77,13 +77,13 @@ struct BackToBackMatmulConfig[
     var num_pipeline_stages: UInt
 
     fn num_warps_m(self) -> UInt:
-        return self.block_tile_shape[0] // self.warp_tile_shape[0]
+        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
 
     fn num_warps_n(self) -> UInt:
-        return self.block_tile_shape[1] // self.warp_tile_shape[1]
+        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+        return UInt(self.num_warps_m() * self.num_warps_n() * WARP_SIZE)
 
     fn shared_mem_usage(self, K: UInt) -> Int:
         return (
@@ -94,7 +94,7 @@ struct BackToBackMatmulConfig[
         ) * size_of[src_type]()
 
     fn grid_dim(self, M: UInt) -> IndexList[3]:
-        return Index(1, Int(ceildiv(M, self.block_tile_shape[0])), 1)
+        return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)
 
     fn block_dim(self) -> IndexList[3]:
         return Index(Int(self.num_threads()), 1, 1)
@@ -173,13 +173,13 @@ fn b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M: UInt = D.dim[0]()
-    var L: UInt = B.dim[0 if transpose_b else 1]()
+    var M: UInt = UInt(D.dim[0]())
+    var L: UInt = UInt(B.dim[0 if transpose_b else 1]())
     # var K: UInt = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    alias K: UInt = Int(A.layout.shape[1])
-    alias N: UInt = Int(D.layout.shape[1])
+    alias K: UInt = UInt(Int(A.layout.shape[1]))
+    alias N: UInt = UInt(Int(D.layout.shape[1]))
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -200,15 +200,16 @@ fn b2b_gemm[
     #             D += AB[0:BM,(0:BK)+bk*BK] * C[0:BK,0:BN]
 
     # To avoid recalculating `A*B`:
-    constrained[N == BN]()
+    constrained[N == UInt(BN)]()
     # TODO: lift this restriction
     constrained[K % BK == 0, "K must be an integer multiple of BK"]()
     constrained[BN % BK == 0, "BN must be an integer multiple of BK"]()
     constrained[
-        K == BK, "FIXME: currently, K == BK must be true, but that is a bug."
+        K == UInt(BK),
+        "FIXME: currently, K == BK must be true, but that is a bug.",
     ]()
 
-    var num_l_iter = ceildiv(L, BN)
+    var num_l_iter = ceildiv(L, UInt(BN))
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
@@ -357,7 +358,7 @@ fn b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                ceildiv(K, BK),
+                ceildiv(K, UInt(BK)),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -383,7 +384,7 @@ fn b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                ceildiv(K, BK),
+                ceildiv(K, UInt(BK)),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -434,7 +435,7 @@ fn b2b_gemm[
             c_gmem_iter,
             a_smem_iter,  # ignored
             c_smem_iter,
-            ceildiv(N, BK),
+            ceildiv(N, UInt(BK)),
             num_b_rows=num_rows_b,
         )
 
@@ -552,7 +553,9 @@ fn b2b_gemm[
             @parameter
             for i in range(__type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = __type_of(d_gmem_frag).layout(i)
+                alias dst_static_idx: UInt = UInt(
+                    __type_of(d_gmem_frag).layout(i)
+                )
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -609,7 +612,7 @@ fn multistage_b2b_gemm[
             elementwise_lambda_fn,
         ]
         var smem_use: Int = config.shared_mem_usage(
-            size(Layout(A.layout.shape[1]))
+            UInt(size(Layout(A.layout.shape[1])))
         )
         print("smem_use =", smem_use)
         ctx.enqueue_function[b2b_fn](
@@ -617,7 +620,7 @@ fn multistage_b2b_gemm[
             A,
             B,
             C,
-            grid_dim=config.grid_dim(Int(D.runtime_layout.shape[0])),
+            grid_dim=config.grid_dim(UInt(Int(D.runtime_layout.shape[0]))),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

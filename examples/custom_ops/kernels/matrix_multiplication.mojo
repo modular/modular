@@ -133,7 +133,7 @@ fn naive_matrix_multiplication[
     var dst_reg: c.element_type = 0
 
     # Iterate over the K dimension to compute the dot product.
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         for k_index in range(K):
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
@@ -200,7 +200,7 @@ fn coalescing_matrix_multiplication[
     var dst_reg: c.element_type = 0
 
     # Iterate over the K dimension to compute the dot product.
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         for k_index in range(K):
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]

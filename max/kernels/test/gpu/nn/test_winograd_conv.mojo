@@ -202,7 +202,7 @@ fn winograd_conv2d_gpu_nhwc[
     var w_out = (block_idx.y * block_dim.y + thread_idx.y) * 2
 
     # Check bounds
-    if h_out + 1 >= H_out or w_out + 1 >= W_out:
+    if h_out + 1 >= UInt(H_out) or w_out + 1 >= UInt(W_out):
         return
 
     # Allocate scratch space

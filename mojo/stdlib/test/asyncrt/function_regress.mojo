@@ -101,7 +101,7 @@ fn _vec_func_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
@@ -114,7 +114,7 @@ fn _vec_func_not_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
@@ -129,7 +129,7 @@ fn _vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 

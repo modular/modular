@@ -299,7 +299,7 @@ fn gemv_split_k[
             # of rows in the weight matrix.
             @parameter
             if check_bounds:
-                if i + tile_id_n >= n:
+                if i + tile_id_n >= UInt(n):
                     continue
             var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
             tile_w.store[simd_width](i, 0, rebind[WeightVecType](b_vec))
@@ -313,7 +313,7 @@ fn gemv_split_k[
             # tile_m is 1.
             @parameter
             if check_bounds:
-                if i + tile_id_m >= m:
+                if i + tile_id_m >= UInt(m):
                     continue
             var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 

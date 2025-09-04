@@ -168,10 +168,10 @@ fn test[
 
     alias config = MHAConfig(
         qkv_type,
-        num_heads,
-        depth,
-        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
-        num_pipeline_stages=4 if (
+        UInt(num_heads),
+        UInt(depth),
+        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
+        num_pipeline_stages=UInt(4) if (
             ctx.default_device_info is H100 or ctx.default_device_info is B200
         ) else 2,
     )
@@ -221,9 +221,9 @@ fn test[
 
     alias config_baseline = MHAConfig(
         qkv_type,
-        num_heads,
-        depth,
-        BK=OptionalReg[UInt](128 // size_of[qkv_type]()),
+        UInt(num_heads),
+        UInt(depth),
+        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )

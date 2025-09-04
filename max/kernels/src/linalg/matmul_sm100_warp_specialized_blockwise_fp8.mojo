@@ -232,21 +232,21 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, a_gmem_slice_coord),
+            (UInt(UInt(iter_idx) * BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, b_gmem_slice_coord),
+            (UInt(UInt(iter_idx) * BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[stage],
-            (work_tile_coord[0] * BM, UInt(iter_idx)),
+            (UInt(work_tile_coord[0] * BM), UInt(iter_idx)),
         )
 
 
@@ -365,8 +365,8 @@ fn multi_stage_reg_epilogue[
             c_tma_op.async_store(
                 c_smem_split,
                 (
-                    coord_n,
-                    work_tile_coord[0] * BM,
+                    UInt(coord_n),
+                    UInt(work_tile_coord[0] * BM),
                 ),
             )
             c_tma_op.commit_group()
@@ -989,8 +989,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % cta_group,
-        rank_m // cta_group,
+        UInt(rank_m % cta_group),
+        UInt(rank_m // cta_group),
         rank_n,
     )  # v,m,n
 
@@ -1127,7 +1127,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
                         ),
-                        stage_stride_cols=stage_stride_cols,
+                        stage_stride_cols = UInt(stage_stride_cols),
                     ](
                         tmem_addr,
                         a_smem,
@@ -1138,7 +1138,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_op,
                         elect_one_warp,
                         0,
-                        accum_index,
+                        UInt(accum_index),
                     )
                     consumer_phase.step()
 
@@ -1207,7 +1207,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     consumer_phase,
                     work_tile_coord=(UInt(work_info.m), UInt(work_info.n)),
                     elect_one_warp=elect_one_warp,
-                    stage_stride_cols=stage_stride_cols,
+                    stage_stride_cols=UInt(stage_stride_cols),
                     k_iter=k_iter,
                     problem_shape=problem_shape,
                 )
@@ -1437,7 +1437,7 @@ fn blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         cta_group=cta_group,
         num_pipeline_stages=pipeline_stages,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        num_accum_pipeline_stages=max_accum_pipeline_stages,
+        num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
     ]

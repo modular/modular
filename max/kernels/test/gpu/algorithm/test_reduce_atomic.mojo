@@ -43,7 +43,7 @@ fn reduce(
 ):
     var tid = global_idx.x
 
-    if tid >= len:
+    if tid >= UInt(len):
         return
 
     _ = Atomic.fetch_add(res_add, vec[tid])

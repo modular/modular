@@ -65,7 +65,9 @@ def execute_kv_cache_ragged_rope[
 
     alias CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        KVCacheStaticParams(
+            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
+        ),
     ]
     var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size + 1)

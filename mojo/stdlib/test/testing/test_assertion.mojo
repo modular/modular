@@ -230,13 +230,17 @@ def test_assert_equal_stringslice():
     str3 = StaticString("This is mojo")
 
     fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
-        return StaticString(ptr=value.unsafe_ptr() + start, length=end - start)
+        return StaticString(
+            ptr=value.unsafe_ptr() + start,
+            length=UInt(end - start),
+        )
 
     fn _build(
         read value: String, start: Int, end: Int
     ) -> StringSlice[__origin_of(value)]:
         return StringSlice[__origin_of(value)](
-            ptr=value.unsafe_ptr() + start, length=end - start
+            ptr=value.unsafe_ptr() + start,
+            length=UInt(end - start),
         )
 
     l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]

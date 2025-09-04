@@ -1402,13 +1402,13 @@ def test_reserve():
 
 def test_uninit_ctor():
     var hello_len = len("hello")
-    var s = String(unsafe_uninit_length=hello_len)
+    var s = String(unsafe_uninit_length=UInt(hello_len))
     memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
     assert_equal(s, "hello")
 
     # Resize with uninitialized memory.
     var s2 = String()
-    s2.resize(unsafe_uninit_length=hello_len)
+    s2.resize(unsafe_uninit_length=UInt(hello_len))
     memcpy(s2.unsafe_ptr_mut(), StaticString("hello").unsafe_ptr(), hello_len)
     assert_equal(s2, "hello")
     assert_equal(s2._is_inline(), True)
@@ -1523,7 +1523,7 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
+    alias expected_capacity = UInt((Int(String.INLINE_CAPACITY) * 2 + 7) & ~7)
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._is_inline(), False)
 

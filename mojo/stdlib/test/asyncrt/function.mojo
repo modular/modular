@@ -58,7 +58,7 @@ fn vec_func(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 

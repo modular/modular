@@ -136,7 +136,7 @@ fn vector_addition_vector(
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < lhs_tensor.size:
+    if global_tid < UInt(lhs_tensor.size):
         out_tensor.ptr[global_tid] = (
             lhs_tensor.ptr[global_tid] + rhs_tensor.ptr[global_tid]
         )
@@ -150,7 +150,7 @@ fn vector_addition_all_unsafe(
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < size:
+    if global_tid < UInt(size):
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]
 
 
@@ -162,7 +162,7 @@ fn vector_addition_tensor(
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < size:
+    if global_tid < UInt(size):
         out_tensor[global_tid] = (
             lhs_tensor.ptr[global_tid] + rhs_tensor.ptr[global_tid]
         )

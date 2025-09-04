@@ -62,7 +62,9 @@ fn tma_swizzle_load_kernel[
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy(
-            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
+            tile,
+            mbar[0],
+            (UInt(block_idx.x * tileN), UInt(block_idx.y * tileM)),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()

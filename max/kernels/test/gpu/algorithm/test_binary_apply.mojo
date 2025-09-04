@@ -25,7 +25,7 @@ fn vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = op(in0[tid], in1[tid])
 

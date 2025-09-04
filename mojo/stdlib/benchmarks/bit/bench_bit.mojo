@@ -65,7 +65,7 @@ fn next_power_of_two_uint_v1(val: UInt) -> UInt:
     if unlikely(val == 0):
         return 1
 
-    return 1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1)))
+    return UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1))))
 
 
 fn next_power_of_two_uint_v2(val: UInt) -> UInt:
@@ -78,16 +78,22 @@ fn next_power_of_two_uint_v2(val: UInt) -> UInt:
 
 
 fn next_power_of_two_uint_v3(val: UInt) -> UInt:
-    return 1 << (
-        bit_width_of[UInt]()
-        - count_leading_zeros(Int(val - UInt(likely(val > 0))))
+    return UInt(
+        1
+        << (
+            bit_width_of[UInt]()
+            - count_leading_zeros(Int(val - UInt(likely(val > 0))))
+        )
     )
 
 
 fn next_power_of_two_uint_v4(val: UInt) -> UInt:
-    return 1 << (
-        bit_width_of[UInt]()
-        - count_leading_zeros(Int((val | UInt(unlikely(val == 0))) - 1))
+    return UInt(
+        1
+        << (
+            bit_width_of[UInt]()
+            - count_leading_zeros(Int((val | UInt(unlikely(val == 0))) - 1))
+        )
     )
 
 
@@ -125,7 +131,7 @@ fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
     fn call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
-                var result = func(_values.unsafe_get(i))
+                var result = func(UInt(_values.unsafe_get(i)))
                 keep(result)
 
     b.iter[call_fn]()

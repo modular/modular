@@ -67,7 +67,7 @@ fn block_reduce[
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < max_warps_per_block:
+    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
         var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )

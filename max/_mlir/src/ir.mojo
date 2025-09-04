@@ -173,7 +173,7 @@ struct Context(Copyable, Defaultable, Movable):
         var result = _c.IR.mlirContextGetOrLoadDialect(
             self.c,
             StaticString(
-                ptr=dialect_name.unsafe_ptr(), length=len(dialect_name)
+                ptr=dialect_name.unsafe_ptr(), length=UInt(len(dialect_name))
             ),
         )
         return Optional(Dialect(result)) if result.ptr else None
@@ -186,7 +186,8 @@ struct Context(Copyable, Defaultable, Movable):
 
     fn is_registered_operation(self, opname: String) -> Bool:
         var result = _c.IR.mlirContextIsRegisteredOperation(
-            self.c, StaticString(ptr=opname.unsafe_ptr(), length=len(opname))
+            self.c,
+            StaticString(ptr=opname.unsafe_ptr(), length=UInt(len(opname))),
         )
         return result
 
@@ -221,7 +222,7 @@ struct Location(Copyable, Movable, Stringable, Writable):
     fn __init__(out self, ctx: Context, filename: String, line: Int, col: Int):
         self.c = _c.IR.mlirLocationFileLineColGet(
             ctx.c,
-            StaticString(ptr=filename.unsafe_ptr(), length=len(filename)),
+            StaticString(ptr=filename.unsafe_ptr(), length=UInt(len(filename))),
             line,
             col,
         )
@@ -279,7 +280,8 @@ struct Module(Copyable, Movable, Stringable, Writable):
     fn parse(ctx: Context, module: String) -> Self:
         # TODO: how can this fail?
         var c = _c.IR.mlirModuleCreateParse(
-            ctx.c, StaticString(ptr=module.unsafe_ptr(), length=len(module))
+            ctx.c,
+            StaticString(ptr=module.unsafe_ptr(), length=UInt(len(module))),
         )
         return Self(c)
 
@@ -377,7 +379,8 @@ struct Operation(Copyable, Movable, Stringable, Writable):
         successors: _OpBuilderList[Block] = _OpBuilderList[Block](),
     ):
         var state = _c.IR.mlirOperationStateGet(
-            StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
+            StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name))),
+            location.c,
         )
         Self._init_op_state(
             state,
@@ -404,7 +407,8 @@ struct Operation(Copyable, Movable, Stringable, Writable):
         successors: _OpBuilderList[Block] = _OpBuilderList[Block](),
     ) raises:
         var state = _c.IR.mlirOperationStateGet(
-            StaticString(ptr=name.unsafe_ptr(), length=len(name)), location.c
+            StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name))),
+            location.c,
         )
         Self._init_op_state(
             state,
@@ -474,8 +478,10 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn parse(ctx: Context, source: String, source_name: String) raises -> Self:
         var result = _c.IR.mlirOperationCreateParse(
             ctx.c,
-            StaticString(ptr=source.unsafe_ptr(), length=len(source)),
-            StaticString(ptr=source_name.unsafe_ptr(), length=len(source_name)),
+            StaticString(ptr=source.unsafe_ptr(), length=UInt(len(source))),
+            StaticString(
+                ptr=source_name.unsafe_ptr(), length=UInt(len(source_name))
+            ),
         )
         if not result.ptr:
             raise "Operation.parse failed"
@@ -553,26 +559,26 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn set_inherent_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetInherentAttributeByName(
             self.c,
-            StaticString(ptr=name.unsafe_ptr(), length=len(name)),
+            StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name))),
             attr.c,
         )
 
     fn get_inherent_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetInherentAttributeByName(
-            self.c, StaticString(ptr=name.unsafe_ptr(), length=len(name))
+            self.c, StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name)))
         )
         return result
 
     fn set_discardable_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetDiscardableAttributeByName(
             self.c,
-            StaticString(ptr=name.unsafe_ptr(), length=len(name)),
+            StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name))),
             attr.c,
         )
 
     fn get_discardable_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetDiscardableAttributeByName(
-            self.c, StaticString(ptr=name.unsafe_ptr(), length=len(name))
+            self.c, StaticString(ptr=name.unsafe_ptr(), length=UInt(len(name)))
         )
         return result
 
@@ -606,7 +612,9 @@ struct Identifier(Copyable, Movable, Stringable):
     fn __init__(out self, ctx: Context, identifier: String):
         self.c = _c.IR.mlirIdentifierGet(
             ctx.c,
-            StaticString(ptr=identifier.unsafe_ptr(), length=len(identifier)),
+            StaticString(
+                ptr=identifier.unsafe_ptr(), length=UInt(len(identifier))
+            ),
         )
 
     fn __str__(self) -> String:
@@ -629,7 +637,7 @@ struct Type(Copyable, Movable, Stringable, Writable):
     @staticmethod
     fn parse(ctx: Context, s: String) raises -> Self:
         var result = _c.IR.mlirTypeParseGet(
-            ctx.c, StaticString(ptr=s.unsafe_ptr(), length=len(s))
+            ctx.c, StaticString(ptr=s.unsafe_ptr(), length=UInt(len(s)))
         )
         if not result.ptr:
             raise "Failed to parse type: " + s
@@ -717,7 +725,7 @@ struct Attribute(Copyable, Movable, Stringable, Writable):
     @staticmethod
     fn parse(ctx: Context, attr: String) raises -> Self:
         var result = _c.IR.mlirAttributeParseGet(
-            ctx.c, StaticString(ptr=attr.unsafe_ptr(), length=len(attr))
+            ctx.c, StaticString(ptr=attr.unsafe_ptr(), length=UInt(len(attr)))
         )
         if not result.ptr:
             raise "Failed to parse attribute:" + attr

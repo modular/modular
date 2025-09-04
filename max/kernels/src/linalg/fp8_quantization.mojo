@@ -797,6 +797,6 @@ fn convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target = get_gpu_target()
     ]()
 
-    _elementwise_impl_gpu[func=convert_kernel, simd_width=target_simd_width](
-        IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context
-    )
+    _elementwise_impl_gpu[
+        func=convert_kernel, simd_width = UInt(target_simd_width)
+    ](IndexList[2](input_buffer.dim[0](), input_buffer.dim[1]()), context)

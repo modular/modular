@@ -85,7 +85,7 @@ fn ring_reduce(
             barrier()
 
             var i = thread_id
-            while i < chunk_elems:
+            while i < UInt(chunk_elems):
                 dst[i] = dst[i] + src[i]
                 i += num_threads
             barrier()

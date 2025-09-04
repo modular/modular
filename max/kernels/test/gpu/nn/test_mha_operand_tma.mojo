@@ -655,7 +655,7 @@ def main():
         for i in range(6, 9):
             alias head_size = 1 << i  # 64, 128, 256
             alias kv_params = KVCacheStaticParams(
-                num_heads=8, head_size=head_size
+                num_heads=8, head_size=UInt(head_size)
             )
 
             @parameter

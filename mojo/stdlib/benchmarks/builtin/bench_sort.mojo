@@ -88,7 +88,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_sort_list(mut b: Bencher) raises:
             seed(1)
-            var list = List(length=count, fill=Scalar[dtype]())
+            var list = List(length=UInt(count), fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -106,7 +106,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_small_sort(mut b: Bencher) raises:
             seed(1)
-            var list = List(length=count, fill=Scalar[dtype]())
+            var list = List(length=UInt(count), fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -124,7 +124,7 @@ fn bench_tiny_list_sort[dtype: DType](mut m: Bench) raises:
         @parameter
         fn bench_insertion_sort(mut b: Bencher) raises:
             seed(1)
-            var list = List(length=count, fill=Scalar[dtype]())
+            var list = List(length=UInt(count), fill=Scalar[dtype]())
 
             @always_inline
             @parameter
@@ -159,7 +159,7 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=Scalar[dtype]())
+        var list = List(length=UInt(count), fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -177,7 +177,7 @@ fn bench_small_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_insertion_sort(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=Scalar[dtype]())
+        var list = List(length=UInt(count), fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -209,7 +209,7 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=Scalar[dtype]())
+        var list = List(length=UInt(count), fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -227,7 +227,7 @@ fn bench_large_list_sort[dtype: DType](mut m: Bench, count: Int) raises:
     @parameter
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=Scalar[dtype]())
+        var list = List(length=UInt(count), fill=Scalar[dtype]())
 
         @always_inline
         @parameter
@@ -260,7 +260,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     @parameter
     fn bench_sort_list(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=UInt8())
+        var list = List(length=UInt(count), fill=UInt8())
 
         @always_inline
         @parameter
@@ -278,7 +278,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
     @parameter
     fn bench_heap_sort(mut b: Bencher) raises:
         seed(1)
-        var list = List(length=count, fill=UInt8())
+        var list = List(length=UInt(count), fill=UInt8())
 
         @always_inline
         @parameter

@@ -60,7 +60,8 @@ struct StringAttr(Copyable, DialectAttribute, Movable):
         var result = _c.BuiltinAttributes.mlirStringAttrGet(
             self.ctx.c,
             StaticString(
-                ptr=self.value.unsafe_ptr(), length=self.value.byte_length()
+                ptr=self.value.unsafe_ptr(),
+                length=UInt(self.value.byte_length()),
             ),
         )
         return result

@@ -25,7 +25,7 @@ fn p2p_copy_kernel(
     num_elements: Int,
 ):
     var tid = global_idx.x
-    if tid < num_elements:
+    if tid < UInt(num_elements):
         dst[tid] = src[tid]
 
 

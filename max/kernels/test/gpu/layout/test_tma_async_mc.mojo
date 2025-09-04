@@ -89,7 +89,7 @@ fn test_tma_mcast_load_kernel[
             tma_tile.async_multicast_load(
                 tile,
                 mbar[0],
-                (block_idx.x * tileN, block_idx.y * tileM),
+                (UInt(block_idx.x * tileN), UInt(block_idx.y * tileM)),
                 multicast_mask.cast[DType.uint16](),
             )
 

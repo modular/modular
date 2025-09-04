@@ -49,7 +49,7 @@ fn ring_bcast(
     if mype == npes - 1:
         return
 
-    shmem_put(data, data, nelem, peer)
+    shmem_put(data, data, UInt(nelem), peer)
     shmem_fence()
     shmem_signal_op(psync, 1, SHMEM_SIGNAL_SET, peer)
 

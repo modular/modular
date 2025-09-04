@@ -65,7 +65,9 @@ fn test_tma_load_kernel[
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy(
-            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
+            tile,
+            mbar[0],
+            (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM)),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -117,7 +119,9 @@ fn test_tma_multiple_loads_kernel[
         if thread_idx.x == 0:
             mbar[0].expect_bytes(expected_bytes)
             tma_tile.async_copy(
-                tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
+                tile,
+                mbar[0],
+                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
             )
         # Ensure all threads sees initialized mbarrier
         barrier()
@@ -230,7 +234,9 @@ fn test_tma_async_store_kernel[
     fence_async_view_proxy()
 
     if thread_idx.x == 0:
-        tma_tile.async_store(tile, (block_idx.x * tileN, block_idx.y * tileM))
+        tma_tile.async_store(
+            tile, (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM))
+        )
         cp_async_bulk_commit_group()
 
     cp_async_bulk_wait_group[0]()
@@ -264,7 +270,9 @@ fn test_tma_async_multiple_store_kernel[
         fence_async_view_proxy()
 
         if thread_idx.x == 0:
-            tma_tile.async_store(tile, (UInt(i) * tileN, block_idx.y * tileM))
+            tma_tile.async_store(
+                tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
+            )
             cp_async_bulk_commit_group()
 
     cp_async_bulk_wait_group[0]()
@@ -362,7 +370,7 @@ fn test_tma_async_reduce_kernel[
 
     if thread_idx.x == 0:
         tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
-            tile, (block_idx.x * tileN, block_idx.y * tileM)
+            tile, (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM))
         )
         cp_async_bulk_commit_group()
 
@@ -398,7 +406,7 @@ fn test_tma_async_multiple_reduce_kernel[
 
         if thread_idx.x == 0:
             tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
-                tile, (UInt(i) * tileN, block_idx.y * tileM)
+                tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
             )
             cp_async_bulk_commit_group()
 
@@ -527,10 +535,14 @@ fn test_tma_loads_two_buffers_kernel[
         if thread_idx.x == 0:
             mbar[0].expect_bytes(expected_bytes * 2)
             a_tma_tile.async_copy(
-                a_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
+                a_tile,
+                mbar[0],
+                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
             )
             b_tma_tile.async_copy(
-                b_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
+                b_tile,
+                mbar[0],
+                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -682,10 +694,14 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         if thread_idx.x == 0:
             mbar[0].expect_bytes(expected_bytes * 2)
             a_tma_src_tile.async_copy(
-                a_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
+                a_tile,
+                mbar[0],
+                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
             )
             b_tma_src_tile.async_copy(
-                b_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
+                b_tile,
+                mbar[0],
+                (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM)),
             )
 
         # Ensure all threads sees initialized mbarrier
@@ -698,10 +714,10 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
         if thread_idx.x == 0:
             a_tma_dst_tile.async_store(
-                a_tile, (UInt(i) * tileN, block_idx.y * tileM)
+                a_tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
             )
             b_tma_dst_tile.async_store(
-                b_tile, (UInt(i) * tileN, block_idx.y * tileM)
+                b_tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
             )
             cp_async_bulk_commit_group()
 

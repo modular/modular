@@ -24,7 +24,7 @@ fn id(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= UInt(len):
         return
     output[tid] = Float32(BFloat16(input[tid]))
 
