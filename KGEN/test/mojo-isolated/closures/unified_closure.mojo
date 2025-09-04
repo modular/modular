@@ -290,7 +290,7 @@ fn bindIt(x: Int, y: Int) -> Int:
 # CHECK: kgen.witness "__call__" : !lit.generator<<"my_param": !AnyType>
 # CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::@"bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) -> !kgen.none
 # CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"bindIt()", "myclosure", #kgen.closure_method<call>
-# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::@"bindIt()" "myclosure"> #kgen.closure<@{{.*}}::@"bindIt()" "myclosure">>>
+# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::@"bindIt()" "myclosure"> CAPTURES>>
 
 
 # CHECK: lit.file_module
