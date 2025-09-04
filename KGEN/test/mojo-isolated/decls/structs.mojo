@@ -86,7 +86,7 @@ struct IntPairWrapper(ImplicitlyCopyable, Movable):
 # CHECK-LABEL: lit.fn @"copy
 # CHECK-SAME: (%self: !lit.ref<!IntPairWrapper{{.*}}> read_mem,
 # CHECK-SAME: %__result__: !lit.ref<!IntPairWrapper{{.*}}> byref_result)
-# CHECK-NEXT: lit.call {{.*}}@ExplicitlyCopyable::@"copy($0){{.*}}(%self, %__result__)
+# CHECK-NEXT: lit.call {{.*}}@Copyable::@"copy($0){{.*}}(%self, %__result__)
 
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth

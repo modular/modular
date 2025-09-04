@@ -1290,7 +1290,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
       emitError(exprLoc) << valueType << " is not "
                          << (allowExplicitCopy ? "explicitly" : "implicitly")
                          << " copyable because it does not conform to '"
-                         << (allowExplicitCopy ? "Explicitly" : "Implicitly")
+                         << (allowExplicitCopy ? "" : "Implicitly")
                          << "Copyable'" << value.expr->getRange();
     }
     return {};

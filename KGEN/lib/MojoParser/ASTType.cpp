@@ -296,8 +296,7 @@ bool ASTType::isCopyable(llvm::SMLoc loc, SharedState &shared,
   if (isTrivial(loc, shared))
     return true;
 
-  StringRef traitName =
-      isImplicit ? "ImplicitlyCopyable" : "ExplicitlyCopyable";
+  StringRef traitName = isImplicit ? "ImplicitlyCopyable" : "Copyable";
 
   // Check whether the type conforms to `ImplicitlyCopyable` trait.
   ASTDecl *traitDecl =
@@ -318,7 +317,7 @@ bool ASTType::isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
 }
 
 /// Return true if this type is explicitly copyable, either because it is
-/// trivial or conforms to ExplicitlyCopyable trait. Note: this resolves the
+/// trivial or conforms to the Copyable trait. Note: this resolves the
 /// body of a struct type.
 bool ASTType::isExplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const {
   return isCopyable(loc, shared, /*isImplicit=*/false);

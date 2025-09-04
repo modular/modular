@@ -1257,9 +1257,9 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                              SpecialFunctionInfo::getKind(name))) {
         continue;
       }
-      // MLIR types can conform to the `copy()` method of `ExplicitlyCopyable`.
-      // NOTE: This only works for `ExplicitlyCopyable` because `__MLIRType`
-      //       only explicitly conforms to `ExplicitlyCopyable`, so its OK that
+      // MLIR types can conform to the `copy()` method of `Copyable`.
+      // NOTE: This only works for `Copyable` because `__MLIRType`
+      //       only explicitly conforms to `Copyable`, so its OK that
       //       this doesn't validate the signature of this `copy()` method.
       if (name == "copy") {
         continue;

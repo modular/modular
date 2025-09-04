@@ -2711,7 +2711,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
     synthesizeTrivialFlagIfNeeded("__moveinit__");
   }
-  if (conformsToTrait("ExplicitlyCopyable")) {
+  if (conformsToTrait("Copyable")) {
     // TODO: this should synthesize a keyword only copy argument:
     // __copyinit__(out self, *, copy=others)
     if (!shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
