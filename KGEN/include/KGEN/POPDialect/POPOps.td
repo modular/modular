@@ -403,10 +403,12 @@ class POP_BitwiseOp<string mnemonic, list<Trait> traits = []> :
         Commutative,
         SameOperandsAndResultType
       ]> {
-
-  let arguments = (ins UnboundOrBoolOrIndexOrIntegerSIMD:$lhs,
-                       UnboundOrBoolOrIndexOrIntegerSIMD:$rhs);
-  let results = (outs UnboundOrBoolOrIndexOrIntegerSIMD:$result);
+  // (TODO) MOCO-2374 Relax type restrictions here so that we don't
+  // fail verification before types are fully concretized before
+  // elaboration. Move the type verification during pop to llvm lowering.
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs)";
   let hasFolder = 1;
