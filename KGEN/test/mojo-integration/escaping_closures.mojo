@@ -9,7 +9,7 @@ from sys import argv
 
 
 @fieldwise_init("implicit")
-struct MemType(Copyable):
+struct MemType(ImplicitlyCopyable):
     var member: Int
 
     fn __add__(self, other: MemType) -> MemType:
@@ -25,7 +25,7 @@ fn makes_escaping_closure(m: Int) -> fn (n: Int) escaping -> Int:
 
 @fieldwise_init
 @register_passable
-struct Foo[a: Int](Copyable):
+struct Foo[a: Int](ImplicitlyCopyable):
     var b: Int
 
     fn get(self) -> Int:
@@ -58,7 +58,7 @@ struct Bar[C: Int, D: Int]:
 
 @fieldwise_init
 @register_passable
-struct Bat[A: Int](Copyable, Movable):
+struct Bat[A: Int](ImplicitlyCopyable, Movable):
     var b: Int
 
     fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
@@ -109,7 +109,7 @@ fn captureCallable[
 
 @fieldwise_init
 @register_passable
-struct C[B: DType](Copyable):
+struct C[B: DType](ImplicitlyCopyable):
     var b: Int
 
     fn get(self) -> Int:

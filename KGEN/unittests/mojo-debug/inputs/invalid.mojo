@@ -6,7 +6,7 @@
 
 
 @fieldwise_init
-struct A(Copyable, Movable):
+struct A(ImplicitlyCopyable, Movable):
     var x: UnsafePointer[Scalar[DType.invalid]]
 
     fn __init__(out self):

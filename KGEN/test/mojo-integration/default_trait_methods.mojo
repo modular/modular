@@ -121,7 +121,7 @@ fn generic_trait_caller[T: Foo](x: T):
 
 
 trait AATrait1:
-    alias X: Copyable
+    alias X: ImplicitlyCopyable
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In AATrait1.zork")
@@ -129,7 +129,7 @@ trait AATrait1:
 
 
 trait AATrait2:
-    alias X: Copyable & Movable
+    alias X: ImplicitlyCopyable & Movable
 
     fn zork(self, x: Self.X) -> Self.X:
         print("In AATrait2.zork")

@@ -6,7 +6,7 @@
 
 
 @fieldwise_init
-struct Foo(Copyable, Movable):
+struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
     var y: String
     var z: Int

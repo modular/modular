@@ -27,7 +27,7 @@ alias Traits123 = Trait1 & Trait2 & Trait3
 
 
 @fieldwise_init
-struct Struct123(Copyable, Movable, Trait3, Traits12):
+struct Struct123(ImplicitlyCopyable, Movable, Trait3, Traits12):
     fn f1(self):
         print("f1")
 
@@ -63,7 +63,7 @@ fn use123[T: Traits123](x: T):
 
 # conditional method
 @fieldwise_init
-struct Wrapper[T: AnyType](Copyable, Movable):
+struct Wrapper[T: AnyType](ImplicitlyCopyable, Movable):
     fn cond1[T: Trait1](self: Wrapper[T], other: Wrapper[T]):
         print("cond")
 
