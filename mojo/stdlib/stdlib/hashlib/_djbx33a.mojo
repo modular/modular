@@ -196,14 +196,10 @@ struct DJBX33A(Hasher):
     fn __init__(out self):
         self._value = 0
 
-    fn _update_with_bytes(
-        mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
-        length: Int,
-    ):
-        self._value = _HASH_UPDATE(self._value, hash(data, length))
+    fn _update_with_bytes(mut self, data: Span[UInt8]):
+        self._value = _HASH_UPDATE(
+            self._value, hash(data.unsafe_ptr(), len(data))
+        )
 
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         self._value = _HASH_UPDATE(self._value, _hash_simd(value))
