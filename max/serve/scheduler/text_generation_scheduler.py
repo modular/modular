@@ -17,22 +17,20 @@ import time
 from typing import Union
 
 from max.interfaces import (
+    MAXPullQueue,
+    MAXPushQueue,
     Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
     drain_queue,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
-from max.serve.config import Settings
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .base import Scheduler
 from .text_batch_constructor import (
@@ -59,32 +57,21 @@ class TokenGenerationScheduler(Scheduler):
             TextGenerationOutput,
         ],
         *,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
+        request_queue: MAXPullQueue[
+            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+        ],
+        response_queue: MAXPushQueue[
+            dict[RequestID, SchedulerResult[TextGenerationOutput]]
+        ],
+        cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
-        self.request_q = ZmqPullSocket[
-            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-        ](
-            endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(
-                tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-            ),
-        )
-        self.response_q = ZmqPushSocket[
-            dict[RequestID, SchedulerResult[TextGenerationOutput]]
-        ](
-            endpoint=response_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
-        self.cancel_q = ZmqPullSocket[list[str]](
-            endpoint=cancel_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(list[str]),
-        )
+        self.request_queue = request_queue
+        self.response_queue = response_queue
+        self.cancel_queue = cancel_queue
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
@@ -94,7 +81,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
 
     def _retrieve_pending_requests(self) -> None:
-        self.batch_constructor.ce_reqs |= dict(drain_queue(self.request_q))
+        self.batch_constructor.ce_reqs |= dict(drain_queue(self.request_queue))
 
     def run_iteration(self) -> None:
         """The Scheduler routine that creates batches and schedules them on GPU"""
@@ -134,8 +121,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _handle_cancelled_requests(self) -> None:
         release_cancelled_requests(
-            self.cancel_q,
-            self.response_q,
+            self.cancel_queue,
+            self.response_queue,
             self.batch_constructor.tg_reqs,
             self.pipeline,
         )
@@ -170,21 +157,28 @@ class TokenGenerationScheduler(Scheduler):
         )
 
         # send the responses to the API process
-        self.response_q.put_nowait(
-            {
-                req_id: SchedulerResult.create(response)
-                for req_id, response in responses.items()
-            }
-        )
+        if responses:
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.create(response)
+                    for req_id, response in responses.items()
+                }
+            )
 
 
 def load_text_generation_scheduler(
-    settings: Settings,
     pipeline: Pipeline[
         TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
+    request_queue: MAXPullQueue[
+        tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+    ],
+    response_queue: MAXPushQueue[
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    ],
+    cancel_queue: MAXPullQueue[list[RequestID]],
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
@@ -199,7 +193,7 @@ def load_text_generation_scheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         paged_manager=paged_manager,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
     )

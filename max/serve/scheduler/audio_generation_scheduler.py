@@ -24,16 +24,15 @@ from typing import Any
 from max.interfaces import (
     AudioGenerator,
     AudioGeneratorOutput,
+    MAXPullQueue,
+    MAXPushQueue,
     RequestID,
     SchedulerResult,
     drain_queue,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
 from max.profiler import Tracer
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -203,30 +202,19 @@ class AudioGenerationScheduler(Scheduler):
         scheduler_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
+        request_queue: MAXPullQueue[tuple[RequestID, TTSContext]],
+        response_queue: MAXPushQueue[
+            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+        ],
+        cancel_queue: MAXPullQueue[list[RequestID]],
         paged_manager: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
-        self.request_q = ZmqPullSocket[tuple[RequestID, TTSContext]](
-            endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(tuple[RequestID, TTSContext]),
-        )
-
-        self.response_q = ZmqPushSocket[
-            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
-        ](
-            endpoint=response_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
-
-        self.cancel_q = ZmqPullSocket[list[RequestID]](
-            endpoint=cancel_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(list[RequestID]),
-        )
+        self.request_queue = request_queue
+        self.response_queue = response_queue
+        self.cancel_queue = cancel_queue
 
         # Initialize Scheduler state.
         self.pending_reqs: deque[tuple[RequestID, TTSContext]] = deque()
@@ -245,7 +233,7 @@ class AudioGenerationScheduler(Scheduler):
         )
 
     def _retrieve_pending_requests(self) -> None:
-        self.pending_reqs.extend(drain_queue(self.request_q))
+        self.pending_reqs.extend(drain_queue(self.request_queue))
 
     def _create_tg_batch(
         self,
@@ -313,7 +301,7 @@ class AudioGenerationScheduler(Scheduler):
         )
 
         # send the responses to the API process
-        self.response_q.put_nowait(
+        self.response_queue.put_nowait(
             {
                 req_id: SchedulerResult.create(response)
                 for req_id, response in responses.items()
@@ -389,8 +377,8 @@ class AudioGenerationScheduler(Scheduler):
         )
 
         release_cancelled_requests(
-            self.cancel_q,
-            self.response_q,
+            self.cancel_queue,
+            self.response_queue,
             self.decode_reqs,
             self.pipeline,
         )

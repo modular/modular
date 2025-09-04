@@ -19,13 +19,13 @@ import uuid
 from typing import Union
 
 from max.interfaces import (
+    MAXPullQueue,
+    MAXPushQueue,
     Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.interfaces.queue import drain_queue
 from max.nn.kv_cache import (
@@ -37,10 +37,8 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
-from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
 from .base import Scheduler
@@ -69,9 +67,13 @@ class DecodeScheduler(Scheduler):
         scheduler_config: TokenGenerationSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
+        request_queue: MAXPullQueue[
+            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+        ],
+        response_queue: MAXPushQueue[
+            dict[RequestID, SchedulerResult[TextGenerationOutput]]
+        ],
+        cancel_queue: MAXPullQueue[list[RequestID]],
         dispatcher_client: DispatcherClient,
     ) -> None:
         # Initialize Pipeline and Config
@@ -80,26 +82,9 @@ class DecodeScheduler(Scheduler):
         self.paged_manager = paged_manager
 
         # Initialize Queues
-        self.request_pull_socket = ZmqPullSocket[
-            tuple[str, Union[TextContext, TextAndVisionContext]]
-        ](
-            endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(
-                tuple[str, Union[TextContext, TextAndVisionContext]]
-            ),
-        )
-        self.response_push_socket = ZmqPushSocket[
-            dict[str, SchedulerResult[TextGenerationOutput]]
-        ](
-            endpoint=response_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
-        self.cancel_pull_socket = ZmqPullSocket[list[RequestID]](
-            endpoint=cancel_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(
-                list[RequestID],
-            ),
-        )
+        self.request_queue = request_queue
+        self.response_queue = response_queue
+        self.cancel_queue = cancel_queue
 
         self.dispatcher_client = dispatcher_client
         self.dispatcher_client.register_reply_handler(
@@ -153,7 +138,7 @@ class DecodeScheduler(Scheduler):
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
         output = context.to_generation_output()
-        self.response_push_socket.put_nowait(
+        self.response_queue.put_nowait(
             {message.id: SchedulerResult.create(output)}
         )
 
@@ -207,7 +192,7 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self.pending_reqs |= dict(drain_queue(self.request_pull_socket))
+        self.pending_reqs |= dict(drain_queue(self.request_queue))
 
         while (
             self.pending_reqs
@@ -246,13 +231,13 @@ class DecodeScheduler(Scheduler):
     def _handle_cancelled_requests(self):
         while True:
             try:
-                for request_id in self.cancel_pull_socket.get_nowait():
+                for request_id in self.cancel_queue.get_nowait():
                     # Remove it from the active batch.
                     if request_id in self.batch_constructor.tg_reqs:
                         del self.batch_constructor.tg_reqs[request_id]
 
                         # Send the cancelled result back to the response q
-                        self.response_push_socket.put_nowait(
+                        self.response_queue.put_nowait(
                             {request_id: SchedulerResult.cancelled()}
                         )
 
@@ -267,7 +252,7 @@ class DecodeScheduler(Scheduler):
                         )
 
                         # Send the cancelled result back to the response q
-                        self.response_push_socket.put_nowait(
+                        self.response_queue.put_nowait(
                             {request_id: SchedulerResult.cancelled()}
                         )
 
@@ -346,7 +331,7 @@ class DecodeScheduler(Scheduler):
         )
 
         # send the responses to the API process
-        self.response_push_socket.put_nowait(
+        self.response_queue.put_nowait(
             {
                 req_id: SchedulerResult.create(response)
                 for req_id, response in responses.items()
@@ -397,13 +382,19 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    settings: Settings,
     pipeline: Pipeline[
         TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
     dispatcher_client: DispatcherClient,
+    request_queue: MAXPullQueue[
+        tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+    ],
+    response_queue: MAXPushQueue[
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    ],
+    cancel_queue: MAXPullQueue[list[RequestID]],
 ) -> DecodeScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
@@ -422,8 +413,8 @@ def load_decode_scheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
         dispatcher_client=dispatcher_client,
     )
