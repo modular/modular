@@ -17,7 +17,7 @@ from functools import reduce
 from typing import Optional
 
 import pytest
-from conftest import axes, tensor_types
+from conftest import GraphBuilder, axes, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -32,7 +32,7 @@ shared_tensor_types = st.shared(tensor_types())
     axis=axes(shared_tensor_types),
 )
 def test_repeat_interleave(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     type: TensorType,
     repeats: int,
     axis: int,
@@ -56,7 +56,9 @@ def test_repeat_interleave(
     type=shared_tensor_types,
     axis=axes(shared_tensor_types),
 )
-def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:  # noqa: ANN001
+def test_vector_repeats(
+    graph_builder: GraphBuilder, type: TensorType, axis: int
+) -> None:
     dim = type.shape[axis]
 
     repeats_type = TensorType(DType.int64, [dim], device=DeviceRef.CPU())
@@ -80,7 +82,7 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:  # 
     repeats=st.integers(min_value=1, max_value=2**63 - 1),
 )
 def test_repeat_interleave__no_axis(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     type: TensorType,
     repeats: int,
 ) -> None:
@@ -101,7 +103,7 @@ def test_repeat_interleave__no_axis(
     axis=st.one_of(axes(shared_tensor_types), st.none()),
 )
 def test_repeat_interleave__nonpositive_repeats(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     type: TensorType,
     repeats: int,
     axis: Optional[int],
@@ -118,7 +120,7 @@ def test_repeat_interleave__nonpositive_repeats(
     axis=...,
 )
 def test_repeat_interleave__axis_out_of_bounds(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     type: TensorType,
     repeats: int,
     axis: int,

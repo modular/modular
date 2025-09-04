@@ -15,7 +15,7 @@
 import re
 
 import pytest
-from conftest import dtypes, small_shapes
+from conftest import GraphBuilder, dtypes, small_shapes
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -33,7 +33,9 @@ input_types = st.shared(constrained_tensor_types)
 
 
 @given(input_type=input_types)
-def test_resize_valid(graph_builder, input_type: TensorType) -> None:  # noqa: ANN001
+def test_resize_valid(
+    graph_builder: GraphBuilder, input_type: TensorType
+) -> None:
     """Test valid resize operations."""
     with graph_builder(input_types=[input_type]) as graph:
         # Create a valid size shape - just double all dimensions.
@@ -51,7 +53,7 @@ def test_resize_valid(graph_builder, input_type: TensorType) -> None:  # noqa: A
         graph.output(out)
 
 
-def test_resize_basic_upscale(graph_builder) -> None:  # noqa: ANN001
+def test_resize_basic_upscale(graph_builder: GraphBuilder) -> None:
     """Test basic resize upscaling."""
     input_type = TensorType(
         shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()
@@ -70,7 +72,7 @@ def test_resize_basic_upscale(graph_builder) -> None:  # noqa: ANN001
         graph.output(out)
 
 
-def test_resize_basic_downscale(graph_builder) -> None:  # noqa: ANN001
+def test_resize_basic_downscale(graph_builder: GraphBuilder) -> None:
     """Test basic resize downscaling."""
     input_type = TensorType(
         shape=[2, 3, 256, 256], dtype=DType.float32, device=DeviceRef.CPU()
@@ -91,7 +93,7 @@ def test_resize_basic_downscale(graph_builder) -> None:  # noqa: ANN001
 
 @given(input_type=input_types, resize_shape=...)
 def test_resize_error_size_wrong_length(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     resize_shape: Shape,
 ) -> None:
@@ -111,7 +113,7 @@ def test_resize_error_size_wrong_length(
             )
 
 
-def test_resize_error_insufficient_rank(graph_builder) -> None:  # noqa: ANN001
+def test_resize_error_insufficient_rank(graph_builder: GraphBuilder) -> None:
     """Test error when input has insufficient rank."""
     # Create a rank-2 tensor
     input_type = TensorType(
@@ -132,7 +134,9 @@ def test_resize_error_insufficient_rank(graph_builder) -> None:  # noqa: ANN001
             )
 
 
-def test_resize_error_unsupported_interpolation(graph_builder) -> None:  # noqa: ANN001
+def test_resize_error_unsupported_interpolation(
+    graph_builder: GraphBuilder,
+) -> None:
     """Test error when using unsupported interpolation mode."""
     input_type = TensorType(
         shape=[1, 3, 224, 224], dtype=DType.float32, device=DeviceRef.CPU()

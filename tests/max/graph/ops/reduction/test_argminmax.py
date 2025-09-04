@@ -13,7 +13,7 @@
 """ops.argmax tests."""
 
 import pytest
-from conftest import axes, tensor_types
+from conftest import GraphBuilder, axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -25,7 +25,7 @@ ops = st.sampled_from([ops.argmax, ops.argmin])  # type: ignore
 
 @given(input_type=input_types, op=ops, axis=axes(input_types))  # type: ignore
 def test_argminmax(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     op,  # noqa: ANN001
     axis: int,
@@ -40,7 +40,7 @@ def test_argminmax(
 
 @given(input_type=input_types, op=ops, axis=...)  # type: ignore
 def test_argminmax__invalid_axis(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     op,  # noqa: ANN001
     axis: int,

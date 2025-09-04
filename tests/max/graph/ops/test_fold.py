@@ -15,7 +15,7 @@
 import math
 
 import pytest
-from conftest import dtypes
+from conftest import GraphBuilder, dtypes
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -35,7 +35,7 @@ valid_dim = st.integers(min_value=1, max_value=1024)
     padding=st.tuples(valid_dim, valid_dim),
 )
 def test_fold(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     dtype: DType,
     batch: int,
     channel: int,
@@ -89,7 +89,7 @@ def test_fold(
     padding=st.tuples(valid_dim, valid_dim),
 )
 def test_fold_invalid_inputs(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     dtype: DType,
     batch: int,
     channel: int,

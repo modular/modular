@@ -13,7 +13,7 @@
 """ops.pad tests."""
 
 import pytest
-from conftest import tensor_types
+from conftest import GraphBuilder, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import Shape, StaticDim, TensorType, ops
@@ -47,7 +47,7 @@ def paddings_for(input_types, low=0, high=16):  # noqa: ANN001
 
 @given(input_type=input_types, paddings=paddings_for(input_types, low=-16))
 def test_negative_paddings(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     paddings: list[int],
 ) -> None:
@@ -61,7 +61,9 @@ def test_negative_paddings(
 
 
 @given(input_type=input_types)
-def test_no_padding(graph_builder, input_type: TensorType) -> None:  # noqa: ANN001
+def test_no_padding(
+    graph_builder: GraphBuilder, input_type: TensorType
+) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
     paddings = [0] * (2 * input_type.rank)
@@ -74,7 +76,7 @@ def test_no_padding(graph_builder, input_type: TensorType) -> None:  # noqa: ANN
 
 @given(input_type=input_types, paddings=paddings_for(input_types))
 def test_positive_paddings(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     input_type: TensorType,
     paddings: list[int],
 ) -> None:

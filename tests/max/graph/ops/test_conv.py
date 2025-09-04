@@ -16,7 +16,7 @@ from math import sqrt
 
 import numpy as np
 import pytest
-from conftest import MAX_INT32, static_dims, tensor_types
+from conftest import MAX_INT32, GraphBuilder, static_dims, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -48,7 +48,7 @@ stride_type = st.tuples(pos_int, pos_int)
     padding=padding_type,
 )
 def test_conv_valid(
-    graph_builder,  # noqa: ANN001
+    graph_builder: GraphBuilder,
     x_type: TensorType,
     filter_type: TensorType,
     stride,  # noqa: ANN001
@@ -91,7 +91,7 @@ def test_conv_valid(
         graph.output(out)
 
 
-def test_conv_dtype_promote_np(graph_builder) -> None:  # noqa: ANN001
+def test_conv_dtype_promote_np(graph_builder: GraphBuilder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -107,7 +107,7 @@ def test_conv_dtype_promote_np(graph_builder) -> None:  # noqa: ANN001
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight(graph_builder) -> None:  # noqa: ANN001
+def test_conv_dtype_promote_weight(graph_builder: GraphBuilder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -120,7 +120,7 @@ def test_conv_dtype_promote_weight(graph_builder) -> None:  # noqa: ANN001
     )
     with graph_builder(input_types=[x_type]) as graph:
         out = ops.conv2d(
-            graph.inputs[0],
+            graph.inputs[0],  # type: ignore
             filter,
         )
         # Both input and filter dtype exactly match.
@@ -128,7 +128,7 @@ def test_conv_dtype_promote_weight(graph_builder) -> None:  # noqa: ANN001
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_success(graph_builder) -> None:  # noqa: ANN001
+def test_conv_dtype_promote_weight_success(graph_builder: GraphBuilder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -148,7 +148,7 @@ def test_conv_dtype_promote_weight_success(graph_builder) -> None:  # noqa: ANN0
         assert out.dtype == DType.float32
 
 
-def test_conv_dtype_promote_weight_failed(graph_builder) -> None:  # noqa: ANN001
+def test_conv_dtype_promote_weight_failed(graph_builder: GraphBuilder) -> None:
     x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
@@ -172,7 +172,7 @@ def test_conv_dtype_promote_weight_failed(graph_builder) -> None:  # noqa: ANN00
             )
 
 
-def test_conv_symbolic_shapes(graph_builder) -> None:  # noqa: ANN001
+def test_conv_symbolic_shapes(graph_builder: GraphBuilder) -> None:
     input_type = TensorType(
         DType.bfloat16,
         [1, "height", "width", "channels"],
