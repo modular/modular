@@ -109,11 +109,11 @@ will automatically execute the equivalent bazelw command
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.
-Otherwise, CI will fail in its lint and formatting checks.  The `mojo` compiler
+Otherwise, CI will fail in its lint and formatting checks.  `bazel` setup
 provides a `format` command.  So, you can format your changes like so:
 
 ```bash
-mojo format ./
+./bazelw run format
 ```
 
 It is advised, to avoid forgetting, to set-up `pre-commit`, which will format
@@ -123,14 +123,13 @@ always have the latest linting tools applied.
 To do so, install pre-commit:
 
 ```bash
-pip install pre-commit
-pre-commit install
+pixi x pre-commit install
 ```
 
 and that's it!
 
 If you need to manually apply the `pre-commit`, for example, if you
-made a commit with the github UI, you can do `pre-commit run --all-files`,
+made a commit with the github UI, you can do `pixi x pre-commit run --all-files`,
 and it will apply the formatting to all Mojo files.
 
 You can also consider setting up your editor to automatically format
