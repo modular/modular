@@ -3,10 +3,11 @@ load("//bazel:api.bzl", "lit_tests")
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
+    gpu_constraints = select({
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     mojo_deps = [
         "@mojo//:shmem",
         "@mojo//:stdlib",
