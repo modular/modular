@@ -31,7 +31,7 @@ alias PRINT_OUTPUT = False
 
 
 struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
-    Copyable, Movable
+    ImplicitlyCopyable, Movable
 ):
     alias is_top_p = _is_top_p
     alias dtype = _dtype

@@ -30,10 +30,10 @@ alias _mIsFloat = UInt8(1 << 6)
 
 @register_passable("trivial")
 struct DType(
-    Copyable,
     EqualityComparable,
     ExplicitlyCopyable,
     Hashable,
+    ImplicitlyCopyable,
     KeyElement,
     Movable,
     Representable,

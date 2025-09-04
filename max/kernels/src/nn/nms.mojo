@@ -19,7 +19,7 @@ from utils import IndexList
 
 
 @fieldwise_init
-struct BoundingBox[dtype: DType](Copyable, Movable):
+struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
     var nw: SIMD[dtype, 2]
     var se: SIMD[dtype, 2]
 

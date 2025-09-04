@@ -56,7 +56,7 @@ fn _inline_array_construction_checks[size: Int]():
 struct InlineArray[
     ElementType: ExplicitlyCopyable & Movable,
     size: Int,
-](Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
+](Defaultable, ExplicitlyCopyable, ImplicitlyCopyable, Movable, Sized):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
 
@@ -536,13 +536,13 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: InlineArray[T, size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
             T: The element type, must implement both `EqualityComparable` and
-                `Copyable` and `Movable`.
+                `ImplicitlyCopyable` and `Movable`.
 
         Args:
             value: The value to search for.

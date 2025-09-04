@@ -81,7 +81,7 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
 
 @fieldwise_init
-struct GatherSpec(Copyable, Movable, Stringable):
+struct GatherSpec(ImplicitlyCopyable, Movable, Stringable):
     var axis: Int
     var m1: Int
     var m2: Int

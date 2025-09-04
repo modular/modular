@@ -471,7 +471,7 @@ import sys
 import time
 
 @fieldwise_init
-struct Timer(Copyable, Movable):
+struct Timer(ImplicitlyCopyable, Movable):
     var start_time: Int
 
     fn __init__(out self):
@@ -544,7 +544,7 @@ type of error condition and propagates all others:
 import time
 
 @fieldwise_init
-struct ConditionalTimer(Copyable, Movable):
+struct ConditionalTimer(ImplicitlyCopyable, Movable):
     var start_time: Int
 
     fn __init__(out self):

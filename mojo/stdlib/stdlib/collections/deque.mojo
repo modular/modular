@@ -39,7 +39,7 @@ struct Deque[ElementType: ExplicitlyCopyable & Movable](
 
     Parameters:
         ElementType: The type of the elements in the deque.
-            Must implement the traits `Copyable` and `Movable`.
+            Must implement the traits `ImplicitlyCopyable` and `Movable`.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -984,7 +984,7 @@ struct _DequeIter[
     T: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:

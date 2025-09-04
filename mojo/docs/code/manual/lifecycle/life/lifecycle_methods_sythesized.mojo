@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct MyPet(Copyable, ExplicitlyCopyable, Movable):
+struct MyPet(Copyable, Movable):
     var name: String
     var age: Int
 
@@ -23,7 +23,7 @@ def main():
     pet2 = pet.copy()
     print(pet2.name)
     print(pet2.age)
-    pet3 = pet
+    pet3 = pet.copy()
     print(pet3.name)
     pet4 = pet^
     print(pet4.name)

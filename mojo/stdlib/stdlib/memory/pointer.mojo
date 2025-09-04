@@ -26,7 +26,7 @@ from memory import Pointer
 
 
 @register_passable("trivial")
-struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
+struct _GPUAddressSpace(EqualityComparable, ImplicitlyCopyable, Movable):
     var _value: Int
 
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
@@ -145,7 +145,12 @@ struct _GPUAddressSpace(Copyable, EqualityComparable, Movable):
 
 @register_passable("trivial")
 struct AddressSpace(
-    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
+    EqualityComparable,
+    ImplicitlyCopyable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
 ):
     """Address space of the pointer."""
 
@@ -268,7 +273,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Copyable, ExplicitlyCopyable, Movable, Stringable):
+](ExplicitlyCopyable, ImplicitlyCopyable, Movable, Stringable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

@@ -23,7 +23,7 @@ from linalg.utils_gpu import block_swizzle
 
 @fieldwise_init
 @register_passable("trivial")
-struct RasterOrder(Copyable, Movable):
+struct RasterOrder(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     alias AlongN = Self(0)
@@ -40,7 +40,7 @@ struct RasterOrder(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Copyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -97,7 +97,7 @@ struct WorkInfo(Copyable, Movable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct MatmulSchedule(Copyable, Movable):
+struct MatmulSchedule(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     alias NONE = Self(-1)

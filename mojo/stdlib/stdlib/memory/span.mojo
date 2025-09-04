@@ -36,7 +36,7 @@ struct _SpanIter[
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[T](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -85,7 +85,14 @@ struct Span[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[T](),
-](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
+](
+    ExplicitlyCopyable,
+    ImplicitlyCopyable,
+    Movable,
+    Sized,
+    Boolable,
+    Defaultable,
+):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -331,7 +338,7 @@ struct Span[
 
     @no_inline
     fn __str__[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: Span[U, *_]) -> String:
         """Returns a string representation of a `Span`.
 
@@ -364,7 +371,7 @@ struct Span[
 
     @no_inline
     fn write_to[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: Span[U, *_], mut writer: Some[Writer]):
         """Write `my_span.__str__()` to a `Writer`.
 
@@ -384,7 +391,7 @@ struct Span[
 
     @no_inline
     fn __repr__[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: Span[U, *_]) -> String:
         """Returns a string representation of a `Span`.
 
@@ -486,7 +493,8 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable, rhs_alignment: Int, //
+        T: EqualityComparable & ImplicitlyCopyable & Movable,
+        rhs_alignment: Int, //,
     ](
         self: Span[T, origin, alignment=alignment],
         rhs: Span[T, _, alignment=rhs_alignment],
@@ -494,8 +502,8 @@ struct Span[
         """Verify if span is equal to another span.
 
         Parameters:
-            T: The type of the elements in the span. Must implement the
-              traits `EqualityComparable`, `Copyable` and `Movable`.
+            T: The type of the elements in tImplicitlyCopyable Must implement the
+              traits `EqualityComparable`, `ImplicitlyCopyable` and `Movable`.
             rhs_alignment: The inferred alignment of the rhs span.
 
         Args:
@@ -519,13 +527,13 @@ struct Span[
 
     @always_inline
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
             T: The type of the elements in the span. Must implement the
-              traits `EqualityComparable`, `Copyable` and `Movable`.
+              traits `EqualityComparable`, `ImplicitlyCopyable` and `Movable`.
 
         Args:
             rhs: The span to compare against.

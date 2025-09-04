@@ -373,7 +373,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
 
 fn platform_map[
-    T: Copyable & Movable, //,
+    T: ImplicitlyCopyable & Movable, //,
     operation: Optional[String] = None,
     *,
     linux: Optional[T] = None,

@@ -276,7 +276,7 @@ struct Task[type: AnyType, origins: OriginSet]:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext(Copyable, Movable):
+struct TaskGroupContext(ImplicitlyCopyable, Movable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -295,7 +295,7 @@ struct TaskGroupContext(Copyable, Movable):
 
 
 @register_passable
-struct _TaskGroupBox(Copyable, Movable):
+struct _TaskGroupBox(ImplicitlyCopyable, Movable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine

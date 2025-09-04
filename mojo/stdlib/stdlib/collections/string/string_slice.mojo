@@ -85,7 +85,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable, Sized):
+](ImplicitlyCopyable, Iterator, Movable, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -307,7 +307,7 @@ struct CodepointSliceIter[
 
 
 struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
-    Copyable, Movable, Sized
+    ImplicitlyCopyable, Movable, Sized
 ):
     """Iterator over the `Codepoint`s in a string slice, constructed by
     `StringSlice.codepoints()`.
@@ -452,12 +452,12 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Boolable,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
     EqualityComparable,
     ExplicitlyCopyable,
     FloatableRaising,
     Hashable,
+    ImplicitlyCopyable,
     IntableRaising,
     KeyElement,
     Movable,
@@ -2226,12 +2226,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Movable & Writable, //,
+        T: ImplicitlyCopyable & Movable & Writable, //,
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
         Parameters:
-            T: The type of the elements, must implement the `Copyable`,
+            T: The type of the elements, must implement the `ImplicitlyCopyable`,
                 `Movable` and `Writable` traits.
 
         Args:
@@ -2350,7 +2350,8 @@ fn get_static_string[
 
 fn _to_string_list[
     O: Origin, //,
-    T: Copyable & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
+    T: ImplicitlyCopyable
+    & Movable,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, mut = O.mut, origin=O],
 ](items: List[T]) -> List[String]:

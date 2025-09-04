@@ -57,7 +57,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
         IndexList[rank]

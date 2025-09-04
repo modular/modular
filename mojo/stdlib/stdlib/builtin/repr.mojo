@@ -80,7 +80,9 @@ fn repr[T: Representable](value: T) -> String:
     return value.__repr__()
 
 
-fn repr[T: Representable & Movable & Copyable](value: List[T]) -> String:
+fn repr[
+    T: Representable & Movable & ImplicitlyCopyable
+](value: List[T]) -> String:
     """Returns the string representation of a `List[T]`.
 
     Args:
@@ -107,7 +109,7 @@ fn repr[
 
     Parameters:
         K: A type that implements `KeyElement` and `Representable`.
-        V: A type that implements `Movable`, `Copyable` and `Representable`.
+        V: A type that implements `Movable`, `ImplicitlyCopyable` and `Representable`.
 
     Returns:
         The string representation of `Dict[K,V]`.
@@ -132,14 +134,16 @@ fn repr[U: KeyElement & Representable](value: Set[U]) -> String:
     return value.__repr__()
 
 
-fn repr[U: Representable & Copyable & Movable](value: Optional[U]) -> String:
+fn repr[
+    U: Representable & ImplicitlyCopyable & Movable
+](value: Optional[U]) -> String:
     """Returns the string representation of an `Optional[U]`.
 
     Args:
         value: A `Optional` of element type `U`.
 
     Parameters:
-        U: A type that implements `Movable`, `Copyable` and `Representable`.
+        U: A type that implements `Movable`, `ImplicitlyCopyable` and `Representable`.
 
     Returns:
         The string representation of `Optional[U]`.

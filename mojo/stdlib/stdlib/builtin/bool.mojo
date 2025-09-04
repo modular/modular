@@ -107,12 +107,12 @@ struct Bool(
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
     ExplicitlyCopyable,
     Floatable,
     Hashable,
     ImplicitlyBoolable,
+    ImplicitlyCopyable,
     ImplicitlyIntable,
     Indexer,
     Intable,
@@ -562,7 +562,9 @@ struct Bool(
 # TODO: Combine these into Iterators over Boolable elements
 
 
-fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
+fn any[
+    T: Boolable & ImplicitlyCopyable & Movable, //
+](list: List[T, *_]) -> Bool:
     """Checks if **any** element in the list is truthy.
 
     Parameters:
@@ -619,7 +621,9 @@ fn any(value: SIMD) -> Bool:
 # TODO: Combine these into Iterators over Boolable elements
 
 
-fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
+fn all[
+    T: Boolable & ImplicitlyCopyable & Movable, //
+](list: List[T, *_]) -> Bool:
     """Checks if **all** elements in the list are truthy.
 
     Parameters:

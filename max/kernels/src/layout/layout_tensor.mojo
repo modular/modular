@@ -270,7 +270,7 @@ struct LayoutTensor[
     masked: Bool = False,
     alignment: Int = align_of[dtype](),
 ](
-    Copyable,
+    ImplicitlyCopyable,
     DevicePassable,
     Movable,
     ExplicitlyCopyable,
@@ -5251,7 +5251,7 @@ fn stack_allocation_like[
 
 
 @register_passable("trivial")
-struct ThreadScope(Copyable, Movable):
+struct ThreadScope(ImplicitlyCopyable, Movable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,

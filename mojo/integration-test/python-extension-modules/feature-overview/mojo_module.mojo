@@ -126,7 +126,7 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Copyable, Defaultable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Movable, Representable):
     var name: String
     var age: Int
 

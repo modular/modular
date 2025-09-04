@@ -33,7 +33,7 @@ from memory import bitcast
 
 @register_passable("trivial")
 struct Consistency(
-    Copyable, EqualityComparable, Movable, Representable, Stringable
+    EqualityComparable, ImplicitlyCopyable, Movable, Representable, Stringable
 ):
     """Represents the consistency model for atomic operations.
 

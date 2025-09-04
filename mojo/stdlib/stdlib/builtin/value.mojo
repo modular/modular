@@ -139,7 +139,7 @@ trait ImplicitlyCopyable(ExplicitlyCopyable):
     pass
 
 
-alias Copyable = ImplicitlyCopyable
+alias Copyable = ExplicitlyCopyable
 
 
 trait Defaultable:

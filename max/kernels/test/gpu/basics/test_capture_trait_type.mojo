@@ -25,7 +25,7 @@ trait BaseT:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ImplT(BaseT, Copyable, Movable):
+struct ImplT(BaseT, ImplicitlyCopyable, Movable):
     alias rank = 1
     var values: NDBuffer[DType.float32, Self.rank, MutableAnyOrigin]
 

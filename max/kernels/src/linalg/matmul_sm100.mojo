@@ -87,7 +87,7 @@ from bit import next_power_of_two, prev_power_of_two
 
 @fieldwise_init
 @register_passable("trivial")
-struct WarpRole(Copyable, Movable):
+struct WarpRole(ImplicitlyCopyable, Movable):
     var _role: Int32
 
     alias Mma = Self(6)

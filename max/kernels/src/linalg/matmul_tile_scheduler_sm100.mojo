@@ -36,7 +36,7 @@ from gpu.id import warp_id
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Copyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32

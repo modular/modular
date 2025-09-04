@@ -80,7 +80,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(Copyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
     var _value: List[String]
 
     fn __init__(out self, value: List[String]):
@@ -106,7 +106,9 @@ struct DriverVersion(Copyable, Movable, StringableRaising):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Copyable, EqualityComparable, Movable, Stringable, Writable):
+struct Result(
+    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
+):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -284,7 +286,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(Copyable, EqualityComparable, Movable):
+struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -305,7 +307,7 @@ struct EnableState(Copyable, EqualityComparable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(Copyable, EqualityComparable, Movable):
+struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -332,7 +334,7 @@ struct ClockType(Copyable, EqualityComparable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Copyable, Defaultable, Movable):
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
     var handle: OpaquePointer
 
     @always_inline
@@ -585,7 +587,7 @@ struct Device(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _EnableState(Copyable, Movable):
+struct _EnableState(ImplicitlyCopyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

@@ -451,7 +451,9 @@ fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
-struct TestCase[_sampling: Bool, _largest: Bool = True](Copyable, Movable):
+struct TestCase[_sampling: Bool, _largest: Bool = True](
+    ImplicitlyCopyable, Movable
+):
     alias sampling = _sampling
     alias largest = _largest
     var N: Int
@@ -476,7 +478,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](Copyable, Movable):
 
 
 struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
-    Copyable, Movable
+    ImplicitlyCopyable, Movable
 ):
     alias sampling = _sampling
     alias largest = _largest

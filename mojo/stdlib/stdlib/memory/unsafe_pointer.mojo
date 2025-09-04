@@ -51,7 +51,7 @@ struct UnsafePointer[
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
     ImplicitlyBoolable,
-    Copyable,
+    ImplicitlyCopyable,
     Movable,
     ExplicitlyCopyable,
     Stringable,

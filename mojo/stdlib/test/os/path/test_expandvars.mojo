@@ -18,7 +18,7 @@ from testing import assert_equal
 
 
 @fieldwise_init
-struct EnvVar(Copyable, Movable):
+struct EnvVar(ImplicitlyCopyable, Movable):
     var name: String
 
     fn __init__(out self, name: String, value: String):

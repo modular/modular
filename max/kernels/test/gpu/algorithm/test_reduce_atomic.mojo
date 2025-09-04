@@ -21,7 +21,7 @@ from testing import assert_equal
 
 
 @fieldwise_init
-struct FillStrategy(Copyable, Movable):
+struct FillStrategy(ImplicitlyCopyable, Movable):
     var value: Int
 
     alias LINSPACE = Self(0)

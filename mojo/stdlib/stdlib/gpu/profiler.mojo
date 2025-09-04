@@ -38,7 +38,7 @@ from io.io import _printf
 
 
 @fieldwise_init
-struct ProfileBlock[enabled: Bool = False](Copyable, Movable):
+struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable, Movable):
     """A struct for profiling code blocks.
 
     This struct provides context manager functionality to profile code blocks.

@@ -249,7 +249,7 @@ def reference_attention_bshd_with_sinks[
 
 @fieldwise_init
 @register_passable("trivial")
-struct TestCaseConfig[batch_rank: Int](Copyable, Movable):
+struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, Movable):
     """Test case workload configuration hyperparameters."""
 
     alias rank = batch_rank + 2

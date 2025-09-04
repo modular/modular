@@ -57,7 +57,7 @@ from .utils import (
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(Copyable):
+trait InnerMatmulKernel(ImplicitlyCopyable):
     fn __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -184,7 +184,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutableOrigin,
     algorithm: InnerMatmulKernel,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 

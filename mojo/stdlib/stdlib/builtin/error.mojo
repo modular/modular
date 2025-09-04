@@ -28,7 +28,7 @@ from io.write import _WriteBufferStack
 # StackTrace
 # ===-----------------------------------------------------------------------===#
 @register_passable
-struct StackTrace(Copyable, Stringable):
+struct StackTrace(ImplicitlyCopyable, Stringable):
     """Holds a stack trace of a location when StackTrace is constructed."""
 
     var value: ArcPointer[UnsafePointer[UInt8]]
@@ -103,9 +103,9 @@ struct StackTrace(Copyable, Stringable):
 @register_passable
 struct Error(
     Boolable,
-    Copyable,
     Defaultable,
     ExplicitlyCopyable,
+    ImplicitlyCopyable,
     Movable,
     Representable,
     Stringable,

@@ -61,7 +61,7 @@ struct HostNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var tensor: NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 
     @always_inline
@@ -133,7 +133,7 @@ struct DeviceNDBuffer[
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     var buffer: DeviceBuffer[dtype]
     var tensor: NDBuffer[
         dtype,
@@ -234,7 +234,7 @@ struct DeviceNDBuffer[
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @fieldwise_init
-struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
+struct TestTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     var ndbuffer: NDBuffer[dtype, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
@@ -274,7 +274,7 @@ struct TestTensor[dtype: DType, rank: Int](Copyable, Movable):
         return DynamicTensor[dtype, rank](self.ndbuffer)
 
 
-struct InitializationType(Copyable, EqualityComparable, Movable):
+struct InitializationType(EqualityComparable, ImplicitlyCopyable, Movable):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
@@ -620,7 +620,7 @@ fn array_equal[
 
 @fieldwise_init
 @register_passable("trivial")
-struct Mode(Copyable, Movable, Stringable):
+struct Mode(ImplicitlyCopyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")

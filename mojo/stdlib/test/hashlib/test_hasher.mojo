@@ -45,7 +45,7 @@ struct DummyHasher(Hasher):
 
 
 @fieldwise_init
-struct SomeHashableStruct(Copyable, Hashable, Movable):
+struct SomeHashableStruct(Hashable, ImplicitlyCopyable, Movable):
     var _value: Int64
 
     fn __hash__[H: Hasher](self, mut hasher: H):

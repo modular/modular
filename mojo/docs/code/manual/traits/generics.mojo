@@ -34,7 +34,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         self.list = Self.list_type()
 
     fn push(mut self, var item: Self.EltType):
-        self.list.append(item)
+        self.list.append(item^)
 
     fn pop(mut self) -> Self.EltType:
         return self.list.pop()
@@ -48,8 +48,8 @@ struct MyStack[type: Copyable & Movable](Stacklike):
         print("]")
 
 
-def add_to_stack[S: Stacklike](mut stack: S, item: S.EltType):
-    stack.push(item)
+def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType):
+    stack.push(item^)
 
 
 def main():

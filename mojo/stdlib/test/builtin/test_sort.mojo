@@ -52,7 +52,9 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[T: Copyable & Movable & Comparable](mut list: List[T]) raises:
+fn assert_sorted[
+    T: ImplicitlyCopyable & Movable & Comparable
+](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
@@ -484,7 +486,7 @@ fn test_sort_stress() raises:
 
 
 @fieldwise_init
-struct MyStruct(Copyable, Movable):
+struct MyStruct(ImplicitlyCopyable, Movable):
     var val: Int
 
 
@@ -534,7 +536,7 @@ def test_sort_strings():
 
 
 @fieldwise_init
-struct Person(Comparable, Copyable, Movable):
+struct Person(Comparable, ImplicitlyCopyable, Movable):
     var name: String
     var age: Int
 

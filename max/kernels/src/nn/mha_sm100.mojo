@@ -265,7 +265,7 @@ fn local_tensor_type[
 
 
 @register_passable("trivial")
-trait AccumulatorTile(Copyable, Movable):
+trait AccumulatorTile(ImplicitlyCopyable, Movable):
     alias dtype: DType
     alias element_layout: Layout
     alias vec_output_layout: Layout

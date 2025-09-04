@@ -56,7 +56,9 @@ fn variadic_size[T: _AnyTypeMetaType](seq: VariadicOf[T]) -> Int:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](
+    ImplicitlyCopyable, Iterator, Movable
+):
     """Const Iterator for VariadicList.
 
     Parameters:

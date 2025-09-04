@@ -17,7 +17,7 @@ from os import abort
 
 # DO NOT CHANGE
 @register_passable("trivial")
-trait TuningConfig(Copyable, Movable, Stringable):
+trait TuningConfig(ImplicitlyCopyable, Movable, Stringable):
     ...
 
 
@@ -95,7 +95,7 @@ struct Table[type: TuningConfig](Stringable):
 
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
-        ret_type: Comparable & Copyable & Movable,
+        ret_type: Comparable & ImplicitlyCopyable & Movable,
         rule: fn (type) capturing -> ret_type,
         idx_list: List[Int] = List[Int](),
     ](self) -> List[ret_type]:

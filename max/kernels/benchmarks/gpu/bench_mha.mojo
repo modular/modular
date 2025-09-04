@@ -260,7 +260,7 @@ fn run_mha[
 
 
 @fieldwise_init
-struct MHA_cfg(Copyable, Movable):
+struct MHA_cfg(ImplicitlyCopyable, Movable):
     # params
     var qkv_type: DType
     var mask_type: DType

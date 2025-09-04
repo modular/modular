@@ -25,7 +25,7 @@ alias DAYS_PER_YEAR = 365.24
 
 
 @fieldwise_init
-struct Planet(Copyable, Movable):
+struct Planet(ImplicitlyCopyable, Movable):
     var pos: SIMD[DType.float64, 4]
     var velocity: SIMD[DType.float64, 4]
     var mass: Float64

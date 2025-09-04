@@ -106,7 +106,7 @@ from ._nvshmem import (
 alias shmem_team_t = c_int
 
 
-struct SHMEMScope(Copyable, EqualityComparable, Movable):
+struct SHMEMScope(EqualityComparable, ImplicitlyCopyable, Movable):
     """Enables following the OpenSHMEM spec by default for put/get/iput/iget
     etc. While allowing NVIDIA extensions for block and warp scopes by passing a
     parameter."""

@@ -1064,7 +1064,7 @@ struct String(
         return String(elems, sep=sep)
 
     fn join[
-        T: Copyable & Movable & Writable
+        T: ImplicitlyCopyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -1073,7 +1073,7 @@ struct String(
         the default page size on arm64 and x86-64.
 
         Parameters:
-            T: The type of the elements. Must implement the `Copyable`,
+            T: The type of the elements. Must implement the `ImplicitlyCopyable`,
                 `Movable` and `Writable` traits.
 
         Args:

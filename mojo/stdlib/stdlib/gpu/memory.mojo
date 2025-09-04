@@ -425,7 +425,7 @@ struct Fill:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Consistency(Copyable, EqualityComparable, Movable):
+struct Consistency(EqualityComparable, ImplicitlyCopyable, Movable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory

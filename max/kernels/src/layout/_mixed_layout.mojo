@@ -32,7 +32,7 @@ from ._mixed_tuple import (
 struct MixedLayout[
     shape_types: VariadicOf[MixedTupleLike],
     stride_types: VariadicOf[MixedTupleLike],
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions

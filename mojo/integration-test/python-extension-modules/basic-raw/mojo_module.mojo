@@ -94,7 +94,7 @@ fn mojo_count_args_with_kwargs(
     return cpy.PyLong_FromSsize_t(count)
 
 
-struct TestCounter(Copyable, Defaultable, Movable, Representable):
+struct TestCounter(Defaultable, ImplicitlyCopyable, Movable, Representable):
     var value: Int
 
     fn __init__(out self):

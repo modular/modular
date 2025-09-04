@@ -51,7 +51,7 @@ struct MlirDiagnostic:
 
 @fieldwise_init
 @register_passable("trivial")
-struct MlirDiagnosticSeverity(Copyable, Movable):
+struct MlirDiagnosticSeverity(ImplicitlyCopyable, Movable):
     """Severity of a diagnostic."""
 
     var value: Int8

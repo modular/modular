@@ -110,9 +110,9 @@ struct PyThreadState:
 @register_passable("trivial")
 struct PyObjectPtr(
     Boolable,
-    Copyable,
     Defaultable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Intable,
     Movable,
     Stringable,
@@ -214,7 +214,7 @@ struct PyObjectPtr(
 
 @fieldwise_init
 @register_passable
-struct PythonVersion(Copyable, Movable):
+struct PythonVersion(ImplicitlyCopyable, Movable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -262,7 +262,7 @@ fn _py_get_version(lib: DLHandle) -> StaticString:
 
 
 @fieldwise_init
-struct PyMethodDef(Copyable, Defaultable, Movable):
+struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -421,7 +421,7 @@ alias Typed_newfunc = fn (
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyType_Slot(Copyable, Movable):
+struct PyType_Slot(ImplicitlyCopyable, Movable):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -460,7 +460,12 @@ struct PyType_Slot(Copyable, Movable):
 
 @fieldwise_init
 struct PyObject(
-    Copyable, Defaultable, Movable, Representable, Stringable, Writable
+    Defaultable,
+    ImplicitlyCopyable,
+    Movable,
+    Representable,
+    Stringable,
+    Writable,
 ):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an

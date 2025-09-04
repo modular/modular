@@ -527,7 +527,7 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 
 @register_passable("trivial")
-struct _ZeroStartingScalarRange[dtype: DType](Iterator & Copyable):
+struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
     alias Element = Scalar[dtype]
     var curr: Scalar[dtype]
     var end: Scalar[dtype]
@@ -570,7 +570,7 @@ struct _ZeroStartingScalarRange[dtype: DType](Iterator & Copyable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialScalarRange[dtype: DType](Iterator & Copyable):
+struct _SequentialScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
@@ -608,7 +608,7 @@ struct _SequentialScalarRange[dtype: DType](Iterator & Copyable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[dtype: DType](Iterator & Copyable):
+struct _StridedScalarRangeIterator[dtype: DType](Iterator & ImplicitlyCopyable):
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]

@@ -19,7 +19,7 @@ constant memory that can be used for efficient data transfer between host and GP
 
 @fieldwise_init
 @register_passable("trivial")
-struct ConstantMemoryMapping(Copyable, Movable):
+struct ConstantMemoryMapping(ImplicitlyCopyable, Movable):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory

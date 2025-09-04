@@ -61,7 +61,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 
 
 # @register_passable("trivial")
-trait OpArgs(Copyable):
+trait OpArgs(ImplicitlyCopyable):
     pass
 
 

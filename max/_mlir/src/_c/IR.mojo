@@ -149,7 +149,7 @@ struct MlirValue:
 
 @fieldwise_init
 @register_passable("trivial")
-struct MlirNamedAttribute(Copyable, Movable):
+struct MlirNamedAttribute(ImplicitlyCopyable, Movable):
     """Named MLIR attribute.
 
     A named attribute is essentially a (name, attribute) pair where the name is
@@ -1163,7 +1163,7 @@ fn mlirOperationMoveBefore(op: MlirOperation, other: MlirOperation) -> None:
 
 @fieldwise_init
 @register_passable("trivial")
-struct MlirWalkResult(Copyable, Movable):
+struct MlirWalkResult(ImplicitlyCopyable, Movable):
     """Operation walk result."""
 
     var value: Int8
@@ -1176,7 +1176,7 @@ alias MlirWalkResultSkip = MlirWalkResult(2)
 
 @fieldwise_init
 @register_passable("trivial")
-struct MlirWalkOrder(Copyable, Movable):
+struct MlirWalkOrder(ImplicitlyCopyable, Movable):
     """Traversal order for operation walk."""
 
     var value: Int8

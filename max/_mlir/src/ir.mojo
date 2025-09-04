@@ -79,7 +79,7 @@ struct DialectRegistry(Defaultable):
 
 
 @register_passable("trivial")
-struct Dialect(Copyable, Movable):
+struct Dialect(ImplicitlyCopyable, Movable):
     alias cType = _c.IR.MlirDialect
     var c: Self.cType
 
@@ -99,7 +99,7 @@ struct Dialect(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct DialectHandle(Copyable, Movable):
+struct DialectHandle(ImplicitlyCopyable, Movable):
     alias cType = _c.IR.MlirDialectHandle
     var c: Self.cType
 
@@ -108,7 +108,7 @@ struct DialectHandle(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct Context(Copyable, Defaultable, Movable):
+struct Context(Defaultable, ImplicitlyCopyable, Movable):
     alias cType = _c.IR.MlirContext
     var c: Self.cType
 
@@ -211,7 +211,7 @@ struct Context(Copyable, Defaultable, Movable):
 
 
 @register_passable("trivial")
-struct Location(Copyable, Movable, Stringable, Writable):
+struct Location(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirLocation
     var c: Self.cType
 
@@ -258,7 +258,7 @@ struct Location(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Module(Copyable, Movable, Stringable, Writable):
+struct Module(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
@@ -313,7 +313,7 @@ struct Module(Copyable, Movable, Stringable, Writable):
 
 # Helper class with a bunch of implicit conversions for things that go on
 # Operations.
-struct _OpBuilderList[T: Copyable & Movable](Defaultable):
+struct _OpBuilderList[T: ImplicitlyCopyable & Movable](Defaultable):
     var elements: List[T]
 
     fn __init__(out self):
@@ -333,7 +333,7 @@ struct _OpBuilderList[T: Copyable & Movable](Defaultable):
 
 
 @fieldwise_init
-struct NamedAttribute(Copyable, Movable):
+struct NamedAttribute(ImplicitlyCopyable, Movable):
     alias cType = _c.IR.MlirNamedAttribute
     var name: Identifier
     var attr: Attribute
@@ -350,14 +350,14 @@ struct NamedAttribute(Copyable, Movable):
 
 
 @fieldwise_init
-struct _WriteState(Copyable, Movable):
+struct _WriteState(ImplicitlyCopyable, Movable):
     var handle: UnsafePointer[FileHandle]
     var errors: List[String]
 
 
 # TODO: how to correctly destroy "owned" Operations?
 @register_passable("trivial")
-struct Operation(Copyable, Movable, Stringable, Writable):
+struct Operation(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
     var c: Self.cType
 
@@ -601,7 +601,7 @@ struct Operation(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Identifier(Copyable, Movable, Stringable):
+struct Identifier(ImplicitlyCopyable, Movable, Stringable):
     alias cType = _c.IR.MlirIdentifier
     var c: Self.cType
 
@@ -622,7 +622,7 @@ struct Identifier(Copyable, Movable, Stringable):
 
 
 @register_passable("trivial")
-struct Type(Copyable, Movable, Stringable, Writable):
+struct Type(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirType
     var c: Self.cType
 
@@ -654,7 +654,7 @@ struct Type(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Value(Copyable, Movable, Stringable, Writable):
+struct Value(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirValue
     var c: Self.cType
 
@@ -707,7 +707,7 @@ struct Value(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Attribute(Copyable, Movable, Stringable, Writable):
+struct Attribute(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirAttribute
     var c: Self.cType
 
@@ -739,7 +739,7 @@ struct Attribute(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Block(Copyable, Movable, Stringable, Writable):
+struct Block(ImplicitlyCopyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
 
@@ -809,7 +809,7 @@ struct Block(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Region(Copyable, Defaultable, Movable):
+struct Region(Defaultable, ImplicitlyCopyable, Movable):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 

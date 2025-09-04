@@ -14,7 +14,7 @@
 
 
 @register_passable("trivial")
-trait MMAOperandDescriptor(Copyable, Movable):
+trait MMAOperandDescriptor(ImplicitlyCopyable, Movable):
     @always_inline
     fn __add__(self, offset: Int) -> Self:
         ...

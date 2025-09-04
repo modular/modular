@@ -18,7 +18,7 @@ from os import abort
 from sys.intrinsics import _type_is_eq
 
 
-trait MixedTupleLike(Copyable, Movable, Representable):
+trait MixedTupleLike(ImplicitlyCopyable, Movable, Representable):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     # Note that unlike the __len__() from Sized, this is a static method.

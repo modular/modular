@@ -20,7 +20,7 @@ from ._c.Support import MlirLogicalResult
 
 
 @register_passable("trivial")
-struct DiagnosticSeverity(Copyable, Movable):
+struct DiagnosticSeverity(ImplicitlyCopyable, Movable):
     """Severity level of a diagnostic."""
 
     alias cType = _c.Diagnostics.MlirDiagnosticSeverity
@@ -39,7 +39,7 @@ struct DiagnosticSeverity(Copyable, Movable):
         return self.c.value == other.c.value
 
 
-struct Diagnostic(Copyable, Movable, Stringable, Writable):
+struct Diagnostic(ImplicitlyCopyable, Movable, Stringable, Writable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -64,7 +64,9 @@ alias DiagnosticHandlerID = _c.Diagnostics.MlirDiagnosticHandlerID
 
 
 @fieldwise_init
-struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
+struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](
+    ImplicitlyCopyable, Movable
+):
     """Deals with attaching and detaching diagnostic functions to an MLIRContext.
 
     Parameters:
@@ -105,7 +107,7 @@ struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
     handler: fn (Diagnostic, mut UserDataType) -> Bool,
     delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Deals with attaching and detaching diagnostic functions along with user data to an MLIRContext.
 
     Parameters:

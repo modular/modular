@@ -45,7 +45,7 @@ trait ConvertibleToPython:
         ...
 
 
-trait ConvertibleFromPython(Copyable, Movable):
+trait ConvertibleFromPython(ImplicitlyCopyable, Movable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """
@@ -63,7 +63,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Copyable):
+struct _PyIter(ImplicitlyCopyable):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -114,8 +114,8 @@ struct _PyIter(Copyable):
 struct PythonObject(
     Boolable,
     ConvertibleToPython,
-    Copyable,
     Defaultable,
+    ImplicitlyCopyable,
     Movable,
     SizedRaising,
     Writable,
@@ -322,7 +322,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](out self, var *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
@@ -340,7 +340,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](out self, var *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 

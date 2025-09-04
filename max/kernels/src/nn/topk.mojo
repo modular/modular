@@ -635,7 +635,9 @@ fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
 # Define the TopK_2 structure to keep track of the top element per thread
 @fieldwise_init
 @register_passable("trivial")
-struct TopK_2[T: DType, largest: Bool = True](Copyable, Defaultable, Movable):
+struct TopK_2[T: DType, largest: Bool = True](
+    Defaultable, ImplicitlyCopyable, Movable
+):
     var p: Int  # flattened index of the element
     var u: Scalar[T]  # value of the element
 

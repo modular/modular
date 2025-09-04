@@ -23,7 +23,7 @@ struct One[Type: Writable & Copyable & Movable]:
     var value: Type
 
     fn __init__(out self, value: Type):
-        self.value = value
+        self.value = value.copy()
 
 
 def use_one():
@@ -39,9 +39,9 @@ struct Two[Type: Writable & Copyable & Movable]:
     var val1: Type
     var val2: Type
 
-    fn __init__(out self, var one: One[Type], var another: One[Type]):
-        self.val1 = one.value
-        self.val2 = another.value
+    fn __init__(out self, one: One[Type], another: One[Type]):
+        self.val1 = one.value.copy()
+        self.val2 = another.value.copy()
         print(String(self.val1), String(self.val2))
 
     @staticmethod

@@ -320,9 +320,9 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
 
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
-    Copyable,
     Defaultable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Intable,
     Movable,
     Sized,
@@ -1461,7 +1461,7 @@ fn is_tuple(t: IntTuple) -> Bool:
     return t.is_tuple()
 
 
-struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
+struct _ZipIter[origin: ImmutableOrigin, n: Int](ImplicitlyCopyable, Movable):
     """Iterator for zipped `IntTuple` collections."""
 
     alias Element = IntTuple[origin]
@@ -1517,7 +1517,7 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int](Copyable, Movable):
 
 
 @fieldwise_init
-struct _zip[origin: ImmutableOrigin, n: Int](Copyable, Movable):
+struct _zip[origin: ImmutableOrigin, n: Int](ImplicitlyCopyable, Movable):
     """Container for zipped `IntTuple` collections."""
 
     var ts: InlineArray[Pointer[IntTuple, origin], n]

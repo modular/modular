@@ -145,7 +145,7 @@ struct LayoutTensorBuild[
     __layout_int_type: DType = _get_layout_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
-](Copyable, Defaultable, Movable):
+](Defaultable, ImplicitlyCopyable, Movable):
     """
     Tensor layout builder providing a fluent interface for constructing tensors with various layouts.
 

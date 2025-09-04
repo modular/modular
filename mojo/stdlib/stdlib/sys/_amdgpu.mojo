@@ -42,7 +42,7 @@ alias amd_signal_kind64_t = Int64
 # Must match the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L61
 @fieldwise_init
-struct amd_signal_t(Copyable, Movable):
+struct amd_signal_t(ImplicitlyCopyable, Movable):
     var kind: amd_signal_kind64_t
     var value: UInt64
     var event_mailbox_ptr: UInt64
@@ -516,7 +516,7 @@ fn printf_append_string_n(
 
 @fieldwise_init
 @register_passable("trivial")
-struct Header(Copyable, Movable):
+struct Header(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -605,7 +605,7 @@ struct Header(Copyable, Movable):
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
 @register_passable("trivial")
-struct header_t(Copyable, Movable):
+struct header_t(ImplicitlyCopyable, Movable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -614,7 +614,7 @@ struct header_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Payload(Copyable, Movable):
+struct Payload(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[payload_t]
 
     @always_inline
@@ -627,13 +627,13 @@ struct Payload(Copyable, Movable):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @fieldwise_init
-struct payload_t(Copyable, Movable):
+struct payload_t(ImplicitlyCopyable, Movable):
     var slots: InlineArray[InlineArray[UInt64, 8], 64]
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct Buffer(Copyable, Movable):
+struct Buffer(ImplicitlyCopyable, Movable):
     var _handle: UnsafePointer[
         buffer_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -726,7 +726,7 @@ struct Buffer(Copyable, Movable):
 # this code tries to access.
 @fieldwise_init
 @register_passable("trivial")
-struct buffer_t(Copyable, Movable):
+struct buffer_t(ImplicitlyCopyable, Movable):
     var headers: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]
@@ -739,7 +739,7 @@ struct buffer_t(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlOffset(Copyable, Movable):
+struct ControlOffset(ImplicitlyCopyable, Movable):
     var value: UInt32
     alias ready_flag = Self(0)
     alias reserved0 = Self(1)
@@ -755,7 +755,7 @@ struct ControlOffset(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ControlWidth(Copyable, Movable):
+struct ControlWidth(ImplicitlyCopyable, Movable):
     var value: UInt32
     alias ready_flag = Self(1)
     alias reserved0 = Self(31)

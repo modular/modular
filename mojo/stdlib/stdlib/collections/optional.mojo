@@ -39,7 +39,7 @@ from utils import Variant
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(Copyable, ExplicitlyCopyable, Movable):
+struct _NoneType(ExplicitlyCopyable, ImplicitlyCopyable, Movable):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -50,7 +50,7 @@ struct _NoneType(Copyable, ExplicitlyCopyable, Movable):
 
 
 struct Optional[T: ExplicitlyCopyable & Movable](
-    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable
+    Boolable, Defaultable, ExplicitlyCopyable, ImplicitlyCopyable, Movable
 ):
     """A type modeling a value which may or may not be present.
 
@@ -171,7 +171,7 @@ struct Optional[T: ExplicitlyCopyable & Movable](
         return self is None
 
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable
+        T: EqualityComparable & ImplicitlyCopyable & Movable
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -179,7 +179,7 @@ struct Optional[T: ExplicitlyCopyable & Movable](
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `ImplicitlyCopyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -205,7 +205,7 @@ struct Optional[T: ExplicitlyCopyable & Movable](
         return self is not None
 
     fn __ne__[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -213,7 +213,7 @@ struct Optional[T: ExplicitlyCopyable & Movable](
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-                traits `Copyable`, `Movable` and `EqualityComparable`.
+                traits `ImplicitlyCopyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -258,13 +258,13 @@ struct Optional[T: ExplicitlyCopyable & Movable](
         return self.unsafe_value()
 
     fn __str__[
-        U: Copyable & Movable & Representable, //
+        U: ImplicitlyCopyable & Movable & Representable, //
     ](self: Optional[U]) -> String:
         """Return the string representation of the value of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
 
         Returns:
             A string representation of the `Optional`.
@@ -275,13 +275,13 @@ struct Optional[T: ExplicitlyCopyable & Movable](
 
     # TODO: Include the Parameter type in the string as well.
     fn __repr__[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: Optional[U]) -> String:
         """Returns the verbose string representation of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
 
         Returns:
             A verbose string representation of the `Optional`.
@@ -307,13 +307,13 @@ struct Optional[T: ExplicitlyCopyable & Movable](
         return self.__bool__()
 
     fn write_to[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: Optional[U], mut writer: Some[Writer]):
         """Write `Optional` string representation to a `Writer`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `Copyable` and `Movable`.
+                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
 
         Args:
             writer: The object to write to.

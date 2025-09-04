@@ -2822,7 +2822,7 @@ trait Ceilable:
     from math import Ceilable, ceil
 
     @fieldwise_init
-    struct Complex(Ceilable, Copyable):
+    struct Complex(Ceilable, ImplicitlyCopyable):
         var re: Float64
         var im: Float64
 
@@ -2859,7 +2859,7 @@ trait Floorable:
     from math import Floorable, floor
 
     @fieldwise_init
-    struct Complex(Floorable, Copyable):
+    struct Complex(Floorable, ImplicitlyCopyable):
         var re: Float64
         var im: Float64
 
@@ -2897,7 +2897,7 @@ trait CeilDivable:
     from math import CeilDivable
 
     @fieldwise_init
-    struct Foo(CeilDivable, Copyable):
+    struct Foo(CeilDivable, ImplicitlyCopyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) -> Self:
@@ -2930,7 +2930,7 @@ trait CeilDivableRaising:
     from math import CeilDivableRaising
 
     @fieldwise_init
-    struct Foo(CeilDivableRaising, Copyable):
+    struct Foo(CeilDivableRaising, ImplicitlyCopyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) raises -> Self:
@@ -2968,7 +2968,7 @@ trait Truncable:
     from math import Truncable, trunc
 
     @fieldwise_init
-    struct Complex(Truncable, Copyable):
+    struct Complex(Truncable, ImplicitlyCopyable):
         var re: Float64
         var im: Float64
 

@@ -62,10 +62,10 @@ fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
 
 struct Path(
     Boolable,
-    Copyable,
     EqualityComparable,
     ExplicitlyCopyable,
     Hashable,
+    ImplicitlyCopyable,
     KeyElement,
     Movable,
     PathLike,

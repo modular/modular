@@ -58,7 +58,7 @@ fn _check_scheduler_constraints[
 
 @fieldwise_init
 @register_passable("trivial")
-struct ReductionMode(Copyable, Movable):
+struct ReductionMode(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior

@@ -59,7 +59,7 @@ from .shmem_api import (
 )
 
 
-struct SHMEMContext(Copyable, Movable):
+struct SHMEMContext(ImplicitlyCopyable, Movable):
     """Usable as a context manager to run kernels on a GPU with SHMEM support,
     on exit it will finalize SHMEM and clean up resources.
 

@@ -67,7 +67,7 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     return Pointer(to=ptr2[])
 
 
-struct Python(Copyable, Defaultable):
+struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
     var _impl: Pointer[CPython, StaticConstantOrigin]
@@ -359,7 +359,7 @@ struct Python(Copyable, Defaultable):
     @doc_private
     @staticmethod
     fn _dict[
-        V: ConvertibleToPython & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
         """Construct a Python dictionary from keyword arguments.
 
@@ -383,13 +383,13 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn dict[
-        V: ConvertibleToPython & Copyable & Movable = PythonObject
+        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Parameters:
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -405,16 +405,16 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn dict[
-        K: ConvertibleToPython & Copyable & Movable = PythonObject,
-        V: ConvertibleToPython & Copyable & Movable = PythonObject,
+        K: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject,
+        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject,
     ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
             K: The type of the keys in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
+                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -446,7 +446,7 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn list[
-        T: ConvertibleToPython & Copyable & Movable
+        T: ConvertibleToPython & ImplicitlyCopyable & Movable
     ](values: Span[T]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
@@ -470,9 +470,11 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn _list[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+        values: VariadicPack[
+            True, _, ConvertibleToPython & ImplicitlyCopyable, *Ts
+        ]
     ) raises -> PythonObject:
         """Initialize the object from a list literal.
 
@@ -498,7 +500,7 @@ struct Python(Copyable, Defaultable):
     @always_inline
     @staticmethod
     fn list[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
 
@@ -515,9 +517,11 @@ struct Python(Copyable, Defaultable):
 
     @staticmethod
     fn _tuple[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](
-        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
+        values: VariadicPack[
+            True, _, ConvertibleToPython & ImplicitlyCopyable, *Ts
+        ]
     ) raises -> PythonObject:
         """Initialize the object from a tuple literal.
 
@@ -543,7 +547,7 @@ struct Python(Copyable, Defaultable):
     @always_inline
     @staticmethod
     fn tuple[
-        *Ts: ConvertibleToPython & Copyable
+        *Ts: ConvertibleToPython & ImplicitlyCopyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
 

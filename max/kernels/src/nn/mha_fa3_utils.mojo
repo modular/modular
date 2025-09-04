@@ -73,7 +73,7 @@ struct MHAPosition[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.

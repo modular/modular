@@ -22,7 +22,7 @@ from sys.intrinsics import _type_is_eq
 
 
 struct Variant[*Ts: ExplicitlyCopyable & Movable](
-    Copyable, ExplicitlyCopyable, Movable
+    ExplicitlyCopyable, ImplicitlyCopyable, Movable
 ):
     """A union that can hold a runtime-variant value from a set of predefined
     types.

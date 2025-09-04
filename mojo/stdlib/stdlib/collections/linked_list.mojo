@@ -18,7 +18,7 @@ from os import abort
 
 struct Node[
     ElementType: ExplicitlyCopyable & Movable,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """A node in a linked list data structure.
 
     Parameters:
@@ -98,7 +98,7 @@ struct _LinkedListIter[
     ElementType: ExplicitlyCopyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -137,12 +137,12 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: ExplicitlyCopyable & Movable,
-](Boolable, Copyable, Defaultable, Movable, Sized):
+](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:
         ElementType: The type of elements stored in the list. Must implement the
-            `Copyable` and `Movable` traits.
+            `ImplicitlyCopyable` and `Movable` traits.
 
     A doubly-linked list is a data structure where each element points to both
     the next and previous elements, allowing for efficient insertion and deletion

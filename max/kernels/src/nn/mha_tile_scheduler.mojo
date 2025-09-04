@@ -25,7 +25,7 @@ from gpu.sync import barrier, named_barrier
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Copyable, Movable, Stringable, Writable):
+struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -61,7 +61,7 @@ struct WorkInfo(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct SeqInfo(Copyable, Movable):
+struct SeqInfo(ImplicitlyCopyable, Movable):
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -107,7 +107,7 @@ struct SeqInfo(Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHASchedulerSynchronization(Copyable, Movable):
+struct MHASchedulerSynchronization(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     alias NONE = Self(0)  # use for TMA
@@ -154,7 +154,7 @@ struct MHATileState:
 
 
 @register_passable("trivial")
-struct MHATileSummary(Copyable, Movable):
+struct MHATileSummary(ImplicitlyCopyable, Movable):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -382,7 +382,7 @@ trait MHATileScheduler:
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHASchedule(Copyable, Movable):
+struct MHASchedule(ImplicitlyCopyable, Movable):
     var _value: Int32
 
     alias DEFAULT = Self(0)
@@ -406,7 +406,7 @@ struct MHASchedule(Copyable, Movable):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](Copyable, Defaultable, MHATileScheduler, Movable):
+](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -477,7 +477,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](Copyable, Defaultable, MHATileScheduler, Movable):
+](Defaultable, ImplicitlyCopyable, MHATileScheduler, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
 
@@ -561,7 +561,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](Copyable, DevicePassable, MHATileScheduler, Movable):
+](DevicePassable, ImplicitlyCopyable, MHATileScheduler, Movable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.

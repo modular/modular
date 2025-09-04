@@ -17,8 +17,8 @@ from math import sqrt
 @register_passable("trivial")
 struct Complex(
     Boolable,
-    Copyable,
     EqualityComparable,
+    ImplicitlyCopyable,
     Movable,
     Representable,
     Stringable,

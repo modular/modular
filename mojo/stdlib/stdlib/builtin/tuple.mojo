@@ -28,7 +28,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: ExplicitlyCopyable & Movable](
-    Copyable, Movable, Sized
+    ImplicitlyCopyable, Movable, Sized
 ):
     """The type of a literal tuple expression.
 

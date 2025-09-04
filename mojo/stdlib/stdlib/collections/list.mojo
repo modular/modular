@@ -37,7 +37,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:
@@ -84,9 +84,9 @@ struct _ListIter[
 
 struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     Boolable,
-    Copyable,
     Defaultable,
     ExplicitlyCopyable,
+    ImplicitlyCopyable,
     Iterable,
     Movable,
     Sized,
@@ -364,7 +364,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @always_inline
     fn __eq__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are equal.
 
@@ -397,7 +397,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @always_inline
     fn __ne__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_], other: List[U, *_]) -> Bool:
         """Checks if two lists are not equal.
 
@@ -422,7 +422,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         return not (self == other)
 
     fn __contains__[
-        U: EqualityComparable & Copyable & Movable, //
+        U: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_], value: U) -> Bool:
         """Verify if a given value is present in the list.
 
@@ -548,7 +548,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn __str__[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
@@ -580,7 +580,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn write_to[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_], mut writer: Some[Writer]):
         """Write `my_list.__str__()` to a `Writer`.
 
@@ -600,7 +600,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     @no_inline
     fn __repr__[
-        U: Representable & Copyable & Movable, //
+        U: Representable & ImplicitlyCopyable & Movable, //
     ](self: List[U, *_]) -> String:
         """Returns a string representation of a `List`.
 
@@ -939,7 +939,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
     # TODO: Remove explicit self type when issue 1876 is resolved.
     fn index[
-        C: EqualityComparable & Copyable & Movable, //
+        C: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](
         ref self: List[C, *_],
         value: C,
@@ -1136,7 +1136,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         (self._data + idx).init_pointee_move(value^)
 
     fn count[
-        T: EqualityComparable & Copyable & Movable, //
+        T: EqualityComparable & ImplicitlyCopyable & Movable, //
     ](self: List[T, *_], value: T) -> Int:
         """Counts the number of occurrences of a value in the list.
 

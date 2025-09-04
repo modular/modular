@@ -120,7 +120,7 @@ struct TraceCategory(EqualityComparable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(Copyable, EqualityComparable, Movable):
+struct TraceLevel(EqualityComparable, ImplicitlyCopyable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)
@@ -358,7 +358,7 @@ struct Trace[
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events

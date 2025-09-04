@@ -20,7 +20,7 @@ from utils.index import IndexList
 # Padding handling method.
 @fieldwise_init
 @register_passable("trivial")
-struct PadHandling(Copyable, Movable):
+struct PadHandling(ImplicitlyCopyable, Movable):
     var value: Int
     alias EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     alias INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -37,7 +37,7 @@ struct PadHandling(Copyable, Movable):
 # Data layout encoding.
 @fieldwise_init
 @register_passable("trivial")
-struct Image2DLayout(Copyable, Movable):
+struct Image2DLayout(ImplicitlyCopyable, Movable):
     var value: Int
     alias UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     alias NHWC = Image2DLayout(0)  # channels last layout.
@@ -281,7 +281,7 @@ struct ImageData[
 
 
 @register_passable("trivial")
-struct ImageShape(Copyable, Movable):
+struct ImageShape(ImplicitlyCopyable, Movable):
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
     var N: Int

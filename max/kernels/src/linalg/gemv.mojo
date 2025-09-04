@@ -62,7 +62,7 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 @fieldwise_init
-struct GEMVAlgorithm(Copyable, Movable, Stringable, Writable):
+struct GEMVAlgorithm(ImplicitlyCopyable, Movable, Stringable, Writable):
     var _value: Int
 
     alias GEMV_KERNEL = Self(0)

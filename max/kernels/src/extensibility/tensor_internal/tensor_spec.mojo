@@ -26,7 +26,7 @@ from utils import IndexList, product
 
 @fieldwise_init
 @register_passable("trivial")
-struct RuntimeTensorSpec[dtype: DType, rank: Int](Copyable, Movable):
+struct RuntimeTensorSpec[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
     var shape: IndexList[rank]
 
     fn __getitem__(self, idx: Int) -> Int:

@@ -29,13 +29,15 @@ alias insertion_sort_threshold = 32
 
 
 @fieldwise_init("implicit")
-struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
+struct _SortWrapper[T: ImplicitlyCopyable & Movable](
+    ImplicitlyCopyable, Movable
+):
     var data: T
 
 
 @always_inline
 fn _insertion_sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
@@ -60,7 +62,7 @@ fn _insertion_sort[
 # put everything thats "<" to the left of pivot
 @always_inline
 fn _quicksort_partition_right[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
@@ -89,7 +91,7 @@ fn _quicksort_partition_right[
 # put everything thats "<=" to the left of pivot
 @always_inline
 fn _quicksort_partition_left[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
@@ -115,7 +117,7 @@ fn _quicksort_partition_left[
 
 
 fn _heap_sort_fix_down[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin], idx: Int):
@@ -136,7 +138,7 @@ fn _heap_sort_fix_down[
 
 @always_inline
 fn _heap_sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
@@ -165,7 +167,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 
 @always_inline
 fn _delegate_small_sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
@@ -196,7 +198,7 @@ fn _delegate_small_sort[
 
 @always_inline
 fn _quicksort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
@@ -259,7 +261,7 @@ fn _quicksort[
 
 
 fn _merge[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     span_origin: ImmutableOrigin,
     result_origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
@@ -317,7 +319,7 @@ fn _merge[
 
 
 fn _stable_sort_impl[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     span_life: MutableOrigin,
     tmp_life: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
@@ -345,7 +347,7 @@ fn _stable_sort_impl[
 
 
 fn _stable_sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]):
@@ -362,7 +364,7 @@ fn _stable_sort[
 
 @always_inline
 fn _partition[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
@@ -395,7 +397,7 @@ fn _partition[
 
 
 fn _partition[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](var span: Span[T, origin], var k: Int):
@@ -413,7 +415,7 @@ fn _partition[
 
 
 fn partition[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], k: Int):
@@ -445,7 +447,7 @@ fn partition[
 
 # Junction from public to private API
 fn _sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
     *,
@@ -471,7 +473,7 @@ fn _sort[
 # Eventually we want a sort that takes a Span and one that takes a List with
 # optional cmp_fn.
 fn sort[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
@@ -481,7 +483,7 @@ fn sort[
     The function doesn't return anything, the list is updated inplace.
 
     Parameters:
-        T: Copyable & Movable type of the underlying data.
+        T: ImplicitlyCopyable & Movable type of the underlying data.
         origin: Origin of span.
         cmp_fn: The comparison function.
         stable: Whether the sort should be stable.
@@ -546,7 +548,7 @@ fn sort[
 
 
 fn sort[
-    T: Copyable & Movable & Comparable,
+    T: ImplicitlyCopyable & Movable & Comparable,
     origin: MutableOrigin, //,
     *,
     stable: Bool = False,
@@ -576,7 +578,7 @@ fn sort[
 
 @always_inline
 fn _sort2[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
@@ -594,7 +596,7 @@ fn _sort2[
 
 @always_inline
 fn _sort3[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
@@ -611,7 +613,7 @@ fn _sort3[
 
 @always_inline
 fn _sort_partial_3[
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
@@ -638,7 +640,7 @@ fn _sort_partial_3[
 @always_inline
 fn _small_sort[
     n: Int,
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
 ](array: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=True, **_]):
     @parameter

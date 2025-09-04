@@ -233,7 +233,15 @@ struct NDBuffer[
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
-](Sized, Stringable, Writable, Copyable, Movable, Defaultable, DevicePassable):
+](
+    Sized,
+    Stringable,
+    Writable,
+    ImplicitlyCopyable,
+    Movable,
+    Defaultable,
+    DevicePassable,
+):
     """An N-dimensional buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does

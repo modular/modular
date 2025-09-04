@@ -28,7 +28,7 @@ Its implementation closely mirrors Python's `dict` implementation:
   [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait, which encompasses
-Movable, Hashable, and EqualityComparable. It also includes Copyable and Movable
+Movable, Hashable, and EqualityComparable. It also includes ImplicitlyCopyable and Movable
 until we push references through the standard library types.
 
 Value elements must be CollectionElements for a similar reason. Both key and
@@ -44,7 +44,7 @@ from memory import bitcast, memcpy
 
 alias KeyElement = ExplicitlyCopyable & Movable & Hashable & EqualityComparable
 """A trait composition for types which implement all requirements of
-dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
+dictionary keys. Dict keys must minimally be ImplicitlyCopyable, Movable, Hashable,
 and EqualityComparable for a hash map. Until we have references
 they must also be copyable."""
 
@@ -57,7 +57,7 @@ struct _DictEntryIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -115,7 +115,7 @@ struct _DictKeyIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -156,7 +156,7 @@ struct _DictValueIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -200,7 +200,7 @@ struct _DictValueIter[
 
 @fieldwise_init
 struct DictEntry[K: KeyElement, V: ExplicitlyCopyable & Movable, H: Hasher](
-    Copyable, ExplicitlyCopyable, Movable
+    ExplicitlyCopyable, ImplicitlyCopyable, Movable
 ):
     """Store a key-value pair entry inside a dictionary.
 
@@ -346,7 +346,14 @@ struct _DictIndex(Movable):
 
 struct Dict[
     K: KeyElement, V: ExplicitlyCopyable & Movable, H: Hasher = default_hasher
-](Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized):
+](
+    Boolable,
+    Defaultable,
+    ExplicitlyCopyable,
+    ImplicitlyCopyable,
+    Movable,
+    Sized,
+):
     """A container that stores key-value pairs.
 
     The `Dict` type is Mojo's primary associative collection, similar to
@@ -1193,7 +1200,7 @@ struct Dict[
 
 
 struct OwnedKwargsDict[V: ExplicitlyCopyable & Movable](
-    Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
+    Defaultable, ExplicitlyCopyable, ImplicitlyCopyable, Movable, Sized
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 

@@ -44,7 +44,7 @@ fn gemm_naive[
 
 @fieldwise_init
 struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, Copyable, Movable
+    Benchmarkable, ImplicitlyCopyable, Movable
 ):
     var m: Int
     var n: Int
@@ -123,7 +123,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
 
 @fieldwise_init
 struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable, Copyable, Movable
+    Benchmarkable, ImplicitlyCopyable, Movable
 ):
     var m: Int
     var n: Int

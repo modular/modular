@@ -13,7 +13,7 @@
 
 
 @fieldwise_init
-struct WeightsRegistry(Copyable, Movable):
+struct WeightsRegistry(ImplicitlyCopyable, Movable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
     var names: List[String]

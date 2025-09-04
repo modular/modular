@@ -70,7 +70,7 @@ struct OwnedPointer[T: AnyType]:
         self._inner.init_pointee_explicit_copy(copy_value)
 
     fn __init__[
-        T: Copyable, U: NoneType = None
+        T: ImplicitlyCopyable, U: NoneType = None
     ](out self: OwnedPointer[T], value: T):
         """Construct a new `OwnedPointer` by copying the passed value into a new backing allocation.
 
@@ -140,7 +140,7 @@ struct OwnedPointer[T: AnyType]:
         Parameters:
             T: The type of the data backing this `OwnedPointer`. `take()` only exists for `T: Movable`
                 since this consuming operation only makes sense for types that you want to avoid copying.
-                For types that are `Copyable` or `ExplicitlyCopyable` but are not `Movable`, you can copy them through
+                For types that are `ImplicitlyCopyable` or `ExplicitlyCopyable` but are not `Movable`, you can copy them through
                 `__getitem__` as in `var v = some_ptr_var[]`.
 
         Returns:

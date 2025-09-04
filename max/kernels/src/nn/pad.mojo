@@ -365,7 +365,7 @@ fn _do_pad[
 
 @register_passable("trivial")
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    Copyable & Movable
+    ImplicitlyCopyable & Movable
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -602,7 +602,7 @@ fn _memcpy_regions_fast[
 
 @register_passable("trivial")
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
-    Copyable & Movable
+    ImplicitlyCopyable & Movable
 ):
     var pre_pad: Int
     var post_pad: Int

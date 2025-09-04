@@ -17,7 +17,7 @@ from collections import Optional
 from memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Movable, Stringable):
+struct Grid[rows: Int, cols: Int](ImplicitlyCopyable, Movable, Stringable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#

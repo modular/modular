@@ -58,7 +58,9 @@ alias _WINDOWS_LARGE_INTEGER = Int64
 
 @fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
+struct _CTimeSpec(
+    Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable
+):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -86,7 +88,7 @@ struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _FILETIME(Copyable, Defaultable, Movable):
+struct _FILETIME(Defaultable, ImplicitlyCopyable, Movable):
     var dw_low_date_time: UInt32
     var dw_high_date_time: UInt32
 

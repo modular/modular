@@ -376,7 +376,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Defaultable, Movable):
+struct LaunchAttribute(Defaultable, ImplicitlyCopyable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
