@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
+from collections.string.string_slice import get_static_string, _to_string_list
 from sys.info import size_of
 
 from testing import assert_equal, assert_false, assert_true
@@ -487,7 +487,6 @@ def test_split():
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
@@ -563,16 +562,8 @@ def test_split():
 
 
 def test_splitlines():
-    alias S = StringSlice[StaticConstantOrigin]
-    alias L = List[StringSlice[StaticConstantOrigin]]
-
-    # FIXME: remove once we can compare Lists of different element types
-    fn _assert_equal[
-        O1: ImmutableOrigin
-    ](l1: List[StringSlice[O1]], l2: List[String]) raises:
-        assert_equal(len(l1), len(l2))
-        for i in range(len(l1)):
-            assert_equal(String(l1[i]), l2[i])
+    alias S = StaticString
+    alias L = List[StaticString]
 
     # Test with no line breaks
     assert_equal(S("hello world").splitlines(), L("hello world"))
@@ -614,12 +605,15 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
-        s = StringSlice(item)
-        assert_equal(s.splitlines(), hello_mojo)
-        items = ["hello" + u, "world" + u, "mojo" + u, "language" + u]
-        _assert_equal(s.splitlines(keepends=True), items)
+    for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        item = StaticString("").join(
+            "hello", u, "world", u, "mojo", u, "language", u
+        )
+        assert_equal(item.splitlines(), hello_mojo)
+        assert_equal(
+            _to_string_list(item.splitlines(keepends=True)),
+            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
+        )
 
 
 def test_rstrip():

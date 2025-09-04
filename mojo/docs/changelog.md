@@ -337,6 +337,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 - The `SIMD.from_bits` factory method is now a constructor, use
   `SIMD(from_bits=...)` instead.
 
+- `String.splitlines()` now returns a `List[StringSlice]` instead of a
+  `List[String]`. This avoids unnecessary intermediate allocations.
+
 - `StringSlice.from_utf8` factory method is now a constructor, use
   `StringSlice(from_utf8=...)` instead.
 

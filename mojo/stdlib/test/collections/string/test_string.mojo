@@ -26,6 +26,7 @@ from testing import (
     assert_raises,
     assert_true,
 )
+from collections.string.string_slice import _to_string_list
 
 
 @fieldwise_init
@@ -687,7 +688,6 @@ def test_split():
 
     # Should add all whitespace-like chars as one
     # test all unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
@@ -763,17 +763,19 @@ def test_split():
 
 
 def test_splitlines():
-    alias L = List[String]
+    alias S = String
+    alias L = List[StaticString]
+
     # Test with no line breaks
-    assert_equal(String("hello world").splitlines(), L("hello world"))
+    assert_equal(S("hello world").splitlines(), L("hello world"))
 
     # Test with line breaks
-    assert_equal(String("hello\nworld").splitlines(), L("hello", "world"))
-    assert_equal(String("hello\rworld").splitlines(), L("hello", "world"))
-    assert_equal(String("hello\r\nworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\nworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\rworld").splitlines(), L("hello", "world"))
+    assert_equal(S("hello\r\nworld").splitlines(), L("hello", "world"))
 
     # Test with multiple different line breaks
-    s1 = "hello\nworld\r\nmojo\rlanguage\r\n"
+    s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
     hello_mojo = L("hello", "world", "mojo", "language")
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
@@ -782,9 +784,9 @@ def test_splitlines():
     )
 
     # Test with an empty string
-    assert_equal(String().splitlines(), L())
+    assert_equal(S("").splitlines(), L())
     # test \v \f \x1c \x1d
-    s2 = "hello\vworld\fmojo\x1clanguage\x1d"
+    s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
     assert_equal(
         s2.splitlines(keepends=True),
@@ -792,7 +794,7 @@ def test_splitlines():
     )
 
     # test \x1c \x1d \x1e
-    s3 = "hello\x1cworld\x1dmojo\x1elanguage\x1e"
+    s3 = S("hello\x1cworld\x1dmojo\x1elanguage\x1e")
     assert_equal(s3.splitlines(), hello_mojo)
     assert_equal(
         s3.splitlines(keepends=True),
@@ -800,17 +802,18 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = List[UInt8](0xC2, 0x85)
-    var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
-    var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
+    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = String(bytes=elt)
-        item = String().join("hello", u, "world", u, "mojo", u, "language", u)
+    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        item = StaticString("").join(
+            "hello", u, "world", u, "mojo", u, "language", u
+        )
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
-            item.splitlines(keepends=True),
-            L("hello" + u, "world" + u, "mojo" + u, "language" + u),
+            _to_string_list(item.splitlines(keepends=True)),
+            List("hello" + u, "world" + u, "mojo" + u, "language" + u),
         )
 
 
@@ -818,7 +821,6 @@ def test_isspace():
     assert_false(String().isspace())
 
     # test all utf8 and unicode separators
-    # 0 is to build a String with null terminator
     var next_line = List[UInt8](0xC2, 0x85)
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
