@@ -43,8 +43,9 @@ class SamplingParamsInput:
 class SamplingParams:
     """Request specific sampling parameters that are only known at run time."""
 
-    top_k: int = 1
-    """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
+    top_k: int = 255
+    """Limits the sampling to the K most probable tokens. This defaults to 255.
+    For greedy sampling, set to 1."""
 
     top_p: float = 1
     """Only use the tokens whose cumulative probability is within the top_p threshold. This applies to the top_k tokens."""
