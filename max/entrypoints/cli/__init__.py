@@ -22,6 +22,7 @@ from .config import (
     is_multiple,
     is_optional,
     pipeline_config_options,
+    sampling_params_options,
     validate_field_type,
 )
 from .device_options import DevicesOptionType
@@ -45,6 +46,7 @@ __all__ = [
     "list_pipelines_to_json",
     "pipeline_config_options",
     "pipeline_encode",
+    "sampling_params_options",
     "serve_api_server_and_model_worker",
     "stream_text_to_console",
     "validate_field_type",

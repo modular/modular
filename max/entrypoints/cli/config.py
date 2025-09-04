@@ -282,6 +282,38 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
+def sampling_params_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
+    @click.option(
+        "--top-k",
+        is_flag=False,
+        type=int,
+        show_default=False,
+        default=None,
+        help="Limits the sampling to the K most probable tokens. This defaults to 255. For greedy sampling, set to 1.",
+    )
+    @click.option(
+        "--temperature",
+        is_flag=False,
+        type=float,
+        show_default=False,
+        default=None,
+        help="Controls the randomness of the model's output; higher values produce more diverse responses.",
+    )
+    @click.option(
+        "--seed",
+        is_flag=False,
+        type=int,
+        show_default=False,
+        default=None,
+        help="Seed for the random number generator.",
+    )
+    @functools.wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 def parse_task_flags(task_flags: tuple[str, ...]) -> dict[str, str]:
     """Parse task flags into a dictionary.
 

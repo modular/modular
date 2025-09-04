@@ -3453,7 +3453,7 @@ class CreateCompletionRequest(BaseModel):
         examples=[1],
     )
     top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
-        1,
+        255,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )
@@ -4887,7 +4887,7 @@ class CreateChatCompletionRequest(BaseModel):
         examples=[1],
     )
     top_k: Optional[Annotated[int, Field(ge=1, le=255)]] = Field(
-        1,
+        255,
         description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )

@@ -43,17 +43,22 @@ class WithLazyPipelineOptions(click.Command):
         self._options_loaded = False
         super().__init__(*args, **kwargs)
 
+    @staticmethod
+    def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
+        from max.entrypoints.cli import pipeline_config_options
+
+        return pipeline_config_options(callback)
+
     def _ensure_options_loaded(self) -> None:
         if not self._options_loaded:
             # Lazily load and apply pipeline_config_options decorator
-            from max.entrypoints.cli import pipeline_config_options
 
             # In Click, each command has a callback function that's executed when the command runs.
             # The callback contains the actual implementation of the command.
             # Here, we're applying the pipeline_config_options decorator to add CLI parameters
             # to our callback function dynamically, rather than statically at import time.
             assert self.callback is not None
-            self.callback = pipeline_config_options(self.callback)
+            self.callback = self._add_options(self.callback)
             self._options_loaded = True
 
             # When Click decorators (like @click.option) are applied to a function,
@@ -86,6 +91,17 @@ class WithLazyPipelineOptions(click.Command):
     ) -> list[click.shell_completion.CompletionItem]:
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
+
+
+class WithLazySamplingAndPipelineOptions(WithLazyPipelineOptions):
+    @staticmethod
+    def _add_options(callback: Callable[_P, _R]) -> Callable[_P, _R]:
+        from max.entrypoints.cli import (
+            pipeline_config_options,
+            sampling_params_options,
+        )
+
+        return sampling_params_options(pipeline_config_options(callback))
 
 
 class ModelGroup(click.Group):
@@ -236,7 +252,7 @@ def cli_serve(
         )
 
 
-@main.command(name="generate", cls=WithLazyPipelineOptions)
+@main.command(name="generate", cls=WithLazySamplingAndPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -265,6 +281,9 @@ def cli_pipeline(
     prompt: str,
     image_url: list[str],
     num_warmups: int,
+    seed: int,
+    top_k: int,
+    temperature: float,
     **config_kwargs: Any,
 ) -> None:
     """Generate text using the specified model.
@@ -273,16 +292,23 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max.entrypoints.cli import generate_text_for_pipeline
+    from max.interfaces import SamplingParams, SamplingParamsInput
     from max.pipelines import PipelineConfig
 
     if config_kwargs["max_new_tokens"] == -1:
         # Limit generate default max_new_tokens to 100.
         config_kwargs["max_new_tokens"] = 100
+    params = SamplingParamsInput(
+        seed=seed,
+        top_k=top_k,
+        temperature=temperature,
+    )
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
     generate_text_for_pipeline(
         pipeline_config,
+        sampling_params=SamplingParams.from_input(params),
         prompt=prompt,
         image_urls=image_url,
         num_warmups=num_warmups,

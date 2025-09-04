@@ -19,12 +19,12 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Iterable
-from typing import Optional
 
 import requests
 from max.interfaces import (
     Pipeline,
     PipelineTokenizer,
+    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )
@@ -41,9 +41,10 @@ async def stream_text_to_console(
     pipeline: Pipeline,
     tokenizer: PipelineTokenizer,
     prompt: str,
-    images: Optional[list[bytes]],
+    images: list[bytes] | None,
     num_steps: int,
-    metrics: Optional[TextGenerationMetrics] = None,
+    sampling_params: SamplingParams,
+    metrics: TextGenerationMetrics | None = None,
     print_tokens: bool = True,
 ) -> None:
     req_id = str(uuid.uuid4())
@@ -53,6 +54,7 @@ async def stream_text_to_console(
             prompt=prompt,
             images=images,
             model_name=MODEL_NAME,
+            sampling_params=sampling_params,
         )
     )
     pipeline_request = {req_id: context}
@@ -105,6 +107,7 @@ async def stream_text_to_console(
 
 def generate_text_for_pipeline(
     pipeline_config: PipelineConfig,
+    sampling_params: SamplingParams,
     prompt: str,
     image_urls: Iterable[str] = (),
     num_warmups: int = 0,
@@ -129,6 +132,7 @@ def generate_text_for_pipeline(
                         prompt,
                         images,
                         num_steps=pipeline_config.max_num_steps,
+                        sampling_params=sampling_params,
                         metrics=None,
                         print_tokens=False,
                     )
@@ -143,6 +147,7 @@ def generate_text_for_pipeline(
                 prompt,
                 images,
                 num_steps=pipeline_config.max_num_steps,
+                sampling_params=sampling_params,
                 metrics=metrics,
                 print_tokens=True,
             )
