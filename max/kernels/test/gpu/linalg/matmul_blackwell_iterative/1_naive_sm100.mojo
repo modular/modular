@@ -48,7 +48,7 @@ fn kernel_1[
     var row = block_dim.y * block_idx.y + (thread_idx.y)
     var col = block_dim.x * block_idx.x + (thread_idx.x)
 
-    if row < M and col < N:
+    if row < UInt(M) and col < UInt(N):
         # Still accumulate in float32 for precision
         var acc: Float32 = 0
 

@@ -307,14 +307,14 @@ fn kernel_5[
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, a_gmem_slice_coord),
+                    (UInt(i * BK + k), UInt(a_gmem_slice_coord)),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, b_gmem_slice_coord),
+                    (UInt(i * BK + k), UInt(b_gmem_slice_coord)),
                     b_multicast_mask,
                 )
 
@@ -442,7 +442,7 @@ fn kernel_5[
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
-    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
         var row_start = block_idx.x * BM
 
         var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
@@ -458,7 +458,7 @@ fn kernel_5[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
+        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
