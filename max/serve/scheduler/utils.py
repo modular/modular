@@ -22,14 +22,17 @@ from typing import TYPE_CHECKING
 from max.interfaces import (
     AudioGenerator,
     AudioGeneratorOutput,
+    MAXPullQueue,
+    MAXPushQueue,
     Pipeline,
+    RequestID,
     SchedulerResult,
     TextGenerationOutput,
 )
 from max.interfaces.pipeline import PipelineOutputType
+from max.interfaces.queue import drain_queue
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -240,10 +243,10 @@ def maybe_restore_chunked_request(
 
 def release_terminated_requests(
     sch_output: SchedulerOutput | AudioGenerationSchedulerOutput,
-    responses: dict[str, TextGenerationOutput]
-    | dict[str, AudioGeneratorOutput],
+    responses: dict[RequestID, TextGenerationOutput]
+    | dict[RequestID, AudioGeneratorOutput],
     pipeline: Pipeline | AudioGenerator[TTSContext],
-    tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
+    tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
 ) -> None:
     for req_id, response in responses.items():
         if not response.is_done:
@@ -254,12 +257,14 @@ def release_terminated_requests(
 
 
 def release_cancelled_requests(
-    cancel_q: ZmqPullSocket[list[str]],
-    response_q: ZmqPushSocket[dict[str, SchedulerResult[PipelineOutputType]]],
-    tg_reqs: dict[str, ContextType] | dict[str, TTSContext],
+    cancel_q: MAXPullQueue[list[RequestID]],
+    response_q: MAXPushQueue[
+        dict[RequestID, SchedulerResult[PipelineOutputType]]
+    ],
+    tg_reqs: dict[RequestID, ContextType] | dict[RequestID, TTSContext],
     pipeline: Pipeline | AudioGenerator[TTSContext],
 ) -> None:
-    for req_ids in cancel_q.drain_nowait():
+    for req_ids in drain_queue(cancel_q):
         for req_id in req_ids:
             if req_id not in tg_reqs:
                 continue

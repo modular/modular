@@ -24,7 +24,9 @@ from typing import Any
 from max.interfaces import (
     AudioGenerator,
     AudioGeneratorOutput,
+    RequestID,
     SchedulerResult,
+    drain_queue,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -162,7 +164,7 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
-        reqs: dict[str, TTSContext],
+        reqs: dict[RequestID, TTSContext],
         batch_type: BatchType,
     ) -> None:
         self.start_time = time.time()
@@ -209,24 +211,24 @@ class AudioGenerationScheduler(Scheduler):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
-        self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
+        self.request_q = ZmqPullSocket[tuple[RequestID, TTSContext]](
             zmq_endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
+            deserialize=msgpack_numpy_decoder(tuple[RequestID, TTSContext]),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
+            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
         ](
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
         )
-        self.cancel_q = ZmqPullSocket[list[str]](
+        self.cancel_q = ZmqPullSocket[list[RequestID]](
             zmq_endpoint=cancel_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(list[str]),
+            deserialize=msgpack_numpy_decoder(list[RequestID]),
         )
 
         # Initialize Scheduler state.
-        self.pending_reqs: deque[tuple[str, TTSContext]] = deque()
-        self.decode_reqs: dict[str, TTSContext] = {}
+        self.pending_reqs: deque[tuple[RequestID, TTSContext]] = deque()
+        self.decode_reqs: dict[RequestID, TTSContext] = {}
         self.paged_manager = paged_manager
 
         if self.scheduler_config.enable_chunked_prefill:
@@ -241,18 +243,18 @@ class AudioGenerationScheduler(Scheduler):
         )
 
     def _retrieve_pending_requests(self) -> None:
-        self.pending_reqs.extend(self.request_q.drain_nowait())
+        self.pending_reqs.extend(drain_queue(self.request_q))
 
     def _create_tg_batch(
         self,
-        candidate_reqs: dict[str, TTSContext] | None = None,
+        candidate_reqs: dict[RequestID, TTSContext] | None = None,
     ) -> AudioGenerationSchedulerOutput:
         self._retrieve_pending_requests()
 
         if candidate_reqs is None:
             candidate_reqs = self.decode_reqs
 
-        scheduled_reqs: dict[str, TTSContext] = {}
+        scheduled_reqs: dict[RequestID, TTSContext] = {}
         for req_id, req_data in candidate_reqs.items():
             if req_id not in self.decode_reqs:
                 continue
@@ -268,7 +270,7 @@ class AudioGenerationScheduler(Scheduler):
     def _create_ce_batch(self) -> AudioGenerationSchedulerOutput:
         self._retrieve_pending_requests()
 
-        ce_batch: dict[str, TTSContext] = {}
+        ce_batch: dict[RequestID, TTSContext] = {}
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
         max_input_len = self.scheduler_config.target_tokens_per_batch_ce

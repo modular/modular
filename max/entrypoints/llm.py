@@ -126,7 +126,7 @@ class LLM:
         self._pending_requests[request.id] = response_queue
 
         try:
-            self._request_queue.put(request)
+            self._request_queue.put_nowait(request)
             return response_queue.get().complete_texts
         finally:
             # Clean up the pending request mapping

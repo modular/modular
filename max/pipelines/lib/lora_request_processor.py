@@ -90,7 +90,7 @@ class LoRARequestProcessor(Generic[ReqId]):
 
                     response = self._handle_zmq_request(request)
 
-                    self._response_socket.put((req_id, response))
+                    self._response_socket.put_nowait((req_id, response))
 
                 except queue.Empty:
                     time.sleep(0.01)

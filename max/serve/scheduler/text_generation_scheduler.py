@@ -18,9 +18,11 @@ from typing import Union
 
 from max.interfaces import (
     Pipeline,
+    RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
+    drain_queue,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -66,15 +68,15 @@ class TokenGenerationScheduler(Scheduler):
         self.pipeline = pipeline
 
         self.request_q = ZmqPullSocket[
-            tuple[str, Union[TextContext, TextAndVisionContext]]
+            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
         ](
             zmq_endpoint=request_zmq_endpoint,
             deserialize=msgpack_numpy_decoder(
-                tuple[str, Union[TextContext, TextAndVisionContext]]
+                tuple[RequestID, Union[TextContext, TextAndVisionContext]]
             ),
         )
         self.response_q = ZmqPushSocket[
-            dict[str, SchedulerResult[TextGenerationOutput]]
+            dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ](
             zmq_endpoint=response_zmq_endpoint,
             serialize=msgpack_numpy_encoder(),
@@ -92,7 +94,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger = SchedulerLogger()
 
     def _retrieve_pending_requests(self) -> None:
-        self.batch_constructor.ce_reqs |= dict(self.request_q.drain_nowait())
+        self.batch_constructor.ce_reqs |= dict(drain_queue(self.request_q))
 
     def run_iteration(self) -> None:
         """The Scheduler routine that creates batches and schedules them on GPU"""

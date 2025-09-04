@@ -111,7 +111,7 @@ class BlockPool:
         logger.debug(
             f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
         )
-        self.kv_cache_agent_queue.put(
+        self.kv_cache_agent_queue.put_nowait(
             KVCacheChangeMessage(
                 cache_id=str(hash_value),
                 memory_tier=self.memory_tier,
@@ -175,7 +175,7 @@ class BlockPool:
         logger.debug(
             f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
         )
-        self.kv_cache_agent_queue.put(
+        self.kv_cache_agent_queue.put_nowait(
             KVCacheChangeMessage(
                 cache_id=str(hash_value),
                 memory_tier=self.memory_tier,

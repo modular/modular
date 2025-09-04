@@ -170,28 +170,20 @@ class ZmqPushSocket(Generic[T]):
 
     def put_nowait(
         self,
-        msg: Any,
-        **kwargs,
-    ) -> None:
-        self.put(msg, flags=zmq.NOBLOCK, **kwargs)
-
-    def put(
-        self,
-        msg: Any,
-        **kwargs,
+        item: T,
     ) -> None:
         if self._closed:
             raise RuntimeError("Socket is closed")
 
         while True:
             try:
-                serialized_msg = self.serialize(msg)
+                serialized_msg = self.serialize(item)
             except Exception as e:
                 logger.exception(f"Failed to serialize message: {e}")
                 raise
 
             try:
-                self.push_socket.send(serialized_msg, **kwargs)
+                self.push_socket.send(serialized_msg, flags=zmq.NOBLOCK)
 
                 # Exit since we succeeded
                 break
@@ -240,12 +232,12 @@ class ZmqPullSocket(Generic[T]):
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
-    def _pull_from_socket(self, **kwargs) -> T:
+    def get_nowait(self) -> T:
         if self._closed:
             raise RuntimeError("Socket is closed")
 
         try:
-            msg = self.pull_socket.recv(**kwargs)
+            msg = self.pull_socket.recv(flags=zmq.NOBLOCK)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()  # noqa: B904
@@ -260,24 +252,6 @@ class ZmqPullSocket(Generic[T]):
         except Exception as e:
             logger.exception(e)
             raise
-
-    def get(self, **kwargs) -> T:
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-
-        return self._pull_from_socket(**kwargs)
-
-    def get_nowait(self, **kwargs) -> T:
-        return self.get(flags=zmq.NOBLOCK, **kwargs)
-
-    def drain_nowait(self) -> list[T]:
-        msgs = []
-        while True:
-            try:
-                msgs.append(self.get_nowait())
-            except queue.Empty:
-                break
-        return msgs
 
 
 class ZmqRouterSocket(Generic[T]):

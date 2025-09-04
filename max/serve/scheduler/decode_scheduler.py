@@ -27,6 +27,7 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
+from max.interfaces.queue import drain_queue
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -206,7 +207,7 @@ class DecodeScheduler(Scheduler):
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self.pending_reqs |= dict(self.request_pull_socket.drain_nowait())
+        self.pending_reqs |= dict(drain_queue(self.request_pull_socket))
 
         while (
             self.pending_reqs

@@ -151,7 +151,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
                                 decoded_token
                             ):
                                 # Tell the scheduler to stop generating this request
-                                self.engine_queue.cancel_push_socket.put(
+                                self.engine_queue.cancel_push_socket.put_nowait(
                                     [request.request_id]
                                 )
 
