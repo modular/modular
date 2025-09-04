@@ -226,7 +226,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!ImplicitlyCopyable T, mut {{.*}}> byref_result
 fn copy_me[T: ImplicitlyCopyable](value: T) -> T:
     # CHECK-NEXT: call[!lit.generator<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::ExplicitlyCopyable", "__copyinit__">]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<:!ImplicitlyCopyable T, "stdlib::builtin::stubs::Copyable", "__copyinit__">]{{.*}}(%value, %__result__)
     return value
 
 

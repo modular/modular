@@ -810,8 +810,8 @@ struct HList[T: ImplicitlyCopyable & Movable, hint_trivial_type: Bool = False]:
 # CHECK-NEXT:     "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
-# CHECK-NEXT:     "name": "ExplicitlyCopyable",
-# CHECK-NEXT:     "path": "/stdlib/builtin/value/ExplicitlyCopyable"
+# CHECK-NEXT:     "name": "Copyable",
+# CHECK-NEXT:     "path": "/stdlib/builtin/value/Copyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "ImplicitlyCopyable",

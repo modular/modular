@@ -911,13 +911,13 @@ struct OkayStruct(ImplicitlyCopyable):
 @fieldwise_init
 @register_passable
 # TODO(MOCO-2385)
-# expected-error @below {{'StructWithoutBody' is not explicitly copyable because it does not conform to 'ExplicitlyCopyable'}}
-struct ExplicitlyCopyableStructWithNonCopyableBody(ExplicitlyCopyable):
+# expected-error @below {{'StructWithoutBody' is not explicitly copyable because it does not conform to 'Copyable'}}
+struct ExplicitlyCopyableStructWithNonCopyableBody(Copyable):
     var begin: StructWithoutBody
 
 
 @register_passable
-struct ExplicitlyCopyableStructWithoutBody(ExplicitlyCopyable):
+struct ExplicitlyCopyableStructWithoutBody(Copyable):
     pass
 
 @fieldwise_init

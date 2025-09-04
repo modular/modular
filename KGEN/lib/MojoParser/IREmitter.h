@@ -537,8 +537,8 @@ public:
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
   /// When `allowExplicitCopy = true`, compiler is allowed to emit call to
-  /// `__copyinit__` even when the type of the value is `ExplicitlyCopyable`
-  /// only (not `ImplicitlyCopyable`). It can only happen when we are
+  /// `__copyinit__` even when the type of the value is only `Copyable` (and not
+  /// `ImplicitlyCopyable`). It can only happen when we are
   /// synthesizing __copyinit__ itself.
   CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
                          bool allowExplicitCopy = false);

@@ -91,7 +91,7 @@ struct _lit_indirect_origin[mut: Bool, //, base: Origin[mut]._mlir_type]:
 # ===----------------------------------------------------------------------=== #
 
 
-alias KeyElement = ExplicitlyCopyable & Movable
+alias KeyElement = Copyable & Movable
 
 
 @register_passable
@@ -589,7 +589,7 @@ trait ExplicitlyDestroyedCopyable:
         ...
 
 
-trait ExplicitlyCopyable:
+trait Copyable:
     fn __copyinit__(out self, existing: Self, /):
         ...
 
@@ -599,11 +599,8 @@ trait ExplicitlyCopyable:
     alias __copyinit__is_trivial: Bool
 
 
-trait ImplicitlyCopyable(ExplicitlyCopyable):
+trait ImplicitlyCopyable(Copyable):
     pass
-
-
-alias Copyable = ImplicitlyCopyable
 
 
 @explicit_destroy

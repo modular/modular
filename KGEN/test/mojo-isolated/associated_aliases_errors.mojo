@@ -11,7 +11,7 @@ trait Movable:
         ...
 
 
-trait ExplicitlyCopyable:
+trait Copyable:
     fn __copyinit__(out self, other: Self):
         ...
 
@@ -19,7 +19,7 @@ trait ExplicitlyCopyable:
         return Self.__copyinit__(self)
 
 
-trait ImplicitlyCopyable(ExplicitlyCopyable):
+trait ImplicitlyCopyable(Copyable):
     pass
 
 

@@ -808,7 +808,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     // following struct:
     // ```
     // struct T(ImplicitlyCopyable):
-    //   var f : some ExplicitlyCopyable
+    //   var f: some Copyable
     // ```
     emitter.emitStoreToLValue(
         {src, SyntheticNode(location)}, MLValue(targetFieldOp),
@@ -881,7 +881,7 @@ FnOp StructEmitter::synthesizeEmptyExplicitCopy(ASTDecl &structDecl) {
   funcDecl->resolvedness = DeclResolvedness::signature;
 
   // FIXME(MOCO-2288):
-  //  This is a hack to get `Copyable(ExplicitlyCopyable)` inheritance
+  //  This is a hack to get `ImplicitlyCopyable(Copyable)` inheritance
   //  to work. We should not have to early populate `copy()` here.
   populateExplicitCopy(*funcDecl);
 
@@ -989,9 +989,9 @@ std::optional<ValueInfo> StructEmitter::addMissingValueMemberStubsToStruct(
 
   // NOTE: The  behavior of this is scary: if there is no method named "copy"
   // with any signature, then this will get called to synthesize the copy()
-  // method and get ExplicitlyCopyable.  If there is some method with this name
+  // method and get Copyable.  If there is some method with this name
   // then it doesn't get added, even if it has nothing to do with
-  // ExplicitlyCopyable.
+  // Copyable.
   // We should just remove @value.
   if (!valueInfo->copy)
     valueInfo->copy = synthesizeEmptyExplicitCopy(structDecl);
@@ -1062,7 +1062,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     if (kind == SpecialFunctionKind::kDel)
       return "AnyType";
     else if (kind == SpecialFunctionKind::kCopyInit)
-      return "ExplicitlyCopyable"; // TODO: change to Copyable
+      return "Copyable";
     return "Movable";
   }();
 

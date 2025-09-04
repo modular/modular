@@ -117,7 +117,7 @@ public:
   bool hasNontrivialDestructor(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is implicitly/explicitly copyable, either because
-  /// it is trivial or conforms to Implicitly/ExplicitlyCopyable trait. Note:
+  /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
   /// this resolves the body of a struct type.
   bool isCopyable(llvm::SMLoc loc, SharedState &shared, bool isImplicit) const;
   bool isImplicitlyCopyable(llvm::SMLoc loc, SharedState &shared) const;
