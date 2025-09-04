@@ -10,6 +10,7 @@ mojo_library(
         "@mojo//:internal_utils",
         "@mojo//:layout",
         "@mojo//:register",
+        "@mojo//:shmem",
         "@mojo//:stdlib",
     ],
 )
