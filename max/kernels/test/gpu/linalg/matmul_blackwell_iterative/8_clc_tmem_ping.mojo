@@ -238,14 +238,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, a_gmem_slice_coord),
+            (UInt(iter_idx * BK), UInt(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * BK, b_gmem_slice_coord),
+            (UInt(iter_idx * BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
@@ -489,8 +489,8 @@ fn multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    work_tile_coord[1] * MMA_N + stage * stageN,
-                    work_tile_coord[0] * BM,
+                    UInt(work_tile_coord[1] * MMA_N + stage * stageN),
+                    UInt(work_tile_coord[0] * BM),
                 ),
             )
             c_tma_op.commit_group()
@@ -779,9 +779,9 @@ fn kernel_8[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % cta_group,
-        rank_m // cta_group,
-        rank_n,
+        UInt(rank_m % cta_group),
+        UInt(rank_m // cta_group),
+        UInt(rank_n),
     )  # v,m,n
 
     var a_multicast_mask: UInt16 = 0x0
@@ -912,7 +912,7 @@ fn kernel_8[
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
-                        stage_stride_cols=stage_stride_cols,
+                        stage_stride_cols = UInt(stage_stride_cols),
                         cta_group=cta_group,
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
@@ -927,7 +927,7 @@ fn kernel_8[
                         mma_op,
                         elect_one_warp,
                         i,
-                        accum_index,
+                        UInt(accum_index),
                     )
                     consumer_phase.step()
 
@@ -958,7 +958,7 @@ fn kernel_8[
                 accum_type=accum_type,
                 block_tile_shape=block_tile_shape,
                 mma_shape=mma_shape,
-                stage_stride_cols=stage_stride_cols,
+                stage_stride_cols = UInt(stage_stride_cols),
                 c_swizzle=c_swizzle,
                 cta_group=cta_group,
                 num_output_warps=num_output_warps,
@@ -1131,9 +1131,9 @@ fn blackwell_kernel_8[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=max_pipeline_stages,
+        num_pipeline_stages = UInt(max_pipeline_stages),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        num_accum_pipeline_stages=max_accum_pipeline_stages,
+        num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
     ]

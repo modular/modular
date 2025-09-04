@@ -221,14 +221,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (UInt(iter_idx) * BK, a_gmem_slice_coord),
+        (UInt(iter_idx * BK), UInt(a_gmem_slice_coord)),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (UInt(iter_idx) * BK, b_gmem_slice_coord),
+        (UInt(iter_idx * BK), UInt(b_gmem_slice_coord)),
         b_multicast_mask,
     )
 
@@ -558,7 +558,7 @@ fn store_C[
     # UMMA (tensor memory) → registers → shared memory → global memory
     # #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < NUM_TMA_TILES:
+    if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
         var row_start = block_idx.x * BM
         var col_start = block_idx.y * MMA_N + thread_idx.x * TMA_BN
 
@@ -573,7 +573,7 @@ fn store_C[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
+        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
@@ -773,9 +773,9 @@ fn kernel_6[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % cta_group,
-        rank_m // cta_group,
-        rank_n,
+        UInt(rank_m % cta_group),
+        UInt(rank_m // cta_group),
+        UInt(rank_n),
     )  # v,m,n
 
     var a_multicast_mask: UInt16 = 0x0
@@ -814,7 +814,7 @@ fn kernel_6[
                     tma_mbar,
                     producer_phase,
                     peer_cta_coord,
-                    (block_idx.x, block_idx.y),
+                    (UInt(block_idx.x), UInt(block_idx.y)),
                     a_multicast_mask,
                     b_multicast_mask,
                     i,
@@ -973,7 +973,7 @@ fn blackwell_kernel_6[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages=max_pipeline_stages,
+        num_pipeline_stages = UInt(max_pipeline_stages),
     ]
 
     ctx.enqueue_function[kernel](

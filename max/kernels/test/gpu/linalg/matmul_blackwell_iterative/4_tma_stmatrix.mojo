@@ -279,15 +279,18 @@ fn kernel_4[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.y * BM),
+                    (UInt(i * BK + k), UInt(block_idx.y * BM)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (UInt(i) * BK + k, block_idx.x * BN) if transpose_b else (
-                        block_idx.x * BN,
-                        UInt(i) * BK + k,
+                    (
+                        UInt(i * BK + k),
+                        UInt(block_idx.x * BN),
+                    ) if transpose_b else (
+                        UInt(block_idx.x * BN),
+                        UInt(i * BK + k),
                     ),
                 )
 
@@ -378,7 +381,7 @@ fn kernel_4[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < BN // TMA_BN:
+    if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
         fence_async_view_proxy()
 
         var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
@@ -393,7 +396,10 @@ fn kernel_4[
 
         c_tma_op.async_store(
             c_tma_tile,
-            ((block_idx.x * BN + thread_idx.x * TMA_BN), (block_idx.y * BM)),
+            (
+                UInt(block_idx.x * BN + thread_idx.x * TMA_BN),
+                UInt(block_idx.y * BM),
+            ),
         )
         c_tma_op.commit_group()
         # wait for the store to complete
