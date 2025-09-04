@@ -21,8 +21,3 @@ repos:
         files: '\.(mojo|🔥|py|md)$'
         stages: [pre-commit]
         pass_filenames: false
-  - repo: https://github.com/keith/pre-commit-buildifier
-    rev: 8.2.0
-    hooks:
-    -   id: buildifier
-    -   id: buildifier-lint
