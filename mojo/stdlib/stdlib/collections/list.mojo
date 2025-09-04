@@ -86,6 +86,7 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
     Boolable,
     Copyable,
     Defaultable,
+    DeletableItem,
     ExplicitlyCopyable,
     Iterable,
     Movable,
@@ -625,6 +626,66 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         """
         return self.__str__()
 
+    fn __delitem__(mut self, idx: Some[Indexer]) -> None:
+        """Delete an item from the list at the given index.
+
+        Args:
+            idx: The index of the item to delete.
+        """
+        _ = self.pop(idx)
+
+    fn __delitem__(mut self, slice: Slice) -> None:
+        """Delete a slice of items from the list.
+
+        Args:
+            slice: The slice of items to delete.
+        """
+        var start, end, step = slice.indices(self._len)
+        var slice_range = range(start, end, step)
+        var slice_len = len(slice_range)
+
+        if not slice_len:
+            return  # Nothing to delete
+        elif step == 1:
+            # No need to run destructors if `T` has a trivial destructor
+            @parameter
+            if not Bool(T.__del__is_trivial):
+                for del_index in slice_range:
+                    (self._data + del_index).destroy_pointee()
+
+            for move_index in range(end, self._len):
+                (self._data + move_index).move_pointee_into(
+                    self._data + move_index - slice_len
+                )
+
+            self._len -= slice_len
+        else:
+            var n_deleted = 0
+            var previous_deleted = start - 1
+
+            for to_delete_index in slice_range:
+                # Backfill the list to patch the hole from the previously deleted element
+                for move_index in range(previous_deleted + 1, to_delete_index):
+                    var move_from = self._data + move_index
+                    var move_to = self._data + move_index - n_deleted
+                    move_from.move_pointee_into(move_to)
+
+                # Destroy the element at to_delete_index
+                @parameter
+                if not Bool(T.__del__is_trivial):
+                    (self._data + to_delete_index).destroy_pointee()
+
+                n_deleted += 1
+                previous_deleted = to_delete_index
+
+            # Move remaining elements between last deletion and end of the list
+            for move_index in range(previous_deleted + 1, self._len):
+                var move_from = self._data + move_index
+                var move_to = self._data + move_index - n_deleted
+                move_from.move_pointee_into(move_to)
+
+            self._len -= n_deleted
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -819,20 +880,18 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, idx: Some[Indexer]) -> T:
         """Pops a value from the list at the given index.
 
         Args:
-            i: The index of the value to pop.
+            idx: The index of the value to pop.
 
         Returns:
             The popped value.
         """
-        debug_assert(-self._len <= i < self._len, "pop index out of range")
-
-        var normalized_idx = i
-        if i < 0:
-            normalized_idx += self._len
+        var normalized_idx = normalize_index["List", assert_always=False](
+            idx, UInt(len(self))
+        )
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
@@ -840,6 +899,15 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
         self._len -= 1
 
         return ret_val^
+
+    @always_inline
+    fn pop(mut self) -> T:
+        """Pops the last value from the list.
+
+        Returns:
+            The popped value.
+        """
+        return self.pop(-1)
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
@@ -1060,14 +1128,11 @@ struct List[T: ExplicitlyCopyable & Movable, hint_trivial_type: Bool = False](
 
         return res^
 
-    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] T:
+    fn __getitem__(ref self, idx: Some[Indexer]) -> ref [self] T:
         """Gets the list element at the given index.
 
         Args:
             idx: The index of the element.
-
-        Parameters:
-            I: A type that can be used as an index.
 
         Returns:
             A reference to the element at the given index.
