@@ -61,7 +61,8 @@ fn quantize_static_scaled_fp8[
         "input dtype should be float16, bfloat16 or float32",
     ]()
     constrained[
-        out_dtype is DType.float8_e4m3fn, "output dtype should be float8_e4m3fn"
+        out_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
+        "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
     ]()
 
     @always_inline

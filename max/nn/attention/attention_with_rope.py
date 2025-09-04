@@ -34,6 +34,9 @@ from max.graph import (
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
 from max.nn.float8_config import Float8Config
+from max.nn.kernels import (
+    convert_weights_to_fp8_fnuz_if_needed,
+)
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -307,11 +310,16 @@ class AttentionWithRope(Module):
 
             wqkv = ops.concat((wq, wk, wv))
             if self.float8_config and self.float8_config.is_static:
-                # Float8 always has a weight scale.
                 assert self.qkv_weight_scale is not None
-                wqkv = quantize_static_scaled_float8(
+
+                wqkv, qkv_weight_scale = convert_weights_to_fp8_fnuz_if_needed(
                     wqkv, self.qkv_weight_scale.to(DeviceRef.CPU())
                 )
+
+                wqkv = quantize_static_scaled_float8(
+                    wqkv, qkv_weight_scale.to(DeviceRef.CPU())
+                )
+
             return wqkv
 
     @property

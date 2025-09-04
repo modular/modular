@@ -8848,15 +8848,20 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @staticmethod
     fn execute[
         input_type: DType,
+        output_type: DType,
         scale_type: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype = DType.float8_e4m3fn, rank=2],
+        output: OutputTensor[dtype=output_type, rank=2],
         input: InputTensor[dtype=input_type, rank=2],
         scale: Scalar[scale_type],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
+        constrained[
+            output_type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz),
+            "output dtype should be float8_e4m3fn or float8_e4m3fnuz",
+        ]()
         var scale_loaded = scale.cast[DType.float32]()
         quantize_static_scaled_fp8[scale_is_inverted=scale_is_inverted](
             managed_tensor_slice_to_ndbuffer(output),
@@ -8936,12 +8941,13 @@ struct MatmulStaticScaledFloat8:
     @staticmethod
     fn execute[
         output_type: DType,
+        input_dtype: DType,
         scale_type: DType,
         target: StaticString,
     ](
         output_tensor: OutputTensor[dtype=output_type, rank=2],
-        input_tensor: InputTensor[dtype = DType.float8_e4m3fn, rank=2],
-        weight_tensor: InputTensor[dtype = DType.float8_e4m3fn, rank=2],
+        input_tensor: InputTensor[dtype=input_dtype, rank=2],
+        weight_tensor: InputTensor[dtype=input_dtype, rank=2],
         input_scale: Scalar[scale_type],
         weight_scale: Scalar[scale_type],
         ctx: DeviceContextPtr,
