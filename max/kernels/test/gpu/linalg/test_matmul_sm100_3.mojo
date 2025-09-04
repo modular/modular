@@ -294,16 +294,19 @@ fn tma_umma_warp_specialized_gemm_kernel[
                     a_tma_op.async_copy(
                         a_smem_tile,
                         full_barrier_base[stage],
-                        (UInt(i) * BK, block_idx.y * BM),
+                        (UInt(i * BK), UInt(block_idx.y * BM)),
                     )
 
                     b_smem_tile = b_smem.next(stage)[]
                     b_tma_op.async_copy(
                         b_smem_tile,
                         full_barrier_base[stage],
-                        (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                            block_idx.x * BN,
-                            UInt(i) * BK,
+                        (
+                            UInt(i * BK),
+                            UInt(block_idx.x * BN),
+                        ) if transpose_b else (
+                            UInt(block_idx.x * BN),
+                            UInt(i * BK),
                         ),
                     )
 
@@ -417,7 +420,7 @@ fn tma_umma_warp_specialized_gemm_kernel[
         # SMEM -> GMEM: Direct TMA store
         # UMMA (tensor memory) → registers → shared memory → global memory
         #           c_frag                   c_smem_tile      c_tma_op
-        if elect_one_warp and thread_idx.x < BN // TMA_BN:
+        if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
             fence_async_view_proxy()
 
             var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
@@ -433,8 +436,8 @@ fn tma_umma_warp_specialized_gemm_kernel[
             c_tma_op.async_store(
                 c_tma_tile,
                 (
-                    (block_idx.x * BN + thread_idx.x * TMA_BN),
-                    (block_idx.y * BM),
+                    UInt(block_idx.x * BN + thread_idx.x * TMA_BN),
+                    UInt(block_idx.y * BM),
                 ),
             )
             c_tma_op.commit_group()
@@ -459,8 +462,8 @@ fn blackwell_matmul_tma_umma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    num_pipeline_stages: Int = 8,
-    block_dim: Int = 32 * 6,
+    num_pipeline_stages: UInt = 8,
+    block_dim: UInt = 32 * 6,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],

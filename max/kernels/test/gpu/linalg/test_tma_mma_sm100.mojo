@@ -212,14 +212,14 @@ fn tma_umma_kernel_ss[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.y * BM),
+                (UInt(i * BK), UInt(block_idx.y * BM)),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (UInt(i * BK), UInt(block_idx.x * BN)) if transpose_b else (
+                    UInt(block_idx.x * BN),
+                    UInt(i * BK),
                 ),
             )
 
@@ -501,9 +501,9 @@ fn tma_umma_kernel_ts[
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
-                    block_idx.x * BN,
-                    UInt(i) * BK,
+                (UInt(i * BK), UInt(block_idx.x * BN)) if transpose_b else (
+                    UInt(block_idx.x * BN),
+                    UInt(i * BK),
                 ),
             )
 
@@ -690,7 +690,7 @@ def test_tma_umma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
-    alias block_dim = 2 * MMA_M
+    alias block_dim: UInt = UInt(2 * MMA_M)
 
     @parameter
     if a_smem:

@@ -232,10 +232,10 @@ fn tma_umma_kernel_pair_cta[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = (
+            var a_gmem_slice_coord = UInt(
                 peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
-            var b_gmem_slice_coord = (
+            var b_gmem_slice_coord = UInt(
                 peer_cta_coord[1] * b_tma_rows
                 + peer_cta_coord[0] * BN
                 + block_idx.y * MMA_N
@@ -247,7 +247,7 @@ fn tma_umma_kernel_pair_cta[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
                 tma_mbar[0],
-                (UInt(i) * BK, a_gmem_slice_coord),
+                (UInt(i * BK), a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
@@ -256,7 +256,7 @@ fn tma_umma_kernel_pair_cta[
                     peer_cta_coord[1]
                 ],
                 tma_mbar[0],
-                (UInt(i) * BK, b_gmem_slice_coord),
+                (UInt(i * BK), b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
