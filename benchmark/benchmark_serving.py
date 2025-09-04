@@ -1088,6 +1088,9 @@ async def benchmark(
     if collect_gpu_stats and collector is not None:
         gpu_metrics = collector.collect()
         collector.stop()
+        # Delete the collector.
+        # Leaving it to be cleaned up later can lead to segfaults.
+        del collector
     else:
         gpu_metrics = {}
 
