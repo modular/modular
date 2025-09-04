@@ -632,7 +632,7 @@ struct Type(Copyable, Movable, Stringable, Writable):
             ctx.c, StaticString(ptr=s.unsafe_ptr(), length=len(s))
         )
         if not result.ptr:
-            raise "Failed to parse type: " + s
+            raise Error("Failed to parse type: ", s)
         return result
 
     fn context(self) -> Context:
@@ -720,7 +720,7 @@ struct Attribute(Copyable, Movable, Stringable, Writable):
             ctx.c, StaticString(ptr=attr.unsafe_ptr(), length=len(attr))
         )
         if not result.ptr:
-            raise "Failed to parse attribute:" + attr
+            raise Error("Failed to parse attribute:", attr)
         return result
 
     fn __str__(self) -> String:
