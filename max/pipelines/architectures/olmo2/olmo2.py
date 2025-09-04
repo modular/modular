@@ -188,5 +188,4 @@ class Olmo2(Transformer):
             rope=rope,
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
-            logits_postprocessor=config.logits_postprocessor,
         )

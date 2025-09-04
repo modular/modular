@@ -396,16 +396,8 @@ class Qwen25VLDecoder(Module):
             config.llm_config.kv_params,
             num_layers=config.llm_config.num_hidden_layers,
         )
-        self.logits_postprocessor = config.llm_config.logits_postprocessor
         self.rope = rope
         self.return_logits = config.llm_config.return_logits
-
-    def _apply_logits_postprocessor(
-        self, output: tuple[TensorValue, ...]
-    ) -> tuple[TensorValue, ...]:
-        if self.logits_postprocessor is None:
-            return output
-        return tuple(self.logits_postprocessor(elem) for elem in output)
 
     def __call__(
         self,
@@ -476,16 +468,6 @@ class Qwen25VLDecoder(Module):
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             offsets = input_row_offsets
-
-        if logits:
-            last_logits, logits = self._apply_logits_postprocessor(
-                (
-                    last_logits,
-                    logits,
-                )
-            )
-        else:
-            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
 
         if offsets is not None:
             assert logits is not None

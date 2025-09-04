@@ -191,6 +191,7 @@ class DistributedTransformer(Module):
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
         subgraph_layer_groups: list[list[int]] | None = None,
+        logits_scaling: float = 1.0,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -213,6 +214,7 @@ class DistributedTransformer(Module):
             # are in a single group.
             subgraph_layer_groups = [[i for i in range(len(layers))]]
         self.subgraph_layer_groups = subgraph_layer_groups
+        self.logits_scaling = logits_scaling
 
     def __call__(
         self,
@@ -362,6 +364,11 @@ class DistributedTransformer(Module):
                 DType.float32,
             )
             offsets = input_row_offsets
+
+        if self.logits_scaling != 1.0:
+            last_logits = last_logits / self.logits_scaling
+            if logits is not None:
+                logits = logits / self.logits_scaling
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

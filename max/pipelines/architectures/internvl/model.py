@@ -430,7 +430,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             vision_state_dict=vision_model_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,

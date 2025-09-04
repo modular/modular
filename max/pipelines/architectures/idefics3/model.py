@@ -382,7 +382,6 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             llm_state_dict=llm_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,

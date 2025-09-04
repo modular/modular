@@ -15,10 +15,9 @@
 from __future__ import annotations
 
 import math
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import TensorValue
 from max.graph.weights import WeightData
 from max.nn import DistributedGemmConfig, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
@@ -113,7 +112,6 @@ class Olmo2Config(Llama3Config):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -131,7 +129,6 @@ class Olmo2Config(Llama3Config):
             state_dict: Model state dictionary.
             dtype: Model data type.
             n_devices: Number of devices.
-            logits_postprocessor: Optional logits postprocessor.
             cache_dtype: KV cache data type.
             kv_cache_config: KV cache configuration.
             return_logits: Return logits configuration.
@@ -147,7 +144,6 @@ class Olmo2Config(Llama3Config):
             state_dict=state_dict,
             dtype=dtype,
             n_devices=n_devices,
-            logits_postprocessor=logits_postprocessor,
             cache_dtype=cache_dtype,
             kv_cache_config=kv_cache_config,
             return_logits=return_logits,
@@ -194,7 +190,6 @@ class Olmo2Config(Llama3Config):
             tie_word_embeddings=base_config.tie_word_embeddings,
             stacked_mlp=base_config.stacked_mlp,
             stacked_qkv=base_config.stacked_qkv,
-            logits_postprocessor=base_config.logits_postprocessor,
             attention_multiplier=olmo2_attention_multiplier,  # Use Olmo2-specific attention multiplier
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,

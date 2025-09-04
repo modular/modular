@@ -134,7 +134,6 @@ class PipelineParallelLlama3(Transformer):
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
             rope=self.rope,
-            logits_postprocessor=config.logits_postprocessor,
         )
 
         logger.debug(
@@ -443,14 +442,6 @@ class PipelineParallelLlama3(Transformer):
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             offsets = input_row_offsets
 
-        # Apply logits postprocessor
-        if logits is not None:
-            last_logits, logits = self._apply_logits_postprocessor(
-                (last_logits, logits)
-            )
-        else:
-            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
-
         # Transfer outputs back to first device for sampling compatibility
         first_device = self.devices[0]
         if last_logits.device != first_device:
@@ -465,10 +456,3 @@ class PipelineParallelLlama3(Transformer):
             return (last_logits, logits, offsets)
         else:
             return (last_logits,)
-
-    def _apply_logits_postprocessor(
-        self, output: tuple[TensorValue, ...]
-    ) -> tuple[TensorValue, ...]:
-        if self.logits_postprocessor is None:
-            return output
-        return tuple(self.logits_postprocessor(elem) for elem in output)

@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Sequence
 from math import ceil
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -121,9 +121,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     attention_bias: bool = False
     """Whether to use attention bias."""
-
-    logits_postprocessor: Callable[[TensorValue], TensorValue] | None = None
-    """Postprocessor for the logits."""
 
     state_dict: dict[str, Any]
     """Weights to load into the model."""
@@ -694,7 +691,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
             state_dict=state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,

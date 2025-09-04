@@ -298,7 +298,6 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             llm_state_dict=llm_state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            logits_postprocessor=None,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,

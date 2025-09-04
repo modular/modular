@@ -294,5 +294,5 @@ class Llama3(Transformer):
             rope=rope,
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
-            logits_postprocessor=config.logits_postprocessor,
+            logits_scaling=config.logits_scaling,
         )

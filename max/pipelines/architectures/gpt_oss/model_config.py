@@ -231,7 +231,6 @@ class GptOssConfig(MAXModelConfig, GptOssConfigBase):
             state_dict: The model's state dictionary containing weights (:obj:`max.graph.weights.WeightData`).
             dtype: The primary data type for model parameters (:obj:`max.dtype.DType`).
             n_devices: The number of devices the model will run on.
-            logits_postprocessor: An optional callable to post-process model logits (:obj:`max.graph.TensorValue`).
             cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
             kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
             return_logits: Whether to return the last token, all tokens or a variable number of logits.

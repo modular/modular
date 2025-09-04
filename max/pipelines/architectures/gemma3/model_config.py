@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import LinearScalingParams, ReturnLogits
 from max.nn.float8_config import Float8Config, parse_float8_config
@@ -208,7 +208,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -227,7 +226,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
             state_dict: The model's state dictionary containing weights (:obj:`max.graph.weights.WeightData`).
             dtype: The primary data type for model parameters (:obj:`max.dtype.DType`).
             n_devices: The number of devices the model will run on.
-            logits_postprocessor: An optional callable to post-process model logits (:obj:`max.graph.TensorValue`).
             cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
             kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
             return_logits: Whether to return the last token, all tokens or a variable number of logits.

@@ -196,5 +196,5 @@ class DistributedLlama3(DistributedTransformer):
             use_subgraphs=config.use_subgraphs,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
-            # logits_postprocessor=config.logits_postprocessor,
+            logits_scaling=config.logits_scaling,
         )

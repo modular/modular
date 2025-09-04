@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import (
@@ -119,7 +119,6 @@ class Llama3ConfigBase(MAXModelConfigBase):
     tie_word_embeddings: bool
     stacked_mlp: bool
     stacked_qkv: bool
-    logits_postprocessor: Callable[[TensorValue], TensorValue] | None
     attention_multiplier: float
     embedding_multiplier: float
     residual_multiplier: float
@@ -131,6 +130,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     tensor_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
+    logits_scaling: float = 1.0
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -238,7 +238,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         return_logits: ReturnLogits,
@@ -388,7 +387,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
-            logits_postprocessor=logits_postprocessor,
             attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
@@ -406,4 +404,5 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             if dtype.is_float8()
             else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora_config,
+            logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
         )
