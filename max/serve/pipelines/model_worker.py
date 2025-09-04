@@ -33,7 +33,11 @@ from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
-from max.serve.scheduler.base import PayloadType
+from max.serve.scheduler.base import (
+    PayloadType,
+    SchedulerProgress,
+    sleep_with_backoff,
+)
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
@@ -141,12 +145,18 @@ class ModelWorker:
             pc.set_started()
             logger.debug("Started model worker!")
 
+            count_no_progress = 0
             while not pc.is_canceled():
                 pc.beat()
                 try:
                     # This method must terminate in a reasonable amount of time
                     # so that the ProcessMonitor heartbeat is periodically run.
-                    scheduler.run_iteration()
+                    progress = scheduler.run_iteration()
+                    if progress == SchedulerProgress.NO_PROGRESS:
+                        await sleep_with_backoff(count_no_progress)
+                        count_no_progress += 1
+                    else:
+                        count_no_progress = 0
                 except Exception as e:
                     logger.exception("An error occurred during scheduling")
                     raise e

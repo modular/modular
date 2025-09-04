@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import asyncio
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Union
 
 import msgspec
@@ -19,16 +21,40 @@ from max.nn.kv_cache import KVTransferEngineMetadata, XferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 
+class SchedulerProgress(Enum):
+    """Indicates whether a scheduler made progress during an iteration."""
+
+    MADE_PROGRESS = "made_progress"
+    NO_PROGRESS = "no_progress"
+
+
+async def sleep_with_backoff(count_no_progress: int):
+    """A basic strategy to avoid busy waiting.
+
+    This function sleeps with a linear backoff.
+    The first sleep of 0 enables other async threads to run but otherwise does not sleep.
+    The step size is 1ms because of limitations around asyncio to sleep with finer granularity.
+    The maximum sleep is 10ms because it resolves CPU usage overhead while maintaining minimal waiting.
+    """
+
+    ms_to_sleep = min(max(0, count_no_progress), 10)
+    await asyncio.sleep(ms_to_sleep * 0.001)
+
+
 class Scheduler(ABC):
     """Abstract base class defining the interface for schedulers."""
 
     @abstractmethod
-    def run_iteration(self):
+    def run_iteration(self) -> SchedulerProgress:
         """The core scheduler routine that creates and executes batches.
 
         This method should implement the core scheduling logic including:
         - Batch creation and management
         - Request scheduling
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
+                Returns MADE_PROGRESS if any batch was executed, NO_PROGRESS if no work was done.
         """
         pass
 

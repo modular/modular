@@ -42,7 +42,7 @@ from max.serve.scheduler.text_batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 
-from .base import Scheduler
+from .base import Scheduler, SchedulerProgress
 from .utils import SchedulerLogger, maybe_restore_chunked_request
 
 logger = logging.getLogger("max.serve")
@@ -237,11 +237,14 @@ class PrefillScheduler(Scheduler):
                 reply_context,
             )
 
-    def run_iteration(self) -> None:
+    def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes prefill requests.
 
         Receives requests, creates batches, and schedules them for processing
         while handling errors and cancelled requests.
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
         """
         # Cleanup active transfers.
         self.cleanup_active_transfers()
@@ -255,7 +258,7 @@ class PrefillScheduler(Scheduler):
         # If the batch is empty, skip
         batch_size = batch_to_execute.batch_size
         if batch_size == 0:
-            return
+            return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
@@ -274,6 +277,8 @@ class PrefillScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.ce_reqs),
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
+
+        return SchedulerProgress.MADE_PROGRESS
 
 
 def load_prefill_scheduler(

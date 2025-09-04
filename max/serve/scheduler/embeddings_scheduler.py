@@ -25,7 +25,8 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced
-from max.serve.scheduler import Scheduler
+
+from .base import Scheduler, SchedulerProgress
 
 logger = logging.getLogger("max.serve")
 
@@ -70,13 +71,18 @@ class EmbeddingsScheduler(Scheduler):
 
         return batch
 
-    def run_iteration(self) -> None:
-        """The Scheduler loop that creates batches and schedules them on GPU"""
+    def run_iteration(self) -> SchedulerProgress:
+        """The Scheduler loop that creates batches and schedules them on GPU
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
+        """
         batch_to_execute = self._create_batch_to_execute()
         if len(batch_to_execute) == 0:
-            return
+            return SchedulerProgress.NO_PROGRESS
 
         self._schedule_encode(batch_to_execute)
+        return SchedulerProgress.MADE_PROGRESS
 
     @traced
     def _handle_terminated_responses(

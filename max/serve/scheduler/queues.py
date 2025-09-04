@@ -32,6 +32,7 @@ from max.interfaces import (
 )
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
@@ -197,6 +198,7 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
             asyncio.CancelledError: If the response worker task is cancelled.
         """
         try:
+            count_no_progress = 0
             while True:
                 try:
                     response_dict = self.response_pull_socket.get_nowait()
@@ -212,6 +214,8 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
                     if cancelled:
                         self.cancel_push_socket.put_nowait(list(cancelled))
 
+                    count_no_progress = 0
+
                 except queue.Empty:
                     # If the worker dies this loop will keep running,
                     # so we have to check the worker status.
@@ -219,7 +223,9 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
                         logger.error("Model worker process is not healthy")
                         self.worker_pc.set_canceled()
                         raise Exception("Worker failed!")  # noqa: B904
-                    await asyncio.sleep(0)
+
+                    await sleep_with_backoff(count_no_progress)
+                    count_no_progress += 1
 
         except asyncio.CancelledError:
             raise

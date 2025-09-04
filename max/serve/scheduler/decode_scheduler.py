@@ -41,7 +41,7 @@ from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
-from .base import Scheduler
+from .base import Scheduler, SchedulerProgress
 from .text_batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,
@@ -338,11 +338,14 @@ class DecodeScheduler(Scheduler):
             }
         )
 
-    def run_iteration(self) -> None:
+    def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
 
         Receives requests, updates batches, and schedules them for processing
         while handling memory management.
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
         """
         # Eagerly reserve memory and send to prefill worker
         self.reserve_memory_and_send_to_prefill()
@@ -359,7 +362,7 @@ class DecodeScheduler(Scheduler):
         # If the batch is empty, skip
         batch_size = batch_to_execute.batch_size
         if batch_size == 0:
-            return
+            return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
@@ -379,6 +382,8 @@ class DecodeScheduler(Scheduler):
             + len(self.pending_prefill_requests),
             total_preemption_count=self.batch_constructor.total_preemption_count,
         )
+
+        return SchedulerProgress.MADE_PROGRESS
 
 
 def load_decode_scheduler(

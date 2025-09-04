@@ -32,7 +32,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
 
-from .base import Scheduler
+from .base import Scheduler, SchedulerProgress
 from .text_batch_constructor import (
     SchedulerOutput,
     TextBatchConstructor,
@@ -83,8 +83,12 @@ class TokenGenerationScheduler(Scheduler):
     def _retrieve_pending_requests(self) -> None:
         self.batch_constructor.ce_reqs |= dict(drain_queue(self.request_queue))
 
-    def run_iteration(self) -> None:
-        """The Scheduler routine that creates batches and schedules them on GPU"""
+    def run_iteration(self) -> SchedulerProgress:
+        """The Scheduler routine that creates batches and schedules them on GPU
+
+        Returns:
+            SchedulerProgress: Indicates whether work was performed in this iteration.
+        """
         # Drain the request queue and add to CE requests
         self._retrieve_pending_requests()
 
@@ -97,7 +101,7 @@ class TokenGenerationScheduler(Scheduler):
         # If the batch is empty, skip
         batch_size = batch_to_execute.batch_size
         if batch_size == 0:
-            return
+            return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
@@ -118,6 +122,8 @@ class TokenGenerationScheduler(Scheduler):
         )
 
         self._handle_cancelled_requests()
+
+        return SchedulerProgress.MADE_PROGRESS
 
     def _handle_cancelled_requests(self) -> None:
         release_cancelled_requests(

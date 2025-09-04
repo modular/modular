@@ -36,7 +36,7 @@ from max.profiler import Tracer
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
-from .base import Scheduler
+from .base import Scheduler, SchedulerProgress
 from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
 from .utils import release_cancelled_requests, release_terminated_requests
 
@@ -348,7 +348,7 @@ class AudioGenerationScheduler(Scheduler):
             ):
                 yield self._create_tg_batch()
 
-    def run_iteration(self) -> None:
+    def run_iteration(self) -> SchedulerProgress:
         # Construct the batch to execute
         t0 = time.monotonic()
         batch = next(self.batch_generator)
@@ -357,7 +357,7 @@ class AudioGenerationScheduler(Scheduler):
 
         # If the batch is empty, skip
         if batch.batch_size == 0:
-            return
+            return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
@@ -382,3 +382,5 @@ class AudioGenerationScheduler(Scheduler):
             self.decode_reqs,
             self.pipeline,
         )
+
+        return SchedulerProgress.MADE_PROGRESS
