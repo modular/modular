@@ -481,6 +481,52 @@ def test_is_codepoint_boundary():
     assert_false(empty.is_codepoint_boundary(1))
 
 
+def test_comparison_operators():
+    var abc = StringSlice("abc")
+    var de = StringSlice("de")
+    var ABC = StringSlice("ABC")
+    var ab = StringSlice("ab")
+    var abcd = StringSlice("abcd")
+
+    # Test equality and inequality
+    assert_true(StringSlice.__eq__(abc, abc))
+    assert_true(StringSlice.__eq__(abc, "abc"))
+    assert_false(StringSlice.__eq__(abc, de))
+    assert_false(StringSlice.__eq__(abc, "xyz"))
+
+    # Test less than and greater than
+    assert_true(StringSlice.__lt__(abc, de))
+    assert_false(StringSlice.__lt__(de, abc))
+    assert_false(StringSlice.__lt__(abc, abc))
+    assert_true(StringSlice.__lt__(ab, abc))
+    assert_true(StringSlice.__gt__(abc, ab))
+    assert_false(StringSlice.__gt__(abc, abcd))
+
+    # Test less than or equal to and greater than or equal to
+    assert_true(StringSlice.__le__(abc, de))
+    assert_true(StringSlice.__le__(abc, abc))
+    assert_false(StringSlice.__le__(de, abc))
+    assert_true(StringSlice.__ge__(abc, abc))
+    assert_false(StringSlice.__ge__(ab, abc))
+    assert_true(StringSlice.__ge__(abcd, abc))
+
+    # Test case sensitivity in comparison (assuming ASCII order)
+    assert_true(StringSlice.__gt__(abc, ABC))
+    assert_false(StringSlice.__le__(abc, ABC))
+
+    # Testing with implicit conversion
+    assert_true(StringSlice.__lt__(abc, "defgh"))
+    assert_false(StringSlice.__gt__(abc, "xyz"))
+    assert_true(StringSlice.__ge__(abc, "abc"))
+    assert_false(StringSlice.__le__(abc, "ab"))
+
+    # Test comparisons involving empty strings
+    assert_true(StringSlice.__lt__("", abc))
+    assert_false(StringSlice.__lt__(abc, ""))
+    assert_true(StringSlice.__le__("", ""))
+    assert_true(StringSlice.__ge__("", ""))
+
+
 def test_split():
     alias S = StaticString
     alias L = List[StaticString]
@@ -1024,6 +1070,7 @@ def main():
     test_find()
     test_find_compile_time()
     test_is_codepoint_boundary()
+    test_comparison_operators()
     test_split()
     test_splitlines()
     test_rstrip()
