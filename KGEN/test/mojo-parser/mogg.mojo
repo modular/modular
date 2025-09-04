@@ -32,7 +32,9 @@ fn custom_op_varargs(*a: Int, **b: Int) raises -> Int:
 
 
 @register_internal("custom.op")
-fn custom_op_generic[T: Movable, *Ts: Copyable](a: T, *b: *Ts) -> MemoryType:
+fn custom_op_generic[
+    T: Movable, *Ts: ImplicitlyCopyable
+](a: T, *b: *Ts) -> MemoryType:
     pass
 
 

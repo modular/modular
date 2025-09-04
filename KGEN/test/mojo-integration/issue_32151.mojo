@@ -10,7 +10,9 @@ from utils.variant import Variant
 from collections import List
 
 
-struct MTuple[T: Copyable & Movable](Copyable, Movable, Stringable, Writable):
+struct MTuple[T: ImplicitlyCopyable & Movable](
+    ImplicitlyCopyable, Movable, Stringable, Writable
+):
     alias Element = Variant[T, Self]
     var elts: List[Self.Element]
 

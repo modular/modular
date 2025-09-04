@@ -39,7 +39,7 @@ struct my_iter:
 
 
 @fieldwise_init
-struct MyList(Copyable):
+struct MyList(ImplicitlyCopyable):
     var start: UnsafePointer[Int]
     var size: Int
 

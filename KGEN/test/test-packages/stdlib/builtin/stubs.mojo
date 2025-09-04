@@ -285,7 +285,7 @@ struct FloatDyn:
 
 
 @register_passable("trivial")
-struct Int(AnyRPTrivialType, Copyable):
+struct Int(AnyRPTrivialType, ImplicitlyCopyable):
     var _mlir_value: Index
 
     @always_inline("builtin")
@@ -365,7 +365,7 @@ alias Byte = UInt8
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: Copyable & Movable,
+    T: ImplicitlyCopyable & Movable,
     origin: Origin[mut],
 ]:
     # Field
@@ -556,7 +556,7 @@ struct Set[T: AnyType]:
         pass
 
 
-struct Dict[K: AnyType, V: Copyable & Movable]:
+struct Dict[K: AnyType, V: ImplicitlyCopyable & Movable]:
     fn __init__(out self):
         pass
 
@@ -1021,7 +1021,7 @@ fn paramfor_next_iter[
 
 
 fn paramfor_next_value[
-    IteratorType: Iterator & Copyable & ImplicitlyCopyable
+    IteratorType: Iterator & ImplicitlyCopyable & ImplicitlyCopyable
 ](it: IteratorType) -> IteratorType.Element:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ will return true.  This is needed because the interpreter
@@ -1030,7 +1030,7 @@ fn paramfor_next_value[
     return result.__next__()
 
 
-struct Optional[T: Copyable & Movable]:
+struct Optional[T: ImplicitlyCopyable & Movable]:
     fn __del__(deinit self):
         pass
 

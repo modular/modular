@@ -8,13 +8,13 @@
 
 @fieldwise_init
 @register_passable
-struct RegPassable(Copyable):
+struct RegPassable(ImplicitlyCopyable):
     var v: Float32
     var w: Float32
 
 
 @fieldwise_init
-struct MemOnly(Copyable, Movable):
+struct MemOnly(ImplicitlyCopyable, Movable):
     var a: Int
     var b: Int
 

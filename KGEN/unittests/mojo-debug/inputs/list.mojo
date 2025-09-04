@@ -8,7 +8,7 @@ from debug_test_utils import keep_alive
 
 
 @register_passable("trivial")
-struct Point(Copyable, Movable):
+struct Point(ImplicitlyCopyable, Movable):
     var x: Int
     var y: Int
 

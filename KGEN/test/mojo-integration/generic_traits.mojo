@@ -103,13 +103,13 @@ fn like_father_like(value: Son):
 
 
 @register_passable
-struct SomeType(Copyable):
+struct SomeType(ImplicitlyCopyable):
     fn __del__(deinit self):
         pass
 
 
 # CHECK-LABEL: kgen.func {{.*}}drop_copy
-fn drop_copy[T: Copyable](value: T):
+fn drop_copy[T: ImplicitlyCopyable](value: T):
     # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{ }>
     # CHECK: call {{.*}}SomeType::__del__{{.*}}([[V0]])
     var _unused = value

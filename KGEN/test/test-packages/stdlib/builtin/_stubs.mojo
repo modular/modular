@@ -6,5 +6,5 @@
 
 
 @register_passable("trivial")
-struct __MLIRType[T: AnyTrivialRegType](Copyable, Movable):
+struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable, Movable):
     var value: T
