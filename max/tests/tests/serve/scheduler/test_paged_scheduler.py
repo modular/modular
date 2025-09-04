@@ -176,22 +176,29 @@ def create_paged_scheduler(
         cancel_zmq_endpoint=generate_zmq_endpoint(),
     )
 
+    scheduler.request_q.initialize_socket()
+    scheduler.response_q.initialize_socket()
+    scheduler.cancel_q.initialize_socket()
+
     # Create a push socket for the "APIWorker" to submit requests to
     push_socket = ZmqPushSocket[tuple[str, ContextType]](
-        zmq_endpoint=scheduler.request_q.zmq_endpoint,
+        endpoint=scheduler.request_q._endpoint,
         serialize=msgpack_numpy_encoder(),
+        lazy=False,
     )
 
     # Wire up unused pull sockets
     _ = ZmqPullSocket[dict[str, SchedulerResult[TextGenerationOutput]]](
-        zmq_endpoint=scheduler.response_q.zmq_endpoint,
+        endpoint=scheduler.response_q._endpoint,
         deserialize=msgpack_numpy_decoder(
             dict[str, SchedulerResult[TextGenerationOutput]]
         ),
+        lazy=False,
     )
     _ = ZmqPushSocket[list[str]](
-        zmq_endpoint=scheduler.cancel_q.zmq_endpoint,
+        endpoint=scheduler.cancel_q._endpoint,
         serialize=msgpack_numpy_encoder(),
+        lazy=False,
     )
 
     return (scheduler, push_socket)

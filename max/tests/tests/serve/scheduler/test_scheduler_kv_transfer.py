@@ -161,7 +161,7 @@ def decode_scheduler(
             max_batch_size_ce=4,
         )
 
-        return DecodeScheduler(
+        scheduler = DecodeScheduler(
             pipeline=mock_pipeline,
             scheduler_config=config,
             paged_manager=decode_paged_manager,
@@ -170,6 +170,12 @@ def decode_scheduler(
             cancel_zmq_endpoint=decode_cancel_zmq_path,
             dispatcher_client=decode_client,
         )
+
+        scheduler.request_pull_socket.initialize_socket()
+        scheduler.response_push_socket.initialize_socket()
+        scheduler.cancel_pull_socket.initialize_socket()
+
+        return scheduler
 
     return create_scheduler
 
@@ -252,24 +258,27 @@ async def test_transfer_between_prefill_and_decode_scheduler(
 ) -> None:
     # Create request push socket
     request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_endpoint=decode_request_zmq_path,
+        endpoint=decode_request_zmq_path,
         serialize=msgpack_numpy_encoder(),
+        lazy=False,
     )
 
     # Create response pull socket
     response_pull_socket = ZmqPullSocket[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ](
-        zmq_endpoint=decode_response_zmq_path,
+        endpoint=decode_response_zmq_path,
         deserialize=msgpack_numpy_decoder(
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ),
+        lazy=False,
     )
 
     # Create cancel push socket
     cancel_push_socket = ZmqPushSocket[list[str]](
-        zmq_endpoint=decode_cancel_zmq_path,
+        endpoint=decode_cancel_zmq_path,
         serialize=msgpack_numpy_encoder(),
+        lazy=False,
     )
 
     # Create queues for assertion results
