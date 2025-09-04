@@ -94,14 +94,14 @@ def test_smoke(
     stub: KVCacheAgentServiceStub,
 ) -> None:
     """Smoke test using ZMQ for event delivery."""
-    zmq_push_socket.put(
+    zmq_push_socket.put_nowait(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,
             update_type=UpdateType.UPDATE_TYPE_ADDED,
         )
     )
-    zmq_push_socket.put(
+    zmq_push_socket.put_nowait(
         KVCacheChangeMessage(
             cache_id="id2",
             memory_tier=MemoryTier.MEMORY_TIER_CPU,
@@ -121,7 +121,7 @@ def test_smoke(
     assert response.memory_tier == MemoryTier.MEMORY_TIER_CPU
     assert response.cache_ids == ["id2"]
 
-    zmq_push_socket.put(
+    zmq_push_socket.put_nowait(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,
@@ -146,7 +146,7 @@ def test_multiple_subscribers(
     responses1 = stub.SubscribeToUpdates(SubscriptionRequest())
     responses2 = stub.SubscribeToUpdates(SubscriptionRequest())
 
-    zmq_push_socket.put(
+    zmq_push_socket.put_nowait(
         KVCacheChangeMessage(
             cache_id="id1",
             memory_tier=MemoryTier.MEMORY_TIER_GPU,
