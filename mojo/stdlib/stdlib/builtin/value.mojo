@@ -68,11 +68,11 @@ trait Movable:
     """
 
 
-trait ExplicitlyCopyable:
-    """The ExplicitlyCopyable trait denotes a type whose value can be explicitly copied.
+trait Copyable:
+    """The Copyable trait denotes a type whose value can be explicitly copied.
 
-    Example implementing the `ExplicitlyCopyable` trait on `Foo` which requires the `__copyinit__`
-    method:
+    Example implementing the `Copyable` trait on `Foo`, which requires the
+    `__copyinit__` method:
 
     ```mojo
     struct Foo(Copyable):
@@ -90,8 +90,8 @@ trait ExplicitlyCopyable:
 
     ```mojo
     fn copy_return[T: Copyable](foo: T) -> T:
-        var copy = foo
-        return copy
+        var copy = foo.copy()
+        return copy^
 
     var foo = Foo("test")
     var res = copy_return(foo)
@@ -131,7 +131,7 @@ trait ExplicitlyCopyable:
     """
 
 
-trait ImplicitlyCopyable(ExplicitlyCopyable):
+trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
     in order to make a copy of the object when needed.
     """
@@ -139,7 +139,11 @@ trait ImplicitlyCopyable(ExplicitlyCopyable):
     pass
 
 
-alias Copyable = ExplicitlyCopyable
+@deprecated(
+    "Use `Copyable` or `ImplicitlyCopyable` instead. `Copyable` on its own no"
+    " longer implies implicit copyability."
+)
+alias ExplicitlyCopyable = Copyable
 
 
 trait Defaultable:
