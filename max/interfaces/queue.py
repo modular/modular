@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import queue
+import time
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 PushItemType = TypeVar("PushItemType", contravariant=True)
@@ -96,3 +97,16 @@ def drain_queue(pull_queue: MAXPullQueue[PullItemType]) -> list[PullItemType]:
         except queue.Empty:
             break
     return output
+
+
+def get_blocking(pull_queue: MAXPullQueue[PullItemType]) -> PullItemType:
+    """
+    Get the next item from the queue.
+
+    If no item is available, this method will spin until one is.
+    """
+    while True:
+        try:
+            return pull_queue.get_nowait()
+        except queue.Empty:
+            time.sleep(0.001)
