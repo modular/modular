@@ -31,6 +31,7 @@ qwen2_5_vl_arch = SupportedArchitecture(
         "Qwen/Qwen2.5-VL-7B-Instruct",
     ],
     default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
