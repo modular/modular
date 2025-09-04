@@ -128,7 +128,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
 
     # Verify the pipeline received default sampling_params.
     assert isinstance(pipeline.received_sampling_params, SamplingParams)
-    assert pipeline.received_sampling_params.top_k == 1
+    assert pipeline.received_sampling_params.top_k == 255
     assert pipeline.received_sampling_params.top_p == 1
     assert pipeline.received_sampling_params.min_p == 0.0
     assert pipeline.received_sampling_params.temperature == 1
