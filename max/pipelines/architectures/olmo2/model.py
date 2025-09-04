@@ -69,14 +69,14 @@ class Olmo2Model(LlamaModelBase):
             return_logits=self.return_logits,
         )
 
-        # Get Graph Inputs
-        graph_inputs = self.graph_inputs()
-
         # Build Graph - only single GPU for now
         if len(self.devices) > 1:
             raise NotImplementedError("Multi-GPU OLMo2 is not implemented yet")
 
         nn_model = Olmo2(model_config)
+
+        # Get Graph Inputs
+        graph_inputs = nn_model.input_types(self.kv_manager)
 
         # Load weights.
         nn_model.load_state_dict(

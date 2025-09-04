@@ -190,70 +190,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Llama3Config.get_num_layers(huggingface_config)
 
-    def graph_inputs(self) -> tuple[Union[TensorType, BufferType], ...]:
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_manager.input_symbols()
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        if len(self.devices) > 1:
-            # Flatten kv types for each device
-            flattened_kv_types: list[TensorType] = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
-
-            signals = Signals(
-                devices=(DeviceRef(d.label, d.id) for d in self.devices)
-            )
-
-            # Explicitly construct tuple with mixed types
-            signal_buffer_types: list[BufferType] = signals.input_types()
-
-            # Build the complete input types list
-            all_input_types: list[Union[TensorType, BufferType]] = [
-                tokens_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-            ]
-            all_input_types.extend(signal_buffer_types)
-            all_input_types.extend(flattened_kv_types)
-
-            return tuple(all_input_types)
-        else:
-            if self._lora_manager:
-                lora_ids, lora_ranks, lora_grouped_offsets = (
-                    self._lora_manager.input_symbols(device_ref)
-                )
-                return (
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    lora_ids,
-                    lora_ranks,
-                    lora_grouped_offsets,
-                    *kv_inputs[0],
-                )
-            else:
-                return (
-                    tokens_type,
-                    input_row_offsets_type,
-                    return_n_logits_type,
-                    *kv_inputs[0],
-                )
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
@@ -371,7 +307,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def load_kv_manager(
         self,
         session: InferenceSession,
-        available_cache_memory: int,
+        available_cache_memory: int | None,
     ) -> KVCacheManager:
         # For pipeline parallel, use layers per stage instead of total layers
         num_layers_for_cache = Llama3Config.get_num_layers(
@@ -561,7 +497,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_collection_func: Any
             if model_config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
                 kv_collection_func = FetchPagedKVCacheCollection(
-                    self.kv_manager.params, num_layers=num_layers_in_stage
+                    self.kv_manager.params
                 )
             else:
                 raise ValueError(
@@ -728,7 +664,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
-                input_types=self.graph_inputs(),
+                input_types=dist_model.input_types(self.kv_manager),
             ) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
@@ -773,7 +709,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
             self.state_dict = single_model.state_dict()
 
-            with Graph("llama3", input_types=self.graph_inputs()) as graph:
+            with Graph(
+                "llama3",
+                input_types=single_model.input_types(
+                    self.kv_manager, self._lora_manager
+                ),
+            ) as graph:
                 if self._lora_manager:
                     (
                         tokens,

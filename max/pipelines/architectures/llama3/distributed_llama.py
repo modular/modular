@@ -18,6 +18,7 @@ import functools
 import logging
 
 from max.dtype import DType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
@@ -27,10 +28,12 @@ from max.nn import (
     DistributedTransformerBlock,
     Linear,
     RMSNorm,
+    Signals,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
+    KVCacheManager,
     KVCacheStrategy,
 )
 
@@ -41,6 +44,7 @@ from .model_config import Llama3Config, create_rope_embedding
 class DistributedLlama3(DistributedTransformer):
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
+        self.config = config
 
         if config.quantization_config:
             raise ValueError(
@@ -198,3 +202,46 @@ class DistributedLlama3(DistributedTransformer):
             # embedding_multiplier=config.embedding_multiplier,
             logits_scaling=config.logits_scaling,
         )
+
+    def input_types(
+        self, kv_manager: KVCacheManager
+    ) -> tuple[TensorType | BufferType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        # Flatten kv types for each device
+        flattened_kv_types: list[TensorType] = [
+            kv_type for sublist in kv_inputs for kv_type in sublist
+        ]
+
+        signals = Signals(devices=self.config.devices)
+
+        # Explicitly construct tuple with mixed types
+        signal_buffer_types: list[BufferType] = signals.input_types()
+
+        # Build the complete input types list
+        all_input_types: list[TensorType | BufferType] = [
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+        ]
+        all_input_types.extend(signal_buffer_types)
+        all_input_types.extend(flattened_kv_types)
+
+        return tuple(all_input_types)

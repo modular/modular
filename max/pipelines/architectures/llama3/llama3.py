@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import numpy.typing as npt
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     MLP,
@@ -40,8 +40,10 @@ from max.nn import (
 )
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
+    KVCacheManager,
     KVCacheStrategy,
 )
+from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
 
@@ -122,6 +124,7 @@ class ConstantLayerNorm(Module):
 class Llama3(Transformer):
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
+        self.config = config
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
@@ -296,3 +299,46 @@ class Llama3(Transformer):
             embedding_multiplier=config.embedding_multiplier,
             logits_scaling=config.logits_scaling,
         )
+
+    def input_types(
+        self, kv_manager: KVCacheManager, lora_manager: LoRAManager | None
+    ) -> tuple[TensorType, ...]:
+        # TODO: Move input symbol computation from the manager classes.
+        # It should be possible to compute the input symbols from the model
+        # config.
+        device_ref = self.config.devices[0]
+
+        # Construct general input types
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_manager.input_symbols()
+
+        # Construct Graph Inputs
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        if lora_manager is not None:
+            lora_ids, lora_ranks, lora_grouped_offsets = (
+                lora_manager.input_symbols(device_ref)
+            )
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                lora_ids,
+                lora_ranks,
+                lora_grouped_offsets,
+                *kv_inputs[0],
+            )
+        else:
+            return (
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+                *kv_inputs[0],
+            )

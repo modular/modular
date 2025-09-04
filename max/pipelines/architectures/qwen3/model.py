@@ -69,12 +69,12 @@ class Qwen3Model(LlamaModelBase):
             return_logits=self.return_logits,
         )
 
-        # Get Graph Inputs
-        graph_inputs = self.graph_inputs()
-
         # Build Graph
         nn_model: Module
         nn_model = Qwen3(model_config)
+
+        # Get Graph Inputs
+        graph_inputs = nn_model.input_types(self.kv_manager)
 
         # Load weights.
         nn_model.load_state_dict(
