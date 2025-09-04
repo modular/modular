@@ -39,7 +39,9 @@ def zmq_push_socket(
     zmq_endpoint: str,
 ) -> Generator[ZmqPushSocket[KVCacheChangeMessage], None, None]:
     push_socket = ZmqPushSocket[KVCacheChangeMessage](
-        zmq_endpoint=zmq_endpoint, serialize=pickle.dumps
+        endpoint=zmq_endpoint,
+        serialize=pickle.dumps,
+        lazy=False,
     )
     yield push_socket
     push_socket._cleanup()
