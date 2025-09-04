@@ -104,8 +104,8 @@ trait ParamInputTrait:
         return ParamRPType[x, y](x * y)
 
 
-# CHECK-LABEL: lit.struct.decl @ParamTestStruct
-struct ParamTestStruct(ParamInputTrait):
+# CHECK-LABEL: lit.struct.decl @SimpleTestStruct
+struct SimpleTestStruct(ParamInputTrait):
     # Check that we generate proper wrapper for parameterized input method
     # CHECK: lit.fn @"process_parameterized
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
@@ -113,6 +113,29 @@ struct ParamTestStruct(ParamInputTrait):
     # Check that we generate proper wrapper for parameterized return type
     # CHECK: lit.fn @"return_parameterized
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
+
+    # CHECK: kgen.conformance{{.*}}:ParamInputTrait
+    # CHECK-DAG: kgen.witness "process_parameterized"
+    # CHECK-DAG: kgen.witness "return_parameterized"
+    pass
+
+
+# COM: Test parameterized struct with parameters whose names are the same as a
+# parameters used in the trait methods.
+# CHECK-LABEL: lit.struct.decl @ParamTestStruct
+struct ParamTestStruct[T: Int, x: Bool](ParamInputTrait):
+    # CHECK: lit.fn @"process_parameterized
+    # CHECK-SAME: <*"T`": !Barable>
+    # CHECK-SAME: %item: !lit.ref<:!Barable *"T`",
+    # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"process_parameterized
+    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Barable *"T`">
+
+    # CHECK: lit.fn @"return_parameterized
+    # CHECK-SAME: <*"x`1": !Int, *"y`2": !Int>
+    # CHECK-SAME: %self: !lit.ref<@default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>,
+    # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int *"x`1", :!Int *"y`2">>
+    # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
+    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Int *"x`1", :!Int *"y`2">
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized"
