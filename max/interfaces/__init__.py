@@ -34,7 +34,7 @@ from .pipeline_variants import (
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
 )
-from .queue import MAXQueue
+from .queue import MAXPullQueue, MAXPushQueue, drain_queue
 from .request import Request, RequestID
 from .scheduler import SchedulerResult
 from .status import GenerationStatus
@@ -70,7 +70,8 @@ __all__ = [
     "LoRAStatus",
     "LoRAType",
     "LogProbabilities",
-    "MAXQueue",
+    "MAXPullQueue",
+    "MAXPushQueue",
     "Pipeline",
     "PipelineOutput",
     "PipelineOutputsDict",
@@ -93,6 +94,7 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "drain_queue",
     "msgpack_eq",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
