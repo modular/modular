@@ -398,8 +398,14 @@ protected:
 /// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
 bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs);
 
-// Return true if target is NVPTX and arch is of hopper architecture or above.
+/// Return true if target is AMDGPU and `arch` is in `allowedGPUs`.
+bool isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs);
+
+/// Return true if target is NVPTX and arch is of hopper architecture or above.
 bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
+
+/// Return true if target is AMDGPU and arch is mi350x(gfx950) or above
+bool isAMDGPU_MI350XAndAbove(TargetInfoAttr target);
 
 } // namespace M::KGEN
 

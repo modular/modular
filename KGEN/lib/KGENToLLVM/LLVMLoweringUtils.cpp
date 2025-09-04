@@ -1149,9 +1149,27 @@ bool KGEN::isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
 }
 
 //===----------------------------------------------------------------------===//
+// isAMDGPU
+//===----------------------------------------------------------------------===//
+
+bool KGEN::isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
+  if (!target.getTriple().isAMDGPU())
+    return false;
+  return llvm::is_contained(allowedGPUs, target.getArch());
+}
+
+//===----------------------------------------------------------------------===//
 // isNVPTX_HopperAndAbove
 //===----------------------------------------------------------------------===//
 
 bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
   return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
+}
+
+//===----------------------------------------------------------------------===//
+// isAMDGPU_MI350XAndAbove
+//===----------------------------------------------------------------------===//
+
+bool KGEN::isAMDGPU_MI350XAndAbove(TargetInfoAttr target) {
+  return isAMDGPU(target, {"gfx950"});
 }
