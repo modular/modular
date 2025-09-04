@@ -170,7 +170,7 @@ fn dispatch_kernel[
     # The auxiliary SMs are used for counting counting the number of tokens
     # that need to be sent to each expert. It also monitors the completion of
     # the communication for each expert.
-    if block_idx.x < n_aux_sms:
+    if block_idx.x < UInt(n_aux_sms):
         var expert_idx: Int32 = block_idx.x * n_warps + warp_id()
         var expert_count: Int32 = 0
 
@@ -292,7 +292,7 @@ fn dispatch_kernel[
                     shmem_put_nbi[kind = SHMEMScope.warp](
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
-                        msg_bytes,
+                        UInt(msg_bytes),
                         dst_rank,
                     )
                     syncwarp()
@@ -416,7 +416,7 @@ fn dispatch_cb_kernel[
     # The first SM is used for checking if any of a local expert has received
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
-    if block_idx.x < n_aux_sms:
+    if block_idx.x < UInt(n_aux_sms):
         var shared_mem = stack_allocation[
             1, DType.uint32, address_space = AddressSpace.SHARED
         ]()
@@ -425,7 +425,7 @@ fn dispatch_cb_kernel[
         barrier()
 
         var local_expert_id = warp_id()
-        if local_expert_id >= n_local_experts:
+        if local_expert_id >= UInt(n_local_experts):
             return
 
         alias scan_round = ceildiv(n_ranks, WARP_SIZE)
