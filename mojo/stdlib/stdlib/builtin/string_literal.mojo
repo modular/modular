@@ -35,7 +35,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     ConvertibleToPython,
     Defaultable,
-    ExplicitlyCopyable,
     FloatableRaising,
     ImplicitlyCopyable,
     IntableRaising,

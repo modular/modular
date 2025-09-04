@@ -33,7 +33,6 @@ struct UInt(
     Comparable,
     Defaultable,
     DivModable,
-    ExplicitlyCopyable,
     Hashable,
     ImplicitlyCopyable,
     Indexer,

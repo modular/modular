@@ -17,7 +17,7 @@ from os import abort
 
 
 struct Node[
-    ElementType: ExplicitlyCopyable & Movable,
+    ElementType: Copyable & Movable,
 ](ImplicitlyCopyable, Movable):
     """A node in a linked list data structure.
 
@@ -63,7 +63,7 @@ struct Node[
         self.next = existing.next
 
     fn __str__[
-        ElementType: ExplicitlyCopyable & Movable & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: Node[ElementType]) -> String:
         """Convert this node's value to a string representation.
 
@@ -78,7 +78,7 @@ struct Node[
 
     @no_inline
     fn write_to[
-        ElementType: ExplicitlyCopyable & Movable & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: Node[ElementType], mut writer: Some[Writer]):
         """Write this node's value to the given writer.
 
@@ -95,7 +95,7 @@ struct Node[
 @fieldwise_init
 struct _LinkedListIter[
     mut: Bool, //,
-    ElementType: ExplicitlyCopyable & Movable,
+    ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterator, Movable):
@@ -136,13 +136,13 @@ struct _LinkedListIter[
 
 
 struct LinkedList[
-    ElementType: ExplicitlyCopyable & Movable,
+    ElementType: Copyable & Movable,
 ](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:
         ElementType: The type of elements stored in the list. Must implement the
-            `ImplicitlyCopyable` and `Movable` traits.
+            `Copyable` and `Movable` traits.
 
     A doubly-linked list is a data structure where each element points to both
     the next and previous elements, allowing for efficient insertion and deletion
@@ -552,7 +552,7 @@ struct LinkedList[
         other._tail = Self._NodePointer()
 
     fn count[
-        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], read elem: ElementType) -> UInt:
         """Count the occurrences of `elem` in the list.
 
@@ -580,7 +580,7 @@ struct LinkedList[
         return UInt(count)
 
     fn __contains__[
-        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], value: ElementType) -> Bool:
         """Checks if the list contains `value`.
 
@@ -606,7 +606,7 @@ struct LinkedList[
         return False
 
     fn __eq__[
-        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](
         read self: LinkedList[ElementType], read other: LinkedList[ElementType]
     ) -> Bool:
@@ -641,7 +641,7 @@ struct LinkedList[
         return True
 
     fn __ne__[
-        ElementType: EqualityComparable & ExplicitlyCopyable & Movable, //
+        ElementType: EqualityComparable & Copyable & Movable, //
     ](self: LinkedList[ElementType], other: LinkedList[ElementType]) -> Bool:
         """Checks if the two lists are not equal.
 
@@ -782,7 +782,7 @@ struct LinkedList[
         return len(self) != 0
 
     fn __str__[
-        ElementType: ExplicitlyCopyable & Movable & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -801,7 +801,7 @@ struct LinkedList[
         return writer
 
     fn __repr__[
-        ElementType: ExplicitlyCopyable & Movable & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType]) -> String:
         """Convert the list to its string representation.
 
@@ -820,7 +820,7 @@ struct LinkedList[
         return writer
 
     fn write_to[
-        ElementType: ExplicitlyCopyable & Movable & Writable
+        ElementType: Copyable & Movable & Writable
     ](self: LinkedList[ElementType], mut writer: Some[Writer]):
         """Write the list to the given writer.
 
@@ -838,7 +838,7 @@ struct LinkedList[
 
     @no_inline
     fn _write[
-        W: Writer, ElementType: ExplicitlyCopyable & Movable & Writable
+        W: Writer, ElementType: Copyable & Movable & Writable
     ](
         self: LinkedList[ElementType],
         mut writer: W,

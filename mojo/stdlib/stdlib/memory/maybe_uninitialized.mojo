@@ -15,7 +15,7 @@ from os import abort
 
 
 struct UnsafeMaybeUninitialized[ElementType: AnyType](
-    Defaultable, ExplicitlyCopyable, ImplicitlyCopyable, Movable
+    Defaultable, ImplicitlyCopyable, Movable
 ):
     """A memory location that may or may not be initialized.
 
@@ -82,7 +82,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
 
     @always_inline
     fn copy_from[
-        CopyableType: ExplicitlyCopyable
+        CopyableType: Copyable
     ](
         mut self: UnsafeMaybeUninitialized[CopyableType],
         other: UnsafeMaybeUninitialized[CopyableType],
@@ -102,7 +102,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
 
     @always_inline
     fn copy_from[
-        CopyableType: ExplicitlyCopyable
+        CopyableType: Copyable
     ](mut self: UnsafeMaybeUninitialized[CopyableType], other: CopyableType):
         """Copy another object.
 

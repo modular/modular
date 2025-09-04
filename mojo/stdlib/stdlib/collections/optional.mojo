@@ -39,7 +39,7 @@ from utils import Variant
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(ExplicitlyCopyable, ImplicitlyCopyable, Movable):
+struct _NoneType(ImplicitlyCopyable, Movable):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -49,8 +49,8 @@ struct _NoneType(ExplicitlyCopyable, ImplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Optional[T: ExplicitlyCopyable & Movable](
-    Boolable, Defaultable, ExplicitlyCopyable, ImplicitlyCopyable, Movable
+struct Optional[T: Copyable & Movable](
+    Boolable, Defaultable, ImplicitlyCopyable, Movable
 ):
     """A type modeling a value which may or may not be present.
 
@@ -407,7 +407,7 @@ struct Optional[T: ExplicitlyCopyable & Movable](
     fn copied[
         mut: Bool,
         origin: Origin[mut], //,
-        T: ExplicitlyCopyable & Movable,
+        T: Copyable & Movable,
     ](self: Optional[Pointer[T, origin]]) -> Optional[T]:
         """Converts an `Optional` containing a Pointer to an `Optional` of an
         owned value by copying.

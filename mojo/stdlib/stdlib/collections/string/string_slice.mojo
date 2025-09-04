@@ -454,7 +454,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     ConvertibleToPython,
     Defaultable,
     EqualityComparable,
-    ExplicitlyCopyable,
     FloatableRaising,
     Hashable,
     ImplicitlyCopyable,

@@ -253,7 +253,6 @@ struct SIMD[dtype: DType, size: Int](
     ConvertibleToPython,
     Defaultable,
     DevicePassable,
-    ExplicitlyCopyable,
     Floorable,
     Hashable,
     ImplicitlyCopyable,

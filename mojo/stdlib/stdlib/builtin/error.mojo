@@ -104,7 +104,6 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
 struct Error(
     Boolable,
     Defaultable,
-    ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     Representable,

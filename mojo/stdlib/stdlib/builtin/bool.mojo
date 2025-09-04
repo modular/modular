@@ -108,7 +108,6 @@ struct Bool(
     ConvertibleFromPython,
     ConvertibleToPython,
     Defaultable,
-    ExplicitlyCopyable,
     Floatable,
     Hashable,
     ImplicitlyBoolable,

@@ -82,7 +82,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
 
 
 fn reversed[
-    T: ExplicitlyCopyable & Movable
+    T: Copyable & Movable
 ](ref value: List[T, *_]) -> _ListIter[
     T, __type_of(value).hint_trivial_type, __origin_of(value), False
 ]:
@@ -123,7 +123,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: ExplicitlyCopyable & Movable,
+    V: Copyable & Movable,
     H: Hasher,
 ](
     ref value: Dict[K, V, H],
@@ -150,7 +150,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: ExplicitlyCopyable & Movable,
+    V: Copyable & Movable,
     H: Hasher,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
@@ -179,7 +179,7 @@ fn reversed[
 
 fn reversed[
     K: KeyElement,
-    V: ExplicitlyCopyable & Movable,
+    V: Copyable & Movable,
     H: Hasher,
     dict_mutability: Bool,
     dict_origin: Origin[dict_mutability],
@@ -211,7 +211,7 @@ fn reversed[
 
 @always_inline
 fn reversed[
-    T: ExplicitlyCopyable & Movable
+    T: Copyable & Movable
 ](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 

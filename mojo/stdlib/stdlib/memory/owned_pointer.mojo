@@ -54,14 +54,12 @@ struct OwnedPointer[T: AnyType]:
         self._inner = UnsafePointer[T].alloc(1)
         self._inner.init_pointee_move(value^)
 
-    fn __init__[
-        T: ExplicitlyCopyable
-    ](out self: OwnedPointer[T], *, copy_value: T):
+    fn __init__[T: Copyable](out self: OwnedPointer[T], *, copy_value: T):
         """Construct a new `OwnedPointer` by explicitly copying the passed value into a new backing allocation.
 
         Parameters:
             T: The type of the data to store, which must be
-               `ExplicitlyCopyable`.
+               `Copyable`.
 
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
@@ -85,7 +83,7 @@ struct OwnedPointer[T: AnyType]:
         self._inner.init_pointee_copy(value)
 
     fn __init__[
-        T: ExplicitlyCopyable
+        T: Copyable
     ](out self: OwnedPointer[T], *, other: OwnedPointer[T]):
         """Construct a new `OwnedPointer` by explicitly copying the value from another `OwnedPointer`.
 
@@ -140,7 +138,7 @@ struct OwnedPointer[T: AnyType]:
         Parameters:
             T: The type of the data backing this `OwnedPointer`. `take()` only exists for `T: Movable`
                 since this consuming operation only makes sense for types that you want to avoid copying.
-                For types that are `ImplicitlyCopyable` or `ExplicitlyCopyable` but are not `Movable`, you can copy them through
+                For types that are `ImplicitlyCopyable` or `Copyable` but are not `Movable`, you can copy them through
                 `__getitem__` as in `var v = some_ptr_var[]`.
 
         Returns:

@@ -31,7 +31,7 @@ from memory import Pointer
 @fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
-    T: ExplicitlyCopyable & Movable,
+    T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -80,13 +80,12 @@ struct _SpanIter[
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
-    T: ExplicitlyCopyable & Movable,
+    T: Copyable & Movable,
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[T](),
 ](
-    ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     Sized,

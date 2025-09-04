@@ -93,7 +93,7 @@ struct ObservableMoveOnly(Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct ExplicitCopyOnly(ExplicitlyCopyable):
+struct ExplicitCopyOnly(Copyable):
     var value: Int
     var copy_count: Int
 
@@ -131,7 +131,7 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(ExplicitlyCopyable, ImplicitlyCopyable, Movable, Writable):
+struct CopyCounter(ImplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -156,9 +156,7 @@ struct CopyCounter(ExplicitlyCopyable, ImplicitlyCopyable, Movable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCounter[T: ExplicitlyCopyable & Movable](
-    ExplicitlyCopyable, ImplicitlyCopyable, Movable
-):
+struct MoveCounter[T: Copyable & Movable](ImplicitlyCopyable, Movable):
     """Counts the number of moves performed on a value."""
 
     var value: T
@@ -210,7 +208,7 @@ struct MoveCopyCounter(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder(ExplicitlyCopyable, ImplicitlyCopyable, Movable):
+struct DelRecorder(ImplicitlyCopyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
@@ -286,6 +284,6 @@ struct CopyCountedStruct(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct AbortOnCopy(ExplicitlyCopyable, ImplicitlyCopyable):
+struct AbortOnCopy(ImplicitlyCopyable):
     fn __copyinit__(out self, other: Self):
         abort("We should never implicitly copy AbortOnCopy")

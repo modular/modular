@@ -18,7 +18,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 struct Slice(
     EqualityComparable,
-    ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     Representable,

@@ -23,12 +23,12 @@ trait Iterable:
         ...
 
 
-trait Iterator(ExplicitlyCopyable, Movable):
+trait Iterator(Copyable, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
 
-    alias Element: ExplicitlyCopyable & Movable
+    alias Element: Copyable & Movable
 
     fn __has_next__(self) -> Bool:
         ...
@@ -54,7 +54,7 @@ fn next[
 
 
 struct _Enumerate[InnerIteratorType: Iterator](
-    ExplicitlyCopyable, Iterable, Iterator, Movable
+    Copyable, Iterable, Iterator, Movable
 ):
     """The `enumerate` function returns an iterator that yields tuples of the
     index and the element of the original iterator.

@@ -215,7 +215,6 @@ struct Int(
     Defaultable,
     DevicePassable,
     DivModable,
-    ExplicitlyCopyable,
     Floorable,
     Hashable,
     ImplicitlyBoolable,

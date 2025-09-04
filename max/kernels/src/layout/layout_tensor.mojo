@@ -273,7 +273,6 @@ struct LayoutTensor[
     ImplicitlyCopyable,
     DevicePassable,
     Movable,
-    ExplicitlyCopyable,
     Stringable,
     Writable,
     _Expable,

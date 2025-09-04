@@ -53,7 +53,6 @@ struct UnsafePointer[
     ImplicitlyBoolable,
     ImplicitlyCopyable,
     Movable,
-    ExplicitlyCopyable,
     Stringable,
     Writable,
     Intable,
@@ -1192,7 +1191,7 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_copy[
-        T: ExplicitlyCopyable, //,
+        T: Copyable, //,
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
         value: T,
@@ -1218,7 +1217,7 @@ struct UnsafePointer[
 
     @always_inline
     fn init_pointee_explicit_copy[
-        T: ExplicitlyCopyable, //
+        T: Copyable, //
     ](
         self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
         value: T,
@@ -1235,7 +1234,7 @@ struct UnsafePointer[
 
         Parameters:
             T: The type the pointer points to, which must be
-               `ExplicitlyCopyable`.
+               `Copyable`.
 
         Args:
             value: The value to emplace.

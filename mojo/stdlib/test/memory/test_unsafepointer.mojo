@@ -72,7 +72,7 @@ def test_unsafepointer_init_pointee_explicit_copy():
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
 
-    # Test initialize pointee from `ExplicitlyCopyable` type
+    # Test initialize pointee from `Copyable` type
     ptr.init_pointee_explicit_copy(orig)
 
     assert_equal(ptr[].value, 5)

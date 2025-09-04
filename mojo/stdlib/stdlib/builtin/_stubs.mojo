@@ -18,9 +18,7 @@
 
 
 @register_passable("trivial")
-struct __MLIRType[T: AnyTrivialRegType](
-    ExplicitlyCopyable, ImplicitlyCopyable, Movable
-):
+struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable, Movable):
     var value: T
 
     fn copy(self) -> Self:
