@@ -24,28 +24,19 @@ from nn.mha_tile_scheduler import (
     TileScheduler,
     WorkInfo,
 )
+from nn.mha_fa3_utils import NullPointer
 
 
 fn test_kernel[schedule: MHASchedule]():
     alias scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     scheduler = scheduler_t()
-    valid_length = NDBuffer[DType.uint32, 1, MutableAnyOrigin]()
+    valid_length = NullPointer[DType.uint32]()
     tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
     state = scheduler.initial_state(
         UnsafePointer[UInt32, address_space = AddressSpace.SHARED](),
         tile_summary,
     )
     work_info = scheduler.get_current_work_info(tile_summary, state)
-
-    # @parameter
-    # @always_inline
-    # fn update_work_info(work: WorkInfo):
-    #     work_info = work
-
-    # while scheduler.advance[func=update_work_info, producer=True,sync= MHASchedulerSynchronization.DEFAULT](
-    #     tile_summary, state, 0
-    # ):
-    #     print(block_idx.x, work_info)
 
     while work_info.is_valid():
         print(block_idx.x, work_info)

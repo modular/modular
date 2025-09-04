@@ -723,7 +723,8 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Intable):
+@register_passable("trivial")
+trait OptionallyStaticInt(Copyable, Intable):
     alias static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -773,7 +774,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 
 @register_passable("trivial")
-trait MHAPartitionScheme:
+trait MHAPartitionScheme(Copyable):
     alias do_partition: Bool
     alias accum_dtype: DType
 

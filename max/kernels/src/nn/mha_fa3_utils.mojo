@@ -59,9 +59,98 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from tensor_internal import ManagedTensorSlice
+from builtin.variadics import VariadicOf
 from utils.index import Index, IndexList
 from sys import size_of
+
+
+@register_passable("trivial")
+trait OptionalPointer(Copyable):
+    alias dtype: DType
+    alias is_null: Bool
+
+    @always_inline
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+        ...
+
+
+@register_passable("trivial")
+struct NonNullPointer[dtype_: DType](OptionalPointer):
+    alias dtype: DType = dtype_
+    alias is_null: Bool = False
+
+    var ptr: UnsafePointer[Scalar[Self.dtype]]
+
+    @always_inline
+    fn __init__(out self, ptr: UnsafePointer[Scalar[Self.dtype]]):
+        self.ptr = ptr
+
+    @always_inline
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+        debug_assert(
+            Bool(self.ptr),
+            (
+                "NonNullPointer is supposed to provide a compile-time guarantee"
+                " of being non-null"
+            ),
+        )
+        return self.ptr
+
+
+@register_passable("trivial")
+struct NullPointer[dtype_: DType](OptionalPointer):
+    alias dtype: DType = dtype_
+    alias is_null: Bool = True
+
+    @always_inline
+    fn __init__(out self):
+        pass
+
+    @always_inline
+    fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
+        return {}
+
+
+@register_passable("trivial")
+struct Pack[
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait,
+    SchedulerType: MHATileScheduler,
+    ValidLengthType: OptionalPointer,
+    SinkType: OptionalPointer,
+    KVRowOffsetsType: OptionalPointer,
+    MaxSeqLenType: OptionallyStaticInt,
+    PartitionType: MHAPartitionScheme,
+]:
+    var mask: MaskType
+    var score_mod: ScoreModType
+    var scheduler: SchedulerType
+    var valid_length: ValidLengthType
+    var sink_weights: SinkType
+    var kv_input_row_offsets: KVRowOffsetsType
+    var max_seq_len: MaxSeqLenType
+    var partition: PartitionType
+
+    @always_inline
+    fn __init__(
+        out self,
+        mask: MaskType,
+        score_mod: ScoreModType,
+        scheduler: SchedulerType,
+        valid_length: ValidLengthType,
+        sink_weights: SinkType,
+        kv_input_row_offsets: KVRowOffsetsType,
+        max_seq_len: MaxSeqLenType,
+        partition: PartitionType,
+    ):
+        self.mask = mask
+        self.score_mod = score_mod
+        self.scheduler = scheduler
+        self.valid_length = valid_length
+        self.sink_weights = sink_weights
+        self.kv_input_row_offsets = kv_input_row_offsets
+        self.max_seq_len = max_seq_len
+        self.partition = partition
 
 
 @register_passable("trivial")
@@ -263,7 +352,8 @@ struct MHAPosition[
 @always_inline
 fn _get_position[
     KVLUTType: MHAOperand,
-    MaxSeqLenType: OptionallyStaticInt, //,
+    MaxSeqLenType: OptionallyStaticInt,
+    KVInputRowOffsetsType: OptionalPointer, //,
     BM: Int,
     BN: Int,
     depth: Int,
@@ -286,9 +376,7 @@ fn _get_position[
     kv_lut: KVLUTType,
     max_seq_len: MaxSeqLenType,
     num_keys_arg: UInt32,
-    kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    ],
+    kv_input_row_offsets: KVInputRowOffsetsType,
 ):
     var batch_idx: UInt32 = seq_info.prompt_idx
     # mha inputs
@@ -309,14 +397,15 @@ fn _get_position[
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
-        if kv_input_row_offsets:
+        @parameter
+        if KVInputRowOffsetsType.is_null:
+            num_keys = seq_len + cache_len
+        else:
             var kv_row_offsets = kv_input_row_offsets.value()
             kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
             kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
             cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = cur_kv_len + cache_len
-        else:
-            num_keys = seq_len + cache_len
         q_row = seq_info.start_of_seq
 
     # NDBuffer inputs, homogeneous batching.
@@ -352,26 +441,45 @@ fn _get_position[
     )
 
 
+alias QTMATile[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    group: Int,
+    decoding: Bool,
+] = TMANestedTensorTile[
+    dtype,
+    max(group, 8) if decoding else BM,
+    64 if decoding else depth,
+    swizzle_mode,
+    is_k_major=True,
+]
+
+
 @always_inline
 fn q_out_tma[
     dtype: DType, //,
+    swizzle_mode: TensorMapSwizzle,
+    *,
     BM: Int,
     depth: Int,
     padded_depth: Int,
-    swizzle_mode: TensorMapSwizzle,
-    *,
     q_num_heads: Int,
+    group: Int,
     decoding: Bool,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype]],
     rows: Int,
-    out res: TMANestedTensorTile[
+    out res: QTMATile[
         dtype,
-        max(8, BM),
-        64 if decoding else padded_depth,
         swizzle_mode,
-        is_k_major=True,
+        BM=BM,
+        depth=padded_depth,
+        group=group,
+        decoding=decoding,
     ],
 ) raises:
     alias tile_cols: Int = 64 if decoding else padded_depth
@@ -381,63 +489,12 @@ fn q_out_tma[
     rt_layout = RuntimeLayout[layout].row_major(IndexList[2](rows, matrix_cols))
     var tensor = LayoutTensor[dtype, layout, MutableAnyOrigin](ptr, rt_layout)
 
-    return create_nested_tma_tile[
-        max(8, BM), tile_cols, swizzle_mode, is_k_major=True
+    res = create_nested_tma_tile[
+        max(group, 8) if decoding else BM,
+        tile_cols,
+        swizzle_mode,
+        is_k_major=True,
     ](ctx, tensor)
-
-
-@always_inline("nodebug")
-fn _produce[
-    smem_layout: Layout,
-    kv_t: MHAOperand,
-    BM: Int,
-    BN: Int,
-    depth: Int,
-    padded_depth: Int,
-    num_heads: Int,
-    group: Int,
-    decoding: Bool,
-    swizzle_mode: TensorMapSwizzle,
-    is_k_major: Bool, //,
-    kv_num_heads: Int,
-    *,
-    wait: Bool,
-](
-    write_idx: UInt32,
-    write_phase: UInt32,
-    kv_tile_start_row: UInt32,
-    position: MHAPosition[
-        BM, BN, depth, padded_depth, num_heads, group, decoding
-    ],
-    consumed_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    produced_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ],
-    kv: kv_t,
-    tma_tile: TMANestedTensorTile[
-        kv_t.dtype, BN, padded_depth, swizzle_mode, is_k_major=is_k_major
-    ],
-    smem_tile: LayoutTensor[
-        kv_t.dtype,
-        smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
-    ],
-):
-    src_col = kv.col_idx(position.kv_head_idx())
-    src_row = kv.row_idx(position.prompt_idx, kv_tile_start_row)
-
-    @parameter
-    if wait:
-        consumed_mbar[write_idx].wait(write_phase)
-
-    p_mbar = produced_mbar + write_idx
-    p_mbar[0].expect_bytes(BN * padded_depth * size_of[kv_t.dtype]())
-    tma_tile.async_copy(smem_tile, p_mbar[0], (UInt(src_col), UInt(src_row)))
 
 
 @always_inline
@@ -623,17 +680,6 @@ fn _apply_mask[
         )
 
 
-# TODO: Remove this when we're no longer using NDBuffers.
-@always_inline
-fn valid_length_managed_tensor_slice_to_ndbuffer(
-    tensor: ManagedTensorSlice[dtype = DType.uint32, rank=1]
-) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-    var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
-    return NDBuffer[DType.uint32, 1, MutableAnyOrigin](
-        ptr, tensor.shape(), tensor._runtime_strides
-    )
-
-
 @always_inline
 fn produce[
     qkv_type: DType,
@@ -650,7 +696,9 @@ fn produce[
     MaxSeqLenType: OptionallyStaticInt,
     SchedulerType: MHATileScheduler,
     KVLUTType: MHAOperand,
-    MaskType: MHAMask, //,
+    MaskType: MHAMask,
+    KVInputRowOffsetsType: OptionalPointer,
+    ValidLengthType: OptionalPointer, //,
     *,
     pipeline_stages: Int,
     ragged: Bool,
@@ -708,13 +756,11 @@ fn produce[
     partition: PartitionType,
     scheduler: SchedulerType,
     mask: MaskType,
-    tile_summary: MHATileSummary,
+    tile_summary: MHATileSummary[ValidLengthType],
     tile_state_arg: MHATileState,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    kv_input_row_offsets: OptionalReg[
-        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
-    ],
+    kv_input_row_offsets: KVInputRowOffsetsType,
 ):
     alias decoding: Bool = _is_decoding[MaxSeqLenType]()
     alias PositionType = MHAPosition[
@@ -921,7 +967,7 @@ fn produce[
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
                 docontinue = scheduler.advance[
-                    ragged, True, MHASchedulerSynchronization.DEFAULT
+                    producer=True, sync = MHASchedulerSynchronization.DEFAULT
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
                 # must signal somehow

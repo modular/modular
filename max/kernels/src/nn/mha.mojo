@@ -487,7 +487,9 @@ fn flash_attention_dispatch[
                         num_rows_q,
                         mask_functor,
                         score_mod_functor,
-                        valid_length,
+                        valid_length._ptr.address_space_cast[
+                            AddressSpace.GENERIC
+                        ](),
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
@@ -514,7 +516,9 @@ fn flash_attention_dispatch[
                         num_rows_q,
                         mask_functor,
                         score_mod_functor,
-                        valid_length,
+                        valid_length._ptr.address_space_cast[
+                            AddressSpace.GENERIC
+                        ](),
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
@@ -699,7 +703,9 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length,
+                                valid_length._ptr.address_space_cast[
+                                    AddressSpace.GENERIC
+                                ](),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -725,7 +731,9 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length,
+                                valid_length._ptr.address_space_cast[
+                                    AddressSpace.GENERIC
+                                ](),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -828,7 +836,9 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length,
+                                valid_length._ptr.address_space_cast[
+                                    AddressSpace.GENERIC
+                                ](),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,
@@ -857,7 +867,9 @@ fn flash_attention_dispatch[
                                 num_rows_q,
                                 mask_functor,
                                 score_mod_functor,
-                                valid_length,
+                                valid_length._ptr.address_space_cast[
+                                    AddressSpace.GENERIC
+                                ](),
                                 StaticInt[1](),
                                 max_cache_valid_length,
                                 scale,

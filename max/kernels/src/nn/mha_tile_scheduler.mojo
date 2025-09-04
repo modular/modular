@@ -21,6 +21,7 @@ from gpu.host.info import H100
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier, named_barrier
+from nn.mha_fa3_utils import OptionalPointer, NullPointer
 
 
 @fieldwise_init
@@ -85,19 +86,20 @@ struct SeqInfo(ImplicitlyCopyable, Movable):
     @staticmethod
     @always_inline
     fn create[
-        ragged: Bool
+        ValidLengthType: OptionalPointer, //,
     ](
         work: WorkInfo,
-        valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        valid_length: ValidLengthType,
         max_seq_len: UInt32,
     ) -> SeqInfo:
         var batch_idx: UInt32 = work.prompt_idx
 
         @parameter
-        if ragged:
+        if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
-            start_of_seq = valid_length[Int(batch_idx)]
-            end_of_seq = valid_length[Int(batch_idx + 1)]
+            ptr = rebind[UnsafePointer[UInt32]](valid_length.value())
+            start_of_seq = ptr[Int(batch_idx)]
+            end_of_seq = ptr[Int(batch_idx + 1)]
             seq_len = end_of_seq - start_of_seq
             return SeqInfo(seq_len, start_of_seq, work)
         else:
@@ -154,12 +156,14 @@ struct MHATileState:
 
 
 @register_passable("trivial")
-struct MHATileSummary(ImplicitlyCopyable, Movable):
+struct MHATileSummary[ValidLengthType: OptionalPointer](
+    ImplicitlyCopyable, Movable
+):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
     var max_num_prompt_tiles: UInt32
-    var valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var valid_length: ValidLengthType
     var max_seq_len: UInt32
 
     @always_inline
@@ -167,7 +171,7 @@ struct MHATileSummary(ImplicitlyCopyable, Movable):
         out self,
         batch_size: UInt32,
         max_num_prompt_tiles: UInt32,
-        valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+        valid_length: ValidLengthType,
         max_seq_len: UInt32,
     ):
         self.batch_size = batch_size
@@ -299,55 +303,53 @@ struct MHATileSummary(ImplicitlyCopyable, Movable):
         return (Int(max_num_prompt_tiles), Int(num_heads), Int(batch_size))
 
     @always_inline
-    fn seq_info[ragged: Bool](self, work: WorkInfo) -> SeqInfo:
-        return SeqInfo.create[ragged](work, self.valid_length, self.max_seq_len)
+    fn seq_info(self, work: WorkInfo) -> SeqInfo:
+        return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
     @always_inline
     fn unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
-        ragged: Bool,
         schedule: MHASchedule,
     ](self, idx: UInt32) -> SeqInfo:
         work = self.unsafe_get_current_work_info[
             tile_shape, num_heads, schedule
         ](idx)
-        return SeqInfo.create[ragged](work, self.valid_length, self.max_seq_len)
+        return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
     @always_inline
     fn unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
-        ragged: Bool,
         schedule: MHASchedule,
     ](self, state: MHATileState) -> SeqInfo:
-        return self.unsafe_seq_info[tile_shape, num_heads, ragged, schedule](
-            state.idx
-        )
+        return self.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
 
 
 @register_passable("trivial")
-trait MHATileScheduler:
+trait MHATileScheduler(Copyable):
     alias may_advance: Bool
     alias mha_schedule: MHASchedule
 
     """The MHATileScheduler trait describes a schedule for the persistent kernel.
     """
 
-    fn get_current_work_info(
-        self, ts: MHATileSummary, state: MHATileState
+    fn get_current_work_info[
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
         """Returns the current `WorkInfo`."""
         ...
 
     @always_inline
     fn advance[
-        ragged: Bool,
+        ValidLengthType: OptionalPointer, //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
         self,
-        ts: MHATileSummary,
+        ts: MHATileSummary[ValidLengthType],
         mut state: MHATileState,
         pipeline_idx: UInt32,
     ) -> OptionalReg[SeqInfo]:
@@ -365,18 +367,22 @@ trait MHATileScheduler:
         ...
 
     @always_inline
-    fn initial_state(
+    fn initial_state[
+        ValidLengthType: OptionalPointer, //,
+    ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
-        tile_summary: MHATileSummary,
+        tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object."""
         ...
 
     @always_inline
     fn unsafe_seq_info[
-        ragged: Bool
-    ](self, ts: MHATileSummary, state: MHATileState) -> SeqInfo:
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
+    ) -> SeqInfo:
         ...
 
 
@@ -424,19 +430,21 @@ struct TransientScheduler[
         )
 
     @always_inline
-    fn get_current_work_info(
-        self, ts: MHATileSummary, state: MHATileState
+    fn get_current_work_info[
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
         return self.get_current_work_info()
 
     @always_inline
     fn advance[
-        ragged: Bool,
+        ValidLengthType: OptionalPointer, //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
         self,
-        ts: MHATileSummary,
+        ts: MHATileSummary[ValidLengthType],
         mut state: MHATileState,
         pipeline_idx: UInt32,
     ) -> OptionalReg[SeqInfo]:
@@ -454,18 +462,22 @@ struct TransientScheduler[
         )
 
     @always_inline
-    fn initial_state(
+    fn initial_state[
+        ValidLengthType: OptionalPointer, //,
+    ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
-        tile_summary: MHATileSummary,
+        tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState.__init__(0, ptr, 1)
 
     @always_inline
     fn unsafe_seq_info[
-        ragged: Bool,
-    ](self, ts: MHATileSummary, state: MHATileState) -> SeqInfo:
-        return SeqInfo.create[ragged](
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
+    ) -> SeqInfo:
+        return SeqInfo.create(
             self.get_current_work_info(), ts.valid_length, ts.max_seq_len
         )
 
@@ -486,8 +498,10 @@ struct TileScheduler[
         pass
 
     @always_inline
-    fn get_current_work_info(
-        self, ts: MHATileSummary, state: MHATileState
+    fn get_current_work_info[
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
         return ts.get_current_work_info[tile_shape, num_heads, schedule](state)
 
@@ -504,21 +518,19 @@ struct TileScheduler[
 
     @always_inline
     fn advance[
-        ragged: Bool,
+        ValidLengthType: OptionalPointer, //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
         self,
-        ts: MHATileSummary,
+        ts: MHATileSummary[ValidLengthType],
         mut state: MHATileState,
         pipeline_idx: UInt32,
     ) -> OptionalReg[SeqInfo]:
         state.idx += num_ctas
         if not state.is_valid(state.idx):
             return None
-        return ts.unsafe_seq_info[tile_shape, num_heads, ragged, schedule](
-            state.idx
-        )
+        return ts.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
 
     @staticmethod
     @always_inline
@@ -528,17 +540,19 @@ struct TileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        bx, by, bz = MHATileSummary.grid_dim[num_heads](
-            max_num_prompt_tiles, batch_size
-        )
+        bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+            num_heads
+        ](max_num_prompt_tiles, batch_size)
         size = min(Int(num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
-    fn initial_state(
+    fn initial_state[
+        ValidLengthType: OptionalPointer, //,
+    ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
-        tile_summary: MHATileSummary,
+        tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
             block_idx.x, ptr, tile_summary.max_idx(Self.num_heads)
@@ -546,9 +560,11 @@ struct TileScheduler[
 
     @always_inline
     fn unsafe_seq_info[
-        ragged: Bool,
-    ](self, ts: MHATileSummary, state: MHATileState) -> SeqInfo:
-        return ts.unsafe_seq_info[tile_shape, num_heads, ragged, Self.schedule](
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
+    ) -> SeqInfo:
+        return ts.unsafe_seq_info[tile_shape, num_heads, Self.schedule](
             state.idx
         )
 
@@ -583,19 +599,21 @@ struct QueuedTileScheduler[
         ]()
 
     @always_inline
-    fn get_current_work_info(
-        self, ts: MHATileSummary, state: MHATileState
+    fn get_current_work_info[
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
     ) -> WorkInfo:
         return ts.get_current_work_info[tile_shape, num_heads, schedule](state)
 
     @always_inline
     fn advance[
-        ragged: Bool,
+        ValidLengthType: OptionalPointer, //,
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
     ](
         self,
-        ts: MHATileSummary,
+        ts: MHATileSummary[ValidLengthType],
         mut state: MHATileState,
         pipeline_idx: UInt32,
     ) -> OptionalReg[SeqInfo]:
@@ -621,7 +639,7 @@ struct QueuedTileScheduler[
                         else:
                             break
                     var seq_info: SeqInfo = ts.unsafe_seq_info[
-                        tile_shape, num_heads, ragged, schedule
+                        tile_shape, num_heads, schedule
                     ](idx)
 
                     @parameter
@@ -654,9 +672,7 @@ struct QueuedTileScheduler[
         state.idx = warp.broadcast(state.sidx_ptr.load(pipeline_idx))
         if not state.is_valid():
             return None
-        return ts.unsafe_seq_info[tile_shape, num_heads, ragged, schedule](
-            state
-        )
+        return ts.unsafe_seq_info[tile_shape, num_heads, schedule](state)
 
     @staticmethod
     @always_inline
@@ -666,17 +682,19 @@ struct QueuedTileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        bx, by, bz = MHATileSummary.grid_dim[num_heads](
-            max_num_prompt_tiles, batch_size
-        )
+        bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+            num_heads
+        ](max_num_prompt_tiles, batch_size)
         size = min(Int(num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
-    fn initial_state(
+    fn initial_state[
+        ValidLengthType: OptionalPointer, //,
+    ](
         self,
         ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
-        tile_summary: MHATileSummary,
+        tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         state = MHATileState(
             block_idx.x, ptr, tile_summary.max_idx(Self.num_heads)
@@ -688,9 +706,11 @@ struct QueuedTileScheduler[
 
     @always_inline
     fn unsafe_seq_info[
-        ragged: Bool,
-    ](self, ts: MHATileSummary, state: MHATileState) -> SeqInfo:
-        return ts.unsafe_seq_info[tile_shape, num_heads, ragged, Self.schedule](
+        ValidLengthType: OptionalPointer, //,
+    ](
+        self, ts: MHATileSummary[ValidLengthType], state: MHATileState
+    ) -> SeqInfo:
+        return ts.unsafe_seq_info[tile_shape, num_heads, Self.schedule](
             state.idx
         )
 

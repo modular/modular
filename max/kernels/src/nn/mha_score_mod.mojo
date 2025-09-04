@@ -18,7 +18,8 @@ from bit import prev_power_of_two
 from utils.index import IndexList
 
 
-trait ScoreModTrait:
+@register_passable("trivial")
+trait ScoreModTrait(Copyable):
     """The ScoreMod trait desctribes score_mod for mha kernel like alibi bias.
     """
 

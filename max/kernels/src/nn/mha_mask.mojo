@@ -109,7 +109,8 @@ struct TileMaskStatus(
 # ===-----------------------------------------------------------------------===#
 
 
-trait MHAMask:
+@register_passable("trivial")
+trait MHAMask(Copyable):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 

@@ -73,12 +73,15 @@ from math.constants import log2e
 from memory import stack_allocation, bitcast
 from nn.mha_fa3_utils import (
     MHAPosition,
+    NonNullPointer,
+    NullPointer,
+    OptionalPointer,
+    Pack,
     _apply_mask,
     _get_position,
-    _produce,
     produce,
     q_out_tma,
-    valid_length_managed_tensor_slice_to_ndbuffer,
+    QTMATile,
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
@@ -1258,9 +1261,9 @@ fn mha_sm100_dispatch[
     k: KVType,
     v: KVType,
     num_rows_q: Int,
-    mask_functor: MaskType,
-    score_mod_functor: ScoreModType,
-    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
+    mask: MaskType,
+    score_mod: ScoreModType,
+    valid_length: UnsafePointer[Scalar[DType.uint32]],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -1294,15 +1297,6 @@ fn mha_sm100_dispatch[
         String(BK),
     ]()
     alias BN = new_config.block_n()
-    alias max_tmem_cols = 512
-    alias num_s = (max_tmem_cols - (BN // 2) - config.padded_depth) // BN
-    # we add smem use for SharedMemBarrier synchronization
-    # 2*8 for mma mbars
-    #
-    alias extra_B200_smem = (2 * num_s + 3) * 8
-    alias smem_use = new_config.shared_mem_bytes[
-        True, sm_90=True
-    ]() + extra_B200_smem
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     alias num_threads = new_config.num_threads[True]()
     constrained[
@@ -1331,154 +1325,121 @@ fn mha_sm100_dispatch[
     # if decoding,
     alias scheduler_tile_shape = 1 if decoding else BM
     alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    q_tma = q_out_tma[
-        group if decoding else Int(BM),
-        config.depth,
-        config.padded_depth,
-        swizzle_mode,
-        q_num_heads = config.num_heads,
-        decoding=decoding,
-    ](ctx, q, num_rows_q)
-    k_tma = k.create_tma_tile[
-        BN, config.padded_depth, swizzle_mode, is_k_major=True
+    q_tma_op = rebind[
+        QTMATile[
+            KVType.dtype,
+            swizzle_mode,
+            BM = new_config.block_m(),
+            depth = new_config.padded_depth,
+            group=group,
+            decoding = _is_decoding[MaxPromptLenType](),
+        ]
+    ](
+        q_out_tma[
+            swizzle_mode,
+            BM=BM,
+            depth = new_config.depth,
+            padded_depth = new_config.padded_depth,
+            q_num_heads = new_config.num_heads,
+            group=group,
+            decoding=decoding,
+        ](ctx, q, num_rows_q)
+    )
+    k_tma_op = k.create_tma_tile[
+        BN, new_config.padded_depth, swizzle_mode, is_k_major=True
     ](ctx)
-    v_tma = v.create_tma_tile[
-        BN, config.padded_depth, swizzle_mode, is_k_major=False
+    v_tma_op = v.create_tma_tile[
+        BN, new_config.padded_depth, swizzle_mode, is_k_major=False
     ](ctx)
 
     alias SchedulerType = TransientScheduler[
         scheduler_tile_shape, num_scheduler_heads
     ]
-    alias kernel_sm100 = _mha_sm100[
-        KVType,
-        output_type,
-        MaskType,
-        ScoreModType,
-        SchedulerType,
-        new_config,
-        group=group,
-        use_score_mod=use_score_mod,
-        ragged=ragged,
-        sink=sink,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-        MaxSeqLenType=MaxPromptLenType,
-        PartitionType=PartitionType,
-        swizzle_mode=swizzle_mode,
-    ]
     var scheduler: SchedulerType = SchedulerType()
-    gd = SchedulerType.grid_dim(batch_size, block_x)
 
     @parameter
-    if MaxPromptLenType.static_value:
-
-        @parameter
-        if PartitionType.do_partition:
-            ctx.enqueue_function[kernel_sm100](
-                q_tma,
-                k_tma,
-                v_tma,
-                output,
-                k,
-                scale,
-                batch_size,
-                max_cache_valid_length,
-                valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
-                kv_input_row_offsets,
-                sink_weights,
-                partition,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
+    if sink:
+        alias SinkType = NonNullPointer[KVType.dtype]
+        var sink_ptr: SinkType = {
+            rebind[UnsafePointer[Scalar[KVType.dtype]]](
+                sink_weights.value().data
             )
-        else:
-            ctx.enqueue_function[kernel_sm100](
-                q_tma,
-                k_tma,
-                v_tma,
-                output,
-                k,
-                scale,
-                batch_size,
-                max_cache_valid_length,
-                valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
-                kv_input_row_offsets,
-                sink_weights,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
-
+        }
+        _mha_sm100_kv_input_row_offset_dispatch[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVType,
+            output_type=output_type,
+            MaxSeqLenType=MaxPromptLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=new_config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            SinkType=SinkType,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            output,
+            k,
+            scale,
+            batch_size,
+            max_prompt_len_arg,
+            max_cache_valid_length,
+            valid_length,
+            kv_input_row_offsets,
+            sink_ptr,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
     else:
-
-        @parameter
-        if PartitionType.do_partition:
-            ctx.enqueue_function[kernel_sm100](
-                q_tma,
-                k_tma,
-                v_tma,
-                output,
-                k,
-                scale,
-                batch_size,
-                max_prompt_len,
-                max_cache_valid_length,
-                valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
-                kv_input_row_offsets,
-                sink_weights,
-                partition,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
-        else:
-            ctx.enqueue_function[kernel_sm100](
-                q_tma,
-                k_tma,
-                v_tma,
-                output,
-                k,
-                scale,
-                batch_size,
-                max_prompt_len,
-                max_cache_valid_length,
-                valid_length_managed_tensor_slice_to_ndbuffer(valid_length),
-                kv_input_row_offsets,
-                sink_weights,
-                mask_functor,
-                score_mod_functor,
-                grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                block_dim=(Int(num_threads), 1, 1),
-                shared_mem_bytes=Int(smem_use),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    smem_use
-                ),
-            )
+        alias SinkType = NullPointer[KVType.dtype]
+        alias sink_ptr: SinkType = {}
+        _mha_sm100_kv_input_row_offset_dispatch[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVType,
+            output_type=output_type,
+            MaxSeqLenType=MaxPromptLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=new_config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            SinkType=SinkType,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            output,
+            k,
+            scale,
+            batch_size,
+            max_prompt_len_arg,
+            max_cache_valid_length,
+            valid_length,
+            kv_input_row_offsets,
+            sink_ptr,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
 
 
-@__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
-    )
-)
-fn _mha_sm100[
+@always_inline
+fn _mha_sm100_kv_input_row_offset_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -1488,21 +1449,20 @@ fn _mha_sm100[
     group: Int,
     use_score_mod: Bool,
     ragged: Bool,
-    sink: Bool,
+    SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: SchedulerType,
-    q_tma_op: TMANestedTensorTile[
+    q_tma_op: QTMATile[
         KVLUTType.dtype,
-        max(group, 8) if _is_decoding[MaxSeqLenType]() else Int(
-            config.block_m()
-        ),
-        64 if _is_decoding[MaxSeqLenType]() else config.padded_depth,
         swizzle_mode,
-        is_k_major=True,
+        BM = config.block_m(),
+        depth = config.padded_depth,
+        group=group,
+        decoding = _is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: TMANestedTensorTile[
         KVLUTType.dtype,
@@ -1524,14 +1484,418 @@ fn _mha_sm100[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    valid_length: UnsafePointer[Scalar[DType.uint32]],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
-    sink_weights: OptionalReg[NDBuffer[KVLUTType.dtype, 1, MutableAnyOrigin]],
+    sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
     score_mod: ScoreModType,
+    ctx: DeviceContext,
+) raises:
+    alias KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
+    alias KVRowOffsetsNull = NullPointer[DType.uint32]
+    if kv_input_row_offsets:
+        var kv_row_offsets: KVRowOffsetsNonNull = {
+            kv_input_row_offsets.value().data
+        }
+        _mha_sm100_valid_length_dispatch[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVLUTType,
+            output_type=output_type,
+            MaxSeqLenType=MaxSeqLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            SinkType=SinkType,
+            KVRowOffsetsType=KVRowOffsetsNonNull,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            o_ptr_arg,
+            kv_lut,
+            scale,
+            batch_size,
+            max_seq_len,
+            num_keys_arg,
+            valid_length,
+            kv_row_offsets,
+            sink_weights,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
+    else:
+        var kv_row_offsets: KVRowOffsetsNull = {}
+        _mha_sm100_valid_length_dispatch[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVLUTType,
+            output_type=output_type,
+            MaxSeqLenType=MaxSeqLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=config,
+            group=group,
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            SinkType=SinkType,
+            KVRowOffsetsType=KVRowOffsetsNull,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            o_ptr_arg,
+            kv_lut,
+            scale,
+            batch_size,
+            max_seq_len,
+            num_keys_arg,
+            valid_length,
+            kv_row_offsets,
+            sink_weights,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
+
+
+@always_inline
+fn _mha_sm100_valid_length_dispatch[
+    KVLUTType: MHAOperand,
+    output_type: DType,
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait,
+    SchedulerType: MHATileScheduler,
+    config: MHAConfig,
+    group: Int,
+    use_score_mod: Bool,
+    ragged: Bool,
+    SinkType: OptionalPointer,
+    KVRowOffsetsType: OptionalPointer,
+    _is_cache_length_accurate: Bool,
+    MaxSeqLenType: OptionallyStaticInt,
+    PartitionType: MHAPartitionScheme,
+    swizzle_mode: TensorMapSwizzle,
+](
+    scheduler: SchedulerType,
+    q_tma_op: QTMATile[
+        KVLUTType.dtype,
+        swizzle_mode,
+        BM = config.block_m(),
+        depth = config.padded_depth,
+        group=group,
+        decoding = _is_decoding[MaxSeqLenType](),
+    ],
+    k_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    v_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=False,
+    ],
+    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    kv_lut: KVLUTType,
+    scale: Float32,
+    batch_size: UInt32,
+    max_seq_len: MaxSeqLenType,  # sequence length after padding.
+    num_keys_arg: UInt32,
+    valid_length: UnsafePointer[Scalar[DType.uint32]],
+    kv_input_row_offsets: KVRowOffsetsType,
+    sink_weights: SinkType,
+    partition: PartitionType,
+    mask: MaskType,
+    score_mod: ScoreModType,
+    ctx: DeviceContext,
+) raises:
+    @parameter
+    if ragged:
+        alias ValidLengthType = NonNullPointer[DType.uint32]
+        var valid_len: ValidLengthType = {valid_length}
+        _mha_sm100_enqueue[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVLUTType,
+            output_type=output_type,
+            MaxSeqLenType=MaxSeqLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=config,
+            group=group,
+            use_score_mod=use_score_mod,
+            SinkType=SinkType,
+            ValidLengthType=ValidLengthType,
+            KVRowOffsetsType=KVRowOffsetsType,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            o_ptr_arg,
+            kv_lut,
+            scale,
+            batch_size,
+            max_seq_len,
+            num_keys_arg,
+            valid_len,
+            kv_input_row_offsets,
+            sink_weights,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
+    else:
+        alias ValidLengthType = NullPointer[DType.uint32]
+        var valid_len: ValidLengthType = {}
+        _mha_sm100_enqueue[
+            SchedulerType=SchedulerType,
+            KVLUTType=KVLUTType,
+            output_type=output_type,
+            MaxSeqLenType=MaxSeqLenType,
+            PartitionType=PartitionType,
+            MaskType=MaskType,
+            ScoreModType=ScoreModType,
+            config=config,
+            group=group,
+            use_score_mod=use_score_mod,
+            SinkType=SinkType,
+            ValidLengthType=ValidLengthType,
+            KVRowOffsetsType=KVRowOffsetsType,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            swizzle_mode=swizzle_mode,
+        ](
+            scheduler,
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            o_ptr_arg,
+            kv_lut,
+            scale,
+            batch_size,
+            max_seq_len,
+            num_keys_arg,
+            valid_len,
+            kv_input_row_offsets,
+            sink_weights,
+            partition,
+            mask,
+            score_mod,
+            ctx,
+        )
+
+
+@always_inline
+fn _mha_sm100_enqueue[
+    KVLUTType: MHAOperand,
+    output_type: DType,
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait,
+    SchedulerType: MHATileScheduler,
+    config: MHAConfig,
+    group: Int,
+    use_score_mod: Bool,
+    ValidLengthType: OptionalPointer,
+    SinkType: OptionalPointer,
+    KVRowOffsetsType: OptionalPointer,
+    _is_cache_length_accurate: Bool,
+    MaxSeqLenType: OptionallyStaticInt,
+    PartitionType: MHAPartitionScheme,
+    swizzle_mode: TensorMapSwizzle,
+](
+    scheduler: SchedulerType,
+    q_tma_op: QTMATile[
+        KVLUTType.dtype,
+        swizzle_mode,
+        BM = config.block_m(),
+        depth = config.padded_depth,
+        group=group,
+        decoding = _is_decoding[MaxSeqLenType](),
+    ],
+    k_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    v_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=False,
+    ],
+    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    kv_lut: KVLUTType,
+    scale: Float32,
+    batch_size: UInt32,
+    max_seq_len: MaxSeqLenType,  # sequence length after padding.
+    num_keys_arg: UInt32,
+    valid_length: ValidLengthType,  # OptionalPointer[DType.uint32]
+    kv_input_row_offsets: KVRowOffsetsType,  # OptionalPointer[DType.uint32],
+    sink_weights: SinkType,
+    partition: PartitionType,
+    mask: MaskType,
+    score_mod: ScoreModType,
+    ctx: DeviceContext,
+) raises:
+    # the pack contains all possibly 0-sized objects
+    alias kernel_sm100 = _mha_sm100[
+        KVLUTType,
+        output_type,
+        MaskType,
+        ScoreModType,
+        SchedulerType,
+        config,
+        group,
+        use_score_mod,
+        ValidLengthType,
+        SinkType,
+        KVRowOffsetsType,
+        _is_cache_length_accurate,
+        MaxSeqLenType,
+        PartitionType,
+        swizzle_mode,
+    ]
+    alias PackType = Pack[
+        MaskType,
+        ScoreModType,
+        SchedulerType,
+        ValidLengthType,
+        SinkType,
+        KVRowOffsetsType,
+        MaxSeqLenType,
+        PartitionType,
+    ]
+    var pack: PackType = {
+        mask,
+        score_mod,
+        scheduler,
+        valid_length,
+        sink_weights,
+        kv_input_row_offsets,
+        max_seq_len,
+        partition,
+    }
+
+    var max_num_prompt_tiles: UInt32 = ceildiv(
+        max_seq_len.as_uint32(), config.block_m()
+    )
+    var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
+
+    alias max_tmem_cols = 512
+    alias BN = config.block_n()
+    alias num_s = (max_tmem_cols - (BN // 2) - config.padded_depth) // BN
+    # we add smem use for SharedMemBarrier synchronization
+    # 2*8 for mma mbars
+    alias extra_B200_smem = (2 * num_s + 3) * 8
+    alias smem_use = config.shared_mem_bytes[
+        True, sm_90=True
+    ]() + extra_B200_smem
+    alias num_threads = config.num_threads[True]()
+    ctx.enqueue_function[kernel_sm100](
+        q_tma_op,
+        k_tma_op,
+        v_tma_op,
+        o_ptr_arg,
+        kv_lut,
+        scale,
+        batch_size,
+        num_keys_arg,
+        pack,
+        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+        block_dim=(Int(num_threads), 1, 1),
+        shared_mem_bytes=Int(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+    )
+
+
+@__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        config.num_threads[True]()
+    )
+)
+fn _mha_sm100[
+    KVLUTType: MHAOperand,
+    output_type: DType,
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait,
+    SchedulerType: MHATileScheduler,
+    config: MHAConfig,
+    group: Int,
+    use_score_mod: Bool,
+    ValidLengthType: OptionalPointer,
+    SinkType: OptionalPointer,
+    KVRowOffsetsType: OptionalPointer,
+    _is_cache_length_accurate: Bool,
+    MaxSeqLenType: OptionallyStaticInt,
+    PartitionType: MHAPartitionScheme,
+    swizzle_mode: TensorMapSwizzle,
+](
+    q_tma_op: QTMATile[
+        KVLUTType.dtype,
+        swizzle_mode,
+        BM = config.block_m(),
+        depth = config.padded_depth,
+        group=group,
+        decoding = _is_decoding[MaxSeqLenType](),
+    ],
+    k_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=True,
+    ],
+    v_tma_op: TMANestedTensorTile[
+        KVLUTType.dtype,
+        config.block_n(),
+        config.padded_depth,
+        swizzle_mode,
+        is_k_major=False,
+    ],
+    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    kv_lut: KVLUTType,
+    scale: Float32,
+    batch_size: UInt32,
+    num_keys_arg: UInt32,
+    pack: Pack[
+        MaskType,
+        ScoreModType,
+        SchedulerType,
+        ValidLengthType,
+        SinkType,
+        KVRowOffsetsType,
+        MaxSeqLenType,
+        PartitionType,
+    ],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1651,6 +2015,14 @@ fn _mha_sm100[
         swizzle_b=swizzle_mode,
         transpose_b=False,
     ]
+    mask = pack.mask
+    score_mod = pack.score_mod
+    scheduler = pack.scheduler
+    valid_length = pack.valid_length
+    sink_weights = pack.sink_weights
+    kv_input_row_offsets = pack.kv_input_row_offsets
+    max_seq_len = pack.max_seq_len
+    partition = pack.partition
 
     # var warp_x: UInt32 = warp_id % num_warps_n
 
@@ -1774,17 +2146,16 @@ fn _mha_sm100[
     # var lane_predicate = elect_one_sync() # not needed with async_copy
 
     alias mma_thread_layout = Layout.row_major(8, 4)
+    alias ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
 
     @parameter
-    if sink:
-        debug_assert(
-            Bool(sink_weights),
-            "expect sink_weights to be non-null when sink=true",
+    if not SinkType.is_null:
+        sink_weights_ptr = rebind[UnsafePointer[Scalar[kv_type]]](
+            sink_weights.value()
         )
-        sink_weights_ptr = sink_weights.value().data
 
     # actually 16 byte alignment
     produced_mbar_kv = (
@@ -1810,7 +2181,7 @@ fn _mha_sm100[
     # alias num_softmax_regs = 224
 
     # constructing calls barrier() if static
-    var tile_summary = MHATileSummary(
+    var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
         ceildiv(max_seq_len.as_uint32(), BM) * partition.num_partitions(),
         valid_length,
@@ -1823,7 +2194,7 @@ fn _mha_sm100[
     # The persistent kernels limit the grid size.
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
-    initial_seq_info = scheduler.unsafe_seq_info[ragged](tile_summary, state)
+    initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
     constrained[not SchedulerType.may_advance]()
 
     @parameter
@@ -2356,7 +2727,7 @@ fn _mha_sm100[
 
         # Include sink_weights in rowmax computation if present
         @parameter
-        if sink:
+        if not SinkType.is_null:
             var head_idx = position.head_idx
             var sink_weight = sink_weights_ptr[head_idx]
 
@@ -2380,7 +2751,7 @@ fn _mha_sm100[
 
         # Add sink weight contribution to rowsum
         @parameter
-        if sink:
+        if not SinkType.is_null:
             var head_idx = position.head_idx
             var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
 
@@ -2433,7 +2804,7 @@ fn _mha_sm100[
 
             # Include sink_weights in rowmax if present
             @parameter
-            if sink:
+            if not SinkType.is_null:
                 var head_idx = position.head_idx
                 var sink_weight = sink_weights_ptr[head_idx]
 
@@ -2450,7 +2821,7 @@ fn _mha_sm100[
 
             # Add sink weight contribution to score_frag_rowsum
             @parameter
-            if sink:
+            if not SinkType.is_null:
                 var head_idx = position.head_idx
                 var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
 
