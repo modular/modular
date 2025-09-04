@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import queue
 import time
 from datetime import datetime
 from multiprocessing import Process, Queue
@@ -17,17 +18,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
-    InputContext,
-    RequestID,
-    SchedulerResult,
     TextGenerationOutput,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
-    PagedKVCacheManager,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
@@ -39,8 +34,6 @@ from max.serve.kvcache_agent.dispatcher_factory import (
 )
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.queue.zmq_queue import (
-    ZmqPullSocket,
-    ZmqPushSocket,
     generate_zmq_inproc_endpoint,
     generate_zmq_ipc_path,
 )
@@ -142,14 +135,15 @@ def decode_dispatcher_factory():
 
 @pytest.fixture
 def decode_scheduler(
-    mock_pipeline: Mock,
-    decode_paged_manager: PagedKVCacheManager,
-    decode_request_zmq_path: str,
-    decode_response_zmq_path: str,
-    decode_cancel_zmq_path: str,
-    decode_dispatcher_factory: DispatcherFactory[TransportMessage[PayloadType]],
-) -> Callable[[], DecodeScheduler]:
-    def create_scheduler() -> DecodeScheduler:
+    mock_pipeline,  # noqa: ANN001
+    decode_paged_manager,  # noqa: ANN001
+    decode_dispatcher_factory,  # noqa: ANN001
+) -> Callable[[queue.Queue, queue.Queue, queue.Queue], DecodeScheduler]:
+    def create_scheduler(
+        request_queue: queue.Queue,
+        response_queue: queue.Queue,
+        cancel_queue: queue.Queue,
+    ) -> DecodeScheduler:
         # Create dispatcher client
         decode_client = decode_dispatcher_factory.create_client()
         decode_client.start()
@@ -165,15 +159,11 @@ def decode_scheduler(
             pipeline=mock_pipeline,
             scheduler_config=config,
             paged_manager=decode_paged_manager,
-            request_zmq_endpoint=decode_request_zmq_path,
-            response_zmq_endpoint=decode_response_zmq_path,
-            cancel_zmq_endpoint=decode_cancel_zmq_path,
+            request_queue=request_queue,
+            response_queue=response_queue,
+            cancel_queue=cancel_queue,
             dispatcher_client=decode_client,
         )
-
-        scheduler.request_pull_socket.initialize_socket()
-        scheduler.response_push_socket.initialize_socket()
-        scheduler.cancel_pull_socket.initialize_socket()
 
         return scheduler
 
@@ -250,36 +240,12 @@ def prefill_scheduler(
 async def test_transfer_between_prefill_and_decode_scheduler(
     prefill_scheduler,  # noqa: ANN001
     decode_scheduler,  # noqa: ANN001
-    decode_request_zmq_path,  # noqa: ANN001
-    decode_response_zmq_path,  # noqa: ANN001
-    decode_cancel_zmq_path,  # noqa: ANN001
     decode_dispatcher_factory,  # noqa: ANN001
     prefill_dispatcher_factory,  # noqa: ANN001
 ) -> None:
-    # Create request push socket
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        endpoint=decode_request_zmq_path,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
-
-    # Create response pull socket
-    response_pull_socket = ZmqPullSocket[
-        dict[RequestID, SchedulerResult[TextGenerationOutput]]
-    ](
-        endpoint=decode_response_zmq_path,
-        deserialize=msgpack_numpy_decoder(
-            dict[RequestID, SchedulerResult[TextGenerationOutput]]
-        ),
-        lazy=False,
-    )
-
-    # Create cancel push socket
-    cancel_push_socket = ZmqPushSocket[list[str]](
-        endpoint=decode_cancel_zmq_path,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
+    request_queue: queue.Queue[tuple[str, TextContext]] = queue.Queue()
+    response_queue: queue.Queue[Union[bool, Exception]] = queue.Queue()
+    cancel_queue: queue.Queue[list[str]] = queue.Queue()
 
     # Create queues for assertion results
     decode_queue: Queue[Union[bool, Exception]] = Queue()
@@ -307,7 +273,9 @@ async def test_transfer_between_prefill_and_decode_scheduler(
             print(
                 f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: initializing scheduler"
             )
-            scheduler_instance = decode_scheduler()
+            scheduler_instance = decode_scheduler(
+                request_queue, response_queue, cancel_queue
+            )
             print(
                 f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler initialized successfully"
             )
@@ -596,7 +564,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     print(
         f"test process: sending request to decode worker at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
-    request_push_socket.put_nowait(("request_1", mock_request_1))
+    request_queue.put_nowait(("request_1", mock_request_1))
     print(
         f"test process: sent request to decode worker successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
@@ -613,7 +581,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     print(
         f"test process: sending request to decode worker at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
-    request_push_socket.put_nowait(("request_2", mock_request_2))
+    request_queue.put_nowait(("request_2", mock_request_2))
     print(
         f"test process: sent request to decode worker successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )

@@ -193,9 +193,7 @@ def test_zmq_push_pull_queue_with_custom_serialization() -> None:
 
 def test_zmq_push_pull_queue_empty_queue_raises_exception() -> None:
     """Test that get_nowait raises queue.Empty when queue is empty."""
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=str
-    )
+    _, pull_queue = create_zmq_push_pull_queues(lazy=False, payload_type=str)
 
     with pytest.raises(queue.Empty):
         pull_queue.get_nowait()

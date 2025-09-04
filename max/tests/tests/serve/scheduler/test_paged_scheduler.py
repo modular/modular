@@ -6,10 +6,9 @@
 
 from __future__ import annotations
 
+import queue
 import tempfile
-import time
 from dataclasses import dataclass
-from queue import Queue
 from typing import Union
 from uuid import uuid4
 
@@ -20,17 +19,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
     GenerationStatus,
+    MAXPushQueue,
     Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_batch_constructor import (
     BatchType,
     TokenGenerationSchedulerConfig,
@@ -41,10 +38,6 @@ from max.serve.scheduler.text_generation_scheduler import (
 from max.support.math import ceildiv
 
 ContextType = Union[TextContext, TextAndVisionContext]
-
-
-def create_queues() -> dict[str, Queue]:
-    return {"REQUEST": Queue(), "RESPONSE": Queue(), "CANCEL": Queue()}
 
 
 def rand(length: int) -> np.ndarray:
@@ -145,7 +138,7 @@ def create_paged_scheduler(
     enable_kvcache_swapping_to_host: bool = False,
 ) -> tuple[
     TokenGenerationScheduler,
-    ZmqPushSocket[tuple[str, ContextType]],
+    MAXPushQueue[tuple[RequestID, ContextType]],
 ]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -167,41 +160,21 @@ def create_paged_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
+    request_queue: queue.Queue[tuple[RequestID, ContextType]] = queue.Queue()
+    response_queue: queue.Queue[
+        dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    ] = queue.Queue()
+    cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
     scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
         paged_manager=paged_manager,
-        request_zmq_endpoint=generate_zmq_endpoint(),
-        response_zmq_endpoint=generate_zmq_endpoint(),
-        cancel_zmq_endpoint=generate_zmq_endpoint(),
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
     )
 
-    scheduler.request_q.initialize_socket()
-    scheduler.response_q.initialize_socket()
-    scheduler.cancel_q.initialize_socket()
-
-    # Create a push socket for the "APIWorker" to submit requests to
-    push_socket = ZmqPushSocket[tuple[str, ContextType]](
-        endpoint=scheduler.request_q._endpoint,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
-
-    # Wire up unused pull sockets
-    _ = ZmqPullSocket[dict[str, SchedulerResult[TextGenerationOutput]]](
-        endpoint=scheduler.response_q._endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[TextGenerationOutput]]
-        ),
-        lazy=False,
-    )
-    _ = ZmqPushSocket[list[str]](
-        endpoint=scheduler.cancel_q._endpoint,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
-
-    return (scheduler, push_socket)
+    return (scheduler, request_queue)
 
 
 class FakeTokenGeneratorPipeline(
@@ -348,7 +321,7 @@ def run_until_completion(
 
 
 def enqueue_request(
-    socket: ZmqPushSocket[tuple[str, ContextType]],
+    queue: MAXPushQueue[tuple[RequestID, ContextType]],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -359,11 +332,11 @@ def enqueue_request(
         shared_prefix=shared_prefix,
     )
     assert context.active_length == prompt_len
-    socket.put_nowait((context.request_id, context))
+    queue.put_nowait((context.request_id, context))
 
 
 def enqueue_request_with_prompt(
-    socket: ZmqPushSocket[tuple[str, ContextType]],
+    queue: MAXPushQueue[tuple[RequestID, ContextType]],
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:
@@ -372,7 +345,7 @@ def enqueue_request_with_prompt(
         tokens=tokens,
     )
 
-    socket.put_nowait((context.request_id, context))
+    queue.put_nowait((context.request_id, context))
 
 
 CE = BatchType.CE
@@ -386,7 +359,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     max_seq_len = 2048
     page_size = 128
     num_blocks = int(max_seq_len / page_size * num_reqs)
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_seq_len,
         max_batch_size=100,
         num_blocks=num_blocks,
@@ -404,8 +377,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
     # Create a few requests with 2040 tokens
     for _ in range(num_reqs):
-        enqueue_request(push_socket, prompt_len, max_seq_len=max_seq_len)
-    time.sleep(1)
+        enqueue_request(request_queue, prompt_len, max_seq_len=max_seq_len)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -415,7 +387,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     ]
     actual = run_until_completion(scheduler)
     assert len(actual) == len(expected) and actual == expected
-    del push_socket
+    del request_queue
 
 
 def test_paged_scheduler_basic_chunked_prefill() -> None:
@@ -426,7 +398,7 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
     prompt_len = 9123
     output_tokens = 43
     num_blocks = ceildiv(prompt_len + output_tokens, page_size)
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_seq_len,
         num_blocks=num_blocks,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
@@ -436,11 +408,10 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
     )
 
     enqueue_request(
-        push_socket,
+        request_queue,
         prompt_len=prompt_len,
         max_seq_len=prompt_len + output_tokens,
     )
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -470,17 +441,16 @@ def test_paged_scheduler_basic_small_batch_size() -> None:
     output_tokens = 13
     max_batch_size = 13
     num_requests = 40
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_batch_size=max_batch_size,
     )
 
     for _ in range(num_requests):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -507,18 +477,17 @@ def test_paged_scheduler_basic_small_batch_size_with_chunked_prefill() -> None:
     output_tokens = 13
     max_batch_size = 13
     num_requests = 40
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_batch_size=max_batch_size,
         enable_chunked_prefill=True,
     )
 
     for _ in range(num_requests):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -553,18 +522,17 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
     prompt_len = 500
     output_tokens = 16
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
     )
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
     # This is rounded up to 17 due to chunked prefill.
@@ -593,7 +561,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     output_tokens = 16
     prefix_len = 384
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -605,12 +573,11 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     # We predict approx 384 tokens to be cache hit.
     # This means we encode 500 - 384 = 116 tokens per CE batch.
@@ -637,7 +604,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     output_tokens = 16
     prefix_len = 200
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -649,12 +616,11 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     # We predict 200 tokens to be cache hit.
     # This means we encode 500 - 200 = 300 tokens per CE request.
@@ -684,7 +650,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     output_tokens = 16
     prefix_len = 64
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -696,12 +662,11 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     # We predict 64 tokens to be cache hit.
     # This means we encode 500 - 64 = 436 tokens per CE request.
@@ -734,7 +699,7 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
     page_size = 10
     num_blocks = 50  # this is enough for 500 tokens
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=num_blocks * page_size,
         page_size=page_size,
         num_blocks=num_blocks,
@@ -749,12 +714,11 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -793,7 +757,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
     page_size = 10
     num_blocks = 50  # this is enough for 500 tokens
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=num_blocks * page_size,
         page_size=page_size,
         num_blocks=num_blocks,
@@ -808,12 +772,11 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -873,17 +836,16 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
     prompt_len = 500
     output_tokens = 16
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_in_flight_batching=True,
     )
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     # With inflight batching, the CE batches become bigger and bigger since they
     # now include TG requests.
@@ -910,7 +872,7 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
     output_tokens = 100
     page_size = 10
     num_blocks = 11  # enough for 110 tokens or exactly 1 request
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         num_blocks=num_blocks,
@@ -920,12 +882,10 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-
-    time.sleep(1)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -962,7 +922,7 @@ def test_paged_scheduler_oom() -> None:
     # this can hold 100 tokens, but is not enough for even 1 request
     page_size = 10
     num_blocks = 10
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         num_blocks=num_blocks,
@@ -972,11 +932,10 @@ def test_paged_scheduler_oom() -> None:
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     actual: list[BatchInfo] = []
     with pytest.raises(RuntimeError) as e:
@@ -1010,7 +969,7 @@ def test_paged_scheduler_dont_oom_during_cow() -> None:
     # this can hold 512 tokens
     page_size = 128
     num_blocks = 3
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -1024,24 +983,22 @@ def test_paged_scheduler_dont_oom_during_cow() -> None:
 
     # Request A needs 3 blocks
     enqueue_request(
-        push_socket,
+        request_queue,
         prompt_len=300,
         max_seq_len=300 + 16,
         shared_prefix=shared_prefix,
     )
-    time.sleep(1)
 
     batch_info = create_batch_and_execute(scheduler)
     assert batch_info == BatchInfo(CE, 1, 0, 1, 200)
 
     # Request B needs 1 block
     enqueue_request(
-        push_socket,
+        request_queue,
         prompt_len=64,
         max_seq_len=64 + 16,
         shared_prefix=shared_prefix,
     )
-    time.sleep(1)
 
     # Note that request A and request B share some common prefix tokens.
     # Request B will want to COW which requires allocating a new block.
@@ -1071,7 +1028,7 @@ def test_paged_scheduler_paging_to_host(
     num_new_tokens = 3
     # We only have 5 gpu blocks which is only enough for 1 request.
     num_gpu_blocks = 5
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
@@ -1088,20 +1045,18 @@ def test_paged_scheduler_paging_to_host(
     # Submit reqs for the first time
     for prompt in prompts:
         enqueue_request_with_prompt(
-            push_socket,
+            request_queue,
             tokens=prompt,
             max_seq_len=prompt_len + num_new_tokens,
         )
-    time.sleep(1)
 
     # Submit same reqs again to try to get cache hits
     for prompt in prompts:
         enqueue_request_with_prompt(
-            push_socket,
+            request_queue,
             tokens=prompt,
             max_seq_len=prompt_len + num_new_tokens,
         )
-    time.sleep(1)
 
     actual = run_until_completion(scheduler)
 
@@ -1174,7 +1129,7 @@ def test_paged_scheduler_misc_sch_configs(
     page_size = 128
     num_blocks = ceildiv(max_seq_len, page_size) * max(16, num_prompts)
     max_batch_size = ceildiv(num_prompts, 3)
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         max_batch_size=max_batch_size,
@@ -1191,12 +1146,11 @@ def test_paged_scheduler_misc_sch_configs(
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             input_tokens,
             max_seq_len,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     # make sure that we terminated within 1000 iterations
     actual = run_until_completion(scheduler, max_num_iters=1000)

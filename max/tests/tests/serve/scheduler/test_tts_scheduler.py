@@ -6,11 +6,10 @@
 
 from __future__ import annotations
 
+import queue
 import tempfile
-import time
 from collections.abc import Generator
 from dataclasses import dataclass
-from queue import Queue
 from uuid import uuid4
 
 import numpy as np
@@ -22,24 +21,18 @@ from max.interfaces import (
     AudioGenerator,
     AudioGeneratorOutput,
     GenerationStatus,
+    MAXPushQueue,
+    RequestID,
     SchedulerResult,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
 )
-from max.interfaces.request import RequestID
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import TTSContext
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
     AudioGenerationSchedulerOutput,
 )
 from max.serve.scheduler.text_batch_constructor import BatchType
-
-
-def create_queues() -> dict[str, Queue]:
-    return {"REQUEST": Queue(), "RESPONSE": Queue(), "CANCEL": Queue()}
 
 
 def rand(length: int) -> np.ndarray:
@@ -145,7 +138,7 @@ def create_paged_scheduler(
     ce_delay_ms: float = 0.0,
     enable_prioritize_first_decode: bool = False,
 ) -> tuple[
-    AudioGenerationScheduler, ZmqPushSocket[tuple[RequestID, TTSContext]]
+    AudioGenerationScheduler, MAXPushQueue[tuple[RequestID, TTSContext]]
 ]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -171,40 +164,23 @@ def create_paged_scheduler(
     token_pipeline = FakeAudioGeneratorPipeline(
         paged_manager, max_num_steps=max_forward_steps_tg
     )
+
+    request_queue: queue.Queue[tuple[RequestID, TTSContext]] = queue.Queue()
+    response_queue: queue.Queue[
+        dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+    ] = queue.Queue()
+    cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
+
     scheduler = AudioGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        request_zmq_endpoint=generate_zmq_endpoint(),
-        response_zmq_endpoint=generate_zmq_endpoint(),
-        cancel_zmq_endpoint=generate_zmq_endpoint(),
+        request_queue=request_queue,
+        response_queue=response_queue,
+        cancel_queue=cancel_queue,
         paged_manager=paged_manager,
     )
-    scheduler.request_q.initialize_socket()
-    scheduler.response_q.initialize_socket()
-    scheduler.cancel_q.initialize_socket()
 
-    # Create a push socket for the "APIWorker" to submit requests to
-    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
-        endpoint=scheduler.request_q._endpoint,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
-
-    # Wire up unused pull sockets
-    _ = ZmqPullSocket[dict[str, SchedulerResult[AudioGeneratorOutput]]](
-        endpoint=scheduler.response_q._endpoint,
-        deserialize=msgpack_numpy_decoder(
-            dict[str, SchedulerResult[AudioGeneratorOutput]]
-        ),
-        lazy=False,
-    )
-    _ = ZmqPushSocket[list[str]](
-        endpoint=scheduler.cancel_q._endpoint,
-        serialize=msgpack_numpy_encoder(),
-        lazy=False,
-    )
-
-    return scheduler, push_socket
+    return scheduler, request_queue
 
 
 class FakeAudioGeneratorPipeline(AudioGenerator):
@@ -385,7 +361,7 @@ def run_until_completion(
 
 
 def enqueue_request(
-    socket: ZmqPushSocket[tuple[str, TTSContext]],
+    queue: MAXPushQueue[tuple[str, TTSContext]],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -398,11 +374,11 @@ def enqueue_request(
         shared_prefix=shared_prefix,
     )
     assert context.active_length == prompt_len
-    socket.put_nowait((req_id, context))
+    queue.put_nowait((req_id, context))
 
 
 def enqueue_request_with_prompt(
-    socket: ZmqPushSocket[tuple[str, TTSContext]],
+    queue: MAXPushQueue[tuple[RequestID, TTSContext]],
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:
@@ -414,7 +390,7 @@ def enqueue_request_with_prompt(
         streaming=False,
     )
 
-    socket.put_nowait((req_id, context))
+    queue.put_nowait((req_id, context))
 
 
 CE = BatchType.CE
@@ -428,7 +404,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     max_seq_len = 2048
     page_size = 128
     num_blocks = int(max_seq_len / page_size * num_reqs)
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_seq_len,
         max_batch_size=100,
         num_blocks=num_blocks,
@@ -443,8 +419,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
     # Create a few requests with 2040 tokens
     for _ in range(num_reqs):
-        enqueue_request(push_socket, prompt_len, max_seq_len=max_seq_len)
-    time.sleep(1)
+        enqueue_request(request_queue, prompt_len, max_seq_len=max_seq_len)
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
@@ -454,7 +429,6 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     ]
     actual = run_until_completion(scheduler)
     assert len(actual) == len(expected) and actual == expected
-    del push_socket
 
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
@@ -474,7 +448,6 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16() -> (
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
     # This is rounded up to 17 due to chunked prefill.
@@ -503,7 +476,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     output_tokens = 16
     prefix_len = 384
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         enable_prefix_caching=True,
         enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
@@ -514,12 +487,11 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
             shared_prefix=shared_prefix,
         )
-    time.sleep(1)
 
     if enable_prioritize_first_decode:
         # As you can see, the TG batch that follows each CE batch has exactly
@@ -565,7 +537,7 @@ def test_paged_scheduler_max_queue_size_tg(
     prompt_len = 500
     output_tokens = 16
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         max_batch_size=32,
         max_queue_size_tg=max_queue_size_tg,
     )
@@ -575,11 +547,10 @@ def test_paged_scheduler_max_queue_size_tg(
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     if max_queue_size_tg is None:
         # Notice that max_queue_size_tg defaults to max_batch_size_tg. This causes
@@ -650,7 +621,7 @@ def test_paged_scheduler_tg_batching(
     prompt_len = 500
     output_tokens = 16
 
-    scheduler, push_socket = create_paged_scheduler(
+    scheduler, request_queue = create_paged_scheduler(
         min_batch_size_tg=min_batch_size_tg,
         max_batch_size=max_batch_size,
         max_queue_size_tg=max_queue_size_tg,
@@ -662,11 +633,10 @@ def test_paged_scheduler_tg_batching(
 
     for _ in range(num_prompts):
         enqueue_request(
-            push_socket,
+            request_queue,
             prompt_len=prompt_len,
             max_seq_len=prompt_len + output_tokens,
         )
-    time.sleep(1)
 
     key = (min_batch_size_tg, max_batch_size, max_queue_size_tg)
     if key == (None, 50, None) or key == (50, 50, 50):
