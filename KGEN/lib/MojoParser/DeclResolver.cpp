@@ -1150,6 +1150,21 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   }
   mangledName += ')';
 
+  // Add constraints to the mangled name. These are already sorted (RASCFNM).
+  ArrayRef<ConstraintAttr> constraints =
+      fullSig.getParamListAttrs().getConstraints();
+  if (!constraints.empty()) {
+    mangledName += '{';
+    llvm::interleave(
+        constraints, os,
+        [&](ConstraintAttr constraint) {
+          ASTType::printParam(os, constraint.getProposition(),
+                              /*diags=*/nullptr);
+        },
+        ",");
+    mangledName += '}';
+  }
+
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
   std::replace(mangledName.begin(), mangledName.end(), '@', '_');

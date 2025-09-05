@@ -744,6 +744,26 @@ struct RaisingGetterSetter:
 fn test_raising_computed_getter() raises:
     var a = RaisingGetterSetter()[2]
 
+##===----------------------------------------------------------------------===##
+# Constraint Overloading
+##===----------------------------------------------------------------------===##
+
+# CHECK: lit.fn @"int_abs[[INT_ABS_NONNEG:[^"]+]]"
+fn int_abs[x: Int]() -> Int
+    requires x > -1:
+    return x
+
+# CHECK: lit.fn @"int_abs[[INT_ABS_NEG:[^"]+]]"
+fn int_abs[x: Int]() -> Int
+    requires x < 0:
+    return 0 - x
+
+# CHECK: lit.fn @"constraint_overloading
+fn constraint_overloading():
+    # CHECK: lit.call @decls::@"int_abs[[INT_ABS_NONNEG]]"
+    _ = int_abs[1]()
+    # CHECK: lit.call @decls::@"int_abs[[INT_ABS_NEG]]"
+    _ = int_abs[-1]()
 
 ##===----------------------------------------------------------------------===##
 # Structs

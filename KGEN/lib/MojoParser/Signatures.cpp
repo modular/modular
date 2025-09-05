@@ -929,6 +929,11 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         propVal, result.shared.translateLocation(constraint.loc),
         constraint.errorMsg));
   }
+  // Sort constraints by proposition (RASCFNM).
+  llvm::stable_sort(
+      result.constraints, [](const ConstraintAttr &a, const ConstraintAttr &b) {
+        return ParameterAttr::compare(a.getProposition(), b.getProposition());
+      });
 
   if (hasErrors)
     return std::nullopt;

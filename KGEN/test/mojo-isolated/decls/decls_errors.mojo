@@ -534,6 +534,18 @@ fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{cannot emit initializer list without a contextual type}}
   _ = {a = 1, b = 2}
 
+# expected-note @+1 {{previous definition here}}
+fn constraint_overloading[x: Int, y: Int]() -> Int
+    requires x > -1, "hello"
+    requires y < 0, "world":
+    return x
+
+# expected-error @+1 {{redefinition of function 'constraint_overloading' with identical signature}}
+fn constraint_overloading[x: Int, y: Int]() -> Int
+    requires y < 0, "aaa"
+    requires x > -1, "bbb":
+    return x + 1
+
 ##===----------------------------------------------------------------------===##
 # Decorators
 ##===----------------------------------------------------------------------===##
