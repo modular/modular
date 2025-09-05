@@ -362,6 +362,12 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
   [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
 
+- `String` can now decode UTF-32 input using the `String(from_utf32=...)`
+  constructor. It can also decode shorter unicode codepoint encodings like
+  ISO-8859-1 (aka. Latin-1) by using the `String(from_codepoints=...)`
+  constructor. PR [#5258](https://github.com/modular/modular/pull/5258) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
