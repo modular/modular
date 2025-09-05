@@ -39,6 +39,8 @@ def test_smollm_with_structured_output_gpu(
         huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
             "HuggingFaceTB/SmolLM2-135M-Instruct",
         ),
+        max_length=8192,
+        max_batch_size=1,
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -53,7 +55,7 @@ def test_smollm_with_structured_output_gpu(
     """
 
     request_id = "request_0"
-    sampling_params = SamplingParams(max_new_tokens=50)
+    sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
     request = TextGenerationRequest(
         model_name=pipeline_config.model_config.model_path,
         request_id=request_id,
