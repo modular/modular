@@ -201,7 +201,8 @@ public:
   /// Default values for keyword-only params.
   SmallVector<TypedAttr> defaultKwOnlyParams;
 
-  /// Constraints specified with 'requires' clauses.
+  /// Constraints specified with 'requires' clauses. Sorted by constraint
+  /// expression (RASCFNM).
   SmallVector<ConstraintAttr> constraints;
 };
 
