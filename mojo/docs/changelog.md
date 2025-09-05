@@ -184,23 +184,89 @@ language across multiple phases.
 - There is now an `iter` module which exposes the `next`, `iter`,
   and `enumerate` methods.
 
-- The `Copyable` trait now requires `ExplicitlyCopyable`, ensuring that all
-  all types that can be implicitly copied may also be copied using an explicit
-  `.copy()` method call.
+- The way copying is modeled in Mojo has been overhauled.
 
-  If a type conforms to `Copyable` and an `ExplicitlyCopyable` `.copy()`
-  implementation is not provided by the type, a default implementation will be
-  synthesized by the compiler.
+  Previously, Mojo had two traits for modeling copyability:
+
+  - `Copyable` denoted a type that could be copied implicitly
+  - `ExplicitlyCopyable` denoted a type that could only be copied with an
+    explicit call to a `.copy()` method.
+
+  The vast majority of types defaulted to implementing `Copyable` (and therefore
+  were implicitly copyable), and `ExplicitlyCopyable` was partially phased in
+  but had significant usage limitations.
+
+  Now, the new `Copyable` trait instead represents a type that can be
+  *explicitly* copied (using `.copy()`), and a new `ImplicitlyCopyable` "marker"
+  trait can be used to *opt-in* to making a type implicitly copyable as well.
+  This swaps the default behavior from being implicitly copyable to being only
+  explicitly copyable.
+
+  The new `ImplicitlyCopyable` trait inherits from `Copyable`, and requires
+  no additional methods. `ImplicitlyCopyable` is known specially to the
+  compiler. (`ImplicitlyCopyable` types may also be copied explicitly using
+  `.copy()`.)
+
+  This makes it possible for non-implicitly-copyable types to be used with all
+  standard library functionality, resolving a long-standing issue with Mojo
+  effectively forcing implicit copyability upon all types.
+  This will enable Mojo programs to be more efficient and readable, with fewer
+  performance and correctness issues caused by accidental implicit copies.
+
+  With this change, types that conform to `Copyable` are no longer implicitly
+  copyable:
+
+  ```mojo
+  @fieldwise_init
+  struct Person(Copyable):
+      var name: String
+
+  fn main():
+      var p = Person("Connor")
+      var p2 = p           # ERROR: not implicitly copyable
+      var p3 = p.copy()    # OK: may be copied explicitly
+  ```
+
+  To enable a type to be implicitly copyable, declare a conformance to the
+  `ImplicitlyCopyable` marker trait:
+
+  ```mojo
+  @fieldwise_init
+  struct Point(ImplicitlyCopyable):
+      var x: Float32
+      var y: Float32
+
+  fn main():
+      var p = Point(5, 10)
+      var p2 = p           # OK: may be implicitly copied
+      var p3 = p.copy()    # OK: may be explicitly copied
+  ```
+
+  An additional nuance is that `ImplicitlyCopyable` may only be synthesized
+  for types whose fields are all themselves `ImplicitlyCopyable` (and not
+  merely `Copyable`). If you need to make a type with any non-`ImplicitlyCopyable`
+  fields support implicit copying, you can declare the conformance to
+  `ImplicitlyCopyable`, but write the `__copyinit__()` definition manually:
+
+  ```mojo
+  struct Container(ImplicitlyCopyable):
+      var x: SomeCopyableType
+      var y: SomeImplicitlyCopyableType
+
+      fn __copyinit__(out self, existing: Self):
+          self.x = existing.x.copy()   # Copy field explicitly
+          self.y = existing.y
+  ```
 
   - The following standard library types and functions now require only
-    `ExplicitlyCopyable`, enabling their use with types that are not implicitly
-    copyable:
+    explicit `Copyable` for their element and argument types, enabling their use
+    with types that are not implicitly copyable:
     `List`, `Span`, `InlineArray`, `Optional`, `Variant`, `Tuple`, `Dict`,
     `Set`, `Counter`, `LinkedList`, `Deque`, `reversed`.
 
-    Additionally, the following traits now require `ExplicitlyCopyable` instead
-    of implicit `Copyable`:
-    `KeyElement`
+    Additionally, the following traits now require explicit `Copyable` instead
+    of `ImplicitlyCopyable`:
+    `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
 
 - A new `Some` utility is introduced to reduce the syntactic load of declaring
   function arguments of a type that implements a given trait or trait
