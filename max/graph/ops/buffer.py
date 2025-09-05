@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for load_buffer."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import kgen, mo, rmo
 
 from ..graph import Graph
-from ..type import TensorType, _ChainType
+from ..type import TensorType
 from ..value import BufferValue, TensorValue
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
 
@@ -37,11 +37,12 @@ def buffer_load(
     """
     in_chain = Graph.current._current_chain
 
-    output = Graph.current._add_op(
-        rmo.mo_mutable_load,
-        TensorType(x.dtype, x.shape, x.device).to_mlir(),
-        _ChainType().to_mlir(),
+    output = Graph.current._add_op_generated(
+        rmo.MoMutableLoadOp,
+        TensorType(x.dtype, x.shape, x.device),
+        mo.ChainType(),
         x,
+        kgen.ParamDeclArrayAttr([]),
         in_chain,
     )
 
@@ -62,8 +63,13 @@ def buffer_store(destination: BufferValue, source: TensorValue) -> None:
     """
     in_chain = Graph.current._current_chain
 
-    output_chain = Graph.current._add_op(
-        rmo.mo_mutable_store, destination, source, in_chain
+    output_chain = Graph.current._add_op_generated(
+        rmo.MoMutableStoreOp,
+        mo.ChainType(),
+        destination,
+        source,
+        kgen.ParamDeclArrayAttr([]),
+        in_chain,
     )[0]
 
     Graph.current._update_chain(output_chain)
@@ -95,13 +101,15 @@ def buffer_store_slice(
             f" shape {source.shape}"
         )
 
-    output_chain = Graph.current._add_op(
-        rmo.mo_mutable_store_slice,
+    output_chain = Graph.current._add_op_generated(
+        rmo.MoMutableStoreSliceOp,
+        mo.ChainType(),
         destination,
         source.reshape(unsqueezed_shape),
         starts,
         stops,
         steps,
+        kgen.ParamDeclArrayAttr([]),
         in_chain,
     )[-1]
 
