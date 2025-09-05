@@ -1119,6 +1119,9 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     var accum_index = accum_pipeline_producer_state.index()
                     var accum_phase = accum_pipeline_producer_state.phase()
                     accum_empty_mbar[accum_index].wait(accum_phase)
+                    var tmem_offset = tmem_addr + (
+                        accum_index * stage_stride_cols
+                    )
 
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
@@ -1127,9 +1130,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
                         ),
-                        stage_stride_cols = UInt(stage_stride_cols),
                     ](
-                        tmem_addr,
+                        tmem_offset,
                         a_smem,
                         b_smem,
                         mma_mbar,
@@ -1138,7 +1140,6 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_op,
                         elect_one_warp,
                         0,
-                        UInt(accum_index),
                     )
                     consumer_phase.step()
 

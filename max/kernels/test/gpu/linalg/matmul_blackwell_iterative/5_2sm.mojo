@@ -419,7 +419,7 @@ fn kernel_5[
                         UNKNOWN_VALUE,
                     ),
                 )
-            ](thread_idx.x % 32, i, 0, 0)
+            ](lane_id(), i, 0, 0)
 
             var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
             var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)

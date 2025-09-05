@@ -254,7 +254,6 @@ fn consumer_main_loop[
     *,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    stage_stride_cols: UInt,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ](
@@ -295,7 +294,6 @@ fn consumer_main_loop[
     ],
     elect_one_warp: Bool,
     iter_idx: UInt,
-    accum_index: UInt32,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -306,11 +304,10 @@ fn consumer_main_loop[
     var b_smem_tile = b_smem_iter.next(stage)[]
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
-        var tmem_offset = accum_index * stage_stride_cols
         mma_op.mma(
             a_smem_tile,
             b_smem_tile,
-            tmem_addr + tmem_offset,
+            tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
 
@@ -980,6 +977,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     alias max_tmem_cols = 512
 
     if elect_one_warp and elect_one_thread:
+        a_tma_op.prefetch_descriptor()
+        b_tma_op.prefetch_descriptor()
+        c_tma_op.prefetch_descriptor()
 
         @parameter
         for i in range(num_pipeline_stages):
@@ -1098,7 +1098,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 clc_throttle_producer_state.step()
 
             # DO TMA LOAD
-
             for i in range(num_iters):
                 load_AB[
                     block_tile_shape=block_tile_shape,
@@ -1186,18 +1185,18 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                 var accum_phase = accum_pipeline_producer_state.phase()
 
                 accum_empty_mbar[accum_index].wait(accum_phase)
+                var tmem_offset = tmem_addr + (accum_index * stage_stride_cols)
 
                 for i in range(num_iters):
                     consumer_main_loop[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
-                        stage_stride_cols = UInt(stage_stride_cols),
                         cta_group=cta_group,
                         cluster_shape = Index(
                             cluster_shape[0], cluster_shape[1], cluster_shape[2]
                         ),
                     ](
-                        tmem_addr,
+                        tmem_offset,
                         a_smem,
                         b_smem,
                         mma_mbar,
@@ -1206,7 +1205,6 @@ fn blackwell_tma_umma_warp_specialized_kernel[
                         mma_op,
                         elect_one_warp,
                         i,
-                        UInt(accum_index),
                     )
                     consumer_phase.step()
 
