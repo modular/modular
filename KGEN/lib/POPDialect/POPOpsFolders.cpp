@@ -1186,7 +1186,9 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [inType](const APSInt &in) -> int64_t {
+        [inType](const APSInt &in) -> std::optional<int64_t> {
+          if (in.getSignificantBits() > 64)
+            return {};
           return inType->isSInt() ? in.getSExtValue() : in.getZExtValue();
         },
         [](const APFloat &in) -> std::optional<int64_t> {
