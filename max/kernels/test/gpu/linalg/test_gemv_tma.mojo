@@ -40,18 +40,17 @@ from layout.tma_async import (
 from linalg import vendor_blas
 from math import ceildiv
 from random import rand
-from sys import size_of
+from sys import size_of, argv
 from utils import StaticTuple
 from utils.index import Index
+from utils.numerics import get_accum_type
 
 
-# TODO: Tune further.
-alias BLOCK_SIZE_M = 128
-alias BLOCK_SIZE_N = 32
-# Number of warps per block for 128 threads.
-alias WARPS_PER_BLOCK = 4
-alias ROWS_PER_WARP = BLOCK_SIZE_M // WARPS_PER_BLOCK
-alias NUM_PIPELINE_STAGES = 2
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark":
+            return True
+    return False
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -61,13 +60,17 @@ fn gemv_tma_kernel[
     b_layout: Layout,
     c_layout: Layout,
     a_desc_layout: Layout,
+    BLOCK_SIZE_M: UInt,
+    BLOCK_SIZE_K: UInt,
+    ROWS_PER_WARP: UInt,
+    NUM_PIPELINE_STAGES: UInt,
 ](
     c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
     a_tma_op: TMATensorTile[dtype, a_layout, a_desc_layout],
     b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M: UInt,
+    N: UInt,
+    K: UInt,
 ):
     var tid = thread_idx.x
     var bidx = block_idx.x
@@ -76,14 +79,16 @@ fn gemv_tma_kernel[
     var warp_row_offset = warp_id() * ROWS_PER_WARP
     var global_row_idx = block_row + warp_row_offset
 
+    alias accum_type = get_accum_type[dtype]()
+
     alias a_smem_layout = tile_layout_k_major[
         dtype,
         BLOCK_SIZE_M,
-        BLOCK_SIZE_N,
+        BLOCK_SIZE_K,
         swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
     ]()
 
-    alias b_smem_layout = Layout(IntTuple(BLOCK_SIZE_N, 1), IntTuple(1, 1))
+    alias b_smem_layout = Layout(IntTuple(BLOCK_SIZE_K, 1), IntTuple(1, 1))
 
     var a_smem_base = rebind[
         UnsafePointer[
@@ -146,7 +151,7 @@ fn gemv_tma_kernel[
     ](tma_mbar_ptr)
 
     # Initialize dot products for all rows before column processing.
-    var dot_products = InlineArray[Scalar[dtype], ROWS_PER_WARP](fill=0)
+    var dot_products = InlineArray[Scalar[accum_type], ROWS_PER_WARP](fill=0)
 
     if thread_idx.x == 0:
 
@@ -160,8 +165,8 @@ fn gemv_tma_kernel[
     var consumer_phase = PipelineState[NUM_PIPELINE_STAGES]()
     var producer_phase = PipelineState[NUM_PIPELINE_STAGES](0, 1, 0)
 
-    for col_offset in range(0, K, BLOCK_SIZE_N):
-        var current_block_size = min(BLOCK_SIZE_N, K - col_offset)
+    for col_offset in range(0, K, BLOCK_SIZE_K):
+        var current_block_size = min(BLOCK_SIZE_K, K - col_offset)
 
         # Producer: Thread 0 loads data.
         if thread_idx.x == 0:
@@ -200,8 +205,8 @@ fn gemv_tma_kernel[
                     var a_val = current_tile[warp_row_offset + i, j]
                     var b_val = b_smem_tile[j, 0]
                     dot_products[i] += rebind[__type_of(dot_products[i])](
-                        a_val
-                    ) * rebind[__type_of(dot_products[i])](b_val)
+                        a_val.cast[accum_type]() * b_val.cast[accum_type]()
+                    )
         barrier()
 
         consumer_phase.step()
@@ -212,7 +217,7 @@ fn gemv_tma_kernel[
         if global_row < M:
             var final_dot_product = warp.sum(dot_products[i])
             if lane_id() == 0:
-                c[global_row, 0] = final_dot_product
+                c[global_row, 0] = Scalar[dtype](final_dot_product)
 
 
 def gemv_tma[
@@ -231,6 +236,15 @@ def gemv_tma[
     K: Int,
     ctx: DeviceContext,
 ):
+    # TODO: Tune further.
+    alias THREAD_NUM = 1024
+    alias BLOCK_SIZE_M = 64
+    alias BLOCK_SIZE_K = UInt(256) if dtype == DType.bfloat16 else UInt(128)
+    # Number of warps per block for 128 threads.
+    alias WARPS_PER_BLOCK = THREAD_NUM // WARP_SIZE
+    alias ROWS_PER_WARP = UInt(BLOCK_SIZE_M // WARPS_PER_BLOCK)
+    alias NUM_PIPELINE_STAGES = 1
+
     var a = from_ndbuffer_row_major(a_device)
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
@@ -242,14 +256,14 @@ def gemv_tma[
     a_tma_op = create_tma_tile[
         dtype,
         2,
-        Index(BLOCK_SIZE_M, BLOCK_SIZE_N),
+        Index(BLOCK_SIZE_M, BLOCK_SIZE_K),
     ](ctx, a)
 
     # Shared memory needed for NUM_PIPELINE_STAGES*A and B working tiles.
     # +8 bytes for each of NUM_PIPELINE_STAGES barriers.
     alias smem_use = (
-        NUM_PIPELINE_STAGES * BLOCK_SIZE_M * BLOCK_SIZE_N * size_of[dtype]()
-        + BLOCK_SIZE_N * size_of[dtype]()
+        NUM_PIPELINE_STAGES * BLOCK_SIZE_M * BLOCK_SIZE_K * size_of[dtype]()
+        + BLOCK_SIZE_K * size_of[dtype]()
         + 8 * NUM_PIPELINE_STAGES
     )
 
@@ -259,6 +273,10 @@ def gemv_tma[
         b.layout,
         c.layout,
         a_tma_op.desc_layout,
+        BLOCK_SIZE_M,
+        BLOCK_SIZE_K,
+        ROWS_PER_WARP,
+        NUM_PIPELINE_STAGES,
     ]
 
     ctx.enqueue_function[kernel](
@@ -269,7 +287,7 @@ def gemv_tma[
         N,
         K,
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
-        block_dim=(128),  # WARP_SIZE * WARPS_PER_BLOCK = 32*4
+        block_dim=(THREAD_NUM),
         shared_mem_bytes=Int(smem_use),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
@@ -277,7 +295,13 @@ def gemv_tma[
 
 def test_gemv_tma[
     dtype: DType
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](
+    ctx: DeviceContext,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    benchmark: Bool = False,
+):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -332,29 +356,62 @@ def test_gemv_tma[
 
     ctx.synchronize()
 
-    # Compare with vendor BLAS for correctness.
-    vendor_blas.matmul(
-        ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        c_row_major=True,
-        transpose_b=False,
-    )
+    if benchmark:
+        alias num_runs = 50
+        alias num_warmup = 10
 
-    ctx.synchronize()
+        @always_inline
+        @parameter
+        fn run_func(ctx: DeviceContext) raises:
+            gemv_tma(
+                c_device.tensor,
+                a_device.tensor,
+                b_device.tensor,
+                M,
+                N,
+                K,
+                ctx,
+            )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
-    ctx.synchronize()
+        for _ in range(num_warmup):
+            run_func(ctx)
+        ctx.synchronize()
 
-    alias rtol = 1e-2
-    assert_almost_equal(
-        c_host.tensor,
-        c_host_ref.tensor,
-        atol=0.0001,
-        rtol=rtol,
-    )
+        var nstime = ctx.execution_time[run_func](num_runs) / num_runs
+        var sectime = nstime * 1e-9
+        var TFlop = 2.0 * M * N * K * 1e-12
+        # Round TFLOPS to two decimal places for cleaner output
+        var tflops = TFlop / sectime
+        var tflops_rounded = round(tflops, 3)
+        print(
+            String(M, "x", N, "x", K, ": DTYPE=", dtype),
+            sectime * 1000,
+            tflops_rounded,
+        )
+    else:
+        # Compare with vendor BLAS for correctness.
+        vendor_blas.matmul(
+            ctx,
+            c_device_ref.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            c_row_major=True,
+            transpose_b=False,
+        )
+
+        ctx.synchronize()
+
+        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.synchronize()
+
+        alias rtol = 1e-2
+        assert_almost_equal(
+            c_host.tensor,
+            c_host_ref.tensor,
+            atol=0.0001,
+            rtol=rtol,
+        )
 
     _ = c_device
     _ = c_device_ref
@@ -368,9 +425,17 @@ def test_gemv_tma[
 
 def main():
     with DeviceContext() as ctx:
+        var benchmark = is_benchmark()
+        test_gemv_tma[DType.bfloat16](
+            ctx, dynamic(256), static[1](), static[256](), benchmark=benchmark
+        )
+        test_gemv_tma[DType.bfloat16](
+            ctx, dynamic(4096), static[1](), static[4096](), benchmark=benchmark
+        )
+
         test_gemv_tma[DType.float32](
-            ctx, dynamic(256), static[1](), static[256]()
+            ctx, dynamic(256), static[1](), static[256](), benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, dynamic(4096), static[1](), static[4096]()
+            ctx, dynamic(4096), static[1](), static[4096](), benchmark=benchmark
         )
