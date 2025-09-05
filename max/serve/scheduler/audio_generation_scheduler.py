@@ -27,6 +27,7 @@ from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
+    Scheduler,
     SchedulerResult,
     drain_queue,
 )
@@ -36,7 +37,7 @@ from max.profiler import Tracer
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
-from .base import Scheduler, SchedulerProgress
+from .base import SchedulerProgress
 from .text_batch_constructor import BatchType, TokenGenerationSchedulerConfig
 from .utils import release_cancelled_requests, release_terminated_requests
 

@@ -20,6 +20,7 @@ from typing import Union
 from max.interfaces import (
     Pipeline,
     RequestID,
+    Scheduler,
     TextGenerationInputs,
     TextGenerationOutput,
 )
@@ -42,7 +43,7 @@ from max.serve.scheduler.text_batch_constructor import (
     TokenGenerationSchedulerConfig,
 )
 
-from .base import Scheduler, SchedulerProgress
+from .base import SchedulerProgress
 from .utils import SchedulerLogger, maybe_restore_chunked_request
 
 logger = logging.getLogger("max.serve")

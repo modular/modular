@@ -21,6 +21,7 @@ from max.interfaces import (
     MAXPushQueue,
     Pipeline,
     RequestID,
+    Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -32,7 +33,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
 
-from .base import Scheduler, SchedulerProgress
+from .base import SchedulerProgress
 from .text_batch_constructor import (
     SchedulerOutput,
     TextBatchConstructor,

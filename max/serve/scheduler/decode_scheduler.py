@@ -23,6 +23,7 @@ from max.interfaces import (
     MAXPushQueue,
     Pipeline,
     RequestID,
+    Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -41,7 +42,7 @@ from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
-from .base import Scheduler, SchedulerProgress
+from .base import SchedulerProgress
 from .text_batch_constructor import (
     TextBatchConstructor,
     TokenGenerationSchedulerConfig,

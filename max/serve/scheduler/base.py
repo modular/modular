@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import asyncio
-from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Union
 
@@ -39,24 +38,6 @@ async def sleep_with_backoff(count_no_progress: int):
 
     ms_to_sleep = min(max(0, count_no_progress), 10)
     await asyncio.sleep(ms_to_sleep * 0.001)
-
-
-class Scheduler(ABC):
-    """Abstract base class defining the interface for schedulers."""
-
-    @abstractmethod
-    def run_iteration(self) -> SchedulerProgress:
-        """The core scheduler routine that creates and executes batches.
-
-        This method should implement the core scheduling logic including:
-        - Batch creation and management
-        - Request scheduling
-
-        Returns:
-            SchedulerProgress: Indicates whether work was performed in this iteration.
-                Returns MADE_PROGRESS if any batch was executed, NO_PROGRESS if no work was done.
-        """
-        pass
 
 
 class PrefillRequest(

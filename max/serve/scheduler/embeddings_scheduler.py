@@ -21,12 +21,13 @@ from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
     RequestID,
+    Scheduler,
     SchedulerResult,
 )
 from max.pipelines.core import TextContext
 from max.profiler import traced
 
-from .base import Scheduler, SchedulerProgress
+from .base import SchedulerProgress
 
 logger = logging.getLogger("max.serve")
 

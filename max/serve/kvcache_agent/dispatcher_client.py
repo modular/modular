@@ -52,10 +52,10 @@ class DispatcherClient(Generic[DispatcherMessagePayload]):
         """Initialize dispatcher client with ZMQ sockets for communication."""
         self.pull_socket = ZmqPullSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=recv_endpoint, deserialize=deserialize)
+        ](endpoint=recv_endpoint, deserialize=deserialize, lazy=False)
         self.push_socket = ZmqPushSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=send_endpoint, serialize=serialize)
+        ](endpoint=send_endpoint, serialize=serialize, lazy=False)
 
         # Request handlers
         self._request_handlers: dict[

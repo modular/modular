@@ -21,6 +21,7 @@ from max.interfaces import (
     EmbeddingsOutput,
     Pipeline,
     RequestID,
+    Scheduler,
     SchedulerResult,
     TextGenerationOutput,
 )
@@ -35,7 +36,7 @@ from .audio_generation_scheduler import (
     AudioGenerationScheduler,
     AudioGenerationSchedulerConfig,
 )
-from .base import PrefillRequest, PrefillResponse, Scheduler
+from .base import PrefillRequest, PrefillResponse
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler
@@ -48,7 +49,6 @@ __all__ = [
     "EmbeddingsSchedulerConfig",
     "PrefillRequest",
     "PrefillResponse",
-    "Scheduler",
     "load_scheduler",
 ]
 
