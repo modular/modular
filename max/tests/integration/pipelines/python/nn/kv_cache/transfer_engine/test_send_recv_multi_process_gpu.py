@@ -176,11 +176,11 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     # Check stdout
     assert re.search(r"Transferring .* GB took .* ms \(.* GB/s\)", out)
-    assert "UCX  DEBUG register host memory on: cma, cuda_cpy, self, tcp" in out
+    assert "UCX  DEBUG register host memory on: cuda_cpy, self" in out
     assert "UCX  DEBUG register cuda memory on: cuda_cpy, cuda_ipc" in out
     assert "UCX  DEBUG register cuda-managed memory on: cuda_cpy" in out
     assert "UCX  DEBUG no memory domain supports registering rocm memory" in out
     assert (
-        "UCX  DEBUG cuMemcpyDtoDAsync_v2(dst, src, iov[0].length, stream) -> 0"
+        "UCX  DEBUG cuMemcpyDtoDAsync_v2(dst, src, iov[0].length, *stream) -> 0"
         in out
     )
