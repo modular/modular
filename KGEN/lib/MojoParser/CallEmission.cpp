@@ -681,8 +681,8 @@ PValue OverloadSet::filterOverloadSetForValueType(
   //
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
-  auto getBindingsIfValidCandidate =
-      [&](FnTypeGeneratorType candidateType) -> ParameterExprArrayAttr {
+  auto getBindingsAndBoundCandidateType = [&](FnTypeGeneratorType candidateType)
+      -> std::pair<ParameterExprArrayAttr, FnTypeGeneratorType> {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -690,7 +690,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // parameter expression context.
     auto newBindings = paramBindings.verifyBindings(candidateType);
     if (!newBindings)
-      return {}; // If there is an error, return the problem.
+      return {nullptr, nullptr}; // If there is an error, return the problem.
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
@@ -699,13 +699,19 @@ PValue OverloadSet::filterOverloadSetForValueType(
           newBindings, &declScope.getShared().getEvaluationContext());
     }
 
-    if (!candidateType)
+    return {newBindings, candidateType};
+  };
+  auto getBindingsIfValidCandidate =
+      [&](FnTypeGeneratorType candidateType) -> ParameterExprArrayAttr {
+    auto [newBindings, boundCandidateType] =
+        getBindingsAndBoundCandidateType(candidateType);
+    if (!boundCandidateType)
       return {};
-
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
     if (IREmitter::canImplicitlyConvertToType(
-            {UnboundAttr::get(candidateType), expr}, functionType, declScope))
+            {UnboundAttr::get(boundCandidateType), expr}, functionType,
+            declScope))
       return newBindings;
     return {};
   };
@@ -750,32 +756,48 @@ PValue OverloadSet::filterOverloadSetForValueType(
     return {};
 
   InflightDiag &diag = emitError(expr->getLoc());
-  std::string functionTypeAsString =
-      "'" + functionType.getAsString(&getShared()) + "'";
+  std::string functionTypeAsString = functionType.getAsString(&getShared());
 
   ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
-    diag << "no '" << baseName << "' candidates have type "
-         << functionTypeAsString << expr->getRange();
+    diag << "no '" << baseName << "' candidates have type '"
+         << functionTypeAsString << "'" << expr->getRange();
     declsToReport = fnDecls;
   } else {
-    diag << "ambiguous use of '" << baseName << "' as type "
-         << functionTypeAsString << expr->getRange();
+    diag << "ambiguous use of '" << baseName << "' as type '"
+         << functionTypeAsString << "'" << expr->getRange();
     declsToReport = validCandidates;
   }
 
   for (ASTDecl *candidate : declsToReport) {
-    auto candidateType =
-        ASTType(cast<FnOp>(candidate->getIfOperation()).getFullSignature());
-    std::string candidateTypeAsString =
-        "'" + candidateType.getAsString(&getShared()) + "'";
     diag.attachNote(candidate->getLoc())
-        << "candidate declared here with type " << candidateTypeAsString;
+        << "candidate declared here with type ";
+    FnTypeGeneratorType candidateType =
+        cast<FnOp>(candidate->getIfOperation()).getFullSignature();
+    std::string candidateTypeAsString;
+    // If there are bindings, specialize the candidate type and print the
+    // specialized type.
+    if (!paramBindings.empty()) {
+      auto [newBindings, boundCandidateType] =
+          getBindingsAndBoundCandidateType(candidateType);
+      if (boundCandidateType) {
+        candidateTypeAsString =
+            ASTType(boundCandidateType).getAsString(&getShared());
+        diag << "'" << candidateTypeAsString << "' (specialized from "
+             << ASTType(candidateType) << ")";
+      }
+    }
+    // If there are no bindings (or bindings were illegal), print the candidate
+    // type as is.
+    if (candidateTypeAsString.empty()) {
+      candidateTypeAsString = ASTType(candidateType).getAsString(&getShared());
+      diag << "'" << candidateTypeAsString << "'";
+    }
     if (functionTypeAsString == candidateTypeAsString) {
       // Print out the internal representation of the types.
       // TODO(MOCO-2080): Make this irrelevant by making the above type
       // printing smarter.
-      printSimilarTypesNote(diag, expr->getLoc(), candidateType.mlirType,
+      printSimilarTypesNote(diag, expr->getLoc(), candidateType,
                             functionType.mlirType);
     }
   }
