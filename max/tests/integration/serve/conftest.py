@@ -21,7 +21,7 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
@@ -31,9 +31,15 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.telemetry.common import configure_metrics
 
 
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self.served_model_name = "echo"
+
+
 class MockPipelineConfig(PipelineConfig):
     def __init__(self):
         self.max_batch_size = 1
+        self._model_config = MockModelConfig()
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -56,7 +62,6 @@ def echo_app() -> FastAPI:
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_name="echo",
         model_factory=echo_factory,
         pipeline_config=MockPipelineConfig(),
         tokenizer=tokenizer,
@@ -96,7 +101,6 @@ def app(
     )
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_name=pipeline_config.model_config.model_path,
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
