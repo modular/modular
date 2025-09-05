@@ -160,6 +160,11 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
                 "In-flight batching is not supported with TTS Scheduler"
             )
 
+        if self.data_parallel_degree > 1:
+            raise ValueError(
+                "Data parallelism is not supported with TTS Scheduler"
+            )
+
 
 class AudioGenerationSchedulerOutput:
     def __init__(

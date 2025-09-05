@@ -230,7 +230,7 @@ class AttentionWithRope(Module):
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
-
+        self.q_weight_dim = q_weight_dim
         self.stacked_qkv = stacked_qkv
 
         if stacked_qkv:
@@ -412,6 +412,12 @@ class AttentionWithRope(Module):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
+        wqkv = self.wqkv.to(x.device)
+        if self.wqkv_bias is not None:
+            wqkv_bias = self.wqkv_bias.to(x.device)
+        else:
+            wqkv_bias = None
+
         if self.float8_config:
             # TODO(GEX-2452): Find a cleaner way to write assertions like this
             # or improve the subgraph code so that it can preserve the Python
@@ -440,8 +446,8 @@ class AttentionWithRope(Module):
             xq = fused_qkv_ragged_matmul_scaled_float8(
                 self.kv_params,
                 input=x,
-                wqkv=self.wqkv,
-                bias=self.wqkv_bias,
+                wqkv=wqkv,
+                bias=wqkv_bias,
                 input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
@@ -454,8 +460,8 @@ class AttentionWithRope(Module):
             xq = fused_qkv_ragged_matmul(
                 self.kv_params,
                 input=x,
-                wqkv=self.wqkv,
-                bias=self.wqkv_bias,
+                wqkv=wqkv,
+                bias=wqkv_bias,
                 input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
@@ -489,9 +495,9 @@ class AttentionWithRope(Module):
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
-
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
-
+        attn_out = ops.reshape(
+            attn_out, shape=[total_seq_len, self.q_weight_dim]
+        )
         return self.o_proj(attn_out)
 
 

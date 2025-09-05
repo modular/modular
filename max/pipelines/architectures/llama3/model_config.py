@@ -128,6 +128,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     lora_config: LoRAConfig | None = None
     pipeline_parallel_degree: int = 1
     tensor_parallel_degree: int = 1
+    data_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
@@ -183,6 +184,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         pipeline_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=cache_dtype,
@@ -202,6 +204,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             total_num_layers=huggingface_config.num_hidden_layers
             if pipeline_parallel_degree > 1
             else None,
+            data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
@@ -245,6 +248,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         attention_bias: bool = False,
         pipeline_parallel_degree: int = 1,
         tensor_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -380,6 +384,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
                 pipeline_parallel_degree=pipeline_parallel_degree,
+                data_parallel_degree=data_parallel_degree,
             ),
             norm_method=norm_method,
             norm_dtype=norm_dtype,
@@ -398,6 +403,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             # TODO: GEX-2388: Figure out the issue and re-enable this.
             pipeline_parallel_degree=pipeline_parallel_degree,
             tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             dist_gemm_config=DistributedGemmConfig(
                 enable_matmul_allreduce=False
             )

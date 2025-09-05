@@ -21,7 +21,7 @@ from enum import Enum
 from typing import Union
 
 from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
-from max.nn.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
 from max.pipelines.core.context import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.profiler import traced
@@ -53,6 +53,10 @@ class TokenGenerationSchedulerConfig:
 
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context encoding requests."""
+
+    data_parallel_degree: int = 1
+    """Data-parallelism parameter. The degree to which the model is replicated
+    is dependent on the model type."""
 
     def __post_init__(self) -> None:
         if self.max_batch_size_tg <= 0:
@@ -89,6 +93,7 @@ class TokenGenerationSchedulerConfig:
             target_tokens_per_batch_ce=pipeline_config.target_num_new_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            data_parallel_degree=pipeline_config.model_config.data_parallel_degree,
         )
 
 
@@ -384,7 +389,15 @@ class TextBatchConstructor:
             # Claim the cache slot for the request if it's a new request.
             if ctx.start_idx == 0:
                 if self.paged_cache is not None:
-                    self.paged_cache.external_claim(req_id)
+                    if isinstance(self.paged_cache, MultiPagedKVCacheManager):
+                        replica_idx = self.paged_cache.get_or_recommend_replica(
+                            ctx
+                        )
+                        self.paged_cache.external_claim_for_replica(
+                            replica_idx, req_id
+                        )
+                    else:
+                        self.paged_cache.external_claim(req_id)
 
             orig_prompt_length = ctx.active_length
 

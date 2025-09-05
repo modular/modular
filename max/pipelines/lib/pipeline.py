@@ -59,10 +59,12 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.nn.kv_cache import (
+    KVCacheAwareContext,
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheManager,
     KVCacheParams,
+    MultiPagedKVCacheManager,
     PagedKVCacheManager,
     infer_optimal_batch_size,
 )
@@ -674,78 +676,95 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batch: list[T],
+        batches: list[list[T]],
         num_steps: int,
     ) -> tuple[ModelInputs, int, Optional[npt.NDArray[np.int32]]]:
         tracer: Tracer = Tracer("prepare_batch")
+        flat_batch = [context for batch in batches for context in batch]
 
         if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
             bitmask = llguidance.numpy.allocate_token_bitmask(
-                len(batch), self.vocab_size
+                len(flat_batch), self.vocab_size
             )
         else:
             bitmask = None
 
         tracer.next("claim_cache_rows")
-        for i, context in enumerate(batch):
-            # Initialize a matcher if needed
-            if context.json_schema and context.matcher is None:
-                if not self._pipeline_config.sampling_config.enable_structured_output:
-                    msg = "json_schema provided but constrained decoding is not enabled."
-                    raise ValueError(msg)
+        for replica_idx, batch in enumerate(batches):
+            for i, context in enumerate(batch):
+                # Initialize a matcher if needed
+                if context.json_schema and context.matcher is None:
+                    if not self._pipeline_config.sampling_config.enable_structured_output:
+                        msg = "json_schema provided but constrained decoding is not enabled."
+                        raise ValueError(msg)
 
-                try:
-                    serialized_grammar = LLMatcher.grammar_from_json_schema(
-                        context.json_schema,
-                        defaults={
-                            "whitespace_flexible": False,
-                        },
-                    )
-                    matcher = LLMatcher(
-                        self._tokenizer_info, serialized_grammar
-                    )
-                    context.set_matcher(matcher)
-                except Exception as e:
-                    msg = f"Json schema provided in request cannot be compiled to valid grammar. \
-                    Please update your json schema to produce valid structured output. From llguidance: {e}"
-                    logger.warning(msg)
-                    # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
-                    context.json_schema = None  # type: ignore
+                    try:
+                        serialized_grammar = LLMatcher.grammar_from_json_schema(
+                            context.json_schema,
+                            defaults={
+                                "whitespace_flexible": False,
+                            },
+                        )
+                        matcher = LLMatcher(
+                            self._tokenizer_info, serialized_grammar
+                        )
+                        context.set_matcher(matcher)
+                    except Exception as e:
+                        msg = f"Json schema provided in request cannot be compiled to valid grammar. \
+                        Please update your json schema to produce valid structured output. From llguidance: {e}"
+                        logger.warning(msg)
+                        # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
+                        context.json_schema = None  # type: ignore
 
-            if context.matcher:
-                jump_forward_tokens = context.matcher.compute_ff_tokens()
-                for token in jump_forward_tokens:
-                    context.jump_ahead(token)
+                if context.matcher:
+                    jump_forward_tokens = context.matcher.compute_ff_tokens()
+                    for token in jump_forward_tokens:
+                        context.jump_ahead(token)
 
-            # Claim cache rows for context.
-            if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.external_claim(
+                # Claim cache rows for context.
+                if not self._pipeline_model.kv_manager.contains(
                     context.request_id
-                )
+                ):
+                    if (
+                        self._pipeline_config.model_config.data_parallel_degree
+                        > 1
+                    ):
+                        assert isinstance(
+                            self._pipeline_model.kv_manager,
+                            MultiPagedKVCacheManager,
+                        )
+                        assert isinstance(context, KVCacheAwareContext)
+                        self._pipeline_model.kv_manager.external_claim_for_replica(
+                            replica_idx, context.request_id
+                        )
+                    else:
+                        self._pipeline_model.kv_manager.external_claim(
+                            context.request_id
+                        )
 
-            # Update num_steps.
-            num_steps = self.calculate_num_steps(num_steps, context)
+                # Update num_steps.
+                num_steps = self.calculate_num_steps(num_steps, context)
 
-            # Update bitmask
-            if (
-                self._pipeline_config.sampling_config.enable_structured_output
-                and context.matcher
-                and bitmask is not None
-            ):
-                llguidance.numpy.fill_next_token_bitmask(
-                    context.matcher, bitmask, index=i
-                )
+                # Update bitmask
+                if (
+                    self._pipeline_config.sampling_config.enable_structured_output
+                    and context.matcher
+                    and bitmask is not None
+                ):
+                    llguidance.numpy.fill_next_token_bitmask(
+                        context.matcher, bitmask, index=i
+                    )
 
         # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            batch, num_steps
+            flat_batch, num_steps
         )
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
-                context_batch=batch,
+                context_batch=flat_batch,
                 kv_cache_inputs=KVCacheInputsSequence(
                     kv_cache_inputs=kv_cache_inputs
                 ),
@@ -981,18 +1000,20 @@ class TextGenerationPipeline(
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
-
-        batch = self._maybe_sort_loras(inputs.batch)
-
-        if self.batch_info_output_fname is not None:
-            self._record_batch_info(batch.values(), inputs.num_steps)
+        batches = []
+        for batch in inputs.batches:
+            batch = self._maybe_sort_loras(batch)
+            batches.append(list(batch.values()))
+            if self.batch_info_output_fname is not None:
+                self._record_batch_info(batch.values(), inputs.num_steps)
+        del batch  # Unbind the batch variable.
 
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
-        context_batch = list(batch.values())
+        context_batch = [context for batch in batches for context in batch]
 
-        # # Get extra compute parameters for each input.
+        # Get extra compute parameters for each input.
         batch_top_n = [context.log_probabilities for context in context_batch]
         compute_log_probabilities = any(batch_top_n)
         batch_echo: list[bool] = [
@@ -1001,7 +1022,7 @@ class TextGenerationPipeline(
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask = self.prepare_batch(
-            context_batch, inputs.num_steps
+            batches, inputs.num_steps
         )
 
         # Multistep execution loop.
@@ -1197,7 +1218,7 @@ class TextGenerationPipeline(
         # Update the context object.
         tracer.push("update_context")
         res: dict[str, TextGenerationOutput] = {}
-        for batch_index, (request_id, context) in enumerate(batch.items()):
+        for batch_index, context in enumerate(context_batch):
             for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
@@ -1215,7 +1236,7 @@ class TextGenerationPipeline(
                 if context.is_done:
                     break
 
-            res[request_id] = context.to_generation_output()
+            res[context.request_id] = context.to_generation_output()
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

@@ -70,7 +70,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask = self.prepare_batch(
-            context_batch, num_steps
+            [context_batch], num_steps
         )
 
         # Multistep execution loop.

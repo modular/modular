@@ -33,12 +33,14 @@ from max.nn.kv_cache import (
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
+    MultiPagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
+    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -52,6 +54,7 @@ from max.pipelines.lib.log_probabilities import (
 from max.profiler import traced
 from transformers import AutoConfig
 
+from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -79,6 +82,9 @@ class Llama3Inputs(ModelInputs):
 
     return_n_logits: Tensor
 
+    data_parallel_splits: Tensor | None = None
+    """Tensor containing the data parallel splits."""
+
     def __init__(
         self,
         tokens: Tensor,
@@ -89,6 +95,7 @@ class Llama3Inputs(ModelInputs):
         lora_ids: Tensor | None = None,
         lora_ranks: Tensor | None = None,
         lora_grouped_offsets: Tensor | None = None,
+        data_parallel_splits: Tensor | None = None,
     ) -> None:
         """
         Args:
@@ -105,9 +112,10 @@ class Llama3Inputs(ModelInputs):
         self.lora_ids = lora_ids
         self.lora_ranks = lora_ranks
         self.lora_grouped_offsets = lora_grouped_offsets
+        self.data_parallel_splits = data_parallel_splits
 
 
-class LlamaModelBase(PipelineModel[TextContext]):
+class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     """Base Llama pipeline model implementation."""
 
     model: Model
@@ -191,10 +199,19 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return Llama3Config.get_num_layers(huggingface_config)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        assert isinstance(model_inputs, Llama3Inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        assert isinstance(model_inputs, Llama3Inputs)
 
-        if self._lora_manager:
+        if self.pipeline_config.model_config.data_parallel_degree > 1:
+            assert model_inputs.data_parallel_splits is not None
+            model_outputs = self.model.execute(
+                model_inputs.tokens,
+                model_inputs.input_row_offsets,
+                model_inputs.return_n_logits,
+                model_inputs.data_parallel_splits,
+                *curr_kv_cache_inputs,
+            )
+        elif self._lora_manager:
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
@@ -248,6 +265,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
             np.concatenate([ctx.next_tokens for ctx in context_batch])
         ).to(self.devices[0])
 
+        data_parallel_splits: Tensor | None = None
+        if self.pipeline_config.model_config.data_parallel_degree > 1:
+            assert isinstance(self.kv_manager, MultiPagedKVCacheManager)
+            data_parallel_splits = self.kv_manager.get_data_parallel_splits(
+                context_batch
+            )
+
         inputs = Llama3Inputs(
             tokens=tokens,
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
@@ -258,6 +282,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
+            data_parallel_splits=data_parallel_splits,
         )
 
         # Map model names to LoRA graph inputs
@@ -294,6 +319,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             lora_ids=prev_model_inputs.lora_ids,
             lora_ranks=prev_model_inputs.lora_ranks,
             lora_grouped_offsets=prev_model_inputs.lora_grouped_offsets,
+            data_parallel_splits=prev_model_inputs.data_parallel_splits,
         )
 
     @classmethod
@@ -336,6 +362,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 kv_cache_config=self.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
                 pipeline_parallel_degree=pp_degree,
+                data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -634,7 +661,22 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return_logits=self.return_logits,
             pipeline_parallel_degree=self.pipeline_config.model_config.pipeline_parallel_degree,
             tensor_parallel_degree=self.pipeline_config.model_config.tensor_parallel_degree,
+            data_parallel_degree=self.pipeline_config.model_config.data_parallel_degree,
         )
+
+        if model_config.data_parallel_degree > 1:
+            if (
+                model_config.pipeline_parallel_degree > 1
+                or model_config.tensor_parallel_degree > 1
+            ):
+                raise ValueError(
+                    "Hybrid DP+PP+TP not supported yet. Use either DP+PP>1 or DP+TP>1, not both."
+                )
+            graph, new_state_dict = create_data_parallel_graph(
+                model_config, self.kv_manager, state_dict
+            )
+            self.state_dict = new_state_dict
+            return graph
 
         # Pipeline Parallel case - early return to avoid changing existing logic
         if model_config.pipeline_parallel_degree > 1:

@@ -132,7 +132,9 @@ class Embedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        result = ops.gather(TensorValue(self.weight), indices, axis=0)
+        indices = TensorValue(indices).to(self.device)
+        weight = TensorValue(self.weight).to(self.device)
+        result = ops.gather(weight, indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         return result

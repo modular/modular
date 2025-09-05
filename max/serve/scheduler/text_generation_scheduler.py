@@ -34,6 +34,7 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer
 
 from .base import SchedulerProgress
+from .data_parallelism_utils import split_by_replica_idx
 from .text_batch_constructor import (
     SchedulerOutput,
     TextBatchConstructor,
@@ -138,10 +139,18 @@ class TokenGenerationScheduler(Scheduler):
         assert sch_output.batch_size > 0
         batch_to_execute = sch_output.batch_inputs
 
+        # TODO(E2EOPT-399): Add proper data parallelism support. Currently
+        # this naively splits the batch onto different devices.
+        batches = split_by_replica_idx(
+            batch_to_execute,
+            self.scheduler_config.data_parallel_degree,
+            self.batch_constructor.paged_cache,
+        )
+
         # execute the batch
         responses = self.pipeline.execute(
             TextGenerationInputs(
-                batches=[batch_to_execute], num_steps=sch_output.num_steps
+                batches=batches, num_steps=sch_output.num_steps
             )
         )
 

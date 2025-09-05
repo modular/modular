@@ -346,7 +346,7 @@ class Linear(Module, Shardable):
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
-        weight: TensorValue = self.weight
+        weight: TensorValue = self.weight.to(x.device)
         if self.clip_weight:
             weight = clamp(weight, -self.clip_weight, self.clip_weight)
 
@@ -394,7 +394,7 @@ class Linear(Module, Shardable):
             res = x @ weight.T
 
         if self.bias is not None:
-            res += self.bias
+            res += self.bias.to(res.device)
         return res
 
 

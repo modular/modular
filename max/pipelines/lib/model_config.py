@@ -124,6 +124,10 @@ class MAXModelConfig(MAXModelConfigBase):
     pipeline_parallel_degree: int = 1
     """Number of pipeline stages."""
 
+    data_parallel_degree: int = 1
+    """Data-parallelism parameter. The degree to which the model is replicated
+    is dependent on the model type."""
+
     _applied_dtype_cast_from: Optional[SupportedEncoding] = None
     """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 

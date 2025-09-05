@@ -155,7 +155,7 @@ class PagedKVCacheManager(KVCacheManager):
     page_size: int
     """Number of tokens stored per block."""
 
-    total_num_pages: int
+    _total_num_pages: int
     """Total number of blocks allocated per device."""
 
     device_tensors: list[Tensor]

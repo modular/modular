@@ -567,6 +567,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
+    if batch_size == 0:
+        return
+
     @parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
     @always_inline
@@ -704,6 +707,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
+
+    if batch_size == 0:
+        return
 
     @parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
@@ -843,6 +849,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
+
+    if batch_size == 0:
+        return
 
     # Here we decide the quantization scheme for the QKV Tensor.
     alias use_per_tensor = (
@@ -1992,6 +2001,11 @@ fn _flash_attention_dispatch[
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
+
+    var has_inputs = q.dim[0]() > 0
+    if not has_inputs:
+        # no-op if there are no inputs
+        return
 
     @parameter
     @__copy_capture(k, v)

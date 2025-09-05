@@ -104,8 +104,10 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     _log_probabilities_data: dict[int, LogProbabilities] = msgspec.field(
         default_factory=dict
     )
+
     _is_initial_prompt: bool = msgspec.field(default=True)
     _draft_offset: int = msgspec.field(default=0)
+
     target_endpoint: str | None = msgspec.field(default=None)
 
     def __post_init__(self) -> None:

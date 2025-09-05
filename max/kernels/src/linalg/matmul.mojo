@@ -826,6 +826,10 @@ fn matmul[
         "expected DeviceContext to be provided if target != cpu",
     )
 
+    # If any of the dimensions are 0, we can skip the kernel.
+    if c.dim[0]() == 0 or c.dim[1]() == 0:
+        return
+
     @always_inline
     @parameter
     fn description_fn() -> String:

@@ -42,6 +42,7 @@ class Qwen3Config(Llama3Config):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
         pipeline_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         """Override the default Llama3Config.get_kv_params to use head_dim from config.
 
@@ -75,6 +76,7 @@ class Qwen3Config(Llama3Config):
             total_num_layers=huggingface_config.num_hidden_layers
             if pipeline_parallel_degree > 1
             else None,
+            data_parallel_degree=data_parallel_degree,
         )
 
     @staticmethod
@@ -130,6 +132,7 @@ class Qwen3Config(Llama3Config):
         attention_bias: bool = False,
         pipeline_parallel_degree: int = 1,
         tensor_parallel_degree: int = 1,
+        data_parallel_degree: int = 1,
     ) -> Qwen3Config:
         """Generate a Qwen3Config from the provided parameters.
 
@@ -168,6 +171,7 @@ class Qwen3Config(Llama3Config):
             attention_bias=attention_bias,
             pipeline_parallel_degree=pipeline_parallel_degree,
             tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
         )
 
         # Override the KV parameters and attention multiplier with Qwen3-specific calculations
@@ -177,6 +181,7 @@ class Qwen3Config(Llama3Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
             pipeline_parallel_degree=pipeline_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
         )
 
         qwen3_attention_multiplier = Qwen3Config.calculate_attention_multiplier(
@@ -220,5 +225,6 @@ class Qwen3Config(Llama3Config):
             use_subgraphs=base_config.use_subgraphs,
             pipeline_parallel_degree=pipeline_parallel_degree,
             tensor_parallel_degree=tensor_parallel_degree,
+            data_parallel_degree=data_parallel_degree,
             dist_gemm_config=base_config.dist_gemm_config,
         )
