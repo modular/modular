@@ -90,9 +90,7 @@ async def test_served_model_name(app: FastAPI) -> None:
             },
         )
         # Validate response
-        response = CreateChatCompletionResponse.model_validate(
-            raw_response.json()
-        )
+        _ = CreateChatCompletionResponse.model_validate(raw_response.json())
 
         # Make a request to the actual model name
         raw_response = await client.post(
