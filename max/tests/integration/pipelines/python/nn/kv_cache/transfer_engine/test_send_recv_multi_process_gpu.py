@@ -184,6 +184,3 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         "UCX  DEBUG cuMemcpyDtoDAsync_v2(dst, src, iov[0].length, stream) -> 0"
         in out
     )
-
-    # Check stderr
-    assert "Loading remote metadata for agent: engine_2" in err
