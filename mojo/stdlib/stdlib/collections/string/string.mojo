@@ -527,7 +527,7 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=Int(unsafe_uninit_length))
-        self.set_byte_length(Int(unsafe_uninit_length))
+        self._set_byte_length(Int(unsafe_uninit_length))
 
     fn __init__(
         out self,
@@ -876,7 +876,7 @@ struct String(
         var len = self.byte_length()
         self.reserve(UInt(len) + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(Int(len + 1))
+        self._set_byte_length(Int(len + 1))
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -900,7 +900,7 @@ struct String(
             other.unsafe_ptr(),
             other_len,
         )
-        self.set_byte_length(new_len)
+        self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1278,7 +1278,7 @@ struct String(
         else:
             return self._len_or_data
 
-    fn set_byte_length(mut self, new_len: Int):
+    fn _set_byte_length(mut self, new_len: Int):
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
@@ -1812,7 +1812,7 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
-        self.set_byte_length(length)
+        self._set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
@@ -1828,7 +1828,7 @@ struct String(
         self._clear_nul_terminator()
         if UInt(unsafe_uninit_length) > self.capacity():
             self.reserve(UInt(unsafe_uninit_length))
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
@@ -1848,7 +1848,7 @@ struct String(
     fn _inline_string(mut self):
         var length = len(self)
         var new_string = Self()
-        new_string.set_byte_length(length)
+        new_string._set_byte_length(length)
         var dst = UnsafePointer(to=new_string).bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):
