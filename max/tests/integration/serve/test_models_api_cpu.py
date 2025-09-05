@@ -24,7 +24,6 @@ from max.serve.schemas.openai import (
         PipelineConfig(
             model_path="HuggingFaceTB/SmolLM-135M",
             max_length=512,
-            max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.PAGED,
@@ -61,7 +60,6 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
             model_path=MODEL_NAME,
             served_model_name=MODEL_ALIAS,
             max_length=512,
-            max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.PAGED,
@@ -87,6 +85,7 @@ async def test_served_model_name(app: FastAPI) -> None:
                 "model": MODEL_ALIAS,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
+                "max_new_tokens": 3,
             },
         )
         # Validate response
@@ -99,6 +98,7 @@ async def test_served_model_name(app: FastAPI) -> None:
                 "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
+                "max_new_tokens": 3,
             },
         )
         # Validate request failed

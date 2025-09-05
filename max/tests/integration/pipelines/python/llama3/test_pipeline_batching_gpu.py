@@ -38,7 +38,6 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
         pipeline_config.model_config.model_path,
         revision=pipeline_config.model_config.huggingface_model_revision,
         max_length=pipeline_config.max_length,
-        max_new_tokens=pipeline_config.max_new_tokens,
         trust_remote_code=pipeline_config.model_config.trust_remote_code,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )

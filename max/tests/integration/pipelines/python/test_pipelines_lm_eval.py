@@ -45,7 +45,6 @@ def test_pipelines_lm_eval_smollm(tmp_path: Path) -> None:
             f"--pipelines-arg=--model-path={local_model_path}",
             "--pipelines-arg=--quantization-encoding=float32",
             "--pipelines-arg=--max-length=512",
-            "--pipelines-arg=--max-new-tokens=10",
             "--pipelines-arg=--device-memory-utilization=0.3",
             "--lm-eval-arg=--model=local-completions",
             "--lm-eval-arg=--tasks=smol_task",

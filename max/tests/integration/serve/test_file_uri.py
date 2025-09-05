@@ -22,7 +22,6 @@ from PIL import Image
 pipeline_config = PipelineConfig(
     model_path="OpenGVLab/InternVL3-1B-Instruct",
     max_length=512,
-    max_new_tokens=3,
     device_specs=[DeviceSpec.accelerator()],
     quantization_encoding=SupportedEncoding.bfloat16,
     cache_strategy=KVCacheStrategy.PAGED,
@@ -83,6 +82,7 @@ async def test_chat_completion_with_file_uri(
                 ],
                 "stream": False,
                 "top_k": 1,
+                "max_new_tokens": 3,
             },
         )
 
@@ -141,6 +141,7 @@ async def test_file_uri_security_check(app: FastAPI, tmp_path: Path) -> None:
                     ],
                     "stream": False,
                     "top_k": 1,
+                    "max_new_tokens": 3,
                 },
             )
 

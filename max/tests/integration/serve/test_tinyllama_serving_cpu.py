@@ -28,7 +28,6 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 pipeline_config = PipelineConfig(
     model_path=MODEL_NAME,
     max_length=512,
-    max_new_tokens=3,
     device_specs=[DeviceSpec.cpu()],
     quantization_encoding=SupportedEncoding.float32,
     cache_strategy=KVCacheStrategy.PAGED,
@@ -52,6 +51,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
                 "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
+                "max_new_tokens": 3,
             },
         )
         # This is not a streamed completion - There is no [DONE] at the end.
@@ -97,6 +97,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app: FastAPI) -> None:
             "model": MODEL_NAME,
             "prompt": content,
             "temperature": 0.7,
+            "max_new_tokens": 3,
         }
 
     async def main_stream(client: TestClient, msg: str) -> str:

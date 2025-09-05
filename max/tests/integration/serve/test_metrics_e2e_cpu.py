@@ -27,7 +27,6 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
         PipelineConfig(
             model_path=MODEL_NAME,
             max_length=512,
-            max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.PAGED,
@@ -70,6 +69,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                     "model": MODEL_NAME,
                     "messages": [{"role": "user", "content": "tell me a joke"}],
                     "stream": False,
+                    "max_new_tokens": 3,
                 },
             )
             # This is not a streamed completion - There is no [DONE] at the end.
@@ -104,7 +104,6 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         PipelineConfig(
             model_path=MODEL_NAME,
             max_length=512,
-            max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.PAGED,
@@ -144,6 +143,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                     "model": MODEL_NAME,
                     "messages": [{"role": "user", "content": "tell me a joke"}],
                     "stream": False,
+                    "max_new_tokens": 3,
                 },
             )
 
@@ -178,7 +178,6 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
         PipelineConfig(
             model_path=MODEL_NAME,
             max_length=512,
-            max_new_tokens=3,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
             cache_strategy=KVCacheStrategy.PAGED,
