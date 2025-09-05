@@ -362,6 +362,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
   [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
 
+- `File.read() -> String` now reads the given amount of **unicode codepoints**
+  not bytes.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will

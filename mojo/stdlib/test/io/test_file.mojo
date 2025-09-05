@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.string._utf8 import _is_valid_utf8
 from pathlib import Path, _dir_of_current_file
 from tempfile import gettempdir
 
@@ -19,8 +20,23 @@ from testing import assert_equal, assert_true
 alias DUMMY_FILE_SIZE: UInt = 954
 
 
+fn _dir(file: String) -> Path:
+    try:
+        return _dir_of_current_file() / file
+    except:
+        return Path(file)
+
+
+alias DUMMY_FILE = _dir("test_file_dummy_input_ASCII.txt")
+alias UN_charter_AR = _dir("UN_charter_AR.txt")
+alias UN_charter_EN = _dir("UN_charter_EN.txt")
+alias UN_charter_ES = _dir("UN_charter_ES.txt")
+alias UN_charter_RU = _dir("UN_charter_RU.txt")
+alias UN_charter_zh_CN = _dir("UN_charter_zh-CN.txt")
+
+
 def test_file_read():
-    var path = _dir_of_current_file() / "test_file_dummy_input.txt"
+    var path = DUMMY_FILE
     with open(path, "r") as f:
         assert_true(
             f.read().startswith(
@@ -30,10 +46,7 @@ def test_file_read():
 
 
 def test_file_read_multi():
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         assert_equal(f.read(12), "Lorem ipsum ")
         assert_equal(f.read(6), "dolor ")
         assert_true(
@@ -42,10 +55,7 @@ def test_file_read_multi():
 
 
 def test_file_read_bytes_multi():
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var bytes1 = f.read_bytes(12)
         assert_equal(len(bytes1), 12, "12 bytes")
         var string1 = String(bytes=bytes1)
@@ -66,25 +76,19 @@ def test_file_read_bytes_multi():
 
 
 def test_file_read_bytes_all():
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var bytes_all = f.read_bytes(-1)
         assert_equal(len(bytes_all), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_all():
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var all = f.read(-1)
         assert_equal(len(all), Int(DUMMY_FILE_SIZE))
 
 
 def test_file_read_path():
-    var file_path = _dir_of_current_file() / "test_file_dummy_input.txt"
+    var file_path = DUMMY_FILE
 
     with open(file_path, "r") as f:
         assert_true(
@@ -95,7 +99,7 @@ def test_file_read_path():
 
 
 def test_file_path_direct_read():
-    var file_path = _dir_of_current_file() / "test_file_dummy_input.txt"
+    var file_path = DUMMY_FILE
     assert_true(
         file_path.read_text().startswith(
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
@@ -104,10 +108,7 @@ def test_file_path_direct_read():
 
 
 def test_file_read_context():
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         assert_true(
             f.read().startswith(
                 "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
@@ -118,10 +119,7 @@ def test_file_read_context():
 def test_file_read_to_address():
     alias DUMMY_FILE_SIZE = 954
     # Test buffer size > file size
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer = InlineArray[UInt8, size=1000](fill=0)
         assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
         assert_equal(buffer[0], 76)  # L
@@ -133,34 +131,22 @@ def test_file_read_to_address():
         assert_equal(buffer[56], 10)  # <LF>
 
     # Test buffer size < file size
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer = InlineArray[UInt8, size=500](fill=0)
         assert_equal(f.read(buffer), 500)
 
     # Test buffer size == file size
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer = InlineArray[UInt8, size=DUMMY_FILE_SIZE](fill=0)
         assert_equal(f.read(buffer), DUMMY_FILE_SIZE)
 
     # Test buffer size 0
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer = List[UInt8]()
         assert_equal(f.read(buffer), 0)
 
     # Test sequential reads of different sizes
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer_30 = InlineArray[UInt8, size=30](fill=0)
         var buffer_1 = InlineArray[UInt8, size=1](fill=0)
         var buffer_2 = InlineArray[UInt8, size=2](fill=0)
@@ -173,10 +159,7 @@ def test_file_read_to_address():
         assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE - (30 + 1 + 2 + 100))
 
     # Test read after EOF
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var buffer_1000 = InlineArray[UInt8, size=1000](fill=0)
         assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE)
         assert_equal(f.read(buffer_1000), 0)
@@ -185,10 +168,7 @@ def test_file_read_to_address():
 def test_file_seek():
     import os
 
-    with open(
-        _dir_of_current_file() / "test_file_dummy_input.txt",
-        "r",
-    ) as f:
+    with open(DUMMY_FILE, "r") as f:
         var pos = f.seek(6)
         assert_equal(pos, 6)
 
@@ -299,6 +279,36 @@ def test_file_get_raw_fd():
     f3.close()
 
 
+def test_file_read_utf8():
+    def _test[overallocate: Bool](file: Path):
+        # read the whole file
+        with open(file, "r") as f:
+            assert_true(
+                _is_valid_utf8(f.read[overallocate=overallocate]().as_bytes())
+            )
+
+        # read several chunk sizes
+        with open(file, "r") as f:
+            for codepoints in range(4096):
+                _ = f.seek(0)
+                var read = f.read[overallocate=overallocate](codepoints)
+                assert_true(_is_valid_utf8(read.as_bytes()))
+                assert_true(read.byte_length() >= codepoints)
+                assert_equal(
+                    read.as_string_slice().char_length(), UInt(codepoints)
+                )
+
+    for file in [
+        UN_charter_AR,
+        UN_charter_EN,
+        UN_charter_ES,
+        UN_charter_RU,
+        UN_charter_zh_CN,
+    ]:
+        _test[overallocate=True](file)
+        _test[overallocate=False](file)
+
+
 def main():
     test_file_read()
     test_file_read_multi()
@@ -315,3 +325,4 @@ def main():
     test_file_write_span()
     test_file_write_again()
     test_file_get_raw_fd()
+    test_file_read_utf8()
