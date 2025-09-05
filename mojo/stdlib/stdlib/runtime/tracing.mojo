@@ -14,7 +14,7 @@
 
 
 from collections.optional import OptionalReg, Optional
-from sys import external_call
+from sys import external_call, stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing
@@ -287,6 +287,15 @@ fn _is_gpu_profiler_detailed_enabled[
 
 
 @always_inline
+fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
+    @parameter
+    if not is_defined["MODULAR_ENABLE_OP_LOGGING"]():
+        return False
+
+    return level == TraceLevel.OP
+
+
+@always_inline
 fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is enabled for the specified level."""
     return is_profiling_enabled[TraceCategory.MAX, level]()
@@ -296,6 +305,27 @@ fn _is_mojo_profiling_enabled[level: TraceLevel]() -> Bool:
 fn _is_mojo_profiling_disabled[level: TraceLevel]() -> Bool:
     """Returns whether Mojo profiling is disabled for the specified level."""
     return is_profiling_disabled[TraceCategory.MAX, level]()
+
+
+@always_inline
+fn _validate_single_tracing_enabled() -> Bool:
+    """Validates that at most one tracing system is enabled."""
+    var enabled_count = 0
+
+    # Check AsyncRT profiling
+    if _build_info_asyncrt_max_profiling_level():
+        enabled_count += 1
+
+    # Check GPU profiling
+    if _gpu_is_enabled():
+        enabled_count += 1
+
+    # Check op logging
+    @parameter
+    if is_defined["MODULAR_ENABLE_OP_LOGGING"]():
+        enabled_count += 1
+
+    return enabled_count <= 1
 
 
 @always_inline
@@ -421,6 +451,12 @@ struct Trace[
             "the AsyncRT profiler only supports `StaticString` names",
         )
 
+        # Validate that only one tracing system is enabled
+        debug_assert(
+            _validate_single_tracing_enabled(),
+            "only one tracing system should be enabled at a time",
+        )
+
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
             self._name_value = _name_value^
@@ -431,7 +467,10 @@ struct Trace[
             else:
                 self.detail = ""
             self.int_payload = None
-        elif is_profiling_enabled[category, level]():
+        elif (
+            is_profiling_enabled[category, level]()
+            or _is_op_logging_enabled[level]()
+        ):
             self._name_value = _name_value^
             self.detail = detail
 
@@ -566,6 +605,14 @@ struct Trace[
             return
 
         @parameter
+        if _is_op_logging_enabled[level]():
+            # Since Mojo does not support module-level globals yet, we need to
+            # put this atomic counter variable in C++ code.
+            self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
+            self._emit_op_log("LAUNCH")
+            return
+
+        @parameter
         if is_profiling_disabled[category, level]():
             return
 
@@ -630,6 +677,11 @@ struct Trace[
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
             _end_gpu_range(gpu_tracing.RangeID(self.event_id))
+            return
+
+        @parameter
+        if _is_op_logging_enabled[level]():
+            self._emit_op_log("COMPLETE")
             return
 
         @parameter
@@ -704,6 +756,25 @@ struct Trace[
         This finishes recording of the trace event, similar to __exit__.
         """
         self.__exit__()
+
+    fn _emit_op_log(self, action: StaticString) -> None:
+        """
+        Emit a log message for op tracing to stderr.
+        """
+        var detail = self.detail
+        if self.int_payload:
+            detail += ":" + String(self.int_payload.value())
+        print(
+            "[OP] "
+            + action
+            + " "
+            + self.name()
+            + " [id="
+            + String(self.event_id)
+            + "] "
+            + detail,
+            file=stderr,
+        )
 
 
 fn get_current_trace_id[level: TraceLevel]() -> Int:
