@@ -40,6 +40,10 @@ from utils import Variant
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
 struct _NoneType(ImplicitlyCopyable, Movable):
+    alias __copyinit__is_trivial = True
+    alias __moveinit__is_trivial = True
+    alias __del__is_trivial = True
+
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -86,6 +90,9 @@ struct Optional[T: Copyable & Movable](
     alias _type = Variant[_NoneType, T]
     var _value: Self._type
 
+    alias __copyinit__is_trivial = Self._type.__copyinit__is_trivial
+    alias __moveinit__is_trivial = Self._type.__moveinit__is_trivial
+    alias __del__is_trivial = Self._type.__del__is_trivial
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
