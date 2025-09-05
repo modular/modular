@@ -11,7 +11,7 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib import PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -49,25 +49,14 @@ def decode_and_strip(text: bytes, prefix: str | None):
     return decoded
 
 
-class MockModelConfig(MAXModelConfig):
-    def __init__(self):
-        self.served_model_name = "echo"
-
-
-class MockPipelineConfig(PipelineConfig):
-    def __init__(self):
-        self.max_batch_size = 1
-        self._model_config = MockModelConfig()
-
-
 @pytest.fixture(scope="function")
-def stream_app() -> FastAPI:
+def stream_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=EchoTokenGenerator,
-        pipeline_config=MockPipelineConfig(),
+        pipeline_config=mock_pipeline_config,
         tokenizer=EchoPipelineTokenizer(),
     )
     fast_app = fastapi_app(settings, serving_settings)
