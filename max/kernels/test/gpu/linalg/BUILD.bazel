@@ -63,10 +63,8 @@ _GPU_MEMORY = {
     "test_matmul_sm90_hilbert.mojo": "1",
     "test_sm90_splitk.mojo": "1.5",
     "test_vendor_blas.mojo": "3",
-    "test_matmul_sm100_2.mojo": "1",
-    "test_matmul_sm100_4.mojo": "1",
-    "test_matmul_sm100_5.mojo": "1",
     "test_warp_specialization_gemm_with_cluster.mojo": "2",
+    "test_matmul_sm100.mojo": "3",
 }
 
 [
