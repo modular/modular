@@ -1480,6 +1480,10 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   envAttrs.set("MODULAR_ASYNCRT_MAX_PROFILING_LEVEL",
                IntegerAttr::get(IndexType::get(ctx),
                                 MODULAR_ASYNCRT_MAX_PROFILING_LEVEL));
+#ifdef MODULAR_ENABLE_OP_LOGGING
+  envAttrs.set("MODULAR_ENABLE_OP_LOGGING",
+               IntegerAttr::get(IndexType::get(ctx), 1));
+#endif // MODULAR_ENABLE_OP_LOGGING
 
   if (compileCtx) {
     for (auto entry : compileCtx->mojoDefines) {

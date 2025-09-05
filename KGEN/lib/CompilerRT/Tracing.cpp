@@ -6,6 +6,7 @@
 
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/SymbolExport.h"
+#include <atomic>
 
 using namespace M;
 
@@ -56,4 +57,10 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerSetCurrentId(size_t id) {
   // NOTE: Must be always enabled.
   ProfilerEntry<true, Trace::kMojo>(id).setAsCurrentId();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_GetNextOpId() {
+  static std::atomic<size_t> opIdCounter{0};
+  return opIdCounter.fetch_add(1);
 }

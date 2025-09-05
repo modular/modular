@@ -5,6 +5,7 @@ load(
     "ALLOW_UNUSED_TAG",
     "ASYNCRT_PROFILING_LOCAL_DEFINES",
     "CONFIG_SECTION_LOCAL_DEFINES",
+    "MAX_LOG_OPS_LOCAL_DEFINES",
 )
 load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 
@@ -832,7 +833,7 @@ modular_cc_library(
     name = "KGENDialect",
     srcs = glob(["lib/KGENDialect/*.cpp"]),
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
-    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + selects.with_or({
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + MAX_LOG_OPS_LOCAL_DEFINES + selects.with_or({
         ("//:modular_config_debug_modular", "//:modular_config_debug_everything"): ["BUILD_TYPE=debug"],
         ("//:modular_config_default", "//:modular_config_asan", "//:modular_config_tsan", "//:modular_config_ubsan"): ["BUILD_TYPE=relwithdebinfo"],
         ("//:modular_config_ci_build", "//:modular_config_release", "//:modular_config_production"): ["BUILD_TYPE=release"],
