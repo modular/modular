@@ -1313,6 +1313,40 @@ class FunctionType(max._core.Type):
     @property
     def results(self) -> Sequence[max._core.Type]: ...
 
+class GraphType(max._core.Type):
+    """
+    Syntax:
+
+    ```
+    // Function types may have multiple results.
+    function-result-type ::= type-list-parens | non-function-type
+    function-type ::= type-list-parens `->` function-result-type
+    ```
+
+    The function type can be thought of as a function signature. It consists of
+    a list of formal parameter types and a list of formal result types.
+
+    #### Example:
+
+    ```mlir
+    func.func @add_one(%arg0 : i64) -> i64 {
+      %c1 = arith.constant 1 : i64
+      %0 = arith.addi %arg0, %c1 : i64
+      return %0 : i64
+    }
+    ```
+    """
+
+    def __init__(
+        self,
+        inputs: Sequence[max._core.Type] = [],
+        results: Sequence[max._core.Type] = [],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Type]: ...
+    @property
+    def results(self) -> Sequence[max._core.Type]: ...
+
 class IndexType(max._core.Type):
     """
     Syntax:
