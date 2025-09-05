@@ -233,9 +233,6 @@ struct cudnnForwardMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -791,9 +788,6 @@ struct cudnnSeqDataAxis_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

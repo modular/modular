@@ -28,9 +28,6 @@ struct LibraryProperty(EqualityComparable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     @no_inline
     fn __str__(self) -> String:
         if self == Self.MAJOR_VERSION:
@@ -72,9 +69,6 @@ struct Status(EqualityComparable, Identifiable, Stringable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -149,9 +143,6 @@ struct Type(EqualityComparable, Identifiable, Stringable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -195,9 +186,6 @@ struct Compatibility(EqualityComparable, Identifiable, Stringable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -231,9 +219,6 @@ struct Property(EqualityComparable, Identifiable, Stringable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

@@ -100,17 +100,6 @@ struct Level(
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Returns True if this level does not equal the other level.
-
-        Args:
-            other: The level to compare with.
-
-        Returns:
-            Bool: True if the levels are not equal, False otherwise.
-        """
-        return not (self == other)
-
     fn __gt__(self, other: Self) -> Bool:
         """Returns True if this level is greater than the other level.
 

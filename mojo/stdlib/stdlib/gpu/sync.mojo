@@ -207,17 +207,6 @@ struct AMDScheduleBarrierMask(EqualityComparable, Intable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Compares two `AMDScheduleBarrierMask` instances for inequality.
-
-        Args:
-            other: The other `AMDScheduleBarrierMask` to compare with.
-
-        Returns:
-            True if the masks have different values, False otherwise.
-        """
-        return not (self == other)
-
     fn __str__(self) -> String:
         """Returns a string representation of the `AMDScheduleBarrierMask`.
 

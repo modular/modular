@@ -87,9 +87,6 @@ struct cudnnSoftmaxMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -146,9 +143,6 @@ struct cudnnReduceTensorIndices_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -337,9 +331,6 @@ struct cudnnReduceTensorOp_t(EqualityComparable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -440,9 +431,6 @@ struct cudnnDeterminism_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -496,9 +484,6 @@ struct cudnnStatus_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -562,9 +547,6 @@ struct cudnnCTCLossAlgo_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -624,9 +606,6 @@ struct cudnnTensorFormat_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -789,9 +768,6 @@ struct cudnnNormAlgo_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -831,9 +807,6 @@ struct cudnnOpTensorOp_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1129,9 +1102,6 @@ struct cudnnActivationMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1212,9 +1182,6 @@ struct cudnnConvolutionBwdDataAlgo_t(
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1310,9 +1277,6 @@ struct cudnnSamplerType_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1373,9 +1337,6 @@ struct cudnnNormMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1488,9 +1449,6 @@ struct cudnnNormOps_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1561,9 +1519,6 @@ struct cudnnSoftmaxAlgorithm_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1648,9 +1603,6 @@ struct cudnnBatchNormOps_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1695,9 +1647,6 @@ struct cudnnConvolutionFwdAlgo_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1938,9 +1887,6 @@ struct cudnnLRNMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -2060,9 +2006,6 @@ struct cudnnFoldingDirection_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -2120,9 +2063,6 @@ struct cudnnErrQueryMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2278,9 +2218,6 @@ struct cudnnBatchNormMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -2365,9 +2302,6 @@ struct cudnnSeverity_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -2413,9 +2347,6 @@ struct cudnnMathType_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -2455,9 +2386,6 @@ struct cudnnNanPropagation_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2500,9 +2428,6 @@ struct cudnnRNNAlgo_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2636,9 +2561,6 @@ struct cudnnDataType_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2823,9 +2745,6 @@ struct cudnnIndicesType_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -3112,9 +3031,6 @@ struct cudnnConvolutionBwdFilterAlgo_t(
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -3265,9 +3181,6 @@ struct cudnnPoolingMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -3359,9 +3272,6 @@ struct cudnnDivNormMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

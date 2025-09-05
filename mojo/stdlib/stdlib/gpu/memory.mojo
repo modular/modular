@@ -137,17 +137,6 @@ struct CacheOperation(EqualityComparable, Identifiable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two CacheOperation instances are not equal.
-
-        Args:
-            other: The CacheOperation to compare against.
-
-        Returns:
-            True if the operations are not equal, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two CacheOperation instances are identical.
 
@@ -262,17 +251,6 @@ struct CacheEviction(EqualityComparable, Identifiable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two CacheEviction instances are not equal.
-
-        Args:
-            other: The CacheEviction to compare against.
-
-        Returns:
-            True if the eviction policies are not equal, False otherwise.
-        """
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         """Tests if two CacheEviction instances are identical.
 
@@ -343,17 +321,6 @@ struct Fill(EqualityComparable, Identifiable):
             True if the fill patterns are equal, False otherwise.
         """
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two Fill instances have different fill patterns.
-
-        Args:
-            other: The Fill instance to compare against.
-
-        Returns:
-            True if the fill patterns are different, False otherwise.
-        """
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         """Tests if two Fill instances are identical.
@@ -534,17 +501,6 @@ struct ReduceOp(EqualityComparable, Identifiable):
             True if the reduction operations are equal, False otherwise.
         """
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        """Tests if two ReduceOp instances are not equal.
-
-        Args:
-            other: The ReduceOp instance to compare against.
-
-        Returns:
-            True if the reduction operations are different, False otherwise.
-        """
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         """Tests if two ReduceOp instances are identical.

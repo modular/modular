@@ -795,17 +795,6 @@ struct ReductionMethod(EqualityComparable, Identifiable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        """Checks if two ReductionMethod are not equal.
-
-        Args:
-            other: The other ReductionMethod to compare.
-
-        Returns:
-            True if the ReductionMethod are not equal, false otherwise.
-        """
-        return self._value != other._value
-
     fn __is__(self, other: Self) -> Bool:
         """Checks if two ReductionMethod are identical.
 

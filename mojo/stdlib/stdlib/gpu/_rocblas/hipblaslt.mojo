@@ -49,9 +49,6 @@ struct Status(EqualityComparable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

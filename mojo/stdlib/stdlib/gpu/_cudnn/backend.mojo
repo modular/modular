@@ -112,9 +112,6 @@ struct cudnnBackendKnobType_t(EqualityComparable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -270,9 +267,6 @@ struct cudnnPointwiseMode_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -442,9 +436,6 @@ struct cudnnBackendDescriptorType_t(EqualityComparable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -599,9 +590,6 @@ struct cudnnBackendBehaviorNote_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -649,9 +637,6 @@ struct cudnnBackendLayoutType_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -694,9 +679,6 @@ struct cudnnBackendNormFwdPhase_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -735,9 +717,6 @@ struct cudnnBackendHeurMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -794,9 +773,6 @@ struct cudnnBackendNumericalNote_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -892,9 +868,6 @@ struct cudnnBackendAttributeType_t(EqualityComparable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -988,9 +961,6 @@ struct cudnnRngDistribution_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1037,9 +1007,6 @@ struct cudnnBackendTensorReordering_t(
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1290,9 +1257,6 @@ struct cudnnBackendAttributeName_t(EqualityComparable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -1847,9 +1811,6 @@ struct cudnnBackendNormMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1892,9 +1853,6 @@ struct cudnnSignalMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1934,9 +1892,6 @@ struct cudnnBnFinalizeStatsMode_t(EqualityComparable, Identifiable, Writable):
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -1971,9 +1926,6 @@ struct cudnnGenStatsMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2036,9 +1988,6 @@ struct cudnnResampleMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -2115,9 +2064,6 @@ struct cudnnPaddingMode_t(EqualityComparable, Identifiable, Writable):
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
