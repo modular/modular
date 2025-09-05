@@ -1090,10 +1090,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A StringSlice merged with the other origin.
         """
-        return __type_of(result)(
-            ptr=self.unsafe_ptr().origin_cast[result.mut, result.origin](),
-            length=UInt(len(self)),
-        )
+        return {
+            ptr = self.unsafe_ptr().origin_cast[result.mut, result.origin](),
+            length = UInt(len(self)),
+        }
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -2629,7 +2629,7 @@ fn _split[
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
         var i_len = len(iterator) + 2
-        output = __type_of(output)(capacity=i_len)
+        output = {capacity = i_len}
         output.append(S(ptr=ptr, length=0))
         for s in iterator:
             output.append(s)
@@ -2642,7 +2642,7 @@ fn _split[
     @parameter
     if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
-    output = __type_of(output)(capacity=amnt)
+    output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
     var lhs = 0
     var rhs: Int
@@ -2680,7 +2680,7 @@ fn _split[
     @parameter
     if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
-    output = __type_of(output)(capacity=amnt)
+    output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
     var lhs = 0
     var rhs: Int

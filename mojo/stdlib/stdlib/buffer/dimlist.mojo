@@ -725,7 +725,7 @@ fn _make_tuple[
     for idx in range(size):
         tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
 
-    return __type_of(result)(tup)
+    return {tup}
 
 
 @always_inline
@@ -756,4 +756,4 @@ fn _make_partially_static_index_list[
                 result._int_type(static_list.at[idx]().get())
             )
 
-    return __type_of(result)(tup)
+    return {tup}
