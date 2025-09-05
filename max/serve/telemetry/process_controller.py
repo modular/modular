@@ -167,6 +167,7 @@ async def start_process_consumer(
         poll_s=100e-3,
         max_time_s=settings.telemetry_worker_spawn_timeout,
         unhealthy_poll_s=500e-3,
+        use_heartbeat=settings.use_heartbeat,
     )
 
     healthy = await monitor.until_healthy()

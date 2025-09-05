@@ -92,7 +92,7 @@ async def start_kv_cache_service(
         args=(pc, settings, dispatcher_factory),
     )
     process.start()
-    monitor = ProcessMonitor(pc, process)
+    monitor = ProcessMonitor(pc, process, use_heartbeat=settings.use_heartbeat)
 
     # before progressing, observe the kvcache agent process to be healthy or dead
     dt = asyncio.create_task(monitor.until_dead())

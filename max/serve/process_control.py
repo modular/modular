@@ -170,6 +170,7 @@ class ProcessMonitor:
     max_time_s: Optional[float] = 10.0
     unhealthy_poll_s: float = 200e-3
     unhealthy_max_time_s: Optional[float] = None
+    use_heartbeat: bool = False
 
     async def until_started(self) -> bool:
         return await _until_true(
@@ -200,6 +201,12 @@ class ProcessMonitor:
             self.unhealthy_poll_s,
             self.unhealthy_max_time_s,
         )
+
+    def is_healthy(self) -> bool:
+        if self.use_heartbeat:
+            return self.pc.is_healthy()
+
+        return self.proc.is_alive()
 
     async def wait_for_startup(
         self, timeout: Optional[float] = 10.0, shutdown_on_failure: bool = False

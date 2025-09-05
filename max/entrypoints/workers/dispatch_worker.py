@@ -81,7 +81,7 @@ async def start_dispatch_worker(
     )
 
     process.start()
-    monitor = ProcessMonitor(pc, process)
+    monitor = ProcessMonitor(pc, process, use_heartbeat=settings.use_heartbeat)
 
     await monitor.wait_for_startup(timeout=10, shutdown_on_failure=True)
     logger.info("Dispatcher Worker started successfully!")

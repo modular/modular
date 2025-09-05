@@ -300,6 +300,7 @@ async def start_model_worker(
         poll_s=10e-3,
         max_time_s=settings.mw_timeout_s,
         unhealthy_poll_s=200e-3,
+        use_heartbeat=settings.use_heartbeat,
     )
 
     if not settings.use_heartbeat:
