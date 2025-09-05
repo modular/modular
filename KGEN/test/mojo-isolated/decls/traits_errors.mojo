@@ -45,6 +45,7 @@ fn different_trait_types[
 # expected-note @below {{trait 'SimpleTrait' declared here}}
 trait SimpleTrait:
     # expected-note @below {{required function 'some_method' is not implemented}}
+    # expected-note @below {{no 'some_method' candidates have type 'fn(self: ParamDoesNotConform[x]) -> None'}}
     fn some_method(self):
         pass
 
@@ -64,6 +65,12 @@ fn test_many_things_of_specified_trait[
 # expected-error @below {{'DoesNotConform' does not implement all requirements for 'SimpleTrait'}}
 struct DoesNotConform(SimpleTrait):
     pass
+
+# expected-error @below {{'ParamDoesNotConform[x]' does not implement all requirements for 'SimpleTrait'}}
+struct ParamDoesNotConform[x: Int](SimpleTrait):
+    # expected-note @below {{candidate declared here with type 'fn(self: ParamDoesNotConform[x], y: Int) -> None' (specialized from 'fn[Int](self: ParamDoesNotConform[$0], y: Int) -> None')}}
+    fn some_method(self, y: Int):
+        pass
 
 
 fn call_many_things_of_specified_trait(a: TraitStruct):
