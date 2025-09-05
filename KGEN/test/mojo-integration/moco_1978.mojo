@@ -8,7 +8,7 @@
 
 
 fn f0(not_used: String, values: List[List[String]], i: Int) -> List[String]:
-    return values[i]
+    return values[i].copy()
 
 
 fn main():
