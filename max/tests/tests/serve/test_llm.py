@@ -25,7 +25,11 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.lib import IdentityPipelineTokenizer, PipelineConfig
+from max.pipelines.lib import (
+    IdentityPipelineTokenizer,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -47,9 +51,15 @@ class MockContext(Mock):
         return self.status.is_done
 
 
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self.served_model_name = "test"
+
+
 class MockPipelineConfig(PipelineConfig):
     def __init__(self):
         self.max_batch_size = 1
+        self._model_config = MockModelConfig()
 
 
 class MockValueErrorTokenGenerator(
@@ -107,9 +117,8 @@ def token_generator(request):  # noqa: ANN001
 @pytest.fixture(scope="function")
 def app(token_generator):  # noqa: ANN001
     """Fixture for a FastAPI app using a given pipeline."""
-    model_name, model_factory = token_generator
+    _, model_factory = token_generator
     serving_settings = ServingTokenGeneratorSettings(
-        model_name=model_name,
         model_factory=model_factory,
         pipeline_config=MockPipelineConfig(),
         tokenizer=MockTokenizer(),

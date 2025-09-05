@@ -6,7 +6,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import (
@@ -17,9 +17,15 @@ from max.serve.router import openai_routes
 from max.serve.schemas.openai import InputItem, PromptItem
 
 
+class MockModelConfig(MAXModelConfig):
+    def __init__(self):
+        self.served_model_name = "echo"
+
+
 class MockPipelineConfig(PipelineConfig):
     def __init__(self):
         self.max_batch_size = 1
+        self._model_config = MockModelConfig()
 
 
 @pytest.fixture
@@ -29,7 +35,6 @@ def app():
     )
 
     pipeline_settings = ServingTokenGeneratorSettings(
-        model_name="echo",
         model_factory=EchoTokenGenerator,
         pipeline_config=MockPipelineConfig(),
         tokenizer=EchoPipelineTokenizer(),
