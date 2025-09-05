@@ -349,7 +349,9 @@ class Graph:
             )
             builder = OpBuilder(_module.body.end)
 
-            op = builder.create(_mo.GraphOp, loc)(
+            op = _mo.GraphOp(
+                builder,
+                loc,
                 name=name,
                 input_types=[t.to_mlir() for t in input_types],
                 result_types=[],
