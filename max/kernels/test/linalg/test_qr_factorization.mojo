@@ -99,7 +99,7 @@ fn create_vector[
         __type_of(result.runtime_layout.shape)(m),
         __type_of(result.runtime_layout.stride)(1),
     )
-    return __type_of(result)(ptr, dynamic_layout)
+    return {ptr, dynamic_layout}
 
 
 fn create_tensor[
@@ -114,7 +114,7 @@ fn create_tensor[
         __type_of(result.runtime_layout.shape)(m, n),
         __type_of(result.runtime_layout.stride)(1, m),
     )
-    return __type_of(result)(ptr, dynamic_layout)
+    return {ptr, dynamic_layout}
 
 
 def main():

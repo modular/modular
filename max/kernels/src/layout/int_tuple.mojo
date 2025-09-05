@@ -1579,12 +1579,12 @@ fn zip(
         The resulting zip iterator for the input `IntTuple`s.
     """
     alias common_type = Pointer[IntTuple, __origin_of(a, b)]
-    return __type_of(result)(
+    return {
         InlineArray[common_type, 2](
             rebind[common_type](Pointer(to=a)),
             rebind[common_type](Pointer(to=b)),
         )
-    )
+    }
 
 
 @always_inline("nodebug")
@@ -1608,13 +1608,13 @@ fn zip(
         The resulting zip iterator for the input `IntTuple`s.
     """
     alias common_type = Pointer[IntTuple, __origin_of(a, b, c)]
-    return __type_of(result)(
+    return {
         InlineArray[common_type, 3](
             rebind[common_type](Pointer(to=a)),
             rebind[common_type](Pointer(to=b)),
             rebind[common_type](Pointer(to=c)),
         )
-    )
+    }
 
 
 # Python-style reduce

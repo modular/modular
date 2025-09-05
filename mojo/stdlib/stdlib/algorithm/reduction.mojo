@@ -75,11 +75,11 @@ fn _get_nd_indices_from_flat_index(
     @parameter
     if shape.size == 2:
         if skip_dim == 1:
-            return __type_of(shape)(flat_index, 0)
+            return {flat_index, 0}
         else:
-            return __type_of(shape)(0, flat_index)
+            return {0, flat_index}
 
-    var out = __type_of(shape)()
+    var out: __type_of(shape) = {}
     var curr_index = flat_index
 
     @parameter

@@ -132,7 +132,7 @@ fn correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = __type_of(u)()
+    var w_val: __type_of(u) = {}
     if w:
         w_val = __type_of(u).alloc(len)
         _div(w_val, w.value(), _sum(w.value(), len), len)

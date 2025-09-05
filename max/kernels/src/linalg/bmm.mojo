@@ -83,7 +83,7 @@ alias elementwise_epilogue_type = fn[
 fn _get_batch_dims[
     rank: Int
 ](flat_index: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
-    var out = __type_of(shape)()
+    var out: __type_of(shape) = {}
     var curr_index = flat_index
 
     @parameter
