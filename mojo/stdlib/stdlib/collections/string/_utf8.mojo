@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from base64._b64encode import _sub_with_saturation
-from sys import simd_width_of
+from sys import simd_width_of, is_compile_time
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
@@ -162,6 +162,44 @@ fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, **_]) -> Bool:
     return all(has_error.eq(0))
 
 
+fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, **_]) -> Bool:
+    var ptr = span.unsafe_ptr()
+    var length = UInt(len(span))
+    var offset = UInt(0)
+
+    while offset < length:
+        var b0 = ptr[offset]
+        var byte_type = _utf8_byte_type(b0)
+        if byte_type == 0:
+            offset += 1
+            continue
+        elif byte_type == 1:
+            return False
+
+        for i in range(1, byte_type):
+            var idx = offset + i
+            if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
+                return False
+
+        # special unicode ranges
+        var b1 = ptr[offset + 1]
+        if byte_type == 2 and b0 < UInt8(0b1100_0010):
+            return False
+        elif b0 == 0xE0 and b1 < UInt8(0xA0):
+            return False
+        elif b0 == 0xED and b1 > UInt8(0x9F):
+            return False
+        elif b0 == 0xF0 and b1 < UInt8(0x90):
+            return False
+        elif b0 == 0xF4 and b1 > UInt8(0x8F):
+            return False
+
+        offset += UInt(byte_type)
+
+    return True
+
+
+@always_inline("nodebug")
 fn _is_valid_utf8(span: Span[mut=False, Byte, **_]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
@@ -178,16 +216,19 @@ fn _is_valid_utf8(span: Span[mut=False, Byte, **_]) -> Bool:
     Code Points        | First Byte | Second Byte | Third Byte | Fourth Byte |
     :----------        | :--------- | :---------- | :--------- | :---------- |
     U+0000..U+007F     | 00..7F     |             |            |             |
-    U+0080..U+07FF     | C2..DF     | 80..BF      |            |             |
-    U+0800..U+0FFF     | E0         | ***A0***..BF| 80..BF     |             |
+    U+0080..U+07FF     | **C2**..DF | 80..BF      |            |             |
+    U+0800..U+0FFF     | E0         | **A0**..BF  | 80..BF     |             |
     U+1000..U+CFFF     | E1..EC     | 80..BF      | 80..BF     |             |
-    U+D000..U+D7FF     | ED         | 80..***9F***| 80..BF     |             |
+    U+D000..U+D7FF     | ED         | 80..**9F**  | 80..BF     |             |
     U+E000..U+FFFF     | EE..EF     | 80..BF      | 80..BF     |             |
-    U+10000..U+3FFFF   | F0         | ***90***..BF| 80..BF     | 80..BF      |
+    U+10000..U+3FFFF   | F0         | **90**..BF  | 80..BF     | 80..BF      |
     U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
-    U+100000..U+10FFFF | F4         | 80..***8F***| 80..BF     | 80..BF      |
+    U+100000..U+10FFFF | F4         | 80..**8F**  | 80..BF     | 80..BF      |
     """
-    return _is_valid_utf8_runtime(span)
+    if is_compile_time():
+        return _is_valid_utf8_comptime(span)
+    else:
+        return _is_valid_utf8_runtime(span)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -236,7 +277,12 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    return count_leading_zeros(~b)
+    return (
+        b.ge(0b1000_0000).cast[DType.uint8]()
+        + b.ge(0b1100_0000).cast[DType.uint8]()
+        + b.ge(0b1110_0000).cast[DType.uint8]()
+        + b.ge(0b1111_0000).cast[DType.uint8]()
+    )
 
 
 @always_inline
