@@ -410,16 +410,6 @@ public:
   /// soon as possible.
   Context *context;
 
-  //===--------------------------------------------------------------------===//
-  // Kernel Logging
-  //===--------------------------------------------------------------------===//
-
-  /// Set whether kernel logging is enabled for this runtime.
-  void setKernelLogging(bool enabled) { kernelLogging = enabled; }
-
-  /// Get whether kernel logging is enabled for this runtime.
-  bool isKernelLoggingEnabled() const { return kernelLogging; }
-
 private:
   Runtime(const Runtime &) = delete;
   void operator=(const Runtime &) = delete;
@@ -449,9 +439,6 @@ private:
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
-
-  /// Whether kernel logging is enabled for this runtime
-  bool kernelLogging = false;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
 };
