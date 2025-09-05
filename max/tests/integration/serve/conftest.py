@@ -57,13 +57,18 @@ def echo_factory():
     return SleepyEchoTokenGenerator()
 
 
+@pytest.fixture
+def mock_pipeline_config() -> PipelineConfig:
+    return MockPipelineConfig()
+
+
 @pytest.fixture()
-def echo_app() -> FastAPI:
+def echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
     tokenizer = EchoPipelineTokenizer()
 
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=echo_factory,
-        pipeline_config=MockPipelineConfig(),
+        pipeline_config=mock_pipeline_config,
         tokenizer=tokenizer,
     )
 

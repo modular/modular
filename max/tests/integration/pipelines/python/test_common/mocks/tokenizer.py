@@ -108,6 +108,7 @@ class MockTextTokenizer(
         )
 
         ctx = TextContext(
+            request_id=request.request_id,
             max_length=max_length,
             tokens=encoded,
             log_probabilities=request.logprobs,
