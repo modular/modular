@@ -362,6 +362,10 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
   [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
 
+- `String` can now decode UTF-16 input using the `String(from_utf16=...)`
+  constructor. PR [#5255](https://github.com/modular/modular/pull/5255) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will
