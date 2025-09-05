@@ -788,6 +788,7 @@ class MAXConfig:
         self,
         choices_provider: dict[str, list[str]] | None = None,
         description: str | None = None,
+        formatter_class: type[argparse.HelpFormatter] | None = None,
         required_params: set[str] | None = None,
     ) -> argparse.ArgumentParser:
         """Create an ArgumentParser populated with all MAXConfig fields as arguments.
@@ -802,6 +803,8 @@ class MAXConfig:
             choices_provider: Optional dictionary mapping field names to their valid choices.
                              This allows external code to specify choices for specific fields.
             description: Optional description for the argument parser.
+            formatter_class: Optional formatter class for the argument parser. This is forwarded
+                              to the argparse.ArgumentParser constructor.
             required_params: Optional set of field names that should be marked as required
                            in the argument parser, regardless of their default values.
 
@@ -841,7 +844,14 @@ class MAXConfig:
         """
 
         # Create parser
-        parser = argparse.ArgumentParser(description=description)
+        additional_argument_parser_args: dict[str, Any] = {}
+
+        if formatter_class is not None:
+            additional_argument_parser_args["formatter_class"] = formatter_class
+
+        parser = argparse.ArgumentParser(
+            description=description, **additional_argument_parser_args
+        )
         choices_provider = choices_provider or self.get_default_field_choices()
         required_params = required_params or self.get_default_required_fields()
 
