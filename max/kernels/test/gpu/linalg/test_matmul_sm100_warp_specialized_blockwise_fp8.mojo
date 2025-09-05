@@ -21,7 +21,7 @@ from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from linalg import vendor_blas
 from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
-    blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8,
+    sm100_warp_specialized_blockwise_fp8,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from utils.index import Index, IndexList
@@ -61,6 +61,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
+    scales_type: DType = DType.float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -150,19 +151,19 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         dynamic_c_shape, ctx=ctx
     )
 
-    var a_scales_host = HostNDBuffer[DType.float32, 2, static_a_scales_shape](
+    var a_scales_host = HostNDBuffer[scales_type, 2, static_a_scales_shape](
         dynamic_a_scales_shape
     )
-    var b_scales_host = HostNDBuffer[DType.float32, 2, static_b_scales_shape](
+    var b_scales_host = HostNDBuffer[scales_type, 2, static_b_scales_shape](
         dynamic_b_scales_shape
     )
 
-    var a_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_a_scales_shape
-    ](dynamic_a_scales_shape, ctx=ctx)
-    var b_scales_device = DeviceNDBuffer[
-        DType.float32, 2, static_b_scales_shape
-    ](dynamic_b_scales_shape, ctx=ctx)
+    var a_scales_device = DeviceNDBuffer[scales_type, 2, static_a_scales_shape](
+        dynamic_a_scales_shape, ctx=ctx
+    )
+    var b_scales_device = DeviceNDBuffer[scales_type, 2, static_b_scales_shape](
+        dynamic_b_scales_shape, ctx=ctx
+    )
 
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
@@ -173,19 +174,21 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         var bt = b_host.tensor
         for m in range(M):
             for k in range(K):
-                at[m, k] = Float32(1.0).cast[a_type]()
+                at[m, k] = Scalar[a_type](1.0)
         for n in range(N):
             for k in range(K):
-                bt[n, k] = Float32(1.0).cast[b_type]()
+                bt[n, k] = Scalar[b_type](1.0)
 
         for m in range(M):
             for k in range(K):
-                a_scales_host.tensor[k // BLOCK_SCALE_K, m] = Float32(0.5)
+                a_scales_host.tensor[k // BLOCK_SCALE_K, m] = Scalar[
+                    scales_type
+                ](0.5)
         for n in range(N):
             for k in range(K):
                 b_scales_host.tensor[
                     n // BLOCK_SCALE_K, k // BLOCK_SCALE_K
-                ] = Float32(0.5)
+                ] = Scalar[scales_type](0.5)
 
     else:
         random(a_host.tensor)
@@ -214,7 +217,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         ),
     )
 
-    blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+    sm100_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         config=matmul_config,
         cta_group=2,
@@ -235,7 +238,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         @always_inline
         @parameter
         fn run_kernel(ctx: DeviceContext) raises:
-            blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+            sm100_warp_specialized_blockwise_fp8[
                 transpose_b=transpose_b,
                 config=matmul_config,
                 cta_group=2,
@@ -457,6 +460,7 @@ def main():
                     cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
+                    scales_type = DType.bfloat16,
                 ](
                     ctx,
                     dynamic(1000),
@@ -521,6 +525,7 @@ def main():
                     cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
+                    scales_type = DType.bfloat16,
                 ](
                     ctx,
                     static[1024](),

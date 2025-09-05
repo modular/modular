@@ -481,7 +481,7 @@ fn promote_accumulators[
 
     var index = accum_pipeline_consumer_state.index()
     var phase = accum_pipeline_consumer_state.phase()
-    var tmem_offset = index * stage_stride_cols
+    var tmem_offset = index * stage_stride_cols + tmem_addr
 
     var bm = work_tile_coord[0]
     var bn = work_tile_coord[1]
@@ -589,7 +589,7 @@ fn promote_accumulators[
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
-        var stage_tmem_addr = tmem_addr + (stage * stageN) + tmem_offset
+        var stage_tmem_addr = tmem_offset + (stage * stageN)
         var upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -604,7 +604,7 @@ fn promote_accumulators[
             repeat=repeats,
             dtype=accum_type,
             pack=False,
-        ](stage_tmem_addr | (16 << 16))
+        ](stage_tmem_addr + (16 << 16))
 
         tcgen05_load_wait()
 
@@ -747,8 +747,8 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     )
 
     # For ld from TMEM, use same per-stage stride in column field.
-    alias TMEM_N = 512
-    alias stage_stride_cols = TMEM_N // num_accum_pipeline_stages
+    alias NUM_TMEM_COLS = 512
+    alias stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
 
     alias clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     alias clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -1241,7 +1241,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         _ = tmem_dealloc_mbar[].arrive()
 
 
-fn blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+fn sm100_warp_specialized_blockwise_fp8[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,

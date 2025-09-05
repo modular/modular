@@ -38,7 +38,9 @@ from utils.index import Index
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import IntTuple, Layout, LayoutTensor
 from gpu.host.info import H100, B200
-from linalg.matmul_sm100_blockwise_fp8 import matmul_sm100_blockwise_scaled_fp8
+from linalg.matmul_sm100_warp_specialized_blockwise_fp8 import (
+    sm100_warp_specialized_blockwise_fp8,
+)
 
 ########################################################
 # Static scaled fp8 quantization
@@ -344,7 +346,7 @@ fn matmul_dynamic_scaled_fp8[
         if (
             ctx.default_device_info is B200
             and transpose_b
-            and (a_scales_type == b_scales_type == DType.float32)
+            and c_type == DType.bfloat16
         ):
             var a_tensor = from_ndbuffer_row_major(a)
             var b_tensor = from_ndbuffer_row_major(b)
@@ -352,12 +354,22 @@ fn matmul_dynamic_scaled_fp8[
             var a_scales_tensor = from_ndbuffer_row_major(a_scales)
             var b_scales_tensor = from_ndbuffer_row_major(b_scales)
 
-            alias umma_shape = Index(64, 128, 32)
-            alias block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
-            matmul_sm100_blockwise_scaled_fp8[
-                transpose_b=transpose_b,
-                umma_shape=umma_shape,
+            alias BK = 128
+            alias MMA_K = 32
+            alias block_tile_shape = Index(64, 96, BK)
+            alias umma_shape = Index(128, 192, MMA_K)
+            alias cluster_shape = Index(2, 1, 1)
+            alias matmul_config = MatmulConfig[
+                a_type, b_type, c_type, transpose_b
+            ](
                 block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
+                cluster_shape=cluster_shape,
+            )
+            sm100_warp_specialized_blockwise_fp8[
+                transpose_b=transpose_b,
+                config=matmul_config,
+                cta_group=2,
             ](
                 c_tensor,
                 a_tensor,
