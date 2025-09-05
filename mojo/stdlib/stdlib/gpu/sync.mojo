@@ -138,7 +138,7 @@ fn barrier():
 
 @fieldwise_init
 @register_passable("trivial")
-struct AMDScheduleBarrierMask(Intable):
+struct AMDScheduleBarrierMask(EqualityComparable, Intable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for

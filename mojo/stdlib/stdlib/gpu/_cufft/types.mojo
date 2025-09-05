@@ -16,7 +16,7 @@ from os import abort
 
 @fieldwise_init
 @register_passable("trivial")
-struct LibraryProperty:
+struct LibraryProperty(EqualityComparable):
     var _value: Int32
     alias MAJOR_VERSION = Self(0)
     alias MINOR_VERSION = Self(1)
@@ -47,7 +47,7 @@ struct LibraryProperty:
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(Identifiable, Stringable, Writable):
+struct Status(EqualityComparable, Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_INVALID_PLAN = Self(1)
     alias CUFFT_SUCCESS = Self(0)
@@ -134,7 +134,7 @@ struct Status(Identifiable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Type(Identifiable, Stringable, Writable):
+struct Type(EqualityComparable, Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_R2C = Self(0x2A)
     alias CUFFT_C2R = Self(0x2C)
@@ -185,7 +185,7 @@ struct Type(Identifiable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Compatibility(Identifiable, Stringable, Writable):
+struct Compatibility(EqualityComparable, Identifiable, Stringable, Writable):
     var _value: Int8
     alias CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
@@ -221,7 +221,7 @@ struct Compatibility(Identifiable, Stringable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Property(Identifiable, Stringable, Writable):
+struct Property(EqualityComparable, Identifiable, Stringable, Writable):
     var _value: Int8
     alias NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     alias NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)

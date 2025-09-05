@@ -29,7 +29,7 @@ alias hipblasLtMatmulPreference_t = OpaquePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct Status(Writable):
+struct Status(EqualityComparable, Writable):
     var _value: Int32
     alias SUCCESS = Self(0)
     alias NOT_INITIALIZED = Self(1)
