@@ -30,7 +30,7 @@ benchmark_config:
   base_url: null  # Server or API base url if not using host/port
   host: "localhost"
   port: 8000
-  endpoint: "/v1/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
+  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
 
   # Dataset configuration (serving-specific)
   dataset_name: "sharegpt"  # has to be set to a valid dataset name for serving benchmarks
