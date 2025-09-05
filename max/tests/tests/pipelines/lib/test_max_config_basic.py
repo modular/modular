@@ -508,7 +508,7 @@ class TestMAXConfigTypeConversion:
         assert result == 42
 
 
-class TestMAXConfigNamespaceConversion:
+class TestMAXConfigCLIArgParsers:
     """Test suite for MAXConfig cli_arg_parsers functionality."""
 
     def test_cli_arg_parsers_vs_config_file_basic(self) -> None:
@@ -1017,6 +1017,62 @@ class TestMAXConfigNamespaceConversion:
         namespace = parser_override.parse_args(["--other-field", "provided"])
         assert namespace.other_field == "provided"
         assert namespace.test_field == "default"
+
+    def test_cli_arg_parsers_formatter_class(self) -> None:
+        """Test cli_arg_parsers with custom formatter class."""
+        config = TestConfig()
+
+        # Test with RawDescriptionHelpFormatter
+        parser = config.cli_arg_parsers(
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description="Test description\nwith multiple lines",
+        )
+
+        # Verify the parser was created with the custom formatter
+        assert parser.formatter_class is argparse.RawDescriptionHelpFormatter
+
+        # Test that the description is preserved (RawDescriptionHelpFormatter preserves newlines)
+        help_text = parser.format_help()
+        assert "Test description" in help_text
+        assert "with multiple lines" in help_text
+
+        # Test with ArgumentDefaultsHelpFormatter
+        parser_with_defaults = config.cli_arg_parsers(
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+
+        # Verify the parser was created with the custom formatter
+        assert (
+            parser_with_defaults.formatter_class
+            is argparse.ArgumentDefaultsHelpFormatter
+        )
+
+        # Test that parsing still works with custom formatter
+        namespace = parser_with_defaults.parse_args(
+            ["--test-field", "custom_value"]
+        )
+        assert namespace.test_field == "custom_value"
+        assert namespace.test_int == 42  # Default value from TestConfig
+        assert namespace.test_bool is True  # Default value from TestConfig
+
+        # Test with custom formatter class that has max_help_position=80
+        class CustomRawTextHelpFormatter(argparse.RawTextHelpFormatter):
+            def __init__(self, prog: str) -> None:
+                super().__init__(prog, max_help_position=80)
+
+        parser_custom = config.cli_arg_parsers(
+            formatter_class=CustomRawTextHelpFormatter
+        )
+
+        # Verify the parser was created with the custom formatter
+        assert parser_custom.formatter_class is CustomRawTextHelpFormatter
+
+        # Test that parsing still works with custom formatter
+        namespace_custom = parser_custom.parse_args(["--test-int", "43"])
+        assert namespace_custom.test_int == 43
+        assert (
+            namespace_custom.test_field == "default_value"
+        )  # Default value from TestConfig
 
 
 class TestBuiltinConfigClasses:
