@@ -195,7 +195,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 
 struct StringDict[
-    V: ImplicitlyCopyable & Movable,
+    V: Copyable & Movable,
     KeyCountType: DType = DType.uint32,
     KeyOffsetType: DType = DType.uint32,
     destructive: Bool = True,
@@ -309,7 +309,7 @@ struct StringDict[
                 @parameter
                 if caching_hashes:
                     self.key_hashes.store(slot, key_hash)
-                self.values.append(value)
+                self.values.append(value.copy())
                 self.count += 1
                 self.slot_to_index.store(
                     slot, SIMD[KeyCountType, 1](self.keys.count)
@@ -322,7 +322,8 @@ struct StringDict[
                 if other_key_hash == key_hash:
                     var other_key = self.keys[key_index - 1]
                     if other_key == key:
-                        self.values[key_index - 1] = value  # replace value
+                        # replace value
+                        self.values[key_index - 1] = value.copy()
 
                         @parameter
                         if destructive:
@@ -333,7 +334,8 @@ struct StringDict[
             else:
                 var other_key = self.keys[key_index - 1]
                 if other_key == key:
-                    self.values[key_index - 1] = value  # replace value
+                    # replace value
+                    self.values[key_index - 1] = value.copy()
 
                     @parameter
                     if destructive:
@@ -434,13 +436,13 @@ struct StringDict[
     fn get(self, key: StringSlice, default: V) -> V:
         var key_index = self._find_key_index(key)
         if key_index == 0:
-            return default
+            return default.copy()
 
         @parameter
         if destructive:
             if self._is_deleted(key_index - 1):
-                return default
-        return self.values[key_index - 1]
+                return default.copy()
+        return self.values[key_index - 1].copy()
 
     fn delete(mut self, key: StringSlice):
         @parameter
@@ -470,7 +472,7 @@ struct StringDict[
                     self.values[key_index] = update(None)
                     return
 
-            self.values[key_index] = update(self.values[key_index])
+            self.values[key_index] = update(self.values[key_index].copy())
 
     fn clear(mut self):
         self.values.clear()

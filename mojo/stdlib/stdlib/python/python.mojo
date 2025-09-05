@@ -359,7 +359,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @doc_private
     @staticmethod
     fn _dict[
-        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable & Movable = PythonObject
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
         """Construct a Python dictionary from keyword arguments.
 
@@ -373,7 +373,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             if not key:
                 raise cpy.unsafe_get_error()
 
-            var val = entry.value.to_python_object()
+            var val = entry.value.copy().to_python_object()
             var errno = cpy.PyDict_SetItem(dict_obj, key, val._obj_ptr)
             cpy.Py_DecRef(key)
             if errno == -1:
@@ -383,13 +383,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn dict[
-        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject
+        V: ConvertibleToPython & Copyable & Movable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
 
         Parameters:
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -405,16 +405,16 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn dict[
-        K: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject,
-        V: ConvertibleToPython & ImplicitlyCopyable & Movable = PythonObject,
+        K: ConvertibleToPython & Copyable & Movable = PythonObject,
+        V: ConvertibleToPython & Copyable & Movable = PythonObject,
     ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
             K: The type of the keys in the dictionary. Must implement the
-                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
             V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, `ImplicitlyCopyable`, and `Movable` traits.
+                `ConvertibleToPython`, `Copyable`, and `Movable` traits.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -434,8 +434,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
-            var key_obj = tuples[i][0].to_python_object()
-            var val_obj = tuples[i][1].to_python_object()
+            var key_obj = tuples[i][0].copy().to_python_object()
+            var val_obj = tuples[i][1].copy().to_python_object()
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
             )
@@ -446,7 +446,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn list[
-        T: ConvertibleToPython & ImplicitlyCopyable & Movable
+        T: ConvertibleToPython & Copyable & Movable
     ](values: Span[T]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
@@ -463,18 +463,16 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var obj_ptr = cpython.PyList_New(len(values))
 
         for i in range(len(values)):
-            var obj = values[i].to_python_object()
+            var obj = values[i].copy().to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
         return PythonObject(from_owned=obj_ptr)
 
     @staticmethod
     fn _list[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](
-        values: VariadicPack[
-            True, _, ConvertibleToPython & ImplicitlyCopyable, *Ts
-        ]
+        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
     ) raises -> PythonObject:
         """Initialize the object from a list literal.
 
@@ -492,7 +490,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         @parameter
         for i in range(len(VariadicList(Ts))):
-            var obj = values[i].to_python_object()
+            var obj = values[i].copy().to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyList_SetItem(obj_ptr, i, obj._obj_ptr)
         return PythonObject(from_owned=obj_ptr)
@@ -500,7 +498,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @always_inline
     @staticmethod
     fn list[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
 
@@ -517,11 +515,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @staticmethod
     fn _tuple[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](
-        values: VariadicPack[
-            True, _, ConvertibleToPython & ImplicitlyCopyable, *Ts
-        ]
+        values: VariadicPack[True, _, ConvertibleToPython & Copyable, *Ts]
     ) raises -> PythonObject:
         """Initialize the object from a tuple literal.
 
@@ -539,7 +535,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
         @parameter
         for i in range(len(VariadicList(Ts))):
-            var obj = values[i].to_python_object()
+            var obj = values[i].copy().to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             _ = cpython.PyTuple_SetItem(obj_ptr, i, obj._obj_ptr)
         return PythonObject(from_owned=obj_ptr)
@@ -547,7 +543,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @always_inline
     @staticmethod
     fn tuple[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
 

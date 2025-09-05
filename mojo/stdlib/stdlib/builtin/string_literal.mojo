@@ -663,7 +663,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return String(elems, sep=self)
 
     fn join[
-        T: ImplicitlyCopyable & Movable & Writable
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -672,7 +672,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         the default page size on arm64 and x86-64.
 
         Parameters:
-            T: The type of the elements. Must implement the `ImplicitlyCopyable`,
+            T: The type of the elements. Must implement the `Copyable`,
                 `Movable` and `Writable` traits.
 
         Args:

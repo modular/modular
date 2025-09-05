@@ -536,13 +536,13 @@ struct InlineArray[
 
     @always_inline
     fn __contains__[
-        T: EqualityComparable & ImplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: InlineArray[T, size], value: T) -> Bool:
         """Tests if a value is present in the array using the `in` operator.
 
         Parameters:
             T: The element type, must implement both `EqualityComparable` and
-                `ImplicitlyCopyable` and `Movable`.
+                `Copyable` and `Movable`.
 
         Args:
             value: The value to search for.

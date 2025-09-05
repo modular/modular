@@ -52,9 +52,7 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[
-    T: ImplicitlyCopyable & Movable & Comparable
-](mut list: List[T]) raises:
+fn assert_sorted[T: Copyable & Movable & Comparable](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 

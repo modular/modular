@@ -177,7 +177,7 @@ struct _WriteBufferHeap(Writable, Writer):
         self.pos = 0
 
     fn write_list[
-        T: ImplicitlyCopyable & Movable & Writable, //
+        T: Copyable & Movable & Writable, //
     ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
         var length = len(values)
         if length == 0:
@@ -237,7 +237,7 @@ struct _WriteBufferStack[
         self.writer = Pointer(to=writer)
 
     fn write_list[
-        T: ImplicitlyCopyable & Movable & Writable, //
+        T: Copyable & Movable & Writable, //
     ](mut self, values: List[T, *_], *, sep: String = String()):
         var length = len(values)
         if length == 0:
@@ -280,7 +280,7 @@ struct _TotalWritableBytes(Writer):
         self.size = 0
 
     fn __init__[
-        T: ImplicitlyCopyable & Movable & Writable, //
+        T: Copyable & Movable & Writable, //
     ](out self, values: List[T, *_], sep: String = String()):
         self.size = 0
         var length = len(values)

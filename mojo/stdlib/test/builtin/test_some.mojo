@@ -47,8 +47,8 @@ def test_some_param():
     assert_equal(takes_some_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24)
 
 
-fn takes_multiple_traits(x: Some[Intable & ImplicitlyCopyable]) -> __type_of(x):
-    return x
+fn takes_multiple_traits(x: Some[Intable & Copyable]) -> __type_of(x):
+    return x.copy()
 
 
 def test_some_return():

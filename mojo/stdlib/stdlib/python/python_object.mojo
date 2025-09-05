@@ -45,7 +45,7 @@ trait ConvertibleToPython:
         ...
 
 
-trait ConvertibleFromPython(ImplicitlyCopyable, Movable):
+trait ConvertibleFromPython(Copyable, Movable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """
@@ -323,7 +323,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](out self, var *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
@@ -341,7 +341,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: ConvertibleToPython & ImplicitlyCopyable
+        *Ts: ConvertibleToPython & Copyable
     ](out self, var *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 
@@ -363,7 +363,7 @@ struct PythonObject(
 
         @parameter
         for i in range(len(VariadicList(Ts))):
-            var obj = values[i].to_python_object()
+            var obj = values[i].copy().to_python_object()
             cpython.Py_IncRef(obj._obj_ptr)
             var result = cpython.PySet_Add(obj_ptr, obj._obj_ptr)
             if result == -1:
@@ -390,8 +390,8 @@ struct PythonObject(
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(keys)):
-            var key_obj = keys[i].to_python_object()
-            var val_obj = values[i].to_python_object()
+            var key_obj = keys[i].copy().to_python_object()
+            var val_obj = values[i].copy().to_python_object()
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_obj._obj_ptr, val_obj._obj_ptr
             )

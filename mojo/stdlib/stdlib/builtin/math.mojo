@@ -184,7 +184,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
 
 
 @always_inline
-fn max[T: ImplicitlyCopyable & GreaterThanComparable](x: T, *ys: T) -> T:
+fn max[T: Copyable & GreaterThanComparable](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -197,11 +197,11 @@ fn max[T: ImplicitlyCopyable & GreaterThanComparable](x: T, *ys: T) -> T:
     Returns:
         The maximum value from the input sequence.
     """
-    var res = x
+    var res = x.copy()
     for y in ys:
         if y > res:
-            res = y
-    return res
+            res = y.copy()
+    return res.copy()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -269,7 +269,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: __type_of(x), /) -> __type_of(x):
 
 
 @always_inline
-fn min[T: ImplicitlyCopyable & LessThanComparable](x: T, *ys: T) -> T:
+fn min[T: Copyable & LessThanComparable](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:
@@ -282,11 +282,11 @@ fn min[T: ImplicitlyCopyable & LessThanComparable](x: T, *ys: T) -> T:
     Returns:
         The minimum value from the input sequence.
     """
-    var res = x
+    var res = x.copy()
     for y in ys:
         if y < res:
-            res = y
-    return res
+            res = y.copy()
+    return res.copy()
 
 
 # ===----------------------------------------------------------------------=== #

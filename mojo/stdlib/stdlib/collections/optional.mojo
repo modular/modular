@@ -171,7 +171,7 @@ struct Optional[T: Copyable & Movable](
         return self is None
 
     fn __eq__[
-        T: EqualityComparable & ImplicitlyCopyable & Movable
+        T: EqualityComparable & Copyable & Movable
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -179,7 +179,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-                traits `ImplicitlyCopyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -205,7 +205,7 @@ struct Optional[T: Copyable & Movable](
         return self is not None
 
     fn __ne__[
-        T: EqualityComparable & ImplicitlyCopyable & Movable, //
+        T: EqualityComparable & Copyable & Movable, //
     ](self: Optional[T], rhs: Optional[T]) -> Bool:
         """Return `False` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
@@ -213,7 +213,7 @@ struct Optional[T: Copyable & Movable](
 
         Parameters:
             T: The type of the elements in the list. Must implement the
-                traits `ImplicitlyCopyable`, `Movable` and `EqualityComparable`.
+                traits `Copyable`, `Movable` and `EqualityComparable`.
 
         Args:
             rhs: The value to compare to.
@@ -258,13 +258,13 @@ struct Optional[T: Copyable & Movable](
         return self.unsafe_value()
 
     fn __str__[
-        U: ImplicitlyCopyable & Movable & Representable, //
+        U: Copyable & Movable & Representable, //
     ](self: Optional[U]) -> String:
         """Return the string representation of the value of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A string representation of the `Optional`.
@@ -275,13 +275,13 @@ struct Optional[T: Copyable & Movable](
 
     # TODO: Include the Parameter type in the string as well.
     fn __repr__[
-        U: Representable & ImplicitlyCopyable & Movable, //
+        U: Representable & Copyable & Movable, //
     ](self: Optional[U]) -> String:
         """Returns the verbose string representation of the `Optional`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Returns:
             A verbose string representation of the `Optional`.
@@ -307,13 +307,13 @@ struct Optional[T: Copyable & Movable](
         return self.__bool__()
 
     fn write_to[
-        U: Representable & ImplicitlyCopyable & Movable, //
+        U: Representable & Copyable & Movable, //
     ](self: Optional[U], mut writer: Some[Writer]):
         """Write `Optional` string representation to a `Writer`.
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-                traits `Representable`, `ImplicitlyCopyable` and `Movable`.
+                traits `Representable`, `Copyable` and `Movable`.
 
         Args:
             writer: The object to write to.

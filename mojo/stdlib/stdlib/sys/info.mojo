@@ -373,7 +373,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
 
 fn platform_map[
-    T: ImplicitlyCopyable & Movable, //,
+    T: Copyable & Movable, //,
     operation: Optional[String] = None,
     *,
     linux: Optional[T] = None,
@@ -400,11 +400,11 @@ fn platform_map[
 
     @parameter
     if CompilationTarget.is_macos() and macos:
-        return macos.value()
+        return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
-        return linux.value()
+        return linux.value().copy()
     elif CompilationTarget.is_windows() and windows:
-        return windows.value()
+        return windows.value().copy()
     else:
         return CompilationTarget.unsupported_target_error[
             T, operation=operation

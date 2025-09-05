@@ -223,7 +223,7 @@ struct DelRecorder(ImplicitlyCopyable, Movable):
 
 @fieldwise_init
 struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
-    ImplicitlyCopyable & Movable
+    ImplicitlyCopyable, Movable
 ):
     var target: UnsafePointer[Bool, origin=origin]
 

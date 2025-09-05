@@ -68,7 +68,7 @@ struct OwnedPointer[T: AnyType]:
         self._inner.init_pointee_explicit_copy(copy_value)
 
     fn __init__[
-        T: ImplicitlyCopyable, U: NoneType = None
+        T: Copyable, U: NoneType = None
     ](out self: OwnedPointer[T], value: T):
         """Construct a new `OwnedPointer` by copying the passed value into a new backing allocation.
 

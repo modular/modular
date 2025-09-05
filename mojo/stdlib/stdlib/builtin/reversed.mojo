@@ -103,7 +103,7 @@ fn reversed[
 
 
 fn reversed[
-    T: ImplicitlyCopyable & Movable
+    T: Copyable & Movable
 ](ref value: Deque[T]) -> _DequeIter[T, __origin_of(value), False]:
     """Get a reversed iterator of the deque.
 
