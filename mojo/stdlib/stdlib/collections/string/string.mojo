@@ -76,6 +76,7 @@ var ascii_str = ascii("Hello")  # ASCII-only string
 from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
+from collections.string._utf8 import _is_valid_utf8
 from collections.string._parsing_numbers.parsing_floats import _atof
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
@@ -210,6 +211,19 @@ struct String(
             self._set_ref_counted()
 
     @always_inline("nodebug")
+    fn __init__(out self, *, unsafe_uninit_length: UInt):
+        """Construct a String with the specified length, with uninitialized
+        memory. This is unsafe, as it relies on the caller initializing the
+        elements with unsafe operations, not assigning over the uninitialized
+        data.
+
+        Args:
+            unsafe_uninit_length: The number of bytes to allocate.
+        """
+        self = Self(capacity=Int(unsafe_uninit_length))
+        self._set_byte_length(Int(unsafe_uninit_length))
+
+    @always_inline("nodebug")
     @implicit  # does not allocate.
     fn __init__(out self, data: StaticString):
         """Construct a `String` from a `StaticString` without allocating.
@@ -241,16 +255,67 @@ struct String(
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    fn __init__(out self, *, bytes: Span[Byte, *_]):
-        """Construct a string by copying the data. This constructor is explicit
-        because it can involve memory allocation.
+    fn __init__(out self, *, unsafe_from_utf8: Span[mut=False, Byte, **_]):
+        """Construct a new `String` copying a buffer containing UTF-8 encoded
+        data.
 
         Args:
-            bytes: The bytes to copy.
+            unsafe_from_utf8: A span of bytes containing UTF-8 encoded data.
+
+        Safety:
+            The data MUST be valid UTF-8.
         """
-        var length = len(bytes)
-        self = Self(unsafe_uninit_length=UInt(length))
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+        debug_assert(
+            _is_valid_utf8(unsafe_from_utf8), "data is not valid utf-8"
+        )
+        self = String(StringSlice(unsafe_from_utf8=unsafe_from_utf8))
+
+    fn __init__(out self, *, from_utf8: Span[mut=False, Byte, **_]) raises:
+        """Construct a new `String` copying a buffer containing UTF-8 encoded
+        data.
+
+        Args:
+            from_utf8: A span of bytes containing UTF-8 encoded data.
+
+        Raises:
+            An exception is raised if the provided buffer byte values do not
+            form valid UTF-8 encoded codepoints.
+        """
+        self = String(StringSlice(from_utf8=from_utf8))
+
+    fn __init__(
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=False, **_]
+    ):
+        """Creates a string from a UTF-8 encoded nul-terminated pointer.
+
+        Args:
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
+                bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
+        """
+        var data = StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr)
+        debug_assert(_is_valid_utf8(data.as_bytes()), "data is not valid utf-8")
+        self = String(data)  # Copy the data
+
+    fn __init__(
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=False, **_]
+    ):
+        """Creates a string from a UTF-8 encoded nul-terminated pointer.
+
+        Args:
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
+                bytes encoded in UTF-8.
+
+        Safety:
+            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
+            - `unsafe_from_utf8_ptr` MUST be null terminated.
+        """
+        var data = StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr)
+        debug_assert(_is_valid_utf8(data.as_bytes()), "data is not valid utf-8")
+        self = String(data)  # Copy the data
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
@@ -515,51 +580,6 @@ struct String(
         var result = String()
         value.write_to(result)
         return result^
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, unsafe_uninit_length: UInt):
-        """Construct a String with the specified length, with uninitialized
-        memory. This is unsafe, as it relies on the caller initializing the
-        elements with unsafe operations, not assigning over the uninitialized
-        data.
-
-        Args:
-            unsafe_uninit_length: The number of bytes to allocate.
-        """
-        self = Self(capacity=Int(unsafe_uninit_length))
-        self.set_byte_length(Int(unsafe_uninit_length))
-
-    fn __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[c_char, mut=_, origin=_],
-    ):
-        """Creates a string from a UTF-8 encoded nul-terminated pointer.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-        # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
-
-    fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
-    ):
-        """Creates a string from a UTF-8 encoded nul-terminated pointer.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-        # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, deinit other: Self):
@@ -876,7 +896,7 @@ struct String(
         var len = self.byte_length()
         self.reserve(UInt(len) + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(Int(len + 1))
+        self._set_byte_length(Int(len + 1))
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -900,7 +920,7 @@ struct String(
             other.unsafe_ptr(),
             other_len,
         )
-        self.set_byte_length(new_len)
+        self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1251,9 +1271,6 @@ struct String(
         Returns:
             A string slice pointing to the data owned by this string.
         """
-        # FIXME(MSTDL-160):
-        #   Enforce UTF-8 encoding in String so this is actually
-        #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
     fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
@@ -1278,7 +1295,7 @@ struct String(
         else:
             return self._len_or_data
 
-    fn set_byte_length(mut self, new_len: Int):
+    fn _set_byte_length(mut self, new_len: Int):
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
@@ -1812,7 +1829,7 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
-        self.set_byte_length(length)
+        self._set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
@@ -1828,7 +1845,7 @@ struct String(
         self._clear_nul_terminator()
         if UInt(unsafe_uninit_length) > self.capacity():
             self.reserve(UInt(unsafe_uninit_length))
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
@@ -1848,7 +1865,7 @@ struct String(
     fn _inline_string(mut self):
         var length = len(self)
         var new_string = Self()
-        new_string.set_byte_length(length)
+        new_string._set_byte_length(length)
         var dst = UnsafePointer(to=new_string).bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):

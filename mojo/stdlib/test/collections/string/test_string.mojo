@@ -703,9 +703,9 @@ def test_split():
         "\x1c",
         "\x1d",
         "\x1e",
-        String(bytes=next_line),
-        String(bytes=unicode_line_sep),
-        String(bytes=unicode_paragraph_sep),
+        String(from_utf8=next_line),
+        String(from_utf8=unicode_line_sep),
+        String(from_utf8=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     assert_equal(StringSlice(s).split(), L("hello", "world"))
@@ -802,14 +802,12 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(bytes=List[UInt8](0xC2, 0x85))
-    var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
-    var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
+    var next_line = String(from_utf8=List[UInt8](0xC2, 0x85))
+    var unicode_line_sep = String(from_utf8=List[UInt8](0xE2, 0x80, 0xA8))
+    var unicode_paragraph_sep = String(from_utf8=List[UInt8](0xE2, 0x80, 0xA9))
 
     for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        item = StaticString("").join(
-            "hello", u, "world", u, "mojo", u, "language", u
-        )
+        item = String("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
             _to_string_list(item.splitlines(keepends=True)),
@@ -836,9 +834,9 @@ def test_isspace():
         "\x1c",
         "\x1d",
         "\x1e",
-        String(bytes=next_line),
-        String(bytes=unicode_line_sep),
-        String(bytes=unicode_paragraph_sep),
+        String(from_utf8=next_line),
+        String(from_utf8=unicode_line_sep),
+        String(from_utf8=unicode_paragraph_sep),
     ]
 
     for i in univ_sep_var:
