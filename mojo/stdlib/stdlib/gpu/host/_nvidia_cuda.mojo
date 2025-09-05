@@ -258,7 +258,7 @@ struct TMADescriptor(ImplicitlyCopyable):
 
 
 fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
-    __mlir_op.`nvvm.prefetch.tensormap`(
+    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 
