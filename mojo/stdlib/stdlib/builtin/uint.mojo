@@ -120,6 +120,7 @@ struct UInt(
         self = value.__uint__()
 
     @always_inline("builtin")
+    @implicit
     fn __init__(out self, value: Int):
         """Construct UInt from the given Int value.
 

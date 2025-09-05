@@ -169,12 +169,6 @@ language across multiple phases.
   var parts = path.parts()
   ```
 
-- The `Int` type no longer implicitly converts to `UInt`. (The `@implicit`
-  annotation was removed from `UInt.__init__(Int)`.
-
-  This helps the programmer avoid invalid or unsafe logic resulting from
-  conversions that happened unintentionally, without their knowledge.
-
 - Added `Path(..).name()` method to the `Path` type, which returns the name of
   the file or directory.
 
