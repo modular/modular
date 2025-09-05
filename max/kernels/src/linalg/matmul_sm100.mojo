@@ -321,7 +321,7 @@ fn consumer_main_loop[
 fn stsm_helper[
     swizzle: Swizzle
 ](
-    vec: SIMD,
+    vec: SIMD[_, _],
     dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -338,14 +338,25 @@ fn stsm_helper[
     var lane = lane_id()
     var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
 
+    # Helper function to slice a range of SIMD vector.
+    # LLVM extract intrinsic generates bad code on GPU.
+    @always_inline
+    fn slice[offset: Int, size: Int](v: SIMD) -> SIMD[v.dtype, size]:
+        var tmp = SIMD[v.dtype, size]()
+
+        @parameter
+        for i in range(size):
+            tmp[i] = v[i + offset]
+        return tmp
+
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     @parameter
     for i in range(shape0 // stsmx4_row_size):
         alias n_offset = i * stsmx4_row_size
         var offset = swizzle(stsm_lane_offset + n_offset)
-        var v = vec.slice[
-            stsmx4_lane_size, offset = i * stsmx4_lane_size
-        ]().cast[dst.dtype]()
+        var v = slice[i * stsmx4_lane_size, stsmx4_lane_size](vec).cast[
+            dst.dtype
+        ]()
         st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
 
 
