@@ -60,6 +60,7 @@ from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
     ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
+    ChatCompletionStreamOptions,
     ChatCompletionStreamResponseDelta,
     ChatCompletionTool,
     Choice,
@@ -180,11 +181,20 @@ async def get_pipeline(
 class OpenAIChatResponseGenerator(
     OpenAIResponseGenerator[CreateChatCompletionResponse]
 ):
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+        stream_options: ChatCompletionStreamOptions | None = None,
+    ) -> None:
+        super().__init__(pipeline)
+        self.stream_options = stream_options
+
     async def stream(self, request: TextGenerationRequest):
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
+        prompt_tokens = 0
         status_code = 200
         try:
             async for token in self.pipeline.next_token(request):
@@ -194,6 +204,9 @@ class OpenAIChatResponseGenerator(
                     n_tokens,
                     token.decoded_token,
                 )
+
+                if token.prompt_token_count:
+                    prompt_tokens = token.prompt_token_count
 
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
@@ -212,14 +225,10 @@ class OpenAIChatResponseGenerator(
                     )
                 ]
 
-                usage = Usage(
-                    prompt_tokens=token.prompt_token_count,
-                    completion_tokens=n_tokens,
-                    total_tokens=n_tokens + (token.prompt_token_count or 0),
-                )
-
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
+                # Don't include usage in regular chunks when streaming
+                # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
                 response = CreateChatCompletionStreamResponse(
                     id=request.request_id,
                     choices=choices,
@@ -227,7 +236,7 @@ class OpenAIChatResponseGenerator(
                     model=request.model_name,
                     object="chat.completion.chunk",
                     system_fingerprint=None,
-                    usage=usage,
+                    usage=None,
                     service_tier=None,
                 )
                 n_tokens += 1
@@ -235,6 +244,27 @@ class OpenAIChatResponseGenerator(
                 yield payload
 
             logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
+
+            # If `include_usage=True`, send a final chunk with usage statistics
+            if self.stream_options and self.stream_options.include_usage:
+                final_usage = Usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=n_tokens,
+                    total_tokens=n_tokens + prompt_tokens,
+                )
+
+                final_response = CreateChatCompletionStreamResponse(
+                    id=request.request_id,
+                    choices=[],
+                    created=int(datetime.now().timestamp()),
+                    model=request.model_name,
+                    object="chat.completion.chunk",
+                    system_fingerprint=None,
+                    usage=final_usage,
+                    service_tier=None,
+                )
+                yield final_response.model_dump_json()
+
             yield "[DONE]"
         except Exception as e:
             # Note that for SSE, the server will have already responded with a
@@ -665,7 +695,13 @@ async def openai_create_chat_completion(
             completion_request.response_format
         )
 
-        response_generator = OpenAIChatResponseGenerator(pipeline)
+        stream_options = None
+        if completion_request.stream:
+            stream_options = completion_request.stream_options
+
+        response_generator = OpenAIChatResponseGenerator(
+            pipeline, stream_options=stream_options
+        )
         sampling_params = SamplingParams.from_input(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
