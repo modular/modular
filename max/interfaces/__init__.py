@@ -16,7 +16,12 @@ from .context import (
 )
 from .log_probabilities import LogProbabilities
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
-from .pipeline import Pipeline, PipelineOutput, PipelineOutputsDict
+from .pipeline import (
+    Pipeline,
+    PipelineOutput,
+    PipelineOutputsDict,
+    PipelineOutputType,
+)
 from .pipeline_variants import (
     AudioGenerationMetadata,
     AudioGenerationRequest,
@@ -74,6 +79,7 @@ __all__ = [
     "MAXPushQueue",
     "Pipeline",
     "PipelineOutput",
+    "PipelineOutputType",
     "PipelineOutputsDict",
     "PipelineTask",
     "PipelineTokenizer",
