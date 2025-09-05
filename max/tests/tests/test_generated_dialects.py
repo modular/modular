@@ -79,7 +79,7 @@ def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
+    graph = mo.GraphOp(builder, loc, "hello", [], [], is_subgraph=False)
 
     assert graph.name == "hello"
     assert list(graph.input_parameters) == []
@@ -91,7 +91,7 @@ def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
+    graph = mo.GraphOp(builder, loc, "hello", [], [], is_subgraph=False)
 
     block = graph.regions[0].front
     assert isinstance(block, Block)
@@ -138,7 +138,7 @@ def test_discardable_attributes(mlir_context) -> None:  # noqa: ANN001
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    graph = mo.GraphOp(builder, loc, "hello", [], [])
 
     attrs = graph.discardable_attributes
 
@@ -183,7 +183,7 @@ def test_discardable_attrs__op_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    graph = mo.GraphOp(builder, loc, "hello", [], [])
     attrs = graph.discardable_attributes
     attrs["foo"] = builtin.StringAttr("foo")
     del graph
@@ -196,7 +196,7 @@ def test_discardable_attrs__dict_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    graph = mo.GraphOp(builder, loc, "hello", [], [])
     attrs = graph.discardable_attributes
     attrs["foo"] = builtin.StringAttr("foo")
     foo = attrs["foo"]
@@ -213,7 +213,7 @@ def test_discardable_attrs__attr_deleted(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    graph = mo.GraphOp(builder, loc, "hello", [], [])
     attrs = graph.discardable_attributes
     attrs["foo"] = builtin.StringAttr("foo")
     foo = attrs["foo"]
@@ -228,7 +228,7 @@ def test_discardable_attrs__concurrent_modification(mlir_context) -> None:  # no
     loc = mlir.Location.current
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    graph = mo.GraphOp(builder, loc, "hello", [], [])
     attrs = graph.discardable_attributes
 
     attrs["foo"] = builtin.StringAttr("foo")
