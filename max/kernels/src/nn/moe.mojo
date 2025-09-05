@@ -213,7 +213,9 @@ fn moe_create_indices[
 
     var cuda_ctx = context.get_device_context()
 
-    with Trace[TraceLevel.OP, target=target]("mo.moe.create_indices"):
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
+    ):
         var n = topk_ids.size()
         var pow_2_length = next_power_of_two(n)
         var padded_input_buffer = cuda_ctx.enqueue_create_buffer[input_type](

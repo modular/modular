@@ -25,8 +25,29 @@ from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
 from gpu.host._tracing import Color
+from gpu.host import DeviceContext
+from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, Variant
+
+
+fn get_safe_task_id(ctx: DeviceContextPtr) -> OptionalReg[Int]:
+    """Safely extract task_id from DeviceContextPtr, returning None if null/invalid.
+    """
+    # Check if the underlying handle is null
+    if not ctx._handle:
+        return None
+    # If not null, still need try/except as these operations can fail for other reasons
+    try:
+        return OptionalReg(Int(ctx.get_device_context().id()))
+    except:
+        return None
+
+
+fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
+    """Safely extract task_id from DeviceContext, returning None if null/invalid.
+    """
+    return get_safe_task_id(DeviceContextPtr(ctx))
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:

@@ -28,11 +28,12 @@ from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from utils import IndexList, StaticTuple, product
 
 from .gather_scatter import normalize_neg_index
+
 
 alias elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
@@ -597,7 +598,9 @@ fn concat[
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
 
-    with Trace[TraceLevel.OP, target=target]("concat"):
+    with Trace[TraceLevel.OP, target=target](
+        "concat", task_id=get_safe_task_id(context)
+    ):
 
         @parameter
         if is_cpu[target]():
@@ -1013,7 +1016,9 @@ fn fused_concat[
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
 
-    with Trace[TraceLevel.OP, target=target]("concat"):
+    with Trace[TraceLevel.OP, target=target](
+        "concat", task_id=get_safe_task_id(ctx)
+    ):
 
         @parameter
         if is_cpu[target]():

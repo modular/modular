@@ -164,6 +164,7 @@ fn flare_mla_decoding[
         Trace[
             TraceLevel.OP, target = ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
     ):
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -1195,6 +1196,7 @@ fn flare_mla_prefill[
         Trace[
             TraceLevel.OP, target = ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int
 
@@ -1303,6 +1305,7 @@ fn flare_mla_prefill[
         Trace[
             TraceLevel.OP, target = ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = q.dim[0]()
 

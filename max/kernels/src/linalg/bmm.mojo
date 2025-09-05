@@ -26,7 +26,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import is_cpu, is_valid_target, A100
 from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -402,6 +402,7 @@ fn batched_matmul[
     with Trace[TraceLevel.OP, target=target](
         "batched_matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
         # TODO: generalize to > rank 3
         @parameter

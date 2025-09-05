@@ -54,7 +54,7 @@ from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
@@ -1395,5 +1395,6 @@ fn swishGLU[
     with Trace[TraceLevel.OP, target=target](
         "swish_glu",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
     ):
         dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())

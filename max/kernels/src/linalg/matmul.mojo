@@ -852,6 +852,7 @@ fn matmul[
             ")" if _trace_description else "matmul",
         ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
     ):
 
         @parameter

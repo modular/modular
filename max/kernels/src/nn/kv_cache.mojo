@@ -41,10 +41,11 @@ from nn.mha_utils import (
 )
 from nn.normalization import _rms_norm_impl
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
 
 from utils import Index, IndexList
+
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)
@@ -96,6 +97,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
     ):
         return _fused_qkv_matmul_kv_cache[
             kv_collection.CacheType, target=target
@@ -353,6 +355,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
         fused_qk_rope[
             kv_collection.CacheType, interleaved=interleaved, target=target
@@ -415,6 +418,7 @@ fn generic_flash_attention_kv_cache_padded[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -748,11 +752,12 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             val=val,
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm_kv_cache_ragged_continuous_batching_nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
+        task_id=get_safe_task_id(context),
     ):
         _rms_norm_impl[
             dtype,
@@ -918,11 +923,12 @@ def rms_norm_kv_cache_ragged_paged[
             val=val,
         )
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm_kv_cache_ragged_paged_nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
+        task_id=get_safe_task_id(context),
     ):
         _rms_norm_impl[
             dtype,

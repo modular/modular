@@ -760,9 +760,10 @@ fn layer_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
 
         @parameter
@@ -1911,9 +1912,10 @@ fn rms_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_impl[
             dtype,
@@ -2067,9 +2069,10 @@ fn rms_norm_fused_residual_add[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual_add",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_fused_residual_add_impl[
             dtype,
@@ -2505,9 +2508,10 @@ fn group_norm[
     fn description_fn() -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP](
+    with Trace[TraceLevel.OP, target=target](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         group_norm_gpu[
             dtype=dtype,

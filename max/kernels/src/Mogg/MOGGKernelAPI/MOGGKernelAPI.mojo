@@ -230,7 +230,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
@@ -2262,7 +2262,9 @@ struct ArgMax:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
 
             @parameter
             if target == "cpu":
@@ -2301,7 +2303,9 @@ struct ArgMin:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
 
             @parameter
             if target == "cpu":
@@ -2425,7 +2429,9 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             sum[
                 output.dtype,
                 input_fn,
@@ -2478,7 +2484,9 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             product[
                 output.dtype,
                 input_fn,
@@ -2531,7 +2539,9 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             reduce_max[
                 output.dtype,
                 input_fn,
@@ -2584,7 +2594,9 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             reduce_min[
                 output.dtype,
                 input_fn,
@@ -2697,7 +2709,9 @@ struct ReduceMinMax:
             init_min, init_max
         )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             _reduce_generator[
                 num_reductions,
                 dtype,
@@ -3075,7 +3089,9 @@ struct GatherND:
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             gather_nd[batch_dims=batchDims, target=target](
                 data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
             )
@@ -3140,7 +3156,9 @@ struct Gather:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             gather[
                 dtype = output.dtype,
                 indices_type = indices.dtype,
@@ -3559,7 +3577,9 @@ struct TopK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             top_k[largest=True, target=target](
                 input.to_layout_tensor(),
                 Int(k),
@@ -4697,7 +4717,9 @@ struct Conv:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
 
             @parameter
             if is_cpu[target]():
@@ -5794,7 +5816,9 @@ struct QMatmulGPU_b4_g32:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             matmul_gpu_qint4[32, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5826,7 +5850,9 @@ struct QMatmulGPU_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             matmul_gpu_qint4[128, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5857,7 +5883,9 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5886,7 +5914,9 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5916,7 +5946,9 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -8090,7 +8122,9 @@ struct Struct_fused_token_sampling:
                 ),
             )
         )
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
 
             @parameter
             if is_cpu[target]():
@@ -8149,7 +8183,9 @@ struct Struct_min_p_sampling:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
         var min_ps_buf = managed_tensor_slice_to_ndbuffer(min_ps)
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
 
             @parameter
             if is_cpu[target]():
@@ -8191,7 +8227,9 @@ struct Struct_sampler_apply_penalties:
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             apply_penalties_to_logits[target=target](
                 logits.to_layout_tensor(),
                 compressed_frequency_data.to_layout_tensor(),
@@ -8221,7 +8259,9 @@ struct Struct_sampler_update_frequency_data:
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target=target](
+            _trace_name, task_id=get_safe_task_id(ctx)
+        ):
             update_frequency_data[target=target](
                 compressed_frequency_data.to_layout_tensor(),
                 frequency_offsets.to_layout_tensor(),

@@ -19,6 +19,7 @@ from algorithm import map
 ```
 """
 
+from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv, clamp
 from os import abort
@@ -41,7 +42,7 @@ from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from runtime import tracing
 from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 
 from utils.index import Index, IndexList
 from utils.numerics import FlushDenormals
@@ -49,6 +50,7 @@ from utils.static_tuple import StaticTuple
 from pathlib import Path
 
 from gpu.host.info import B200
+
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -1377,6 +1379,7 @@ fn elementwise[
     with Trace[TraceLevel.OP, target=target](
         kind,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
     ):
 
         @parameter

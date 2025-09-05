@@ -28,7 +28,7 @@ from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor_internal import ManagedTensorSlice
 
 from utils import IndexList, StaticTuple
@@ -650,7 +650,9 @@ fn gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
     gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP, target=target]("gather"):
+    with Trace[TraceLevel.OP, target=target](
+        "gather", task_id=get_safe_task_id(context)
+    ):
         if (
             input_shape.flattened_length() == 0
             or indices_shape.flattened_length() == 0
@@ -765,7 +767,9 @@ fn gather[
     ]() else get_gpu_target()
 
     gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP, target=target]("gather"):
+    with Trace[TraceLevel.OP, target=target](
+        "gather", task_id=get_safe_task_id(context)
+    ):
         if (
             input_shape.flattened_length() == 0
             or indices_shape.flattened_length() == 0
@@ -892,7 +896,9 @@ fn scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
-    with Trace[TraceLevel.OP, target=target](_trace_description):
+    with Trace[TraceLevel.OP, target=target](
+        _trace_description, task_id=get_safe_task_id(context)
+    ):
         if data.get_shape() != output.get_shape():
             raise Error(
                 "Input and output shapes in scatter_nd must be the same."

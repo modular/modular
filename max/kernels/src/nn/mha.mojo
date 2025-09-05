@@ -155,6 +155,7 @@ fn flash_attention[
         Trace[
             TraceLevel.OP, target = ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
     ):
         return flash_attention[
             use_score_mod=use_score_mod,
@@ -311,6 +312,7 @@ fn flash_attention[
         Trace[
             TraceLevel.OP, target = ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
     ):
         # TODO: This helps differentiate between CE/TG. Not batch-specific.
         #       We'll just implement a flag on the cache object which is true
