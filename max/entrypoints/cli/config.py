@@ -284,6 +284,14 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
 def sampling_params_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @click.option(
+        "--max-new-tokens",
+        is_flag=False,
+        type=int,
+        show_default=False,
+        default=None,
+        help="Maximum number of new tokens to generate during a single inference pass of the model.",
+    )
+    @click.option(
         "--top-k",
         is_flag=False,
         type=int,

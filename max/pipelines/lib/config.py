@@ -56,9 +56,6 @@ class PipelineConfig(MAXConfig):
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
 
-    max_new_tokens: int = -1
-    """Maximum number of new tokens to generate during a single inference pass of the model."""
-
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
     """Whether the pipeline should serve both a prefill or decode role or both."""
 
@@ -585,7 +582,6 @@ class PipelineConfig(MAXConfig):
     def help() -> dict[str, str]:
         return {
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
-            "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
             "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 192.",

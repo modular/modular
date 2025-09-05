@@ -288,9 +288,10 @@ def cli_pipeline(
     prompt: str,
     image_url: list[str],
     num_warmups: int,
-    seed: int,
+    max_new_tokens: int,
     top_k: int,
     temperature: float,
+    seed: int,
     **config_kwargs: Any,
 ) -> None:
     """Generate text using the specified model.
@@ -302,13 +303,12 @@ def cli_pipeline(
     from max.interfaces import SamplingParams, SamplingParamsInput
     from max.pipelines import PipelineConfig
 
-    if config_kwargs["max_new_tokens"] == -1:
-        # Limit generate default max_new_tokens to 100.
-        config_kwargs["max_new_tokens"] = 100
     params = SamplingParamsInput(
-        seed=seed,
+        # Limit generate default max_new_tokens to 100.
+        max_new_tokens=max_new_tokens or 100,
         top_k=top_k,
         temperature=temperature,
+        seed=seed,
     )
 
     # Load tokenizer & pipeline.

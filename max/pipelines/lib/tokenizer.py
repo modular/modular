@@ -159,14 +159,12 @@ class TextTokenizer(
         *,
         revision: str | None = None,
         max_length: int | None = None,
-        max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
         pipeline_config: PipelineConfig | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
 
         try:
             self.delegate = AutoTokenizer.from_pretrained(
@@ -408,8 +406,6 @@ class TextTokenizer(
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
             max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
             len(token_ids), self.max_length, max_new_tokens
@@ -489,12 +485,10 @@ class TextAndVisionTokenizer(
         *,
         revision: str | None = None,
         max_length: int | None = None,
-        max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
@@ -639,8 +633,6 @@ class TextAndVisionTokenizer(
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
             max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
             encoded_prompt.shape[0], self.max_length, max_new_tokens

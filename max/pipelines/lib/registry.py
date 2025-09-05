@@ -406,7 +406,6 @@ class PipelineRegistry:
                 pipeline_config.model_config.model_path,
                 revision=pipeline_config.model_config.huggingface_model_revision,
                 max_length=max_length,
-                max_new_tokens=pipeline_config.max_new_tokens,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
             )
@@ -415,7 +414,6 @@ class PipelineRegistry:
                 model_path=pipeline_config.model_config.model_path,
                 revision=pipeline_config.model_config.huggingface_model_revision,
                 max_length=max_length,
-                max_new_tokens=pipeline_config.max_new_tokens,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 pipeline_config=pipeline_config,
             )
@@ -481,7 +479,6 @@ class PipelineRegistry:
                 pipeline_config.model_config.model_path,
                 revision=pipeline_config.model_config.huggingface_model_revision,
                 max_length=max_length,
-                max_new_tokens=pipeline_config.max_new_tokens,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
             )
@@ -490,7 +487,6 @@ class PipelineRegistry:
                 model_path=pipeline_config.model_config.model_path,
                 revision=pipeline_config.model_config.huggingface_model_revision,
                 max_length=max_length,
-                max_new_tokens=pipeline_config.max_new_tokens,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 pipeline_config=pipeline_config,
             )
