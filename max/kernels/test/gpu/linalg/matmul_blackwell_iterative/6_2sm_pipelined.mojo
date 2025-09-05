@@ -297,8 +297,12 @@ fn consumer_main_loop[
 
     tma_mbar[stage].wait(phase)
 
-    var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-    var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+    var a_smem_tile = a_smem_iter.next_unsafe(
+        rebind[a_smem_iter.linear_uint_type](stage)
+    )[]
+    var b_smem_tile = b_smem_iter.next_unsafe(
+        rebind[b_smem_iter.linear_uint_type](stage)
+    )[]
 
     if elect_one_sync():
         mma_op.mma(
