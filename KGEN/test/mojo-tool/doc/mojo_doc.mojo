@@ -956,11 +956,14 @@ struct DeprecatedStruct:
 # CHECK:  "traits": [
 # CHECK:    "description": "The is some kind of description.",
 # CHECK:    "functions":
+# CHECK:      "hasDefaultImplementation": false,
 # CHECK:      "kind": "function",
 # Check that we don't generate inherited methods (like __del__ from AnyType).
 # CHECK-NOT: "name": "__del__"
 # CHECK:      "name": "f",
 # CHECK:      "summary": "This is a trait function doc."
+# CHECK:      "hasDefaultImplementation": true,
+# CHECK:      "name": "f_default",
 # CHECK:    "kind": "trait",
 # CHECK:    "name": "Trait",
 # CHECK:    "summary": "This is a trait doc."
@@ -975,6 +978,10 @@ trait Trait:
     fn f(self):
         """This is a trait function doc."""
         ...
+
+    fn f_default(self) -> Int:
+        """A function with a default implementation."""
+        return 0
 
 
 # CHECK: "deprecated": "deprecated trait"

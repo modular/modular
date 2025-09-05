@@ -581,6 +581,9 @@ public:
   /// Return true if this is a non-static struct method.
   bool isMethod() const { return isMethodFlag; }
 
+  /// Return true if this trait method has a default implementation.
+  bool hasDefaultImplementation() const { return isDefaultImplFlag; }
+
   /// Return the list of arguments of this function.
   ArrayRef<PublicArgumentDecl> getArguments() const { return args; }
   const PublicArgumentDecl &getArgument(size_t i) const { return args[i]; }
@@ -633,6 +636,7 @@ public:
   ///   "args": PublicArgumentDecl[],
   ///   "constraints": string,
   ///   "description": string,
+  ///   "hasDefaultImplementation": boolean,
   ///   "isDef": boolean,
   ///   "isImplicitConversion", boolean,
   ///   "isStatic": boolean,
@@ -690,6 +694,8 @@ private:
   bool isStaticFlag = false;
   bool raisesFlag = false;
   bool isInit = false; // Is init or moveinit or copyinit.
+  bool isDefaultImplFlag =
+      false; // True if trait method has default implementation.
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
