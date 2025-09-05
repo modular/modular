@@ -440,7 +440,7 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
                    3 for triple buffering).
     """
 
-    var _index: Int
+    var _index: UInt32
     """The current stage index in the pipeline.
 
     This field tracks which buffer in the circular pipeline is currently active.
@@ -490,7 +490,7 @@ struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, Movable):
         self._count = count
 
     @always_inline
-    fn index(self) -> Int:
+    fn index(self) -> UInt32:
         """Get the current stage index.
 
         Returns:

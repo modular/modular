@@ -295,7 +295,7 @@ fn consumer_main_loop[
     ],
     elect_one_warp: Bool,
     iter_idx: UInt,
-    accum_index: UInt,
+    accum_index: UInt32,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
