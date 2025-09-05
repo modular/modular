@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string._utf8 import _is_valid_utf8
+from collections.string._utf8 import _is_valid_utf8, _is_utf8_continuation_byte
 from collections.string.string_slice import _split
 from os import abort
 from pathlib import _dir_of_current_file
@@ -36,6 +35,13 @@ fn make_string[
 
     Args:
         filename: The name of the file inside the `./data` directory.
+
+    Notes:
+        This function tries to read the given length, but it can pad any invalid
+        utf8 with the nex bytes until reaching one. If the file length is less
+        than the requested length, then an approximate amount is appended from
+        `file_data * (length // file_size)` if the delta is bigger than
+        file_size otherwise `data[-delta:]` is appended.
     """
 
     try:
@@ -44,14 +50,26 @@ fn make_string[
 
         @parameter
         if length > 0:
-            var items = f.read_bytes(length)
-            i = 0
-            while length > len(items):
-                items.append(items[i])
-                i = i + 1 if i < len(items) - 1 else 0
-            return String(bytes=items)
+            var data = String(unsafe_uninit_length=UInt(length + 4))
+            var read = f.read(data.as_bytes_mut())
+            data._set_byte_length(read)
+            var end_idx = read - 1
+            while _is_utf8_continuation_byte(data.unsafe_ptr()[end_idx]):
+                end_idx += 1
+            data._set_byte_length(end_idx + 1)
+
+            if length > end_idx:
+                var delta = length - end_idx
+                var extra: String
+                if delta <= end_idx:
+                    extra = String(data[-Int(delta) :])
+                else:
+                    extra = data * Int(delta // end_idx)
+                data += extra
+
+            return data^
         else:
-            return String(bytes=f.read_bytes())
+            return f.read()
     except e:
         print(e, file=stderr)
     return abort[String]()

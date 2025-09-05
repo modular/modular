@@ -183,9 +183,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(first_word)
         ```
         """
-
-        var list = self.read_bytes(size)
-        return String(bytes=list)
+        return String(from_utf8=self.read_bytes(size))
 
     fn read[
         dtype: DType, origin: Origin[True]
