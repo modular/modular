@@ -646,9 +646,7 @@ class Graph:
         """Wrapper for clients that only require the op results."""
         with self._context, _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
-            op = builder.create(op_type, location)(
-                *_to_mlir(args), **_to_mlir(kwargs)
-            )
+            op = op_type(builder, location, *_to_mlir(args), **_to_mlir(kwargs))  # type: ignore
             op.verify()
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
