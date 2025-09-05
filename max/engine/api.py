@@ -266,7 +266,7 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-        kernel_logging: bool | None = None,
+        logging: str | None = None,
     ) -> None:
         """Construct an inference session.
 
@@ -278,18 +278,14 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
-            kernel_logging: Enable kernel execution logging. If None,
-              defaults to MAX_LOG_KERNELS environment variable. Kernel logging
-              will emit information about each kernel launch and completion to
-              stderr. Note: this can be a lot of output, so use with caution.
+            logging: Enable execution logging. If None, then logging is
+              disabled. Setting this to a value of "op" will emit information
+              about each op launch and completion to stderr.
         """
         config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
-
-        if kernel_logging is not None:
-            config["kernel_logging"] = kernel_logging
 
         # Process the provided iterable `devices`.
         final_devices: list[Device] = []
@@ -308,6 +304,9 @@ class InferenceSession:
                 custom_extensions
             )
         self._impl = _InferenceSession(config)
+
+        if logging is not None and logging == "op":
+            self._enable_op_logging()
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -566,6 +565,9 @@ class InferenceSession:
     def _set_mojo_define(self, key: str, value: bool | int | str) -> None:
         """Enables overwriting of any mojo config directly."""
         self._impl.set_mojo_define(key, value)
+
+    def _enable_op_logging(self) -> None:
+        self._set_mojo_define("MODULAR_ENABLE_OP_LOGGING", 1)
 
     @property
     def devices(self) -> list[Device]:
