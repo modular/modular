@@ -889,11 +889,15 @@ fn st_matrix[
     @parameter
     if num_matrices == 1:
         alias ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
-        inlined_assembly[ins, NoneType, constraints="r,r"](ptr, d[0])
+        inlined_assembly[ins, NoneType, constraints="r,r"](
+            Int32(Int(ptr)), d[0]
+        )
 
     elif num_matrices == 2:
         alias ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
-        inlined_assembly[ins, NoneType, constraints="r,r,r"](ptr, d[0], d[1])
+        inlined_assembly[ins, NoneType, constraints="r,r,r"](
+            Int32(Int(ptr)), d[0], d[1]
+        )
 
     else:
         constrained[
@@ -903,7 +907,7 @@ fn st_matrix[
 
         alias ins = base + get_suffix() + ".x4.shared.b16 [$0], {$1, $2, $3, $4};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r,r,r"](
-            ptr, d[0], d[1], d[2], d[3]
+            Int32(Int(ptr)), d[0], d[1], d[2], d[3]
         )
 
 
