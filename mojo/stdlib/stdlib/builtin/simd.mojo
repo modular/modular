@@ -1859,7 +1859,8 @@ struct SIMD[dtype: DType, size: Int](
             The corresponding __mlir_type.index value.
         """
         constrained[
-            dtype.is_integral(), "cannot index using a floating point type"
+            not dtype.is_floating_point(),
+            "cannot index using a floating point type",
         ]()
         # NOTE: using Int(self) here would cause an infinite recursion.
         return self.__int__()._mlir_value
