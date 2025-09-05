@@ -8,7 +8,7 @@
 
 import enum
 from collections.abc import Iterator, Sequence
-from typing import Callable, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from max.mlir import Attribute as MlirAttribute
 from max.mlir import Block as MlirBlock
@@ -150,11 +150,6 @@ class Operation:
 
 class OpBuilder:
     def __init__(self, arg: InsertPoint, /) -> None: ...
-
-    Op = TypeVar("Op", bound=Operation)
-    def create(
-        self, type: type[Op], location: Location
-    ) -> Callable[..., Op]: ...
 
 class Region:
     @property
