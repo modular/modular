@@ -31,7 +31,7 @@ struct MTuple[T: ImplicitlyCopyable & Movable](
 
     @always_inline
     fn __copyinit__(out self, existing: Self):
-        self.elts = existing.elts
+        self.elts = existing.elts.copy()
 
     @always_inline
     fn cons(self, var other: Self) -> Self:
