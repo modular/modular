@@ -581,7 +581,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in self._data.items():
             for _ in range(item.value):
                 elements.append(item.key.copy())
-        return elements
+        return elements^
 
     fn update(mut self, other: Self):
         """Update the Counter, like `dict.update()` but add counts instead of

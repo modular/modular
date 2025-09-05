@@ -806,7 +806,7 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+    for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
         item = StaticString("").join(
             "hello", u, "world", u, "mojo", u, "language", u
         )

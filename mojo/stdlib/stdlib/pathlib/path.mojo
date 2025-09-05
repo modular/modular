@@ -377,7 +377,7 @@ struct Path(
         for i in range(len(ls)):
             res.append(ls[i])
 
-        return res
+        return res^
 
     fn name(self) -> String:
         """Returns the name of the path.

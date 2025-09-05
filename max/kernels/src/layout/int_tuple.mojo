@@ -2882,7 +2882,7 @@ fn _sorted_perm(tuple: IntTuple) -> IntList:
         values.replace_entry(j + 1, int_value=Int(key_val))
         indices[j + 1] = key_idx
 
-    return indices
+    return indices^
 
 
 fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:

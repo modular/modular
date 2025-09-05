@@ -378,7 +378,7 @@ fn bench_compile_time[
     # the value of all measured metrics m to 0.
     var measures: List[ThroughputMeasure] = List[ThroughputMeasure]()
     if len(m.info_vec) > 0:
-        var ref_measures = m.info_vec[0].measures
+        ref ref_measures = m.info_vec[0].measures
         for i in range(len(ref_measures)):
             metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
@@ -422,7 +422,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
             continue
         sum = sum * 10 + diff
     vals.append(sum)
-    return vals
+    return vals^
 
 
 fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:

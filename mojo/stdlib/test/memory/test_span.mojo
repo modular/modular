@@ -308,14 +308,14 @@ def test_apply():
         items = List[Scalar[D]](
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
         )
-        twice = items
+        twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D]]()
         for i in range(len(items)):
             assert_true(span[i] == items[i] * 2)
 
         # twice only even numbers
-        twice = items
+        twice = items.copy()
         span = Span(twice)
         span.apply[func = _twice[D], where = _where[D]]()
         for i in range(len(items)):

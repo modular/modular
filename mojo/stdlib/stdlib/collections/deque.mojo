@@ -128,7 +128,7 @@ struct Deque[ElementType: Copyable & Movable](
         self._shrink = shrink
 
         if elements is not None:
-            self.extend(elements.value())
+            self.extend(elements.take())
 
     fn __init__(out self, var *values: ElementType, __list_literal__: () = ()):
         """Constructs a deque from the given values.

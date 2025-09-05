@@ -88,9 +88,9 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
             for _col in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
                 row_data.append(Int(random.random_si64(0, 1)))
-            data.append(row_data)
+            data.append(row_data^)
 
-        return Self(rows, cols, data)
+        return Self(rows, cols, data^)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -133,6 +133,6 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
                     new_state = 1
                 row_data.append(new_state)
 
-            next_generation.append(row_data)
+            next_generation.append(row_data^)
 
-        return Self(self.rows, self.cols, next_generation)
+        return Self(self.rows, self.cols, next_generation^)

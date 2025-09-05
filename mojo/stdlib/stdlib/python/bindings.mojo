@@ -512,8 +512,10 @@ struct PythonModuleBuilder:
             declared functions or types to the module.
         """
 
-        Python.add_functions(self.module, self.functions)
-        self.functions.clear()
+        var functions = self.functions^
+        self.functions = List[PyMethodDef]()
+
+        Python.add_functions(self.module, functions^)
 
         for ref builder in self.type_builders:
             builder.finalize(self.module)

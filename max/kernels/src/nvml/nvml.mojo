@@ -43,7 +43,7 @@ fn _get_nvml_library_paths() raises -> List[Path]:
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
             paths.append(path)
-    return paths
+    return paths^
 
 
 alias CUDA_NVML_LIBRARY = _Global[
@@ -83,8 +83,8 @@ fn _get_dylib_function[
 struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
     var _value: List[String]
 
-    fn __init__(out self, value: List[String]):
-        self._value = value
+    fn __init__(out self, var value: List[String]):
+        self._value = value^
 
     fn major(self) raises -> Int:
         return Int(self._value[0])
@@ -428,7 +428,7 @@ struct Device(Writable):
         for clock in clocks:
             res.append(Int(clock))
 
-        return res
+        return res^
 
     fn graphics_clocks(
         self, memory_clock_mhz: Int
@@ -479,7 +479,7 @@ struct Device(Writable):
         for clock in clocks:
             res.append(Int(clock))
 
-        return res
+        return res^
 
     fn set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
         _check_error(

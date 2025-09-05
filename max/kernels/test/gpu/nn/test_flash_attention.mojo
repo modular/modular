@@ -370,7 +370,7 @@ fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
     if info is H100 or info is B200:
         depths.append(80)
-    return depths
+    return depths^
 
 
 fn test_context_encoding(ctx: DeviceContext) raises:

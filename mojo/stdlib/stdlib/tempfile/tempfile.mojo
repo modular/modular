@@ -67,7 +67,7 @@ fn _candidate_tempdir_list() -> List[String]:
     except:
         pass
 
-    return dirlist
+    return dirlist^
 
 
 fn _get_default_tempdir() raises -> String:

@@ -621,7 +621,7 @@ fn gemv_gpu_dispatch[
                         k,
                         grid_dim=ceildiv(m, block_dim // WARP_SIZE),
                         block_dim=block_dim,
-                        attributes=launch_attributes,
+                        attributes=launch_attributes^,
                     )
                 else:
                     alias kernel = gemv_kernel_vector[

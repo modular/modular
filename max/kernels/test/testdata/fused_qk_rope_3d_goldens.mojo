@@ -119,7 +119,7 @@ def q_input[dtype: DType]() -> List[Scalar[dtype]]:
             -0.21553164720535278, -0.6398274898529053, -0.5227154493331909, -0.21821902692317963, 0.7730187177658081, 1.5361590385437012, 0.4523410499095917, 0.9832633137702942,
             # fmt: on
         )
-    )
+    ).copy()
 
 
 def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
@@ -224,7 +224,7 @@ def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
             1.731379747390747, -0.5656759142875671, 1.6123626232147217, 1.1043682098388672, 1.1283290386199951, 0.5013413429260254, -0.1915452629327774, -0.1277516782283783,
             # fmt: on
         )
-    )
+    ).copy()
 
 
 def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
@@ -329,7 +329,7 @@ def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
             -0.2150571048259735, -0.6398478150367737, -0.5227072238922119, -0.21821367740631104, 0.7730252146720886, 1.5361371040344238, 0.4523429870605469, 0.9832747578620911,
             # fmt: on
         )
-    )
+    ).copy()
 
 
 def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
@@ -434,7 +434,7 @@ def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
             1.7313255071640015, -0.5654513239860535, 1.612424373626709, 1.1042828559875488, 1.1283674240112305, 0.5013559460639954, -0.19156305491924286, -0.12774600088596344,
             # fmt: on
         )
-    )
+    ).copy()
 
 
 def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
@@ -445,7 +445,7 @@ def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
             2, 5, 8, 2, 1, 0, 6, 9, 6,
             # fmt: on
         )
-    )
+    ).copy()
 
 
 def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
@@ -710,4 +710,4 @@ def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
             1.0, 0.00017432581807952374, 1.0, 0.00011320397607050836, 1.0, 7.351258682319894e-05, 1.0, 4.7737721615703776e-05,
             # fmt: on
         )
-    )
+    ).copy()

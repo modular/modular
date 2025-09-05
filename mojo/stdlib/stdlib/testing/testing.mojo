@@ -226,7 +226,7 @@ fn assert_equal[
 
     # Cast `rhs` to have the same origin as `lhs`, so that we can delegate to
     # `List.__ne__`.
-    var rhs_origin_casted = rebind[List[StringSlice[O1]]](rhs)
+    var rhs_origin_casted = rebind[List[StringSlice[O1]]](rhs).copy()
 
     if lhs != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](

@@ -41,7 +41,7 @@ fn random_numbers[
             result.append(random_float64(0, max).cast[dtype]())
         else:
             result.append(random_ui64(0, max).cast[dtype]())
-    return result
+    return result^
 
 
 fn assert_sorted_string(mut list: List[String]) raises:

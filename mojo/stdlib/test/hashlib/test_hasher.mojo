@@ -105,7 +105,6 @@ struct ComplexHashableStructWithList(Hashable):
             data=self._value3.unsafe_ptr(),
             length=len(self._value3),
         )
-        _ = self._value3
 
 
 @fieldwise_init
@@ -125,7 +124,6 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
             length=len(self._value3),
         )
         hasher.update(self._value4)
-        _ = self._value3
 
 
 def test_update_with_bytes():

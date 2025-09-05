@@ -227,13 +227,13 @@ struct Report(Defaultable, ImplicitlyCopyable, Movable):
 
     fn __copyinit__(out self, existing: Self):
         """
-        Creates a shallow copy (it doesn't copy the data).
+        Creates a copy of `existing`.
 
         Args:
             existing: The `Report` to copy.
         """
         self.warmup_duration = existing.warmup_duration
-        self.runs = existing.runs
+        self.runs = existing.runs.copy()
 
     fn iters(self) -> Int:
         """

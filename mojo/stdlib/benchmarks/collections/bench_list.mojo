@@ -31,7 +31,7 @@ fn make_list[
         max=scalar_t.MAX.cast[DType.float64](),
     )
     d._len = size
-    return d
+    return d^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -50,7 +50,7 @@ fn bench_list_copyinit[
     @always_inline
     @parameter
     fn call_fn() raises:
-        result = items
+        result = items^
         res += len(result)
         keep(result.unsafe_ptr())
         keep(items.unsafe_ptr())

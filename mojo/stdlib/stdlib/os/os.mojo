@@ -148,7 +148,7 @@ struct _DirHandle:
                 continue
             res.append(String(name_str))
 
-        return res
+        return res^
 
     fn _list_macos(self) -> List[String]:
         """Reads all the data from the handle.
@@ -174,7 +174,7 @@ struct _DirHandle:
                 continue
             res.append(String(name_str))
 
-        return res
+        return res^
 
 
 # ===----------------------------------------------------------------------=== #

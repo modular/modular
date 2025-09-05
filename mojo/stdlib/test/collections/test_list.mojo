@@ -482,8 +482,8 @@ def test_list_append():
 
 def test_list_extend():
     var items = List[UInt32](1, 2, 3)
-    var copy = items
-    items.extend(copy)
+    var copy = items.copy()
+    items.extend(copy^)
     assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
 
     items = [1, 2, 3]
@@ -543,7 +543,7 @@ def test_2d_dynamic_list():
         var v = List[Int]()
         for j in range(3):
             v.append(i + j)
-        list.append(v)
+        list.append(v^)
 
     assert_equal(0, list[0][0])
     assert_equal(1, list[0][1])
@@ -606,7 +606,7 @@ def test_no_extra_copies_with_sugared_set_by_field():
 # https://github.com/modular/modular/issues/1493
 def test_list_copy_constructor():
     var vec = List[Int](capacity=1)
-    var vec_copy = vec
+    var vec_copy = vec.copy()
     vec_copy.append(1)  # Ensure copy constructor doesn't crash
     _ = vec^  # To ensure previous one doesn't invoke move constructor
 
@@ -757,14 +757,14 @@ def test_list_count():
 def test_list_add():
     var a = [1, 2, 3]
     var b = [4, 5, 6]
-    var c = a + b
+    var c = a + b.copy()
     assert_equal(len(c), 6)
     # check that original values aren't modified
     assert_equal(len(a), 3)
     assert_equal(len(b), 3)
     assert_equal(c.__str__(), "[1, 2, 3, 4, 5, 6]")
 
-    a += b
+    a += b.copy()
     assert_equal(len(a), 6)
     assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
@@ -937,7 +937,7 @@ def _test_copyinit_trivial_types[dt: DType, hint_trivial_type: Bool]():
         x = List[Scalar[dt], hint_trivial_type]()
         for i in range(current_size):
             x.append(i)
-        y = x
+        y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
         assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))

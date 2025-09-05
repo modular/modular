@@ -230,7 +230,7 @@ def test_from_to_bits_roundtrip():
         @parameter
         if not CompilationTarget.has_neon():
             res.append(DType.bfloat16)
-        return res
+        return res^
 
     alias fp_dtypes = floating_point_dtypes()
 

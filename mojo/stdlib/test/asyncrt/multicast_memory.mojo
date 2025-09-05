@@ -20,7 +20,7 @@ fn test_multicast_memory(contexts: List[DeviceContext]) raises:
     alias alloc_len = 128 * 1024
     alias dtype = DType.int32
 
-    var multicast_buf = DeviceMulticastBuffer[dtype](contexts, alloc_len)
+    var multicast_buf = DeviceMulticastBuffer[dtype](contexts.copy(), alloc_len)
 
     for i in range(len(contexts)):
         var dev_buf = multicast_buf.unicast_buffer_for(contexts[i])

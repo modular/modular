@@ -1068,7 +1068,7 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
         alias arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
-    return layout_list
+    return layout_list^
 
 
 # The CUTE version has a second input to specify which modes to coalesce. We simplify

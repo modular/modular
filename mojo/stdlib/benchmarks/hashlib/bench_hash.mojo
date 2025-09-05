@@ -576,7 +576,7 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
         for w in list:
             var w2 = w.strip()
             result.append(w1 + " " + w2)
-    return result
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#

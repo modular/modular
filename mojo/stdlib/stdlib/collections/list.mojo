@@ -476,7 +476,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         var orig = self.copy()
         self.reserve(len(self) * x)
         for _ in range(x - 1):
-            self.extend(orig)
+            self.extend(Span(orig))
 
     fn __add__(self, var other: Self) -> Self:
         """Concatenates self with other and returns the result as a new list.

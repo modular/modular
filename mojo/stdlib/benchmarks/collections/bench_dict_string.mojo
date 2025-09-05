@@ -184,7 +184,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var keys = List[StringSlice[ImmutableAnyOrigin]](capacity=self.count)
         for i in range(self.count):
             keys.append(self[i])
-        return keys
+        return keys^
 
     fn print_keys(self):
         print("(" + String(self.count) + ")[", end="")
@@ -260,7 +260,7 @@ struct StringDict[
             memcpy(self.key_hashes, existing.key_hashes, self.capacity)
         else:
             self.key_hashes = UnsafePointer[Scalar[KeyCountType]].alloc(0)
-        self.values = existing.values
+        self.values = existing.values.copy()
         self.slot_to_index = UnsafePointer[Scalar[KeyCountType]].alloc(
             self.capacity
         )

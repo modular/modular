@@ -83,7 +83,7 @@ def all_gather_test[
             device_outputs.append(
                 list_of_ctx[device_idx].create_buffer_sync[dtype](length)
             )
-        out_bufs_list.append(device_outputs)
+        out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](

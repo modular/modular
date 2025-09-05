@@ -434,7 +434,7 @@ struct BenchmarkInfo(ImplicitlyCopyable, Movable):
         out self,
         name: String,
         result: Report,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        var measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
         verbose_timing: Bool = False,
     ):
         """Constructs a `BenchmarkInfo` object to return benchmark report and
@@ -449,7 +449,7 @@ struct BenchmarkInfo(ImplicitlyCopyable, Movable):
 
         self.name = name
         self.result = result
-        self.measures = measures
+        self.measures = measures^
         self.verbose_timing = verbose_timing
 
 
@@ -781,7 +781,7 @@ struct Bench(Stringable, Writable):
 
         if self.mode == Mode.Benchmark:
             for _ in range(self.config.num_repetitions):
-                self._bench[bench_fn](bench_id, measures)
+                self._bench[bench_fn](bench_id, measures.copy())
         elif self.mode == Mode.Test:
             self._test[bench_fn]()
 
@@ -869,7 +869,7 @@ struct Bench(Stringable, Writable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
+        var measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function.
 
@@ -932,7 +932,7 @@ struct Bench(Stringable, Writable):
             BenchmarkInfo(
                 full_name,
                 res,
-                measures,
+                measures^,
                 self.config.verbose_timing,
             )
         )
@@ -1069,7 +1069,7 @@ struct Bench(Stringable, Writable):
         writer.write("\n")
 
         # Loop through the runs and write out the table rows
-        var runs = self.info_vec
+        var runs = self.info_vec.copy()
         for i in range(len(runs)):
             var run = runs[i]
             var result = run.result

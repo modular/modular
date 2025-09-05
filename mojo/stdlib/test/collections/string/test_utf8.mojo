@@ -210,7 +210,7 @@ def test_combination_good_utf8_sequences():
     # any combination of good sequences should be good
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + GOOD_SEQUENCES[j]
+            var sequence = GOOD_SEQUENCES[i] + GOOD_SEQUENCES[j].copy()
             assert_true(validate_utf8(Span(sequence)))
 
 
@@ -218,7 +218,7 @@ def test_combination_bad_utf8_sequences():
     # any combination of bad sequences should be bad
     for i in range(0, len(BAD_SEQUENCES)):
         for j in range(i, len(BAD_SEQUENCES)):
-            var sequence = BAD_SEQUENCES[i] + BAD_SEQUENCES[j]
+            var sequence = BAD_SEQUENCES[i] + BAD_SEQUENCES[j].copy()
             assert_false(validate_utf8(Span(sequence)))
 
 
@@ -226,7 +226,7 @@ def test_combination_good_bad_utf8_sequences():
     # any combination of good and bad sequences should be bad
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + BAD_SEQUENCES[j]
+            var sequence = GOOD_SEQUENCES[i] + BAD_SEQUENCES[j].copy()
             assert_false(validate_utf8(Span(sequence)))
 
 

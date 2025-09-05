@@ -113,7 +113,7 @@ fn bench_reduce[
         fill={}
     )
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var multicast_buf = DeviceMulticastBuffer[dtype](list_of_ctx, length)
+    var multicast_buf = DeviceMulticastBuffer[dtype](list_of_ctx.copy(), length)
 
     @parameter
     if use_multimem:

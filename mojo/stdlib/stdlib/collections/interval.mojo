@@ -925,7 +925,7 @@ struct IntervalTree[
             var row = List[String]()
             for _ in range(4 * width):
                 row.append(" ")  # Initialize with spaces
-            grid.append(row)
+            grid.append(row^)
 
         var work_list = Deque[
             Tuple[UnsafePointer[_IntervalNode[T, U]], Int, Int, Int]
@@ -1049,4 +1049,4 @@ struct IntervalTree[
             ):
                 work_list.append(current_node[].right)
 
-        return result
+        return result^

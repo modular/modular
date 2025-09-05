@@ -702,7 +702,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         self._len = existing._len
         self._n_entries = existing._n_entries
         self._index = existing._index.copy_reserved(existing._reserved())
-        self._entries = existing._entries
+        self._entries = existing._entries.copy()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1094,7 +1094,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         # We have memory available, we'll use everything.
         for _ in range(entries.capacity):
             entries.append(None)
-        return entries
+        return entries^
 
     fn _insert(mut self, var key: K, var value: V):
         self._insert(DictEntry[K, V, H](key^, value^))
