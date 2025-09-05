@@ -29,15 +29,9 @@ def : MojoDriverDescription<
   "\n"
   "And you can start a REPL session by running `mojo` with no commands.\n"
   "\n"
-  "To update Mojo to the latest version, use the "
-  "[`magic` tool](https://docs.modular.com/mojo/manual/get-started"
-  "#update-mojo):\n"
-  "\n"
-  "    magic update\n"
-  "\n"
   "You can check your current version with `mojo --version`. "
-  "For information about Mojo updates, see the "
-  "[Mojo changelog](https://docs.modular.com/mojo/changelog.html).",
+  "For version information, see the "
+  "[Mojo changelog](https://docs.modular.com/mojo/changelog).",
   [
     UsageInfo<"", "command", /*variadicInput=*/false>,
     UsageInfo<"run-options", "path", /*variadicInput=*/false>,
