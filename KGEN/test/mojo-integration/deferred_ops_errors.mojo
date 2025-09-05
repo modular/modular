@@ -28,7 +28,7 @@ def extra_attribute(a: Int, b: Int) -> Bool:
 @export
 fn invalid_predicate_passed(x: Int, y: Int) -> Bool:
     fn pred() -> __mlir_type.`!kgen.string`:
-        return __mlir_attr[`"ne" : !kgen.string`]
+        return __mlir_attr[`"xyz" : !kgen.string`]
 
     fn get_pred() -> __mlir_type.`!kgen.deferred`:
         return __mlir_deferred_attr[`#index<cmp_predicate `, pred(), `>`]

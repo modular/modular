@@ -115,12 +115,10 @@ struct ValueIsPresent<M::SmartVariant<Ts...>,
 template <class To, class... Ts>
 struct CastInfo<To, M::SmartVariant<Ts...>> {
   using From = M::SmartVariant<Ts...>;
-  using PointerUnionCastImpl = CastInfoPointerUnionImpl<Ts...>;
 
   static bool isPossible(From &f) {
     if constexpr (From::CanStealBits)
-      return PointerUnionCastImpl::template isPossible<To>(
-          f.getUnderlyingStorage());
+      return isa<To>(f.getUnderlyingStorage());
     else
       return std::holds_alternative<To>(f.getUnderlyingStorage());
   }
@@ -129,8 +127,7 @@ struct CastInfo<To, M::SmartVariant<Ts...>> {
   /// pointer, return a value. Otherwise, return a reference.
   static std::conditional_t<From::CanStealBits, To, To &> doCast(From &f) {
     if constexpr (From::CanStealBits)
-      return PointerUnionCastImpl::template doCast<To>(
-          f.getUnderlyingStorage());
+      return cast<To>(f.getUnderlyingStorage());
     else
       return std::get<To>(f.getUnderlyingStorage());
   }
@@ -140,8 +137,7 @@ struct CastInfo<To, M::SmartVariant<Ts...>> {
   static std::conditional_t<From::CanStealBits, To, const To &>
   doCast(const From &f) {
     if constexpr (From::CanStealBits)
-      return PointerUnionCastImpl::template doCast<To>(
-          f.getUnderlyingStorage());
+      return cast<To>(f.getUnderlyingStorage());
     else
       return std::get<To>(f.getUnderlyingStorage());
   }

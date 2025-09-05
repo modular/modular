@@ -267,8 +267,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       type.getContext(), llvm::dwarf::DW_TAG_array_type,
       StringAttr::get(type.getContext()), nullptr, /*line=*/0,
       /*scope=*/nullptr, convertType(type.getElementType()),
-      LLVM::DIFlags::Zero, type.getSizeInBits(), /*alignInBits=*/0, element,
-      /*dataLocation=*/{}, /*rank=*/{}, /*allocated=*/{}, /*associated=*/{});
+      LLVM::DIFlags::Zero, type.getSizeInBits(), /*alignInBits=*/0,
+      /*dataLocation=*/{}, /*rank=*/{}, /*allocated=*/{}, /*associated=*/{},
+      element);
 }
 
 LLVM::DIBasicTypeAttr MetadataConverter::convertTypeImpl(DIBasicType type) {
@@ -313,9 +314,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
   return LLVM::DICompositeTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_structure_type, type.getName(),
       /*file=*/nullptr, /*line=*/0, /*scope=*/nullptr, /*baseType=*/nullptr,
-      LLVM::DIFlags::Zero, structSize, structAlign, elementTypes,
+      LLVM::DIFlags::Zero, structSize, structAlign,
       /*dataLocation=*/{}, /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{});
+      /*allocated=*/{}, /*associated=*/{}, elementTypes);
 }
 
 LLVM::DISubroutineTypeAttr
@@ -369,8 +370,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
   return LLVM::DICompositeTypeAttr::get(
       context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
       nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
-      type.getAlignInBits(), variantTypes, /*dataLocation=*/{}, /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{});
+      type.getAlignInBits(), /*dataLocation=*/{}, /*rank=*/{},
+      /*allocated=*/{}, /*associated=*/{}, variantTypes);
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
@@ -382,9 +383,9 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       type.getContext(), llvm::dwarf::DW_TAG_array_type, type.getName(),
       nullptr, /*line=*/0, /*scope=*/nullptr,
       convertType(type.getElementType()), LLVM::DIFlags::Vector,
-      type.getSizeInBits(), /*alignInBits=*/0, element, /*dataLocation=*/{},
+      type.getSizeInBits(), /*alignInBits=*/0, /*dataLocation=*/{},
       /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{});
+      /*allocated=*/{}, /*associated=*/{}, element);
 }
 
 //===----------------------------------------------------------------------===//
