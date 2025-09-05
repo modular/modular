@@ -55,7 +55,6 @@ logger = logging.getLogger("max.serve")
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
     # Pipeline config
-    model_name: str
     model_factory: PipelinesFactory
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer
@@ -70,7 +69,9 @@ async def lifespan(
 ):
     try:
         if not settings.disable_telemetry:
-            send_telemetry_log(serving_settings.model_name)
+            send_telemetry_log(
+                serving_settings.pipeline_config.model_config.model_name
+            )
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
 
@@ -123,14 +124,16 @@ async def lifespan(
                 else None
             )
 
-            METRICS.pipeline_load(serving_settings.model_name)
+            METRICS.pipeline_load(
+                serving_settings.pipeline_config.model_config.model_name
+            )
             pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
             if serving_settings.pipeline_task in (
                 PipelineTask.TEXT_GENERATION,
                 PipelineTask.EMBEDDINGS_GENERATION,
             ):
                 pipeline = TokenGeneratorPipeline(
-                    model_name=serving_settings.model_name,
+                    model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
                     engine_queue=engine_queue,
                     lora_queue=lora_queue,
@@ -139,7 +142,7 @@ async def lifespan(
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
             ):
                 pipeline = AudioGeneratorPipeline(
-                    model_name=serving_settings.model_name,
+                    model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
                     engine_queue=engine_queue,
                     lora_queue=lora_queue,

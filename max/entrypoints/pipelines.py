@@ -150,6 +150,11 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         ),
     )
     @click.option(
+        "--served-model-name",
+        type=str,
+        help="Model name used in HTTP API. If unspecified, the model name is equal to --model-path",
+    )
+    @click.option(
         "--sim-failure",
         type=int,
         default=0,
@@ -202,7 +207,9 @@ def cli_serve(
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
-    from max.entrypoints.cli import serve_api_server_and_model_worker
+    from max.entrypoints.cli import (
+        serve_api_server_and_model_worker,
+    )
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
     from max.pipelines import AudioGenerationConfig, PipelineConfig

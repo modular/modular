@@ -96,7 +96,6 @@ def serve_api_server_and_model_worker(
     )
 
     pipeline_settings = ServingTokenGeneratorSettings(
-        model_name=pipeline_config.model_config.model_path,
         model_factory=pipeline_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,

@@ -77,6 +77,9 @@ class MAXModelConfig(MAXModelConfigBase):
     model_path: str = ""
     """:obj:`repo_id` of a Hugging Face model repository to use."""
 
+    served_model_name: Optional[str] = None
+    """Optional override for client-facing model name. Defaults to model_path."""
+
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
@@ -219,6 +222,12 @@ class MAXModelConfig(MAXModelConfigBase):
     @property
     def kv_cache_config(self) -> KVCacheConfig:
         return self._kv_cache_config
+
+    @property
+    def model_name(self) -> str:
+        if self.served_model_name is not None:
+            return self.served_model_name
+        return self.model_path
 
     @property
     def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
@@ -834,6 +843,7 @@ class MAXModelConfig(MAXModelConfigBase):
     def help() -> dict[str, str]:
         max_model_help = {
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "served_model_name": "Optional override for client-facing model name. Defaults to model_path.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "allow_safetensors_weights_fp32_bf6_bidirectional_cast": "Specify whether to allow automatic float32 to bfloat16 safetensors weight type casting, if needed. Currently only supported in Llama3 models.",
