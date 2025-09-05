@@ -102,6 +102,7 @@ description: {% if decl.summary
 {# Main loop #}
 {#############}
 {% for decl in decls recursive %}
+{% set outer_loop = loop %}
 {% if loop.depth == 1 %}
 {{ print_front_matter(decl) }}
 {% else %}
@@ -233,11 +234,26 @@ description: {% if decl.summary
 
 {% endfor %}
 {% endif %}
+{% if decl.kind == 'trait' %}
+{% if decl.required_methods %}
+
+## Required methods
+
+{{ outer_loop(decl.required_methods) }}
+{% endif %}
+{% if decl.provided_methods %}
+
+## Provided methods
+
+{{ outer_loop(decl.provided_methods) }}
+{% endif %}
+{% else %}
 {% if decl.functions %}
 
 ## Methods
 
-{{ loop(decl.functions) }}
+{{ outer_loop(decl.functions) }}
+{% endif %}
 {% endif %}
 {% endfor %}
 
