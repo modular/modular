@@ -25,14 +25,20 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-from max.interfaces import BaseContext, PipelinesFactory, PipelineTask
+from max.interfaces import (
+    BaseContext,
+    PipelinesFactory,
+    PipelineTask,
+    RequestID,
+)
+from max.pipelines.core import get_request_payload_from_pipeline_task
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler import load_scheduler
+from max.serve.scheduler import create_zmq_push_pull_queues, load_scheduler
 from max.serve.scheduler.base import (
     PayloadType,
     SchedulerProgress,
@@ -242,13 +248,35 @@ async def start_model_worker(
     pc = ProcessControl(
         mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
+
+    # Create Queues
+    request_push_queue, _ = create_zmq_push_pull_queues(
+        endpoint=settings.request_zmq_endpoint,
+        payload_type=get_request_payload_from_pipeline_task(pipeline_task),
+        use_pickle=False,
+        lazy=True,
+    )
+
+    _, response_pull_queue = create_zmq_push_pull_queues(
+        endpoint=settings.response_zmq_endpoint,
+        payload_type=pipeline_task.output_type,
+        use_pickle=False,
+        lazy=True,
+    )
+
+    cancel_push_queue, _ = create_zmq_push_pull_queues(
+        endpoint=settings.cancel_zmq_endpoint,
+        payload_type=list[RequestID],
+        use_pickle=False,
+        lazy=True,
+    )
+
     engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
         mp_context,
         worker_pc=pc,
-        request_zmq_endpoint=settings.request_zmq_endpoint,
-        response_zmq_endpoint=settings.response_zmq_endpoint,
-        cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        pipeline_task=pipeline_task,
+        request_queue=request_push_queue,
+        response_queue=response_pull_queue,
+        cancel_queue=cancel_push_queue,
     )
 
     logger.debug("Starting worker: %s", worker_name)

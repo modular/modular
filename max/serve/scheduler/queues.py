@@ -21,27 +21,25 @@ import multiprocessing.process
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from typing import Generic, TypeVar
+from typing import Generic
 
 from max.interfaces import (
     BaseContextType,
-    PipelineTask,
+    MAXPullQueue,
+    MAXPushQueue,
+    PipelineOutputType,
     RequestID,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
+    SchedulerResult,
 )
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
-ReqOutput = TypeVar("ReqOutput")
-
 """The sentinel used to indicate a queue is finished."""
 
 
-class EngineQueue(Generic[BaseContextType, ReqOutput]):
+class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
     """Container for managing interactions between a remote model worker process
 
     As part of its work, response_worker will verify that the remote process is
@@ -53,31 +51,19 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
         self,
         context: multiprocessing.context.BaseContext,
         worker_pc: ProcessControl,
-        request_zmq_endpoint: str,
-        response_zmq_endpoint: str,
-        cancel_zmq_endpoint: str,
-        pipeline_task: PipelineTask,
+        request_queue: MAXPushQueue[tuple[RequestID, BaseContextType]],
+        response_queue: MAXPullQueue[
+            dict[RequestID, SchedulerResult[PipelineOutputType]]
+        ],
+        cancel_queue: MAXPushQueue[list[RequestID]],
     ) -> None:
         super().__init__()
         self.context = context
 
         # Create Queues
-        self.request_push_socket = ZmqPushSocket[
-            tuple[RequestID, BaseContextType]
-        ](
-            endpoint=request_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(use_shared_memory=True),
-        )
-
-        self.response_pull_socket = ZmqPullSocket[dict[RequestID, ReqOutput]](
-            endpoint=response_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(pipeline_task.output_type),
-        )
-
-        self.cancel_push_socket = ZmqPushSocket[list[str]](
-            endpoint=cancel_zmq_endpoint,
-            serialize=msgpack_numpy_encoder(),
-        )
+        self.request_queue = request_queue
+        self.response_queue = response_queue
+        self.cancel_queue = cancel_queue
 
         self.pending_out_queues: dict[RequestID, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
@@ -140,14 +126,14 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
             # put_nowait will fail if the request_push_socket is unavailable
             # this will immediately trigger the finally block, resulting in
             # the request being purged, and returned without result.
-            self.request_push_socket.put_nowait((req_id, data))
+            self.request_queue.put_nowait((req_id, data))
             yield out_queue
         finally:
             del self.pending_out_queues[req_id]
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncGenerator[ReqOutput, None]:
+    ) -> AsyncGenerator[PipelineOutputType, None]:
         """
         Asynchronously streams results for a given request ID and input data.
 
@@ -201,7 +187,7 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
             count_no_progress = 0
             while True:
                 try:
-                    response_dict = self.response_pull_socket.get_nowait()
+                    response_dict = self.response_queue.get_nowait()
                     cancelled = set()
                     for request_id, response in response_dict.items():
                         if request_id in self.pending_out_queues:
@@ -212,7 +198,7 @@ class EngineQueue(Generic[BaseContextType, ReqOutput]):
                             cancelled.add(request_id)
 
                     if cancelled:
-                        self.cancel_push_socket.put_nowait(list(cancelled))
+                        self.cancel_queue.put_nowait(list(cancelled))
 
                     count_no_progress = 0
 
