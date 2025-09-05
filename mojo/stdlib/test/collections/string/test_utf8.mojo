@@ -12,8 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string._utf8 import (
+    _is_valid_utf8_runtime,
+    _is_valid_utf8_comptime,
     _count_utf8_continuation_bytes,
     _is_valid_utf8,
+    _utf8_byte_type,
+    _is_utf8_continuation_byte,
 )
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
@@ -32,6 +36,7 @@ alias GOOD_SEQUENCES = [
     List("\xf0\x90\x80\x80".as_bytes()),
     List("\xee\x80\x80".as_bytes()),
     List("very very very long string 🔥🔥🔥".as_bytes()),
+    List(" τo".as_bytes()),
 ]
 
 
@@ -81,8 +86,22 @@ alias BAD_SEQUENCES = [
 # ===----------------------------------------------------------------------=== #
 
 
+def validate_utf8[span: Span[Byte]]() -> Bool:
+    alias comptime = _is_valid_utf8_comptime(span)
+    var runtime = _is_valid_utf8_runtime(span)
+    assert_equal(comptime, runtime)
+    return comptime
+
+
+def validate_utf8(span: Span[Byte]) -> Bool:
+    var comptime = _is_valid_utf8_comptime(span)
+    var runtime = _is_valid_utf8_runtime(span)
+    assert_equal(comptime, runtime)
+    return comptime
+
+
 fn test_utf8_validation() raises:
-    var text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
+    alias text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
     , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
     Nulla nec risus a purus volutpat blandit. Donec sit amet massa velit. Aenean
@@ -109,10 +128,9 @@ fn test_utf8_validation() raises:
      ظهرت نسخ جديدة ومختلفة من نص لوريم إيبسوم، أحياناً عن طريق
      الصدفة، وأحياناً عن عمد كإدخال بعض العبارات الفكاهية إليها.
     """
-    assert_true(_is_valid_utf8(text.as_bytes()))
-    assert_true(_is_valid_utf8(text.as_bytes()))
+    assert_true(validate_utf8[text.as_bytes()]())
 
-    var positive = List[List[UInt8]](
+    alias positive = List[List[UInt8]](
         List[UInt8](0x0),
         List[UInt8](0x00),
         List[UInt8](0x66),
@@ -129,10 +147,12 @@ fn test_utf8_validation() raises:
         List[UInt8](0xF2, 0x81, 0xBE, 0x99),
         List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
     )
-    for item in positive:
-        assert_true(_is_valid_utf8(Span(item)))
-        assert_true(_is_valid_utf8(Span(item)))
-    var negative = List[List[UInt8]](
+
+    @parameter
+    for i in range(len(positive)):
+        assert_true(validate_utf8[positive[i]]())
+
+    alias negative = List[List[UInt8]](
         List[UInt8](0x80),
         List[UInt8](0xBF),
         List[UInt8](0xC0, 0x80),
@@ -159,23 +179,22 @@ fn test_utf8_validation() raises:
         List[UInt8](0x00, 0x00, 0xF1, 0x80, 0xC2, 0x80, 0x00),
         List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
     )
-    for item in negative:
-        assert_false(_is_valid_utf8(Span(item)))
-        assert_false(_is_valid_utf8(Span(item)))
 
-
-fn validate_utf8(span: Span[Byte]) -> Bool:
-    return _is_valid_utf8(span)
+    @parameter
+    for i in range(len(negative)):
+        assert_false(validate_utf8[negative[i]]())
 
 
 def test_good_utf8_sequences():
-    for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence))
+    @parameter
+    for i in range(len(GOOD_SEQUENCES)):
+        assert_true(validate_utf8[GOOD_SEQUENCES[i]]())
 
 
 def test_bad_utf8_sequences():
-    for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(Span(sequence)))
+    @parameter
+    for i in range(len(BAD_SEQUENCES)):
+        assert_false(validate_utf8[BAD_SEQUENCES[i]]())
 
 
 def test_stringslice_from_utf8():
@@ -234,6 +253,9 @@ def test_count_utf8_continuation_bytes():
     alias b3 = UInt8(0b1110_0000)
     alias b4 = UInt8(0b1111_0000)
 
+    for i in range(c, b2):
+        assert_true(_is_utf8_continuation_byte(i))
+
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
         var span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
@@ -254,7 +276,23 @@ def test_count_utf8_continuation_bytes():
     _test(3, List[UInt8](b2, c, b3, c, c))
 
 
+def test_utf8_byte_type():
+    for i in range(UInt8(0b1000_0000)):
+        assert_equal(_utf8_byte_type(i), 0)
+    for i in range(UInt8(0b1000_0000), UInt8(0b1100_0000)):
+        assert_equal(_utf8_byte_type(i), 1)
+    for i in range(UInt8(0b1100_0000), UInt8(0b1110_0000)):
+        assert_equal(_utf8_byte_type(i), 2)
+    for i in range(UInt8(0b1110_0000), UInt8(0b1111_0000)):
+        assert_equal(_utf8_byte_type(i), 3)
+    for i in range(UInt8(0b1111_0000), UInt8(0b1111_1111)):
+        assert_equal(_utf8_byte_type(i), 4)
+
+
 def main():
+    test_count_utf8_continuation_bytes()
+    test_utf8_byte_type()
+
     test_utf8_validation()
     test_good_utf8_sequences()
     test_bad_utf8_sequences()
@@ -264,4 +302,3 @@ def main():
     test_combination_good_bad_utf8_sequences()
     test_combination_10_good_utf8_sequences()
     test_combination_10_good_10_bad_utf8_sequences()
-    test_count_utf8_continuation_bytes()
