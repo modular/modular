@@ -651,6 +651,30 @@ def _convert_stop(stop: Union[str, list[str], None]) -> Optional[list[str]]:
     return stop
 
 
+def _get_target_endpoint(
+    request: Request, body_target_endpoint: Optional[str]
+) -> Optional[str]:
+    """Extract target_endpoint from header or body.
+
+    Header takes precedence over body parameter.
+    Uses the header name 'X-Target-Endpoint'.
+
+    Args:
+        request: FastAPI Request object
+        body_target_endpoint: target_endpoint from the request body
+
+    Returns:
+        target_endpoint value from header if present, otherwise from body
+    """
+    # Check for header first (takes precedence)
+    header_target_endpoint = request.headers.get("X-Target-Endpoint")
+    if header_target_endpoint:
+        return header_target_endpoint
+
+    # Fall back to body parameter
+    return body_target_endpoint
+
+
 @router.post("/chat/completions", response_model=None)
 async def openai_create_chat_completion(
     request: Request,
@@ -728,7 +752,9 @@ async def openai_create_chat_completion(
             request_path=request.url.path,
             response_format=response_format,
             sampling_params=sampling_params,
-            target_endpoint=completion_request.target_endpoint,
+            target_endpoint=_get_target_endpoint(
+                request, completion_request.target_endpoint
+            ),
         )
 
         if completion_request.stream:
@@ -1171,7 +1197,9 @@ async def openai_create_completion(
                 ),
                 echo=completion_request.echo or False,
                 sampling_params=sampling_params,
-                target_endpoint=completion_request.target_endpoint,
+                target_endpoint=_get_target_endpoint(
+                    request, completion_request.target_endpoint
+                ),
             )
             token_requests.append(tgr)
 
