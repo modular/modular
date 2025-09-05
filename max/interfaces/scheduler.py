@@ -6,11 +6,26 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import Generic, Optional
 
 import msgspec
 
 from .pipeline import PipelineOutputType
+
+
+class Scheduler(ABC):
+    """Abstract base class defining the interface for schedulers."""
+
+    @abstractmethod
+    def run_iteration(self):
+        """The core scheduler routine that creates and executes batches.
+
+        This method should implement the core scheduling logic including:
+        - Batch creation and management
+        - Request scheduling
+        """
+        ...
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
