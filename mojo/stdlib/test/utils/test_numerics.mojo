@@ -166,6 +166,7 @@ def test_max_finite():
     assert_true(overflow_int[DType.uint32]())
     assert_true(overflow_int[DType.int64]())
     assert_true(overflow_int[DType.uint64]())
+    assert_true(overflow_int[DType.index]())
 
     assert_true(overflow_fp[DType.float32]())
     assert_true(overflow_fp[DType.float64]())
@@ -230,6 +231,7 @@ def test_min_finite():
     assert_true(underflow_int[DType.uint32]())
     assert_true(underflow_int[DType.int64]())
     assert_true(underflow_int[DType.uint64]())
+    assert_true(underflow_int[DType.index]())
 
     assert_true(underflow_fp[DType.float32]())
     assert_true(underflow_fp[DType.float64]())

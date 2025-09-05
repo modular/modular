@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys import size_of
-from sys.info import CompilationTarget
+from sys.info import CompilationTarget, is_64bit
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
@@ -2444,6 +2444,36 @@ def test_float_literal_init():
     )
 
 
+def test_int_literal_init():
+    assert_equal(UInt8(255), UInt8(-1))
+    assert_equal(UInt8(256), UInt8(0))
+    assert_equal(UInt16(65535), UInt16(-1))
+    assert_equal(UInt16(65536), UInt16(0))
+    assert_equal(UInt32(4294967295), UInt32(-1))
+    assert_equal(UInt32(4294967296), UInt32(0))
+    assert_equal(UInt64(18446744073709551615), UInt64(-1))
+    assert_equal(UInt64(18446744073709551616), UInt64(0))
+
+    assert_equal(Int8(-128), Int8(128))
+    assert_equal(Int8(-129), Int8(127))
+    assert_equal(Int16(-32768), Int16(32768))
+    assert_equal(Int16(-32769), Int16(32767))
+    assert_equal(Int32(-2147483648), Int32(2147483648))
+    assert_equal(Int32(-2147483649), Int32(2147483647))
+    assert_equal(Int64(-9223372036854775808), Int64(9223372036854775808))
+    assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
+
+    alias Index = Scalar[DType.index]
+
+    @parameter
+    if is_64bit():
+        assert_equal(Index(-9223372036854775808), Index(9223372036854775808))
+        assert_equal(Index(-9223372036854775809), Index(9223372036854775807))
+    else:
+        assert_equal(Index(-2147483648), Index(2147483648))
+        assert_equal(Index(-2147483649), Index(2147483647))
+
+
 def test_bool_init():
     # Test initialization from Bool for boolean SIMD types
     var bool_simd = SIMD[DType.bool, 4](fill=True)
@@ -2533,5 +2563,6 @@ def main():
     test_hash()
     test_reduce_bitwise_ops()
     test_float_literal_init()
+    test_int_literal_init()
     test_bool_init()
     # TODO: add tests for __and__, __or__, and comparison operators
