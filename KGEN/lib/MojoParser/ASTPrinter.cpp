@@ -187,6 +187,104 @@ tryGetSymbolNameAndParams(TypedAttr param) {
   return {{}, {}};
 }
 
+/// If the parameter being referenced is an auto-parameterization of the
+/// current function or struct, dig it out so we can print the correct name.
+/// Consider something like:
+///    struct S[a: Scalar]:
+///       fn f(b: Scalar):
+///          use(a.dtype, b.dtype)
+/// Both "a.dtype" and "b.dtype" will resolve to a (mangled) string of
+/// "dtype", but we would really like to print them as "a.dtype" so the user
+/// knows what is going on, and we don't get a T != T error.
+static void printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
+                                         SharedState &shared, raw_ostream &os) {
+  ASTDecl *curDecl = shared.declResolver->getDeclCurrentlyProcessing();
+
+  // Walk up the decl hierarchy to find the one that contains the parameter.
+  PogListAttr paramListAttr;
+  ArrayRef<ParamDeclAttr> paramDecls;
+  ssize_t paramIdx = -1;
+  size_t numImplicitOrigins = 0;
+  while (curDecl) {
+    // TODO: we need a decl interface to do this!
+    if (auto fnDecl =
+            dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
+      paramListAttr = fnDecl.getFuncTypeGenerator().getParamListAttrs();
+      paramDecls = fnDecl.getParams();
+      numImplicitOrigins =
+          fnDecl.getFuncTypeGenerator().getNumImplicitOriginDecls();
+    }
+    if (auto structDecl =
+            dyn_cast_if_present<LIT::StructDeclOp>(curDecl->getIfOperation())) {
+      paramListAttr = structDecl.getSignature().getParamListAttrs();
+      paramDecls = structDecl.getParams();
+      numImplicitOrigins = 0;
+    }
+
+    if (paramListAttr) {
+      assert(paramListAttr.size() + numImplicitOrigins == paramDecls.size() &&
+             "Unexpected number of parameters");
+
+      for (auto [idx, param] : llvm::enumerate(paramDecls)) {
+        if (param.getName() == declRef.getName()) {
+          paramIdx = idx;
+          break;
+        }
+      }
+      if (paramIdx != -1)
+        break;
+    }
+    curDecl = curDecl->getParentDecl();
+  }
+
+  // If we didn't find it, or it isn't an implicit parameter then there is
+  // nothing to do.
+  if (paramIdx == -1 ||
+      // Is an implicit origin reference.
+      size_t(paramIdx) >= paramListAttr.size() ||
+      // Is a non-inferred parameter.
+      (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred &&
+       paramListAttr.getPassingKind(paramIdx) != PassingKind::Implicit))
+    return;
+
+  // Otherwise, it is an autoparam.  It could be an autoparam of another
+  // parameter, or could be an autoparam for an argument type of a function.
+  // Check parameters first (handling structs and functions).
+  for (auto paramDecl : paramDecls) {
+    for (auto p : ASTType(paramDecl.getType()).getParamBindings()) {
+      if (p == declRef) {
+        os << paramDecl.getName().strref() << ".";
+        return;
+      }
+    }
+  }
+
+  // If this is a function, it may be an autoparam for an argument type.
+  auto fnDecl = dyn_cast<LIT::FnOp>(curDecl->getIfOperation());
+  if (!fnDecl)
+    return; // TODO: Tighten up.
+
+  assert(fnDecl && "Unknown auto-parameterization");
+  auto fnSig = fnDecl.getFuncTypeGenerator();
+  for (auto [idx, arg] :
+       llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
+    auto userArgType =
+        RefType::stripRefConvention(arg, fnSig.getArgConvention(idx));
+    if (llvm::is_contained(ASTType(userArgType).getParamBindings(), declRef)) {
+      os << fnSig.getArgName(idx).strref() << ".";
+      return;
+    }
+  }
+
+#if 0 // FIXME: Tighten this up.
+  // FIXME: Struct autoparam is making inferred instead of implicit params.
+  if (paramListAttr.getPassingKind(paramIdx) == PassingKind::Inferred)
+    return;
+
+  llvm_unreachable("Unknown auto-parameterization");
+#endif
+}
+
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared) {
@@ -448,8 +546,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto variadicCst = dyn_cast<VariadicAttr>(param)) {
-    // VariadicAttr appears in a pack list, so it doesn't need extra []'s around
-    // it.
+    // VariadicAttr appears in a pack list, so it doesn't need extra []'s
+    // around it.
     llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
       printParam(os, value, diagShared);
     });
@@ -668,12 +766,17 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   // Print ParamDeclRefAttr as the name of the parameter.
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
+    // If the parameter is an implicit parameter injected due to
+    // auto-parameterization, print the thing that is being parameterized.
+    if (diagShared)
+      printAutoParamScopeIfPresent(declRef, *diagShared, os);
+
     StringRef name = declRef.getName();
     if (diagShared)
       name = demangleParameterName(name);
 
-    // Escape any weird characters in the parameter name that might have been
-    // introduced with backticks.
+    // Escape any weird characters in the parameter name that might have
+    // been introduced with backticks.
     printAsMojoStringLiteral(name, os);
     return;
   }
@@ -684,8 +787,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   os << KGEN::getParamAsString(param);
 }
 
-/// Given a parameter value of MLIR wrapper type like Bool or Int or DType, dig
-/// out the single element of the struct with the specified type.
+/// Given a parameter value of MLIR wrapper type like Bool or Int or DType,
+/// dig out the single element of the struct with the specified type.
 template <typename T>
 static T getSingleElementStructAttr(TypedAttr param) {
   if (auto strParam = dyn_cast<LITStructAttr>(param)) {
@@ -758,8 +861,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
             }
           }
 
-          // Otherwise if we know the size is 1, we can use Scalar[] alias, even
-          // if the dtype is parametric.
+          // Otherwise if we know the size is 1, we can use Scalar[] alias,
+          // even if the dtype is parametric.
           os << "Scalar[";
           printParam(os, params[0], diagShared);
           os << "]";
@@ -912,10 +1015,11 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         type.print(os, diagShared);
       }
 
-      // Check if we are at the end; if so, we might still have to print a '/'.
-      // If we're pretty printing for a diagnostic, and don't have any names,
-      // then we don't print the trailing slash. This makes the extremely
-      // common case of a source signature `fn(...) -> ...` look nicer.
+      // Check if we are at the end; if so, we might still have to print a
+      // '/'. If we're pretty printing for a diagnostic, and don't have any
+      // names, then we don't print the trailing slash. This makes the
+      // extremely common case of a source signature `fn(...) -> ...` look
+      // nicer.
       if (!diagShared || hadAnyNames)
         passingKindPrinter.printOptionalTrailingSlash(idx);
     }
@@ -1009,9 +1113,9 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
                                   SharedState &shared) {
   removeImplicitCtorCall(value, shared);
 
-  // It is pretty common for function arguments to use default conversions from
-  // the actual value they want, and may not be an always_inline("builtin")
-  // constructor, e.g.:
+  // It is pretty common for function arguments to use default conversions
+  // from the actual value they want, and may not be an
+  // always_inline("builtin") constructor, e.g.:
   //   fn example(v: Optional[Int64] = None):
   // Without doing anything fancy, we would get something like:
   //   fn example(v: Optional[Int64] = Optional[Int64](None)):

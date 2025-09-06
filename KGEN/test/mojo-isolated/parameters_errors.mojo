@@ -624,3 +624,14 @@ fn test_param_call():
     # expected-error @below {{cannot be converted from 'HasSize[HoldsInt.get_int()]' to 'HasSize[4]'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     takes4(HasSize[HoldsInt.get_int()]())
+
+# Make sure error messages include scope for auto parameters.
+# MOCO-970: "can't convert type to type" error stripped off full parameter name.
+struct TestAutoParams[f1: HasSize]:
+    fn method[f2: HasSize](self, f3: HasSize):
+        # expected-error @+1 {{cannot be converted from 'HasSize[f1.size]' to 'HasSize[4]'}}
+        takes4(HasSize[f1.size]())
+        # expected-error @+1 {{cannot be converted from 'HasSize[f2.size]' to 'HasSize[4]'}}
+        takes4(HasSize[f2.size]())
+        # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
+        takes4(HasSize[f3.size]())

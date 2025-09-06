@@ -718,7 +718,7 @@ fn invalid_call_variadic_int(a: Int):
         pass
 
 fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, origin]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, b.origin]'}}
   var x : Pointer[T, b.origin] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutableAnyOrigin]'}}
@@ -734,7 +734,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention mut since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, origin]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, a.origin]' to 'Addable'}}
     _ = b+a
 
 
@@ -815,7 +815,7 @@ struct HasIntParam[p: Int]:
 
 # expected-note @below {{function declared here}}
 fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]):
-  # expected-error @below {{cannot be converted from 'HasIntParam[(value * 4)]' to 'HasIntParam[(value * 4)]'}}
+  # expected-error @below {{cannot be converted from 'HasIntParam[(x.value * 4)]' to 'HasIntParam[(x.value * 4)]'}}
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 fn test_signature():
