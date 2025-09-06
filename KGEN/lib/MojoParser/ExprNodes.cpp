@@ -836,12 +836,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       }
     }
 
-    auto diag = emitter.emitError(loc) << expr->getRange();
-    if (auto structDecl =
-            dyn_cast_or_null<StructDeclOp>(lookupScope.getIfOperation()))
-      diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
-    else
-      diag << "use of unknown declaration '" << spelling << "'";
+    auto diag = emitter.emitError(loc, "use of unknown declaration '")
+                << spelling << "'" << expr->getRange();
     return {};
   }
 
