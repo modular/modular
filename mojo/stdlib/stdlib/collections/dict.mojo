@@ -345,7 +345,7 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
-    Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized
+    Boolable, Copyable, Defaultable, Movable, Sized
 ):
     """A container that stores key-value pairs.
 
@@ -676,7 +676,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         var my_dict = Dict[K, V, H]()
         for key in keys:
             my_dict[key.copy()] = value.copy()
-        return my_dict
+        return my_dict^
 
     @staticmethod
     fn fromkeys(
@@ -1193,7 +1193,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
 
 struct OwnedKwargsDict[V: Copyable & Movable](
-    Defaultable, ImplicitlyCopyable, Movable, Sized
+    Copyable, Defaultable, Movable, Sized
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
@@ -1224,7 +1224,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         Args:
             existing: The existing keyword dictionary.
         """
-        self._dict = existing._dict
+        self._dict = existing._dict.copy()
 
     fn __moveinit__(out self, deinit existing: Self):
         """Move data of an existing keyword dictionary into a new one.

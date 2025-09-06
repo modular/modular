@@ -98,6 +98,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in items:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
+    fn __copyinit__(out self, other: Self):
+        self._data = other._data.copy()
+
     @staticmethod
     fn fromkeys(keys: List[V, *_], value: Int) -> Self:
         """Create a new Counter from a list of keys and a default value.

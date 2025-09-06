@@ -1104,7 +1104,7 @@ struct Bench(Stringable, Writable):
 
             for metric in metrics.items():
                 try:
-                    var rates = metric.value.rates
+                    ref rates = metric.value.rates
                     var max_width = metric.value.max_width
                     if i not in rates:
                         writer.write(sep, "N/A", self.pad(max_width, "N/A"))
@@ -1172,7 +1172,7 @@ struct Bench(Stringable, Writable):
                         metrics[name].rates[i] = rate
                     except e:
                         abort(String(e))
-        return metrics
+        return metrics^
 
     fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
         # If label is larger than any value, will pad to the label length
@@ -1202,6 +1202,10 @@ struct Bench(Stringable, Writable):
 struct _Metric(ImplicitlyCopyable, Movable):
     var max_width: Int
     var rates: Dict[Int, Float64]
+
+    fn __copyinit__(out self, other: Self):
+        self.max_width = other.max_width
+        self.rates = other.rates.copy()
 
 
 @fieldwise_init

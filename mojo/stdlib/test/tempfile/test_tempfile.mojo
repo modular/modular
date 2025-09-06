@@ -57,7 +57,7 @@ struct TempEnvWithCleanup:
         vars_to_set: Dict[String, String],
         clean_up_function: fn () raises -> None,
     ):
-        self.vars_to_set = vars_to_set
+        self.vars_to_set = vars_to_set.copy()
         self._vars_back = Dict[String, String]()
         self.clean_up_function = clean_up_function
 

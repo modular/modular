@@ -1120,7 +1120,7 @@ struct PyObjectFunction[
 
         # Handle the case where kwargs is None or empty
         if not py_kwargs._obj_ptr:
-            return result
+            return result^
 
         # Iterate through the Python dictionary and populate OwnedKwargsDict
         var items = py_kwargs.items()
@@ -1130,7 +1130,7 @@ struct PyObjectFunction[
             var key_str = String(key)
             result[key_str] = value
 
-        return result
+        return result^
 
     # ===-------------------------------------------------------------------===#
     # Compile-time check utilities

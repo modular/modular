@@ -631,7 +631,7 @@ def test_compile_time_dict():
         var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = i
-        return res
+        return res^
 
     alias my_dict = _get_dict()
 

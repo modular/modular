@@ -31,7 +31,7 @@ fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
             d[i] = Int(random_si64(0, size))
         else:
             d[i] = i
-    return d
+    return d^
 
 
 # ===-----------------------------------------------------------------------===#

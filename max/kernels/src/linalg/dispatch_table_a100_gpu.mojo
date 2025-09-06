@@ -44,6 +44,7 @@ fn get_dispatch_table[
     ]()
 
     @always_inline
+    @parameter
     fn insert(
         name: StaticString,
         *,
@@ -580,4 +581,4 @@ fn get_dispatch_table[
         num_warp_k_partitions=2,
     )
 
-    return tile_configs
+    return tile_configs^
