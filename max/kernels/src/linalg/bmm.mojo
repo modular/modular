@@ -14,7 +14,11 @@
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import align_of
-from sys.info import simd_width_of, has_nvidia_gpu_accelerator
+from sys.info import (
+    simd_width_of,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+)
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
@@ -49,6 +53,7 @@ from linalg.matmul_sm100_blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 from ._multistage_gemm_gpu import multistage_gemm_kernel
+from .matmul_amd import gemm_kernel_amd
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout, IntTuple
 from buffer import Dim
 from .utils_gpu import (
@@ -58,6 +63,7 @@ from .utils_gpu import (
 from utils.static_tuple import StaticTuple
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from sys import size_of
+from sys.info import is_nvidia_gpu, is_amd_gpu
 from logger import Logger
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from layout.tma_async import (
@@ -716,25 +722,47 @@ fn batched_matmul_kernel_gpu[
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
 
-    multistage_gemm_kernel[
-        c_type,
-        c.layout,
-        a_type,
-        a.layout,
-        b_type,
-        b.layout,
-        transpose_b,
-        c.layout_int_type,
-        a.layout_int_type,
-        b.layout_int_type,
-        c.linear_idx_type,
-        a.linear_idx_type,
-        b.linear_idx_type,
-        config,
-        OptionalReg[matmul_elementwise_epilogue_type](
-            elementwise_epilogue_fn_wrapper
-        ) if elementwise_lambda_fn else None,
-    ](c, a, b)
+    @parameter
+    if is_nvidia_gpu():
+        multistage_gemm_kernel[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[matmul_elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
+    elif is_amd_gpu():
+        gemm_kernel_amd[
+            c_type,
+            c.layout,
+            a_type,
+            a.layout,
+            b_type,
+            b.layout,
+            transpose_b,
+            c.layout_int_type,
+            a.layout_int_type,
+            b.layout_int_type,
+            c.linear_idx_type,
+            a.linear_idx_type,
+            b.linear_idx_type,
+            config,
+            OptionalReg[matmul_elementwise_epilogue_type](
+                elementwise_epilogue_fn_wrapper
+            ) if elementwise_lambda_fn else None,
+        ](c, a, b)
 
 
 @always_inline
@@ -868,6 +896,42 @@ fn _batched_matmul_gpu[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 kernels.ampere_128x128_4.shared_mem_usage()
             ),
+        )
+    elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
+        alias block_m = 128
+        alias block_n = 128
+        alias block_k = 64
+        alias config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+            block_tile_shape=Index(block_m, block_n, block_k),
+            warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+            num_pipeline_stages=1,
+            num_k_partitions=1,
+        )
+        alias batched_matmul_type = batched_matmul_kernel_gpu[
+            c_tensor_reshaped.dtype,
+            a_tensor_reshaped.dtype,
+            b_tensor_reshaped.dtype,
+            c_tensor_reshaped.layout,
+            a_tensor_reshaped.layout,
+            b_tensor_reshaped.layout,
+            transpose_b,
+            config,
+            elementwise_epilogue_fn,
+        ]
+
+        ctx.enqueue_function[batched_matmul_type](
+            c_tensor_reshaped,
+            a_tensor_reshaped,
+            b_tensor_reshaped,
+            m,
+            n,
+            k,
+            grid_dim=(
+                ceildiv(n, block_n),
+                ceildiv(m, block_m),
+                batch_size,
+            ),
+            block_dim=(256, 1, 1),
         )
     else:
         # TODO: support non-A100 transposed kernels
