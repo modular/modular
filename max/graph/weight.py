@@ -416,6 +416,8 @@ class _ShardingStrategyContainer:
     """
 
 
+# TODO: Make Weight explicitly inherit from Shardable. We currently do not do this
+# because importing Shardable from nn causes a circular dependency.
 class Weight(TensorValue):
     """Represents a value in a Graph that can be loaded at a later time.
 

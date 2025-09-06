@@ -19,12 +19,13 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight
 from max.graph.quantization import QuantizationEncoding
 from max.nn.float8_config import Float8Config
+from max.nn.lora.interfaces import SupportsLoRA
 
 from ..kernels import sgmv_lora_kernel
 from ..linear import Linear
 
 
-class LinearLoRA(Linear):
+class LinearLoRA(Linear, SupportsLoRA):
     def __init__(
         self,
         in_dim: int,
