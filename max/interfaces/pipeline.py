@@ -41,7 +41,7 @@ class PipelineInputs:
 @runtime_checkable
 class PipelineOutput(Protocol):
     """
-    Abstract base class representing the output of a pipeline operation.
+    Protocol representing the output of a pipeline operation.
 
     Subclasses must implement the `is_done` property to indicate whether
     the pipeline operation has completed.

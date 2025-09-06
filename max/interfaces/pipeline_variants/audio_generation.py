@@ -12,12 +12,20 @@ responses, including status tracking and audio data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Optional, Protocol, Union, runtime_checkable
+from typing import (
+    Any,
+    Generic,
+    Optional,
+    Protocol,
+    Union,
+    runtime_checkable,
+)
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
+from max.interfaces.pipeline import PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
@@ -115,6 +123,12 @@ class AudioGenerationMetadata(
             if value := getattr(self, attr, None):
                 result[attr] = value
         return result
+
+
+def _check_audio_generator_output_implements_pipeline_output(
+    x: AudioGeneratorOutput,
+) -> PipelineOutput:
+    return x
 
 
 class AudioGeneratorOutput(msgspec.Struct, tag=True, omit_defaults=True):

@@ -12,7 +12,7 @@ from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar, Union
 import msgspec
 from max.interfaces.context import BaseContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
-from max.interfaces.pipeline import PipelineInputs
+from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 
@@ -172,10 +172,16 @@ class TextGenerationRequest(Request):
     target_endpoint: Optional[str] = None
     """
     Optional target endpoint identifier for routing the request to a specific
-    service or model instance. This should be used in disaggregate serving 
+    service or model instance. This should be used in disaggregate serving
     scenarios, when you want to dynamically route to a specific instance.
     If not specified, the request will be routed to the default endpoint.
     """
+
+
+def _check_text_generation_output_implements_pipeline_output(
+    x: TextGenerationOutput,
+) -> PipelineOutput:
+    return x
 
 
 class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
