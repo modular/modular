@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for cast."""
 
+from max._core.dialects import mo
 from max.dtype import DType
-from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..value import StrongTensorValueLike, TensorValue
@@ -32,4 +32,4 @@ def cast(x: StrongTensorValueLike, dtype: DType) -> TensorValue:
     """
     x = TensorValue(x)
     cast_type = x.type.cast(dtype)
-    return Graph.current._add_op(mo.cast, cast_type.to_mlir(), x)[0].tensor
+    return Graph.current._add_op_generated(mo.CastOp, cast_type, x)[0].tensor

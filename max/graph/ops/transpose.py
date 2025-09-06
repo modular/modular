@@ -13,8 +13,8 @@
 """Op implementation for transpose."""
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DeviceRef
@@ -69,9 +69,10 @@ def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
         )
         indices[axis_1], indices[axis_2] = axis_2, axis_1
 
-    return Graph.current._add_op(
-        rmo.mo_transpose,
-        TensorType(dtype=v.dtype, shape=new_shape, device=v.device).to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoTransposeOp,
+        TensorType(dtype=v.dtype, shape=new_shape, device=v.device),
         v,
         constant(indices, DType.int64, DeviceRef.CPU()),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor

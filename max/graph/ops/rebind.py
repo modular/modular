@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-from max import mlir
-from max.mlir.dialects import rmo
+from max._core.dialects import builtin, kgen, rmo
 
 from ..graph import Graph
 from ..type import FilterLayout, Shape, ShapeLike
@@ -59,7 +58,11 @@ def rebind(
     out_type = TensorType(v.dtype, shape, device=v.device)
     out_type._layout = layout
 
-    message_attr = mlir.StringAttr.get(message)
-    return Graph.current._add_op(
-        rmo.rebind_tensor_shape, out_type.to_mlir(), v, message=message_attr
+    message_attr = builtin.StringAttr(message)
+    return Graph.current._add_op_generated(
+        rmo.RebindTensorShapeOp,
+        out_type,
+        v,
+        kgen.ParamDeclArrayAttr([]),
+        message=message_attr,
     )[0].tensor
