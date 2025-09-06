@@ -312,7 +312,26 @@ private:
   /// Name binding is an recursive process in the general case.  This keeps
   /// track of the declarations currently being name bound so we can diagnose
   /// cyclic dependencies.
-  DenseMap<ASTDecl *, llvm::SMLoc> declsCurrentlyProcessing;
+  struct CurrentProcessingSet {
+    DenseMap<ASTDecl *, llvm::SMLoc> map;
+    std::vector<ASTDecl *> stack;
+
+    /// Insert the specified declaration into this set. If it already exists,
+    /// return failure and leave the container alone.
+    LogicalResult insert(ASTDecl *decl, llvm::SMLoc loc) {
+      auto [it, inserted] = map.insert({decl, loc});
+      if (!inserted)
+        return failure();
+      stack.push_back(decl);
+      return success();
+    }
+
+    void pop() {
+      map.erase(stack.back());
+      stack.pop_back();
+    }
+  };
+  CurrentProcessingSet declsCurrentlyProcessing;
 
   /// Allow access to private fields.
   friend SharedState;

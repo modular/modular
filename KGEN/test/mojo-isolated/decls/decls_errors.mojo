@@ -626,10 +626,21 @@ fn no_message():
 # Structs
 ##===----------------------------------------------------------------------===##
 
-# expected-error @below {{recursive reference to declaration}}
-# expected-note @below {{previously used here}}
-struct Rec[param: Rec]:
+# expected-note @below {{originally resolving it here}}
+struct Rec[
+  # expected-error @below {{attempt to resolve a recursive reference to declaration}}
+  param: Rec]:
   pass
+
+
+struct Rec1[# expected-note {{originally resolving it here}}
+ # expected-note @below {{referenced through this use}}
+  p1: Rec2]: pass
+
+struct Rec2[
+  # expected-error @below {{attempt to resolve a recursive reference to declaration}}
+  p2: Rec1]:
+
 
 # expected-error @+1 {{'def' statement must be on its own line}}
 struct Struct: def foo(mut self): pass
