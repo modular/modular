@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import tempfile
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Optional, Union
 
 import pytest
@@ -1133,3 +1133,270 @@ class TestBuiltinConfigClasses:
 
         # Test that help method covers all public fields.
         assert_help_covers_all_public_fields(config, "LoRAConfig")
+
+
+class TestMAXConfigArgumentGroups:
+    """Test suite for MAXConfig argument group functionality."""
+
+    def test_cli_arg_parsers_with_groups_basic(self) -> None:
+        """Test cli_arg_parsers with argument grouping."""
+
+        # Create a test config with groups
+        @dataclass
+        class TestConfigWithGroups(MAXConfig):
+            _config_file_section_name: str = "test_config_with_groups"
+
+            # Group 1
+            field1: str = field(
+                default="default1",
+                metadata={
+                    "group": "Group 1",
+                    "group_description": "First group of settings",
+                },
+            )
+            field2: int = field(default=42, metadata={"group": "Group 1"})
+
+            # Group 2
+            field3: bool = field(
+                default=False,
+                metadata={
+                    "group": "Group 2",
+                    "group_description": "Second group of settings",
+                },
+            )
+
+            # Ungrouped
+            field4: str = "ungrouped"
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "field1": "First field in group 1",
+                    "field2": "Second field in group 1",
+                    "field3": "First field in group 2",
+                    "field4": "Ungrouped field",
+                }
+
+        config = TestConfigWithGroups()
+
+        parser_with_groups = config.cli_arg_parsers()
+
+        # Check that argument groups were created
+        assert (
+            len(parser_with_groups._action_groups) >= 2
+        )  # At least 2 groups + main group
+
+        # Find our custom groups
+        group1 = None
+        group2 = None
+        for group in parser_with_groups._action_groups:
+            if group.title == "Group 1":
+                group1 = group
+            elif group.title == "Group 2":
+                group2 = group
+
+        assert group1 is not None, "Group 1 should be created"
+        assert group2 is not None, "Group 2 should be created"
+
+        # Check that group descriptions are set
+        assert group1.description == "First group of settings"
+        assert group2.description == "Second group of settings"
+
+        # Test parsing still works
+        args = parser_with_groups.parse_args(
+            [
+                "--field1",
+                "test_value",
+                "--field2",
+                "100",
+                "--field3",
+                "--field4",
+                "custom_value",
+            ]
+        )
+
+        assert args.field1 == "test_value"
+        assert args.field2 == 100
+        assert args.field3 is True
+        assert args.field4 == "custom_value"
+
+    def test_cli_arg_parsers_ungrouped_fields_only(self) -> None:
+        """Test cli_arg_parsers with only ungrouped fields."""
+
+        @dataclass
+        class TestConfigUngrouped(MAXConfig):
+            _config_file_section_name: str = "test_config_ungrouped"
+
+            field1: str = "default1"
+            field2: int = 42
+            field3: bool = False
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "field1": "Field 1",
+                    "field2": "Field 2",
+                    "field3": "Field 3",
+                }
+
+        config = TestConfigUngrouped()
+
+        # Test with only ungrouped fields
+        parser = config.cli_arg_parsers()
+
+        # Should have at least the main group (argparse always creates at least one group)
+        assert len(parser._action_groups) >= 1
+
+        # Test parsing still works
+        args = parser.parse_args(
+            ["--field1", "test_value", "--field2", "100", "--field3"]
+        )
+
+        assert args.field1 == "test_value"
+        assert args.field2 == 100
+        assert args.field3 is True
+
+    def test_cli_arg_parsers_mixed_groups_and_ungrouped(self) -> None:
+        """Test cli_arg_parsers with both grouped and ungrouped fields."""
+
+        @dataclass
+        class TestConfigMixed(MAXConfig):
+            _config_file_section_name: str = "test_config_mixed"
+
+            # Grouped fields
+            grouped_field1: str = field(
+                default="grouped1", metadata={"group": "Grouped Settings"}
+            )
+            grouped_field2: int = field(
+                default=10, metadata={"group": "Grouped Settings"}
+            )
+
+            # Ungrouped fields
+            ungrouped_field1: str = "ungrouped1"
+            ungrouped_field2: bool = False
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "grouped_field1": "Grouped field 1",
+                    "grouped_field2": "Grouped field 2",
+                    "ungrouped_field1": "Ungrouped field 1",
+                    "ungrouped_field2": "Ungrouped field 2",
+                }
+
+        config = TestConfigMixed()
+        parser = config.cli_arg_parsers()
+
+        # Should have at least 2 groups: main group + our custom group
+        assert len(parser._action_groups) >= 2
+
+        # Find our custom group
+        custom_group = None
+        for group in parser._action_groups:
+            if group.title == "Grouped Settings":
+                custom_group = group
+                break
+
+        assert custom_group is not None, "Custom group should be created"
+
+        # Test parsing works for both grouped and ungrouped fields
+        args = parser.parse_args(
+            [
+                "--grouped-field1",
+                "test1",
+                "--grouped-field2",
+                "20",
+                "--ungrouped-field1",
+                "test2",
+                "--ungrouped-field2",
+            ]
+        )
+
+        assert args.grouped_field1 == "test1"
+        assert args.grouped_field2 == 20
+        assert args.ungrouped_field1 == "test2"
+        assert args.ungrouped_field2 is True
+
+    def test_cli_arg_parsers_group_description_extraction(self) -> None:
+        """Test that group descriptions are properly extracted from field metadata."""
+
+        @dataclass
+        class TestConfigDescription(MAXConfig):
+            _config_file_section_name: str = "test_config_description"
+
+            # Field with group_description
+            field1: str = field(
+                default="default1",
+                metadata={
+                    "group": "Test Group",
+                    "group_description": "This is a test group description",
+                },
+            )
+
+            # Field without group_description (should still be in same group)
+            field2: int = field(default=42, metadata={"group": "Test Group"})
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {
+                    "field1": "Field 1",
+                    "field2": "Field 2",
+                }
+
+        config = TestConfigDescription()
+        parser = config.cli_arg_parsers()
+
+        # Find our test group
+        test_group = None
+        for group in parser._action_groups:
+            if group.title == "Test Group":
+                test_group = group
+                break
+
+        assert test_group is not None, "Test group should be created"
+        assert test_group.description == "This is a test group description"
+
+    def test_cli_arg_parsers_existing_configs(self) -> None:
+        """Test that existing configs without groups still work."""
+        # Use existing TestConfig from the file
+        config = TestConfig()
+
+        # Test that existing configs work (ungrouped fields go to main parser)
+        parser = config.cli_arg_parsers()
+        args = parser.parse_args(
+            ["--test-field", "test_value", "--test-int", "100", "--test-bool"]
+        )
+
+        assert args.test_field == "test_value"
+        assert args.test_int == 100
+        assert args.test_bool is True
+
+    def test_cli_arg_parsers_enum_conversion_with_groups(self) -> None:
+        """Test that enum conversion still works with argument groups."""
+
+        @dataclass
+        class TestConfigEnum(MAXConfig):
+            _config_file_section_name: str = "test_config_enum"
+
+            enum_field: GPUProfilingMode = field(
+                default=GPUProfilingMode.OFF,
+                metadata={"group": "Enum Settings"},
+            )
+
+            @classmethod
+            def _get_enum_mapping_impl(cls):
+                return {"GPUProfilingMode": GPUProfilingMode}
+
+            @staticmethod
+            def help() -> dict[str, str]:
+                return {"enum_field": "Enum field test"}
+
+        config = TestConfigEnum()
+        parser = config.cli_arg_parsers()
+
+        # Test parsing with enum value
+        args = parser.parse_args(["--enum-field", "detailed"])
+
+        # Should be converted to proper enum object
+        assert args.enum_field == GPUProfilingMode.DETAILED
+        assert isinstance(args.enum_field, GPUProfilingMode)
