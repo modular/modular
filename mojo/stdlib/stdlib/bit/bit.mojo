@@ -216,7 +216,7 @@ fn byte_swap[
     constrained[dtype.is_integral(), "must be integral"]()
 
     @parameter
-    if dtype.bitwidth() < 16:
+    if dtype.bit_width() < 16:
         return val
     return llvm_intrinsic["llvm.bswap", __type_of(val), has_side_effect=False](
         val
@@ -311,7 +311,7 @@ fn bit_width(val: Int) -> Int:
     Returns:
         The number of bits required to represent the integer.
     """
-    alias bitwidth = bit_width_of[Int]()
+    alias bitwidth = Int.BIT_WIDTH
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
@@ -335,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = bit_width_of[dtype]()
+    alias bitwidth = dtype.bit_width()
 
     @parameter
     if dtype.is_unsigned():
@@ -376,7 +376,7 @@ fn log2_floor(val: UInt) -> UInt:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns UInt.MAX if val is 0.
     """
-    return UInt(bit_width_of[UInt]() - count_leading_zeros(val) - 1)
+    return UInt(UInt.BIT_WIDTH - count_leading_zeros(val) - 1)
 
 
 @always_inline
@@ -398,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = bit_width_of[dtype]()
+    alias bitwidth = dtype.bit_width()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter
@@ -466,7 +466,7 @@ fn next_power_of_two(val: Int) -> Int:
         This operation is called `bit_ceil()` in C++.
     """
     return select(
-        val <= 1, 1, 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
+        val <= 1, 1, 1 << (Int.BIT_WIDTH - count_leading_zeros(val - 1))
     )
 
 
@@ -488,7 +488,7 @@ fn next_power_of_two(val: UInt) -> UInt:
     return select(
         val == 0,
         UInt(1),
-        UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1)))),
+        UInt(1 << (UInt.BIT_WIDTH - count_leading_zeros(Int(val - 1)))),
     )
 
 
@@ -596,8 +596,8 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
     constrained[
-        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
-        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
+        -Int.BIT_WIDTH <= shift < Int.BIT_WIDTH,
+        "Constraints: -Int.BIT_WIDTH <= shift < Int.BIT_WIDTH",
     ]()
 
     @parameter
@@ -670,8 +670,8 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
     constrained[
-        -bit_width_of[Int]() <= shift < bit_width_of[Int](),
-        "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()",
+        -Int.BIT_WIDTH <= shift < Int.BIT_WIDTH,
+        "Constraints: -Int.BIT_WIDTH <= shift < Int.BIT_WIDTH",
     ]()
 
     @parameter

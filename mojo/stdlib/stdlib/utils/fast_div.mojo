@@ -17,7 +17,6 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from sys import bit_width_of
 from bit import log2_ceil
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi
@@ -33,7 +32,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
     especially in scenarios where division is a frequent operation.
     """
 
-    alias uint_type = _uint_type_of_width[bit_width_of[dtype]()]()
+    alias uint_type = _uint_type_of_width[dtype.bit_width()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -54,7 +53,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
                 Defaults to 1.
         """
         constrained[
-            bit_width_of[dtype]() <= 32,
+            dtype.bit_width() <= 32,
             "larger types are not currently supported",
         ]()
         self._div = divisor
@@ -66,7 +65,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << bit_width_of[dtype]())
+                    (UInt64(1) << dtype.bit_width())
                     * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
                     / divisor
                 )

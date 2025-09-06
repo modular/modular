@@ -36,7 +36,7 @@ from algorithm import vectorize
 from bit import log2_floor, pop_count
 from math import ceildiv
 from memory import pack_bits
-from sys import bit_width_of, simd_width_of
+from sys import simd_width_of
 
 from .inline_array import InlineArray
 
@@ -44,7 +44,7 @@ from .inline_array import InlineArray
 # Utilities
 # ===-----------------------------------------------------------------------===#
 
-alias _WORD_BITS = bit_width_of[UInt64]()
+alias _WORD_BITS = DType.uint64.bit_width()
 alias _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 

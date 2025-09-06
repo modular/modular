@@ -33,7 +33,7 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import bit_width_of, external_call, llvm_intrinsic
+from sys import external_call, llvm_intrinsic
 from sys.info import simd_width_of, size_of
 from sys.intrinsics import _type_is_eq
 
