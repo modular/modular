@@ -215,7 +215,7 @@ class Weights(Protocol):
 
 
 @dataclasses.dataclass
-class WeightData:
+class WeightData(DLPackArray):
     """Container for weight tensor data with metadata.
 
     ``WeightData`` encapsulates a weight tensor along with its metadata,
