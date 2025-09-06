@@ -20,19 +20,14 @@ from typing import Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 from .. import _core, driver, engine, graph, mlir
 from .._core.dialects import builtin, kgen, mo
 from ..driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from ..dtype import DType
-from ..graph import (
-    ShapeLike,
-    TensorType,
-    TensorValueLike,
-    Value,
-    ops,
-)
+from ..graph import ShapeLike, TensorType, TensorValueLike, Value, ops
 from ..graph.graph import _location
 from . import functional as F
 
@@ -105,7 +100,7 @@ def _in_running_loop() -> bool:
     return True
 
 
-class Tensor(DLPackArray):
+class Tensor(DLPackArray, HasTensorValue):
     """A Tensor object with numerics.
 
     A Tensor type that can do the kinds of things people expect
