@@ -550,8 +550,14 @@ fn constraint_overloading[x: Int, y: Int]() -> Int
 # Decorators
 ##===----------------------------------------------------------------------===##
 
-@decorator  # expected-error {{'DecoratedStruct' has no 'decorator' member}}
+@decorator  # expected-error {{use of unknown declaration 'decorator'}}
 struct DecoratedStruct: pass
+
+# MOCO-2391
+# expected-error @+1 {{use of unknown declaration 'UnknownTrait'}}
+struct StructWithUnknownTrait(UnknownTrait):
+    pass
+
 
 fn decoratorTest():
   @decorator
