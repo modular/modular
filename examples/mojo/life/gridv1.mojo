@@ -26,6 +26,15 @@ struct Grid(ImplicitlyCopyable, Movable, Stringable):
     var data: List[List[Int]]
 
     # ===-------------------------------------------------------------------===#
+    # Lifecycle
+    # ===-------------------------------------------------------------------===#
+
+    fn __copyinit__(out self, existing: Self):
+        self.rows = existing.rows
+        self.cols = existing.cols
+        self.data = existing.data.copy()
+
+    # ===-------------------------------------------------------------------===#
     # Indexing
     # ===-------------------------------------------------------------------===#
 

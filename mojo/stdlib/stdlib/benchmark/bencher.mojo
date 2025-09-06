@@ -452,6 +452,17 @@ struct BenchmarkInfo(ImplicitlyCopyable, Movable):
         self.measures = measures^
         self.verbose_timing = verbose_timing
 
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of `existing`.
+
+        Args:
+            existing: The value to copy.
+        """
+        self.name = existing.name
+        self.result = existing.result
+        self.measures = existing.measures.copy()
+        self.verbose_timing = existing.verbose_timing
+
 
 @fieldwise_init
 struct Mode(ImplicitlyCopyable, Movable):

@@ -262,6 +262,30 @@ language across multiple phases.
     of `ImplicitlyCopyable`:
     `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
 
+  - The following Mojo standard library types are no longer implicitly copyable:
+    `List`.
+
+    To create a copy of one of these types, call the `.copy()` method explicitly:
+
+    ```mojo
+    var l = List[Int](1, 2, 3)
+
+    # ERROR: Implicit copying of `List` is no longer supported:
+    # var l2 = l
+
+    # Instead, perform an explicit copy:
+    var l2 = l.copy()
+    ```
+
+    Alternatively, to transfer ownership,
+    [use the `^` transfer sigil](https://docs.modular.com/mojo/manual/values/ownership#transfer-arguments-var-and-):
+
+    ```moj
+    var l = List[Int](1, 2, 3)
+    var l2 = l^
+    # `l` is no longer accessible.
+    ```
+
 - A new `Some` utility is introduced to reduce the syntactic load of declaring
   function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing

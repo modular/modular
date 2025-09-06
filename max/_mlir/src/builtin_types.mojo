@@ -33,6 +33,11 @@ struct FunctionType(DialectType, ImplicitlyCopyable, Movable):
         var ctx = (inputs if len(inputs) else results)[0].context()
         self = Self(ctx, inputs.copy(), results.copy())
 
+    fn __copyinit__(out self, existing: Self):
+        self.ctx = existing.ctx
+        self.inputs = existing.inputs.copy()
+        self.results = existing.results.copy()
+
     fn to_mlir(self) -> Type:
         return _c.BuiltinTypes.mlirFunctionTypeGet(
             self.ctx.c,

@@ -354,6 +354,10 @@ struct _WriteState(ImplicitlyCopyable, Movable):
     var handle: UnsafePointer[FileHandle]
     var errors: List[String]
 
+    fn __copyinit__(out self, existing: Self):
+        self.handle = existing.handle
+        self.errors = existing.errors.copy()
+
 
 # TODO: how to correctly destroy "owned" Operations?
 @register_passable("trivial")

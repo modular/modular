@@ -83,7 +83,7 @@ struct _ListIter[
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
-    Boolable, Defaultable, ImplicitlyCopyable, Iterable, Movable, Sized
+    Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A dynamically-allocated and resizable list.
 
@@ -335,7 +335,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._len = unsafe_uninit_length
 
     fn __copyinit__(out self, existing: Self):
-        """Creates a deepcopy of the given list.
+        """Creates a deep copy of the given list.
 
         Args:
             existing: The list to copy.

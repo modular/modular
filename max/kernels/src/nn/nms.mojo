@@ -249,6 +249,7 @@ fn non_max_suppression[
                 )
 
             @always_inline
+            @parameter
             fn sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (

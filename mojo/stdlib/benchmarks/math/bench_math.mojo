@@ -63,7 +63,6 @@ fn bench_math[
 
     @always_inline
     @parameter
-    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f1p(input)
@@ -85,7 +84,6 @@ fn bench_math3[
 
     @always_inline
     @parameter
-    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f3p(input, input, input)
@@ -103,7 +101,6 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
 
     @always_inline
     @parameter
-    @__copy_capture(int_inputs)
     fn call_fn() raises:
         for i in range(len(int_inputs) // 2):
             var result = keep(math_f2p(int_inputs[i], int_inputs[-(i + 1)]))
