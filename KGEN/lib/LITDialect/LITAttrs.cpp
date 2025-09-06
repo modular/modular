@@ -491,9 +491,7 @@ LogicalResult FnMetadataAttr::verifyFuncType(
     }
 
     // Verify argument conventions.
-    if (hasAddress(conv)) {
-      if (::isa<RefType>(type))
-        continue;
+    if (hasAddress(conv) && !::isa<RefType>(type)) {
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!lit.ref` but got: " << type;

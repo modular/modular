@@ -817,6 +817,14 @@ bool RefType::isDefaultAddrSpace() {
   return false;
 }
 
+/// Given an argument type+convention, if the convention has an implicit
+/// reference, remove it from the type.
+Type RefType::stripRefConvention(Type type, ArgConvention convention) {
+  if (hasAddress(convention))
+    return cast<RefType>(type).getElementType();
+  return type;
+}
+
 OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
   // Parse a `store_to_mem` directive.
   if (succeeded(p.parseOptionalKeyword("store_to_mem"))) {
@@ -1173,10 +1181,8 @@ Type FnType::getIfVariadicPack(size_t index) {
     return {};
 
   // Look through references to the VariadicPack type.
-  auto type = getArgument(index);
-  if (hasAddress(getArgConvention(index)))
-    type = ::cast<RefType>(type).getElementType();
-  return type;
+  return RefType::stripRefConvention(getArgument(index),
+                                     getArgConvention(index));
 }
 
 /// For a vararg, return the declared ArgConvention of the elements. For

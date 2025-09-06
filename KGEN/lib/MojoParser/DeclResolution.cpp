@@ -887,8 +887,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
       type = ParamType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::ReadReg;
     }
-    if (hasAddress(conv))
-      type = ASTType(type).getReferenceElementType();
+    type = RefType::stripRefConvention(type, conv);
     argTypes.push_back(type);
   }
 
