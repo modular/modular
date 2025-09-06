@@ -522,10 +522,21 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
-  if (!declsCurrentlyProcessing.insert({&decl, loc}).second) {
-    emitError(loc, "recursive reference to declaration")
-            .attachNote(declsCurrentlyProcessing[&decl])
-        << "previously used here";
+  if (failed(declsCurrentlyProcessing.insert(&decl, loc))) {
+    auto diag = emitError(
+        loc, "attempt to resolve a recursive reference to declaration");
+
+    // Include a stack trace of notes showing why this is being cyclicly
+    // resolved.
+    for (ASTDecl *prev : llvm::reverse(declsCurrentlyProcessing.stack)) {
+      // Bottom out when we find the declaration in question.
+      auto useLoc = declsCurrentlyProcessing.map[prev];
+      if (prev == &decl) {
+        diag.attachNote(useLoc) << "originally resolving it here";
+        break;
+      }
+      diag.attachNote(useLoc) << "referenced through this use";
+    }
     decl.setErroneous();
     return failure();
   }
@@ -536,7 +547,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
       decl.setErroneous();
 
-    declsCurrentlyProcessing.erase(&decl);
+    declsCurrentlyProcessing.pop();
     return success(!decl.isErroneous());
   }
 
@@ -722,7 +733,7 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     }
   }
 
-  declsCurrentlyProcessing.erase(&decl);
+  declsCurrentlyProcessing.pop();
   // If decl is busted, then return failure.
   return success(!decl.isErroneous());
 }
