@@ -196,8 +196,11 @@ tryGetSymbolNameAndParams(TypedAttr param) {
 /// Both "a.dtype" and "b.dtype" will resolve to a (mangled) string of
 /// "dtype", but we would really like to print them as "a.dtype" so the user
 /// knows what is going on, and we don't get a T != T error.
-static void printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
-                                         SharedState &shared, raw_ostream &os) {
+///
+/// This returns success when handled, failure otherwise.
+static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
+                                                  SharedState &shared,
+                                                  raw_ostream &os) {
   ASTDecl *curDecl = shared.declResolver->getDeclCurrentlyProcessing();
 
   // Walk up the decl hierarchy to find the one that contains the parameter.
@@ -237,52 +240,48 @@ static void printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
     curDecl = curDecl->getParentDecl();
   }
 
-  // If we didn't find it, or it isn't an implicit parameter then there is
-  // nothing to do.
-  if (paramIdx == -1 ||
-      // Is an implicit origin reference.
-      size_t(paramIdx) >= paramListAttr.size() ||
-      // Is a non-inferred parameter.
-      (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred &&
-       paramListAttr.getPassingKind(paramIdx) != PassingKind::Implicit))
-    return;
+  // If we didn't find it, or is something like an implicit origin reference
+  // then there is nothing to do.
+  if (paramIdx == -1)
+    return failure();
+
+  // Handle implicit origins.
+  if (size_t(paramIdx) >= paramListAttr.size()) {
+    assert(isa<OriginType>(paramDecls[paramIdx].getType()) &&
+           "Only unnamed thing should be an implicit origin");
+    os << "__origin_of(" << demangleParameterName(declRef.getName()) << ")";
+    return success();
+  }
 
   // Otherwise, it is an autoparam.  It could be an autoparam of another
-  // parameter, or could be an autoparam for an argument type of a function.
-  // Check parameters first (handling structs and functions).
+  // parameter, or could be an autoparam for an argument type of a
+  // function. Check parameters first (handling structs and functions).
   for (auto paramDecl : paramDecls) {
     for (auto p : ASTType(paramDecl.getType()).getParamBindings()) {
       if (p == declRef) {
-        os << paramDecl.getName().strref() << ".";
-        return;
+        os << paramDecl.getName().strref() << "."
+           << demangleParameterName(declRef.getName());
+        return success();
       }
     }
   }
 
-  // If this is a function, it may be an autoparam for an argument type.
-  auto fnDecl = dyn_cast<LIT::FnOp>(curDecl->getIfOperation());
-  if (!fnDecl)
-    return; // TODO: Tighten up.
-
-  assert(fnDecl && "Unknown auto-parameterization");
-  auto fnSig = fnDecl.getFuncTypeGenerator();
-  for (auto [idx, arg] :
-       llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
-    auto userArgType =
-        RefType::stripRefConvention(arg, fnSig.getArgConvention(idx));
-    if (llvm::is_contained(ASTType(userArgType).getParamBindings(), declRef)) {
-      os << fnSig.getArgName(idx).strref() << ".";
-      return;
+  // If this is a function, it may be an auto-param for an argument type.
+  if (auto fnDecl = dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
+    auto fnSig = fnDecl.getFuncTypeGenerator();
+    for (auto [idx, arg] :
+         llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
+      auto userArgType =
+          RefType::stripRefConvention(arg, fnSig.getArgConvention(idx));
+      if (llvm::is_contained(ASTType(userArgType).getParamBindings(),
+                             declRef)) {
+        os << fnSig.getArgName(idx).strref() << "."
+           << demangleParameterName(declRef.getName());
+        return success();
+      }
     }
   }
-
-#if 0 // FIXME: Tighten this up.
-  // FIXME: Struct autoparam is making inferred instead of implicit params.
-  if (paramListAttr.getPassingKind(paramIdx) == PassingKind::Inferred)
-    return;
-
-  llvm_unreachable("Unknown auto-parameterization");
-#endif
+  return failure();
 }
 
 /// Pretty print a parameter value.
@@ -588,59 +587,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
-    if (isa<StaticOriginAttr>(originField.getBase())) {
-      if (originField.getField().str() == "__constants__" &&
-          originField.getType().isMutableKnown(false)) {
-        os << "StaticConstantOrigin";
-        return;
-      }
-    }
-
-    printParam(os, originField.getBase(), diagShared);
-    os << '.' << originField.getField().str();
-    return;
-  }
-  if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
-    os << '{';
-    llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr param) {
-      printParam(os, param, diagShared);
-    });
-    os << '}';
-    return;
-  }
-
-  if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
-    printParam(os, indirect.getBase(), diagShared);
-    os << "[]";
-    return;
-  }
-
-  if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
-    if (mutcast.getType().isMutableKnown(false))
-      os << "(muttoimm ";
-    else
-      os << "(mutcast ";
-    printParam(os, mutcast.getOperand(), diagShared);
-    os << ")";
-    return;
-  }
-
-  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
-    if (anyOrig.getType().isMutableKnown(true))
-      os << "MutableAnyOrigin";
-    else if (anyOrig.getType().isMutableKnown(false))
-      os << "ImmutableAnyOrigin";
-    else
-      os << "SomeAnyOrigin";
-    return;
-  }
-
-  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
-    os << "ComptimeOrigin";
-    return;
-  }
-
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
@@ -768,12 +714,14 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
     // If the parameter is an implicit parameter injected due to
     // auto-parameterization, print the thing that is being parameterized.
-    if (diagShared)
-      printAutoParamScopeIfPresent(declRef, *diagShared, os);
-
     StringRef name = declRef.getName();
-    if (diagShared)
+
+    if (diagShared) {
       name = demangleParameterName(name);
+      if (name != declRef.getName()) // Add context for mangled names.
+        if (succeeded(printAutoParamScopeIfPresent(declRef, *diagShared, os)))
+          return;
+    }
 
     // Escape any weird characters in the parameter name that might have
     // been introduced with backticks.
@@ -781,10 +729,135 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  // These are origins but don't need __origin_of around them.
+  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+    if (anyOrig.getType().isMutableKnown(true))
+      os << "MutableAnyOrigin";
+    else if (anyOrig.getType().isMutableKnown(false))
+      os << "ImmutableAnyOrigin";
+    else
+      os << "SomeAnyOrigin";
+    return;
+  }
+  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
+    os << "ComptimeOrigin";
+    return;
+  }
+  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+    if (isa<StaticOriginAttr>(originField.getBase())) {
+      if (originField.getField().str() == "__constants__" &&
+          originField.getType().isMutableKnown(false)) {
+        os << "StaticConstantOrigin";
+        return;
+      }
+    }
+  }
+
+  // Origins are handled with their own grammar that has `__origin_of(x)` on
+  // the outside.
+  if (isa<OriginType>(param.getType())) {
+    os << "__origin_of(";
+    // Flatten unions into a comma separated list.
+    if (auto unionAttr = dyn_cast<OriginUnionAttr>(param)) {
+      llvm::interleaveComma(unionAttr.getOperands(), os, [&](TypedAttr param) {
+        printOriginParam(os, param, diagShared);
+      });
+    } else {
+      printOriginParam(os, param, diagShared);
+    }
+    os << ")";
+    return;
+  }
+
   // Handle other KGEN parameters that it knows about with an ugly fallback.
   // TODO: Remove this - we should cover all attrs here, anything that falls
   // back should be an error/assertion.
   os << KGEN::getParamAsString(param);
+}
+
+/// Print the specified parameter like we would in an origin expression,
+/// works in an __origin_of(x) body.
+void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
+                               SharedState *diagShared) {
+
+  if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
+    if (isa<StaticOriginAttr>(originField.getBase())) {
+      if (originField.getField().str() == "__constants__" &&
+          originField.getType().isMutableKnown(false)) {
+        os << "StaticConstantOrigin";
+        return;
+      }
+    }
+
+    printOriginParam(os, originField.getBase(), diagShared);
+    os << '.' << originField.getField().str();
+    return;
+  }
+  if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
+    os << '{';
+    llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr param) {
+      printOriginParam(os, param, diagShared);
+    });
+    os << '}';
+    return;
+  }
+
+  if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
+    printOriginParam(os, indirect.getBase(), diagShared);
+    os << "[]";
+    return;
+  }
+
+  if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
+    if (mutcast.getType().isMutableKnown(false))
+      os << "(muttoimm ";
+    else
+      os << "(mutcast ";
+    printOriginParam(os, mutcast.getOperand(), diagShared);
+    os << ")";
+    return;
+  }
+
+  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+    if (anyOrig.getType().isMutableKnown(true))
+      os << "MutableAnyOrigin";
+    else if (anyOrig.getType().isMutableKnown(false))
+      os << "ImmutableAnyOrigin";
+    else
+      os << "SomeAnyOrigin";
+    return;
+  }
+
+  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
+    os << "ComptimeOrigin";
+    return;
+  }
+
+  if (auto originRef = dyn_cast<ImplicitOriginRefAttr>(param)) {
+    // TODO: Should improve this when diagShared is present so references to
+    // function types know what context they are in and can resolve these.
+    os << "*[" << originRef.getDepth() << ',' << originRef.getIndex() << ']';
+    return;
+  }
+
+  if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
+    // If the parameter is an implicit parameter injected due to
+    // auto-parameterization, print the thing that is being parameterized.
+    StringRef name = declRef.getName();
+
+    if (diagShared)
+      name = demangleParameterName(name);
+    // Escape any weird characters in the parameter name that might have
+    // been introduced with backticks.
+    printAsMojoStringLiteral(name, os);
+    return;
+  }
+
+  if (isa<StructExtractAttr, ParamIndexRefAttr>(param))
+    return printParam(os, param, diagShared);
+
+  param.dump();
+  llvm_unreachable("unknown origin parameter");
 }
 
 /// Given a parameter value of MLIR wrapper type like Bool or Int or DType,
@@ -896,7 +969,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
 
   auto printRef = [&](RefType refType) {
     os << "ref [";
-    printParam(os, refType.getOrigin(), diagShared);
+    printOriginParam(os, refType.getOrigin(), diagShared);
     if (!refType.isDefaultAddrSpace()) {
       os << ", ";
       printParam(os, refType.getOrigin(), diagShared);
@@ -1151,5 +1224,14 @@ std::string ASTType::getParamAsString(TypedAttr param,
   std::string result;
   llvm::raw_string_ostream os(result);
   printParam(os, param, diagShared);
+  return os.str();
+}
+
+/// Get the specified parameter as a string.
+std::string ASTType::getOriginAsString(TypedAttr param,
+                                       SharedState *diagShared) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  printOriginParam(os, param, diagShared);
   return os.str();
 }

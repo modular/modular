@@ -833,7 +833,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
           auto argO = OriginMutCastAttr::strip(argType.getOrigin());
           auto expO = OriginMutCastAttr::strip(expectedRefType.getOrigin());
           if (argO != expO) {
-            diag << "origin: " << argO << " vs " << expO;
+            diag << "origin: '" << ASTType::getOriginAsString(argO, &shared)
+                 << "' vs '" << ASTType::getOriginAsString(expO, &shared)
+                 << "'";
           } else {
             diag << "origin mutability: " << argType.isMutable() << " vs "
                  << expectedRefType.isMutable();
