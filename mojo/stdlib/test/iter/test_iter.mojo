@@ -23,9 +23,9 @@ fn test_iter() raises:
         _type_is_eq[__type_of(it), _ListIter[Int, False, __origin_of(l)]]()
     )
     # Check that iter(iter(l)) is the same as iter(l)
-    var it2 = iter(it)
+    var _it2 = iter(it)
     assert_true(
-        _type_is_eq[__type_of(it2), _ListIter[Int, False, __origin_of(l)]]()
+        _type_is_eq[__type_of(_it2), _ListIter[Int, False, __origin_of(l)]]()
     )
 
 

@@ -78,7 +78,7 @@ def test_type_trivial[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events,
         [
@@ -95,7 +95,7 @@ def test_type_not_trivial[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
     )
@@ -105,7 +105,7 @@ def test_type_inherit_triviality[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events,
         [
@@ -122,7 +122,7 @@ def test_type_inherit_non_triviality[T: Movable & Copyable]():
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
-    var value_move = value_copy^
+    var _value_move = value_copy^
     assert_equal(
         events, [EVENT_INIT, EVENT_COPY, EVENT_DEL, EVENT_MOVE, EVENT_DEL]
     )

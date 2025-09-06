@@ -218,7 +218,7 @@ fn bench_find_optimized(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn():
-        _ = _memmem(haystack.as_bytes(), needle.as_bytes())
+        _ = _memmem(local_haystack.as_bytes(), local_needle.as_bytes())
 
     b.iter[call_fn]()
 
