@@ -105,7 +105,7 @@ def _in_running_loop() -> bool:
     return True
 
 
-class Tensor:
+class Tensor(DLPackArray):
     """A Tensor object with numerics.
 
     A Tensor type that can do the kinds of things people expect
