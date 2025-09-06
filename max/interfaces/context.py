@@ -170,7 +170,7 @@ BaseContextType = TypeVar("BaseContextType", bound=BaseContext)
 
 
 @runtime_checkable
-class InputContext(Protocol):
+class InputContext(BaseContext, Protocol):
     """Protocol defining the interface for model input contexts in token generation.
 
     An ``InputContext`` represents model inputs for ``TokenGenerator`` instances, managing

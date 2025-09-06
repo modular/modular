@@ -5,11 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces and response structures for embedding generation in the MAX API."""
 
+from __future__ import annotations
+
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max.interfaces.pipeline import PipelineOutput
+
+
+def _check_embeddings_output_implements_pipeline_output(
+    x: EmbeddingsOutput,
+) -> PipelineOutput:
+    return x
 
 
 class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
