@@ -256,19 +256,27 @@ Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-n
 
 ## Mojo SDK
 
-### How can I get access to the SDK?
+### How can I get the Mojo SDK?
 
-You can install it with the `mojo` conda package. Try it now by following
-the tutorial to [get started with Mojo](/mojo/manual/get-started).
+You can get Mojo and all the developer tools by installing `mojo` with
+any Python or Conda package manager. For details, see the
+[Mojo installation guide](/mojo/manual/install).
 
 ### Is the Mojo Playground still available?
 
-Yes, but it's different. When we first announced Mojo, it was available
-only through login, in a JupyterLab environment. Now that Mojo is available
-for local development, we've shut down that service.
+Not for long. The [Mojo Playground](https://developer.modular.com/playground)
+is deprecated and will be shut down with the v25.6 release.
 
-The new [Mojo Playground](https://developer.modular.com/playground)
-does not require login.
+Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
+available in an SDK; it was available only in web-hosted a JupyterLab
+environment. After we made Mojo available for local development, we
+shut down the JupyterLab environment and launched a new Mojo Playground
+for people to try Mojo on the web. But ever since we made the Mojo SDK
+avialable for Linux and Mac, Mojo Playground usage steadily declined.
+The trickle of users we get now no longer justifies the maintenance
+and hosting costs.
+
+See how to [install Mojo](/mojo/manual/install).
 
 ### What are the license terms for the SDK?
 
@@ -276,7 +284,8 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-See the [Mojo system requirements](/mojo/manual/install#system-requirements).
+Mac and Linux. For details, see the
+[Mojo system requirements](/mojo/manual/install#system-requirements).
 
 ### Is there IDE Integration?
 
