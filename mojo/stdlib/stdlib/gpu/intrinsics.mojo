@@ -1146,3 +1146,44 @@ fn buffer_store[
     llvm_intrinsic[
         "llvm.amdgcn.raw.buffer.store", NoneType, has_side_effect=True
     ](store_val, dst_resource, vector_offset_bytes, scalar_offset_bytes, aux)
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD LDS transpose reads (ds.read.tr*)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn ds_read_tr16_b64[
+    dtype: DType, //,
+](
+    shared_ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.SHARED, **_
+    ]
+) -> SIMD[dtype, 4]:
+    """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
+
+    Args:
+        shared_ptr: Pointer to the LDS transpose block.
+
+    Returns:
+        SIMD[dtype, 4] of 16-bit types.
+
+    Notes:
+        - Only supported on AMD GPUs.
+        - Maps directly to llvm.amdgcn.ds.read.tr16.b64 intrinsic.
+        - Result width is fixed to 4 elements of dtype.
+    """
+
+    constrained[
+        is_amd_gpu(),
+        "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware.",
+    ]()
+    constrained[
+        size_of[dtype]() == 2,
+        "ds_read_tr16_b64 supports 16-bit dtypes.",
+    ]()
+
+    return llvm_intrinsic[
+        "llvm.amdgcn.ds.read.tr16.b64", SIMD[dtype, 4], has_side_effect=False
+    ](shared_ptr)

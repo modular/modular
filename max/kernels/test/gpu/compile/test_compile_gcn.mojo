@@ -26,10 +26,13 @@ from gpu import (
 from gpu.globals import WARP_SIZE
 from gpu.host.compile import _compile_code
 from gpu.host import get_gpu_target
-from gpu.intrinsics import load_acquire, store_release
+from gpu.intrinsics import load_acquire, store_release, ds_read_tr16_b64
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from gpu.memory import AddressSpace
 
 alias MI300X_TARGET = get_gpu_target["mi300x"]()
+alias MI355X_TARGET = get_gpu_target["mi355x"]()
+
 alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
@@ -355,6 +358,48 @@ def test_atomic_compile():
     )
 
 
+# CHECK-LABEL: test_ds_read_tr16_b64_compile
+def test_ds_read_tr16_b64_compile():
+    print("== test_ds_read_tr16_b64_compile")
+
+    fn test_kernel[dtype: DType]():
+        var x = UnsafePointer[
+            Scalar[dtype], address_space = AddressSpace.SHARED
+        ]()
+        var y = ds_read_tr16_b64(x)
+        y[0] = y[0] + 1
+        x[0] = y[0]
+
+    # CHECK: ds_read_b64_tr_b16 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.float16],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b16 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.bfloat16],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b16 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.int16],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b16 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.uint16],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
 def main():
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -366,3 +411,4 @@ def main():
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
     test_atomic_compile()
+    test_ds_read_tr16_b64_compile()
