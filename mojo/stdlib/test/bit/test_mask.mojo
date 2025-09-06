@@ -28,13 +28,13 @@ def test_is_negative():
 
     @parameter
     for i in range(len(dtypes)):
-        alias D = dtypes[i]
-        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
+        alias dtype = dtypes[i]
+        var last_value = 2 ** (dtype.bit_width() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter
         for j in range(len(widths)):
-            alias S = SIMD[D, widths[j]]
+            alias S = SIMD[dtype, widths[j]]
 
             for k in values:
                 assert_equal(S(-1), is_negative(S(-k)))
@@ -80,7 +80,7 @@ def test_compare():
     @parameter
     for i in range(len(dtypes)):
         alias D = dtypes[i]
-        var last_value = 2 ** (bit_width_of[D]() - 1) - 1
+        var last_value = 2 ** (D.bit_width() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
         @parameter

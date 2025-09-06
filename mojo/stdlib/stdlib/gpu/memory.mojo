@@ -1451,7 +1451,7 @@ fn _load_impl[
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
     alias bytes_to_load = size_of[dtype]() * width
-    alias dtype_bitwidth = bit_width_of[dtype]()
+    alias dtype_bitwidth = dtype.bit_width()
 
     @parameter
     if bytes_to_load < size_of[DType.uint32]():

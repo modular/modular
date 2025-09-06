@@ -85,7 +85,7 @@ from collections.string.string_slice import (
 from hashlib.hasher import Hasher
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import bit_width_of, size_of
+from sys import size_of
 from sys.info import is_32bit
 from sys.ffi import c_char
 
@@ -158,19 +158,19 @@ struct String(
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias INLINE_CAPACITY: UInt = UInt(Int.BITWIDTH // 8 * 3 - 1)
+    alias INLINE_CAPACITY: UInt = UInt(Int.BIT_WIDTH // 8 * 3 - 1)
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
-    alias FLAG_HAS_NUL_TERMINATOR: UInt = UInt(1) << UInt(UInt.BITWIDTH - 3)
+    alias FLAG_HAS_NUL_TERMINATOR: UInt = UInt(1) << UInt(UInt.BIT_WIDTH - 3)
     # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
     # that may have other references to it.
-    alias FLAG_IS_REF_COUNTED: UInt = UInt(1) << UInt(UInt.BITWIDTH - 2)
+    alias FLAG_IS_REF_COUNTED: UInt = UInt(1) << UInt(UInt.BIT_WIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
-    alias FLAG_IS_INLINE: UInt = UInt(1) << UInt(UInt.BITWIDTH - 1)
+    alias FLAG_IS_INLINE: UInt = UInt(1) << UInt(UInt.BIT_WIDTH - 1)
     # gives us 5 bits for the length.
-    alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
+    alias INLINE_LENGTH_START = UInt(Int.BIT_WIDTH - 8)
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
@@ -2335,9 +2335,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
-    )
+    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2375,7 +2373,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        if is_32bit() or dtype.bit_width() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
