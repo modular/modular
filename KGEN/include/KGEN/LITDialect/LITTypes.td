@@ -450,6 +450,10 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// Return true if this is in address space 0.
     bool isDefaultAddrSpace();
 
+    /// Given an argument type+convention, if the convention has an implicit
+    /// reference, remove it from the type.
+    static Type stripRefConvention(Type type, ArgConvention convention);
+
     /// Return a reference to the specified element type and mutability with a
     /// #lit.any.origin.
     static RefType getAnyOrigin(Type elementType, bool isMut,

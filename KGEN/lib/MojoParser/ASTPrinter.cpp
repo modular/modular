@@ -908,8 +908,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         if (!name.empty())
           os << name.getValue() << ": ";
 
-        if (hasAddress(convention))
-          type = type.getReferenceElementType();
+        type = RefType::stripRefConvention(type, convention);
         type.print(os, diagShared);
       }
 

@@ -1131,9 +1131,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       numStars = 2;
     }
 
-    if (hasAddress(convention))
-      argType = argType.getReferenceElementType();
-
+    argType = RefType::stripRefConvention(argType, convention);
     mangledName += argType.getAsString(/*forDiag=*/nullptr);
 
     // Add suffix to disambiguate overloadable conventions.

@@ -1462,9 +1462,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
     return;
   }
 
-  ASTType argType = val.getType();
-  if (hasAddress(convention))
-    argType = argType.getReferenceElementType();
+  ASTType argType = RefType::stripRefConvention(val.getType(), convention);
 
   // Otherwise, it is a more complicated buried origin in a type like a
   // Reference or Span.
@@ -1645,9 +1643,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // is different than the origin for the pack itself (when passed through
     // memory).
     if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      ASTType argRVType = arg.getType();
-      if (hasAddress(convention))
-        argRVType = argRVType.getReferenceElementType();
+      ASTType argRVType =
+          RefType::stripRefConvention(arg.getType(), convention);
 
       // Include the union origin that covers all the values.
       implicitOrigins.push_back(

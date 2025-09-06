@@ -222,8 +222,8 @@ generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
   } else if (varKind == VariadicKind::PackVarArg && !isa<PackType>(type)) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
-    if (convention && hasAddress(*convention))
-      astType = astType.getReferenceElementType();
+    if (convention)
+      astType = RefType::stripRefConvention(astType, *convention);
 
     ASTType::printParam(os, astType.getVariadicPackTypeList(),
                         /*forDiag=*/&shared);

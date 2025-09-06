@@ -1038,8 +1038,7 @@ LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
 
     // Memory-only arguments store their default values as pure values.
     if (!convs.empty())
-      if (hasAddress(convs[idx]))
-        expectedType = ::cast<RefType>(expectedType).getElementType();
+      expectedType = RefType::stripRefConvention(expectedType, convs[idx]);
 
     if (defaultType != expectedType &&
         !::isa<TypeCheckErrorType>(expectedType)) {

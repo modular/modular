@@ -740,9 +740,8 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
-      auto argRVType = initSig.getArgument(0);
-      if (hasAddress(initSig.getArgConvention(0)))
-        argRVType = ASTType(argRVType).getReferenceElementType();
+      auto argRVType = RefType::stripRefConvention(initSig.getArgument(0),
+                                                   initSig.getArgConvention(0));
 
       if (actual.getType() != argRVType &&
           IREmitter::canZeroCostConvert(actual.getType(), argRVType, shared)) {
@@ -1534,9 +1533,8 @@ ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
          "init should have positional self argument");
 
   auto selfConvention = signature.getArgConventions()[0];
-  ASTType declaredSelfType = signature.getArgument(0);
-  if (hasAddress(selfConvention))
-    declaredSelfType = declaredSelfType.getReferenceElementType();
+  ASTType declaredSelfType =
+      RefType::stripRefConvention(signature.getArgument(0), selfConvention);
 
   // Get the ASTDecl for the declared self type.  This will give us the struct
   // that we are referring to without bound parameters.

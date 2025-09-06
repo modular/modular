@@ -137,10 +137,8 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
   ArgConvention convention =
       func.getFuncTypeGenerator().getArgConvention(arg.getArgNumber());
   if (hasAddress(convention)) {
-    if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
-      diExpr =
-          DebugInfo::DIDerefExprAttr::get(diExpr, argRefType.getElementType());
-    }
+    auto eltType = RefType::stripRefConvention(arg.getType(), convention);
+    diExpr = DebugInfo::DIDerefExprAttr::get(diExpr, eltType);
   }
 
   DebugInfo::DIType sourceType =
