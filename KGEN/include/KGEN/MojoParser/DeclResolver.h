@@ -169,6 +169,14 @@ public:
     return resolve(decl, DeclResolvedness::body, loc);
   }
 
+  /// DeclResolution is an inherently recursive process - this return the
+  /// current declaration that is being worked on.
+  ASTDecl *getDeclCurrentlyProcessing() const {
+    if (declsCurrentlyProcessing.stack.empty())
+      return nullptr;
+    return declsCurrentlyProcessing.stack.back();
+  }
+
   //===--------------------------------------------------------------------===//
   // Top-Level Decl Resolution
   //===--------------------------------------------------------------------===//
