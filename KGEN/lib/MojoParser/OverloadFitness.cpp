@@ -278,14 +278,10 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
       operandO = operandOS;
     }
 
-    // TODO: Work to improve diagnostics that are referring to implicitly
-    // declared origins, e.g.
-    //       fn foo(ref a: String):
-    //            bad_use(a)
-    // should complain about __origin_of(a) instead of some synthesized name.
-    // See examples in Mojo #3830.
-    diag.attachNote(loc) << "operand origin " << operandO
-                         << " doesn't match expected origin " << argO;
+    diag.attachNote(loc) << "operand origin '"
+                         << ASTType::getOriginAsString(operandO, &shared)
+                         << "' doesn't match expected origin '"
+                         << ASTType::getOriginAsString(argO, &shared) << "'";
   }
 }
 

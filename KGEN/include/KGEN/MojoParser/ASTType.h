@@ -204,6 +204,11 @@ public:
   static void printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared);
 
+  /// Print the specified parameter like we would in an origin expression,
+  /// works in an __origin_of(x) body.
+  static void printOriginParam(raw_ostream &os, TypedAttr param,
+                               SharedState *diagShared);
+
   /// This is the same as printParam, but is only used user pretty printing
   /// circumstances (not mangling) after emitting a type annotation.  This
   /// avoids printing obvious implicit conversion calls.
@@ -212,6 +217,10 @@ public:
 
   /// Get the specified parameter as a string.
   static std::string getParamAsString(TypedAttr param, SharedState *diagShared);
+
+  /// Get the specified parameter as a string, works in an __origin_of(x) body.
+  static std::string getOriginAsString(TypedAttr param,
+                                       SharedState *diagShared);
 
   /// Create and return a reference type with 'this' as the underlying element
   /// type an implicit origin reference with the specified arg name.

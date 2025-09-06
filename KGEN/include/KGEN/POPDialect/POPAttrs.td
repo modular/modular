@@ -189,8 +189,7 @@ def POP_IntLiteralConvertAttr : POP_ExprAttr<"IntLiteralConvert",
   let summary = "Convert an integer literal to a different type.";
   let description = [{
     The `#pop.int_literal_convert` attribute is used to convert an integer
-    literal to a different type.  It is the parameter domain form of
-    the `pop.int_literal.convert` operation.
+    literal to a different type.
   }];
 
   let parameters = (ins
@@ -203,7 +202,7 @@ def POP_IntLiteralConvertAttr : POP_ExprAttr<"IntLiteralConvert",
     `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)")
     `,` $treatIndexAsUnsigned `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
@@ -230,7 +229,7 @@ def POP_IntLiteralBinAttr : POP_ExprAttr<"IntLiteralBin",
   );
 
   let assemblyFormat = "`<` $oper $lhs `,` $rhs `>`";
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
@@ -261,7 +260,7 @@ def POP_IntLiteralCmpAttr : POP_ExprAttr<"IntLiteralCmp", "int_literal_cmp"> {
     `<` $pred custom<ParamValue>($lhs, "IntLiteralType::get($_ctxt)") `,`
        custom<ParamValue>($rhs, "IntLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
@@ -333,8 +332,7 @@ def POP_FloatLiteralIsaAttr : POP_ExprAttr<"FloatLiteralIsa",
   let summary = "Check if the float_literal is of the given special value.";
   let description = [{
     The `#pop<float_literal_isa` attribute is used to check if the float
-    literal is of the given special value.  It is the parameter domain form of
-    the `pop.float_literal.isa` operation.
+    literal is of the given special value.
   }];
 
   let parameters = (ins
@@ -345,7 +343,7 @@ def POP_FloatLiteralIsaAttr : POP_ExprAttr<"FloatLiteralIsa",
   let assemblyFormat = [{
     `<` $kind custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
@@ -369,8 +367,7 @@ def POP_FloatLiteralConvertAttr : POP_ExprAttr<"FloatLiteralConvert",
   let summary = "Convert an float literal to a different type.";
   let description = [{
     The `#pop<float_literal_convert` attribute is used to convert an float
-    literal to a different type.  It is the parameter domain form of
-    the `pop.float_literal.convert` operation.
+    literal to a different type.
   }];
 
   let parameters = (ins
@@ -381,7 +378,7 @@ def POP_FloatLiteralConvertAttr : POP_ExprAttr<"FloatLiteralConvert",
   let assemblyFormat = [{
     `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
@@ -406,7 +403,7 @@ def POP_IntToFloatLiteralAttr : POP_ExprAttr<"IntToFloatLiteral",
   let assemblyFormat = [{
     `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override default builder so we can return a folded attribute.
@@ -434,7 +431,7 @@ def POP_FloatToIntLiteralAttr : POP_ExprAttr<"FloatToIntLiteral",
   let assemblyFormat = [{
     `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
@@ -499,7 +496,7 @@ def POP_FloatLiteralCmpAttr : POP_ExprAttr<"FloatLiteralCmp",
     `<` $pred custom<ParamValue>($lhs, "FloatLiteralType::get($_ctxt)") `,`
        custom<ParamValue>($rhs, "FloatLiteralType::get($_ctxt)") `>`
   }];
-  
+
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this

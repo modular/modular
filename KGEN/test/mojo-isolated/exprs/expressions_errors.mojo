@@ -641,7 +641,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer(to=b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, __origin_of(b)]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -750,7 +750,7 @@ fn field_sensitive_origins(a: ThingWithFields)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
   _ = __origin_of(Index.field_abc)
 
-  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, a.field]'}}
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, __origin_of(a.field)]'}}
   return a
 
 
@@ -777,7 +777,7 @@ fn unbound_function_type():
 struct SomeStruct:
   fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, self]'}}
+    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, __origin_of(self)]'}}
     return Pointer(to=ptr[])
 
 # Various type printing cases.
@@ -903,10 +903,10 @@ fn test_mergewith_pointer():
     # FIXME: This really should work, we need to figure out how exclusivity
     # works here.
 
-    # expected-error @below {{'List[Pointer[Int, {a, b}]]' does not implement the '__iter__' method}}
-    # expected-error @below {{argument of 'List[Pointer[Int, {a, b}]]' initializer call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
-    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
+    # expected-error @below {{'List[Pointer[Int, __origin_of(a, b)]]' does not implement the '__iter__' method}}
+    # expected-error @below {{argument of 'List[Pointer[Int, __origin_of(a, b)]]' initializer call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, __origin_of(a, b)]'}}
+    # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, __origin_of(a, b)]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
         elt[] *= 2
 

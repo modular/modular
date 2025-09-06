@@ -635,3 +635,12 @@ struct TestAutoParams[f1: HasSize]:
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
+
+struct TakeAnything[T: AnyType, //, a: T]:
+    fn __init__(out self): pass
+
+# expected-note @below {{function declared here}}
+fn take_a_4(a: TakeAnything[4]): pass
+fn pass(x: String):
+  # expected-error @+1 {{cannot be converted from 'TakeAnything[__origin_of(x)]' to 'TakeAnything[4]'}}
+  take_a_4(TakeAnything[__origin_of(x)]())
