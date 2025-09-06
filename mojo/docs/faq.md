@@ -276,7 +276,7 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-See the [system requirements](/max/faq#system-requirements).
+See the [Mojo system requirements](/mojo/manual/install#system-requirements).
 
 ### Is there IDE Integration?
 

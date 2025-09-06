@@ -1,0 +1,63 @@
+Because we don't test every variant of a GPU architecture, and support for new
+architectures will improve incrementally, we've divided our list of compatible
+GPUs into 3 tiers:
+
+#### Tier 1: Fully supported
+
+We provide full support and testing for the following data center GPUs:
+
+- NVIDIA H100 and H200 (Hopper)
+- NVIDIA A100 and A10 (Ampere)
+- AMD Instinct MI300X and MI325X (CDNA3)
+
+#### Tier 2: Confirmed compatibility
+
+We've confirmed full compatibility with the following GPUs but we currently
+don't maintain tests for them:
+
+- NVIDIA L4 and L40 (Ada Lovelace)
+- NVIDIA RTX 40XX series (Ada Lovelace)
+- NVIDIA RTX 30XX series (Ampere)
+
+#### Tier 3: Limited compatibility
+
+We've either confirmed or received reports that the following GPUs work for GPU
+programming with Mojo and can execute basic graphs with MAX APIs. However,
+these GPUs currently can't run some GenAI models for various reasons:
+
+- NVIDIA Tesla P100 (Pascal)
+- NVIDIA RTX 20XX series (Turing)
+- NVIDIA T4 (Turing)
+- NVIDIA Jetson Orin and Orin Nano (Ampere)
+- NVIDIA GeForce RTX 3090 (Ampere)
+- NVIDIA GeForce GTX 1080 Ti (Pascal)
+- AMD Radeon 700M series (RDNA3)
+- AMD Radeon RX 7000 series (RDNA3)
+- AMD Radeon RX 9000 series (RDNA4)
+
+If you've had success with any GPUs not listed here, please [let us know on
+Discord](https://discord.gg/modular).
+
+#### GPU software requirements
+
+Make sure you have the corresponding GPU software:
+
+- If you're on an **NVIDIA GPU**:
+
+  - NVIDIA GPU driver version 550 or higher
+
+    - Check your NVIDIA GPU driver version using
+  [nvidia-smi](https://developer.nvidia.com/system-management-interface)
+    - To update, see the [NVIDIA driver
+    docs](https://www.nvidia.com/en-us/drivers/)
+
+- If you're on an **AMD GPU**:
+
+  - AMD GPU driver version 6.3.3 or higher
+
+    - For datacenter GPUs (MI300X/MI325X), see the [Ubuntu native install
+    guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html)
+    - For Radeon GPUs on Ubuntu, see the [Linux install guide for Radeon
+    software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-radeon.html)
+    - For Radeon GPUs on WSL, see the [WSL install guide for Radeon
+    software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/wsl/install-radeon.html)

@@ -7,13 +7,12 @@ toc_max_heading_level: 2
 
 This is a list of changes to the Mojo language, standard library, and tools.
 
-To check your current version, run `mojo --version`.
+To check your current version, run `mojo --version`. To install or update
+Mojo, see the [install guide](/mojo/manual/install).
 
 ## v25.6 nightly
 
 This version is still a work in progress.
-
-See how to [install the nightly release](/max/packages#install).
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
@@ -26,10 +25,10 @@ See how to [install the nightly release](/max/packages#install).
   heavily used in GPU programming). It also includes the Mojo developer tools:
   LSP, debugger, formatter, and so on.
 
-  Currently to use Python to Mojo interoperability, you must install the
-  `modular` package.
+  To use Python to Mojo interoperability in v25.5, you must install the
+  `modular` package. This will move to the `mojo` package in a future release.
 
-  For more details, see [Packages](/max/packages).
+  For more details, see the [install guide](/mojo/manual/install).
 
 - Parametric aliases are now supported: Aliases can be specified with an
   optional parameter list (just like functions). Parametric aliases are
