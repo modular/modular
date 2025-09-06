@@ -1,0 +1,49 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_bmm
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_bmm.mojo
+
+params:
+
+# test shapes
+- $B: [1, 2, 4, 8, 16]
+- $M: [4096]
+  N: 4096
+  K: 4096
+
+- $B: 2
+  $M: 600
+  N: 128256
+  K: 4096
+
+- $B: 4
+  $M: 14
+  N: 3072
+  K: 12288
+
+# DeepSeek test shapes
+- $B: 128
+  $M: 256
+  N: 128
+  K: 512
+
+- $B: 128
+  $M: 256
+  N: 512
+  K: 128
+
+- $B: 4
+  $M: 14
+  N: 3072
+  K: 12288
