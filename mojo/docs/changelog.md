@@ -467,3 +467,6 @@ as the version for these packages.
   docs.
 - Fixed <https://github.com/modular/modular/issues/5239> - Contextual type not
   detected inside an inline if-else.
+- Error messages involving types using implicit parameters from
+  auto-parameterized types now include context information to solve a class of
+  incorrect "T != T" error messages common in kernel code.
