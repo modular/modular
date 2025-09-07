@@ -161,14 +161,15 @@ struct RegisterAccumulatorLayout[
             ),
         ),
     )
-    constrained[
-        Self.vec_output_layout.size() > 0,
-        "layout: " + String(Self.vec_output_layout),
-    ]()
 
     @staticmethod
     @always_inline
     fn description() -> RegisterAccumulatorDescription:
+        constrained[
+            Self.vec_output_layout.size() > 0,
+            "layout: " + String(Self.vec_output_layout),
+        ]()
+
         return RegisterAccumulatorDescription(
             num_m_mmas * num_n_mmas, Self.frag_size
         )
