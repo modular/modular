@@ -2693,6 +2693,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(structOp.getLocScope());
 
+  // Parse the body of the struct, which will give us all the methods and
+  // fields, but without resolving their signatures or bodies.
+  if (ParserBase(shared, lexer).parseSuite(structDecl))
+    return failure();
+
   // At this point, we have to mark the struct as body resolved... for very
   // unfortunate reasons. The issue is that we need nested declarations (e.g.
   // struct fields) to be able to do unqualified name lookups from within the
@@ -2708,11 +2713,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // could add a new resolvedness level for this (between signature and body
   // resolved indicating that we can name lookup through it?).
   structDecl.resolvedness = DeclResolvedness::body;
-
-  // Parse the body of the struct, which will give us all the methods and
-  // fields, but without resolving their signatures or bodies.
-  if (ParserBase(shared, lexer).parseSuite(structDecl))
-    return failure();
 
   // This collects all the resolved struct fields. Now that the body is
   // parsed we can check the declared fields for extra invariants.
