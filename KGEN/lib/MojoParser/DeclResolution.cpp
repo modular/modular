@@ -1402,7 +1402,6 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   // Fully resolve the body so we can swap the IR value of the decl. Later on,
   // we will need this to determine the capture signature.
-  decl.resolvedness = DeclResolvedness::body;
   if (failed(resolveBody(funcOp, lexer, decl)))
     return failure();
 
@@ -2669,9 +2668,6 @@ static void processRegisterPassableDecorator(
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
-  // TODO: Sink this to when the body is actually resolved.
-  structDecl.resolvedness = DeclResolvedness::body;
-
   auto conformsToTrait = [&](StringRef traitName) {
     ASTDecl *traitDecl =
         shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
@@ -2697,10 +2693,53 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(structOp.getLocScope());
 
+  // At this point, we have to mark the struct as body resolved... for very
+  // unfortunate reasons. The issue is that we need nested declarations (e.g.
+  // struct fields) to be able to do unqualified name lookups from within the
+  // struct body:
+  //
+  //    struct S:
+  //       var x : Int  # Must look up 'Int', it isn't a param of 'S'.
+  //
+  // To support this, we mark the struct as body resolved at this point, even
+  // though we don't even know what all the decls are within it - we're about to
+  // synthesize new members etc, which means it definitely isn't body resolved
+  // here.  This is a phase ordering and a modeling problem with ASTDecl - we
+  // could add a new resolvedness level for this (between signature and body
+  // resolved indicating that we can name lookup through it?).
+  structDecl.resolvedness = DeclResolvedness::body;
+
   // Parse the body of the struct, which will give us all the methods and
   // fields, but without resolving their signatures or bodies.
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
+
+  // This collects all the resolved struct fields. Now that the body is
+  // parsed we can check the declared fields for extra invariants.
+  bool hasBadField = false;
+  bool hasNonTrivialDestructor = false;
+  SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
+
+  // Iterate over all the parsed decls.  in general these won't be signature
+  // resolved, and we don't want to resolve functions.  We do need to resolve
+  // struct fields signatures to understand their type.
+  for (std::pair<StringAttr, TinyPtrVector<ASTDecl *>> decls :
+       structDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls.second) {
+      auto fieldOp = dyn_cast_or_null<StructFieldOp>(decl->getIfOperation());
+      if (!fieldOp)
+        continue;
+
+      if (failed(resolveSignature(*decl, decl->getLoc()))) {
+        hasBadField = true;
+        continue;
+      }
+      if (ASTType(fieldOp.getType())
+              .hasNontrivialDestructor(decl->getLoc(), shared))
+        hasNonTrivialDestructor = true;
+      structFields.push_back({fieldOp, decl});
+    }
+  }
 
   // Determine if there is an explicit conformance to AnyType.
   bool implicitlyDestructible = conformsToTrait("AnyType");
@@ -2715,6 +2754,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     synthesizedDtor = true;
     (void)StructEmitter(structDecl).synthesizeEmptyDtor();
   }
+
   // If the structure conforms to "AnyType", we populate the trivial flag.
   if (implicitlyDestructible)
     synthesizeTrivialFlagIfNeeded("__del__");
@@ -2737,26 +2777,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     synthesizeTrivialFlagIfNeeded("__copyinit__");
   }
 
-  // This collects all the resolved struct fields. Now that the body is
-  // completely resolved, check the declared fields for extra invariants.
-  bool hasBadField = false;
-  bool hasNonTrivialDestructor = false;
-  SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
-  for (StructFieldOp field : structOp.getFieldDecls()) {
-    // Make sure the field is signature resolved so we can get its type.
-    auto fieldEntries = structDecl.lookupInCurrentScope(field.getNameAttr());
-    assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
-    ASTDecl &fieldASTDecl = *fieldEntries[0];
-    if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc()))) {
-      hasBadField = true;
-      continue;
-    }
-    if (ASTType(field.getType())
-            .hasNontrivialDestructor(fieldASTDecl.getLoc(), shared))
-      hasNonTrivialDestructor = true;
-    structFields.push_back({field, &fieldASTDecl});
-  }
-
   // If we synthesized a destructor but the fields are all trivial, just drop
   // the destructor so CheckLifetimes doesn't need to worry about emitting calls
   // to it.
@@ -2766,11 +2786,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If the struct is @register_passable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
   // register_passable types before processing them.
-  if (structOp.isRegisterPassable()) {
-    // TODO: Split trivial and register_passable apart.
+  if (structOp.isRegisterPassable())
     processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
                                      structOp.getConvention());
-  }
 
   // Look up move and copy constructors and record them if declared.
   if (auto copyInitAttr = lookupSpecialMethod(structDecl, "__copyinit__",
@@ -2840,13 +2858,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       for (ASTDecl *childDecl : childDecls) {
         auto fnOp = dyn_cast_if_present<FnOp>(childDecl->getIfOperation());
 
-        if (!fnOp)
-          continue;
-
-        if (!fnOp.isDefaultedTraitFn())
-          continue;
-
-        if (isInherited(fnOp, parentDecl))
+        if (!fnOp || !fnOp.isDefaultedTraitFn() ||
+            isInherited(fnOp, parentDecl))
           continue;
 
         // Create a decl corresponding to the trait method we're inheriting.
