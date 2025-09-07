@@ -81,18 +81,12 @@ static ErrorOr<Attribute> parseMLIRAttrFromString(StringRef name, SMLoc loc,
     mlir::ScopedDiagnosticHandler handler(
         shared.getContext(), [&](Diagnostic &diag) { errorMsg = diag.str(); });
 
-    // FIXME(https://github.com/llvm/llvm-project/issues/58964)
-    // Copy the string into a temporary smallvector so we can make sure it is
-    // nul terminated for the MLIR asmparser.
-    SmallString<64> tmpBuf(name.begin(), name.end());
-    tmpBuf.push_back(0);
-
     // FIXME(#9621): Need to track the number of bytes read because we pass in
     // more than just the attribute we actually want to parse. This avoids
     // returning an error but is actually just masking the real problem.
     size_t bytesRead;
-    result = mlir::parseAttribute(StringRef(tmpBuf).drop_back(),
-                                  shared.getContext(), Type(), &bytesRead);
+    result =
+        mlir::parseAttribute(name, shared.getContext(), Type(), &bytesRead);
   }
 
   if (!result)
