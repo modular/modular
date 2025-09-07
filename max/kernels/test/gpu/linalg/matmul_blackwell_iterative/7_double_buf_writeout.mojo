@@ -1088,7 +1088,7 @@ fn make_shapes_dict() -> (
     var dic: Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher] = {
         0: (4096, 4096, 4096),
     }
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:

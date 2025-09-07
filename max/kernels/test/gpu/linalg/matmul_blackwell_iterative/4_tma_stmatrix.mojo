@@ -515,7 +515,7 @@ fn get_dict_of_shapes(
 fn make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     var dic = Dict[Int, Tuple[Int, Int, Int]]()
     dic[0] = (4096, 4096, 4096)
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
