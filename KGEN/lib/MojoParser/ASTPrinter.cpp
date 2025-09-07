@@ -524,7 +524,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (binOp)
         return printOperands(operands, /*separator=*/binOp);
 
-      break;
+      // Otherwise, fall back to printing as a parenthesized form like the KGEN
+      // printer does.  We don't fall back to the kgen printer because it will
+      // print nested subexpressions as KGEN and lose all sugar.
+      os << '(' << stringifyEnum(op.getOpcode()) << ' ';
+      llvm::interleaveComma(operands, os, [&](TypedAttr operand) {
+        printParam(os, operand, diagShared);
+      });
+      os << ')';
+      return;
     }
   }
   if (auto getWitness = dyn_cast<GetWitnessAttr>(param)) {
