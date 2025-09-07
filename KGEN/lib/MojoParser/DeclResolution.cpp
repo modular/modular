@@ -1577,6 +1577,9 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 }
 
 LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
+
   StructEmitter gen(*decl.getParentDecl());
 
   if (fn.getInheritedFrom())
@@ -1601,6 +1604,9 @@ LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
 
 ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
+
   Block &body = *funcOp.getBody();
   auto endFn = cast<EndFnOp>(body.front());
 
@@ -1798,6 +1804,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
 ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
+
   // Push a scope for the file of this module.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
   if (shared.diBuilder) {
@@ -1823,6 +1832,9 @@ static bool isModuleOrPackagePath(const std::filesystem::path &path) {
 }
 
 ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
+
   // A source package corresponds to a directory, resolving the body requires
   // iterating the filesystem directory and importing the corresponding
   // children.
@@ -2093,6 +2105,8 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
 ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
                                       ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
   return success();
 }
 
@@ -2655,6 +2669,9 @@ static void processRegisterPassableDecorator(
 
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
+  // TODO: Sink this to when the body is actually resolved.
+  structDecl.resolvedness = DeclResolvedness::body;
+
   auto conformsToTrait = [&](StringRef traitName) {
     ASTDecl *traitDecl =
         shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
@@ -3233,6 +3250,9 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
 
 ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
                                       ASTDecl &traitDecl) {
+  // TODO: Sink this to when the body is actually resolved.
+  traitDecl.resolvedness = DeclResolvedness::body;
+
   // Push the debug scope for this trait if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -3666,6 +3686,9 @@ ParseResult DeclResolver::resolveSignature(TraitType traitType,
 }
 
 ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
+  // TODO: Sink this to when the body is actually resolved.
+  traitDecl.resolvedness = DeclResolvedness::body;
+
   // Synthetic Trait Composition ASTDecl (STCASTD):
   // A trait composition decl is modeled as an "anonymous child trait" that
   // inherits from each trait in the composition. The differences are that:
@@ -3738,6 +3761,9 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
 //===----------------------------------------------------------------------===//
 
 ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
+  // TODO: Sink this to when the body is actually resolved.
+  decl.resolvedness = DeclResolvedness::body;
+
   // Verify conformance explicitly.
   std::optional<InflightDiag> diag;
   WitnessTable witnesses;
