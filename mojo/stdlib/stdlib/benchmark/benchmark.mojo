@@ -206,7 +206,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Defaultable, ImplicitlyCopyable, Movable):
+struct Report(Copyable, Defaultable, Movable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """
@@ -224,16 +224,6 @@ struct Report(Defaultable, ImplicitlyCopyable, Movable):
         """
         self.warmup_duration = 0
         self.runs = List[Batch]()
-
-    fn __copyinit__(out self, existing: Self):
-        """
-        Creates a copy of `existing`.
-
-        Args:
-            existing: The `Report` to copy.
-        """
-        self.warmup_duration = existing.warmup_duration
-        self.runs = existing.runs.copy()
 
     fn iters(self) -> Int:
         """
@@ -642,7 +632,7 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
             i, report.runs[i], len(report.runs), opts
         ):
             report.runs[i]._mark_as_significant()
-    return report
+    return report^
 
 
 fn _is_significant_measurement(

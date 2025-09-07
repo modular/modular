@@ -259,10 +259,14 @@ struct Format(ImplicitlyCopyable, Movable, Stringable, Writable):
 
 
 @fieldwise_init
-struct BenchConfig(ImplicitlyCopyable, Movable):
+struct BenchConfig(Copyable, Movable):
     """Defines a benchmark configuration struct to control
     execution times and frequency.
     """
+
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
 
     var out_file: Optional[Path]
     """Output file to write results to."""
@@ -292,12 +296,21 @@ struct BenchConfig(ImplicitlyCopyable, Movable):
     """Whether to print verbose timing results."""
     var verbose_metric_names: Bool
     """If True print the metric name and unit, else print the unit only."""
+
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
+
     alias VERBOSE_TIMING_LABELS = List[String](
         "min (ms)", "mean (ms)", "max (ms)", "duration (ms)"
     )
     """Labels to print verbose timing results."""
 
     # TODO: to add median and stddev to verbose-timing
+
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
 
     fn __init__(
         out self,
@@ -417,7 +430,7 @@ struct BenchId:
         self.input_id = None
 
 
-struct BenchmarkInfo(ImplicitlyCopyable, Movable):
+struct BenchmarkInfo(Copyable, Movable):
     """Defines a Benchmark Info struct to record execution Statistics."""
 
     var name: String
@@ -433,7 +446,7 @@ struct BenchmarkInfo(ImplicitlyCopyable, Movable):
     fn __init__(
         out self,
         name: String,
-        result: Report,
+        var result: Report,
         var measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
         verbose_timing: Bool = False,
     ):
@@ -448,20 +461,9 @@ struct BenchmarkInfo(ImplicitlyCopyable, Movable):
         """
 
         self.name = name
-        self.result = result
+        self.result = result^
         self.measures = measures^
         self.verbose_timing = verbose_timing
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of `existing`.
-
-        Args:
-            existing: The value to copy.
-        """
-        self.name = existing.name
-        self.result = existing.result
-        self.measures = existing.measures.copy()
-        self.verbose_timing = existing.verbose_timing
 
 
 @fieldwise_init
@@ -579,7 +581,7 @@ struct Bench(Stringable, Writable):
             mode: Benchmark mode object representing benchmark or test mode.
         """
 
-        self.config = config.value() if config else BenchConfig()
+        self.config = config.value().copy() if config else BenchConfig()
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
@@ -942,7 +944,7 @@ struct Bench(Stringable, Writable):
         self.info_vec.append(
             BenchmarkInfo(
                 full_name,
-                res,
+                res^,
                 measures^,
                 self.config.verbose_timing,
             )
@@ -1082,8 +1084,8 @@ struct Bench(Stringable, Writable):
         # Loop through the runs and write out the table rows
         var runs = self.info_vec.copy()
         for i in range(len(runs)):
-            var run = runs[i]
-            var result = run.result
+            ref run = runs[i]
+            ref result = run.result
 
             # TODO: remove when kbench adds the spec column
             if self.config.format == Format.csv:
@@ -1148,7 +1150,7 @@ struct Bench(Stringable, Writable):
         var metrics = Dict[String, _Metric]()
         var runs = len(self.info_vec)
         for i in range(runs):
-            var run = self.info_vec[i]
+            ref run = self.info_vec[i]
             for j in range(len(run.measures)):
                 var measure = run.measures[j]
                 var rate = measure.compute(run.result.mean(unit=Unit.s))
@@ -1166,9 +1168,11 @@ struct Bench(Stringable, Writable):
                         abort(String(e))
                 else:
                     try:
-                        metrics[name].max_width = max(
-                            width, metrics[name].max_width
-                        )
+                        # FIXME(MOCO-2394):
+                        #   This intermediate ref is needed to avoid the
+                        #   compiler unnecessarily inserting an implicit copy.
+                        ref entry = metrics[name]
+                        entry.max_width = max(width, metrics[name].max_width)
                         metrics[name].rates[i] = rate
                     except e:
                         abort(String(e))
@@ -1186,7 +1190,7 @@ struct Bench(Stringable, Writable):
             # TODO: Move met (ms) to the end of the table to align with verbose
             # timing, don't repeat `Mean (ms)`, and make sure it works with
             # kernel benchmarking.
-            var result = self.info_vec[i].result
+            ref result = self.info_vec[i].result
             var mean_len = len(String(result.mean(unit=Unit.ms)))
             # met == mean execution time == mean
             max_met = max(max_met, mean_len)
@@ -1199,7 +1203,7 @@ struct Bench(Stringable, Writable):
 
 
 @fieldwise_init
-struct _Metric(ImplicitlyCopyable, Movable):
+struct _Metric(Copyable, Movable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 
