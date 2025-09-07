@@ -348,6 +348,10 @@ struct Int(AnyRPTrivialType, ImplicitlyCopyable):
     fn __index__(self) -> __mlir_type.index:
         return self._mlir_value
 
+    @always_inline("builtin")
+    fn _positive_div(self, rhs: Int) -> Int:
+        return Int(__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value))
+
 
 @register_passable("trivial")
 struct UInt8:

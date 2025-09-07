@@ -635,6 +635,9 @@ struct TestAutoParams[f1: HasSize]:
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[f3.size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
+        # expected-error @+1 {{converted from 'HasSize[(div_s f3.size._mlir_value, 4)]' to 'HasSize[4]'}}
+        takes4(HasSize[f3.size._positive_div(4)]())
+
 
 struct TakeAnything[T: AnyType, //, a: T]:
     fn __init__(out self): pass
