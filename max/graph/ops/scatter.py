@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for scatter."""
 
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..dim import DimLike
 from ..graph import Graph
-from ..type import DeviceRef, TensorType
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 from .nonzero import nonzero
@@ -70,13 +70,14 @@ def scatter(
     updates = updates.to(DeviceRef.CPU())
     indices = indices.to(DeviceRef.CPU())
 
-    return Graph.current._add_op(
-        rmo.mo_scatter,
-        input.type.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoScatterOp,
+        input.type,
         input,
         updates,
         indices,
         axis_constant,
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor.to(old_device)
 
 
@@ -120,12 +121,13 @@ def scatter_nd(
             f"updates.device={updates.device}, indices.device={indices.device}"
         )
 
-    return Graph.current._add_op(
-        rmo.mo_scatter_nd,
-        TensorType(input.dtype, input.shape, input.device).to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoScatterNdOp,
+        input.type,
         input,
         updates,
         indices,
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 

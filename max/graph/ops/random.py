@@ -18,8 +18,8 @@ import weakref
 from collections.abc import MutableMapping
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -88,9 +88,9 @@ def gaussian(
     assert_scalar(std)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
-    return Graph.current._add_op(
-        rmo.mo_random_normal,
-        result=like.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoRandomNormalOp,
+        result=like,
         shape=TensorValue(like.shape),
         mean=dtype_promotion._promote_to_strong(
             mean, DType.float32, DeviceRef.CPU()
@@ -99,6 +99,7 @@ def gaussian(
             std, DType.float32, DeviceRef.CPU()
         ),
         seed=seed,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
@@ -116,9 +117,9 @@ def uniform(
     assert_scalar(upper)
     # Check whether we have a seed before we add other constants to the graph.
     seed = _next_seed()
-    return Graph.current._add_op(
-        rmo.mo_random_uniform,
-        result=like.to_mlir(),
+    return Graph.current._add_op_generated(
+        rmo.MoRandomUniformOp,
+        result=like,
         shape=TensorValue(like.shape),
         lower_bound=dtype_promotion._promote_to_strong(
             lower, like.dtype, DeviceRef.CPU()
@@ -127,4 +128,5 @@ def uniform(
             upper, like.dtype, DeviceRef.CPU()
         ),
         seed=seed,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
