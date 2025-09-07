@@ -803,7 +803,7 @@ fn field_indexes(a: DirectInstanceReference):
   a.badField = 42 # expected-error {{'DirectInstanceReference' value has no attribute 'badField'}}
 
 struct MLIRAttrWithinStruct:
-  # expected-warning @below {{'!kgen.deferred' value is unused}}
+  # expected-error @below {{expressions are not supported in struct bodies}}
   __mlir_attr.`#index<cmp_predicate eq>`
 
 
@@ -1263,15 +1263,14 @@ fn top_level_func() raises -> Int:
 fn use_error(e: Error):
    pass
 
-# expected-error @below {{cannot call function that may raise in a context that cannot raise}}
-# expected-note @below {{try surrounding the call in a 'try' block}}
+# expected-error @below {{expressions are not supported at the file scope}}
 _ = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
     pass
 except e:
-    # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+    # expected-error @below {{expressions are not supported at the file scope}}
     use_error(e)
 
 
@@ -1279,7 +1278,7 @@ fn top_level_func_param[p: Int]():
     pass
 
 alias a = 100
-# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
+# expected-error @below {{expressions are not supported at the file scope}}
 top_level_func_param[a]()
 
 # expected-error @below {{global vars are not supported}}

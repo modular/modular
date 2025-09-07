@@ -83,7 +83,8 @@ fn assignPackageModule():
 import module_in_package
 
 # Check that we don't crash on an invalid use of the missing imported decl.
-module_in_package
+fn test():
+  _ = module_in_package
 
 # // -----
 

@@ -720,6 +720,23 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
 
+  // We cannot emit general statements unless we're in a function body.
+  if (!isa_and_nonnull<FnOp, UnboundRegionOp>(
+          getParentDecl().getIfOperation())) {
+    // TODO: Top level expressions will be supported in the future.
+    if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
+      emitError(startCursor.getToken().getLoc())
+          << "expressions are not supported at the file scope";
+    } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
+      emitError(startCursor.getToken().getLoc())
+          << "expressions are not supported in struct bodies";
+    } else {
+      emitError(expr->getLoc(), "expressions must be contained in a function")
+          << expr->getRange();
+    }
+    return success();
+  }
+
   // Emit the expression and ignore the results.  If it is an assignment
   // statement, it will return None.  Other expressions can return whatever they
   // will naturally return.
@@ -731,14 +748,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   // Emit a warning if the result is a value we should warn when unused.
   diagnoseIgnoredResult(expr, result, shared);
-
-  // TODO: Top level expressions will be supported in the future.
-  if (Operation *parent = parentDecl.getIfOperation();
-      parent && isa<LIT::FileModuleOp>(parent) && !result.getIfPValue()) {
-    emitError(startCursor.getToken().getLoc())
-        << "TODO: expressions are not yet supported at the file scope level";
-  }
-
   return success();
 }
 
