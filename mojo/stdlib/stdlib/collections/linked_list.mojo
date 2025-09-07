@@ -137,7 +137,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & Movable,
-](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
+](Boolable, Copyable, Defaultable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:

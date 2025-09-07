@@ -17,13 +17,7 @@ from hashlib import Hasher, default_hasher
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
-    Boolable,
-    Comparable,
-    Hashable,
-    ImplicitlyCopyable,
-    KeyElement,
-    Movable,
-    Sized,
+    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
 ):
     """A set data type.
 
@@ -405,7 +399,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             A new set containing any elements which appear in either
             this set or the `other` set.
         """
-        var result = self
+        var result = self.copy()
         for o in other:
             result.add(o)
 

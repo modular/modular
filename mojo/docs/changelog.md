@@ -263,7 +263,7 @@ language across multiple phases.
     `KeyElement`, `IntervalElement`, `ConvertibleFromPython`
 
   - The following Mojo standard library types are no longer implicitly copyable:
-    `List`, `Dict`, `OwnedKwargsDict`.
+    `List`, `Dict`, `OwnedKwargsDict`, `Set`, `LinkedList`, `Counter`.
 
     To create a copy of one of these types, call the `.copy()` method explicitly:
 

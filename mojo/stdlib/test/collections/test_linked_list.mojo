@@ -408,7 +408,7 @@ def test_2d_dynamic_list():
         var v = LinkedList[Int]()
         for j in range(3):
             v.append(i + j)
-        list.append(v)
+        list.append(v^)
 
     assert_equal(0, list[0][0])
     assert_equal(1, list[0][1])
@@ -421,7 +421,13 @@ def test_2d_dynamic_list():
 
     assert_equal(3, len(list[0]))
 
-    list[0].clear()
+    # TODO(MOCO-2394):
+    #   This should just be `list[0].clear()`, but that
+    #   triggers an unexpected implicit copy for some reason.
+    # list[0].clear()
+    ref first_elem = list[0]
+    first_elem.clear()
+
     assert_equal(0, len(list[0]))
 
     list.clear()

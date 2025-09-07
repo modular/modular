@@ -27,7 +27,7 @@ from utils import Variant
 
 @fieldwise_init
 struct Counter[V: KeyElement, H: Hasher = default_hasher](
-    Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized
+    Boolable, Copyable, Defaultable, Movable, Sized
 ):
     """A container for counting hashable items.
 
@@ -119,7 +119,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var result = Counter[V, H]()
         for key in keys:
             result[key] = value
-        return result
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -436,7 +436,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in self.items():
             if item.value < 0:
                 result[item.key] = -item.value
-        return result
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Methods

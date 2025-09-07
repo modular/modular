@@ -70,7 +70,7 @@ fn get_git_files() raises -> Set[String]:
 
             if not is_ignored_file(newfile):
                 result.add(String(newfile))
-        return result
+        return result^
 
     return (_get_files(tracked) | _get_files(untracked)) - _get_files(deleted)
 
