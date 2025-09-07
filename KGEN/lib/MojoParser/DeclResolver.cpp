@@ -599,36 +599,18 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
                 UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
           .Default([&](Operation &attr) {
-            // Invalid function arguments will not be resolved to a value and
-            // will have a null IR representation.
-            if (!decl.isErroneous()) {
-              emitError(
-                  decl.getLoc(),
-                  "do not know how to resolve the signature of this decl!");
-              decl.setErroneous();
-            }
+            llvm_unreachable(
+                "do not know how to resolve the signature of this decl!");
           });
     } else if (auto typeValue = decl.getIfTypeValue()) {
-      if (auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue())) {
-        if (failed(resolveSignature(traitType, decl)))
-          decl.setErroneous();
-      } else {
-        // Invalid function arguments will not be resolved to a value and will
-        // have a null IR representation.
-        if (!decl.isErroneous()) {
-          emitError(decl.getLoc(),
-                    "do not know how to resolve the signature of this decl!");
-          decl.setErroneous();
-        }
-      }
-    } else {
-      // Invalid function arguments will not be resolved to a value and will
-      // have a null IR representation.
-      if (!decl.isErroneous()) {
-        emitError(decl.getLoc(),
-                  "do not know how to resolve the signature of this decl!");
+      auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue());
+      assert(traitType && "do not know how to resolve the signature of this "
+                          "decl!");
+      if (failed(resolveSignature(traitType, decl)))
         decl.setErroneous();
-      }
+    } else {
+      llvm_unreachable(
+          "do not know how to resolve the signature of this decl!");
     }
     // Never regress resolvedness. In the case of non inlined nested functions,
     // the body is fully resolved when the signature is resolved in order
@@ -665,16 +647,13 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     // Mark the body as already resolved so that name lookup can be performed
     // in the decl during resolution.
-    decl.resolvedness = DeclResolvedness::body;
-
-    // If the decl is already erroneous, trying to process further may crash or
-    // cause spurious error messages.
-    if (decl.isErroneous())
-      return failure();
+    //    decl.resolvedness = DeclResolvedness::body;
 
     // Handle each operation that can be name bound.
-    // TODO(verdagon): migrate this TypeSwitch off of ASTDecl casting
-    if (auto declOp = decl.getIfOperation()) {
+    if (decl.isErroneous()) {
+      // If the decl is already erroneous, trying to process further may crash
+      // or cause spurious error messages.
+    } else if (auto declOp = decl.getIfOperation()) {
       TypeSwitch<Operation &>(*declOp)
           .Case<FileModuleOp, FnOp, StructDeclOp, StructFieldOp,
                 ExtensionDeclOp, TraitDeclOp, AliasDeclOp>([&](auto op) {
@@ -706,31 +685,20 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
           .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
               [&](auto op) { /*Nothing*/ })
           .Default([&](Operation &attr) {
-            if (auto traitType =
-                    dyn_cast_or_null<TraitType>(decl.getIfTypeValue())) {
-              if (failed(resolveBody(traitType, decl)))
-                decl.setErroneous();
-              return;
-            }
-
-            if (!decl.isErroneous())
-              emitError(decl.getLoc(),
-                        "do not know how to resolve the body of this decl!");
+            llvm_unreachable(
+                "do not know how to resolve the body of this decl!");
           });
     } else if (auto typeVal = decl.getIfTypeValue()) {
-      if (auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue())) {
-        if (failed(resolveBody(traitType, decl)))
-          decl.setErroneous();
-      } else {
-        if (!decl.isErroneous())
-          emitError(decl.getLoc(),
-                    "do not know how to resolve the body of this decl!");
-      }
+      auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue());
+      assert(traitType && "do not know how to resolve the body of this decl!");
+      if (failed(resolveBody(traitType, decl)))
+        decl.setErroneous();
     } else {
-      if (!decl.isErroneous())
-        emitError(decl.getLoc(),
-                  "do not know how to resolve the body of this decl!");
+      llvm_unreachable("do not know how to resolve the body of this decl!");
     }
+
+    if (decl.resolvedness == DeclResolvedness::signature)
+      decl.resolvedness = DeclResolvedness::body;
   }
 
   declsCurrentlyProcessing.pop();
