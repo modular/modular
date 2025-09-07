@@ -29,11 +29,8 @@ alias insertion_sort_threshold = 32
 
 
 @fieldwise_init("implicit")
-struct _SortWrapper[T: Copyable & Movable](ImplicitlyCopyable, Movable):
+struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
     var data: T
-
-    fn __copyinit__(out self, existing: Self):
-        self.data = existing.data.copy()
 
 
 @always_inline

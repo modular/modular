@@ -88,13 +88,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: UInt, max_size: Int):
 
 
 struct BitSet[size: UInt](
-    Boolable,
-    Defaultable,
-    ImplicitlyCopyable,
-    Movable,
-    Sized,
-    Stringable,
-    Writable,
+    Boolable, Copyable, Defaultable, Movable, Sized, Stringable, Writable
 ):
     """A grow-only set storing non-negative integers efficiently using bits.
 
@@ -339,7 +333,7 @@ struct BitSet[size: UInt](
                     right._words.unsafe_get(i),
                 )
 
-        return res
+        return res^
 
     fn union(self, other: Self) -> Self:
         """Returns a new bitset that is the union of `self` and `other`.

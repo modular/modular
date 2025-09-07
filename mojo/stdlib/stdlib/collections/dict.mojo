@@ -200,7 +200,7 @@ struct _DictValueIter[
 
 @fieldwise_init
 struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
-    ImplicitlyCopyable, Movable
+    Copyable, Movable
 ):
     """Store a key-value pair entry inside a dictionary.
 

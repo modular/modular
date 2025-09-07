@@ -18,7 +18,7 @@ from os import abort
 
 struct Node[
     ElementType: Copyable & Movable,
-](ImplicitlyCopyable, Movable):
+](Copyable, Movable):
     """A node in a linked list data structure.
 
     Parameters:
@@ -51,16 +51,6 @@ struct Node[
         self.value = value^
         self.prev = prev.value() if prev else Self._NodePointer()
         self.next = next.value() if next else Self._NodePointer()
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the given node.
-
-        Args:
-            existing: The node to copy.
-        """
-        self.value = existing.value.copy()
-        self.prev = existing.prev
-        self.next = existing.next
 
     fn __str__[
         ElementType: Copyable & Movable & Writable
@@ -273,7 +263,7 @@ struct LinkedList[
         var addr = Self._NodePointer.alloc(1)
         if not addr:
             abort("Out of memory")
-        addr.init_pointee_move(node)
+        addr.init_pointee_move(node^)
         if self:
             self._head[].prev = addr
         else:
@@ -341,7 +331,7 @@ struct LinkedList[
         var current = self._get_node_ptr(idx)
 
         if current:
-            var node = current[]
+            var node = current[].copy()
             if node.prev:
                 node.prev[].next = node.next
             else:
@@ -407,7 +397,7 @@ struct LinkedList[
         if not current:
             return Optional[ElementType]()
         else:
-            var node = current[]
+            var node = current[].copy()
             if node.prev:
                 node.prev[].next = node.next
             else:

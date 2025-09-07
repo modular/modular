@@ -1207,10 +1207,6 @@ struct _Metric(Copyable, Movable):
     var max_width: Int
     var rates: Dict[Int, Float64]
 
-    fn __copyinit__(out self, other: Self):
-        self.max_width = other.max_width
-        self.rates = other.rates.copy()
-
 
 @fieldwise_init
 @register_passable

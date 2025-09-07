@@ -564,7 +564,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var items: List[CountTuple[V]] = List[CountTuple[V]]()
         for item in self._data.items():
             var t = CountTuple[V](item.key, UInt(item.value))
-            items.append(t)
+            items.append(t^)
 
         @parameter
         fn comparator(a: CountTuple[V], b: CountTuple[V]) -> Bool:
@@ -608,7 +608,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](ImplicitlyCopyable, Movable):
+struct CountTuple[V: KeyElement](Copyable, Movable):
     """A tuple representing a value and its count in a Counter.
 
     Parameters:
