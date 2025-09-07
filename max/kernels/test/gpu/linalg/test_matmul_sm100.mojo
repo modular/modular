@@ -262,7 +262,7 @@ fn make_shapes_dict() -> (
         11: (8192, 14336, 8192),
         12: (8192, 8192, 8192),
     }
-    return dic
+    return dic^
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
