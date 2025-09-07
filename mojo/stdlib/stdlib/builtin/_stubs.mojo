@@ -21,9 +21,6 @@
 struct __MLIRType[T: AnyTrivialRegType](ImplicitlyCopyable, Movable):
     var value: T
 
-    fn copy(self) -> Self:
-        return self
-
 
 # ===-----------------------------------------------------------------------===#
 # @parameter for implementation details

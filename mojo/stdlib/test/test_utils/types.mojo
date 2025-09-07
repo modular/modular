@@ -102,9 +102,9 @@ struct ExplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn copy(self, out copy: Self):
-        copy = Self(self.value)
-        copy.copy_count = self.copy_count + 1
+    fn __copyinit__(out self, other: Self):
+        self = Self(other.value)
+        self.copy_count = other.copy_count + 1
 
 
 # ===----------------------------------------------------------------------=== #

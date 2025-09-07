@@ -33,9 +33,6 @@ struct MyPet(Copyable):
         self.name = existing.name^
         self.age = existing.age
 
-    fn copy(self) -> Self:
-        return Self(self.name, self.age)
-
 
 def main():
     pet = MyPet("Fido", 3)

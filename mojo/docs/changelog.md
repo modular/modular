@@ -288,6 +288,19 @@ language across multiple phases.
     # `l` is no longer accessible.
     ```
 
+  - User types that define a custom `.copy()` method must be updated to move
+    that logic to `__copyinit__()`. The `.copy()` method is now provided by a
+    default trait implementation on `Copyable` that should not be overridden:
+
+    ```mojo
+    trait Copyable:
+        fn __copyinit__(out self, existing: Self, /):
+            ...
+
+        fn copy(self) -> Self:
+            return Self.__copyinit__(self)
+    ```
+
 - A new `Some` utility is introduced to reduce the syntactic load of declaring
   function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing

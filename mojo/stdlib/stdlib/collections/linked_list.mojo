@@ -199,7 +199,11 @@ struct LinkedList[
         Notes:
             Time Complexity: O(n) in len(elements).
         """
-        self = other.copy()
+        self = Self()
+        var curr = other._head
+        while curr:
+            self.append(curr[].value.copy())
+            curr = curr[].next
 
     fn __moveinit__(out self, deinit other: Self):
         """Initialize this list by moving elements from another list.
@@ -433,22 +437,6 @@ struct LinkedList[
         self._head = Self._NodePointer()
         self._tail = Self._NodePointer()
         self._size = 0
-
-    fn copy(self) -> Self:
-        """Create a deep copy of the list.
-
-        Returns:
-            A new list containing copies of all elements.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        var new = Self()
-        var curr = self._head
-        while curr:
-            new.append(curr[].value.copy())
-            curr = curr[].next
-        return new^
 
     fn insert[I: Indexer](mut self, idx: I, var elem: ElementType) raises:
         """Insert an element `elem` into the list at index `idx`.

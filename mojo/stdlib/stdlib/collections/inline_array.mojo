@@ -279,11 +279,11 @@ struct InlineArray[
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn copy(self, out copy: Self):
-        """Creates a deep copy of the array.
+    fn __copyinit__(out self, other: Self):
+        """Copy constructs the array from another array.
 
-        Returns:
-            A new array containing copies of all elements.
+        Args:
+            other: The array to copy from.
 
         Examples:
 
@@ -293,23 +293,11 @@ struct InlineArray[
         ```
         """
 
-        copy = Self(uninitialized=True)
+        self = Self(uninitialized=True)
 
         for idx in range(size):
-            var ptr = copy.unsafe_ptr() + idx
-            ptr.init_pointee_copy(self.unsafe_get(idx))
-
-    fn __copyinit__(out self, other: Self):
-        """Copy constructs the array from another array.
-
-        Args:
-            other: The array to copy from.
-
-        Notes:
-            Creates a deep copy by copying each element individually.
-        """
-
-        self = other.copy()
+            var ptr = self.unsafe_ptr() + idx
+            ptr.init_pointee_copy(other.unsafe_get(idx))
 
     fn __moveinit__(out self, deinit other: Self):
         """Move constructs the array from another array.

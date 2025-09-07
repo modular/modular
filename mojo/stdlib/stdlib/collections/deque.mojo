@@ -164,25 +164,23 @@ struct Deque[ElementType: Copyable & Movable](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn copy(self) -> Self:
+    fn __copyinit__(out self, other: Self):
         """Creates a deepcopy of the given deque.
 
-        Returns:
-            A copy of the value.
+        Args:
+            other: The deque to copy.
         """
-        var copy = Self(
-            capacity=self._capacity,
-            min_capacity=self._min_capacity,
-            maxlen=self._maxlen,
-            shrink=self._shrink,
+        self = Self(
+            capacity=other._capacity,
+            min_capacity=other._min_capacity,
+            maxlen=other._maxlen,
+            shrink=other._shrink,
         )
-        for i in range(len(self)):
-            offset = self._physical_index(self._head + i)
-            (copy._data + i).init_pointee_copy((self._data + offset)[])
+        for i in range(len(other)):
+            offset = other._physical_index(other._head + i)
+            (self._data + i).init_pointee_copy((other._data + offset)[])
 
-        copy._tail = len(self)
-
-        return copy^
+        self._tail = len(other)
 
     fn __moveinit__(out self, deinit existing: Self):
         """Moves data of an existing deque into a new one.

@@ -182,7 +182,6 @@ struct MyStruct(Sized, Stringable):
     # ===-------------------------------------------------------------------===#
 
     fn unsafe_ptr(..)   # e.g.
-    fn copy(..)        # Explicit copy method
 ```
 
 ## Code conventions

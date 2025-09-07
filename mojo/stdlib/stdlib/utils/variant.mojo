@@ -156,24 +156,6 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn copy(self, out copy: Self):
-        """Explicitly creates a deep copy of an existing variant.
-
-        Returns:
-            A copy of the value.
-        """
-        copy = Self(unsafe_uninitialized=())
-        copy._get_discr() = self._get_discr()
-
-        @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
-            if copy._get_discr() == i:
-                copy._get_ptr[T]().init_pointee_move(
-                    self._get_ptr[T]()[].copy()
-                )
-                return
-
     fn __copyinit__(out self, other: Self):
         """Creates a deep copy of an existing variant.
 
@@ -181,8 +163,17 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             other: The variant to copy from.
         """
 
-        # Delegate to explicit copy initializer.
-        self = other.copy()
+        self = Self(unsafe_uninitialized=())
+        self._get_discr() = other._get_discr()
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+            alias T = Ts[i]
+            if self._get_discr() == i:
+                self._get_ptr[T]().init_pointee_move(
+                    other._get_ptr[T]()[].copy()
+                )
+                return
 
     fn __moveinit__(out self, deinit other: Self):
         """Move initializer for the variant.
