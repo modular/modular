@@ -88,7 +88,7 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](Copyable, Iterator, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -104,7 +104,7 @@ struct _LinkedListIter[
             self.curr = self.src[]._tail
 
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     fn __has_next__(self) -> Bool:
         return Bool(self.curr)

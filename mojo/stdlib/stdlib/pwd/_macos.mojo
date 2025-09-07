@@ -47,7 +47,7 @@ fn _build_pw_struct(passwd_ptr: UnsafePointer[_C_Passwd]) raises -> Passwd:
         pw_dir=String(unsafe_from_utf8_ptr=c_pwuid.pw_dir),
         pw_shell=String(unsafe_from_utf8_ptr=c_pwuid.pw_shell),
     )
-    return passwd
+    return passwd^
 
 
 fn _getpw_macos(uid: UInt32) raises -> Passwd:

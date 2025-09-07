@@ -42,7 +42,7 @@ alias amd_signal_kind64_t = Int64
 # Must match the ABI of:
 # https://github.com/ROCm/llvm-project/blob/656552edc693e2bb4abc9258399c39d190fce2b3/amd/device-libs/ockl/inc/amd_hsa_signal.h#L61
 @fieldwise_init
-struct amd_signal_t(ImplicitlyCopyable, Movable):
+struct amd_signal_t(Copyable, Movable):
     var kind: amd_signal_kind64_t
     var value: UInt64
     var event_mailbox_ptr: UInt64
@@ -627,7 +627,7 @@ struct Payload(ImplicitlyCopyable, Movable):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @fieldwise_init
-struct payload_t(ImplicitlyCopyable, Movable):
+struct payload_t(Copyable, Movable):
     var slots: InlineArray[InlineArray[UInt64, 8], 64]
 
 
@@ -726,7 +726,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
 # this code tries to access.
 @fieldwise_init
 @register_passable("trivial")
-struct buffer_t(ImplicitlyCopyable, Movable):
+struct buffer_t(Copyable, Movable):
     var headers: UnsafePointer[
         header_t, address_space = _GPUAddressSpace.GLOBAL
     ]

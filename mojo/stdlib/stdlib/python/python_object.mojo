@@ -63,7 +63,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(ImplicitlyCopyable):
+struct _PyIter(Copyable):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#

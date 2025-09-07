@@ -57,7 +57,7 @@ struct _DictEntryIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Movable):
+](Copyable, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -83,7 +83,7 @@ struct _DictEntryIter[
         self.src = Pointer(to=dict)
 
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -115,7 +115,7 @@ struct _DictKeyIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](Copyable, Iterator, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -134,7 +134,7 @@ struct _DictKeyIter[
 
     @always_inline
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -156,7 +156,7 @@ struct _DictValueIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](Copyable, Iterator, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -173,7 +173,7 @@ struct _DictValueIter[
     alias Element = V
 
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     fn __reversed__(self) -> _DictValueIter[K, V, H, origin, False]:
         var src = self.iter.src

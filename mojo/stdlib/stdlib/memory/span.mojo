@@ -36,7 +36,7 @@ struct _SpanIter[
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[T](),
-](ImplicitlyCopyable, Movable):
+](Copyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -54,7 +54,7 @@ struct _SpanIter[
 
     @always_inline
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:

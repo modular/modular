@@ -30,7 +30,7 @@ alias blksize_t = Int32
 
 
 @fieldwise_init
-struct _c_stat(Defaultable, ImplicitlyCopyable, Movable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t
@@ -143,7 +143,7 @@ fn _stat(var path: String) raises -> _c_stat:
     )
     if err == -1:
         raise Error("unable to stat '", path, "'")
-    return stat
+    return stat^
 
 
 @always_inline
@@ -154,4 +154,4 @@ fn _lstat(var path: String) raises -> _c_stat:
     )
     if err == -1:
         raise Error("unable to lstat '", path, "'")
-    return stat
+    return stat^

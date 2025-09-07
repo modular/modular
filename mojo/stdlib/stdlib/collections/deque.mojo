@@ -984,7 +984,7 @@ struct _DequeIter[
     T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
@@ -1000,7 +1000,7 @@ struct _DequeIter[
     var src: Pointer[Deque[T], origin]
 
     fn __iter__(self) -> Self:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:

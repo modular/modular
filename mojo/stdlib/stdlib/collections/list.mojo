@@ -37,7 +37,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Movable):
+](Copyable, Iterable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:
@@ -58,7 +58,7 @@ struct _ListIter[
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
-        return self
+        return self.copy()
 
     @always_inline
     fn __has_next__(self) -> Bool:
