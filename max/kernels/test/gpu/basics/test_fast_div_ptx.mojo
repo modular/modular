@@ -48,21 +48,21 @@ def contains_power_of_2_sequence(asm: String) -> Bool:
 
 
 fn fast_div_kernel[
-    type: DType,
+    dtype: DType,
     layout: Layout,
     divisor: Int,
-](input: LayoutTensor[type, layout, MutableAnyOrigin],):
-    alias fast_div = FastDiv[type](divisor)
+](input: LayoutTensor[dtype, layout, MutableAnyOrigin],):
+    alias fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
-    input[0] = result.cast[type]()
+    input[0] = result.cast[dtype]()
 
 
 def main():
-    alias type = DType.uint32
+    alias dtype = DType.uint32
     alias layout = Layout(IntTuple(1))
-    alias kernel_fast_div_4 = fast_div_kernel[type, layout, 4]
-    alias kernel_fast_div_3 = fast_div_kernel[type, layout, 3]
+    alias kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]
+    alias kernel_fast_div_3 = fast_div_kernel[dtype, layout, 3]
 
     var asm = _compile_code[
         kernel_fast_div_4,

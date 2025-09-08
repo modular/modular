@@ -38,8 +38,8 @@ from utils.numerics import FPUtils
 
 
 fn binary_sub[
-    type: DType, width: Int
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x - y
 
 

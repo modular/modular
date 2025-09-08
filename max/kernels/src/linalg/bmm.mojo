@@ -276,12 +276,12 @@ fn _small_batched_matmul[
             @__copy_capture(a_view, b_view)
             @parameter
             fn input_fn[
-                type: DType, width: Int, rank: Int
-            ](idx: IndexList[rank]) -> SIMD[type, width]:
+                dtype: DType, width: Int, rank: Int
+            ](idx: IndexList[rank]) -> SIMD[dtype, width]:
                 return (
-                    a_view.load[width=width](idx[0]).cast[type]()
-                    * b_view.load[width=width](idx[0]).cast[type]()
-                ).cast[type]()
+                    a_view.load[width=width](idx[0]).cast[dtype]()
+                    * b_view.load[width=width](idx[0]).cast[dtype]()
+                ).cast[dtype]()
 
             @always_inline
             @parameter
@@ -826,9 +826,9 @@ fn _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 fn elementwise_epilogue_fn_wrapper[
-                    type: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: Int, *, alignment: Int = 1
                 ](
-                    out_coords: IndexList[2], val: SIMD[type, width]
+                    out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
                     var batch_coords = IndexList[rank](0)
 

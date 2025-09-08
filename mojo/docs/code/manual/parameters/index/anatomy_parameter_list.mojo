@@ -16,18 +16,18 @@
 # parameter list.
 fn my_sort[
     # infer-only parameters
-    Type: DType,
+    dtype: DType,
     width: Int, //,
     # positional-only parameter
-    values: SIMD[Type, width],
+    values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn (Scalar[Type], Scalar[Type]) -> Int,
+    compare: fn (Scalar[dtype], Scalar[dtype]) -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
-]() -> SIMD[Type, width]:
-    sorted = SIMD[Type, width](values)
+]() -> SIMD[dtype, width]:
+    sorted = SIMD[dtype, width](values)
     for output_position in range(width):
         lowest = output_position
         for compare_position in range(output_position + 1, width):

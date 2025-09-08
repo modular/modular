@@ -81,14 +81,14 @@ fn _to_int_tuple[*vals: Int]() -> IntTuple:
 
 
 fn _tma_desc_tile_layout[
-    type: DType,
+    dtype: DType,
     rank: Int,
     tile_shape: IndexList[rank],
     is_k_major: Bool = True,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
     constrained[
-        size_of[type]() >= 1, "Don't support sub-byte type in TMA yet."
+        size_of[dtype]() >= 1, "Don't support sub-byte dtype in TMA yet."
     ]()
 
     constrained[
@@ -104,7 +104,7 @@ fn _tma_desc_tile_layout[
         if is_k_major:
             # TMA copies BM x `swizzle_mode.bytes()` Bytes each time.
             return Layout.row_major(
-                dim0, swizzle_mode.bytes() // size_of[type]()
+                dim0, swizzle_mode.bytes() // dtype.size_of()
             )
 
         constrained[
@@ -119,7 +119,7 @@ fn _tma_desc_tile_layout[
         # dimensions are also ordered by (K, MN).
         alias core_matrix_num_rows = 8
         return Layout.row_major(
-            core_matrix_num_rows, swizzle_mode.bytes() // size_of[type]()
+            core_matrix_num_rows, swizzle_mode.bytes() // dtype.size_of()
         )
 
     else:
@@ -130,7 +130,7 @@ fn _tma_desc_tile_layout[
         constrained[is_k_major, "Only K-Major is supported!"]()
 
         return Layout(
-            [dim0, dim1, swizzle_mode.bytes() // size_of[type]()],
+            [dim0, dim1, swizzle_mode.bytes() // dtype.size_of()],
             [1, 1, 1],
         )
 
@@ -1407,7 +1407,7 @@ def create_tma_tile[
 
 @always_inline
 def create_tma_tile[
-    type: DType,
+    dtype: DType,
     rank: Int,
     tile_shape: IndexList[rank],
     /,
@@ -1416,10 +1416,10 @@ def create_tma_tile[
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
-        type, rank, tile_shape, is_k_major, swizzle_mode
+        dtype, rank, tile_shape, is_k_major, swizzle_mode
     ](),
-](ctx: DeviceContext, tensor: LayoutTensor[type, *_, **_]) -> TMATensorTile[
-    type, __tile_layout, __desc_layout
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, *_, **_]) -> TMATensorTile[
+    dtype, __tile_layout, __desc_layout
 ]:
     """
     Creates a `TMATensorTile` with advanced configuration options for 2D or 3D tensors.
@@ -1429,7 +1429,7 @@ def create_tma_tile[
     tensors and provides fine-grained control over the memory access patterns.
 
     Parameters:
-        type: DType
+        dtype: DType
             The data type of the tensor elements.
         rank: Int
             The dimensionality of the tensor (must be 2 or 3).
@@ -1450,7 +1450,7 @@ def create_tma_tile[
     Args:
         ctx: DeviceContext
             The CUDA device context used to create the TMA descriptor.
-        tensor: LayoutTensor[type, *_, **_]
+        tensor: LayoutTensor[dtype, *_, **_]
             The source tensor from which data will be transferred. This defines the
             global memory layout and must match the specified data type.
 
@@ -1469,8 +1469,8 @@ def create_tma_tile[
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
-    alias desc_bytes_size = __desc_layout.size() * size_of[type]()
-    alias layout_size = __tile_layout.size() * size_of[type]()
+    alias desc_bytes_size = __desc_layout.size() * dtype.size_of()
+    alias layout_size = __tile_layout.size() * dtype.size_of()
 
     @parameter
     if desc_bytes_size < layout_size:
@@ -1496,16 +1496,16 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[1] * size_of[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[1] * dtype.size_of()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[1] * size_of[type]()),
+                String(tile_shape[1] * dtype.size_of()),
                 " bytes.",
             ]()
 
-        return create_tma_descriptor[type, 2, swizzle_mode](
+        return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
                 tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
@@ -1522,16 +1522,16 @@ def create_tma_tile[
         @parameter
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
-                (tile_shape[2] * size_of[type]()) % swizzle_mode.bytes() == 0,
+                (tile_shape[2] * dtype.size_of()) % swizzle_mode.bytes() == 0,
                 String(swizzle_mode),
                 " mode requires K dim multiple of ",
                 String(swizzle_mode.bytes()),
                 "B. K dim is now ",
-                String(tile_shape[2] * size_of[type]()),
+                String(tile_shape[2] * dtype.size_of()),
                 "bytes.",
             ]()
 
-        return create_tma_descriptor[type, 3, swizzle_mode](
+        return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
                 ctx,
                 tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
@@ -1657,7 +1657,7 @@ fn create_nested_tma_tile[
 
 @always_inline
 def create_tma_tile_template[
-    type: DType,
+    dtype: DType,
     rank: Int,
     tile_shape: IndexList[rank],
     /,
@@ -1666,9 +1666,9 @@ def create_tma_tile_template[
     *,
     __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
     __desc_layout: Layout = _tma_desc_tile_layout[
-        type, rank, tile_shape, is_k_major, swizzle_mode
+        dtype, rank, tile_shape, is_k_major, swizzle_mode
     ](),
-]() -> TMATensorTile[type, __tile_layout, __desc_layout]:
+]() -> TMATensorTile[dtype, __tile_layout, __desc_layout]:
     """
     Same as create_tma_tile expect the descriptor is only a placeholder or a template for later replacement.
 
@@ -1676,7 +1676,7 @@ def create_tma_tile_template[
     tensors and provides fine-grained control over the memory access patterns.
 
     Parameters:
-        type: DType
+        dtype: DType
             The data type of the tensor elements.
         rank: Int
             The dimensionality of the tensor (must be 2 or 3).
@@ -1707,7 +1707,7 @@ def create_tma_tile_template[
         - For 3D tensors, only K-major layout is supported.
     """
 
-    return TMATensorTile[type, __tile_layout, __desc_layout](TMADescriptor())
+    return TMATensorTile[dtype, __tile_layout, __desc_layout](TMADescriptor())
 
 
 @register_passable("trivial")

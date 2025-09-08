@@ -413,17 +413,17 @@ fn matmul_stream_k[
 
 
 fn run_matmul_stream_k[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
 ](ctx: DeviceContext,) raises:
     print("== run_matmul kernel stream_k")
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rng_width = 2
     var rand_min = -1 * rng_width
@@ -431,35 +431,35 @@ fn run_matmul_stream_k[
 
     for i in range(M * K):
         var val = Scalar[DType.float32](i % 20)
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
         var val = Scalar[DType.float32](i % 20)
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -467,9 +467,9 @@ fn run_matmul_stream_k[
     alias sm_count = ctx.default_device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[type, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[type, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
         M,
         N,
         K,
@@ -481,7 +481,7 @@ fn run_matmul_stream_k[
 
     alias BLOCK_DIM = 16
 
-    var c_buf_n = NDBuffer[type, 2](c_device_n._unsafe_ptr(), Index(M, N))
+    var c_buf_n = NDBuffer[dtype, 2](c_device_n._unsafe_ptr(), Index(M, N))
 
     var c_tensor = from_ndbuffer_row_major(c_buf_n)
     var a_tensor = from_ndbuffer_row_major(a_buf)
@@ -489,9 +489,9 @@ fn run_matmul_stream_k[
 
     ctx.enqueue_function[
         matmul_kernel_naive[
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             c_tensor.layout,
             a_tensor.layout,
             b_tensor.layout,

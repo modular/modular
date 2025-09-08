@@ -28,7 +28,7 @@ from utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 # TODO: rename to _MatmulAccumulators?
 struct _Accumulator[
-    type: DType,
+    dtype: DType,
     num_rows: Int,
     num_cols: Int,
     simd_width: Int,
@@ -37,7 +37,7 @@ struct _Accumulator[
 ](Defaultable):
     """
     Parameters:
-        type: DType of accumulator.
+        dtype: DType of accumulator.
         num_rows: Number of rows in register tiling.
         num_cols: Number of columns in register tiling.
         simd_width: Number of lanes of a SIMD vector.
@@ -47,21 +47,21 @@ struct _Accumulator[
 
     # The output buffer, should have num_rows x num_cols x simd_width.
     var _storage: NDBuffer[
-        type, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
+        dtype, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
     ]
 
     @always_inline
     fn __init__(out self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
-        alias alignment = align_of[SIMD[type, simd_width]]()
+        alias alignment = align_of[SIMD[dtype, simd_width]]()
         self._storage = NDBuffer[
-            type, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
+            dtype, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
         ].stack_allocation[alignment=alignment]()
 
     @always_inline
     fn __init__(
         out self,
-        other_storage: NDBuffer[type, 1, _, num_rows * num_cols * simd_width],
+        other_storage: NDBuffer[dtype, 1, _, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         self._storage = other_storage
@@ -78,45 +78,45 @@ struct _Accumulator[
         return (m * num_cols + n) * simd_width
 
     @always_inline
-    fn __getitem__(self, m: Int, n: Int) -> SIMD[type, simd_width]:
+    fn __getitem__(self, m: Int, n: Int) -> SIMD[dtype, simd_width]:
         return self._storage.load[width=simd_width](self._storage_index(m, n))
 
     @always_inline
-    fn __setitem__(mut self, m: Int, n: Int, value: SIMD[type, simd_width]):
+    fn __setitem__(mut self, m: Int, n: Int, value: SIMD[dtype, simd_width]):
         self._storage.store(self._storage_index(m, n), value)
 
     @always_inline
     fn _partial_set[
         partial_width: Int
-    ](mut self, offset: Int, value: SIMD[type, partial_width]):
+    ](mut self, offset: Int, value: SIMD[dtype, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
     @always_inline
     fn _partial_get[
         partial_width: Int
-    ](mut self, idx: Int) -> SIMD[type, partial_width]:
+    ](mut self, idx: Int) -> SIMD[dtype, partial_width]:
         return self._storage.load[width=partial_width](idx)
 
-    # In c+=(a*b), each of a, b, and c can have different types.
+    # In c+=(a*b), each of a, b, and c can have different dtypes.
     @always_inline
     fn fma[
-        a_type: DType, b_type: DType
+        a_dtype: DType, b_dtype: DType
     ](
         mut self,
         m: Int,
         n: Int,
-        a: SIMD[a_type, simd_width],
-        b: SIMD[b_type, simd_width],
+        a: SIMD[a_dtype, simd_width],
+        b: SIMD[b_dtype, simd_width],
     ):
         # TODO: the order of 'a' and 'b' in the following FMA and its impact on accuracy.
-        self[m, n] = (b.cast[type]()).fma((a.cast[type]()), self[m, n])
+        self[m, n] = (b.cast[dtype]()).fma((a.cast[dtype]()), self[m, n])
 
     @always_inline
     fn _transfer[
         func: fn (
-            m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]
+            m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]
         ) capturing -> None
-    ](mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    ](mut self, base_ptr: UnsafePointer[Scalar[dtype]], stride: Int):
         var row_ptr = base_ptr
 
         @parameter
@@ -129,10 +129,10 @@ struct _Accumulator[
 
     # TODO: merge with load
     @always_inline
-    fn load(mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    fn load(mut self, base_ptr: UnsafePointer[Scalar[dtype]], stride: Int):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]):
+        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]):
             self[m, n] = ptr.load[width=simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
@@ -140,7 +140,7 @@ struct _Accumulator[
     @always_inline
     fn load(
         mut self,
-        c_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -153,7 +153,7 @@ struct _Accumulator[
     @always_inline
     fn store(
         mut self,
-        c_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -168,7 +168,7 @@ struct _Accumulator[
         is_load: Bool
     ](
         mut self,
-        c_ptr: UnsafePointer[Scalar[type]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -187,7 +187,7 @@ struct _Accumulator[
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, num_cols * simd_width
             )
-            var row_ptrs = InlineArray[UnsafePointer[Scalar[type]], num_rows](
+            var row_ptrs = InlineArray[UnsafePointer[Scalar[dtype]], num_rows](
                 uninitialized=True
             )
 
@@ -206,7 +206,7 @@ struct _Accumulator[
         is_load: Bool,
     ](
         mut self,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[dtype]]],
         stride: Int,
     ):
         """Loads or stores one or more columns from the base column for each
@@ -255,7 +255,7 @@ struct _Accumulator[
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[dtype]]],
         stride: Int,
     ):
         """Loads/stores all pairwise vectors of the tile and dispatches the
@@ -295,7 +295,7 @@ struct _Accumulator[
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[dtype]]],
         stride: Int,
     ):
         """Loads/stores the last elements of the tile that cannot be accessed
@@ -326,7 +326,7 @@ struct _Accumulator[
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[dtype]]],
         stride: Int,
     ):
         var tail_size = transfer_count - base_column
@@ -353,10 +353,10 @@ struct _Accumulator[
 
     # TODO: merge with store
     @always_inline
-    fn store(mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    fn store(mut self, base_ptr: UnsafePointer[Scalar[dtype]], stride: Int):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]):
+        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]):
             ptr.store(self[m, n])
 
         self._transfer[do_transfer](base_ptr, stride)
@@ -368,13 +368,13 @@ struct _Accumulator[
     @always_inline
     fn init(mut self):
         @parameter
-        if type.is_floating_point():
+        if dtype.is_floating_point():
             self.init(0.0)
         else:
             self.init(0)
 
     @always_inline
-    fn init(mut self, val: Scalar[type]):
+    fn init(mut self, val: Scalar[dtype]):
         # TODO: refactor with _transfer
         @parameter
         for m in range(num_rows):
@@ -419,7 +419,7 @@ struct _Accumulator[
                 # TODO: check if partial_load_size has value.
                 self[i, j] = _simd_load_maybe_partial[
                     simd_width, partial_load_last_vec
-                ](input_ptr, 0, partial_load_size).cast[type]()
+                ](input_ptr, 0, partial_load_size).cast[dtype]()
 
     @always_inline
     fn store[
@@ -688,8 +688,8 @@ struct _Accumulator[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     self[i, j] = fma(
-                        a_splat_vec.cast[type](),
-                        b_vec.cast[type](),
+                        a_splat_vec.cast[dtype](),
+                        b_vec.cast[dtype](),
                         self[i, j],
                     )
 
@@ -752,8 +752,8 @@ struct _Accumulator[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     self[i, j] = fma(
-                        a_splat_vec.cast[type](),
-                        b_vec.cast[type](),
+                        a_splat_vec.cast[dtype](),
+                        b_vec.cast[dtype](),
                         self[i, j],
                     )
 
@@ -844,9 +844,9 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[dtype=type, width=simd_width](
-                            a_vecs[i][lane].cast[type](),
-                            b_vec.cast[type](),
+                        self[i, j] = fma[dtype=dtype, width=simd_width](
+                            a_vecs[i][lane].cast[dtype](),
+                            b_vec.cast[dtype](),
                             self[i, j],
                         )
 
@@ -903,9 +903,9 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[dtype=type, width=simd_width](
-                            a_vecs[i][lane].cast[type](),
-                            b_vec.cast[type](),
+                        self[i, j] = fma[dtype=dtype, width=simd_width](
+                            a_vecs[i][lane].cast[dtype](),
+                            b_vec.cast[dtype](),
                             self[i, j],
                         )
 

@@ -247,11 +247,11 @@ fn mha_cross_gpu_naive[
     """
     constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
     constrained[
-        q.type == cache_t.dtype == cache_t.dtype == output.type,
+        q.dtype == cache_t.dtype == cache_t.dtype == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -267,7 +267,7 @@ fn mha_cross_gpu_naive[
     var batch_size = q_input_row_offsets.dim[0]() - 1
     var max_cache_size = Int(k.max_context_length())
 
-    alias q_type = q.type
+    alias q_type = q.dtype
     alias k_type = cache_t.dtype
     alias v_type = cache_t.dtype
 
@@ -318,7 +318,7 @@ fn mha_cross_gpu_naive[
         Index(batch_size * num_heads, q_max_seq_len, num_keys), p_buffer, 2, ctx
     )
 
-    ctx.enqueue_function[_bmm1_bs[__type_of(v), p_type, output.type]](
+    ctx.enqueue_function[_bmm1_bs[__type_of(v), p_type, output.dtype]](
         output.data,
         p_device,
         v,

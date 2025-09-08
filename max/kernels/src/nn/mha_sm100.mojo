@@ -1278,7 +1278,7 @@ fn mha_sm100_dispatch[
 ) raises:
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
-        config.type,
+        config.dtype,
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
@@ -1304,7 +1304,7 @@ fn mha_sm100_dispatch[
         num_threads % 128 == 0, "num_threads = " + String(num_threads)
     ]()
     constrained[
-        config.type == KVType.dtype and config.type == q_type,
+        config.dtype == KVType.dtype and config.dtype == q_type,
         "config, kv, and q types must all match for FA3.",
     ]()
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
@@ -1910,7 +1910,7 @@ fn _mha_sm100[
 
     """
     alias kv_type = KVLUTType.dtype
-    constrained[kv_type == config.type]()
+    constrained[kv_type == config.dtype]()
     alias decoding: Bool = _is_decoding[MaxSeqLenType]()
 
     alias simd_size: Int = simd_width_of[kv_type]()

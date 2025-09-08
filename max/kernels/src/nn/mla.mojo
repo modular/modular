@@ -102,17 +102,17 @@ fn flare_mla_decoding[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -205,16 +205,16 @@ fn flare_mla_decoding[
     rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+        dtype, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
     ),
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -265,12 +265,12 @@ fn flare_mla_decoding_dispatch[
     k_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     # Work arounds to unify KVCache and NDBuffer inputs:
@@ -284,7 +284,7 @@ fn flare_mla_decoding_dispatch[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: k_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -319,7 +319,7 @@ fn flare_mla_decoding_dispatch[
     ]()
 
     constrained[
-        q.type.is_half_float(),
+        q.dtype.is_half_float(),
         "Only support half precision.",
     ]()
 
@@ -1120,7 +1120,7 @@ fn flare_mla_prefill[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     softmax_type: DType,
     q_shape: DimList, //,
@@ -1129,7 +1129,7 @@ fn flare_mla_prefill[
     use_cascade_attention: Bool = False,
 ](
     output: NDBuffer[mut=True, output_type, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, 3, *_],
     v: NDBuffer[_, 3, *_],
     k_rope: cache_t,
@@ -1214,7 +1214,7 @@ fn flare_mla_prefill[
         alias q_depth = q_shape.get[rank - 1]()
 
         alias mha_config = MHAConfig(
-            type,
+            dtype,
             UInt(q_shape.get[rank - 2]()),  # num_heads
             UInt(k.shape.get[rank - 1]()),  # depth
             num_keys_per_block=UInt(64),
@@ -1254,7 +1254,7 @@ fn flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     softmax_type: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
@@ -1262,7 +1262,7 @@ fn flare_mla_prefill[
     use_cascade_attention: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, 3, *_],
     v: NDBuffer[_, 3, *_],
     k_rope: NDBuffer[_, 4, *_],
@@ -1322,7 +1322,7 @@ fn flare_mla_prefill[
         alias q_depth = q_shape.get[rank - 1]()  # hard code for now
 
         alias mha_config = MHAConfig(
-            type,
+            dtype,
             UInt(q_shape.get[rank - 2]()),
             UInt(k.shape.get[rank - 1]()),
             num_keys_per_block=UInt(64),
@@ -1369,7 +1369,7 @@ fn flare_mla_prefill_dispatch[
     k_rope_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     softmax_type: DType,
     q_shape: DimList, //,
@@ -1380,12 +1380,12 @@ fn flare_mla_prefill_dispatch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     _ndbuffer_mha_operand: Bool = False,
 ](
     output: NDBuffer[output_type, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
@@ -1421,7 +1421,7 @@ fn flare_mla_prefill_dispatch[
 
     var batch_size: Int = valid_length.dim[0]() - 1
 
-    alias q_half_float = type in (DType.float16, DType.bfloat16)
+    alias q_half_float = dtype in (DType.float16, DType.bfloat16)
 
     alias BM = config.block_m()
     alias BN = config.block_n()
@@ -1431,7 +1431,7 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * q_depth
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * config.type.size_of()
+    alias smem_use = (q_smem + k_smem + v_smem) * config.dtype.size_of()
 
     var softmax_info_ptr = (
         softmax_info.value().data if softmax_info else UnsafePointer[
@@ -1450,11 +1450,11 @@ fn flare_mla_prefill_dispatch[
     )
 
     alias kernel = mla_prefill[
-        config.type,
+        config.dtype,
         k_t,
         v_t,
         k_rope_t,
-        output.type,
+        output.dtype,
         softmax_type,
         mask_t,
         score_mod_t,
@@ -2648,14 +2648,14 @@ fn mla_prefill_plan_kernel[
 
 @always_inline
 fn _k_cache_to_buffer[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
     cache_offsets: NDBuffer[DType.uint32, 1, *_],
     k_cache: cache_t,
     length: Int32,
-    buffer: NDBuffer[mut=True, type, 2, *_],
+    buffer: NDBuffer[mut=True, dtype, 2, *_],
     context: DeviceContext,
 ) raises:
     alias num_heads = cache_t.kv_params.num_heads
@@ -2684,7 +2684,7 @@ fn _k_cache_to_buffer[
 
         var head_dim_idx = idx[1]
 
-        var cache_val = rebind[SIMD[type, width]](
+        var cache_val = rebind[SIMD[dtype, width]](
             k_cache.load[width=width](batch_idx, 0, token_idx, head_dim_idx)
         )
 
@@ -2694,7 +2694,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias target_simd_width = simd_width_of[type, target = get_gpu_target()]()
+    alias target_simd_width = simd_width_of[dtype, target = get_gpu_target()]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width = UInt(target_simd_width)](
         launch_shape, context

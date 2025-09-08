@@ -69,9 +69,11 @@ from .utils_gpu import MatmulConfig, block_swizzle
 
 @always_inline
 fn distance[
-    type: DType, //
-](arg0: UnsafePointer[Scalar[type]], arg1: UnsafePointer[Scalar[type]]) -> Int:
-    return (Int(arg0) - Int(arg1)) // size_of[arg1.type]()
+    dtype: DType, //
+](
+    arg0: UnsafePointer[Scalar[dtype]], arg1: UnsafePointer[Scalar[dtype]]
+) -> Int:
+    return (Int(arg0) - Int(arg1)) // dtype.size_of()
 
 
 @always_inline
