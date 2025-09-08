@@ -1088,13 +1088,13 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
                                                   fieldASTDecl.getLoc())))
       return nullptr;
 
-    TypedAttr fieldType = PValue(fieldOp.getType());
-    if (!ASTType(fieldType.getType()).getMetaType())
+    if (!ASTType(fieldOp.getType()).getMetaType())
       continue; // skip simple mlir type
 
     TypedAttr fieldIsTrivial = shared.getEvaluationContext().getGetWitnessAttr(
-        fieldType, StringAttr::get(getContext(), witnessSymbolName),
-        witnessName, ret.getType());
+        PValue(fieldOp.getType()),
+        StringAttr::get(getContext(), witnessSymbolName), witnessName,
+        ret.getType());
 
     ret = emitAnd(ret, fieldIsTrivial);
   }

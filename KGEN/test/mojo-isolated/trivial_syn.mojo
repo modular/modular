@@ -70,3 +70,29 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable & Movable):
     # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <1>
     # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <1>
     # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <1>
+
+
+# MOCO-2396:
+# CHECK-LABEL: lit.struct.decl @NotTrivial
+struct NotTrivial(Copyable, Movable):
+    fn __copyinit__(out self, other: Self):
+        pass
+
+    fn __moveinit__(out self, deinit other: Self):
+        pass
+
+    fn __del__(deinit self):
+        pass
+
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <0>
+    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <0>
+    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <0>
+
+
+# CHECK-LABEL: lit.struct.decl @Wrapper
+struct Wrapper(Copyable, Movable):
+    var value: NotTrivial
+
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__del__is_trivial">>
+    # CHECK-DAG: lit.alias.decl __moveinit__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__moveinit__is_trivial">>
+    # CHECK-DAG: lit.alias.decl __copyinit__is_trivial: i1 = <#kgen.get_witness<:!{{.*}} !NotTrivial, "{{.*}}", "__copyinit__is_trivial">>
