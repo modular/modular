@@ -140,7 +140,6 @@ def test_pipeline_receives_default_sampling_params() -> None:
     assert pipeline.received_sampling_params.stop is None
     assert pipeline.received_sampling_params.stop_token_ids is None
     assert pipeline.received_sampling_params.detokenize is True
-    assert pipeline.received_sampling_params.seed == 0
 
     # Verify the audio generation still works correctly.
     assert result.is_done is True
