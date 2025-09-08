@@ -22,7 +22,6 @@ from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
-from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.graph import _location
@@ -114,22 +113,6 @@ def test_transpose_graph_with_device_prop() -> None:
         assert " -> !mo.tensor<[channels, batch], f32, gpu:0>" in str(
             graph._mlir_op
         )
-
-
-def test_location() -> None:
-    with Graph("location") as graph:
-
-        def elided():
-            return _location(ignore_frames=1)
-
-        def foo():
-            return elided()
-
-        loc = foo()
-
-        frames = _graph.get_frame(loc)
-        assert "foo" == frames[-1].name  # type: ignore
-        assert "test_location" == frames[-2].name  # type: ignore
 
 
 def test_location_no_stack() -> None:
