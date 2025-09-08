@@ -95,6 +95,24 @@ struct OwnedPointer[T: AnyType]:
         """
         self = OwnedPointer[T](copy_value=other[])
 
+    fn __init__(out self, *, unsafe_from_raw_pointer: UnsafePointer[T]):
+        """Construct a new `OwnedPointer` by taking ownership of the provided `UnsafePointer`.
+
+        Args:
+            unsafe_from_raw_pointer: The `UnsafePointer` to take ownership of.
+
+        ### Safety
+
+        This function is unsafe as the provided `UnsafePointer` must be initialize with a single valid `T`
+        initialliy allocated with this `OwnedPointer`'s backing allocator.
+        This function is unsafe as other memory problems can arise such as a double-free if this function
+        is called twice with the same pointer or a user manually deallocates the same data.
+
+        After using this constructor, the `UnsafePointer` is assumed to be owned by this `OwnedPointer`.
+        In particular, the destructor method will call `T.__del__` and `UnsafePointer.free`.
+        """
+        self._inner = unsafe_from_raw_pointer
+
     fn __del__(deinit self: OwnedPointer[T]):
         """Destroy the OwnedPointer[]."""
         self._inner.destroy_pointee()
@@ -152,9 +170,10 @@ struct OwnedPointer[T: AnyType]:
         """Take ownership over the heap allocated pointer backing this
         `OwnedPointer`.
 
-        **Safety:**
-            This function is not unsafe to call, as a memory leak is not
-            considered unsafe.
+        ### Safety
+
+        This function is not unsafe to call, as a memory leak is not
+        considered unsafe.
 
         However, to avoid a memory leak, callers should ensure that the
         returned pointer is eventually deinitialized and deallocated.

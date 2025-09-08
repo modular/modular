@@ -13,6 +13,7 @@
 """Implements a foreign functions interface (FFI)."""
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
+from memory import OwnedPointer
 from os import PathLike, abort
 from pathlib import Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
@@ -602,21 +603,19 @@ struct _Global[
     @staticmethod
     fn _init_wrapper() -> OpaquePointer:
         # Heap allocate space to store this "global"
-        var ptr = UnsafePointer[StorageType].alloc(1)
-
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
         #   with the ABI destination result pointer already set to `ptr`?
-        ptr.init_pointee_move(init_fn())
+        var ptr = OwnedPointer(init_fn())
 
-        return ptr.bitcast[NoneType]()
+        return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
     fn _deinit_wrapper(opaque_ptr: OpaquePointer):
         # Deinitialize and deallocate the storage.
-        var ptr = opaque_ptr.bitcast[StorageType]()
-        ptr.destroy_pointee()
-        ptr.free()
+        _ = OwnedPointer(
+            unsafe_from_raw_pointer=opaque_ptr.bitcast[StorageType]()
+        )
 
     @staticmethod
     fn get_or_create_ptr() -> Self.ResultType:
