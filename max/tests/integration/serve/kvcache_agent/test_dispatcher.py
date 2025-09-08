@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import asyncio
+import pickle
 import threading
 import time
 from typing import Any, Callable, Union
@@ -12,7 +15,15 @@ from typing import Any, Callable, Union
 import pytest
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
-from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
+from max.serve.kvcache_agent.dispatcher_service import (
+    DispatcherMessage,
+    DispatcherService,
+)
+from max.serve.kvcache_agent.dispatcher_transport import (
+    DispatcherTransport,
+    TransportMessage,
+    TransportMessageEnvelope,
+)
 from max.serve.process_control import ProcessControl
 
 from .utils import create_dispatcher_config
@@ -1108,3 +1119,159 @@ async def test_duplicate_handler_registration() -> None:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
         await asyncio.sleep(0.5)
+
+
+class MockTransport(DispatcherTransport[dict[str, str]]):
+    """Mock transport for socket timeout testing."""
+
+    async def start(self) -> None:
+        """Start the mock transport."""
+        pass
+
+    async def close(self) -> None:
+        """Close the mock transport."""
+        pass
+
+    async def send_message(
+        self,
+        message: TransportMessage[dict[str, str]],
+        destination_address: str | None = None,
+    ) -> None:
+        """Mock send message."""
+        pass
+
+    async def send_reply(
+        self,
+        message: TransportMessage[dict[str, str]],
+        reply_context: ReplyContext,
+    ) -> None:
+        """Mock send reply."""
+        pass
+
+    async def receive_message(
+        self,
+    ) -> TransportMessageEnvelope[dict[str, str]] | None:
+        """Mock receive message."""
+        await asyncio.sleep(0.1)  # Simulate no messages
+        return None
+
+    def get_address(self) -> str:
+        """Get the mock transport address."""
+        return "tcp://127.0.0.1:5555"  # Mock address for testing
+
+
+@pytest.mark.asyncio
+async def test_socket_readiness_verification_with_actual_sockets() -> None:
+    """Test that socket readiness check correctly verifies actual ZMQ socket connectivity."""
+    from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+
+    # Use unique endpoints to avoid conflicts
+    send_endpoint = "ipc:///tmp/test_dispatcher_send_verification"
+    recv_endpoint = "ipc:///tmp/test_dispatcher_recv_verification"
+
+    transport = MockTransport()
+
+    # First, create external sockets that will connect to the same endpoints
+    # This simulates a real-world scenario where other components connect to these sockets
+    # Create external sockets that will connect to dispatcher's endpoints
+    # The external push connects to dispatcher's recv_endpoint (where dispatcher pulls from)
+    # The external pull connects to dispatcher's send_endpoint (where dispatcher pushes to)
+    external_push_socket = ZmqPushSocket[DispatcherMessage[dict[str, str]]](
+        endpoint=recv_endpoint,
+        serialize=lambda x: pickle.dumps(x),
+        lazy=False,
+    )
+    external_pull_socket = ZmqPullSocket[DispatcherMessage[dict[str, str]]](
+        endpoint=send_endpoint,
+        deserialize=lambda x: pickle.loads(x),
+        lazy=False,
+    )
+    dispatcher = None
+
+    try:
+        # Small delay to ensure sockets are bound/connected
+        await asyncio.sleep(0.1)
+
+        # Create dispatcher with actual sockets that will connect to our endpoints
+        dispatcher = DispatcherService(
+            send_endpoint=send_endpoint,
+            recv_endpoint=recv_endpoint,
+            transport=transport,
+            socket_init_timeout=15.0,
+        )
+
+        # Test 1: Verify readiness check succeeds when sockets can properly connect
+        start_time = time.time()
+        await dispatcher.start()
+        elapsed = time.time() - start_time
+
+        # Should complete quickly since sockets are ready
+        assert elapsed < 1.0, (
+            f"Readiness check took too long with connected sockets: {elapsed:.2f}s"
+        )
+
+    finally:
+        # Clean up in reverse order
+        if dispatcher:
+            try:
+                if dispatcher.local_pull_socket is not None:
+                    dispatcher.local_pull_socket.close()
+                if dispatcher.local_push_socket is not None:
+                    dispatcher.local_push_socket.close()
+            except Exception:
+                pass
+
+        if external_push_socket:
+            try:
+                external_push_socket.close()
+            except Exception:
+                pass
+
+        if external_pull_socket:
+            try:
+                external_pull_socket.close()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
+async def test_socket_readiness_timeout() -> None:
+    """Test that socket readiness check properly times out when sockets aren't ready."""
+    # Use an endpoint that will cause connection issues
+    send_endpoint = "tcp://127.0.0.1:9998"
+    recv_endpoint = "tcp://127.0.0.1:9999"
+
+    transport = MockTransport()
+
+    dispatcher = DispatcherService(
+        send_endpoint=send_endpoint,
+        recv_endpoint=recv_endpoint,
+        transport=transport,
+        socket_init_timeout=0.5,  # Short timeout for faster testing
+    )
+
+    try:
+        start_time = time.time()
+
+        # This should timeout since the endpoints don't exist
+        with pytest.raises(
+            TimeoutError,
+            match="PULL socket peer connection timeout: Peer did not connect within 0.5 seconds",
+        ):
+            await dispatcher.start()
+
+        elapsed = time.time() - start_time
+
+        # Should timeout close to the specified timeout
+        assert 0.4 < elapsed < 1.0, (
+            f"Timeout occurred at unexpected time: {elapsed:.2f}s"
+        )
+
+    finally:
+        try:
+            if dispatcher.local_pull_socket is not None:
+                dispatcher.local_pull_socket.close()
+            if dispatcher.local_push_socket is not None:
+                dispatcher.local_push_socket.close()
+        except Exception:
+            pass
