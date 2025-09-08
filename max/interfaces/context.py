@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from dataclasses import dataclass, fields
+import secrets
+from dataclasses import dataclass, field, fields
 from typing import Any, Optional, Protocol, TypeVar, Union, runtime_checkable
 
 import numpy as np
@@ -91,8 +92,8 @@ class SamplingParams:
     detokenize: bool = True
     """Whether to detokenize the output tokens into text."""
 
-    seed: int = 0
-    """The seed to use for the random number generator."""
+    seed: int = field(default_factory=lambda: secrets.randbits(32))
+    """The seed to use for the random number generator. Defaults to a cryptographically secure random value."""
 
     @classmethod
     def from_input(cls, input_params: SamplingParamsInput) -> "SamplingParams":
@@ -111,10 +112,10 @@ class SamplingParams:
         """
         # Create a new dict with None values replaced by defaults
         resolved_params = {}
-        for field in fields(input_params):
-            value = getattr(input_params, field.name)
+        for _field in fields(input_params):
+            value = getattr(input_params, _field.name)
             if value is not None:
-                resolved_params[field.name] = value
+                resolved_params[_field.name] = value
 
         return cls(**resolved_params)
 
