@@ -2442,29 +2442,20 @@ static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
 }
 
 namespace {
-struct StructBodyDecorators : public SharedStateUser {
-  StructBodyDecorators(
-      StructDeclOp structOp, ASTDecl &structDecl, DeclResolver &resolver,
-      ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields)
+struct StructDecorators : public SharedStateUser {
+  StructDecorators(StructDeclOp structOp, ASTDecl &structDecl,
+                   DeclResolver &resolver)
       : SharedStateUser(resolver.shared), structOp(structOp),
-        structDecl(structDecl), structFields(structFields) {}
+        structDecl(structDecl) {}
 
-  LogicalResult processDecorator(ExprNode *decorator, StructDeclOp structOp);
+  LogicalResult processBodyDecorator(ExprNode *decorator);
 
 private:
   /// Process the @fieldwise_init body decorator on structs.
   void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
 
-  /// Get a constant symbol to a method, and return null if it is missing or
-  /// something went wrong.
-  /// Provide optionally a callback for the case where the method is missing.
-  SymbolConstantAttr
-  getSymbolForMethod(StringRef methodName, ExprNode *decorator,
-                     function_ref<void()> callbackOnMissing = nullptr);
-
   StructDeclOp structOp;
   ASTDecl &structDecl;
-  ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
 };
 } // namespace
 
@@ -2529,8 +2520,8 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
 
 /// Process the @fieldwise_init body decorator on structs. 'isRequired'
 /// indicates whether it is an error to already have a fieldwise init.
-void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
-                                                         bool isImplicit) {
+void StructDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
+                                                     bool isImplicit) {
   // Don't add one if we already have one.
   if (FnOp init = findFieldwiseInit(structDecl)) {
     auto diag =
@@ -2561,31 +2552,7 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
   }
 }
 
-SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
-    StringRef methodName, ExprNode *decorator,
-    function_ref<void()> callbackOnMissing) {
-  // Get the possibly overloaded method.
-  auto methods = OverloadSet::lookup(
-      structDecl, structDecl.getTypeDeclSelf(), methodName, decorator,
-      CallSyntax::kMethodCallSynthetic, callbackOnMissing);
-
-  // Case where we did not find the `impl` method or an error occurred.
-  if (!methods)
-    return {};
-
-  // Emit the constant symbol.
-  auto methodsUValue = OverloadSetUValue::create(std::move(methods));
-  IREmitter emitter(structDecl, {});
-  PValue value =
-      emitter.emitPValue({methodsUValue, decorator}, ExprContext::EC_Decorator);
-  if (!value)
-    return {};
-
-  return cast<SymbolConstantAttr>(value.get());
-}
-
-LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
-                                                     StructDeclOp structOp) {
+LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "fieldwise_init") {
       processFieldwiseInitDecorator(decorator->getRangeStart(),
@@ -2806,10 +2773,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // If there are any body decorators, resolve them now.
-  StructBodyDecorators structDecorators(structOp, structDecl, *this,
-                                        structFields);
+  StructDecorators structDecorators(structOp, structDecl, *this);
   Decorators(structDecl).applyBodyDecorators([&](ExprNode *decorator) {
-    return structDecorators.processDecorator(decorator, structOp);
+    return structDecorators.processBodyDecorator(decorator);
   });
 
   if (structDecl.isErroneous())
