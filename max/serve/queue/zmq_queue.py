@@ -19,6 +19,7 @@ import logging
 import pickle
 import queue
 import tempfile
+import time
 import uuid
 import weakref
 from typing import Any, Callable, Generic, Optional, TypeVar, cast
@@ -75,6 +76,84 @@ def is_valid_zmq_address(address: str) -> bool:
     return True
 
 
+def _wait_for_peer_connection(
+    socket: zmq.Socket, timeout: float, expected_event: int
+) -> None:
+    """
+    Wait for peer connection using ZMQ socket monitoring.
+
+    Args:
+        socket: The ZMQ socket to monitor
+        timeout: Timeout in seconds to wait for peer connection
+        expected_event: Expected ZMQ event (zmq.EVENT_CONNECTED or zmq.EVENT_ACCEPTED)
+
+    Raises:
+        TimeoutError: If peer doesn't connect within the timeout period
+        RuntimeError: If monitoring fails
+    """
+    # Create monitoring endpoint and socket
+    monitor_endpoint = f"inproc://monitor-{uuid.uuid4()}"
+    monitor_socket = None
+
+    try:
+        # Enable monitoring on the socket
+        socket.monitor(monitor_endpoint, expected_event)
+
+        # Create monitoring socket to receive events
+        monitor_socket = zmq.Context.instance().socket(zmq.PAIR)
+        monitor_socket.connect(monitor_endpoint)
+
+        # Set timeout for monitoring socket
+        monitor_socket.setsockopt(
+            zmq.RCVTIMEO, int(timeout * 1000)
+        )  # Convert to milliseconds
+
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                # Receive monitoring event
+                event = monitor_socket.recv_multipart(zmq.NOBLOCK)
+                if len(event) >= 2:
+                    # Parse event - first part contains event data
+                    event_data = event[0]
+                    if len(event_data) >= 4:
+                        # Extract event type from the binary data (first 2 bytes, little-endian)
+                        event_type = int.from_bytes(
+                            event_data[:2], byteorder="little"
+                        )
+
+                        if event_type == expected_event:
+                            # Peer connected successfully
+                            return
+                        elif event_type == zmq.EVENT_DISCONNECTED:
+                            # Peer disconnected - continue waiting for reconnection
+                            continue
+
+            except zmq.Again:
+                # No events available, continue polling
+                time.sleep(0.001)  # Small sleep to avoid busy waiting
+                continue
+
+        # Timeout reached without successful connection
+        raise TimeoutError(f"Peer did not connect within {timeout} seconds")
+
+    except Exception as e:
+        if isinstance(e, TimeoutError):
+            raise
+        raise RuntimeError(f"Socket monitoring failed: {e}") from e
+    finally:
+        # Clean up monitoring
+        try:
+            if monitor_socket is not None:
+                monitor_socket.close()
+            socket.disable_monitor()
+        except Exception as cleanup_error:
+            logger.warning(
+                f"Failed to cleanup socket monitoring: {cleanup_error}"
+            )
+
+
 # Adapted from:
 #  - vllm: https://github.com/vllm-project/vllm/blob/46c759c165a5a985ce62f019bf684e4a6109e41c/vllm/utils.py#L2093
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783
@@ -103,33 +182,33 @@ def _open_zmq_socket(
         buf_size = -1
 
     # Configure socket options based on type
-    if mode == zmq.constants.PULL:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
+    if mode == zmq.PULL:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
         socket.connect(path)
-    elif mode == zmq.constants.PUSH:
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
+    elif mode == zmq.PUSH:
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
         socket.bind(path)
-    elif mode == zmq.constants.ROUTER:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
-        socket.setsockopt(zmq.constants.ROUTER_MANDATORY, 1)
+    elif mode == zmq.ROUTER:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
+        socket.setsockopt(zmq.ROUTER_MANDATORY, 1)
         if bind:
             socket.bind(path)
         else:
             socket.connect(path)
-    elif mode == zmq.constants.DEALER:
-        socket.setsockopt(zmq.constants.RCVHWM, 0)
-        socket.setsockopt(zmq.constants.SNDHWM, 0)
-        socket.setsockopt(zmq.constants.RCVBUF, buf_size)
-        socket.setsockopt(zmq.constants.SNDBUF, buf_size)
-        socket.setsockopt(zmq.constants.LINGER, 0)
+    elif mode == zmq.DEALER:
+        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.RCVBUF, buf_size)
+        socket.setsockopt(zmq.SNDBUF, buf_size)
+        socket.setsockopt(zmq.LINGER, 0)
         if bind:
             socket.bind(path)
         else:
@@ -158,6 +237,7 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
         endpoint: Optional[str] = None,
         serialize: Callable[[T], bytes] = pickle.dumps,
         lazy: bool = True,
+        peer_timeout: Optional[float] = None,
     ) -> None:
         """
         Initialize ZmqPushSocket with lazy PUSH socket initialization.
@@ -167,6 +247,9 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
             serialize: Function to serialize messages before sending.
             lazy: If True (default), socket initialization is deferred until first use.
                   If False, socket is initialized immediately during construction.
+            peer_timeout: Optional timeout in seconds to wait for peer connection during
+                         socket initialization. If specified, raises TimeoutError if no
+                         peer connects within the timeout period.
         """
         # Initialize endpoint
         self._endpoint = (
@@ -177,8 +260,9 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
         if not is_valid_zmq_address(self._endpoint):
             raise ValueError(f"Invalid endpoint: {self._endpoint}")
 
-        # Store serialization function
+        # Store serialization function and peer timeout
         self._serialize = serialize
+        self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
         self._push_socket: Optional[zmq.Socket] = None
@@ -200,9 +284,29 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
 
         Returns:
             The initialized ZMQ push socket.
+
+        Raises:
+            TimeoutError: If peer_timeout is specified and no peer connects within that time.
         """
         if self._push_socket is None:
             self._push_socket = _open_zmq_socket(self._endpoint, mode=zmq.PUSH)
+
+            # If peer timeout is specified, wait for peer connection
+            if self._peer_timeout is not None:
+                try:
+                    _wait_for_peer_connection(
+                        self._push_socket,
+                        self._peer_timeout,
+                        zmq.EVENT_ACCEPTED,
+                    )
+                except TimeoutError as e:
+                    # Clean up socket on timeout
+                    self._push_socket.close()
+                    self._push_socket = None
+                    raise TimeoutError(
+                        f"PUSH socket peer connection timeout: {e}"
+                    ) from e
+
         return self._push_socket
 
     def _cleanup(self) -> None:
@@ -276,6 +380,7 @@ class ZmqPullSocket(Generic[T]):
         endpoint: Optional[str] = None,
         deserialize: Callable[[bytes], T] = pickle.loads,
         lazy: bool = True,
+        peer_timeout: Optional[float] = None,
     ) -> None:
         """
         Initialize ZmqPullSocket with lazy PULL socket initialization.
@@ -285,6 +390,9 @@ class ZmqPullSocket(Generic[T]):
             deserialize: Function to deserialize received messages.
             lazy: If True (default), socket initialization is deferred until first use.
                   If False, socket is initialized immediately during construction.
+            peer_timeout: Optional timeout in seconds to wait for peer connection during
+                         socket initialization. If specified, raises TimeoutError if no
+                         peer connects within the timeout period.
         """
         # Initialize endpoint
         self._endpoint = (
@@ -295,8 +403,9 @@ class ZmqPullSocket(Generic[T]):
         if not is_valid_zmq_address(self._endpoint):
             raise ValueError(f"Invalid endpoint: {self._endpoint}")
 
-        # Store serialization function
+        # Store deserialization function and peer timeout
         self._deserialize = deserialize
+        self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
         self._pull_socket: Optional[zmq.Socket] = None
@@ -318,9 +427,29 @@ class ZmqPullSocket(Generic[T]):
 
         Returns:
             The initialized ZMQ pull socket.
+
+        Raises:
+            TimeoutError: If peer_timeout is specified and no peer connects within that time.
         """
         if self._pull_socket is None:
             self._pull_socket = _open_zmq_socket(self._endpoint, mode=zmq.PULL)
+
+            # If peer timeout is specified, wait for peer connection
+            if self._peer_timeout is not None:
+                try:
+                    _wait_for_peer_connection(
+                        self._pull_socket,
+                        self._peer_timeout,
+                        zmq.EVENT_CONNECTED,
+                    )
+                except TimeoutError as e:
+                    # Clean up socket on timeout
+                    self._pull_socket.close()
+                    self._pull_socket = None
+                    raise TimeoutError(
+                        f"PULL socket peer connection timeout: {e}"
+                    ) from e
+
         return self._pull_socket
 
     def _cleanup(self) -> None:
@@ -348,8 +477,8 @@ class ZmqPullSocket(Generic[T]):
         try:
             msg = pull_socket.recv(flags=zmq.NOBLOCK)
         except zmq.ZMQError as e:
-            if e.errno == zmq.constants.EAGAIN:
-                raise queue.Empty()  # noqa: B904
+            if e.errno == zmq.EAGAIN:
+                raise queue.Empty() from None
 
             logger.exception(
                 f"Failed to receive message on ZMQ socket for unknown reason: {e}"
@@ -372,25 +501,88 @@ class ZmqRouterSocket(Generic[T]):
         bind: bool = True,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
+        lazy: bool = True,
+        peer_timeout: Optional[float] = None,
     ) -> None:
+        """
+        Initialize ZmqRouterSocket with optional lazy initialization and peer timeout.
+
+        Args:
+            zmq_endpoint: ZMQ endpoint for the router socket.
+            bind: If True (default), bind to the endpoint. If False, connect to it.
+            serialize: Function to serialize messages before sending.
+            deserialize: Function to deserialize received messages.
+            lazy: If True (default), socket initialization is deferred until first use.
+                  If False, socket is initialized immediately during construction.
+            peer_timeout: Optional timeout in seconds to wait for peer connection during
+                         socket initialization. If specified, raises TimeoutError if no
+                         peer connects within the timeout period.
+        """
         self.zmq_endpoint = zmq_endpoint
-        self.router_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.constants.ROUTER, bind=bind
-        )
-        self._closed = False
-        self._finalize = weakref.finalize(self, self._cleanup)
+        self.bind = bind
         self.serialize = serialize
         self.deserialize = deserialize
+        self._peer_timeout = peer_timeout
+
+        # Initialize socket (lazily)
+        self.router_socket: Optional[zmq.Socket] = None
+
+        # State management
+        self._closed = False
+        self._finalize = weakref.finalize(self, self._cleanup)
+
+        if not lazy:
+            self.initialize_socket()
+
+    def initialize_socket(self) -> zmq.Socket:
+        """
+        Initialize the router socket if needed and return it.
+
+        This allows external users to initialize the socket before use,
+        which can be useful for setup or testing scenarios. The socket
+        is lazily initialized on first call.
+
+        Returns:
+            The initialized ZMQ router socket.
+
+        Raises:
+            TimeoutError: If peer_timeout is specified and no peer connects within that time.
+        """
+        if self.router_socket is None:
+            self.router_socket = _open_zmq_socket(
+                self.zmq_endpoint, mode=zmq.ROUTER, bind=self.bind
+            )
+
+            # If peer timeout is specified, wait for peer connection
+            if self._peer_timeout is not None:
+                try:
+                    expected_event = (
+                        zmq.EVENT_ACCEPTED if self.bind else zmq.EVENT_CONNECTED
+                    )
+                    _wait_for_peer_connection(
+                        self.router_socket,
+                        self._peer_timeout,
+                        expected_event,
+                    )
+                except TimeoutError as e:
+                    # Clean up socket on timeout
+                    self.router_socket.close()
+                    self.router_socket = None
+                    raise TimeoutError(
+                        f"ROUTER socket peer connection timeout: {e}"
+                    ) from e
+
+        return self.router_socket
 
     def _cleanup(self) -> None:
-        if not self.router_socket.closed:
+        if self.router_socket is not None and not self.router_socket.closed:
             self.router_socket.close()
 
     def close(self) -> None:
         """Explicitly close the ZMQ socket."""
         if not self._closed:
             self._closed = True
-            if not self.router_socket.closed:
+            if self.router_socket is not None and not self.router_socket.closed:
                 self.router_socket.close()
             self._finalize.detach()
 
@@ -401,6 +593,8 @@ class ZmqRouterSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        router_socket = self.initialize_socket()
+
         try:
             serialized_msg = self.serialize(message)
         except Exception as e:
@@ -408,11 +602,11 @@ class ZmqRouterSocket(Generic[T]):
             raise
 
         try:
-            self.router_socket.send_multipart(
+            router_socket.send_multipart(
                 [identity, serialized_msg], flags=flags
             )
         except zmq.ZMQError as e:
-            if e.errno != zmq.constants.EAGAIN:
+            if e.errno != zmq.EAGAIN:
                 logger.exception(f"Failed to send multipart message: {e}")
             raise
 
@@ -421,13 +615,13 @@ class ZmqRouterSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        router_socket = self.initialize_socket()
+
         try:
-            identity, message_data = self.router_socket.recv_multipart(
-                flags=flags
-            )
+            identity, message_data = router_socket.recv_multipart(flags=flags)
         except zmq.ZMQError as e:
-            if e.errno == zmq.constants.EAGAIN:
-                raise queue.Empty()  # noqa: B904
+            if e.errno == zmq.EAGAIN:
+                raise queue.Empty() from None
             logger.exception(f"Failed to receive multipart message: {e}")
             raise
 
@@ -440,7 +634,7 @@ class ZmqRouterSocket(Generic[T]):
 
     def recv_multipart_nowait(self) -> tuple[bytes, T]:
         """Non-blocking receive."""
-        return self.recv_multipart(flags=zmq.constants.NOBLOCK)
+        return self.recv_multipart(flags=zmq.NOBLOCK)
 
 
 class ZmqDealerSocket(Generic[T]):
@@ -452,25 +646,88 @@ class ZmqDealerSocket(Generic[T]):
         bind: bool = False,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
+        lazy: bool = True,
+        peer_timeout: Optional[float] = None,
     ) -> None:
+        """
+        Initialize ZmqDealerSocket with optional lazy initialization and peer timeout.
+
+        Args:
+            zmq_endpoint: ZMQ endpoint for the dealer socket.
+            bind: If False (default), connect to the endpoint. If True, bind to it.
+            serialize: Function to serialize messages before sending.
+            deserialize: Function to deserialize received messages.
+            lazy: If True (default), socket initialization is deferred until first use.
+                  If False, socket is initialized immediately during construction.
+            peer_timeout: Optional timeout in seconds to wait for peer connection during
+                         socket initialization. If specified, raises TimeoutError if no
+                         peer connects within the timeout period.
+        """
         self.zmq_endpoint = zmq_endpoint
-        self.dealer_socket = _open_zmq_socket(
-            self.zmq_endpoint, mode=zmq.constants.DEALER, bind=bind
-        )
+        self.bind = bind
         self.serialize = serialize
         self.deserialize = deserialize
+        self._peer_timeout = peer_timeout
+
+        # Initialize socket (lazily)
+        self.dealer_socket: Optional[zmq.Socket] = None
+
+        # State management
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
+        if not lazy:
+            self.initialize_socket()
+
+    def initialize_socket(self) -> zmq.Socket:
+        """
+        Initialize the dealer socket if needed and return it.
+
+        This allows external users to initialize the socket before use,
+        which can be useful for setup or testing scenarios. The socket
+        is lazily initialized on first call.
+
+        Returns:
+            The initialized ZMQ dealer socket.
+
+        Raises:
+            TimeoutError: If peer_timeout is specified and no peer connects within that time.
+        """
+        if self.dealer_socket is None:
+            self.dealer_socket = _open_zmq_socket(
+                self.zmq_endpoint, mode=zmq.DEALER, bind=self.bind
+            )
+
+            # If peer timeout is specified, wait for peer connection
+            if self._peer_timeout is not None:
+                try:
+                    expected_event = (
+                        zmq.EVENT_ACCEPTED if self.bind else zmq.EVENT_CONNECTED
+                    )
+                    _wait_for_peer_connection(
+                        self.dealer_socket,
+                        self._peer_timeout,
+                        expected_event,
+                    )
+                except TimeoutError as e:
+                    # Clean up socket on timeout
+                    self.dealer_socket.close()
+                    self.dealer_socket = None
+                    raise TimeoutError(
+                        f"DEALER socket peer connection timeout: {e}"
+                    ) from e
+
+        return self.dealer_socket
+
     def _cleanup(self) -> None:
-        if not self.dealer_socket.closed:
+        if self.dealer_socket is not None and not self.dealer_socket.closed:
             self.dealer_socket.close()
 
     def close(self) -> None:
         """Explicitly close the ZMQ socket."""
         if not self._closed:
             self._closed = True
-            if not self.dealer_socket.closed:
+            if self.dealer_socket is not None and not self.dealer_socket.closed:
                 self.dealer_socket.close()
             self._finalize.detach()
 
@@ -479,6 +736,8 @@ class ZmqDealerSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        dealer_socket = self.initialize_socket()
+
         try:
             serialized_msg = self.serialize(message)
         except Exception as e:
@@ -486,9 +745,9 @@ class ZmqDealerSocket(Generic[T]):
             raise
 
         try:
-            self.dealer_socket.send(serialized_msg, flags=flags)
+            dealer_socket.send(serialized_msg, flags=flags)
         except zmq.ZMQError as e:
-            if e.errno != zmq.constants.EAGAIN:
+            if e.errno != zmq.EAGAIN:
                 logger.exception(f"Failed to send message: {e}")
             raise
 
@@ -497,11 +756,13 @@ class ZmqDealerSocket(Generic[T]):
         if self._closed:
             raise RuntimeError("Socket is closed")
 
+        dealer_socket = self.initialize_socket()
+
         try:
-            message = self.dealer_socket.recv(flags=flags)
+            message = dealer_socket.recv(flags=flags)
         except zmq.ZMQError as e:
-            if e.errno == zmq.constants.EAGAIN:
-                raise queue.Empty()  # noqa: B904
+            if e.errno == zmq.EAGAIN:
+                raise queue.Empty() from None
             logger.exception(f"Failed to receive message: {e}")
             raise
 
@@ -513,7 +774,7 @@ class ZmqDealerSocket(Generic[T]):
 
     def recv_pyobj_nowait(self) -> T:
         """Non-blocking receive."""
-        return self.recv_pyobj(flags=zmq.constants.NOBLOCK)
+        return self.recv_pyobj(flags=zmq.NOBLOCK)
 
 
 def create_zmq_push_pull_queues(
@@ -521,6 +782,7 @@ def create_zmq_push_pull_queues(
     endpoint: Optional[str] = None,
     use_pickle: bool = False,
     lazy: bool = True,
+    peer_timeout: Optional[float] = None,
 ) -> tuple[ZmqPushSocket[T], ZmqPullSocket[T]]:
     """
     Factory method to create a matched pair of ZMQ push and pull sockets.
@@ -536,6 +798,9 @@ def create_zmq_push_pull_queues(
         use_pickle: Whether to use pickle for serialization. If False, uses msgpack.
         lazy: If True (default), socket initialization is deferred until first use.
               If False, both sockets are initialized immediately during construction.
+        peer_timeout: Optional timeout in seconds to wait for peer connection during
+                     socket initialization. If specified, raises TimeoutError if no
+                     peer connects within the timeout period.
 
     Returns:
         A tuple containing (ZmqPushSocket, ZmqPullSocket) configured to communicate
@@ -546,6 +811,9 @@ def create_zmq_push_pull_queues(
         >>> push_socket.put_nowait("hello")
         >>> message = pull_socket.get_nowait()
         >>> print(message)  # "hello"
+
+        >>> # With peer timeout - wait up to 5 seconds for peer connection
+        >>> push_socket, pull_socket = create_zmq_push_pull_queues(str, peer_timeout=5.0)
     """
     # Use the same endpoint for both sockets so they can communicate
     actual_endpoint = (
@@ -563,12 +831,14 @@ def create_zmq_push_pull_queues(
         endpoint=actual_endpoint,
         serialize=serialize,
         lazy=lazy,
+        peer_timeout=peer_timeout,
     )
 
     pull_socket = ZmqPullSocket[T](
         endpoint=actual_endpoint,
         deserialize=deserialize,
         lazy=lazy,
+        peer_timeout=peer_timeout,
     )
 
     return push_socket, pull_socket

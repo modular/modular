@@ -70,17 +70,37 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         process_control: Optional[ProcessControl] = None,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
+        socket_init_timeout: Optional[float] = None,
     ) -> None:
-        """Initialize dispatcher service with local sockets and remote transport."""
+        """
+        Initialize dispatcher service with local sockets and remote transport.
+
+        Args:
+            send_endpoint: ZMQ endpoint for the push socket (outgoing messages).
+            recv_endpoint: ZMQ endpoint for the pull socket (incoming messages).
+            transport: Transport layer for remote communication.
+            process_control: Optional process control for heartbeat monitoring.
+            serialize: Function to serialize messages before sending.
+            deserialize: Function to deserialize received messages.
+            socket_init_timeout: Timeout in seconds to wait for socket initialization (default: 180.0).
+        """
         self.transport = transport
         self._pc = process_control
+        self._socket_init_timeout = socket_init_timeout
 
-        self.local_pull_socket = ZmqPullSocket[
-            DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=recv_endpoint, deserialize=deserialize, lazy=False)
-        self.local_push_socket = ZmqPushSocket[
-            DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=send_endpoint, serialize=serialize, lazy=False)
+        # Store socket configuration for later creation in start()
+        self._send_endpoint = send_endpoint
+        self._recv_endpoint = recv_endpoint
+        self._serialize = serialize
+        self._deserialize = deserialize
+
+        # Initialize socket attributes to None - will be created in start()
+        self.local_pull_socket: Optional[
+            ZmqPullSocket[DispatcherMessage[DispatcherMessagePayload]]
+        ] = None
+        self.local_push_socket: Optional[
+            ZmqPushSocket[DispatcherMessage[DispatcherMessagePayload]]
+        ] = None
 
         self._tasks: list[asyncio.Task[object]] = []
         self._heartbeat_task: Optional[asyncio.Task[object]] = None
@@ -93,6 +113,27 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         """Start the dispatcher service and begin message routing loops."""
         try:
             await self.transport.start()
+
+            # Create ZMQ sockets with peer timeout monitoring
+            logger.debug("Creating ZMQ sockets...")
+            self.local_pull_socket = ZmqPullSocket[
+                DispatcherMessage[DispatcherMessagePayload]
+            ](
+                endpoint=self._recv_endpoint,
+                deserialize=self._deserialize,
+                lazy=False,
+                peer_timeout=self._socket_init_timeout,
+            )
+            self.local_push_socket = ZmqPushSocket[
+                DispatcherMessage[DispatcherMessagePayload]
+            ](
+                endpoint=self._send_endpoint,
+                serialize=self._serialize,
+                lazy=False,
+                peer_timeout=self._socket_init_timeout,
+            )
+            logger.debug("ZMQ sockets created and peers connected")
+
             self._tasks = [
                 asyncio.create_task(self._local_to_transport_loop()),
                 asyncio.create_task(self._transport_to_local_loop()),
@@ -138,14 +179,16 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
 
         # Close local pull socket
         try:
-            self.local_pull_socket.close()
+            if self.local_pull_socket is not None:
+                self.local_pull_socket.close()
         except Exception as e:
             logger.exception(f"Failed to close local pull socket: {e}")
             raise
 
         # Close local push socket
         try:
-            self.local_push_socket.close()
+            if self.local_push_socket is not None:
+                self.local_push_socket.close()
             logger.debug("Sockets closed")
         except Exception as e:
             logger.exception(f"Failed to close local push socket: {e}")
@@ -162,6 +205,9 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         """
         while True:
             if self._pc is not None and self._pc.is_canceled():
+                break
+            if self.local_pull_socket is None:
+                logger.error("Local pull socket not initialized")
                 break
             try:
                 msg = self.local_pull_socket.get_nowait()
@@ -215,6 +261,9 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         """
         while True:
             if self._pc is not None and self._pc.is_canceled():
+                break
+            if self.local_push_socket is None:
+                logger.error("Local push socket not initialized")
                 break
             try:
                 received = await self.transport.receive_message()

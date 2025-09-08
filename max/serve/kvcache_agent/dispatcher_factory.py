@@ -70,6 +70,7 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
         # We cannot use | syntax here, since this is parsed by pydantic, which doesn't
         # support that syntax on 3.9. See https://github.com/pydantic/pydantic/issues/7109
         default_destination_address: Optional[str] = None
+        socket_init_timeout: Optional[float] = None
 
     @staticmethod
     def create_dynamic_zmq_transport(
@@ -87,6 +88,7 @@ class TransportFactory(Generic[DispatcherMessagePayload]):
             instance_id=config.instance_id,
             default_destination_address=config.default_destination_address,
             payload_type=payload_type,
+            socket_init_timeout=config.socket_init_timeout,
         )
 
     @classmethod
@@ -128,7 +130,10 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
     """
 
     def __init__(
-        self, config: DispatcherConfig, transport_payload_type: Any
+        self,
+        config: DispatcherConfig,
+        transport_payload_type: Any,
+        local_socket_init_timeout: Optional[float] = None,
     ) -> None:
         """
         Initialize factory with a transport instance.
@@ -137,6 +142,7 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
         self._service_to_client = generate_zmq_ipc_path()
         self._client_to_service = generate_zmq_ipc_path()
         self._transport_payload_type = transport_payload_type
+        self._local_socket_init_timeout = local_socket_init_timeout
 
     def create_service(
         self, process_control: Optional[ProcessControl] = None
@@ -156,6 +162,7 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
             recv_endpoint=self._client_to_service,
             transport=transport,
             process_control=process_control,
+            socket_init_timeout=self._local_socket_init_timeout,
         )
 
     def create_client(
@@ -167,4 +174,5 @@ class DispatcherFactory(Generic[DispatcherMessagePayload]):
         return DispatcherClient[DispatcherMessagePayload](
             send_endpoint=self._client_to_service,
             recv_endpoint=self._service_to_client,
+            socket_init_timeout=self._local_socket_init_timeout,
         )

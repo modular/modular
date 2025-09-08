@@ -154,14 +154,23 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
         instance_id: str,
         payload_type: Any,
         default_destination_address: str | None = None,
+        socket_init_timeout: Optional[float] = None,
     ) -> None:
         """
         Initialize dynamic ZMQ transport with ROUTER/DEALER sockets.
+
+        Args:
+            bind_address: ZMQ address to bind the ROUTER socket to.
+            instance_id: Unique identifier for this transport instance.
+            payload_type: Type of the payload for serialization/deserialization.
+            default_destination_address: Default destination for outgoing messages.
+            socket_init_timeout: Optional timeout in seconds to wait for socket initialization (default: None).
         """
         self._bind_address = bind_address
         self._instance_id = instance_id
         self._default_destination_address = default_destination_address
         self._payload_type = payload_type
+        self._socket_init_timeout = socket_init_timeout
 
         # Receiving socket (ROUTER for handling multiple connections)
         self._router_socket: (
@@ -192,6 +201,8 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
                 self._bind_address,
                 serialize=msgpack_numpy_encoder(),
                 deserialize=msgpack_numpy_decoder(self._payload_type),
+                lazy=False,
+                peer_timeout=self._socket_init_timeout,
             )
             self._running = True
             logger.debug(
@@ -231,7 +242,9 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
                     destination_address
                 )
                 if not dealer_socket:
-                    if not await self._connect_to_address(destination_address):
+                    if not await self._connect_to_address(
+                        destination_address, self._socket_init_timeout
+                    ):
                         logger.error(
                             f"Failed to establish connection to: {destination_address}"
                         )
@@ -378,9 +391,26 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
             logger.exception(f"Failed to receive message: {e}")
         return None
 
-    async def _connect_to_address(self, destination_address: str) -> bool:
+    async def connect_to_default(self, timeout: float | None = None) -> bool:
+        """
+        Create a DEALER connection to the default destination address.
+        """
+        if self._default_destination_address is None:
+            raise ValueError("No default destination address provided.")
+
+        return await self._connect_to_address(
+            self._default_destination_address, timeout
+        )
+
+    async def _connect_to_address(
+        self, destination_address: str, timeout: float | None = None
+    ) -> bool:
         """
         Create a DEALER connection to the destination address.
+
+        Args:
+            destination_address: The ZMQ address to connect to.
+            timeout: Timeout in seconds for socket initialization. If None, uses self._socket_init_timeout.
         """
         try:
             if not is_valid_zmq_address(destination_address):
@@ -392,6 +422,8 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
                 bind=False,
                 serialize=msgpack_numpy_encoder(),
                 deserialize=msgpack_numpy_decoder(self._payload_type),
+                lazy=False,
+                peer_timeout=timeout,
             )
             self._dealer_connections[destination_address] = dealer_socket
             logger.debug(f"Created DEALER connection to: {destination_address}")

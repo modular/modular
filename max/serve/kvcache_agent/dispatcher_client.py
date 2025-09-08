@@ -48,14 +48,37 @@ class DispatcherClient(Generic[DispatcherMessagePayload]):
         recv_endpoint: str,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
+        socket_init_timeout: Optional[float] = None,
     ) -> None:
-        """Initialize dispatcher client with ZMQ sockets for communication."""
-        self.pull_socket = ZmqPullSocket[
-            DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=recv_endpoint, deserialize=deserialize, lazy=False)
+        """
+        Initialize dispatcher client with ZMQ sockets for communication.
+
+        Args:
+            send_endpoint: ZMQ endpoint for the push socket (outgoing messages).
+            recv_endpoint: ZMQ endpoint for the pull socket (incoming messages).
+            serialize: Function to serialize messages before sending.
+            deserialize: Function to deserialize received messages.
+            socket_init_timeout: Timeout in seconds to wait for socket initialization (default: 180.0).
+        """
+        # The push socket must be initialized first, before the pull socket.
+        # To ensure that the socket verification between the client and the service
+        # completes successfully.
         self.push_socket = ZmqPushSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](endpoint=send_endpoint, serialize=serialize, lazy=False)
+        ](
+            endpoint=send_endpoint,
+            serialize=serialize,
+            lazy=False,
+            peer_timeout=socket_init_timeout,
+        )
+        self.pull_socket = ZmqPullSocket[
+            DispatcherMessage[DispatcherMessagePayload]
+        ](
+            endpoint=recv_endpoint,
+            deserialize=deserialize,
+            lazy=False,
+            peer_timeout=socket_init_timeout,
+        )
 
         # Request handlers
         self._request_handlers: dict[
