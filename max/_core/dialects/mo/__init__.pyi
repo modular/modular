@@ -984,7 +984,7 @@ class IfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         cond: max._core.Value,
     ) -> None: ...
     @property
@@ -1231,7 +1231,7 @@ class DistributedAllgatherOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value[max._core.Type]],
+        outputs: Sequence[max._core.Type],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
@@ -2070,7 +2070,7 @@ class CallOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.SymbolRefAttr,
         prefix: max._core.dialects.builtin.StringAttr,
@@ -2865,7 +2865,7 @@ class CustomOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.StringAttr,
         device: max._core.dialects.m.DeviceRefAttr,
@@ -3121,7 +3121,7 @@ class FenceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
@@ -3468,7 +3468,7 @@ class GuardOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         chain: max._core.Value[ChainType],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
@@ -3997,7 +3997,7 @@ class DistributedMatmulAllreduceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value[max._core.Type]],
+        outputs: Sequence[max._core.Type],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         weights: Sequence[max._core.Value[max._core.Type]],
@@ -6577,7 +6577,7 @@ class SplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         input: max._core.Value[TensorType],
         split_sizes: max._core.Value[TensorType],
         axis: max._core.Value[TensorType],
@@ -7088,7 +7088,7 @@ class WhileOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
