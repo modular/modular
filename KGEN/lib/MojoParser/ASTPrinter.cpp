@@ -112,7 +112,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
     assert(paramInfo.size() == params.size() &&
            "Unexpected number of bound params");
 
-    ParserParameterEvaluator evaluator(*diagShared, params);
+    ParameterEvaluator evaluator(params);
 
     // Find out about default parameter values.
     DefaultValueHandler defaultValueHandler(paramInfo);
@@ -174,6 +174,60 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
                           });
     os << ']';
   }
+}
+
+/// Print the input parameter types of a generator type/attr.
+/// This needs to handle the case when 'paramInfo' is null.
+/// An additional attr/type body can be provided that will also be rebound with
+/// parameter names (if available in paramInfo) and returned.
+template <typename BodyT>
+static BodyT printGeneratorInterface(raw_ostream &os,
+                                     ArrayRef<Type> inputParamTypes,
+                                     PogListAttr paramInfo,
+                                     SharedState *diagShared, BodyT body) {
+  os << '[';
+  if (paramInfo) {
+    ParameterEvaluator evaluator;
+    PassingKindPrinter passingKindPrinter(os, paramInfo);
+    DefaultValueHandler defaultValueHandler(paramInfo);
+    auto printFn = [&](auto p) {
+      auto [i, type] = p;
+      passingKindPrinter.printOptionalStarSlash(i);
+
+      Type reboundType = evaluator.getReboundType(type);
+
+      StringRef name = paramInfo.getName(i).strref();
+      if (!name.empty()) {
+        os << name << ": ";
+        evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
+      } else {
+        // If no name exists, keep as is.
+        evaluator.appendIndexBinding(ParamIndexRefAttr::get(i, reboundType));
+      }
+
+      ASTType(reboundType).print(os, diagShared);
+
+      if (TypedAttr defaultOr = defaultValueHandler.getDefault(i)) {
+        os << " = ";
+        ASTType::printParam(os, defaultOr, diagShared);
+      }
+
+      passingKindPrinter.printOptionalTrailingSlash(i);
+    };
+    llvm::interleaveComma(llvm::enumerate(inputParamTypes), os, printFn);
+
+    if constexpr (std::is_base_of_v<Attribute, BodyT>)
+      body = cast<BodyT>(evaluator.getReboundAttribute(body));
+    else
+      body = cast<BodyT>(evaluator.getReboundType(body));
+  } else {
+    // If no param metadata, just print the types.
+    auto printFn = [&](Type type) { ASTType(type).print(os, diagShared); };
+    llvm::interleaveComma(inputParamTypes, os, printFn);
+  }
+  os << ']';
+
+  return body;
 }
 
 /// Try to extract a symbol reference and parameter list from a function callee.
@@ -307,6 +361,16 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
     printParam(os, bindParams.getGenerator(), diagShared);
     printOperands(bindParams.getParamValues(), ", ", "[", "]");
+    return;
+  }
+  if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
+    os << "alias";
+    TypedAttr reboundBody =
+        printGeneratorInterface(os, genAttr.getInputParamTypes(),
+                                dyn_cast<PogListAttr>(genAttr.getMetadata()),
+                                diagShared, genAttr.getBody());
+    os << ' ';
+    printParam(os, reboundBody, diagShared);
     return;
   }
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
