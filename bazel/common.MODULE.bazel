@@ -4,7 +4,7 @@ bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "apple_support", version = "1.22.1", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "gazelle", version = "0.43.0")
 bazel_dep(name = "rules_go", version = "0.55.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "8.15.0")
+bazel_dep(name = "rules_java", version = "8.15.2")
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.4.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.1")
@@ -146,7 +146,10 @@ single_version_override(
         "//bazel/public-patches:protobuf-platforms.patch",
         # TODO: https://github.com/protocolbuffers/protobuf/commit/a5220488813040037e59b5625f953f2da7bf73a4
         "//bazel/public-patches:protobuf-windows.patch",
+        # TODO: https://github.com/protocolbuffers/protobuf/commit/27227205a3986987b7495078aaf7377b49dc38aa
+        "//bazel/public-patches:protobuf-debug-context.patch",
     ],
+    version = "31.1",  # TODO: Remove restriction next update
 )
 
 single_version_override(
