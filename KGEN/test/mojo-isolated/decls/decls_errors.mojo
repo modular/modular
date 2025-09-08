@@ -658,6 +658,12 @@ struct ReturnFromStruct:
 struct ReDef: pass # expected-note {{conflicts with this previous struct declaration}}
 struct ReDef: pass # expected-error {{invalid redefinition of 'ReDef'}}
 
+# Ambiguous Lookup Case for Referencing Redefined Struct (ALCFRRS)
+# This tests that we don't crash or anything when we reference a redefined
+# struct.
+fn reference_redefined_struct(arg: ReDef):
+  pass
+
 struct StructMemberRedefinition:
   var x : __mlir_type.index  # expected-note {{previous definition here}}
   var x : __mlir_type.index  # expected-error {{invalid redefinition of 'x'}}

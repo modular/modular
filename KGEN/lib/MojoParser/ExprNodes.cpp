@@ -642,7 +642,32 @@ ExprNode::ELVIITResult DeclRefNode::emitLCVIR(ValueDest &dest,
                           isSpeculative);
 }
 
-/// Emit IR for an unqualified declaration reference "x" looked up in specified
+/// For a given ASTDecl, return the struct ASTDecl that it's about:
+/// - If it's a struct's ASTDecl, return success with that ASTDecl.
+/// - If it's an extension's ASTDecl, return success with the target struct's
+/// ASTDecl.
+/// - If it's anything else, return success with nullptr.
+/// - If signature resolution fails, return failure.
+static FailureOr<ASTDecl *> getTargetStructDecl(ASTDecl *referencedDecl,
+                                                IREmitter &emitter) {
+  if (isa_and_nonnull<StructDeclOp>(referencedDecl->getIfOperation())) {
+    return referencedDecl;
+  }
+  if (auto extensionDeclOp =
+          dyn_cast_or_null<ExtensionDeclOp>(referencedDecl->getIfOperation())) {
+    // Signature resolve the extension so targetStruct gets populated.
+    if (failed(emitter.shared.declResolver->resolve(
+            *referencedDecl, DeclResolvedness::signature,
+            referencedDecl->getLoc()))) {
+      return failure();
+    }
+
+    SymbolRefAttr targetStructRef = extensionDeclOp.getTargetStruct().value();
+    return &emitter.shared.declResolver->getDeclForTypeSymbol(targetStructRef);
+  }
+  return nullptr;
+}
+
 /// lookup scope.  This is refactored out from emitLCVIR because we use it for
 /// qualified lookup "x.y" when "x" is a package.
 ExprNode::ELVIITResult
@@ -775,8 +800,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(MLValue(varDecl), expr, dest);
   }
 
-  ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-  if (decls.empty()) {
+  ArrayRef<ASTDecl *> declsRef = lookup.getIfSuccess();
+  if (declsRef.empty()) {
     if (lookup.isErroneous())
       return {}; // Error already diagnosed.
 
@@ -835,7 +860,53 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return {};
   }
 
+  // We might modify this further below to filter out extensions and replace
+  // them with the struct they're talking about.
+  llvm::SmallVector<ASTDecl *, 16> decls(declsRef.begin(), declsRef.end());
   emitter.shared.notifyListenerOnRef(decls, spelling, expr);
+  ASTDecl *firstExistingDecl = decls.front();
+
+  // If the first result is a struct or an extension, their intention is
+  // to use the struct.
+  if (isa_and_nonnull<StructDeclOp>(firstExistingDecl->getIfOperation()) ||
+      isa_and_nonnull<ExtensionDeclOp>(firstExistingDecl->getIfOperation())) {
+    // We'll assume the first one is the one they intend to import, and any
+    // conflicting later imports are the problem.
+    ASTDecl *intendedReferencedDecl = firstExistingDecl;
+    FailureOr<ASTDecl *> intendedTargetStructResult =
+        getTargetStructDecl(intendedReferencedDecl, emitter);
+    if (failed(intendedTargetStructResult))
+      return {}; // Signature resolution failed, return early.
+    ASTDecl *intendedTargetStructDecl = *intendedTargetStructResult;
+    // Should be impossible because of the isa_and_nonnull checks above.
+    assert(intendedTargetStructDecl && "no target struct");
+
+    for (ssize_t i = decls.size() - 1; i >= 0; i--) {
+      ASTDecl *otherReferencedDecl = decls[i];
+      FailureOr<ASTDecl *> otherTargetStructResult =
+          getTargetStructDecl(otherReferencedDecl, emitter);
+      if (failed(otherTargetStructResult))
+        return {}; // Signature resolution failed, return early.
+      ASTDecl *otherTargetStructDecl = *otherTargetStructResult;
+      if (!otherTargetStructDecl) {
+        // Skip non-struct/extension declarations (where getTargetStructDecl
+        // returns null). This can happen when lookup returns mixed declaration
+        // types (e.g., a struct and a function with the same name).
+        continue;
+      }
+      // We've now established that the otherTargetStructDecl is a struct.
+      // Let's check if it's referring to the same struct they intended.
+      // This shouldn't happen. If it could, tests ALCFRRS and/or ALCFTSVOE
+      // would trigger this.
+      // TODO(MOCO-522): Add another test in the cross-import extensions PR
+      // to see if a renaming import might trigger this
+      assert(intendedTargetStructDecl == otherTargetStructDecl &&
+             "Ambiguous lookup for two structs/extensions");
+    }
+
+    decls = {intendedTargetStructDecl};
+    // continue on
+  }
 
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate =
