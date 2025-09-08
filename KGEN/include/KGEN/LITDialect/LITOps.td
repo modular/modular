@@ -1294,6 +1294,32 @@ def LIT_LoadConsumeOp : LITOp<"load.consume", [
 }
 
 //===----------------------------------------------------------------------===//
+// MaterializeIntoOp
+//===----------------------------------------------------------------------===//
+
+def LIT_MaterializeIntoOp : LITOp<"materialize_into", [ReferenceElementType<"dest", "value">]> {
+  let summary = "Materialize a parameter and store the value into a reference";
+  let description = [{
+    This operation materializes the value of a parameter expression and store
+    the value into a reference. Unlike `kgen.param.materialize`, which produces
+    an SSA value for the materialized value, this operation stores the value to
+    memory so that it allows non-register-passable values to be explicitly
+    materialized by users.
+
+    The operation is lowered to `kgen.param.materialize` + `lit.ref.store`.
+
+    Example:
+
+    ```mlir
+    lit.materialize_into %ref0 [v] : !lit.ref<scalar<f32>, mut origin>
+    ```
+  }];
+
+  let arguments = (ins TypedAttrInterface:$value, LIT_RefType:$dest);
+  let assemblyFormat = "$dest `[` $value `]` attr-dict `:` type($dest)";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipUseOp
 //===----------------------------------------------------------------------===//
 

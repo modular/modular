@@ -449,9 +449,16 @@ OverallOpValueEffect LIT::getOperationEffects(
   };
 
   // RefStore consumes its operand and transfers it into the result.
-  if (isa<LIT::RefStoreOp>(op)) {
+  if (isa<RefStoreOp>(op)) {
     setOperandEffects(
         {OperandEffect::regConsume, OperandEffect::memStoreOwned});
+    return {};
+  }
+
+  // MaterializeInto overwrites the memory using the (materialized) parameter
+  // value.
+  if (isa<MaterializeIntoOp>(op)) {
+    setOperandEffects({OperandEffect::memStoreOwned});
     return {};
   }
 
