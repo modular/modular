@@ -6467,45 +6467,13 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         # Now GPUs can directly access each other's memory
         ```
         """
-        # Get number of available devices
-        var num_devices = DeviceContext.number_of_devices()
-        if num_devices < 2:
-            return  # Nothing to do
-
-        # Create device contexts for all devices
-        var devices = List[DeviceContext](capacity=num_devices)
-        for i in range(num_devices):
-            devices.append(DeviceContext(device_id=i))
-
-        # Enable peer access between every pair of devices
-        for i in range(num_devices):
-            for j in range(num_devices):
-                if i == j:
-                    continue
-
-                # Check if peer access is possible.
-                if not devices[i].can_access(devices[j]):
-                    raise Error(
-                        "Cannot enable peer access from GPU "
-                        + String(i)
-                        + " to GPU "
-                        + String(j)
-                        + ": hardware does not support P2P access"
-                    )
-
-                try:
-                    devices[i].enable_peer_access(devices[j])
-                except e:
-                    # Ignore "already enabled" errors.
-                    if "PEER_ACCESS_ALREADY_ENABLED" not in String(e):
-                        raise Error(
-                            "Failed to enable peer access from GPU "
-                            + String(i)
-                            + " to GPU "
-                            + String(j)
-                            + ": "
-                            + String(e)
-                        )
+        # const char *AsyncRT_DeviceContext_enableAllPeerAccess()
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enableAllPeerAccess",
+                _CharPtr,
+            ]()
+        )
 
 
 struct DeviceMulticastBuffer[dtype: DType]:
