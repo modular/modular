@@ -93,6 +93,12 @@
 
 using namespace llvm;
 using namespace M::KGEN;
+
+/// Special encoding used for unsupported attributes.
+namespace M::KGEN {
+static constexpr uint64_t UNSUPPORTED_ATTR_KIND_ENCODING = 0;
+} // namespace M::KGEN
+
 namespace {
 
 /// These are manifest constants used by the bitcode writer. They do not need to
@@ -689,7 +695,7 @@ uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
   default:
     // Return 0 for unknown attributes (newer LLVM attributes not supported
     // in 5.0)
-    return 0;
+    return M::KGEN::UNSUPPORTED_ATTR_KIND_ENCODING;
   case Attribute::Alignment:
     return bitc::ATTR_KIND_ALIGNMENT;
   case Attribute::AllocAlign:
@@ -949,18 +955,18 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
     Record.push_back(AttrListIndex);
 
     for (Attribute Attr : AS) {
-      if (Attr.isEnumAttribute()) {
+      if (Attr.isEnumAttribute() || Attr.isIntAttribute()) {
         uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
-        Record.push_back(0);
-        Record.push_back(AttrKindEncoding);
-      } else if (Attr.isIntAttribute()) {
-        Attribute::AttrKind Kind = Attr.getKindAsEnum();
-
-        uint64_t AttrKindEncoding = getAttrKindEncoding(Kind);
-
-        Record.push_back(1);
-        Record.push_back(AttrKindEncoding);
-        Record.push_back(Attr.getValueAsInt());
+        if (AttrKindEncoding != M::KGEN::UNSUPPORTED_ATTR_KIND_ENCODING) {
+          if (Attr.isEnumAttribute()) {
+            Record.push_back(0);
+            Record.push_back(AttrKindEncoding);
+          } else if (Attr.isIntAttribute()) {
+            Record.push_back(1);
+            Record.push_back(AttrKindEncoding);
+            Record.push_back(Attr.getValueAsInt());
+          }
+        }
       } else if (Attr.isStringAttribute()) {
         StringRef Kind = Attr.getKindAsString();
         StringRef Val = Attr.getValueAsString();
