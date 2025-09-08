@@ -270,3 +270,94 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     assert result[1].request_id == test_data[1].request_id
     assert np.array_equal(result[1].tokens, test_data[1].tokens)
     assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
+
+
+def test_zmq_push_socket_timeout_fails_without_peer() -> None:
+    """Test that ZmqPushSocket timeout fails when no peer socket is connected."""
+
+    # Create push socket with short timeout but no peer socket
+    # The timeout should occur during __init__ due to lazy=False
+    with pytest.raises(
+        TimeoutError, match="PUSH socket peer connection timeout"
+    ):
+        ZmqPushSocket[str](
+            peer_timeout=0.5,  # 500ms timeout
+            lazy=False,  # Initialize immediately to trigger timeout
+        )
+
+
+def test_zmq_pull_socket_timeout_fails_without_peer() -> None:
+    """Test that ZmqPullSocket timeout fails when no peer socket is connected."""
+
+    # Create pull socket with short timeout but no peer socket
+    with pytest.raises(
+        TimeoutError, match="PULL socket peer connection timeout"
+    ):
+        ZmqPullSocket[str](
+            peer_timeout=0.5,  # 500ms timeout
+            lazy=False,  # Initialize immediately to trigger timeout
+        )
+
+
+def test_zmq_push_socket_timeout_passes_with_peer() -> None:
+    """Test that ZmqPushSocket timeout passes when peer socket is connected."""
+    test_address = generate_zmq_ipc_path()
+
+    # Create pull socket first (this will connect to the push socket's bind)
+    pull_socket = ZmqPullSocket[str](
+        endpoint=test_address,
+        lazy=False,  # Initialize immediately
+    )
+
+    # Give the pull socket a moment to fully initialize
+    time.sleep(0.1)
+
+    # Now create push socket with timeout - should succeed since pull socket is connected
+    push_socket = ZmqPushSocket[str](
+        endpoint=test_address,
+        peer_timeout=2.0,  # 2 second timeout - should be plenty
+        lazy=False,  # Initialize immediately
+    )
+
+    # If we get here without exception, the timeout passed successfully
+    # Verify the sockets can actually communicate
+    push_socket.put_nowait("test_message")
+    time.sleep(0.1)
+    result = pull_socket.get_nowait()
+    assert result == "test_message"
+
+    # Clean up
+    push_socket.close()
+    pull_socket.close()
+
+
+def test_zmq_pull_socket_timeout_passes_with_peer() -> None:
+    """Test that ZmqPullSocket timeout passes when peer socket is connected."""
+    test_address = generate_zmq_ipc_path()
+
+    # Create push socket first (this binds and waits for connections)
+    push_socket = ZmqPushSocket[str](
+        endpoint=test_address,
+        lazy=False,  # Initialize immediately
+    )
+
+    # Give the push socket a moment to fully initialize and bind
+    time.sleep(0.1)
+
+    # Now create pull socket with timeout - should succeed since push socket is bound
+    pull_socket = ZmqPullSocket[str](
+        endpoint=test_address,
+        peer_timeout=2.0,  # 2 second timeout - should be plenty
+        lazy=False,  # Initialize immediately
+    )
+
+    # If we get here without exception, the timeout passed successfully
+    # Verify the sockets can actually communicate
+    push_socket.put_nowait("test_message")
+    time.sleep(0.1)
+    result = pull_socket.get_nowait()
+    assert result == "test_message"
+
+    # Clean up
+    push_socket.close()
+    pull_socket.close()
