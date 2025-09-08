@@ -1035,13 +1035,12 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   // NOTE: we have to first synthesize the bit to `i1` (instead of `Bool`) to
   // avoid signature resolving `Bool::__init__`s, the implicit conversion will
   // be taken care of when body resolve conformanceOp.
-  auto emitI1Attr = [this, &emitter](bool v) {
-    SyntheticNode synthNode(structDecl.getLoc());
-    return emitter
-        .emitI1({BoolAttr::get(getContext(), v), &synthNode}, EC_AliasValue)
-        .getIfPValue();
+  auto emitI1Attr = [&](bool v) -> TypedAttr {
+    return BoolAttr::get(getContext(), v);
   };
 
+  // This emits an "and" as a PValue expression, maintaining the type of lhs/rhs
+  // (which are Bool) instead of turning them into i1.
   auto emitAnd = [this, &emitter](PValue lhs, PValue rhs) {
     SyntheticNode synthNode(structDecl.getLoc());
     PValue lhsI1Val =
@@ -1055,15 +1054,13 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       /*searchParentScope=*/false);
   if (spDecls.isErroneous())
     return nullptr;
+  ArrayRef<ASTDecl *> decls = spDecls.getIfSuccess();
+  assert(decls.size() == 1 && "special fn decls cannot be overloaded");
 
-  assert(spDecls.getIfSuccess().size() == 1 &&
-         "special fn decls cannot be overloaded");
-  TypedAttr falseAttr = emitI1Attr(false);
   // If has a user provided implementation, consider them as non-trivial.
-  if (!spDecls.getIfSuccess().front()->getCursor().isInvalid())
-    return falseAttr;
+  if (!decls.front()->getCursor().isInvalid())
+    return emitI1Attr(false);
 
-  TypedAttr ret = emitI1Attr(true);
   // We have a synthesize __del__/__moveinit__/__copyinit__ function, in this
   // case all the fields have to conform to AnyType/Movable/Copyable or it will
   // fail to synthesize the special function during `populateMoveCopy`.
@@ -1075,10 +1072,13 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     return "Movable";
   }();
 
-  ASTDecl *traitDecl =
-      shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait(
+      traitName, structDecl.getParentDecl(), structDecl.getLoc());
   auto witnessName =
       StringAttr::get(getContext(), Twine(spFnInfo.name) + "is_trivial");
+  auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
+
+  TypedAttr ret = emitI1Attr(true);
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
@@ -1093,9 +1093,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       continue; // skip simple mlir type
 
     TypedAttr fieldIsTrivial = shared.getEvaluationContext().getGetWitnessAttr(
-        fieldType,
-        StringAttr::get(getContext(),
-                        getFlattenedSymbolName(traitDecl->getSymbolRef())),
+        fieldType, StringAttr::get(getContext(), witnessSymbolName),
         witnessName, ret.getType());
 
     ret = emitAnd(ret, fieldIsTrivial);
