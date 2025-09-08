@@ -685,6 +685,13 @@ static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
   return b.create<POP::LoadOp>(op.getLoc(), adaptor.getRef());
 }
 
+static Value lowerOp(MaterializeIntoOp op, MaterializeIntoOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  Value dynVal = b.create<ParamMaterializeOp>(op->getLoc(), adaptor.getValue());
+  b.replaceOpWithNewOp<POP::StoreOp>(op, dynVal, adaptor.getDest());
+  return {};
+}
+
 static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   b.replaceOpWithNewOp<POP::StoreOp>(op, adaptor.getValue(), adaptor.getDest());
@@ -769,7 +776,8 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
     castedOperands.push_back(getCastedToType(op->getLoc(), value, *newTypeOr));
   }
 
-  typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary());
+  typename OpT::Adaptor adaptor(castedOperands, op->getAttrDictionary(),
+                                op.getProperties());
   if (op->getNumResults() == 1) {
     auto resultType = op->getResult(0).getType();
     Value result = lowerOp(op, adaptor, *this);
@@ -805,9 +813,10 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
   // Lower operations first.
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<StructInsertOp, LIT::StructExtractOp, RefImmutOp, RefToPointerOp,
-              RefFromPointerOp, RefFromPointerREPLOp, RefStructGEROp, RefLoadOp,
-              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
+        .Case<MaterializeIntoOp, StructInsertOp, StructExtractOp, RefImmutOp,
+              RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
+              RefStructGEROp, RefLoadOp, RefStoreOp, RebindOp, RefPackCreateOp,
+              RefPackExtractOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
