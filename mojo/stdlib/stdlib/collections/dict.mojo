@@ -108,6 +108,55 @@ struct _DictEntryIter[
 
 
 @fieldwise_init
+struct _TakeDictEntryIter[
+    K: KeyElement, V: Copyable & Movable, H: Hasher, origin: Origin[True]
+](Iterator, Movable):
+    """Iterator over mutable DictEntry references that moves entries out of the dictionary.
+
+    Parameters:
+        K: The key type of the elements in the dictionary.
+        V: The value type of the elements in the dictionary.
+        H: The type of the hasher in the dictionary.
+        origin: The mutable origin of the Dict
+    """
+
+    alias Element = DictEntry[K, V, H]
+
+    var index: Int
+    var src: Pointer[Dict[K, V, H], origin]
+
+    fn __init__(out self, index: Int, ref [origin]dict: Dict[K, V, H]):
+        self.index = index
+        self.src = Pointer(to=dict)
+
+    @always_inline
+    fn __iter__(var self) -> Self:
+        return self^
+
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return len(self.src[]) > 0
+
+    @always_inline
+    fn __next__(
+        mut self,
+    ) -> Self.Element:
+        while True:
+            ref opt_entry_ref = self.src[]._entries[self.index]
+
+            self.index += 1
+
+            if opt_entry_ref:
+                ref key = opt_entry_ref.value().key
+                var hash = hash[HasherType=H](key)
+                var found, slot, index = self.src[]._find_index(hash, key)
+
+                if found:
+                    # TODO: Should we call `self.src[]._compact()` if len(self.src[]) is 0?
+                    return self.src[]._unsafe_take_entry(slot, index)
+
+
+@fieldwise_init
 struct _DictKeyIter[
     mut: Bool, //,
     K: KeyElement,
@@ -963,12 +1012,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         var hash = hash[HasherType=H](key)
         var found, slot, index = self._find_index(hash, key)
         if found:
-            self._set_index(slot, Self.REMOVED)
-            ref entry = self._entries[index]
-            debug_assert(entry.__bool__(), "entry in index must be full")
-            var entry_value = entry.unsafe_take()
-            entry = None
-            self._len -= 1
+            var entry_value = self._unsafe_take_entry(slot, index)
             return entry_value^.reap_value()
         raise Error("KeyError")
 
@@ -992,6 +1036,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         var val = Optional[V](None)
 
         for item in reversed(self.items()):
+            # TODO: Is there a way to do via move instead of copy?
             key = Optional(item.key.copy())
             val = Optional(item.value.copy())
             break
@@ -1041,6 +1086,30 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         """
         return _DictEntryIter(0, 0, self)
 
+    fn take_items(mut self) -> _TakeDictEntryIter[K, V, H, __origin_of(self)]:
+        """Iterate over the dict's entries and move them out of the dictionary
+        effectively draining the dictionary.
+
+        Returns:
+            An iterator of mutable references to the dictionary entries that
+            moves them out of the dictionary.
+
+        Examples:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+
+        for entry in my_dict.take_items():
+            print(entry.key, entry.value)
+
+        print(len(my_dict))
+        # prints 0
+        ```
+        """
+        return _TakeDictEntryIter(0, self)
+
     fn update(mut self, other: Self, /):
         """Update the dictionary with the key/value pairs from other,
         overwriting existing keys.
@@ -1084,6 +1153,17 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             self._len += 1
             self._n_entries += 1
         return entry.unsafe_value().value
+
+    fn _unsafe_take_entry(
+        mut self, slot: UInt64, index: Int
+    ) -> DictEntry[K, V, H]:
+        self._set_index(slot, Self.REMOVED)
+        ref entry = self._entries[index]
+        debug_assert(entry.__bool__(), "entry in index must be full")
+        var entry_value = entry.unsafe_take()
+        entry = None
+        self._len -= 1
+        return entry_value^
 
     @staticmethod
     @always_inline

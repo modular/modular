@@ -249,6 +249,23 @@ def test_iter_items():
     assert_equal(sum, 3)
 
 
+def test_iter_take_items():
+    var dict: Dict[String, Int] = {}
+    dict["a"] = 1
+    dict["b"] = 2
+
+    var keys = String()
+    var sum = 0
+    for entry in dict.take_items():
+        keys += entry.key
+        sum += entry.value
+
+    assert_equal(keys, "ab")
+    assert_equal(sum, 3)
+    assert_equal(len(dict), 0)
+    assert_false(dict.take_items().__has_next__())
+
+
 def test_dict_contains():
     var dict: Dict[String, Int] = {}
     dict["abc"] = 1
