@@ -27,6 +27,6 @@ def test_cast__tensor(
     """Test that cast correctly converts tensor values between different data types."""
     expected_type = base_type.cast(target_dtype)
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.cast(graph.inputs[0], target_dtype)  # type: ignore
+        out = ops.cast(graph.inputs[0].tensor, target_dtype)
         assert out.type == expected_type
         graph.output(out)

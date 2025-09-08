@@ -240,7 +240,7 @@ def test_call_with_prefix() -> None:
                 device=DeviceRef.CPU(),
                 _placeholder=True,
             )
-            subgraph.output(subgraph.inputs[0] + w)  # type: ignore
+            subgraph.output(subgraph.inputs[0].tensor + w)
         assert re.search(
             r"mo.constant.external.*isPlaceholder = true.*!mo.tensor<\[10\], f32",
             str(subgraph),

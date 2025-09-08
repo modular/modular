@@ -74,10 +74,10 @@ def test_fence_variadic_returns_list_ordered() -> None:
     with Graph(
         "fence_tuple_ordering", input_types=(input_ty, input_ty)
     ) as graph:
-        x, y = graph.inputs
+        x, y = graph.inputs[0].tensor, graph.inputs[1].tensor
         # Create distinct values to track ordering.
-        x2 = ops.mul(x, 2.0)  # x * 2  # type: ignore
-        y3 = ops.mul(y, 3.0)  # y * 3  # type: ignore
+        x2 = ops.mul(x, 2.0)  # x * 2
+        y3 = ops.mul(y, 3.0)  # y * 3
 
         # Fence multiple values.
         result = ops.fence(x2, y3)

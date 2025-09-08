@@ -38,20 +38,22 @@ def test_rebind() -> None:
             ),
         ],
     ) as graph:
-        rebind_to_existing_names = graph.inputs[0].rebind(("batch", "channels"))  # type: ignore
+        rebind_to_existing_names = graph.inputs[0].tensor.rebind(
+            ("batch", "channels")
+        )
         assert rebind_to_existing_names.shape == ["batch", "channels"]
 
-        rebind_to_const = graph.inputs[1].rebind((3, 10))  # type: ignore
+        rebind_to_const = graph.inputs[1].tensor.rebind((3, 10))
         assert rebind_to_const.shape == [3, 10]
 
-        rebind_to_new_names = graph.inputs[0].rebind(  # type: ignore
+        rebind_to_new_names = graph.inputs[0].tensor.rebind(
             ("notbatch", "notchannels")
         )
         assert rebind_to_new_names.shape == ["notbatch", "notchannels"]
 
         rebind_expression = (
             graph.inputs[2]
-            .reshape(("batch", -1))  # type: ignore
+            .tensor.reshape(("batch", -1))
             .rebind(("batch", "expression"))
         )
         assert rebind_expression.shape == ["batch", "expression"]
@@ -69,4 +71,4 @@ def test_rebind__incorrect_rank(input_type: TensorType, shape: Shape) -> None:
     assume(input_type.rank != shape.rank)
     with Graph("rebind", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].rebind(shape)  # type: ignore
+            graph.inputs[0].tensor.rebind(shape)

@@ -65,7 +65,7 @@ def test_elementwise_add_graph() -> None:
             )
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + 1)  # type: ignore
+        graph.output(graph.inputs[0].tensor + 1)
 
 
 def test_elementwise_add_graph_with_device_prop() -> None:
@@ -85,7 +85,7 @@ def test_elementwise_add_graph_with_device_prop() -> None:
             ),
         ],
     ) as graph:
-        graph.output(graph.inputs[0] + graph.inputs[1])  # type: ignore
+        graph.output(graph.inputs[0].tensor + graph.inputs[1].tensor)
         # Ensure input tensor has cuda
         for input in graph.inputs:
             assert "gpu" in str(input)
@@ -107,7 +107,7 @@ def test_transpose_graph_with_device_prop() -> None:
             )
         ],
     ) as graph:
-        graph.output(ops.transpose(graph.inputs[0], -1, -2))  # type: ignore
+        graph.output(ops.transpose(graph.inputs[0].tensor, -1, -2))
         for input in graph.inputs:
             assert "gpu" in str(input)
         assert " -> !mo.tensor<[channels, batch], f32, gpu:0>" in str(
@@ -199,7 +199,7 @@ def test_parfor() -> None:
 
         with Graph._async_region() as parallel:
             for buffer in parallel.each(buffers):
-                ops.buffer_store(buffer, tensor)  # type: ignore
+                ops.buffer_store(buffer.buffer, tensor.tensor)
 
         graph.output()
 

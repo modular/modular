@@ -33,7 +33,7 @@ def test_promote_weak_dtypes__python_float(
         ]:
             # float to float will succeed.
             v1, v2 = dtype_promotion._promote_weak_dtypes(
-                graph.inputs[0],  # type: ignore
+                graph.inputs[0].tensor,
                 scalar,
             )
 
@@ -43,7 +43,7 @@ def test_promote_weak_dtypes__python_float(
             # float to int will fail.
             with pytest.raises(ValueError, match="Unsafe cast"):
                 v1, v2 = dtype_promotion._promote_weak_dtypes(
-                    graph.inputs[0],  # type: ignore
+                    graph.inputs[0].tensor,
                     scalar,
                 )
 
@@ -55,7 +55,7 @@ def test_promote_weak_dtypes__python_int(
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         try:
             v1, v2 = dtype_promotion._promote_weak_dtypes(
-                graph.inputs[0],  # type: ignore
+                graph.inputs[0].tensor,
                 scalar,
             )
 
@@ -85,7 +85,7 @@ def test_promote_weak_dtypes__np_float(
         ]:
             # float to float will succeed.
             v1, v2 = dtype_promotion._promote_weak_dtypes(
-                graph.inputs[0],  # type: ignore
+                graph.inputs[0].tensor,
                 np_const,
             )
 
@@ -95,7 +95,7 @@ def test_promote_weak_dtypes__np_float(
             # float to int will fail.
             with pytest.raises(ValueError, match="Unsafe cast"):
                 v1, v2 = dtype_promotion._promote_weak_dtypes(
-                    graph.inputs[0],  # type: ignore
+                    graph.inputs[0].tensor,
                     np_const,
                 )
 
@@ -127,7 +127,7 @@ def test_promote_weak_dtypes__np_int(
         np_const = np.array(value).astype(np_dtype.to_numpy())
         try:
             v1, v2 = dtype_promotion._promote_weak_dtypes(
-                graph.inputs[0],  # type: ignore
+                graph.inputs[0].tensor,
                 np_const,
             )
 

@@ -54,7 +54,7 @@ def test_flatten_success(
         end -= rank
 
     with Graph("flatten", input_types=[input_type]) as graph:
-        out = graph.inputs[0].flatten(start, end)  # type: ignore
+        out = graph.inputs[0].tensor.flatten(start, end)
 
         assert (
             out.shape[:normalized_start] == input_type.shape[:normalized_start]
@@ -85,7 +85,7 @@ def test_flatten_failure_indexing(
 
     with Graph("flatten", input_types=[input_type]) as graph:
         with pytest.raises(IndexError):
-            out = graph.inputs[0].flatten(start, end)  # type: ignore
+            out = graph.inputs[0].tensor.flatten(start, end)
 
 
 @settings(suppress_health_check=[HealthCheck.filter_too_much])
@@ -117,4 +117,4 @@ def test_flatten_failure_start_greater_end(
 
     with Graph("flatten", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            out = graph.inputs[0].flatten(start, end)  # type: ignore
+            out = graph.inputs[0].tensor.flatten(start, end)

@@ -126,13 +126,13 @@ def test_range_tensor_inputs() -> None:
             TensorType(shape=(), dtype=DType.int32, device=DeviceRef.CPU()),
         ),
     ) as graph:
-        start, stop, step = graph.inputs
+        start, stop, step = (v.tensor for v in graph.inputs)
         out = ops.range(
-            start,  # type: ignore
-            stop,  # type: ignore
-            step,  # type: ignore
+            start,
+            stop,
+            step,
             out_dim=10,
-            dtype=start.dtype,  # type: ignore
+            dtype=start.dtype,
             device=DeviceRef.CPU(),
         )
         graph.output(out)
@@ -276,9 +276,9 @@ def test_range_missing_out_dim_with_dynamic_inputs() -> None:
                 TensorType(shape=(), dtype=DType.int32, device=DeviceRef.CPU()),
             ),
         ) as graph:
-            start_val = graph.inputs[0]  # Dynamic input
+            start_val = graph.inputs[0].tensor  # Dynamic input
             out = ops.range(
-                start_val,  # type: ignore
+                start_val,
                 5,
                 dtype=DType.int32,
                 device=DeviceRef.CPU(),

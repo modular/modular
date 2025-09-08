@@ -52,7 +52,7 @@ def test_as_interleaved_complex__valid(
     *_, last = base_type.shape
 
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.as_interleaved_complex(graph.inputs[0])  # type: ignore
+        out = ops.as_interleaved_complex(graph.inputs[0].tensor)
         # Output shape should be same except last dim is halved and new dim of 2 added
         expected_shape = base_type.shape[:-1] + [int(last) // 2, 2]
         assert out.type.shape == expected_shape
@@ -68,7 +68,7 @@ def test_as_interleaved_complex__error__odd_last_dim(
 
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must be divisible by 2"):
-            ops.as_interleaved_complex(graph.inputs[0])  # type: ignore
+            ops.as_interleaved_complex(graph.inputs[0].tensor)
 
 
 @given(base_type=tensor_types(shapes=dynamic_last_dim_shapes))
@@ -80,4 +80,4 @@ def test_as_interleaved_complex__error__dynamic_last_dim(
 
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(TypeError, match="must be static"):
-            ops.as_interleaved_complex(graph.inputs[0])  # type: ignore
+            ops.as_interleaved_complex(graph.inputs[0].tensor)

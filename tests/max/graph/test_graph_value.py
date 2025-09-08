@@ -25,7 +25,7 @@ from max.graph.value import TensorValue, _is_strong_tensor_value_like
 def test_tensor_value__T(input_type: TensorType) -> None:
     assume(input_type.rank >= 2)
     with Graph("transpose", input_types=[input_type]) as graph:
-        out = graph.inputs[0].T  # type: ignore
+        out = graph.inputs[0].tensor.T
         expected = Shape(input_type.shape)
         expected[-1], expected[-2] = expected[-2], expected[-1]
         assert out.shape == expected
@@ -44,22 +44,22 @@ def test_buffer__not_tensorvalue(input_type: BufferType) -> None:
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
 def test_tensor_value__operator_logical_and(tensor_type: TensorType) -> None:
     with Graph("and", input_types=[tensor_type]) as graph:
-        (x,) = graph.inputs
-        assert (x & x).type == ops.logical_and(x, x).type  # type: ignore
+        x = graph.inputs[0].tensor
+        assert (x & x).type == ops.logical_and(x, x).type
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
 def test_tensor_value__operator_logical_or(tensor_type: TensorType) -> None:
     with Graph("or", input_types=[tensor_type]) as graph:
-        (x,) = graph.inputs
-        assert (x | x).type == ops.logical_or(x, x).type  # type: ignore
+        x = graph.inputs[0].tensor
+        assert (x | x).type == ops.logical_or(x, x).type
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
 def test_tensor_value__operator_logical_xor(tensor_type: TensorType) -> None:
     with Graph("xor", input_types=[tensor_type]) as graph:
-        (x,) = graph.inputs
-        assert (x ^ x).type == ops.logical_xor(x, x).type  # type: ignore
+        x = graph.inputs[0].tensor
+        assert (x ^ x).type == ops.logical_xor(x, x).type
 
 
 def test_special_methods_error() -> None:

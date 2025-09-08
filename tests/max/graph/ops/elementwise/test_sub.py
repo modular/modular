@@ -22,14 +22,14 @@ from max.graph.ops import sub
 @given(tensor_type=...)
 def test_sub__same_type(tensor_type: TensorType) -> None:
     with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
-        op = sub(graph.inputs[0], graph.inputs[1])
+        op = sub(graph.inputs[0].tensor, graph.inputs[1].tensor)
         assert op.type == tensor_type
 
 
 @given(tensor_type=...)
 def test_sub__same_type__operator(tensor_type: TensorType) -> None:
     with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
-        op = graph.inputs[0] - graph.inputs[1]  # type: ignore
+        op = graph.inputs[0].tensor - graph.inputs[1].tensor
         assert op.type == tensor_type
 
 
@@ -41,11 +41,11 @@ def test_sub__promoted_dtype__operator(
     t1 = TensorType(d1, shape, device=DeviceRef.CPU())
     t2 = TensorType(d2, shape, device=DeviceRef.CPU())
     with Graph("sub", input_types=[t1, t2]) as graph:
-        i0, i1 = graph.inputs
+        i0, i1 = graph.inputs[0].tensor, graph.inputs[1].tensor
         try:
-            assert (i0 - i1).dtype in (d1, d2)  # type: ignore
-            assert (i1 - i0).dtype in (d1, d2)  # type: ignore
-            assert (i0 - i1).type == (i1 - i0).type  # type: ignore
+            assert (i0 - i1).dtype in (d1, d2)
+            assert (i1 - i0).dtype in (d1, d2)
+            assert (i0 - i1).type == (i1 - i0).type
             event("types promote")
         except ValueError as e:
             assert "Unsafe cast" in str(e)
@@ -57,13 +57,13 @@ def test_sub__broadcast__operator(types: list[TensorType]) -> None:
     t1, t2 = types
     broadcast_shape = broadcast_shapes(t1.shape, t2.shape)
     with Graph("sub", input_types=[t1, t2]) as graph:
-        i0, i1 = graph.inputs
-        assert (i0 - i1).shape == broadcast_shape  # type: ignore
-        assert (i1 - i0).shape == broadcast_shape  # type: ignore
+        i0, i1 = graph.inputs[0].tensor, graph.inputs[1].tensor
+        assert (i0 - i1).shape == broadcast_shape
+        assert (i1 - i0).shape == broadcast_shape
 
 
 @given(tensor_type=...)
 def test_sub__python_int__operator(tensor_type: TensorType) -> None:
     with Graph("sub", input_types=[tensor_type, tensor_type]) as graph:
-        op = graph.inputs[0] - 1  # type: ignore
-        assert op.type == tensor_type  # type: ignore
+        op = graph.inputs[0].tensor - 1
+        assert op.type == tensor_type

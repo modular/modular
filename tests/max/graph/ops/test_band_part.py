@@ -25,7 +25,7 @@ def test_band_part__trivial(
 ) -> None:
     """Test band_part with no lower or upper bounds, corresponding to the full matrix."""
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.band_part(graph.inputs[0])  # type: ignore
+        out = ops.band_part(graph.inputs[0].tensor)
         assert out.type == base_type
         graph.output(out)
 
@@ -38,7 +38,7 @@ def test_band_part__main_diagonal(
     *_, m, n = base_type.shape
     assume(m != 0 and n != 0)
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.band_part(graph.inputs[0], num_lower=0, num_upper=0)  # type: ignore
+        out = ops.band_part(graph.inputs[0].tensor, num_lower=0, num_upper=0)
         assert out.type == base_type
         graph.output(out)
 
@@ -52,7 +52,7 @@ def test_band_part__lower_triangle(
     *_, m, n = base_type.shape
     assume(n != 0)
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.band_part(graph.inputs[0], num_upper=0)  # type: ignore
+        out = ops.band_part(graph.inputs[0].tensor, num_upper=0)
         assert out.type == base_type
         graph.output(out)
 
@@ -66,7 +66,7 @@ def test_band_part__upper_triangle(
     *_, m, n = base_type.shape
     assume(m != 0)
     with graph_builder(input_types=[base_type]) as graph:
-        out = ops.band_part(graph.inputs[0], num_lower=0)  # type: ignore
+        out = ops.band_part(graph.inputs[0].tensor, num_lower=0)
         assert out.type == base_type
         graph.output(out)
 
@@ -111,7 +111,7 @@ def test_band_part__general(
 
     with graph_builder(input_types=[base_type]) as graph:
         out = ops.band_part(
-            graph.inputs[0],  # type: ignore
+            graph.inputs[0].tensor,
             num_lower=num_lower,
             num_upper=num_upper,
             exclude=exclude,
@@ -128,7 +128,7 @@ def test_band_part__error__low_rank(
     """Test that band_part raises an error for tensors with rank < 2."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must have at least 2 dimensions"):
-            ops.band_part(graph.inputs[0])  # type: ignore
+            ops.band_part(graph.inputs[0].tensor)
 
 
 @given(
@@ -144,7 +144,7 @@ def test_band_part__error__negative_num_lower(
     """Test that band_part raises an error for num_lower < -1."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must be non-negative"):
-            ops.band_part(graph.inputs[0], num_lower=num_lower)  # type: ignore
+            ops.band_part(graph.inputs[0].tensor, num_lower=num_lower)
 
 
 @given(
@@ -160,7 +160,7 @@ def test_band_part__error__negative_num_upper(
     """Test that band_part raises an error for num_upper < -1."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must be non-negative"):
-            ops.band_part(graph.inputs[0], num_upper=num_upper)  # type: ignore
+            ops.band_part(graph.inputs[0].tensor, num_upper=num_upper)
 
 
 shared_static_dim = st.shared(static_dims())
@@ -186,7 +186,7 @@ def test_band_part__error__out_of_bounds_num_lower(
     )
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="is out of bounds"):
-            ops.band_part(graph.inputs[0], num_lower=num_lower)  # type: ignore
+            ops.band_part(graph.inputs[0].tensor, num_lower=num_lower)
 
 
 @given(
@@ -209,4 +209,4 @@ def test_band_part__error__out_of_bounds_num_upper(
     )
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="is out of bounds"):
-            ops.band_part(graph.inputs[0], num_upper=num_upper)  # type: ignore
+            ops.band_part(graph.inputs[0].tensor, num_upper=num_upper)

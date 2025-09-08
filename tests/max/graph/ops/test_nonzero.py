@@ -24,7 +24,7 @@ shared_dtypes = st.shared(st.from_type(DType))
 @given(input_type=...)
 def test_nonzero(input_type: TensorType) -> None:
     with Graph("nonzero ", input_types=[input_type]) as graph:
-        out = ops.nonzero(graph.inputs[0], "nonzero")  # type: ignore
+        out = ops.nonzero(graph.inputs[0].tensor, "nonzero")
         assert out.dtype == DType.int64
         assert out.shape == ["nonzero", input_type.rank]
         graph.output(out)
@@ -36,4 +36,4 @@ def test_nonzero_scalar_error(dtype: DType) -> None:
     scalar_type = TensorType(dtype, [], device=DeviceRef.CPU())
     with Graph("nonzero_scalar", input_types=[scalar_type]) as graph:
         with pytest.raises(ValueError, match="Scalar inputs not supported"):
-            ops.nonzero(graph.inputs[0], "nonzero")  # type: ignore
+            ops.nonzero(graph.inputs[0].tensor, "nonzero")

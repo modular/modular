@@ -35,8 +35,8 @@ def test_where(input_types: list[TensorType]) -> None:
     input_types[0].dtype = DType.bool
 
     with Graph("where", input_types=input_types) as graph:
-        cond, x, y = graph.inputs
-        out = ops.where(cond, x, y)  # type: ignore
+        cond, x, y = (v.tensor for v in graph.inputs)
+        out = ops.where(cond, x, y)
 
         expected = reduce(broadcast_shapes, (t.shape for t in input_types))  # type: ignore
         assert out.shape == expected
@@ -88,9 +88,9 @@ def test_where_with_non_broadcastable_shapes(
 ) -> None:
     assume(not_broadcastable(condition.shape, x.shape, y.shape))
     with Graph("where", input_types=[condition, x, y]) as graph:
-        cond, x, y = graph.inputs
+        cond, x, y = (v.tensor for v in graph.inputs)
         with pytest.raises(ValueError):
-            ops.where(cond, x, y)  # type: ignore
+            ops.where(cond, x, y)
 
 
 def test_where_error_message_with_non_bool_condition() -> None:
@@ -559,19 +559,19 @@ def test_where_with_python_scalars(
             int32_tensor,
             float16_tensor,
             float32_tensor3,
-        ) = graph.inputs
+        ) = (v.tensor for v in graph.inputs)
 
         # Test successful promotions
         # Python int -> float32 (safe case)
-        out = ops.where(cond, safe_int, float32_tensor1)  # type: ignore
+        out = ops.where(cond, safe_int, float32_tensor1)
         assert out.dtype == DType.float32
 
         # Python float -> float32 (safe case)
-        out = ops.where(cond, float32_tensor2, safe_float)  # type: ignore
+        out = ops.where(cond, float32_tensor2, safe_float)
         assert out.dtype == DType.float32
 
         # Python int -> int32 (safe case)
-        out = ops.where(cond, safe_int, int32_tensor)  # type: ignore
+        out = ops.where(cond, safe_int, int32_tensor)
         assert out.dtype == DType.int32
 
         # Test failed promotions
@@ -579,13 +579,13 @@ def test_where_with_python_scalars(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.where(cond, unsafe_int_float16, float16_tensor)  # type: ignore
+            ops.where(cond, unsafe_int_float16, float16_tensor)
 
         # Python int too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.where(cond, unsafe_int_float32, float32_tensor3)  # type: ignore
+            ops.where(cond, unsafe_int_float32, float32_tensor3)
 
 
 @given(
@@ -644,19 +644,19 @@ def test_where_with_numpy_arrays(
             int64_tensor,
             float32_tensor3,
             float32_tensor4,
-        ) = graph.inputs
+        ) = (v.tensor for v in graph.inputs)
 
         # Test successful promotions
         # NumPy int32 -> float32
-        out = ops.where(cond, safe_int32, float32_tensor1)  # type: ignore
+        out = ops.where(cond, safe_int32, float32_tensor1)
         assert out.dtype == DType.float32
 
         # NumPy float64 -> float32
-        out = ops.where(cond, safe_float64, float32_tensor2)  # type: ignore
+        out = ops.where(cond, safe_float64, float32_tensor2)
         assert out.dtype == DType.float32
 
         # NumPy int32 -> int64
-        out = ops.where(cond, safe_int32, int64_tensor)  # type: ignore
+        out = ops.where(cond, safe_int32, int64_tensor)
         assert out.dtype == DType.int64
 
         # Test failed promotions
@@ -664,10 +664,10 @@ def test_where_with_numpy_arrays(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.where(cond, unsafe_int64, float32_tensor3)  # type: ignore
+            ops.where(cond, unsafe_int64, float32_tensor3)
 
         # NumPy uint64 too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.where(cond, unsafe_uint64, float32_tensor4)  # type: ignore
+            ops.where(cond, unsafe_uint64, float32_tensor4)

@@ -452,7 +452,7 @@ class TestCustomGraphStateConsistency:
                 # Add a simple valid operation to test graph consistency
                 from max.graph import ops as graph_ops
 
-                result = graph_ops.cast(graph.inputs[0], DType.float64)  # type: ignore
+                result = graph_ops.cast(graph.inputs[0].tensor, DType.float64)
                 graph.output(result)
                 # If this succeeds, graph state is consistent
             except ValueError as e:
@@ -487,7 +487,7 @@ class TestCustomGraphStateConsistency:
                 # Add a simple buffer operation to test graph consistency
                 from max.graph import ops as graph_ops
 
-                tensor_val = graph_ops.buffer_load(graph.inputs[0])  # type: ignore
+                tensor_val = graph_ops.buffer_load(graph.inputs[0].buffer)
                 graph.output(tensor_val)
                 # If this succeeds, graph state is consistent
             except ValueError as e:

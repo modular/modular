@@ -31,7 +31,7 @@ shared_shapes = st.shared(shapes(min_rank=1))
 @given(input_types=broadcastable_tensor_types(2))
 def test_min__elementwise(graph_builder: GraphBuilder, input_types) -> None:  # noqa: ANN001
     with graph_builder(input_types=input_types) as graph:
-        x, y = graph.inputs
+        x, y = (v.tensor for v in graph.inputs)
         result = ops.min(x, y)
         expected = ops.elementwise.min(x, y)
         assert result.shape == expected.shape
@@ -41,7 +41,7 @@ def test_min__elementwise(graph_builder: GraphBuilder, input_types) -> None:  # 
 @given(input_types=broadcastable_tensor_types(2))
 def test_max__elementwise(graph_builder: GraphBuilder, input_types) -> None:  # noqa: ANN001
     with graph_builder(input_types=input_types) as graph:
-        x, y = graph.inputs
+        x, y = (v.tensor for v in graph.inputs)
         result = ops.max(x, y)
         expected = ops.elementwise.max(x, y)
         assert result.shape == expected.shape
@@ -51,9 +51,9 @@ def test_max__elementwise(graph_builder: GraphBuilder, input_types) -> None:  # 
 @given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
 def test_min__reduction(graph_builder: GraphBuilder, input_type, axis) -> None:  # noqa: ANN001
     with graph_builder(input_types=[input_type]) as graph:
-        (x,) = graph.inputs
+        x = graph.inputs[0].tensor
         result = ops.min(x, axis=axis)
-        expected = ops.reduction.min(x, axis=axis)  # type: ignore
+        expected = ops.reduction.min(x, axis=axis)
         assert result.shape == expected.shape
         assert result.dtype == expected.dtype
 
@@ -61,9 +61,9 @@ def test_min__reduction(graph_builder: GraphBuilder, input_type, axis) -> None: 
 @given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
 def test_max__reduction(graph_builder: GraphBuilder, input_type, axis) -> None:  # noqa: ANN001
     with graph_builder(input_types=[input_type]) as graph:
-        (x,) = graph.inputs
+        x = graph.inputs[0].tensor
         result = ops.max(x, axis=axis)
-        expected = ops.reduction.max(x, axis=axis)  # type: ignore
+        expected = ops.reduction.max(x, axis=axis)
         assert result.shape == expected.shape
         assert result.dtype == expected.dtype
 
@@ -74,9 +74,9 @@ def test_min__reduction__no_axis(
     input_type,  # noqa: ANN001
 ) -> None:
     with graph_builder(input_types=[input_type]) as graph:
-        (x,) = graph.inputs
+        x = graph.inputs[0].tensor
         result = ops.min(x)
-        expected = ops.reduction.min(x)  # type: ignore
+        expected = ops.reduction.min(x)
         assert result.shape == expected.shape
         assert result.dtype == expected.dtype
 
@@ -87,9 +87,9 @@ def test_max__reduction__no_axis(
     input_type,  # noqa: ANN001
 ) -> None:
     with graph_builder(input_types=[input_type]) as graph:
-        (x,) = graph.inputs
+        x = graph.inputs[0].tensor
         result = ops.max(x)
-        expected = ops.reduction.max(x)  # type: ignore
+        expected = ops.reduction.max(x)
         assert result.shape == expected.shape
         assert result.dtype == expected.dtype
 
