@@ -814,7 +814,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
-    block_swizzle_size: Int = 8,
+    block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
@@ -1274,7 +1274,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
-    block_swizzle_size: Int = 8,
+    block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
