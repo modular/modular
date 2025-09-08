@@ -12,40 +12,46 @@
 # ===----------------------------------------------------------------------=== #
 """ops.argmax tests."""
 
+from typing import Protocol
+
 import pytest
 from conftest import GraphBuilder, axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import TensorType, ops
+from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
 
 input_types = st.shared(tensor_types())
-ops = st.sampled_from([ops.argmax, ops.argmin])  # type: ignore
+test_ops = st.sampled_from([ops.argmax, ops.argmin])
 
 
-@given(input_type=input_types, op=ops, axis=axes(input_types))  # type: ignore
+class ReductionOp(Protocol):
+    def __call__(self, x: TensorValueLike, *, axis: int) -> TensorValue: ...
+
+
+@given(input_type=input_types, op=test_ops, axis=axes(input_types))
 def test_argminmax(
     graph_builder: GraphBuilder,
     input_type: TensorType,
-    op,  # noqa: ANN001
+    op: ReductionOp,
     axis: int,
 ) -> None:
     with graph_builder(input_types=[input_type]) as graph:
-        out = op(graph.inputs[0], axis=axis)
+        out = op(graph.inputs[0].tensor, axis=axis)
         assert out.dtype == DType.int64
         expected_shape = list(input_type.shape)
-        expected_shape[axis] = 1  # type: ignore
+        expected_shape[axis] = Dim(1)
         assert out.shape == expected_shape
 
 
-@given(input_type=input_types, op=ops, axis=...)  # type: ignore
+@given(input_type=input_types, op=test_ops, axis=...)
 def test_argminmax__invalid_axis(
     graph_builder: GraphBuilder,
     input_type: TensorType,
-    op,  # noqa: ANN001
+    op: ReductionOp,
     axis: int,
 ) -> None:
     assume(not -input_type.rank <= axis < input_type.rank)
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            op(graph.inputs[0], axis=axis)
+            op(graph.inputs[0].tensor, axis=axis)

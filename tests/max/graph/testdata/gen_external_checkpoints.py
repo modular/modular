@@ -33,17 +33,17 @@ def test_data():
     }
 
 
-def write_gguf(filename) -> None:  # noqa: ANN001
+def write_gguf(filename: Path) -> None:
     gguf_writer = GGUFWriter(str(filename), "example")
 
-    data = {
+    data: dict[str, np.ndarray] = {
         "a": np.arange(10, dtype=np.int32).reshape(5, 2),
         "b": np.full((1, 2, 3), 3.5, dtype=np.float64),
         "c": np.array(5432.1, dtype=np.float32),
         "fancy/name": np.array([1, 2, 3], dtype=np.int64),
     }
     for key, tensor in data.items():
-        gguf_writer.add_tensor(key, tensor)  # type: ignore
+        gguf_writer.add_tensor(key, tensor)
 
     # Separately add Bfloat16 tensor.
     gguf_writer.add_tensor(
@@ -67,7 +67,7 @@ def write_gguf(filename) -> None:  # noqa: ANN001
     gguf_writer.close()
 
 
-def write_pytorch(filename) -> None:  # noqa: ANN001
+def write_pytorch(filename: Path) -> None:
     data = {
         "a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
         "b": torch.full((1, 2, 3), 3.5, dtype=torch.float64),
@@ -79,7 +79,7 @@ def write_pytorch(filename) -> None:  # noqa: ANN001
     torch.save(data, filename)
 
 
-def write_safetensors(filename_prefix) -> None:  # noqa: ANN001
+def write_safetensors(filename_prefix: Path) -> None:
     for i in range(1, 3):
         data = {
             f"{i}.a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
@@ -100,7 +100,7 @@ def write_safetensors(filename_prefix) -> None:  # noqa: ANN001
 
 @click.command()
 @click.argument("output_directory", type=Path)
-def main(output_directory) -> None:  # noqa: ANN001
+def main(output_directory: Path) -> None:
     write_pytorch(output_directory / "example_data.pt")
     write_gguf(output_directory / "example_data.gguf")
     write_safetensors(output_directory / "example_data")

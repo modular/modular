@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """ops.irfft tests."""
 
+from __future__ import annotations
+
 import pytest
 from conftest import GraphBuilder, static_axes, tensor_types
 from hypothesis import assume, example, given
@@ -25,7 +27,7 @@ input_types = st.shared(
 )
 
 
-def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:  # type: ignore
+def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:
     expected_shape = Shape(shape)
     if n is None:
         n = 2 * (int(shape[axis]) - 1)
@@ -69,9 +71,9 @@ def expected_output_shape(shape: Shape, n: int | None, axis: int) -> Shape:  # t
 def test_irfft(
     graph_builder: GraphBuilder,
     input_type: TensorType,
-    n: int | None,  # type: ignore
+    n: int | None,
     axis: int,
-    normalization: Normalization | str,  # type: ignore
+    normalization: Normalization | str,
 ) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.dtype == DType.float32)

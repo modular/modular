@@ -21,7 +21,7 @@ from conftest import GraphBuilder, axes, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Shape, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Dim, Shape, StaticDim, TensorType, ops
 
 shared_tensor_types = st.shared(tensor_types())
 
@@ -71,7 +71,7 @@ def test_vector_repeats(
             out_dim="new_dim",
         )
         target_shape = list(type.shape)
-        target_shape[axis] = out_dim  # type: ignore
+        target_shape[axis] = Dim(out_dim)
         assert out.shape == target_shape
         assert out.dtype == type.dtype
         graph.output(out)
