@@ -12,42 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait Animal:
-    fn make_sound(self):
-        ...
-
-
-# Bird inherits from Animal
-trait Bird(Animal):
-    fn fly(self):
-        ...
-
-
-trait Named:
-    fn get_name(self) -> String:
-        ...
-
-
-trait NamedAnimal(Animal, Named):
-    fn emit_name_and_sound(self):
-        print("The", self.get_name(), "says ", end="")
-        self.make_sound()
+trait DefaultQuackable:
+    fn quack(self):
+        print("Quack")
 
 
 @fieldwise_init
-struct Parrot(Bird, Copyable, Movable, NamedAnimal):
-    fn make_sound(self):
-        print("Squawk!")
+struct DefaultDuck(Copyable, DefaultQuackable, Movable):
+    pass
 
-    fn fly(self):
-        print("Flap flap!")
 
-    fn get_name(self) -> String:
-        return "Parrot"
+fn make_it_quack(duck: DefaultDuck):
+    duck.quack()
 
 
 def main():
-    parrot = Parrot()
-    parrot.make_sound()
-    parrot.fly()
-    parrot.emit_name_and_sound()
+    make_it_quack(DefaultDuck())

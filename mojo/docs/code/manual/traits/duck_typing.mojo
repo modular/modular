@@ -29,10 +29,22 @@ struct StealthCow(Copyable, Movable, Quackable):
         print("Moo!")
 
 
-fn make_it_quack[type: Quackable](maybe_a_duck: type):
+fn make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
     maybe_a_duck.quack()
+
+
+fn make_it_quack2(maybe_a_duck: Some[Quackable]):
+    maybe_a_duck.quack()
+
+
+fn take_two_quackers[
+    DuckType: Quackable
+](quacker1: DuckType, quacker2: DuckType):
+    pass
 
 
 def main():
     make_it_quack(Duck())
     make_it_quack(StealthCow())
+    make_it_quack2(Duck())
+    make_it_quack2(StealthCow())
