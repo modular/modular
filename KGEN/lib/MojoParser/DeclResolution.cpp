@@ -2636,8 +2636,8 @@ static void processRegisterPassableDecorator(
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
   auto conformsToTrait = [&](StringRef traitName) {
-    ASTDecl *traitDecl =
-        shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc());
+    ASTDecl *traitDecl = shared.lookupBuiltinTrait(
+        traitName, structDecl.getParentDecl(), structDecl.getLoc());
     if (!traitDecl)
       return false;
     auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
