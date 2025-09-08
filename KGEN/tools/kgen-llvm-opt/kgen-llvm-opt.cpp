@@ -64,6 +64,7 @@ struct CLOptions : public M::CLOptionsBase {
   bool noOutput = false;
   bool outputAssembly = false;
   unsigned codeGenOptLevel = 0;
+  bool disableOptimizationPasses = false;
 
 private:
   llvm::cl::OptionCategory cat{"Common command line options"};
@@ -111,6 +112,12 @@ private:
       "codegen-opt-level",
       cl::desc("Override optimization level for codegen hooks, legacy PM only"),
       cl::location(codeGenOptLevel), cl::cat(cat)};
+
+  M::cl::MOpt<bool, true> disableOptimizationPassesOpt{
+      "disable-optimization-passes",
+      cl::desc("Disable optimization passes and print input module. Useful to "
+               "test Bitcode Writer"),
+      cl::location(disableOptimizationPasses), cl::cat(cat)};
 };
 
 enum OutputKind {
@@ -283,12 +290,11 @@ int main(int argc, char **argv) {
   if (!clOptions.targetTriple.empty())
     module->setTargetTriple(Triple(Triple::normalize(clOptions.targetTriple)));
 
+  const bool isMetalTriple = M::KGEN::isMetalTriple(module->getTargetTriple());
   Triple moduleTriple(fixTargetTriple(module->getTargetTriple().str()));
   TargetLibraryInfoImpl tlii(moduleTriple);
   std::string cpuStr, featuresStr;
   std::unique_ptr<TargetMachine> targetMachine;
-
-  const bool isMetalTriple = M::KGEN::isMetalTriple(moduleTriple);
 
   if (isMetalTriple || moduleTriple.getArch()) {
     const TargetOptions options =
@@ -318,8 +324,9 @@ int main(int argc, char **argv) {
   llvm::PassInstrumentationCallbacks pic;
   PassBuilder pb(targetMachine.get(), PipelineTuningOptions(),
                  /*PGOOpt=*/std::nullopt, &pic);
-  ModulePassManager mpm =
-      buildPipeline(pb, clOptions, module->getTargetTriple());
+  ModulePassManager mpm;
+  if (!clOptions.disableOptimizationPasses)
+    mpm = buildPipeline(pb, clOptions, module->getTargetTriple());
 
   switch (outputKind) {
   case OK_NoOutput:
