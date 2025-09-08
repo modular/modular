@@ -381,8 +381,9 @@ struct UnsafePointer[
             The number of elements (of type T) between self and other.
         """
         alias element_size = sizeof[T]()
-        var self_int: Int = builtin.ptrtoint(self)
-        var other_int: Int = builtin.ptrtoint(other)
+        var self_int: Int = builtin.ptr_to_int(self)
+        var other_int: Int = builtin.ptr_to_int(other)
+        var byte_diff: Int = self_int - other_int
         return byte_diff // element_size
 
 
