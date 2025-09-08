@@ -16,8 +16,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import multiprocessing
-import multiprocessing.process
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
@@ -31,7 +29,7 @@ from max.interfaces import (
     RequestID,
     SchedulerResult,
 )
-from max.serve.process_control import ProcessControl
+from max.serve.process_control import ProcessMonitor
 from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
@@ -49,37 +47,20 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
     def __init__(
         self,
-        context: multiprocessing.context.BaseContext,
-        worker_pc: ProcessControl,
+        worker_monitor: ProcessMonitor,
         request_queue: MAXPushQueue[tuple[RequestID, BaseContextType]],
         response_queue: MAXPullQueue[
             dict[RequestID, SchedulerResult[PipelineOutputType]]
         ],
         cancel_queue: MAXPushQueue[list[RequestID]],
     ) -> None:
-        super().__init__()
-        self.context = context
-
         # Create Queues
         self.request_queue = request_queue
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
         self.pending_out_queues: dict[RequestID, asyncio.Queue] = {}
-        self.worker_pc: ProcessControl = worker_pc
-        self._proc: multiprocessing.process.BaseProcess | None = None
-
-    def use_process_healthcheck(
-        self, proc: multiprocessing.process.BaseProcess
-    ) -> None:
-        """Register a Process to health check.
-
-        Instead of verifying heartbeats, EngineQueue will verify that the
-        process is alive. Verifying liveness is a more lenient check than
-        verifying heartbeats. Heartbeats prove progress while liveness only
-        proves that the process has not crashed (it could be wedged).
-        """
-        self._proc = proc
+        self.worker_monitor = worker_monitor
 
     def is_worker_healthy(self) -> bool:
         """Is the worker healthy?
@@ -87,9 +68,7 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
         By default, verify health with ProcessControl.is_alive().  If a Process
         is registered, used Process.is_alive() instead.
         """
-        if self._proc:
-            return self._proc.is_alive()
-        return self.worker_pc.is_healthy()
+        return self.worker_monitor.is_healthy()
 
     @contextlib.contextmanager
     def open_channel(
@@ -207,7 +186,7 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
                     # so we have to check the worker status.
                     if not self.is_worker_healthy():
                         logger.error("Model worker process is not healthy")
-                        self.worker_pc.set_canceled()
+                        self.worker_monitor.pc.set_canceled()
                         raise Exception("Worker failed!")  # noqa: B904
 
                     await sleep_with_backoff(count_no_progress)

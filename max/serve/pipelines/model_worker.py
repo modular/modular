@@ -271,14 +271,6 @@ async def start_model_worker(
         lazy=True,
     )
 
-    engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
-        mp_context,
-        worker_pc=pc,
-        request_queue=request_push_queue,
-        response_queue=response_pull_queue,
-        cancel_queue=cancel_push_queue,
-    )
-
     logger.debug("Starting worker: %s", worker_name)
     worker = mp_context.Process(
         name=worker_name,
@@ -303,8 +295,12 @@ async def start_model_worker(
         use_heartbeat=settings.use_heartbeat,
     )
 
-    if not settings.use_heartbeat:
-        engine_queue.use_process_healthcheck(worker)
+    engine_queue: EngineQueue[BaseContext, Any] = EngineQueue[BaseContext, Any](
+        worker_monitor=monitor,
+        request_queue=request_push_queue,
+        response_queue=response_pull_queue,
+        cancel_queue=cancel_push_queue,
+    )
 
     # before progressing, observe the worker process to be healthy or dead
     dt = asyncio.create_task(monitor.until_dead())
