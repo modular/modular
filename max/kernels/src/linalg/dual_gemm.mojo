@@ -522,18 +522,7 @@ fn multistage_dual_gemm_kernel[
         alignment = a_smem.alignment,
         circular=True,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = a_smem.address_space,
-                    alignment = a_smem.alignment,
-                    circular=True,
-                ]().ptr
-            )
-        ](a_smem),
+        a_smem,
         a_smem_size,
     )
 

@@ -245,17 +245,7 @@ fn b2b_gemm[
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    in_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = a_smem.address_space,
-                    alignment = a_smem.alignment,
-                ]().ptr
-            )
-        ](a_smem),
+        a_smem,
         a_smem_size,
     )
 

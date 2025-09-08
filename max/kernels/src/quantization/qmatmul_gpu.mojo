@@ -551,19 +551,7 @@ fn multistage_qgemm_kernel[
         alignment = a_smem.alignment,
         circular=True,
     ](
-        rebind[
-            __type_of(
-                LayoutTensorIter[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    MutableAnyOrigin,
-                    address_space = AddressSpace.SHARED,
-                    alignment = a_smem.alignment,
-                    circular=True,
-                ]().ptr
-            )
-        ](a_smem)
-        + warp_k_part_id * a_smem_size,
+        a_smem + warp_k_part_id * a_smem_size,
         a_smem_size,
     )
 
