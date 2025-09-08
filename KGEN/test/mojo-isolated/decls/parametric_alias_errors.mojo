@@ -30,3 +30,21 @@ alias myRenamedCurriedIntAdd2 = myRenamedCurriedIntAdd[x=2]
 
 # expected-error @below {{'Int' is not subscriptable}}
 alias mySix = myCurriedIntAdd[2][4][6]
+
+# expected-error @below {{parametric value expects 2 parameters, but 3 were specified}}
+alias myIntAddTooManyParams = myIntAdd[1, 2, 3]
+
+# COM: A type with dependent parameters.
+struct Dep[T: AnyType, v: T]:
+    pass
+
+alias MyDep[T: AnyType, v: T] = Dep[T, v]
+
+# expected-error @below {{MLIR type 'alias[T: AnyType, v: T] Dep[T, v]' has no attributes}}
+alias MyDepGetAlias0 = MyDep.hello
+
+# expected-error @below {{MLIR type 'alias[v: Int] Dep[Int, v]' has no attributes}}
+alias MyDepGetAlias1 = MyDep[Int].hello
+
+# expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}
+alias MyDepGetAlias2 = MyDep[Int, 2].hello
