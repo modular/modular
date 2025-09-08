@@ -4790,7 +4790,7 @@ class MoSplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value[max._core.Type]],
+        results: Sequence[max._core.Type],
         input: max._core.Value[max._core.dialects.mo.TensorType],
         split_sizes: max._core.Value[max._core.dialects.mo.TensorType],
         axis: max._core.Value[max._core.dialects.mo.TensorType],

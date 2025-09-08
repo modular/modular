@@ -933,7 +933,7 @@ class UnrealizedConversionCastOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value[max._core.Type]],
+        outputs: Sequence[max._core.Type],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
