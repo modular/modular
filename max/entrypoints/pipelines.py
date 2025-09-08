@@ -229,16 +229,17 @@ def cli_serve(
         failure_percentage = sim_failure
 
     # Initialize Settings
-    settings = Settings()
-
+    setting_kwargs: dict[str, Any] = {}
     if port is not None:
-        settings.port = port
+        setting_kwargs["MAX_SERVE_PORT"] = port
 
     if log_prefix is not None:
-        settings.log_prefix = log_prefix
+        setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
 
     if headless is not None:
-        settings.headless = headless
+        setting_kwargs["MAX_SERVE_HEADLESS"] = headless
+
+    settings = Settings(**setting_kwargs)
 
     # Configure Logging Globally
     configure_logging(settings)

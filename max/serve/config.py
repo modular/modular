@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     # ways.  this is the way:
     #   1. extra="allow"
     #      This allows .env files to include entries for non-modular use cases.  eg HF_TOKEN
-    #   2. populate_by_name=False
-    #      Reduce the number of ways a setting can be spelled so it is easier to reason about priority among env vars, .env, and explicit settings.
+    #   2. populate_by_name=True
+    #      Allow both field names and aliases to be used for initialization, but aliases are preferred for clarity.
     #   3. initialize with alias names `Settings(MAX_SERVE_HOST="host")`
     #
     # Known sharp edges:
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_prefix="", extra="allow", populate_by_name=False
+        env_file=".env", env_prefix="", extra="allow", populate_by_name=True
     )
 
     # Server configuration
@@ -108,7 +108,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_port(cls, port: int, info: ValidationInfo):
         # In offline inference mode, port is not used and always valid.
-        if info.data["offline_inference"] or info.data["headless"]:
+        # Safely get the values with defaults since these fields might not be validated yet
+        offline_inference = info.data.get("offline_inference", False)
+        headless = info.data.get("headless", False)
+
+        if offline_inference or headless:
             return port
 
         # check if port is already in use
