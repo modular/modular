@@ -3612,15 +3612,26 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   if (p.parseToken(Token::colon, "expected ':' in extension definition"))
     return failure();
 
-  // TODO(MOCO-522): This is temporary, removed in a later PR.
-  p.skipUntilIndentation(0, /*stopOnSemicolon=*/false,
-                         [&]() -> bool { return false; });
-
   return success();
 }
 
 ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
                                       Lexer &lexer, ASTDecl &extensionDecl) {
+  SymbolRefAttr structSymbolRef = extensionDeclOp.getTargetStruct().value();
+
+  ASTDecl &structAstDecl = getDeclForTypeSymbol(structSymbolRef);
+  StructDeclOp structDeclOp =
+      cast<StructDeclOp>(structAstDecl.getIfOperation());
+
+  // Push the struct's debug scope for this extension if necessary so that
+  // nested operations have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(structDeclOp.getLocScope());
+
+  if (ParserBase(shared, lexer).parseSuite(extensionDecl))
+    return failure();
+
   return success();
 }
 

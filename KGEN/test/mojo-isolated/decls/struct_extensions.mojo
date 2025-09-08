@@ -16,7 +16,10 @@ struct Spaceship:
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
-    fn fly_to(mut self, new_location: int):
+    # CHECK-LABEL: lit.fn @"fly_to
+    # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
+    # CHECK-SAME: %new_location: index
+    fn fly_to(mut self: Spaceship, new_location: int):
         self.set_location(new_location)
 
 
@@ -36,6 +39,9 @@ struct Spaceship:
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship:
+    # CHECK-LABEL: lit.fn @"fly_to
+    # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
+    # CHECK-SAME: %new_location: index
     fn fly_to(mut self: Spaceship, new_location: int):
         self.set_location(new_location)
 
