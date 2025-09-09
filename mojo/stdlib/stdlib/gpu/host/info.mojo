@@ -599,7 +599,7 @@ fn _get_b100_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_100a", `,
-        `features = "+ptx86,+sm_100a", `,
+        `features = "+ptx88,+sm_100a", `,
         `tune_cpu = "sm_100a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
