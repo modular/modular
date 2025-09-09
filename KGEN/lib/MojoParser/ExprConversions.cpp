@@ -25,8 +25,7 @@
 #include "KGEN/LITDialect/LITUtils.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
-#include "llvm/Support/BLAKE3.h"
-#include "llvm/Support/Base64.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -314,11 +313,9 @@ static std::string generateThunkName(Type expected, Type actual) {
   llvm::raw_string_ostream sigHashOs(sigHash);
   expected.print(sigHashOs);
   actual.print(sigHashOs);
-  auto hash = llvm::BLAKE3::hash(
-      ArrayRef((const uint8_t *)sigHash.data(), sigHash.size()));
-
   os << '|';
-  os << llvm::encodeBase64(hash);
+  os << llvm::utohexstr(llvm::xxh3_64bits(sigHash),
+                        /*LowerCase=*/true, /*Width=*/16);
   return name;
 }
 

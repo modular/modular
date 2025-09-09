@@ -13,8 +13,8 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 
@@ -86,12 +86,12 @@ DenseResourceElementsAttr M::writeModuleToBytecodeAttr(ModuleOp module) {
   // Hash the bytecode itself - this will give us a unique'd attr name that
   // shouldn't clash even when a large number of packages get imported - and
   // if they do clash, they're guaranteed to be exactly the same.
-  auto hash = llvm::BLAKE3::hash(
-      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
-                        (const uint8_t *)str->getBufferEnd()));
+  std::string hashKey = llvm::utohexstr(
+      xxh3_64bits(ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
+                                    (const uint8_t *)str->getBufferEnd())),
+      /*LowerCase=*/true, /*Width=*/16);
   return createResourceAttr(module->getContext(), std::move(str),
-                            "bytecode_" +
-                                llvm::toHex(hash, /*LowerCase=*/true));
+                            "bytecode_" + hashKey);
 }
 
 //===----------------------------------------------------------------------===//

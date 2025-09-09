@@ -21,7 +21,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -553,10 +553,12 @@ Operation *InterpreterMemoryConverter::getOrCreateGlobal(Location loc,
                                       IntegerType::Signless);
   }
 
-  auto hash =
-      llvm::BLAKE3::hash({(const uint8_t *)hdl.getData(), hdl.getSize()});
-  std::string key = (hdl.isString() ? "static_string_" : "memory_blob_") +
-                    llvm::toHex(hash, /*LowerCase=*/true);
+  std::string hashKey = llvm::utohexstr(
+      llvm::xxh3_64bits({(const uint8_t *)hdl.getData(), hdl.getSize()}),
+      /*LowerCase=*/true,
+      /*Width=*/16);
+  std::string key =
+      (hdl.isString() ? "static_string_" : "memory_blob_") + hashKey;
 
   auto global = b.create<LLVM::GlobalOp>(
       loc, LLVM::LLVMArrayType::get(b.getI8Type(), hdl.getSize()),

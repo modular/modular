@@ -40,11 +40,11 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
-#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/xxhash.h"
 
 #include <filesystem>
 #include <stack>
@@ -300,10 +300,10 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, const std::string &bitcodeFile) {
   StringRef data = buffer.getBuffer();
 
   // Hash the bitcode to generate a unique name
-  llvm::BLAKE3Result<32> hash = llvm::BLAKE3::hash(
-      ArrayRef<uint8_t>((const uint8_t *)data.data(), data.size()));
   std::string resourceName =
-      "llvm_bitcode_" + llvm::toHex(hash, /*LowerCase=*/true);
+      "llvm_bitcode_" + llvm::utohexstr(xxh3_64bits(data),
+                                        /*LowerCase=*/true, /*Width=*/16);
+  ;
 
   // Create the resource attribute
   return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
