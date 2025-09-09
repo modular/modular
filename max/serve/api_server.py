@@ -26,7 +26,6 @@ from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
-from max.serve.pipelines.kvcache_worker import start_kv_cache_service
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -90,13 +89,6 @@ async def lifespan(
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
-            if dispatcher_factory is not None:
-                logger.info("Starting Dispatch Service...")
-                await exit_stack.enter_async_context(
-                    start_kv_cache_service(settings, dispatcher_factory)
-                )
-                logger.info("Dispatch Service started.")
-
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
@@ -111,7 +103,6 @@ async def lifespan(
                     settings,
                     metric_client,
                     serving_settings.pipeline_task,
-                    dispatcher_factory,
                 )
             )
 

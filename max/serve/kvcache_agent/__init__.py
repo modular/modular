@@ -13,10 +13,13 @@
 
 from .dispatcher_factory import DispatcherFactory
 from .dispatcher_transport import TransportMessage
+from .dispatcher_v2 import DispatcherClientV2, DispatcherServerV2
 from .kvcache_agent import start_kvcache_agent_service
 
 __all__ = [
+    "DispatcherClientV2",
     "DispatcherFactory",
+    "DispatcherServerV2",
     "TransportMessage",
     "start_kvcache_agent_service",
 ]

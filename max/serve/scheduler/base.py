@@ -72,6 +72,7 @@ class PrefillResponse(
     Attributes:
         id: Unique identifier for this request
         context: The input context containing the request data and state
+        transfer_metadata: The transfer metadata for the KV cache transfers
     """
 
     id: RequestID

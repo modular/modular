@@ -38,9 +38,9 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
-from max.serve.kvcache_agent.dispatcher_base import MessageType
-from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
+from max.serve.config import Settings
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
+from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
 from .text_batch_constructor import (
@@ -75,7 +75,7 @@ class DecodeScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        dispatcher_client: DispatcherClient,
+        dispatcher: DecodeDispatcherClientV2,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
@@ -87,14 +87,7 @@ class DecodeScheduler(Scheduler):
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
-        self.dispatcher_client = dispatcher_client
-        self.dispatcher_client.register_reply_handler(
-            MessageType.PREFILL_RESPONSE, self.handle_prefill_response
-        )
-        self.dispatcher_client.register_reply_handler(
-            MessageType.TRANSFER_ENGINE_RESPONSE,
-            self.handle_transfer_engine_response,
-        )
+        self.dispatcher = dispatcher
 
         self.prefill_responses: dict[str, PrefillResponse] = {}
 
@@ -164,10 +157,9 @@ class DecodeScheduler(Scheduler):
         """
 
         if data.target_endpoint not in self.remote_endpoints:
-            self.dispatcher_client.send(
-                MessageType.TRANSFER_ENGINE_REQUEST,
+            self.dispatcher.send_request_nowait(
                 self.transfer_engine.metadata,
-                destination_address=data.target_endpoint,
+                data.target_endpoint,
             )
             self.remote_endpoints.add(data.target_endpoint)
 
@@ -180,15 +172,14 @@ class DecodeScheduler(Scheduler):
         for i in range(data.start_idx // self.paged_manager.page_size):
             dst_idxs[i] = -1
 
-        self.dispatcher_client.send(
-            MessageType.PREFILL_REQUEST,
+        self.dispatcher.send_request_nowait(
             PrefillRequest(
                 id=request_id,
                 context=data,
                 transfer_engine_name=self.transfer_engine.name,
                 block_ids=dst_idxs,
             ),
-            destination_address=data.target_endpoint,
+            data.target_endpoint,
         )
 
     def reserve_memory_and_send_to_prefill(self) -> None:
@@ -248,9 +239,7 @@ class DecodeScheduler(Scheduler):
                         self.pending_prefill_requests.remove(request_id)
 
                         # Send a cancel request to the prefill node
-                        self.dispatcher_client.send(
-                            MessageType.CANCEL_REQUEST, request_id
-                        )
+                        self.dispatcher.send_request_nowait(request_id)
 
                         # Send the cancelled result back to the response q
                         self.response_queue.put_nowait(
@@ -348,6 +337,18 @@ class DecodeScheduler(Scheduler):
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
         """
+        while True:
+            try:
+                reply = self.dispatcher.recv_reply_nowait()
+            except queue.Empty:
+                break
+            if isinstance(reply, KVTransferEngineMetadata):
+                self.handle_transfer_engine_response(reply)
+            elif isinstance(reply, PrefillResponse):
+                self.handle_prefill_response(reply)
+            else:
+                raise ValueError(f"Invalid reply type: {reply}")
+
         # Eagerly reserve memory and send to prefill worker
         self.reserve_memory_and_send_to_prefill()
 
@@ -393,7 +394,6 @@ def load_decode_scheduler(
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    dispatcher_client: DispatcherClient,
     request_queue: MAXPullQueue[
         tuple[RequestID, Union[TextContext, TextAndVisionContext]]
     ],
@@ -401,6 +401,7 @@ def load_decode_scheduler(
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
+    settings: Settings,
 ) -> DecodeScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
@@ -422,5 +423,8 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher_client=dispatcher_client,
+        dispatcher=DecodeDispatcherClientV2(
+            bind_addr=settings.dispatcher_config.transport_config.bind_address,
+            default_dest_addr=settings.dispatcher_config.transport_config.default_destination_address,
+        ),
     )

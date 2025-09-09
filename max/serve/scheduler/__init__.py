@@ -59,7 +59,6 @@ def load_scheduler(
     pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator[TTSContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
-    dispatcher_client: DispatcherClient | None = None,
 ) -> Scheduler:
     if isinstance(pipeline, EmbeddingsGenerator):
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
@@ -175,29 +174,18 @@ def load_scheduler(
         _, ds_cancel_pull_queue = create_zmq_push_pull_queues(
             endpoint=settings.cancel_zmq_endpoint, payload_type=list[RequestID]
         )
-        if dispatcher_client is None:
-            raise ValueError(
-                "Dispatcher client is required for decode scheduler"
-            )
+
         return load_decode_scheduler(
             pipeline,
             pipeline_config,
-            dispatcher_client=dispatcher_client,
             request_queue=ds_request_pull_queue,
             response_queue=ds_response_push_queue,
             cancel_queue=ds_cancel_pull_queue,
+            settings=settings,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, Pipeline)
-        if dispatcher_client is None:
-            raise ValueError(
-                "Dispatcher client is required for prefill scheduler"
-            )
-        return load_prefill_scheduler(
-            pipeline,
-            pipeline_config,
-            dispatcher_client=dispatcher_client,
-        )
+        return load_prefill_scheduler(pipeline, pipeline_config, settings)
     else:
         raise ValueError(
             f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."

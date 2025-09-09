@@ -16,30 +16,20 @@ import signal
 import sys
 from contextlib import AsyncExitStack
 from types import FrameType
-from typing import Optional, Union
+from typing import Optional
 
 import uvloop
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
-)
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
-from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
-from max.serve.pipelines.kvcache_worker import start_kv_cache_service
-from max.serve.pipelines.model_worker import PayloadType, start_model_worker
+from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.scheduler import PrefillRequest, PrefillResponse
 from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.entrypoints")
 
 # Global shutdown event for coordinating graceful shutdown
 _shutdown_event: Optional[asyncio.Event] = None
-
-from .dispatch_worker import start_dispatch_worker
 
 
 def sigterm_handler(sig: int, frame: Optional[FrameType]) -> None:
@@ -101,19 +91,6 @@ def start_workers(
 
         try:
             async with AsyncExitStack() as exit_stack:
-                # Start Dispatch service if needed
-                if pipeline_config.pipeline_role.uses_dispatch_service:
-                    dispatcher_factory = DispatcherFactory[PayloadType](
-                        settings.dispatcher_config,
-                        transport_payload_type=TransportMessage[PayloadType],
-                    )
-
-                    await exit_stack.enter_async_context(
-                        start_dispatch_worker(settings, dispatcher_factory)
-                    )
-                else:
-                    dispatcher_factory = None
-
                 # Start telemetry worker and Configure Metrics to use it
                 metric_client = await exit_stack.enter_async_context(
                     start_telemetry_consumer(settings)
@@ -129,7 +106,6 @@ def start_workers(
                         settings,
                         metric_client,
                         pipeline_task,
-                        dispatcher_factory,
                     )
                 )
 

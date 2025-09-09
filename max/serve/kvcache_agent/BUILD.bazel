@@ -10,6 +10,7 @@ modular_py_library(
         "dispatcher_factory.py",
         "dispatcher_service.py",
         "dispatcher_transport.py",
+        "dispatcher_v2.py",
         "kvcache_agent.py",
     ],
     imports = ["../../.."],

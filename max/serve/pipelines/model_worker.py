@@ -35,15 +35,10 @@ from max.pipelines.core import get_request_payload_from_pipeline_task
 from max.pipelines.lib import PipelineConfig
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import create_zmq_push_pull_queues, load_scheduler
-from max.serve.scheduler.base import (
-    PayloadType,
-    SchedulerProgress,
-    sleep_with_backoff,
-)
+from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
@@ -105,7 +100,6 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Runs a model worker process.
 
@@ -131,20 +125,11 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
-            # create dispatcher client
-            dispatcher_client = None
-            if dispatcher_factory is not None:
-                assert pipeline_config.pipeline_role.uses_dispatch_service
-                logger.debug("Starting dispatcher client")
-                dispatcher_client = dispatcher_factory.create_client()
-                dispatcher_client.start()
-
             # Retrieve Scheduler.
             scheduler = load_scheduler(
                 pipeline,
                 pipeline_config,
                 settings,
-                dispatcher_client,
             )
 
             # Mark the start of the process, and run the scheduler.
@@ -167,10 +152,6 @@ class ModelWorker:
                     logger.exception("An error occurred during scheduling")
                     raise e
 
-            # Close the process.
-            pc.set_completed()
-            if dispatcher_client is not None:
-                dispatcher_client.stop()
         logger.debug("Stopped model worker!")
 
     @staticmethod
@@ -183,7 +164,6 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        dispatcher_factory: DispatcherFactory[PayloadType] | None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -207,7 +187,6 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
-                    dispatcher_factory,
                 )
             )
         except KeyboardInterrupt:
@@ -225,7 +204,6 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     pipeline_task: PipelineTask,
-    dispatcher_factory: DispatcherFactory[PayloadType] | None = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -282,7 +260,6 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
-            dispatcher_factory,
         ),
     )
     worker.start()
