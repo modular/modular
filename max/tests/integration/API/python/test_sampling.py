@@ -29,14 +29,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 def test_sampling_top_k() -> None:
     with pytest.raises(ValueError):
-        SamplingParams(top_k=0)
-
-    with pytest.raises(ValueError):
         SamplingParams(top_k=257)
-
-    # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
-    with pytest.raises(ValueError):
-        SamplingParams(top_k=-1)
 
 
 def test_llguidance_sampling(
