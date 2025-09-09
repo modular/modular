@@ -31,8 +31,7 @@ UNARY = [
     F.is_nan,
     F.log,
     F.log1p,
-    # TODO(KERNELS-1976): Implement on GPU
-    # F.logsoftmax,
+    F.logsoftmax,
     F.negate,
     F.relu,
     F.round,
