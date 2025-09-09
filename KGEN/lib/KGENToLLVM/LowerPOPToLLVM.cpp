@@ -2019,7 +2019,7 @@ public:
         getAtomicOrdering(op.getFailureOrdering()),
         adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
                                : StringRef(),
-        resolveAlignment(adaptor));
+        resolveAlignment(adaptor), adaptor.getWeak().has_value());
     return success();
   }
 

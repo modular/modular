@@ -998,14 +998,20 @@ kgen.generator @atomic_cmpxchg<scope: string>(%ptr: !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] monotonic monotonic
   %0 = pop.atomic.cmpxchg %ptr, %cmp, %new monotonic monotonic :
                     !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.cmpxchg weak %[[PTR]], %[[CMP]], %[[NEW]] monotonic monotonic
+  %1 = pop.atomic.cmpxchg weak %ptr, %cmp, %new monotonic monotonic :
+                    !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] seq_cst acq_rel
-  %1 = pop.atomic.cmpxchg %ptr, %cmp, %new seq_cst acq_rel :
+  %2 = pop.atomic.cmpxchg %ptr, %cmp, %new seq_cst acq_rel :
                     !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] syncscope(scope) seq_cst acq_rel
-  %2 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope(scope) seq_cst acq_rel :
+  %3 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope(scope) seq_cst acq_rel :
                     !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] syncscope("agent") seq_cst acq_rel
-  %3 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("agent") seq_cst acq_rel :
+  %4 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("agent") seq_cst acq_rel :
+                    !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.cmpxchg weak %[[PTR]], %[[CMP]], %[[NEW]] syncscope(scope) seq_cst acq_rel
+  %5 = pop.atomic.cmpxchg weak %ptr, %cmp, %new syncscope(scope) seq_cst acq_rel :
                     !kgen.pointer<scalar<index>>
   kgen.return
 }

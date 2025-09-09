@@ -2002,6 +2002,10 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
     synchronizes with other atomic operations. Both ordering parameters must be
     at least monotonic, the failure ordering cannot be either release or acq_rel.
 
+    The `weak` argument allows the operation to fail spuriously, that is, act as 
+    if `%ptr` != `%cmp` even if they are equal. This is sometimes desirable if using
+    cmpxchg in a loop as it may yield better performance.
+
     The return type is a KGEN struct type with any integer or pointer followed
     by a boolean value.
 
@@ -2013,6 +2017,9 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
 
     %b1 = pop.atomic.cmpxchg %ptr, %cmp, %val scyncscope("singlethread")
         monotonic monotonic : !kgen.pointer<scalar<index>>
+
+    %b2 = pop.atomic.cmpxchg weak %ptr, %cmp, %val acq_rel monotonic :
+        !kgen.pointer<scalar<index>>
     ```
   }];
 
@@ -2022,10 +2029,12 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
                        POP_AtomicOrderingAttr:$success_ordering,
                        POP_AtomicOrderingAttr:$failure_ordering,
                        OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope,
-                       OptionalAttr<AttrOfType<Index>>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       OptionalAttr<UnitAttr>:$weak);
   let results = (outs POP_AtomicCmpXchgResultType:$result);
 
   let assemblyFormat = [{
+    (`weak` $weak^)?
     $ptr `,` $cmp `,` $val
     (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? `` $success_ordering
     `` $failure_ordering (`align` custom<IndexParamValue>($alignment)^ )?
