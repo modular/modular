@@ -14,6 +14,19 @@
 from logger import Level, Logger
 
 
+# CHECK-LABEL: Test logging at trace level
+def test_log_trace():
+    print("=== Test logging at trace level")
+    var log = Logger[Level.TRACE]()
+
+    # CHECK: TRACE::: hello
+    log.trace("hello")
+
+    var log2 = Logger[Level.DEBUG]()
+    # CHECK-NOT: TRACE::: hello
+    log2.trace("hello")
+
+
 # CHECK-LABEL: Test logging at info level
 def test_log_info():
     print("=== Test logging at info level")
@@ -39,5 +52,6 @@ fn test_log_noset():
 
 
 def main():
+    test_log_trace()
     test_log_info()
     test_log_noset()
