@@ -42,4 +42,5 @@ qwen2_5_vl_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen2_5VLModel,
     tokenizer=Qwen2_5VLTokenizer,
+    supports_prefix_caching=False,
 )

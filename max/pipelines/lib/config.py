@@ -529,6 +529,15 @@ class PipelineConfig(MAXConfig):
             )
             raise ValueError(msg)
 
+        if (
+            not arch.supports_prefix_caching
+            and model_config._kv_cache_config.enable_prefix_caching
+        ):
+            logger.warning(
+                "Architecture does not support prefix caching, overriding enable_prefix_caching=False"
+            )
+            model_config._kv_cache_config.enable_prefix_caching = False
+
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.

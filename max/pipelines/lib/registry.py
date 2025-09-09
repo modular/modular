@@ -93,6 +93,7 @@ class SupportedArchitecture:
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
+        supports_prefix_caching: bool = True,
     ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
 
@@ -159,6 +160,7 @@ class SupportedArchitecture:
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
+        self.supports_prefix_caching = supports_prefix_caching
 
     def __eq__(self, other: Any) -> bool:
         if other.__class__ == self.__class__:
