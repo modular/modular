@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """MAX KVCache configuration."""
 
-from __future__ import annotations
-
 import enum
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Optional
 
 from max.nn.kv_cache import KVCacheStrategy
 
@@ -62,7 +61,8 @@ class KVCacheConfig(MAXConfig):
     This space is only allocated when kvcache_swapping_to_host is enabled.
     """
 
-    _available_cache_memory: int | None = None
+    # Need to use `Optional` here to support `click` with 3.9.
+    _available_cache_memory: Optional[int] = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
     _config_file_section_name: str = "kv_cache_config"
