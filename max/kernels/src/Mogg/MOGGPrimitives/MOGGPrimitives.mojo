@@ -1256,6 +1256,12 @@ fn get_scalar_from_managed_tensor_slice[
     return _get_scalar_from_managed_tensor_slice(tensor)
 
 
+@register_internal("mogg.as_scalar")
+@always_inline
+fn mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
+    return _get_scalar_from_managed_tensor_slice(tensor)
+
+
 @register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
