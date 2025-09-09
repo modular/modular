@@ -43,6 +43,13 @@ fn get_dispatch_table[
         default_comp_time_hasher,
     ]()
 
+    # TODO(PAQ-1284):
+    #   The configs below are sometimes less optimal than the
+    #   default config, leading to performance regressions that were previously
+    #   masked by a bug. Retune and update before using them again. Return an
+    #   empty dict in the meantime.
+    return tile_configs^
+
     @always_inline
     @parameter
     fn insert(
