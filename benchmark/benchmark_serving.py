@@ -1280,10 +1280,8 @@ def main(args: argparse.Namespace) -> None:
 
     if args.base_url is not None:
         api_url = f"{args.base_url}{args.endpoint}"
-        base_url = f"{args.base_url}"
     else:
         api_url = f"http://{args.host}:{args.port}{args.endpoint}"
-        base_url = f"http://{args.host}:{args.port}"
 
     logger.info(f"getting tokenizer. api url: {api_url}")
     tokenizer = get_tokenizer(
