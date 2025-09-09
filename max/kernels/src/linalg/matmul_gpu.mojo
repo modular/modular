@@ -549,7 +549,16 @@ fn _matmul_gpu[
             fn _multistage_gemm[
                 config: MatmulConfig[a_type, b_type, c_type, transpose_b]
             ]() raises:
-                return _multistage_gemm[config](config)
+                return multistage_gemm[
+                    transpose_b=transpose_b,
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    ctx,
+                )
 
             # Allow caller to overwrite dispatch heuristic with their own config.
             @parameter
@@ -611,6 +620,161 @@ fn _matmul_gpu[
                     return kernel_helper[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
+
+                @parameter
+                fn build_config_list() -> (
+                    List[MatmulConfig[a_type, b_type, c_type, transpose_b]]
+                ):
+                    alias sm_count = Int(ctx.default_device_info.sm_count)
+
+                    alias block_sizes = [
+                        16,
+                        32,
+                        64,
+                        96,
+                        128,
+                        160,
+                        192,
+                        224,
+                        256,
+                    ]
+                    alias len_block_sizes = len(block_sizes)
+
+                    var emit_config = InlineArray[
+                        Bool, len_block_sizes * len_block_sizes
+                    ](fill=False)
+
+                    @always_inline
+                    @parameter
+                    fn process_m(m: Int):
+                        var best_score = Int.MAX
+                        var best_idx = 0
+                        var idx = 0
+
+                        for block_m in block_sizes:
+                            var m_blocks = ceildiv(m, block_m)
+
+                            for block_n in block_sizes:
+                                var n_blocks = ceildiv(static_N, block_n)
+
+                                var total_blocks = m_blocks * n_blocks
+                                var batch, extra = divmod(
+                                    total_blocks, sm_count
+                                )
+                                var score_extra = (
+                                    sm_count - extra if extra > 0 else 0
+                                )
+                                var score = batch * sm_count + score_extra
+
+                                if score < best_score or (
+                                    score == best_score and emit_config[idx]
+                                ):
+                                    best_score = score
+                                    best_idx = idx
+
+                                idx += 1
+
+                        emit_config[best_idx] = True
+
+                    for m in range(16, 1024, 16):
+                        process_m(m)
+                    for m in range(1024, 8192, 32):
+                        process_m(m)
+
+                    var config_list = List[
+                        MatmulConfig[a_type, b_type, c_type, transpose_b]
+                    ]()
+
+                    for idx in range(len(emit_config)):
+                        if not emit_config[idx]:
+                            continue
+
+                        var idx_m, idx_n = divmod(idx, len_block_sizes)
+
+                        var block_m = block_sizes[idx_m]
+                        var block_n = block_sizes[idx_n]
+                        var block_k = _bk_base[a_type, True]()
+
+                        alias max_num_warps: UInt = 4
+
+                        var num_warps: UInt = 1
+                        var num_warp_k_partitions: UInt = 1
+
+                        if block_m <= 32 and block_n <= 32:
+                            # Attempt to increase the number of warp_k partitions to improve
+                            # processor utilization.
+                            var test_k = block_k * 2
+                            while (
+                                num_warps < max_num_warps
+                                and (static_K % test_k) == 0
+                            ):
+                                num_warp_k_partitions *= 2
+                                num_warps *= 2
+                                test_k *= 2
+                        else:
+                            # Improve shared memory utilization by expanding block_k.
+                            var smem_a = block_m * block_k * size_of[a_type]()
+                            var smem_b = block_n * block_k * size_of[b_type]()
+                            if smem_a + smem_b <= 32 * 1024:
+                                block_k *= 2
+
+                        block_tile_shape = Index(block_m, block_n, block_k)
+                        warp_tile_shape = block_tile_shape
+
+                        # Warp partition block_m and block_n.
+                        for i in reversed(range(2)):
+                            if (
+                                block_tile_shape[i] >= 32
+                                and block_tile_shape[i] % 32 == 0
+                                and num_warps < max_num_warps
+                            ):
+                                warp_tile_shape[i] = block_tile_shape[i] // 2
+                                num_warps *= 2
+
+                        config = MatmulConfig[
+                            a_type, b_type, c_type, transpose_b
+                        ](
+                            block_tile_shape=block_tile_shape,
+                            warp_tile_shape=warp_tile_shape,
+                            mma_shape=mma_shape_helper(),
+                            num_pipeline_stages=1,
+                            num_warp_k_partitions=num_warp_k_partitions,
+                            pdl_level=pdl_level,
+                        )
+
+                        config_list.append(config)
+
+                    return config_list^
+
+                @parameter
+                if ctx.default_device_info is MI355X:
+                    alias sm_count = Int(ctx.default_device_info.sm_count)
+                    alias config_list = build_config_list()
+
+                    var best_idx = 0
+                    var best_score = Int.MAX
+
+                    @parameter
+                    for i in range(len(config_list)):
+                        alias config = config_list[i]
+                        alias block_m = config.block_tile_shape[0]
+                        alias block_n = config.block_tile_shape[1]
+                        alias n_blocks = ceildiv(static_N, block_n)
+
+                        var m_blocks = ceildiv(m, block_m)
+                        var total_blocks = m_blocks * n_blocks
+                        var batch, extra = divmod(total_blocks, sm_count)
+                        var score_extra = sm_count - extra if extra > 0 else 0
+                        var score = batch * sm_count + score_extra
+
+                        if score < best_score:
+                            best_idx = i
+                            best_score = score
+
+                    @parameter
+                    for i in range(len(config_list)):
+                        if best_idx == i:
+                            return _multistage_gemm[config_list[i]]()
 
                 # mistral-small-24b auto-tuned shapes
                 @parameter
@@ -963,6 +1127,95 @@ fn split_k_reduce[
             )
 
     elementwise[_reduce, simd_width, target="gpu"](Index(M, N), ctx)
+
+
+fn multistage_gemm[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+    *,
+    transpose_b: Bool,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
+    ctx: DeviceContext,
+) raises:
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+
+    var logger = Logger()
+    logger.info("------ Dispatching to Multistage GEMM ------")
+    logger.info(String(config))
+
+    var tensor_c = from_ndbuffer_row_major(c)
+    var tensor_a = from_ndbuffer_row_major(a)
+    var tensor_b = from_ndbuffer_row_major(b)
+
+    @parameter
+    if has_amd_gpu_accelerator() and transpose_b:
+        logger.info("Executing: AMD standard GEMM (no split-K)")
+        alias gemm_kernel_type = gemm_kernel_amd[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
+        ctx.enqueue_function[gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            grid_dim=config.grid_dim(UInt(M), UInt(N)),
+            block_dim=config.block_dim(),
+        )
+
+    else:
+        logger.info("Executing: standard GEMM (no split-K)")
+        alias gemm_kernel_type = multistage_gemm_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
+            config,
+            elementwise_lambda_fn,
+        ]
+
+        ctx.enqueue_function[gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            grid_dim=config.grid_dim(UInt(M), UInt(N)),
+            block_dim=config.block_dim(),
+            shared_mem_bytes=config.shared_mem_usage(),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                config.shared_mem_usage()
+            ),
+        )
 
 
 fn multistage_gemm[
