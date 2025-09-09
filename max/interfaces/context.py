@@ -40,12 +40,12 @@ class SamplingParamsInput:
     seed: Optional[int] = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class SamplingParams:
     """Request specific sampling parameters that are only known at run time."""
 
-    top_k: int = 255
-    """Limits the sampling to the K most probable tokens. This defaults to 255.
+    top_k: int = -1
+    """Limits the sampling to the K most probable tokens. This defaults to -1 (which evaluates the top 255 tokens).
     For greedy sampling, set to 1."""
 
     top_p: float = 1
@@ -131,10 +131,12 @@ class SamplingParams:
         if self.repetition_penalty <= 0:
             raise ValueError("repetition_penalty must be greater than 0.")
 
-        if self.top_k <= 0 or self.top_k > 256:
-            # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
+        # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
+        if self.top_k in [0, -1]:
+            self.top_k = 255
+        elif self.top_k < -1 or self.top_k > 255:
             raise ValueError(
-                f"top_k must be greater than 0 and less than or equal to 256, was {self.top_k}."
+                f"top_k must be -1 or greater than 0 and less than or equal to 255, was {self.top_k}."
             )
 
 
