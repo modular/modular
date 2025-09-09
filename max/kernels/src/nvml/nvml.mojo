@@ -46,9 +46,7 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     return paths^
 
 
-alias CUDA_NVML_LIBRARY = _Global[
-    "CUDA_NVML_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

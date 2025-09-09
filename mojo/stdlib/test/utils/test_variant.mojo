@@ -18,9 +18,7 @@ from testing import assert_equal, assert_false, assert_true
 
 from utils import Variant
 
-alias TEST_VARIANT_POISON = _Global[
-    "TEST_VARIANT_POISON", Bool, _initialize_poison
-]
+alias TEST_VARIANT_POISON = _Global["TEST_VARIANT_POISON", _initialize_poison]
 
 
 fn _initialize_poison() -> Bool:

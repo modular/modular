@@ -483,7 +483,7 @@ struct DLHandle(Boolable, Copyable, Movable):
 
 @always_inline
 fn _get_dylib_function[
-    dylib_global: _Global[_, _OwnedDLHandle, _],
+    dylib_global: _Global[StorageType=_OwnedDLHandle, *_, **_],
     func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() -> result_type:
@@ -591,8 +591,8 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
 # NOTE: This is vending shared mutable pointers to the client without locking.
 # This is not guaranteeing any sort of thread safety.
 struct _Global[
+    StorageType: Movable, //,
     name: StaticString,
-    StorageType: Movable,
     init_fn: fn () -> StorageType,
 ](Defaultable):
     alias ResultType = UnsafePointer[StorageType]

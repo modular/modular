@@ -32,9 +32,7 @@ alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 )
 
-alias CUDA_CUDNN_LIBRARY = _Global[
-    "CUDA_CUDNN_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_CUDNN_LIBRARY = _Global["CUDA_CUDNN_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

@@ -30,9 +30,7 @@ alias CUDA_CURAND_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda/lib64/libcurand.so.10",
 )
 
-alias CUDA_CURAND_LIBRARY = _Global[
-    "CUDA_CURAND_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_CURAND_LIBRARY = _Global["CUDA_CURAND_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

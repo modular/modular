@@ -242,9 +242,7 @@ alias HIPBLASLT_LIBRARY_PATHS = List[Path](
     "/opt/rocm/lib/libhipblaslt.so.0",
 )
 
-alias HIPBLASLT_LIBRARY = _Global[
-    "HIPBLASLT_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

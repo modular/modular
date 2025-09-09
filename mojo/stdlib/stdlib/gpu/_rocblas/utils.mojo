@@ -29,9 +29,7 @@ alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
     "/opt/rocm/lib/librocblas.so.4",
 )
 
-alias ROCM_ROCBLAS_LIBRARY = _Global[
-    "ROCM_ROCBLAS_LIBRARY", _OwnedDLHandle, _init_dylib
-]()
+alias ROCM_ROCBLAS_LIBRARY = _Global["ROCM_ROCBLAS_LIBRARY", _init_dylib]()
 
 
 fn _init_dylib() -> _OwnedDLHandle:

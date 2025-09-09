@@ -43,7 +43,7 @@ fn _init_dylib() -> _OwnedDLHandle:
     return _find_dylib["graph library"](mof_lib_path)
 
 
-alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
+alias MOF_LIB = _Global["MOF_LIB", _init_dylib]
 
 
 @always_inline

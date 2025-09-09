@@ -41,9 +41,7 @@ alias NVSHMEM_LIBRARY_PATHS = List[Path](
     "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so",
 )
 
-alias NVSHMEM_LIBRARY = _Global[
-    "NVSHMEM_LIBRARY", _OwnedDLHandle, _init_nvshmem_dylib
-]
+alias NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 
 fn _init_nvshmem_dylib() -> _OwnedDLHandle:

@@ -34,7 +34,7 @@ alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
 )
 
 alias CUDA_CUDNN_INFER_LIBRARY = _Global[
-    "CUDA_CUDNN_INFER_LIBRARY", _OwnedDLHandle, _init_dylib
+    "CUDA_CUDNN_INFER_LIBRARY", _init_dylib
 ]
 
 

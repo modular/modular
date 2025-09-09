@@ -63,9 +63,7 @@ alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias APPLE_ACCELERATE = _Global[
-    "APPLE_ACCELERATE", _OwnedDLHandle, _init_dylib
-]
+alias APPLE_ACCELERATE = _Global["APPLE_ACCELERATE", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

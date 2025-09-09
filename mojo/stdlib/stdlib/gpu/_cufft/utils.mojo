@@ -27,9 +27,7 @@ alias CUDA_CUFFT_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda/lib64/libcufft.so.11",
 )
 
-alias CUDA_CUFFT_LIBRARY = _Global[
-    "CUDA_CUFFT_LIBRARY", _OwnedDLHandle, _init_dylib
-]()
+alias CUDA_CUFFT_LIBRARY = _Global["CUDA_CUFFT_LIBRARY", _init_dylib]()
 
 
 fn _init_dylib() -> _OwnedDLHandle:

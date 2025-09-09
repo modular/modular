@@ -37,9 +37,7 @@ alias CUDA_CUBLASLT_LIBRARY_PATHS = List[Path](
     "/usr/local/cuda/lib64/libcublasLt.so.12",
 )
 
-alias CUDA_CUBLASLT_LIBRARY = _Global[
-    "CUDA_CUBLASLT_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_CUBLASLT_LIBRARY = _Global["CUDA_CUBLASLT_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:

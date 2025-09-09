@@ -40,8 +40,8 @@ from builtin._startup import _ensure_current_or_global_runtime_init
 # ===-----------------------------------------------------------------------===#
 
 alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
+    StorageType = Dict[StaticString, PythonObject],
     "MOJO_PYTHON_TYPE_OBJECTS",
-    Dict[StaticString, PythonObject],
     Dict[StaticString, PythonObject].__init__,
 ]
 """Mapping of Mojo type identifiers to unique `PyTypeObject*` binding

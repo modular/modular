@@ -68,9 +68,7 @@ fn _setup_categories(
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
-alias GPU_TRACING_LIBRARY = _Global[
-    "GPU_TRACING_LIBRARY", _OwnedDLHandle, _init_dylib
-]()
+alias GPU_TRACING_LIBRARY = _Global["GPU_TRACING_LIBRARY", _init_dylib]()
 
 
 fn _init_dylib() -> _OwnedDLHandle:

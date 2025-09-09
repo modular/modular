@@ -33,7 +33,7 @@ from ._cpython import (
 )
 from .python_object import PythonObject
 
-alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
+alias _PYTHON_GLOBAL = _Global["Python", _init_python_global]
 
 
 fn _init_python_global() -> _PythonGlobal:

@@ -33,7 +33,7 @@ alias MPI_LIBRARY_PATHS = List[Path](
     "/usr/lib/x86_64-linux-gnu/nvshmem/12/nvshmem_bootstrap_mpi.so",
 )
 
-alias MPI_LIBRARY = _Global["MPI_LIBRARY", _OwnedDLHandle, _init_mpi_dylib]
+alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn _init_mpi_dylib() -> _OwnedDLHandle:

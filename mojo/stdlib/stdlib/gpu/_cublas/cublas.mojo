@@ -35,9 +35,7 @@ alias CUDA_CUBLAS_LIBRARY_PATHS = List[Path](
 )
 
 
-alias CUDA_CUBLAS_LIBRARY = _Global[
-    "CUDA_CUBLAS_LIBRARY", _OwnedDLHandle, _init_dylib
-]
+alias CUDA_CUBLAS_LIBRARY = _Global["CUDA_CUBLAS_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
