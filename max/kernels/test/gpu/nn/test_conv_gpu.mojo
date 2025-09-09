@@ -121,19 +121,19 @@ fn test_conv3d_gpu[
     var grid_dim_y = ceildiv(D_out, block_size)  # depth is the y dimension
     var grid_dim_z = N  # batch size is the z dimension
 
+    alias kernel = conv3d_gpu_naive_ndhwc_qrscf[
+        input_dim,
+        filter_dim,
+        output_dim,
+        dtype,
+        dtype,
+        dtype,
+        block_size,
+        None,
+    ]
+
     # run gpu implementation
-    ctx.enqueue_function[
-        conv3d_gpu_naive_ndhwc_qrscf[
-            input_dim,
-            filter_dim,
-            output_dim,
-            dtype,
-            dtype,
-            dtype,
-            block_size,
-            None,
-        ]
-    ](
+    ctx.enqueue_function_checked[kernel, kernel](
         input_buf,
         filter_buf,
         output_buf,

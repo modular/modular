@@ -264,7 +264,7 @@ def causal_conv1d_gpu[
 
     # Map the problem to the 3D grid to iterate over
     # the batch, channel and chunk the sequence length
-    ctx.enqueue_function[kernel_func, dump_asm=False](
+    ctx.enqueue_function_checked[kernel_func, kernel_func](
         input,
         weight,
         bias,

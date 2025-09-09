@@ -333,7 +333,7 @@ fn winograd_conv2d_gpu_launcher[
         block_size,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         input,
         filter,
         output,
