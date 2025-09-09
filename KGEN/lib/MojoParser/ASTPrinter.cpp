@@ -261,7 +261,7 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
   PogListAttr paramListAttr;
   ArrayRef<ParamDeclAttr> paramDecls;
   ssize_t paramIdx = -1;
-  size_t numImplicitOrigins = 0;
+  [[maybe_unused]] size_t numImplicitOrigins = 0;
   while (curDecl) {
     // TODO: we need a decl interface to do this!
     if (auto fnDecl =
