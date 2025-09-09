@@ -23,11 +23,24 @@ from comm.allreduce import (
     allreduce,
     _allreduce_naive_single,
 )
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from testing import assert_almost_equal, assert_true
 
 
 from utils import IndexList, StaticTuple
+
+# Shared test configurations
+alias test_lengths = (
+    8 * 1024,  # Small latency bound
+    128 * 1024,  # Larger latency bound
+    256 * 1024,  # Smallest bandwidth bound
+    16 * 1024 * 1024,  # Bandwidth bound
+    64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
+)
+
+# Test hyperparameters.
+alias test_dtypes = (DType.bfloat16, DType.float32)
+alias test_gpu_counts = (2, 4, 8)
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -57,10 +70,11 @@ fn _human_memory(size: Int) -> String:
 
 
 fn allreduce_test[
-    dtype: DType, rank: Int, ngpus: Int
+    dtype: DType, rank: Int, ngpus: Int, use_multimem: Bool
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     alias num_warmups = 5
     alias num_iters = 100
+    alias num_buffers = 1 if use_multimem else ngpus
 
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
@@ -80,7 +94,10 @@ fn allreduce_test[
     # Initialize buffers for each GPU
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        if not use_multimem:
+            in_bufs_list.append(
+                list_of_ctx[i].enqueue_create_buffer[dtype](length)
+            )
         out_bufs_list.append(
             list_of_ctx[i].enqueue_create_buffer[dtype](length)
         )
@@ -102,21 +119,37 @@ fn allreduce_test[
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
-        # Copy data to device
-        list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
+        # Copy data to device for non-multimem path
+        if not use_multimem:
+            list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[dtype, rank, MutableAnyOrigin], num_buffers
+    ](fill={})
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
         fill={}
     )
 
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(length)
+    if use_multimem:
+        var multicast_buf = DeviceMulticastBuffer[dtype](
+            list_of_ctx.copy(), length
         )
+        for i in range(ngpus):
+            var unicast_buf = multicast_buf.unicast_buffer_for(list_of_ctx[i])
+            list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
+        # All GPUs use the same multicast pointer
+        in_bufs[0] = NDBuffer[dtype, rank](
+            multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
+            DimList(length),
+        )
+    else:
+        for i in range(ngpus):
+            in_bufs[i] = NDBuffer[dtype, rank](
+                in_bufs_list[i].unsafe_ptr(), DimList(length)
+            )
+
+    for i in range(ngpus):
         out_bufs[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
@@ -155,7 +188,9 @@ fn allreduce_test[
         @parameter
         for i in range(ngpus):
             allreduce[
-                ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]
+                ngpus=ngpus,
+                output_lambda = outputs_lambda[input_index=i],
+                use_multimem=use_multimem,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices.
@@ -170,7 +205,9 @@ fn allreduce_test[
         @parameter
         for i in range(ngpus):
             allreduce[
-                ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]
+                ngpus=ngpus,
+                output_lambda = outputs_lambda[input_index=i],
+                use_multimem=use_multimem,
             ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
     # Synchronize all devices.
@@ -207,12 +244,16 @@ fn allreduce_test[
     _ = signal_buffers^
 
 
-fn _get_test_str[dtype: DType](ngpus: Int, length: Int) -> String:
+fn _get_test_str[
+    dtype: DType, use_multimem: Bool
+](ngpus: Int, length: Int) -> String:
+    var multimem_tag = "-multimem" if use_multimem else ""
     return String(
         "====allreduce-",
         dtype,
         "-",
         ngpus,
+        multimem_tag,
         "-",
         _human_memory(size_of[dtype]() * length),
     )
@@ -311,29 +352,8 @@ def allreduce_naive_test() -> None:
         host_ptrs[i].free()
 
 
-def main():
-    assert_true(
-        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
-    )
-
-    # First, explicitly exercise the naive allreduce path by calling it directly.
-    allreduce_naive_test()
-
-    # Test configurations covering edge cases
-    # fmt: off
-    alias test_lengths = (
-        8 * 1024,           # Small latency bound
-        128 * 1024,         # Larger latency bound
-        256 * 1024,         # Smallest bandwidth bound
-        16 * 1024 * 1024,   # Bandwidth bound
-        64 * 1024 * 1024,   # Bandwidth bound: 8192 chunk size at dim = 8192
-    )
-    # fmt: on
-
-    # Test hyperparameters.
-    alias test_dtypes = (DType.bfloat16, DType.float32)
-    alias test_gpu_counts = (2, 4, 8)
-
+@parameter
+fn run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):
@@ -355,16 +375,42 @@ def main():
             for length_idx in range(len(test_lengths)):
                 alias length = test_lengths[length_idx]
 
-                print(_get_test_str[dtype](num_gpus, length))
+                print(_get_test_str[dtype, use_multimem](num_gpus, length))
                 try:
-                    allreduce_test[dtype=dtype, rank=1, ngpus=num_gpus](
-                        ctx, length
-                    )
+                    allreduce_test[
+                        dtype=dtype,
+                        rank=1,
+                        ngpus=num_gpus,
+                        use_multimem=use_multimem,
+                    ](ctx, length)
                 except e:
                     if "OUT_OF_MEMORY" in String(e):
                         print(
                             "Out of memory error occurred for ",
-                            _get_test_str[dtype](num_gpus, length),
+                            _get_test_str[dtype, use_multimem](
+                                num_gpus, length
+                            ),
+                        )
+                    elif (
+                        use_multimem
+                        and "multimem is only supported on SM90+ GPUs"
+                        in String(e)
+                    ):
+                        print(
+                            "Skipping multimem test - SM90+ not supported by"
+                            " compilation target"
                         )
                     else:
                         raise e
+
+
+def main():
+    assert_true(
+        DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
+    )
+
+    # First, explicitly exercise the naive allreduce path by calling it directly.
+    allreduce_naive_test()
+
+    # Standard (non-multimem) sweep
+    run_allreduce_sweep[use_multimem=False]()
