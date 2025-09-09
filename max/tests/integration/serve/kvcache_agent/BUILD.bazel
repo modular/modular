@@ -2,7 +2,10 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_dispatcher_v2.py"],
+    ),
     deps = [
         "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
@@ -10,5 +13,14 @@ modular_py_test(
         requirement("grpcio"),
         requirement("pyzmq"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_dispatcher_v2",
+    srcs = ["test_dispatcher_v2.py"],
+    deps = [
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
+        "//SDK/lib/API/python/max/serve/queue",
     ],
 )
