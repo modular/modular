@@ -443,6 +443,7 @@ fn softmax_3_pass[
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
         dtype, _simd_width
     ],
+    logsoftmax: Bool = False,
 ](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
@@ -472,71 +473,40 @@ fn softmax_3_pass[
         dtype: The dtype of the input and output buffers.
         origins: The OriginSet of captured arguments by the input_fn_1d.
         input_fn_1d: The elementwise input lambda.
+        logsoftmax: Enable to apply elementwise log() to outputs after softmax.
 
     Args:
         output: The output buffer in which to store the softmax values.
     """
-    _softmax_3_pass_base[
-        simd_width,
-        buffer_size,
-        dtype,
-        input_fn_1d,
-        exp,
-        identity,
-        reciprocal,
-        mul,
-    ](output)
+
+    @parameter
+    if logsoftmax:
+        _softmax_3_pass_base[
+            simd_width,
+            buffer_size,
+            dtype,
+            input_fn_1d,
+            identity,
+            exp,
+            log,
+            sub,
+        ](output)
+    else:
+        _softmax_3_pass_base[
+            simd_width,
+            buffer_size,
+            dtype,
+            input_fn_1d,
+            exp,
+            identity,
+            reciprocal,
+            mul,
+        ](output)
 
 
 # ===-----------------------------------------------------------------------===#
 # LogSoftmax
 # ===-----------------------------------------------------------------------===#
-
-
-fn logsoftmax[
-    simd_width: Int,
-    buffer_size: Dim,
-    dtype: DType,
-    origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
-        dtype, _simd_width
-    ],
-](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
-    """Performs an unbatched logsoftmax on an input tensor using the three-pass
-    algorithm.
-
-    The unbatched three-pass softmax is defined as:
-
-        procedure SoftmaxUnbatched(InputInput)
-          maxVal = -∞
-          denom = 0
-          STEP 1: find the max value in each batch
-          for i = 0 to N do
-            maxVal = max(maxVal, Input[b, i])
-          end for
-          STEP 2: compute the sum of exponential of each batch
-          for i = 0 to N do
-            Output[b, i] = Input[b, i] - maxVal
-            accum += exp(Output[b, i])
-          end for
-          STEP 3: normalize each batch
-          for i = 0 to N do
-            Output[b, i] -= log(accum)
-          end for
-
-    Parameters:
-        simd_width: The simd_width to use in vectorization.
-        buffer_size: The size of the input and output buffers.
-        dtype: The dtype of the input and output buffers.
-        origins: The OriginSet of captured arguments by the input_fn_1d.
-        input_fn_1d: The elementwise input lambda.
-
-    Args:
-        output: The output buffer in which to store the softmax values.
-    """
-    _softmax_3_pass_base[
-        simd_width, buffer_size, dtype, input_fn_1d, identity, exp, log, sub
-    ](output)
 
 
 fn logsoftmax[
@@ -547,52 +517,16 @@ fn logsoftmax[
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
     ] -> SIMD[dtype, _simd_width],
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    # TODO: Add rowwise generator to de-duplicate partitioning logic between
-    # softmax and logsoftmax
-    if axis != rank - 1:
-        raise Error("logsoftmax not supported on non-inner axis yet")
-
-    if shape.flattened_length() == 0:
-        return
-
-    var inner_dim = output.dim[rank - 1]()
-    var outer_dim = product[rank](shape, rank - 1)
-    var num_workers = min(parallelism_level(), outer_dim)
-    var chunk_size = ceildiv(outer_dim, num_workers)
-
-    @parameter
-    @__copy_capture(chunk_size, outer_dim, inner_dim)
-    @always_inline
-    fn task_func(task_id: Int) raises:
-        var start_offset = task_id * chunk_size
-        var end_offset = min((task_id + 1) * chunk_size, outer_dim)
-        for i in range(start_offset, end_offset):
-            var buffer_offset = i * inner_dim
-            var output_buffer_view = NDBuffer[dtype, 1](
-                output.data.offset(buffer_offset), inner_dim
-            )
-            var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
-
-            @parameter
-            @always_inline
-            # Given input lambda accepts N-dimensional coordinates, but the
-            # softmax base routines operate on 1D buffers. Here we wrap the
-            # given input lambda with some 1d-to-Nd translation logic.
-            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
-                indices[rank - 1] = idx
-                return input_fn[_width, rank](indices)
-
-            logsoftmax[simd_width, Dim(), dtype, __origin_of(), input_fn_1d](
-                output_buffer_view
-            )
-            _ = indices
-
-    sync_parallelize[task_func](num_workers)
+    softmax[
+        dtype, simd_width, rank, static_shape, input_fn, target, logsoftmax=True
+    ](shape, output, axis, context)
 
 
 fn logsoftmax[
@@ -600,10 +534,12 @@ fn logsoftmax[
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
+    target: StaticString = "cpu",
 ](
     input: NDBuffer[dtype, rank, _, static_shape],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
     @always_inline
@@ -612,9 +548,9 @@ fn logsoftmax[
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         return input.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
-    logsoftmax[dtype, simd_width, rank, static_shape, input_fn](
-        input.get_shape(), output, axis
-    )
+    softmax[
+        dtype, simd_width, rank, static_shape, input_fn, target, logsoftmax=True
+    ](input.get_shape(), output, axis, context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -631,6 +567,7 @@ fn _softmax_cpu[
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         origins
     ] -> SIMD[dtype, _simd_width],
+    logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
@@ -672,7 +609,12 @@ fn _softmax_cpu[
                 return input_fn[_width, rank](indices)
 
             softmax_3_pass[
-                simd_width, Dim(), dtype, __origin_of(), input_fn_1d
+                simd_width,
+                Dim(),
+                dtype,
+                __origin_of(),
+                input_fn_1d,
+                logsoftmax=logsoftmax,
             ](output_buffer_view)
             _ = indices
 
@@ -712,6 +654,7 @@ fn softmax_kernel[
     accum_type: DType = get_accum_type[dtype](),
     *,
     sink: Bool = False,
+    logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[dtype, rank, MutableAnyOrigin],
@@ -814,6 +757,10 @@ fn softmax_kernel[
             row_coords[axis] = Int(row_offset)
             output[row_coords] *= block_exp_sum_recip.cast[dtype]()
 
+        @parameter
+        if logsoftmax:
+            output[row_coords] = log(output[row_coords])
+
 
 fn _softmax_gpu[
     dtype: DType,
@@ -826,6 +773,7 @@ fn _softmax_gpu[
     *,
     sink: Bool = False,
     sink_type: DType = dtype,
+    logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
@@ -849,7 +797,14 @@ fn _softmax_gpu[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
     ctx.enqueue_function[
-        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, dtype, rank, sink=sink]
+        softmax_kernel[
+            BLOCK_SIZE,
+            input_fn_wrapper,
+            dtype,
+            rank,
+            sink=sink,
+            logsoftmax=logsoftmax,
+        ]
     ](shape, output, sink_weights, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 
 
@@ -862,6 +817,7 @@ fn softmax[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",
+    logsoftmax: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, dtype, rank, _, static_shape],
@@ -880,10 +836,23 @@ fn softmax[
         @parameter
         if is_cpu[target]():
             _softmax_cpu[
-                dtype, simd_width, rank, static_shape, __origin_of(), input_fn
+                dtype,
+                simd_width,
+                rank,
+                static_shape,
+                __origin_of(),
+                input_fn,
+                logsoftmax=logsoftmax,
             ](shape, output, axis)
         elif is_gpu[target]():
-            _softmax_gpu[dtype, simd_width, rank, static_shape, input_fn](
+            _softmax_gpu[
+                dtype,
+                simd_width,
+                rank,
+                static_shape,
+                input_fn,
+                logsoftmax=logsoftmax,
+            ](
                 shape,
                 output,
                 axis,

@@ -4269,6 +4269,7 @@ struct LogSoftmax:
     ](
         output: OutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
+        ctx: DeviceContextPtr,
     ) capturing raises:
         # shape should be the same between the two inputs
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -4289,7 +4290,8 @@ struct LogSoftmax:
             output.rank,
             output_ndbuffer.shape,
             input_fn,
-        ](output.shape(), output_ndbuffer, output.rank - 1)
+            target,
+        ](output.shape(), output_ndbuffer, output.rank - 1, context=ctx)
 
 
 # ===-----------------------------------------------------------------------===#
