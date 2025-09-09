@@ -19,6 +19,7 @@ import os
 from typing import Any, Callable, TypeVar
 
 import click
+from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.entrypoints.workers import start_workers
 from max.serve.config import Settings
 from max.serve.telemetry.common import configure_logging
@@ -127,7 +128,33 @@ class ModelGroup(click.Group):
     is_eager=True,  # Eager ensures this runs before other options/commands
     help="Show the MAX version and exit.",
 )
-def main() -> None:
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Enable verbose logging (DEBUG level).",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    default=False,
+    help="Enable quiet logging (WARNING level only).",
+)
+@click.option(
+    "--log-level",
+    type=click.Choice(
+        ["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False
+    ),
+    default="INFO",
+    help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
+)
+def main(
+    verbose: bool = False, quiet: bool = False, log_level: str = "INFO"
+) -> None:
+    # Configure logging first, before any other initialization
+    configure_cli_logging(level=log_level, quiet=quiet, verbose=verbose)
     configure_telemetry()
 
 

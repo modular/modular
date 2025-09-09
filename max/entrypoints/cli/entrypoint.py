@@ -15,7 +15,68 @@
 
 from __future__ import annotations
 
+import logging
+
 import click
+
+
+def configure_cli_logging(
+    level: str = "INFO", quiet: bool = False, verbose: bool = False
+) -> None:
+    """Configure logging for CLI operations without using Settings.
+
+    Args:
+        level: Log level as string (DEBUG, INFO, WARNING, ERROR)
+        quiet: If True, set logging to WARNING level
+        verbose: If True, set logging to DEBUG level
+    """
+    # Determine log level based on flags
+    if quiet:
+        log_level = logging.WARNING
+    elif verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = getattr(logging, level.upper(), logging.INFO)
+
+    # Clear existing handlers to prevent duplicates
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_formatter = logging.Formatter(
+        "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(log_level)
+
+    # Set up log filtering for MAX components
+    components_to_log = [
+        "root",
+        "max.entrypoints",
+        "max.pipelines",
+        "max.serve",
+    ]
+
+    def log_filter(record: logging.LogRecord) -> bool:
+        """Filter to only show logs from MAX components."""
+        return any(
+            record.name == component or record.name.startswith(component + ".")
+            for component in components_to_log
+        )
+
+    console_handler.addFilter(log_filter)
+
+    # Configure root logger
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(console_handler)
+
+    # Reduce noise from external libraries
+    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    logging.getLogger("sse_starlette.sse").setLevel(
+        max(log_level, logging.INFO)
+    )
 
 
 class ModelGroup(click.Group):
@@ -30,8 +91,3 @@ class ModelGroup(click.Group):
             f"Command not supported: {cmd_name}\n"
             f"Supported commands: {supported}"
         )
-
-
-@click.command(cls=ModelGroup)
-def run_cli() -> None:
-    pass
