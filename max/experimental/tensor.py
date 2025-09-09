@@ -4,6 +4,35 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""Provides experimental tensor operations with eager execution capabilities.
+
+.. warning::
+    This module contains experimental APIs that are subject to change or
+    removal in future versions. Use with caution in production environments.
+
+This module provides the :class:`~max.experimental.tensor` class which supports
+eager execution of tensor operations, complementing the graph-based execution
+model provided by :obj:`~max.graph`. The tensor operations automatically compile
+and execute using the MAX runtime.
+
+**Key Features:**
+
+- **Eager execution**: Operations execute immediately rather than building a graph.
+- **Automatic compilation**: Tensors are compiled and optimized automatically.
+- **Lazy evaluation**: Tensors may be computed lazily until their values are needed.
+- **NumPy compatibility**: Supports common NumPy-like operations and indexing.
+
+Create and manipulate tensors with automatic compilation and optimization::
+
+    from max.experimental import tensor
+    from max.driver import CPU
+    from max.dtype import DType
+    # Create and operate on tensors
+    x = tensor.Tensor.ones((2, 3), dtype=DType.float32, device=CPU())
+    y = tensor.Tensor.zeros((2, 3), dtype=DType.float32, device=CPU())
+    result = x + y  # Eager execution with automatic compilation
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -108,18 +137,18 @@ class Tensor(DLPackArray, HasTensorValue):
 
     Tensor operations should always meet the following criteria:
     - Any illegal operation on a tensor must fail immediately with
-        a python exception with a clear error message
+    a python exception with a clear error message
     - All operations on tensors that read or write Tensor memory
-        values use our high-performance compiler and Mojo kernel library.
+    values use our high-performance compiler and Mojo kernel library.
 
     The out of the box experience should be the best one available
     for working with Tensors and numerics, and give seemless access
     to direct low-level programmability in Mojo.
 
-    Notably Tensor does _not_ require that it is backed by memory.
+    Notably Tensor does *not* require that it is backed by memory.
     If no side-effecting operation has been done on a Tensor object,
     then there is no guarantee it has been computed yet. Critically
-    a user _should never know or care_ whether the tensor is backed
+    a user *should never know or care* whether the tensor is backed
     by data: the behavior should be exactly as if it were.
 
     For discussion purposes, a "realized" tensor is a tensor which
@@ -528,10 +557,10 @@ class ComputeGraph:
 
     Terminology:
     - A "source" of the graph is a realized tensor that some unrealized
-      tensor depends on.
+    tensor depends on.
     - "unrealized" refers to a node in the graph which is not a source,
-      or to the tensor object that it backs. There is a 1:1 relationship
-      between the node and the tensor object.
+    or to the tensor object that it backs. There is a 1:1 relationship
+    between the node and the tensor object.
 
     It is not obvious a priori which unrealized nodes to evaluate at
     what time. The `evaluate` method of the graph is at its heart a
@@ -573,9 +602,9 @@ class ComputeGraph:
 
         It is currently undefined to operate on tensors during evaluation.
 
-        After execution
+        After execution:
         - The compute graph object and all tensors realized or otherwise
-          will be in valid states.
+        will be in valid states.
         - The input tensor is guaranteed to be realized.
         - Some other previously unrealized tensors may be realized
         - Any realized tensors with live references will not be unrealized.
