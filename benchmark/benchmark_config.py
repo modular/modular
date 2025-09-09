@@ -250,6 +250,9 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     save_result: bool = False
     """Specify to save benchmark results to a json file."""
 
+    record_output_lengths: Optional[str] = None
+    """Path to save output lengths in YAML format."""
+
     result_dir: Optional[str] = None
     """Directory to save results."""
 
@@ -308,6 +311,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "save_result": "Specify to save benchmark results to a json file.",
             "result_dir": "Directory to save results.",
             "result_filename": "Custom filename (auto-generated if null).",
+            "record_output_lengths": "Path to save output lengths in YAML format.",
             "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
         }
         return {**base_help, **serving_help}
