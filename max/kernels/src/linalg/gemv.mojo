@@ -881,12 +881,12 @@ fn gemv[
     @always_inline
     @parameter
     fn input_fn[
-        type: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return (
-            a_buf.load[width=width](Index(idx[0], idx[1])).cast[type]()
-            * b_buf.load[width=width](idx[1]).cast[type]()
-        ).cast[type]()
+            a_buf.load[width=width](Index(idx[0], idx[1])).cast[dtype]()
+            * b_buf.load[width=width](idx[1]).cast[dtype]()
+        ).cast[dtype]()
 
     @always_inline
     @parameter
@@ -926,11 +926,11 @@ fn naive_gemv[
     c_size: Dim,
     a_shape: DimList,
     b_size: Dim,
-    type: DType,
+    dtype: DType,
 ](
-    c_buf: NDBuffer[mut=True, type, 1, _, c_size],
-    a_buf: NDBuffer[type, 2, _, a_shape],
-    b_buf: NDBuffer[type, 1, _, b_size],
+    c_buf: NDBuffer[mut=True, dtype, 1, _, c_size],
+    a_buf: NDBuffer[dtype, 2, _, a_shape],
+    b_buf: NDBuffer[dtype, 1, _, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

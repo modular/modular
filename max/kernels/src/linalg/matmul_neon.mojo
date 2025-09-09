@@ -62,7 +62,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
 
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
-        var a_vals = InlineArray[SIMD[c_local.type, a_col_size], kernel_rows](
+        var a_vals = InlineArray[SIMD[c_local.dtype, a_col_size], kernel_rows](
             uninitialized=True
         )
 
@@ -70,7 +70,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](global_m, global_k).cast[
-                c_local.type
+                c_local.dtype
             ]()
             a_vals[row] = a_val
 
@@ -82,14 +82,14 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
                 var b_val = (
                     b_ptr.offset(col * simd_size)
                     .load[width=simd_size]()
-                    .cast[c_local.type]()
+                    .cast[c_local.dtype]()
                 )
 
                 @parameter
                 for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_val = c_local[row, col]
-                    c_val = fma[dtype = c_local.type, width=simd_size](
+                    c_val = fma[dtype = c_local.dtype, width=simd_size](
                         a_val[lane], b_val, c_val
                     )
                     c_local[row, col] = c_val

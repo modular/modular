@@ -342,15 +342,19 @@ fn async_load_AB[
 
 @always_inline
 fn async_copy_with_bound_check[
-    type: DType, //,
+    dtype: DType, //,
     thread_layout: Layout,
     swizzle_mode: TensorMapSwizzle,
 ](
     src: LayoutTensor[
-        type, _, MutableAnyOrigin, address_space = AddressSpace.GENERIC, *_, **_
+        dtype,
+        _,
+        MutableAnyOrigin,
+        address_space = AddressSpace.GENERIC,
+        *_, **_,
     ],
     dst: LayoutTensor[
-        type, _, MutableAnyOrigin, address_space = AddressSpace.SHARED, *_, **_
+        dtype, _, MutableAnyOrigin, address_space = AddressSpace.SHARED, *_, **_
     ],
 ):
     constrained[src.layout.rank() == 2, "Global memory tile must be rank 2."]()

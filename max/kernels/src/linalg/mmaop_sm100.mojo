@@ -50,20 +50,20 @@ struct Major:
 
 
 # TODO: add create method to mma_operand trait and unify this with
-# SM90 counter part by abstracting the return type.
+# SM90 counter part by abstracting the return dtype.
 fn _create_mma_desc[
-    type: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
+    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
     ptr: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED, *_, **_
+        Scalar[dtype], address_space = AddressSpace.SHARED, *_, **_
     ]
 ) -> MMASmemDescriptor:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
     alias stride01 = canonical_layout[0].stride[1].value()
     alias stride11 = canonical_layout[1].stride[1].value()
-    alias SBO = stride01 * size_of[type]()
-    alias LBO = stride11 * size_of[type]()
+    alias SBO = stride01 * size_of[dtype]()
+    alias LBO = stride11 * size_of[dtype]()
 
     # Create and return the MMA shared memory descriptor
     # This will be used by the SM100 MMA operations to access shared memory

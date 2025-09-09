@@ -117,25 +117,25 @@ from .softmax import (
 
 fn flash_attention[
     rank: Int,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+        dtype, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
     ),
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
     sink: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: OptionalReg[Int] = None,
-    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     # TODO docstring
     @always_inline
@@ -232,11 +232,11 @@ fn flash_attention[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     sink: Bool = False,
@@ -244,7 +244,7 @@ fn flash_attention[
     naive_kernel: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
@@ -257,7 +257,7 @@ fn flash_attention[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
-    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -290,7 +290,7 @@ fn flash_attention[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
     constrained[
-        q.dtype == cache_t.dtype == output.type,
+        q.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -337,7 +337,7 @@ fn flash_attention[
         alias depth = q.shape.get[rank-1]()
         alias gpu_info = ctx.default_device_info
         alias head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-        alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
+        alias flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -373,8 +373,8 @@ fn flash_attention[
 
 @always_inline
 fn q_num_matrix_view_rows[
-    type: DType, rank: Int, q_shape: DimList, //, *, decoding: Bool, depth: Int
-](q: NDBuffer[type, rank, _, q_shape, *_]) -> Int:
+    dtype: DType, rank: Int, q_shape: DimList, //, *, decoding: Bool, depth: Int
+](q: NDBuffer[dtype, rank, _, q_shape, *_]) -> Int:
     # for tma if decoding, we view q as a rows x depth matrix
     # otherwise, we view q as a rows x (depth*num_heads) matrix
     var num_rows: Int = q.dim[0]()
@@ -392,12 +392,12 @@ fn flash_attention_dispatch[
     v_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
+        dtype, UInt(q_shape.get[rank - 2]()), UInt(q_shape.get[rank - 1]())
     ),
     ragged: Bool = False,
     sink: Bool = False,
@@ -415,7 +415,7 @@ fn flash_attention_dispatch[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -430,7 +430,7 @@ fn flash_attention_dispatch[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ] = None,
     num_partitions: OptionalReg[Int] = None,
-    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     alias num_heads = config.num_heads
     alias depth = config.depth
@@ -451,8 +451,8 @@ fn flash_attention_dispatch[
     else:
         batch_size = q.dim[0]()
 
-    alias q_half_float = type in (DType.float16, DType.bfloat16)
-    alias q_half_float_or_fp32 = type is DType.float32 or q_half_float
+    alias q_half_float = dtype in (DType.float16, DType.bfloat16)
+    alias q_half_float_or_fp32 = dtype is DType.float32 or q_half_float
 
     @parameter
     if _is_flash_attention_applicable:
@@ -535,10 +535,10 @@ fn flash_attention_dispatch[
                 alias BM = config.block_m()
                 alias smem_use = config.shared_mem_bytes[is_shared_kv]()
                 alias kernel = mha[
-                    config.type,
+                    config.dtype,
                     k_t,
                     v_t,
-                    output.type,
+                    output.dtype,
                     mask_t,
                     score_mod_t,
                     config,
@@ -995,11 +995,11 @@ fn flash_attention[
     rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
+        dtype, UInt(q_shape.get[2]()), UInt(q_shape.get[3]())
     ),
     decoding_warp_split_k: Bool = False,
     _use_valid_length: Bool = False,
@@ -1008,7 +1008,7 @@ fn flash_attention[
     sink: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask_functor: mask_t,
@@ -1023,7 +1023,7 @@ fn flash_attention[
             static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
         ]
     ] = None,
-    sink_weights: OptionalReg[NDBuffer[type, 1, MutableAnyOrigin]] = None,
+    sink_weights: OptionalReg[NDBuffer[dtype, 1, MutableAnyOrigin]] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
@@ -1041,7 +1041,7 @@ fn flash_attention[
     alias depth = q.shape.get[rank-1]()
     alias gpu_info = ctx.default_device_info
     alias head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-    alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
+    alias flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.dtype in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
@@ -4675,14 +4675,14 @@ fn mha_gpu_naive[
 
 
 fn _naive_attention_with_transpose[
-    type: DType,
+    dtype: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[mut=True, type, 4],
-    q: NDBuffer[type, 4],
-    k: NDBuffer[type, 4],
-    v: NDBuffer[type, 4],
-    mask: NDBuffer[type, 2],
+    output: NDBuffer[mut=True, dtype, 4],
+    q: NDBuffer[dtype, 4],
+    k: NDBuffer[dtype, 4],
+    v: NDBuffer[dtype, 4],
+    mask: NDBuffer[dtype, 2],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
@@ -4695,7 +4695,7 @@ fn _naive_attention_with_transpose[
     B, S, K, H, D stand for batch size, sequence length, number of keys,
     number of heads, and depth per head, respectively.
     """
-    alias simd_size = simd_width_of[type]()
+    alias simd_size = simd_width_of[dtype]()
 
     var batch_size = q.dim[0]()
     var seq_len = q.dim[1]()
@@ -4704,25 +4704,25 @@ fn _naive_attention_with_transpose[
     var depth = q.dim[3]()
 
     # Q, K, V transposed
-    var qt_ptr = UnsafePointer[Scalar[type]].alloc(q.num_elements())
-    var kt_ptr = UnsafePointer[Scalar[type]].alloc(k.num_elements())
-    var vt_ptr = UnsafePointer[Scalar[type]].alloc(v.num_elements())
+    var qt_ptr = UnsafePointer[Scalar[dtype]].alloc(q.num_elements())
+    var kt_ptr = UnsafePointer[Scalar[dtype]].alloc(k.num_elements())
+    var vt_ptr = UnsafePointer[Scalar[dtype]].alloc(v.num_elements())
     # Score = softmax(Q * K)
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = UnsafePointer[Scalar[type]].alloc(score_size)
+    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(score_size)
     # O = Score * V. It's transposed and will be transposed back to output.
-    var ot_ptr = UnsafePointer[Scalar[type]].alloc(output.num_elements())
+    var ot_ptr = UnsafePointer[Scalar[dtype]].alloc(output.num_elements())
 
-    var qt = NDBuffer[type, 4](
+    var qt = NDBuffer[dtype, 4](
         qt_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
-    var kt = NDBuffer[type, 4](
+    var kt = NDBuffer[dtype, 4](
         kt_ptr, Index(batch_size, num_heads, depth, num_keys)
     )
-    var vt = NDBuffer[type, 4](
+    var vt = NDBuffer[dtype, 4](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    var ot = NDBuffer[type, 4](
+    var ot = NDBuffer[dtype, 4](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
 
@@ -4757,7 +4757,7 @@ fn _naive_attention_with_transpose[
     transpose(kt, k, k_perm.data)
     transpose(vt, v, q_perm.data)
 
-    _naive_attention[type, transpose_k](ot, qt, kt, vt, mask, scale)
+    _naive_attention[dtype, transpose_k](ot, qt, kt, vt, mask, scale)
 
     transpose(output, ot, o_perm.data)
 
@@ -4769,20 +4769,20 @@ fn _naive_attention_with_transpose[
 
 
 fn _naive_attention[
-    type: DType,
+    dtype: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[mut=True, type, 4],
-    q: NDBuffer[type, 4],
-    k: NDBuffer[type, 4],
-    v: NDBuffer[type, 4],
-    mask: NDBuffer[type, 2],
+    output: NDBuffer[mut=True, dtype, 4],
+    q: NDBuffer[dtype, 4],
+    k: NDBuffer[dtype, 4],
+    v: NDBuffer[dtype, 4],
+    mask: NDBuffer[dtype, 2],
     scale: Float32,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
     """
-    alias simd_size = simd_width_of[type]()
+    alias simd_size = simd_width_of[dtype]()
 
     var batch_size = q.dim[0]()
     var num_heads = q.dim[1]()
@@ -4791,8 +4791,8 @@ fn _naive_attention[
 
     # Allocate intermediate memory buffer.
     var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_ptr = UnsafePointer[Scalar[type]].alloc(score_size)
-    var score = NDBuffer[type, 4](
+    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(score_size)
+    var score = NDBuffer[dtype, 4](
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
@@ -4805,7 +4805,7 @@ fn _naive_attention[
         width: Int, _rank: Int, alignment: Int = 1
     ](coords: IndexList[_rank]):
         var vec = score.load[width=width](rebind[IndexList[4]](coords))
-        vec = vec * scale.cast[type]()
+        vec = vec * scale.cast[dtype]()
         vec = vec + mask.load[width=width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
@@ -4813,7 +4813,7 @@ fn _naive_attention[
 
     elementwise[scale_and_mask, simd_size](score.get_shape())
 
-    softmax[type, simd_size, 4](
+    softmax[dtype, simd_size, 4](
         score,
         score,
         axis=3,

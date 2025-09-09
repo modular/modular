@@ -240,16 +240,16 @@ trait OutputOp:
 
 
 struct STOutputOpArgs[
-    type: DType,
+    dtype: DType,
     layout: Layout,
     sb: Origin,
 ](OpArgs):
-    var c: LayoutTensor[type, layout, sb]
+    var c: LayoutTensor[dtype, layout, sb]
 
     @always_inline
     fn __init__(
         out self,
-        c: LayoutTensor[type, layout, sb],
+        c: LayoutTensor[dtype, layout, sb],
     ):
         self.c = c
 
@@ -260,16 +260,16 @@ struct STOutputOpArgs[
 
 struct R2GOutputOp[
     accum_type: DType,
-    type: DType,
+    dtype: DType,
     layout: Layout,
     num_threads: Int,
     mma_shape: IndexList[3],
     block_tile_shape: IndexList[3],
     o: Origin,
 ](OutputOp):
-    alias args_type = STOutputOpArgs[type, layout, o]
+    alias args_type = STOutputOpArgs[dtype, layout, o]
 
-    var c: LayoutTensor[type, layout, o]
+    var c: LayoutTensor[dtype, layout, o]
 
     @always_inline
     fn __init__(out self, args: Self.args_type):
@@ -278,7 +278,7 @@ struct R2GOutputOp[
     @staticmethod
     @always_inline
     fn to_kernel_args(
-        c: LayoutTensor[type, layout, o], ctx: DeviceContext
+        c: LayoutTensor[dtype, layout, o], ctx: DeviceContext
     ) -> Self.args_type:
         return Self.args_type(c)
 
@@ -340,7 +340,7 @@ struct R2GOutputOp[
                         ](
                             SIMD[accum_type, 2](
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
-                            ).cast[type]()
+                            ).cast[dtype]()
                         )
 
 

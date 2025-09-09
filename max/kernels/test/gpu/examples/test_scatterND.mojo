@@ -29,13 +29,13 @@ alias MAX_THREADS_PER_BLOCK = 256
 
 # TODO: Follow-up: Eliminate offsets calculations and use NDBuffers directly.
 fn scatter_nd_gpu[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
 ](
-    output_data_ptr: UnsafePointer[Scalar[type]],
+    output_data_ptr: UnsafePointer[Scalar[dtype]],
     indices_data_ptr: UnsafePointer[Scalar[indices_type]],
     element_counts_and_input_dims_ptr: UnsafePointer[Int64],
-    updates_data_ptr: UnsafePointer[Scalar[type]],
+    updates_data_ptr: UnsafePointer[Scalar[dtype]],
     num_indices: Int,
     last_index_dimension: Int,
     num_updates_elements: Int,
@@ -92,23 +92,23 @@ fn scatter_nd_gpu[
 
 # TODO: Extend for using reduce function if needed.
 fn scatter_nd[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[type, data_rank, *_],
+    data: NDBuffer[dtype, data_rank, *_],
     indices: NDBuffer[indices_type, indices_rank, *_],
-    updates: NDBuffer[type, updates_rank, *_],
-    output: NDBuffer[type, data_rank, *_],
+    updates: NDBuffer[dtype, updates_rank, *_],
+    output: NDBuffer[dtype, data_rank, *_],
     ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
 
     Parameters:
-        type: Type of data, updates, and output tensors.
+        dtype: Type of data, updates, and output tensors.
         indices_type: Type of the indices tensor.
         data_rank: Rank of input (data) tensor (data_rank >= 1).
         indices_rank: Rank of input (data) tensor (indices_rank >= 1).
@@ -205,11 +205,11 @@ fn scatter_nd[
 
     # Allocate and copy output data, elements_counts_and_input_dims, updates,
     # indices to GPU.
-    var output_device = ctx.enqueue_create_buffer[type](data_count_copy)
+    var output_device = ctx.enqueue_create_buffer[dtype](data_count_copy)
     var element_counts_and_input_dims_device = ctx.enqueue_create_buffer[
         DType.int64
     ](last_shape_of_indices * 2)
-    var updates_device = ctx.enqueue_create_buffer[type](updates_count_copy)
+    var updates_device = ctx.enqueue_create_buffer[dtype](updates_count_copy)
     var indices_device = ctx.enqueue_create_buffer[indices_type](
         indices_count_copy
     )
@@ -230,7 +230,9 @@ fn scatter_nd[
 
     var num_updates_elements = count_copy
 
-    ctx.enqueue_function[scatter_nd_gpu[type=type, indices_type=indices_type]](
+    ctx.enqueue_function[
+        scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
+    ](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,
@@ -255,8 +257,8 @@ fn scatter_nd[
 
 
 fn linear_fill[
-    type: DType
-](buf: NDBuffer[type, *_], elems: VariadicList[Scalar[type]]):
+    dtype: DType
+](buf: NDBuffer[dtype, *_], elems: VariadicList[Scalar[dtype]]):
     debug_assert(
         buf.num_elements() == len(elems), "must fill all elements of tensor"
     )
@@ -266,18 +268,18 @@ fn linear_fill[
 
 
 fn test_case[
-    type: DType,
+    dtype: DType,
     input_shape: DimList,
     indices_shape: DimList,
     updates_shape: DimList,
 ](
-    data_vals: VariadicList[Scalar[type]],
+    data_vals: VariadicList[Scalar[dtype]],
     indices_vals: VariadicList[Int64],
-    updates_vals: VariadicList[Scalar[type]],
-    output_ref_vals: VariadicList[Scalar[type]],
+    updates_vals: VariadicList[Scalar[dtype]],
+    output_ref_vals: VariadicList[Scalar[dtype]],
 ) raises:
     var data = NDBuffer[
-        type, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutableAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(data, data_vals)
     var indices = NDBuffer[
@@ -285,11 +287,11 @@ fn test_case[
     ].stack_allocation()
     linear_fill(indices, indices_vals)
     var updates = NDBuffer[
-        type, 3, MutableAnyOrigin, updates_shape
+        dtype, 3, MutableAnyOrigin, updates_shape
     ].stack_allocation()
     linear_fill(updates, updates_vals)
     var output = NDBuffer[
-        type, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutableAnyOrigin, input_shape
     ].stack_allocation()
 
     # Note: This is for the specific set of examples
@@ -302,7 +304,7 @@ fn test_case[
     _ = updates
 
     var output_ref = NDBuffer[
-        type, 3, MutableAnyOrigin, input_shape
+        dtype, 3, MutableAnyOrigin, input_shape
     ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 

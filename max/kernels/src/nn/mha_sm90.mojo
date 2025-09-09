@@ -136,14 +136,14 @@ fn mha_sm90_dispatch[
     sink_weights: OptionalReg[NDBuffer[q_type, 1, MutableAnyOrigin]],
 ) raises:
     constrained[
-        config.type == KVType.dtype and config.type == q_type,
+        config.dtype == KVType.dtype and config.dtype == q_type,
         "config, kv, and q types must all match for FA3.",
     ]()
     alias swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
     alias decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
-        config.type,
+        config.dtype,
         config.num_heads,
         config.depth,
         num_queries_per_block=OptionalReg[UInt](64),
