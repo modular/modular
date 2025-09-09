@@ -1142,6 +1142,45 @@ fn reshape_contiguous_buffer[
     return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
 
 
+# TODO: Rename it without `_v2` and get rid of the implementation above.
+# The previous implementation didn't propagate the StaticTensorSpec correctly.
+# This wasn't a problem because we manipulated KGEN in the GC and passed the correct parameter to the kernel either way.
+# But for mojo we need to compute it correctly.
+@register_internal("reshape_contiguous_managed_tensor_slice_v2")
+@always_inline
+fn reshape_contiguous_buffer_v2[
+    static_shape: DimList, static_stride: DimList, new_rank: Int
+](
+    buffer: ManagedTensorSlice,
+    shape: IndexList[new_rank],
+) -> ManagedTensorSlice[
+    io_spec = buffer.io_spec,
+    static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+        static_shape,
+        static_stride,
+        1,
+        AddressSpace.GENERIC,
+        True,
+        None,
+        None,
+        None,
+    ),
+]:
+    return ManagedTensorSlice[
+        io_spec = buffer.io_spec,
+        static_spec = StaticTensorSpec[buffer.dtype, new_rank](
+            static_shape,
+            static_stride,
+            1,
+            AddressSpace.GENERIC,
+            True,
+            None,
+            None,
+            None,
+        ),
+    ](buffer._ptr, shape)
+
+
 # ===----------------------------------------------------------------------===#
 # Additional expected primitives
 # ===-----------------------------------------------------------------------===#
