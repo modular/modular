@@ -16,9 +16,11 @@ from max.pipelines import PipelineConfig
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from PIL import Image
 from pytest_mock import MockerFixture
+from test_common.mocks import mock_estimate_memory_footprint
 
 
 @pytest.mark.asyncio
+@mock_estimate_memory_footprint
 async def test_internvl_tokenizer_with_image() -> None:
     """Test InternVL tokenizer adds image tokens correctly."""
     model_id = "OpenGVLab/InternVL3-1B-Instruct"
@@ -66,6 +68,7 @@ async def test_internvl_tokenizer_with_image() -> None:
 
 
 @pytest.mark.asyncio
+@mock_estimate_memory_footprint
 async def test_internvl_tokenizer_apply_chat_template(
     mocker: MockerFixture,
 ) -> None:
