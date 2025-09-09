@@ -176,7 +176,7 @@ language across multiple phases.
   `__mlir_type.index` value.
 
 - There is now an `iter` module which exposes the `next`, `iter`,
-  and `enumerate` methods.
+  `zip`, and `enumerate` methods.
 
 - The way copying is modeled in Mojo has been overhauled.
 
