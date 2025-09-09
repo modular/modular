@@ -32,6 +32,11 @@ def test_sampling_top_k() -> None:
         SamplingParams(top_k=257)
 
 
+def test_temperature_zero_sets_top_k_to_one() -> None:
+    sampling_params = SamplingParams(temperature=0.0)
+    assert sampling_params.top_k == 1
+
+
 def test_llguidance_sampling(
     session: InferenceSession, modular_ai_llama_3_1_local_path: str
 ) -> None:
