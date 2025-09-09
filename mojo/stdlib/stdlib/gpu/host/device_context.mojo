@@ -2311,6 +2311,8 @@ struct DeviceFunction[
         if num_captures > num_captures_static:
             dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
             dense_args_sizes = dense_args_sizes.alloc(num_captures + num_args)
+            for i in range(num_captures + num_args):
+                dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer
@@ -2318,6 +2320,8 @@ struct DeviceFunction[
             dense_args_sizes = stack_allocation[
                 num_captures_static + num_args, UInt
             ]()
+            for i in range(num_captures_static + num_args):
+                dense_args_sizes[i] = 0
 
         @parameter
         for i in range(num_args):
@@ -2674,6 +2678,8 @@ struct DeviceFunction[
             dense_args_sizes = dense_args_sizes.alloc(
                 num_captures + num_passed_args
             )
+            for i in range(num_captures + num_passed_args):
+                dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_passed_args, OpaquePointer
@@ -2681,6 +2687,8 @@ struct DeviceFunction[
             dense_args_sizes = stack_allocation[
                 num_captures_static + num_passed_args, UInt
             ]()
+            for i in range(num_captures_static + num_passed_args):
+                dense_args_sizes[i] = 0
         # Since we skip over zero sized declared dtypes when passing arguments
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
@@ -2697,6 +2705,7 @@ struct DeviceFunction[
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
+                dense_args_sizes[i] = UInt(size_of[actual_arg_type]())
                 translated_arg_idx += 1
 
         if cluster_dim:
