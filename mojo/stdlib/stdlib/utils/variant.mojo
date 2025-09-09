@@ -419,23 +419,25 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
 
     @staticmethod
     fn _all_t_trivial[_dunder: String]() -> Bool:
-        var is_trivial = True
 
         @parameter
         for i in range(len(VariadicList(Ts))):
 
             @parameter
             if _dunder == "__del__":
-                is_trivial &= Bool(Ts[i].__del__is_trivial)
+                if not Bool(Ts[i].__del__is_trivial):
+                    return False
 
             @parameter
             if _dunder == "__copyinit__":
-                is_trivial &= Bool(Ts[i].__copyinit__is_trivial)
+                if not Bool(Ts[i].__copyinit__is_trivial):
+                    return False
 
             @parameter
             if _dunder == "__moveinit__":
-                is_trivial &= Bool(Ts[i].__moveinit__is_trivial)
-        return is_trivial
+                if not Bool(Ts[i].__moveinit__is_trivial):
+                    return False
+        return True
 
     @staticmethod
     fn is_type_supported[T: AnyType]() -> Bool:
