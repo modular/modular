@@ -168,6 +168,10 @@ class DeviceRef:
             return False
         return self.device_type is other.device_type and self.id == other.id
 
+    def __hash__(self) -> int:
+        """Hashes based on the immutable identity (device_type, id)."""
+        return hash((self.device_type, self.id))
+
     def to_mlir(self) -> m.DeviceRefAttr:
         """Returns a mlir attribute representing device."""
         return m.DeviceRefAttr(str(self.device_type), self.id)
