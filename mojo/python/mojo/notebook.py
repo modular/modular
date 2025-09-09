@@ -30,11 +30,75 @@ from .run import subprocess_run_mojo
 
 @register_cell_magic
 def mojo(line, cell) -> None:  # noqa: ANN001
+    """A Mojo cell.
+
+    Usage:
+        - Run Mojo code in a cell
+
+            ```mojo
+            %%mojo
+            def main():
+                print("Hello from Mojo!")
+            ```
+
+        - Compile a python extension SO file
+
+            ```mojo
+            %%mojo build --emit shared-lib -o mojo_module.so
+
+            from python import PythonObject
+            from python.bindings import PythonModuleBuilder
+            from os import abort
+
+            @export
+            fn PyInit_mojo_module() -> PythonObject:
+                try:
+                    var m = PythonModuleBuilder("thing")
+                    m.def_function[hello]("hello", docstring="Hello!")
+                    return m.finalize()
+                except e:
+                    return abort[PythonObject](String("error creating Python Mojo module:", e))
+
+            def hello() -> PythonObject:
+                return "Hello from Mojo!"
+            ```
+
+            then in another cell
+
+            ```python
+            from mojo_module import hello
+
+            hello()
+            ```
+
+        - Compile a package for kernel development.
+            The following produces a `kernels.mojopkg` which may be included
+            as custom ops in a graph via the `custom_extensions` mechanism.
+
+            ```mojo
+            %%mojo package -o kernels.mojopkg
+
+            from runtime.asyncrt import DeviceContextPtr
+            from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+
+            @compiler.register("histogram")
+            struct Histogram:
+                @staticmethod
+                fn execute[
+                    target: StaticString
+                ](
+                    output: OutputTensor[dtype = DType.int64, rank=1],
+                    input: InputTensor[dtype = DType.uint8, rank=1],
+                    ctx: DeviceContextPtr,
+                ) raises:
+                    ...
+            ```
+
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="?", default="run")
-    parser.add_argument("-o", "--output")
 
-    args = parser.parse_args(line.strip().split())
+    args, extra_args = parser.parse_known_args(line.strip().split())
 
     with tempfile.TemporaryDirectory() as tempdir:
         path = Path(tempdir)
@@ -47,11 +111,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
         command = [
             args.command,
             str(input_path),
-            *(
-                ("-o", args.output)
-                if args.output and args.command != "run"
-                else ()
-            ),
+            *extra_args,
         ]
 
         result = subprocess_run_mojo(command, capture_output=True)
