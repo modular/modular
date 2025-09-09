@@ -58,7 +58,8 @@ def test_constant_mem(ctx: DeviceContext):
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
     _ = res_device.enqueue_fill(0)
 
-    ctx.enqueue_function[static_constant_kernel[16]](
+    alias kernel = static_constant_kernel[16]
+    ctx.enqueue_function_checked[kernel, kernel](
         res_device, grid_dim=1, block_dim=16
     )
 
@@ -93,7 +94,8 @@ def test_constant_mem_via_func(ctx: DeviceContext):
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
     _ = res_device.enqueue_fill(0)
 
-    ctx.enqueue_function[static_constant_kernel[_fill_impl[20]]](
+    alias kernel = static_constant_kernel[_fill_impl[20]]
+    ctx.enqueue_function_checked[kernel, kernel](
         res_device, grid_dim=1, block_dim=16
     )
 
@@ -122,7 +124,8 @@ def test_external_constant_mem(ctx: DeviceContext):
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
     _ = res_device.enqueue_fill(0)
 
-    ctx.enqueue_function[static_constant_kernel](
+    alias kernel = static_constant_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         res_device,
         grid_dim=1,
         block_dim=16,

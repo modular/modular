@@ -42,7 +42,10 @@ fn test(ctx: DeviceContext, i: Int) raises:
     alias n = 4
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
-    ctx.enqueue_function[bad_func](buf, i, grid_dim=(1), block_dim=(1))
+    alias kernel = bad_func
+    ctx.enqueue_function_checked[kernel, kernel](
+        buf, i, grid_dim=(1), block_dim=(1)
+    )
     ctx.synchronize()
 
 

@@ -82,7 +82,8 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     var device_buf = ctx.enqueue_create_buffer[dst_type](size)
     _ = device_buf.enqueue_fill(0)
 
-    ctx.enqueue_function[convert_kernel[src_type, dst_type, size]](
+    alias kernel = convert_kernel[src_type, dst_type, size]
+    ctx.enqueue_function_checked[kernel, kernel](
         device_buf, grid_dim=(1), block_dim=(1)
     )
     with device_buf.map_to_host() as host_buf:

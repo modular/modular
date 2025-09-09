@@ -100,7 +100,13 @@ def main():
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
-        ctx.enqueue_function[test_format_float8_e5m2](grid_dim=1, block_dim=1)
+        alias kernel_0 = test_format_float8_e5m2
+        ctx.enqueue_function_checked[kernel_0, kernel_0](
+            grid_dim=1, block_dim=1
+        )
 
         print("== test_format_float8_e4m3fn")
-        ctx.enqueue_function[test_format_float8_e4m3fn](grid_dim=1, block_dim=1)
+        alias kernel_1 = test_format_float8_e4m3fn
+        ctx.enqueue_function_checked[kernel_1, kernel_1](
+            grid_dim=1, block_dim=1
+        )

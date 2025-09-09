@@ -52,7 +52,8 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
 
 def test_producer_consumer_kernel(ctx: DeviceContext):
-    ctx.enqueue_function[producer_consumer_kernel[64]](
+    alias kernel = producer_consumer_kernel[64]
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(1),
         block_dim=(64),
     )
@@ -125,7 +126,8 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
 
 
 def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
-    ctx.enqueue_function[producer_consumer_pipeline_kernel[4]](
+    alias kernel = producer_consumer_pipeline_kernel[4]
+    ctx.enqueue_function_checked[kernel, kernel](
         4,
         grid_dim=(1),
         block_dim=(128),
@@ -245,9 +247,10 @@ def test_cpasync_producer_consumer_pipeline[
     dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
 
-    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[num_stages]](
-        src_device.tensor.data,
-        dst_device.tensor.data,
+    alias kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
+    ctx.enqueue_function_checked[kernel, kernel](
+        src_device.buffer,
+        dst_device.buffer,
         grid_dim=(1),
         block_dim=(256),
     )

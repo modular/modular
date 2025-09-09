@@ -52,9 +52,10 @@ def test_warp_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[warp_sum_kernel[dtype=dtype]](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    alias kernel = warp_sum_kernel[dtype=dtype]
+    ctx.enqueue_function_checked[kernel, kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
@@ -115,9 +116,10 @@ def test_block_sum(ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    alias kernel = block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]
+    ctx.enqueue_function_checked[kernel, kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,

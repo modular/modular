@@ -48,8 +48,9 @@ fn _kernel_launch_helper[
     var device_ptr = ctx.enqueue_create_buffer[dtype](buffer_size)
     ctx.enqueue_copy(device_ptr, host_ptr)
 
-    ctx.enqueue_function[kernel_wrapper[dtype, simd_width, kernel_fn]](
-        device_ptr, simd_width, grid_dim=1, block_dim=block_size
+    alias kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
+    ctx.enqueue_function_checked[kernel, kernel](
+        device_ptr, grid_dim=1, block_dim=block_size
     )
 
     ctx.enqueue_copy(host_ptr, device_ptr)

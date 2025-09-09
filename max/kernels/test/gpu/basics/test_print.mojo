@@ -84,7 +84,8 @@ fn test_gpu_print_formattable() raises:
         print_casts(Float32(0.501858))
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function[do_print](
+        alias kernel = do_print
+        ctx.enqueue_function_checked[kernel, kernel](
             Int(42), Float64(7.2), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.

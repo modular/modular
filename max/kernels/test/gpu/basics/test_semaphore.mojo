@@ -46,7 +46,8 @@ fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    ctx.enqueue_function[test_named_barrier_semaphore_equal_kernel](
+    alias kernel = test_named_barrier_semaphore_equal_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,
         grid_dim=(NUM_BLOCKS),
@@ -89,7 +90,8 @@ fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     ctx.enqueue_memset(locks_data, 0)
     ctx.enqueue_memset(shared_data, NUM_BLOCKS)
 
-    ctx.enqueue_function[test_named_barrier_semaphore_less_than_kernel](
+    alias kernel = test_named_barrier_semaphore_less_than_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         locks_data,
         shared_data,
         grid_dim=(NUM_BLOCKS),

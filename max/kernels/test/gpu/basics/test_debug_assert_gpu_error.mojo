@@ -34,7 +34,9 @@ def main():
             # CHECK-NOT: won't print this due to assert failure
             print("won't print this due to assert failure")
 
-        ctx.enqueue_function[fail_assert](
+        alias kernel = fail_assert
+
+        ctx.enqueue_function_checked[kernel, kernel](
             grid_dim=2,
             block_dim=(2, 2),
         )

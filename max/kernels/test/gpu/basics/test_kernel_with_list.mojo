@@ -35,7 +35,8 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    ctx.enqueue_function[kernel_with_list, dump_asm=True](
+    alias kernel = kernel_with_list
+    ctx.enqueue_function_checked[kernel, kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )
     with res_device.map_to_host() as res_host:

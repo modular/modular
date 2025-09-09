@@ -51,7 +51,8 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         return capture + lhs + rhs
 
     var block_dim = 32
-    ctx.enqueue_function[vec_func[add]](
+    alias kernel = vec_func[add]
+    ctx.enqueue_function_checked[kernel, kernel](
         in0,
         in1,
         out,

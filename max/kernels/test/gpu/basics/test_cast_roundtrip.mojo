@@ -52,7 +52,8 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    ctx.enqueue_function[id](
+    alias kernel = id
+    ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,
         length,

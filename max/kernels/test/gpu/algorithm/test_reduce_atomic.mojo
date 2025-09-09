@@ -86,7 +86,9 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     var res_max_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
 
-    ctx.enqueue_function[reduce](
+    alias kernel = reduce
+
+    ctx.enqueue_function_checked[kernel, kernel](
         res_add_device,
         res_min_device,
         res_max_device,

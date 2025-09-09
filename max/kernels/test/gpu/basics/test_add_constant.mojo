@@ -41,7 +41,8 @@ def run_add_constant(ctx: DeviceContext):
     var block_dim = 32
     alias constant = Float32(33)
 
-    ctx.enqueue_function[add_constant_fn](
+    alias kernel = add_constant_fn
+    ctx.enqueue_function_checked[kernel, kernel](
         out_device,
         in_device,
         constant,

@@ -33,7 +33,8 @@ fn test_amd_dims(ctx: DeviceContext) raises:
             print(grid_dim.x, grid_dim.y, grid_dim.z)
             print(block_dim.x, block_dim.y, block_dim.z)
 
-    ctx.enqueue_function[test_dims_kernel](
+    alias kernel = test_dims_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(14, 15, 16),
         block_dim=(2, 3, 4),
     )
