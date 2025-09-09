@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import mo
+from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import TensorType, _ChainType
@@ -124,11 +124,11 @@ def allgather(
     in_chain = Graph.current._current_chain
 
     # Stage the allgather op with signal buffers and chain.
-    *results, out_chain = Graph.current._add_op(
-        mo.distributed_allgather,
+    *results, out_chain = Graph.current._add_op_generated(
+        mo.DistributedAllgatherOp,
         # Output types: tensors + chain
         output_types,
-        _ChainType().to_mlir(),
+        _ChainType(),
         inputs,
         signal_buffers,
         in_chain,
