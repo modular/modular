@@ -859,7 +859,7 @@ async def benchmark(
     if do_test_prompt:
         logger.info("Starting initial single prompt test run...")
         test_prompt: Union[str, list[dict]]
-        if args.num_chat_sessions:
+        if num_chat_sessions:
             test_question = chat_sessions[0].messages[0]
             test_answer = chat_sessions[0].messages[1]
             test_prompt = [
