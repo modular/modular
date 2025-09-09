@@ -21,6 +21,7 @@ from max.interfaces import (
     TextGenerationResponseFormat,
 )
 from max.pipelines import (
+    PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
     TextAndVisionTokenizer,
@@ -295,6 +296,41 @@ def test_tokenizer_encode_stop_criteria(
     assert len(context.eos_sequences) == 1
     assert len(context.eos_sequences[0]) == 1
     assert np.array_equal(context.eos_sequences[0], [0])
+
+
+def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
+    """Test that TextAndVisionTokenizer properly forwards sampling params to context."""
+    model_path = "OpenGVLab/InternVL3-8B-Instruct"
+
+    pipeline_config = PipelineConfig(
+        model_path=model_path,
+        trust_remote_code=True,
+    )
+
+    tokenizer = PIPELINE_REGISTRY.retrieve_tokenizer(pipeline_config)
+
+    custom_params = SamplingParams(
+        temperature=0.5,
+        top_k=42,
+    )
+
+    request = TextGenerationRequest(
+        request_id="test_request",
+        model_name=model_path,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content="test message",
+            )
+        ],
+        sampling_params=custom_params,
+    )
+
+    context = asyncio.run(tokenizer.new_context(request))
+
+    assert context.sampling_params is not None
+    assert context.sampling_params.temperature == 0.5
+    assert context.sampling_params.top_k == 42
 
 
 @pytest.mark.skip("TODO: test fails in CI")
