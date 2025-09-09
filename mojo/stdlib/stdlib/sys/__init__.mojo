@@ -20,7 +20,9 @@ from .ffi import DEFAULT_RTLD, RTLD, DLHandle, external_call
 from .info import (
     CompilationTarget,
     align_of,
+    alignof,
     bit_width_of,
+    bitwidthof,
     has_accelerator,
     has_amd_gpu_accelerator,
     has_apple_gpu_accelerator,
@@ -35,9 +37,13 @@ from .info import (
     num_performance_cores,
     num_physical_cores,
     simd_bit_width,
+    simdbitwidth,
     simd_byte_width,
+    simdbytewidth,
     simd_width_of,
+    simdwidthof,
     size_of,
+    sizeof,
 )
 from .intrinsics import (
     PrefetchCache,
