@@ -55,7 +55,8 @@ class SamplingParams:
     """Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this."""
 
     temperature: float = 1
-    """Controls the randomness of the model's output; higher values produce more diverse responses."""
+    """Controls the randomness of the model's output; higher values produce more diverse responses. Note that for greedy sampling,
+    set the top_k to 1 (setting the temperature to 0 will still result in some randomness due to the fused top-k sampling kernel)."""
 
     frequency_penalty: float = 0.0
     """The frequency penalty to apply to the model's output. A positive value will penalize new tokens
