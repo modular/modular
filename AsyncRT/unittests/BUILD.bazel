@@ -176,6 +176,20 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "GPUDeviceTest",
+    size = "small",
+    srcs = ["GPUDeviceTest.cpp"],
+    gpu_constraints = [
+        "//:has_gpu",
+    ],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
+    ],
+)
+
+modular_cc_test(
     name = "RuntimeTest",
     size = "small",
     srcs = ["RuntimeTest.cpp"],
