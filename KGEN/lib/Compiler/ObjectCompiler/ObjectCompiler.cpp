@@ -36,8 +36,6 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
-#include "xxh3.h"
-#include "xxhash.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
@@ -335,7 +333,8 @@ writeBytesToTempWithHash(const std::string &saveTempsPrefix,
 
   // Include unique hash as part of name.
   assert(sizeof(uint8_t) == sizeof(char) && "Assume char is 8 bits");
-  auto hash = XXH3_128bits(buf.data(), buf.size());
+  llvm::XXH128_hash_t hash =
+      llvm::xxh3_128bits(llvm::arrayRefFromStringRef(buf));
   std::string outPath =
       saveTempsPrefix + "." + llvm::utohexstr(hash.high64, /*LowerCase=*/true) +
       llvm::utohexstr(hash.low64, /*LowerCase=*/true) + postfix;

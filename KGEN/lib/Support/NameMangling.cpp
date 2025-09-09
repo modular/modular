@@ -9,9 +9,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
-
-#include "xxh3.h"
-#include "xxhash.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -98,13 +96,12 @@ StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
   VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
                                            [name] { return name.str(); });
   if (name.size() > charToKeep) {
-    XXH128_hash_t hash = XXH3_128bits(name.data(), name.size());
+    std::string hash = llvm::utohexstr(llvm::xxh3_64bits(name),
+                                       /*LowerCase=*/true, /*Width=*/16);
     return StringAttr::get(
         name.getContext(),
         replaceInvalidCharacter(name.strref().take_front(charToKeep)) + "_" +
-            llvm::toHex(
-                StringRef(llvm::bit_cast<char *>(&hash), sizeof(XXH128_hash_t)),
-                true));
+            hash);
   }
 
   return StringAttr::get(name.getContext(), replaceInvalidCharacter(name));
