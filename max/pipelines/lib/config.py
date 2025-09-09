@@ -348,6 +348,9 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
+        # Log Useful KVCache Info
+        self.log_kvcache_info()
+
     def _import_custom_architectures(self) -> None:
         """
         Import custom model modules to add them to the registry.
@@ -577,6 +580,81 @@ class PipelineConfig(MAXConfig):
             The graph quantization encoding corresponding to the CLI encoding.
         """
         return self._model_config.graph_quantization_encoding
+
+    def log_kvcache_info(self) -> None:
+        """Log comprehensive kvcache configuration and status information to the console."""
+        logger.info("=" * 60)
+        logger.info("KVCache Configuration Summary")
+        logger.info("=" * 60)
+
+        # Primary model kvcache config
+        kv_config = self.model_config._kv_cache_config
+        logger.info(f"Cache Strategy: {kv_config.cache_strategy}")
+        logger.info(f"KVCache Page Size: {kv_config.kv_cache_page_size} tokens")
+        logger.info(
+            f"Prefix Caching Enabled: {kv_config.enable_prefix_caching}"
+        )
+        logger.info(
+            f"Host Swapping Enabled: {kv_config.enable_kvcache_swapping_to_host}"
+        )
+        logger.info(
+            f"Device Memory Utilization: {kv_config.device_memory_utilization:.1%}"
+        )
+        logger.info(
+            f"Host Swap Space: {kv_config.host_kvcache_swap_space_gb} GB"
+        )
+
+        if kv_config._available_cache_memory is not None:
+            cache_gb = kv_config._available_cache_memory / (1024**3)
+            logger.info(
+                f"Available Cache Memory: {cache_gb:.2f} GB ({kv_config._available_cache_memory} bytes)"
+            )
+        else:
+            logger.info("Available Cache Memory: Not calculated yet")
+
+        # Draft model kvcache config (if using speculative decoding)
+        if self.draft_model_config is not None:
+            logger.info("-" * 40)
+            logger.info("Draft Model KVCache Configuration:")
+            draft_kv_config = self.draft_model_config._kv_cache_config
+            logger.info(f"  Cache Strategy: {draft_kv_config.cache_strategy}")
+            logger.info(
+                f"  KVCache Page Size: {draft_kv_config.kv_cache_page_size} tokens"
+            )
+            logger.info(
+                f"  Prefix Caching Enabled: {draft_kv_config.enable_prefix_caching}"
+            )
+            logger.info(
+                f"  Host Swapping Enabled: {draft_kv_config.enable_kvcache_swapping_to_host}"
+            )
+            logger.info(
+                f"  Device Memory Utilization: {draft_kv_config.device_memory_utilization:.1%}"
+            )
+            logger.info(
+                f"  Host Swap Space: {draft_kv_config.host_kvcache_swap_space_gb} GB"
+            )
+
+            if draft_kv_config._available_cache_memory is not None:
+                draft_cache_gb = draft_kv_config._available_cache_memory / (
+                    1024**3
+                )
+                logger.info(
+                    f"  Available Cache Memory: {draft_cache_gb:.2f} GB ({draft_kv_config._available_cache_memory} bytes)"
+                )
+            else:
+                logger.info("  Available Cache Memory: Not calculated yet")
+
+        # Related pipeline configuration
+        logger.info("-" * 40)
+        logger.info("Related Pipeline Configuration:")
+        logger.info(f"Max Sequence Length: {self.max_length}")
+        logger.info(f"Max Batch Size: {self.max_batch_size}")
+        logger.info(f"Max CE Batch Size: {self.max_ce_batch_size}")
+        logger.info(f"Chunked Prefill Enabled: {self.enable_chunked_prefill}")
+        logger.info(f"Target New Tokens: {self.target_num_new_tokens}")
+        logger.info(f"In-Flight Batching: {self.enable_in_flight_batching}")
+
+        logger.info("=" * 60)
 
     @staticmethod
     def help() -> dict[str, str]:
