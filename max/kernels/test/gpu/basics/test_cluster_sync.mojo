@@ -37,7 +37,8 @@ fn test_cluster_sync_kernel():
 # CHECK: 7
 fn test_cluster_sync(ctx: DeviceContext) raises:
     print("== test_cluster_sync")
-    ctx.enqueue_function[test_cluster_sync_kernel](
+    alias kernel = test_cluster_sync_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2, 2),
         block_dim=(1),
         cluster_dim=Dim((2, 2, 2)),

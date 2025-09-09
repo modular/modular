@@ -68,7 +68,8 @@ fn test_cluster_dims_attribute_kernel():
 # CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 0 1 0 ) CLUSTER( 0 1 0 )
 fn test_cluster_dims_attribute(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute")
-    ctx.enqueue_function[test_cluster_dims_attribute_kernel](
+    alias kernel = test_cluster_dims_attribute_kernel
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2, 1), block_dim=(1)
     )
     ctx.synchronize()
@@ -82,7 +83,8 @@ fn test_cluster_dims_attribute(ctx: DeviceContext) raises:
 fn test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute_with_param")
     alias x = StaticTuple[Int32, 3](1, 2, 1)
-    ctx.enqueue_function[test_cluster_dims_attribute_kernel_with_param[x]](
+    alias kernel = test_cluster_dims_attribute_kernel_with_param[x]
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=(2, 2, 1), block_dim=(1)
     )
     ctx.synchronize()
