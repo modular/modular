@@ -51,7 +51,7 @@ class Qwen2_5VL(Module):
 
     def build_language_model(self) -> Qwen25VLDecoder:
         """Return the language model component."""
-        return Qwen25VLDecoder(self.config)
+        return Qwen25VLDecoder(self.config.llm_config)
 
     def __call__(self, *args, **kwargs):
         """This class is not meant to be called directly. Use the component models instead."""
