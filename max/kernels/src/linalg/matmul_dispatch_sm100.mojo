@@ -440,7 +440,7 @@ fn matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 cta_group=2,
-                block_swizzle_size=2,
+                block_swizzle_size=0,
                 rasterize_order = RasterOrder.AlongM,
             ](c, a, b, ctx)
             return DISPATCH_HIT
