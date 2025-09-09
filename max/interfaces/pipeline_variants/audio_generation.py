@@ -49,7 +49,7 @@ class AudioGenerationRequest(Request):
     audio_prompt_transcription: str = ""
     """The audio prompt transcription to use for audio generation."""
 
-    sampling_params: SamplingParams = SamplingParams()
+    sampling_params: SamplingParams = field(default_factory=SamplingParams)
     """Request sampling configuration options."""
 
     _assistant_message_override: str | None = None
