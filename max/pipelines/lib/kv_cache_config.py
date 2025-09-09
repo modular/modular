@@ -39,7 +39,7 @@ class KVCacheConfig(MAXConfig):
     kv_cache_page_size: int = 128
     """The number of tokens in a single page in the paged KVCache."""
 
-    enable_prefix_caching: bool = False
+    enable_prefix_caching: bool = True
     """Whether to enable prefix caching for the paged attention KVCache."""
 
     enable_kvcache_swapping_to_host: bool = False
