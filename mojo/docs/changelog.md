@@ -493,6 +493,9 @@ as the version for these packages.
 
 ### ❌ Removed
 
+- The Mojo MLIR C bindings has been removed. This was a private package that was
+ used for early experimentation.
+
 ### 🛠️ Fixed
 
 - Fixed <https://github.com/modular/modular/issues/4695> - `Dict.__getitem__`

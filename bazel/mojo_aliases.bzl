@@ -99,10 +99,6 @@ alias(
     actual = "@//{prefix}max/compiler/src:compiler",
 )
 
-alias(
-    name = "_mlir",
-    actual = "@//{prefix}max/_mlir/src:_mlir",
-)
 """.format(prefix = rctx.attr.prefix))
 
 mojo_aliases = repository_rule(

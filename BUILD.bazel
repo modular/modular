@@ -10,7 +10,6 @@ mojo_binary(
     srcs = ["repro.mojo"],
     tags = ["manual"],
     deps = [
-        "@mojo//:_mlir",
         "@mojo//:comm",
         "@mojo//:compiler",
         "@mojo//:compiler_internal",
