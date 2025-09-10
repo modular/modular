@@ -36,9 +36,9 @@ def _write_pth(site_packages: Path, imports: list[str]) -> None:
     )
 
 
-def _create_symlink(src: Path, dest: Path) -> None:
+def _create_symlink(src: Path, dest: Path, overwrite: bool = False) -> None:
     # NOTE: Ignore duplicate files that would end up in the same place. First one wins.
-    if dest.exists():
+    if dest.exists() and not overwrite:
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -130,8 +130,10 @@ def _create_venv(manifest: dict[str, Any], venv_path: Path) -> None:
 
     _write_pth(site_packages, manifest["imports"])
     _symlink_files(venv_path, site_packages, manifest)
+    short_venv_path = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"]) / ".venv"
+    _create_symlink(venv_path, short_venv_path, overwrite=True)
     print(
-        f"Created virtual environment at:\n\n{venv_path}\n\nActivate it with:\n\nsource {venv_path / 'bin' / 'activate'}\n"
+        f"Created virtual environment at:\n\n{venv_path}\n\nActivate it with:\n\nsource {venv_path / 'bin' / 'activate'}\n\nOr:\n\nsource {short_venv_path / 'bin' / 'activate'}\n"
     )
 
 
