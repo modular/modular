@@ -86,9 +86,64 @@ def msgpack_numpy_encoder(
     return encoder.encode
 
 
-def msgpack_numpy_decoder(
-    type_: Any, copy: bool = True
-) -> Callable[[bytes], Any]:
+class MsgpackNumpyDecoder:
+    """A pickleable decoder class for msgpack data with numpy arrays.
+
+    This class wraps msgspec.msgpack.Decoder functionality in a pickleable
+    container by storing the decoder parameters and recreating the decoder
+    as needed.
+    """
+
+    def __init__(self, type_: Any, copy: bool = True):
+        """Initialize the decoder.
+
+        Args:
+            type_: The type to decode into
+            copy: Copy numpy arrays if true
+        """
+        self._type = type_
+        self._copy = copy
+        self._decoder: msgspec.msgpack.Decoder[Any] | None = None
+        self._create_decoder()
+
+    def _create_decoder(self) -> None:
+        """Create the internal msgspec decoder."""
+        self._decoder = msgspec.msgpack.Decoder(
+            type=self._type,
+            dec_hook=functools.partial(decode_numpy_array, copy=self._copy),
+        )
+
+    def __call__(self, data: bytes) -> Any:
+        """Decode bytes into the specified type.
+
+        Args:
+            data: The bytes to decode
+
+        Returns:
+            The decoded object
+        """
+        if self._decoder is None:
+            self._create_decoder()
+
+        assert self._decoder is not None
+        return self._decoder.decode(data)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Get state for pickling (excluding the non-pickleable decoder)."""
+        return {
+            "_type": self._type,
+            "_copy": self._copy,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state from pickling and recreate the decoder."""
+        self._type = state["_type"]
+        self._copy = state["_copy"]
+        self._decoder = None
+        self._create_decoder()
+
+
+def msgpack_numpy_decoder(type_: Any, copy: bool = True) -> MsgpackNumpyDecoder:
     """Create a decoder function for the specified type.
 
     Args:
@@ -96,12 +151,9 @@ def msgpack_numpy_decoder(
         copy: Copy numpy arrays if true
 
     Returns:
-        A function that decodes bytes into the specified type
+        A pickleable decoder instance that decodes bytes into the specified type
     """
-    decoder = msgspec.msgpack.Decoder(
-        type=type_, dec_hook=functools.partial(decode_numpy_array, copy=copy)
-    )
-    return decoder.decode
+    return MsgpackNumpyDecoder(type_, copy)
 
 
 def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
