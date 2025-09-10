@@ -23,6 +23,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.pipelines import TextContext
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
@@ -105,7 +106,7 @@ def generate_max_outputs(
     )
     latent_attention.load_state_dict(attention_weights)
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TextContext](
         devices=[Accelerator(0)],
         params=kv_params,
         cache_memory=100 * 1024 * 1024,

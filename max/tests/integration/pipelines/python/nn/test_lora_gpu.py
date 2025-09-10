@@ -30,6 +30,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
+from max.pipelines import TextContext
 from test_common.context_utils import create_text_context
 
 DTYPE = DType.bfloat16
@@ -623,7 +624,7 @@ def attention_lora_max_output(
 
     device = Accelerator(0) if is_gpu else CPU()
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TextContext](
         params=kv_params,
         cache_memory=1024 * 1024,
         max_batch_size=x.shape[0],

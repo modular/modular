@@ -32,6 +32,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
+from max.pipelines import TextContext
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
 
@@ -407,7 +408,7 @@ def test_kv_cache_ragged_rope(session: InferenceSession) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TextContext](
         kv_params,
         max_batch_size=2,
         max_seq_len=100,

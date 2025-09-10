@@ -7,7 +7,6 @@
 
 import math
 from functools import partial
-from typing import cast
 
 import numpy as np
 import pytest
@@ -26,6 +25,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
+from max.pipelines import TextContext
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
@@ -383,7 +383,7 @@ def test_kv_cache_paged_mla_prefill() -> None:
     input_row_offsets_type = TensorType(
         DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
     )
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TextContext](
         kv_params,
         cache_memory=1024 * 1024 * 32,
         page_size=128,
@@ -539,12 +539,9 @@ def causal_max_flash_attn(
     model = session.load(graph)
 
     # Execute.
-    return torch.from_dlpack(
-        cast(
-            Tensor,
-            model.execute(q.detach(), k.detach(), v.detach())[0],
-        )
-    )
+    output = model.execute(q.detach(), k.detach(), v.detach())[0]
+    assert isinstance(output, Tensor)
+    return torch.from_dlpack(output)
 
 
 @pytest.mark.parametrize(
@@ -632,12 +629,9 @@ def null_mask_max_flash_attn(
     model = session.load(graph)
 
     # Execute.
-    return torch.from_dlpack(
-        cast(
-            Tensor,
-            model.execute(q.detach(), k.detach(), v.detach())[0],
-        )
-    )
+    output = model.execute(q.detach(), k.detach(), v.detach())[0]
+    assert isinstance(output, Tensor)
+    return torch.from_dlpack(output)
 
 
 @pytest.mark.parametrize(
@@ -746,14 +740,11 @@ def padded_max_flash_attn(
     model = session.load(graph)
 
     # Execute.
-    return torch.from_dlpack(
-        cast(
-            Tensor,
-            model.execute(
-                q.detach(), k.detach(), v.detach(), valid_length.detach()
-            )[0],
-        )
-    )
+    output = model.execute(
+        q.detach(), k.detach(), v.detach(), valid_length.detach()
+    )[0]
+    assert isinstance(output, Tensor)
+    return torch.from_dlpack(output)
 
 
 @pytest.mark.parametrize(

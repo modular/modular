@@ -17,6 +17,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
+from max.pipelines import TextContext
 from test_common.context_utils import create_text_context
 
 
@@ -98,7 +99,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=devices)
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TextContext](
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
