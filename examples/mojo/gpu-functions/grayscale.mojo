@@ -13,7 +13,7 @@
 
 
 from math import ceildiv
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from sys import has_accelerator
 
 from gpu.host import DeviceContext
 from gpu.id import global_idx
@@ -31,8 +31,7 @@ alias gray_layout = Layout.row_major(HEIGHT, WIDTH)
 
 def main():
     constrained[
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator(),
-        "This examples requires a supported GPU",
+        has_accelerator(), "This example requires a supported accelerator"
     ]()
 
     var ctx = DeviceContext()
