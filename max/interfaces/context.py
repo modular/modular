@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from typing import Any, Optional, Protocol, TypeVar, Union, runtime_checkable
 
@@ -11,6 +12,7 @@ import numpy as np
 import numpy.typing as npt
 
 from .log_probabilities import LogProbabilities
+from .logit_processors_type import LogitsProcessor
 from .request import RequestID
 from .status import GenerationStatus
 
@@ -38,6 +40,7 @@ class SamplingParamsInput:
     stop_token_ids: Optional[Optional[list[int]]] = None
     detokenize: Optional[bool] = None
     seed: Optional[int] = None
+    logits_processors: Optional[Sequence[LogitsProcessor]] = None
 
 
 @dataclass(frozen=False)
@@ -95,6 +98,10 @@ class SamplingParams:
 
     seed: int = field(default_factory=lambda: secrets.randbits(32))
     """The seed to use for the random number generator. Defaults to a cryptographically secure random value."""
+
+    logits_processors: Optional[Sequence[LogitsProcessor]] = None
+    """Callables to post-process the model logits.
+    See :obj:`~max.interfaces.logit_processors_type.LogitsProcessor` for examples."""
 
     @classmethod
     def from_input(cls, input_params: SamplingParamsInput) -> "SamplingParams":

@@ -8,6 +8,7 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/lib/API/python/max/driver",
         requirement("msgspec"),
         requirement("numpy"),
         requirement("typing-extensions"),
