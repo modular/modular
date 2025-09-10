@@ -17,16 +17,9 @@ from sys import env_get_int, size_of
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer import NDBuffer
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-)
-from layout.int_tuple import fill_like
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -41,16 +34,13 @@ fn bench_concat[
     axis: Int,
 ) raises:
     alias type = DType.float32
-    alias layout = Layout.row_major[rank]()
     if num_inputs != len(shapes):
         raise Error("num_inputs does not match number of shapes provided")
     var inputs = StaticTuple[
-        LayoutTensor[type, layout, ImmutableAnyOrigin],
-        num_inputs,
+        NDBuffer[type, rank, MutableAnyOrigin], num_inputs
     ]()
     var inputs_host = StaticTuple[
-        LayoutTensor[type, layout, ImmutableAnyOrigin],
-        num_inputs,
+        NDBuffer[type, rank, MutableAnyOrigin], num_inputs
     ]()
     var out_axis = 0
     var name = String()
@@ -59,30 +49,24 @@ fn bench_concat[
     var shape = shapes[0]
     var size = shape.flattened_length()
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[0] = LayoutTensor[type, layout, ImmutableAnyOrigin](
-        input0_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    inputs[0] = NDBuffer[type, rank](input0_ptr.unsafe_ptr(), shape)
+    inputs_host[0] = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(size), shape
     )
-    inputs_host[0] = LayoutTensor[type, layout, ImmutableAnyOrigin](
-        UnsafePointer[Scalar[type]].alloc(size),
-        RuntimeLayout[layout].row_major(shape),
-    )
-    randn(inputs_host[0].ptr, size)
-    ctx.enqueue_copy(input0_ptr, inputs_host[0].ptr)
+    randn(inputs_host[0].data, size)
+    ctx.enqueue_copy(input0_ptr, inputs_host[0].data)
     name += String(shape)
     out_axis += shape[axis]
 
     shape = shapes[1]
     size = shape.flattened_length()
     var input1_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[1] = LayoutTensor[type, layout, ImmutableAnyOrigin](
-        input1_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(shape)
+    inputs[1] = NDBuffer[type, rank](input1_ptr.unsafe_ptr(), shape)
+    inputs_host[1] = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(size), shape
     )
-    inputs_host[1] = LayoutTensor[type, layout, ImmutableAnyOrigin](
-        UnsafePointer[Scalar[type]].alloc(size),
-        RuntimeLayout[layout].row_major(shape),
-    )
-    randn(inputs_host[1].ptr, size)
-    ctx.enqueue_copy(input1_ptr, inputs_host[1].ptr)
+    randn(inputs_host[1].data, size)
+    ctx.enqueue_copy(input1_ptr, inputs_host[1].data)
     name += String(shape)
     out_axis += shape[axis]
 
@@ -92,16 +76,13 @@ fn bench_concat[
     var output_ptr = ctx.enqueue_create_buffer[type](
         out_shape.flattened_length()
     )
-    var output = LayoutTensor[type, layout](
-        output_ptr.unsafe_ptr(), RuntimeLayout[layout].row_major(out_shape)
+    var output = NDBuffer[type, rank](output_ptr.unsafe_ptr(), out_shape)
+    var output_host = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(output.size()), out_shape
     )
-    var output_host = LayoutTensor[type, layout](
-        UnsafePointer[Scalar[type]].alloc(output.size()),
-        RuntimeLayout[layout].row_major(out_shape),
-    )
-    randn(output_host.ptr, output.size())
+    randn(output_host.data, output.size())
 
-    ctx.enqueue_copy(output_ptr, output_host.ptr)
+    ctx.enqueue_copy(output_ptr, output_host.data)
 
     @parameter
     @always_inline
@@ -123,7 +104,7 @@ fn bench_concat[
         ),
     )
 
-    ctx.enqueue_copy(output_host.ptr, output_ptr)
+    ctx.enqueue_copy(output_host.data, output_ptr)
 
     var offset = 0
     for i in range(num_inputs):
@@ -135,21 +116,14 @@ fn bench_concat[
         ](coords: IndexList[_rank]):
             var out_coords = coords
             out_coords[axis] += offset
-            var out_idx = output_host.runtime_layout(
-                RuntimeTuple[
-                    fill_like(output_host.layout.shape, UNKNOWN_VALUE)
-                ](out_coords)
-            )
-            var in_idx = input.runtime_layout(
-                RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
-                    coords
-                )
-            )
-            if output_host.ptr[out_idx] != input.ptr[in_idx]:
+            if (
+                output_host[rebind[IndexList[rank]](out_coords)]
+                != input[rebind[IndexList[rank]](coords)]
+            ):
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[check, 1](input.runtime_layout.shape.value.canonicalize())
-        offset += input.runtime_layout.shape.value[axis]
+        elementwise[check, 1](input.get_shape())
+        offset += input.get_shape()[axis]
 
     __ownership_keepalive(
         input0_ptr, input1_ptr, output_ptr, output, axis, inputs, output_host

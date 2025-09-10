@@ -22,6 +22,7 @@ from utils import StaticTuple
 from compile import get_type_name
 from builtin.device_passable import DevicePassable
 
+
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
@@ -40,7 +41,7 @@ fn _static_tuple_construction_checks[size: Int]():
 
 @register_passable("trivial")
 struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
-    Copyable, Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized
+    Defaultable, DevicePassable, ImplicitlyCopyable, Movable, Sized
 ):
     """A statically sized tuple type which contains elements of homogeneous types.
 

@@ -18,7 +18,6 @@ from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from math import fma
 from memory import memcpy
 from nn.concat import concat
@@ -29,7 +28,6 @@ from tensor_internal.io_spec import IO
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
-    OutputTensor,
     IOSpec,
     ManagedTensorSlice,
 )
@@ -716,27 +714,13 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.uint8, 1, MutableAnyOrigin], *_],
     call_ctx: DeviceContextPtr,
 ) raises:
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var output_lt = LayoutTensor[DType.uint8, layout_1d](
-        output.data,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
-    )
-    var input_tensors = StaticTuple[
-        LayoutTensor[DType.uint8, layout_1d, ImmutableAnyOrigin],
-        inputs.size,
-    ]()
-    for i in range(len(inputs)):
-        input_tensors[i] = input_tensors.element_type(
-            inputs[i].data,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
-        )
-    if output.size() < 4096:
-        concat[DType.uint8, True, bDevice, None](
-            output_lt, 0, input_tensors, context=call_ctx
+    if len(output) < 4096:
+        concat[1, DType.uint8, True, bDevice, None](
+            output, 0, inputs, context=call_ctx
         )
     else:
-        concat[DType.uint8, False, bDevice, None](
-            output_lt, 0, input_tensors, context=call_ctx
+        concat[1, DType.uint8, False, bDevice, None](
+            output, 0, inputs, context=call_ctx
         )
 
 
