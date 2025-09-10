@@ -234,9 +234,7 @@ def cli_serve(
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
-    from max.entrypoints.cli import (
-        serve_api_server_and_model_worker,
-    )
+    from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
     from max.interfaces import PipelineTask
     from max.pipelines import AudioGenerationConfig, PipelineConfig
@@ -316,9 +314,19 @@ def cli_pipeline(
     prompt: str,
     image_url: list[str],
     num_warmups: int,
-    max_new_tokens: int,
     top_k: int,
+    top_p: float,
+    min_p: float,
     temperature: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    repetition_penalty: float,
+    max_new_tokens: int,
+    min_new_tokens: int,
+    ignore_eos: bool,
+    stop: list[str],
+    stop_token_ids: list[int],
+    detokenize: bool,
     seed: int,
     **config_kwargs: Any,
 ) -> None:
@@ -332,10 +340,20 @@ def cli_pipeline(
     from max.pipelines import PipelineConfig
 
     params = SamplingParamsInput(
+        top_k=top_k,
+        top_p=top_p,
+        min_p=min_p,
+        temperature=temperature,
+        frequency_penalty=frequency_penalty,
+        presence_penalty=presence_penalty,
+        repetition_penalty=repetition_penalty,
         # Limit generate default max_new_tokens to 100.
         max_new_tokens=max_new_tokens or 100,
-        top_k=top_k,
-        temperature=temperature,
+        min_new_tokens=min_new_tokens,
+        ignore_eos=ignore_eos,
+        stop=stop,
+        stop_token_ids=stop_token_ids,
+        detokenize=detokenize,
         seed=seed,
     )
 
