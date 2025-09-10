@@ -103,7 +103,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[CPU()])
 
-    kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager[TTSContext](
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
