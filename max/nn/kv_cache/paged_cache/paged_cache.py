@@ -151,7 +151,7 @@ class FetchPagedKVCacheCollection:
         )
 
 
-class PagedKVCacheManager(KVCacheManager):
+class PagedKVCacheManager(KVCacheManager[T]):
     page_size: int
     """Number of tokens stored per block."""
 
@@ -167,7 +167,7 @@ class PagedKVCacheManager(KVCacheManager):
     total_num_host_pages: int
     """Total number of blocks allocated on the host for swapping (if enabled)."""
 
-    block_manager: BlockManager
+    block_manager: BlockManager[T]
     """Manages allocation, eviction, and reuse of KV cache blocks."""
 
     enable_prefix_caching: bool

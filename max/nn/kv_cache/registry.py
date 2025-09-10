@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 from max.driver import Device
 from max.engine import InferenceSession
@@ -23,21 +23,21 @@ from .manager import KVCacheManager
 from .paged_cache import PagedKVCacheManager
 from .paged_cache.multi_cache_manager import MultiPagedKVCacheManager
 
-CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager]] = {
+CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager[Any]]] = {
     KVCacheStrategy.PAGED: PagedKVCacheManager,
 }
 
 
 def load_kv_manager(
     params: KVCacheParams,
-    max_batch_size: Optional[int],
+    max_batch_size: int | None,
     max_seq_len: int,
     num_layers: int,
     devices: Sequence[Device],
     session: InferenceSession,
-    available_cache_memory: Optional[int] = None,
-    page_size: Optional[int] = 512,
-) -> KVCacheManager:
+    available_cache_memory: int | None = None,
+    page_size: int | None = 512,
+) -> KVCacheManager[Any]:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
     if params.cache_strategy == KVCacheStrategy.PAGED:
@@ -85,7 +85,7 @@ def load_kv_manager(
 
 def estimate_kv_cache_size(
     params: KVCacheParams,
-    max_batch_size: Optional[int],
+    max_batch_size: int | None,
     max_seq_len: int,
     num_layers: int,
     available_cache_memory: int,

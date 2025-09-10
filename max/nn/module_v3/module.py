@@ -19,7 +19,7 @@ import copy
 import dataclasses
 import functools
 from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from rich.pretty import pretty_repr
 from typing_extensions import Self, dataclass_transform
@@ -82,7 +82,7 @@ class Module:
         print(linear(Tensor.constant([1, 2, 3, 4])))
     """
 
-    __call__: Callable
+    __call__: Callable[..., Any]
 
     @property
     def local_parameters(self) -> Iterable[tuple[str, Tensor]]:
@@ -322,7 +322,7 @@ class Module:
         finally:
             self.load_state_dict(parameters)
 
-    def compile(self, *input_types: graph.Type) -> Callable:
+    def compile(self, *input_types: graph.Type[Any]) -> Callable[..., Any]:
         """Compiles the module to a model operating on the given input types.
 
         Example:

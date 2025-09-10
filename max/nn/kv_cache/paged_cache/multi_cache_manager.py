@@ -34,7 +34,7 @@ from .paged_cache import PagedCacheInputSymbols, PagedKVCacheManager
 logger = logging.getLogger("max.pipelines")
 
 
-class MultiPagedKVCacheManager(PagedKVCacheManager):
+class MultiPagedKVCacheManager(PagedKVCacheManager[KVCacheAwareContext]):
     """Enhanced PagedKVCacheManager with support for data parallelism.
 
     This class extends the existing PagedKVCacheManager to use MultiBlockManager,
@@ -108,7 +108,9 @@ class MultiPagedKVCacheManager(PagedKVCacheManager):
         )
         self.devices_per_replica = split_into_groups(devices, num_replicas)
 
-        self._replica_managers: list[PagedKVCacheManager] = []
+        self._replica_managers: list[
+            PagedKVCacheManager[KVCacheAwareContext]
+        ] = []
         for devices in self.devices_per_replica:
             self._replica_managers.append(
                 PagedKVCacheManager(

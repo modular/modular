@@ -13,13 +13,13 @@
 """A Module for a sequence of tensor transformations."""
 
 import functools
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 from ...experimental.tensor import Tensor
 from .module import Module
 
 
-class ModuleList(list, Module):
+class ModuleList(list[Module], Module):
     """A Module subclass which is locally a list container.
 
     ModuleLists will use the stringified integer index of their
@@ -95,7 +95,7 @@ class Sequential(ModuleList):
         assert result.shape == [5]
     """
 
-    def __init__(self, *modules: Callable[[Tensor], Tensor]):
+    def __init__(self, *modules: Module) -> None:
         """Constructs a sequential from a sequence of modules.
 
         Following PyTorch, Sequential takes its inputs as a variadic

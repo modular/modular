@@ -82,7 +82,9 @@ class BlockPool:
         )
 
         # Queue for the KV Cache Agent updates
-        self.kv_cache_agent_queue: multiprocessing.Queue | None = None
+        self.kv_cache_agent_queue: (
+            multiprocessing.Queue[KVCacheChangeMessage] | None
+        ) = None
 
     @traced
     def commit_into_prefix_cache(
