@@ -241,11 +241,14 @@ fn abort[result: AnyType = NoneType._mlir_type]() -> result:
 
 
 @no_inline
-fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
+fn abort[
+    result: AnyType = NoneType._mlir_type, *, prefix: StaticString = "ABORT:"
+](message: String) -> result:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
         result: The result type.
+        prefix: A static string prefix to include before the message.
 
     Args:
         message: The message to include when aborting.
@@ -256,7 +259,7 @@ fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
 
     @parameter
     if not is_gpu():
-        print("ABORT:", message, flush=True)
+        print(prefix, message, flush=True)
 
     return abort[result]()
 

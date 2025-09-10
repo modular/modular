@@ -573,6 +573,28 @@ fn _find_dylib[name: StaticString = ""](paths: List[Path]) -> _OwnedDLHandle:
         return abort[_OwnedDLHandle](String(e))
 
 
+fn _find_dylib[msg: fn () -> String](paths: List[Path]) -> _OwnedDLHandle:
+    """Load a dynamically linked library given a list of possible paths or names.
+
+    If the library is not found, the function will abort.
+
+    Parameters:
+        msg: A function that produces the error message to use if the
+             library cannot be found.
+
+    Args:
+        paths: A list of paths or library names to pass to the DLHandle
+               constructor.
+
+    Returns:
+        A handle to the loaded dynamic library.
+    """
+    try:
+        return _try_find_dylib(paths)
+    except e:
+        return abort[_OwnedDLHandle, prefix="ERROR:"](msg())
+
+
 fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
     """Load a dynamically linked library given a variadic list of possible names.
     """

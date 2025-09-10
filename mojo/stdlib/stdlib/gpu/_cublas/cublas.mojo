@@ -39,7 +39,21 @@ alias CUDA_CUBLAS_LIBRARY = _Global["CUDA_CUBLAS_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["CUDA cuBLAS library"](CUDA_CUBLAS_LIBRARY_PATHS)
+    fn msg() -> String:
+        return String(
+            (
+                "Cannot find the cuBLAS libraries. Please make sure that "
+                "the CUDA toolkit is installed and that the library path is "
+                "correctly set in one of the following paths ["
+            ),
+            ", ".join(CUDA_CUBLAS_LIBRARY_PATHS),
+            (
+                "]. You may need to make sure that you are using the non-slim"
+                " version of the MAX container."
+            ),
+        )
+
+    return _find_dylib[msg](CUDA_CUBLAS_LIBRARY_PATHS)
 
 
 @always_inline
