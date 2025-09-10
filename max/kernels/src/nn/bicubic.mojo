@@ -17,6 +17,7 @@ digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
 from buffer import NDBuffer
+from buffer.dimlist import DimList
 from gpu.host.info import is_gpu
 from gpu.id import block_dim, block_idx, thread_idx
 from math import floor, clamp
@@ -183,9 +184,11 @@ fn cpu_bicubic_kernel[
 fn gpu_bicubic_kernel[
     dtype: DType,
     rank: Int,
+    output_shape: DimList,
+    input_shape: DimList,
 ](
-    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin],
-    input: NDBuffer[dtype, rank, MutableAnyOrigin],
+    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin, output_shape],
+    input: NDBuffer[dtype, rank, MutableAnyOrigin, input_shape],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -256,10 +259,14 @@ fn gpu_bicubic_kernel[
 
 
 fn resize_bicubic[
-    dtype: DType, rank: Int, //, target: StaticString
+    dtype: DType,
+    rank: Int,
+    output_shape: DimList,
+    input_shape: DimList, //,
+    target: StaticString,
 ](
-    output: NDBuffer[mut=True, dtype, rank, *_],
-    input: NDBuffer[dtype, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin, output_shape],
+    input: NDBuffer[dtype, rank, MutableAnyOrigin, input_shape],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -278,9 +285,10 @@ fn resize_bicubic[
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
-        ctx.get_device_context().enqueue_function[
-            gpu_bicubic_kernel[dtype, rank]
-        ](
+        alias kernel = gpu_bicubic_kernel[
+            dtype, rank, output_shape, input_shape
+        ]
+        ctx.get_device_context().enqueue_function_checked[kernel, kernel](
             output,
             input,
             grid_dim=(N, C),

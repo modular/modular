@@ -137,7 +137,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     @parameter
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             output_device_ref,
             StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 4](
                 input_0_device_ref,

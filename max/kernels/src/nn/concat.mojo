@@ -635,7 +635,7 @@ fn _concat_inner_most_single_dim[
     block_size: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[mut=True, dtype, rank],
+    output: NDBuffer[dtype, rank, MutableAnyOrigin],
     inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], num_inputs],
 ):
     var idx = block_idx.x * block_size + thread_idx.x
