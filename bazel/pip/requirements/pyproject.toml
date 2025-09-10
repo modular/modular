@@ -29,6 +29,7 @@ dependencies = [
   "jinja2",
   "jiwer",
   "kaleido==0.2.1",
+  "kepler",
   "llguidance",
   "logbar",
   "markupsafe",
