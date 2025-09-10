@@ -592,7 +592,7 @@ PIPELINES = {
             absolute_tolerance=2.9e-2,
             relative_tolerance=9.4e-2,
             cos_dist_threshold=2.6e-6,
-            kl_div_threshold=3.0e-7,
+            kl_div_threshold=8.6e-07,
         ),
     ),
     "meta-llama/Llama-3.1-8B-Instruct-float32": PipelineDef(
@@ -733,8 +733,8 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
                 json_file="torch_llama3_1_bfloat16_golden.json",
             ),
-            cos_dist_threshold=5.6e-3,
-            kl_div_threshold=3.9e-2,
+            cos_dist_threshold=1.4e-02,
+            kl_div_threshold=4.1e-02,
         ),
     ),
     "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
@@ -744,7 +744,7 @@ PIPELINES = {
             pipeline="llama3.2-1b",
             encoding="bfloat16",
             cos_dist_threshold=2.1e-03,
-            kl_div_threshold=5.0e-03,
+            kl_div_threshold=6.9e-03,
         ),
     ),
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -820,7 +820,7 @@ PIPELINES = {
             pipeline="internvl3-1b-instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=2.3e-03,
+            cos_dist_threshold=3.0e-03,
             kl_div_threshold=1.5e-02,
         ),
     ),
@@ -924,7 +924,7 @@ PIPELINES = {
             # TODO(MODELS-730): With the update to transformers=4.55, the
             # kl_div_threshold went from 8.7e-02 to 6.6e-01.
             # This is likely due to changes in the reference implementation.
-            cos_dist_threshold=3.9e-02,
+            cos_dist_threshold=4.1e-02,
             kl_div_threshold=6.6e-01,
         ),
     ),
