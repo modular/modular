@@ -7,6 +7,7 @@
 
 import asyncio
 import json
+from typing import cast
 
 import hf_repo_lock
 from max.driver import DeviceSpec
@@ -89,6 +90,13 @@ def test_smollm_with_structured_output_gpu(
 
     pipeline = pipeline_factory()
     assert isinstance(pipeline, TextGenerationPipeline)
+    # SpeechTokenGenerationPipeline subclasses TextGenerationPipeline, so at
+    # this point MyPy thinks pipeline could be TextGenerationPipeline[Any] or
+    # SpeechTokenGenerationPipeline.  Unfortunately 'assert not isinstance' is
+    # not recognized by MyPy and it's not clear how else to get it out of that
+    # union without some force.  So we cast it off.  This is bad, ideally we
+    # wouldn't have to do this, but we boxed ourselves in here.
+    pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
 
     tokens = []
     while True:
