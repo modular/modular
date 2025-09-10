@@ -121,7 +121,12 @@ def allgather(
             )
 
     # Get the current chain for synchronization
-    in_chain = Graph.current._current_chain
+    graph = Graph.current
+    in_chain = graph._add_op_generated(
+        mo.ChainCreateOp,
+        _ChainType(),
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)],
+    )[0]
 
     # Stage the allgather op with signal buffers and chain.
     *results, out_chain = Graph.current._add_op_generated(
@@ -136,6 +141,10 @@ def allgather(
 
     # Update the chain
     Graph.current._update_chain(out_chain)
+
+    # Update device chains.
+    for device in devices:
+        Graph.current.device_chains[device] = out_chain
 
     # Convert results to TensorValues.
     all_outputs = [res.tensor for res in results]

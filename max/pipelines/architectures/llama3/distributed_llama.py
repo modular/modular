@@ -72,7 +72,7 @@ class DistributedLlama3(DistributedTransformer):
             interleaved_rope_weights=config.interleaved_rope_weights,
             rope_scaling_params=config.rope_scaling_params,
             longrope_scaling_params=config.longrope_scaling_params,
-            device=config.devices[0],
+            device=DeviceRef.CPU(),
         )
 
         create_distributed_norm = functools.partial(

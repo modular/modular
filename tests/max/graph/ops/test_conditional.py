@@ -13,7 +13,7 @@
 from typing import NoReturn
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 
 
 def test_conditional_no_results() -> None:
@@ -103,3 +103,39 @@ def test_conditional_with_raising() -> None:
         assert graph._current_chain == chain
         graph.output()
     graph._mlir_op.verify()
+
+
+def test_conditional_device_chains_scoped() -> None:
+    """Tests that staging ops.cond restores device chains."""
+    # Set up two-device inputs and signals so branches may update per-device chains.
+    t0 = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+    t1 = TensorType(DType.float32, [4], device=DeviceRef.GPU(1))
+    sb0 = BufferType(DType.int64, [1], device=DeviceRef.GPU(0))
+    sb1 = BufferType(DType.int64, [1], device=DeviceRef.GPU(1))
+
+    with Graph(
+        "cond_device_chains_scoped", input_types=[t0, t1, sb0, sb1]
+    ) as graph:
+        x0, x1, s0, s1 = graph.inputs
+        x0_t, x1_t = x0.tensor, x1.tensor
+        s0_b, s1_b = s0.buffer, s1.buffer
+
+        # Touch device_chains to materialize entries and snapshot ids.
+        ch0_before = graph.device_chains[DeviceRef.GPU(0)]
+        ch1_before = graph.device_chains[DeviceRef.GPU(1)]
+        id0, id1 = id(ch0_before), id(ch1_before)
+
+        pred = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
+
+        def then_fn() -> None:
+            # This updates per-device chains inside the cond.
+            _ = ops.allreduce.sum([x0_t, x1_t], [s0_b, s1_b])
+
+        def else_fn() -> None:
+            return None
+
+        ops.cond(pred, None, then_fn, else_fn)
+        # After cond staging, device chains must be restored.
+        assert id(graph.device_chains[DeviceRef.GPU(0)]) == id0
+        assert id(graph.device_chains[DeviceRef.GPU(1)]) == id1
+        graph.output()

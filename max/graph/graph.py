@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import functools
 import inspect
@@ -297,6 +298,8 @@ class Graph:
     _current_block: mlir.Block
     _should_verify_ops: bool
     _has_chain_input: bool
+    # Per-device chains that ensure the correct sequence of device execution.
+    device_chains: collections.defaultdict[DeviceRef, _ChainValue]
 
     _kernel_library: KernelLibrary
 
@@ -380,12 +383,26 @@ class Graph:
                     cast(_Value[_mo.ChainType], mlir_maybe_chain_value)
                 )
 
+        # Create an always-ready chain that is never advanced by the graph.
+        # Use it for operations that are safe to schedule without per-device
+        # ordering constraints (e.g., host→device transfers for staging).
+        self._always_ready_chain = cast(
+            _ChainValue, self._add_op(mo.chain_create, [])[0]
+        )
+
         if not self._has_chain_input:
-            self._current_chain = cast(
-                _ChainValue, self._add_op(mo.chain_create, [])[0]
-            )
+            # Start the graph's mutable sequencing chain from the always-ready
+            # chain by default; the always-ready chain itself remains immutable.
+            self._current_chain = self._always_ready_chain
 
         assert isinstance(self._current_chain, _ChainValue)
+
+        # Initialize per-device chains to the current chain so that fresh
+        # subgraphs/threaded regions start from the caller's chain without
+        # synthesizing new chains.
+        self.device_chains = collections.defaultdict(
+            lambda: self._current_chain
+        )
 
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = kernel_library or KernelLibrary(context)
@@ -484,6 +501,23 @@ class Graph:
         assert isinstance(chain, _ChainValue)
         self._current_chain = chain
 
+    def merge_device_chains(self) -> None:
+        """Joins device execution to a common point by merging chains."""
+        # Merges:
+        # - current sequencing chain
+        # - all per-device chains currently tracked
+        self._merge_chains([self._current_chain, *self.device_chains.values()])
+
+    @property
+    def always_ready_chain(self) -> _ChainValue:
+        """A graph-global, immutable chain that is always ready.
+
+        Created once per graph and never advanced/merged by the graph itself.
+        Use it for operations that are safe to schedule without threading
+        per-device ordering (e.g., host→device transfers for staging).
+        """
+        return self._always_ready_chain
+
     @contextlib.contextmanager
     @staticmethod
     def _async_region():
@@ -553,7 +587,7 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def local_weights_and_chain(self):
+    def _local_weights_and_chain(self):
         """Creates a local scope for weights and chain state modifications.
 
         Provides a context manager that creates an isolated scope where the
@@ -569,15 +603,22 @@ class Graph:
         """
         weights = self._weights.copy()
         current_chain = self._current_chain
+        # Snapshot per-device chains: both mapping contents and default factory.
+        device_chains_items = dict(self.device_chains)
+        device_chains_factory = self.device_chains.default_factory
         try:
             yield
         finally:
             self._weights = weights
             self._current_chain = current_chain
+            # Restore per-device chains.
+            self.device_chains.clear()
+            self.device_chains.default_factory = device_chains_factory
+            self.device_chains.update(device_chains_items)
 
     @contextlib.contextmanager
     def _block(self, block: mlir.Block):
-        with self.local_weights_and_chain():
+        with self._local_weights_and_chain():
             current_block, self._current_block = self._current_block, block
             try:
                 yield self._current_block
@@ -803,6 +844,8 @@ class Graph:
         graph_body_args = self._graph_body.arguments
         mlir_values = [o._mlir_value for o in outputs]
         if self._has_chain_input:
+            # Ensure the outgoing chain reflects all device-specific sequencing.
+            self.merge_device_chains()
             mlir_values.append(self._current_chain._mlir_value)
 
         # We have a type mismatch now, these are MLIR types
