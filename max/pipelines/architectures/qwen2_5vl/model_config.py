@@ -35,7 +35,7 @@ class VisionConfig:
     """DType of the Qwen2.5VL vision model weights."""
 
     devices: list[DeviceRef]
-    """Devices that the Qwen2.5VL model is parallelized over."""
+    """Devices that the Qwen2.5VL vision encoder model is parallelized over."""
 
     patch_size: int
     """Vision transformer patch size."""

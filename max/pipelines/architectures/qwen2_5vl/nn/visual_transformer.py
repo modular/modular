@@ -14,29 +14,43 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Optional
 
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
     DeviceRef,
     Dim,
+    ShardingStrategy,
     TensorValue,
     TensorValueLike,
     dtype_promotion,
     ops,
 )
-from max.nn import MLP, Conv3D, LayerList, Linear, RMSNorm
+from max.nn import (
+    MLP,
+    LayerList,
+    Linear,
+    RMSNorm,
+    Shardable,
+)
 from max.nn.layer import Module
 
+from ..model_config import VisionConfig
 
-class VisionPatchEmbed(Module):
-    """Generates patch embeddings from pixel_values of patches."""
+
+class VisionPatchEmbed(Module, Shardable):
+    """Generates patch embeddings from a tensor of pixel_values of patches using a Linear layer.
+
+    This implementation uses a Linear layer instead of Conv3D, which is mathematically
+    equivalent when stride equals kernel size (non-overlapping patches).
+    """
 
     def __init__(
         self,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         patch_size: int = 14,
         temporal_patch_size: int = 2,
         in_channels: int = 3,
@@ -44,63 +58,61 @@ class VisionPatchEmbed(Module):
         spatial_merge_unit: int = 4,
     ):
         super().__init__()
+        self.devices = devices or [DeviceRef.CPU()]
+        self._sharding_strategy: ShardingStrategy | None = None
+
         self.patch_size = patch_size
         self.temporal_patch_size = temporal_patch_size
         self.in_channels = in_channels
         self.embed_dim = embed_dim
         self.spatial_merge_unit = spatial_merge_unit
 
-        self.image_dim = (
+        # Calculate input dimension for linear layer, equivalent to the flattened patch size
+        self.patch_dim = (
             self.in_channels
             * self.temporal_patch_size
             * self.patch_size
             * self.patch_size
         )
 
-        # Create Conv3D layer using constructor pattern
-        self.proj = Conv3D(
-            depth=temporal_patch_size,
-            height=patch_size,
-            width=patch_size,
-            in_channels=in_channels,
-            out_channels=embed_dim,
+        # Create Linear layer instead of Conv3D, mathematically equivalent to Conv3D when stride = kernel size
+        self.proj = Linear(
+            in_dim=self.patch_dim,
+            out_dim=embed_dim,
             dtype=dtype,
-            stride=(temporal_patch_size, patch_size, patch_size),
-            device=device,
+            device=devices[0],
+            quantization_encoding=None,
             has_bias=False,
-            permute=True,
         )
 
     def __call__(
-        self, x: TensorValueLike, window_index: TensorValueLike
+        self,
+        x: TensorValueLike,
+        window_index: TensorValueLike,
     ) -> TensorValue:
         """Generates patch embeddings from pixel_values of patches (`x`) and reorders them by window_index.
 
-        Reshapes input to (batch_size, in_channels, depth, height, width).
-        Permutes it to be compatible with max.pipelines.nn.Conv3DV1 input tensor.
-        Permutes the output then flattens it.
+        Uses Linear layer instead of Conv3D for patch embedding, which is mathematically
+        equivalent when stride equals kernel size (non-overlapping patches).
 
         Args:
-            x: tensor representing pixel values of shape [resized_height, resized_width].
+            x: tensor representing pixel values of shape [n_patches, patch_dim].
+            window_index: tensor for reordering patch embeddings.
 
         Returns:
             a tensor of size (seq_len, hidden_size = embed_dim)
         """
-        x, filter = dtype_promotion._promote_weak_dtypes(x, self.proj.filter)
-        x = x.reshape(
-            (
-                -1,
-                self.in_channels,
-                self.temporal_patch_size,
-                self.patch_size,
-                self.patch_size,
-            )
+        x, weight = dtype_promotion._promote_weak_dtypes(x, self.proj.weight)
+
+        x = x.cast(weight.dtype)
+
+        # Shape: (batch_size, patch_dim)
+        assert x.shape[1] == self.patch_dim, (
+            f"x.shape should be (n_patches, patch_dim) = {x.shape}, self.patch_dim = {self.patch_dim}"
         )
-        x = x.cast(filter.dtype)
-        # Input is torch conv3d order: (batch_size, in_channels, depth, height, width)
+
+        # Apply linear transformation
         h = self.proj(x)
-        # Output is in torch conv3d order: (batch_size, out_channels, depth, height, width)
-        h = h.reshape((-1, self.embed_dim))
 
         seq_len = h.shape[0]
         # Reshape into a 3D tensor of blocks.
@@ -122,6 +134,41 @@ class VisionPatchEmbed(Module):
         )
         return h
 
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        assert strategy.is_replicate, (
+            "VisionPatchEmbed only supports replicate sharding strategy"
+        )
+        self.proj.sharding_strategy = ShardingStrategy.replicate(
+            strategy.num_devices
+        )
+        self._sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[VisionPatchEmbed]:
+        if not self.sharding_strategy:
+            raise ValueError(
+                "VisionPatchEmbed layer cannot be sharded because no sharding strategy was provided."
+            )
+        proj_shards = self.proj.shard(devices)
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            sharded = VisionPatchEmbed(
+                dtype=self.proj.weight.dtype,
+                devices=[device],
+                patch_size=self.patch_size,
+                temporal_patch_size=self.temporal_patch_size,
+                in_channels=self.in_channels,
+                embed_dim=self.embed_dim,
+                spatial_merge_unit=self.spatial_merge_unit,
+            )
+            sharded.proj = proj_shards[shard_idx]
+            shards.append(sharded)
+        return shards
+
 
 @dataclass
 class VisionRotaryEmbedding(Module):
@@ -136,7 +183,7 @@ class VisionRotaryEmbedding(Module):
     dim: int
     n_heads: int
     theta: float
-    _inv_freqs: Optional[TensorValue] = None
+    _inv_freqs: TensorValue | None = None
 
     def __post_init__(self):
         super().__init__()
@@ -361,13 +408,14 @@ class VisionBlock(Module):
     def __init__(
         self,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         hidden_size: int,
         num_heads: int,
         intermediate_size: int,
         rms_norm_eps: float = 1e-6,
     ):
         super().__init__()
+        self.devices = devices
 
         # Create RMSNorm layers
         self.norm1 = RMSNorm(
@@ -387,18 +435,18 @@ class VisionBlock(Module):
         # Create attention layer
         self.attn = VisionWindowSdpaAttention(
             dtype=dtype,
-            device=device,
+            device=devices[0],
             dim=hidden_size,
             n_heads=num_heads,
         )
 
-        # Create MLP layer
+        # Create MLP layer with multi-GPU support
         self.mlp = MLP(
             dtype=dtype,
             quantization_encoding=None,
             hidden_dim=hidden_size,
             feed_forward_length=intermediate_size,
-            devices=[device],
+            devices=[self.devices[0]],
             has_bias=True,
         )
 
@@ -407,6 +455,7 @@ class VisionBlock(Module):
         x: TensorValue,
         position_embeddings: tuple[TensorValue, TensorValue],
         attention_mask: TensorValue,
+        signal_buffers: list[BufferValue],
     ) -> TensorValue:
         h = x + self.attn(
             self.norm1(x),
@@ -426,7 +475,7 @@ class PatchMerger(Module):
     def __init__(
         self,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         hidden_size: int,
         out_hidden_size: int,
         spatial_merge_size: int,
@@ -435,6 +484,7 @@ class PatchMerger(Module):
         self.input_dim = hidden_size * (spatial_merge_size**2)
         self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
         self.out_hidden_size = out_hidden_size
+        self.devices = devices
 
         # Create RMSNorm layer
         self.norm = RMSNorm(
@@ -446,7 +496,7 @@ class PatchMerger(Module):
             in_dim=self.input_dim,
             out_dim=self.input_dim,
             dtype=dtype,
-            device=device,
+            device=devices[0],
             has_bias=True,
         )
 
@@ -454,11 +504,13 @@ class PatchMerger(Module):
             in_dim=self.input_dim,
             out_dim=out_hidden_size,
             dtype=dtype,
-            device=device,
+            device=devices[0],
             has_bias=True,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def __call__(
+        self, x: TensorValue, signal_buffers: Sequence[BufferValue]
+    ) -> TensorValue:
         # Apply RMSNorm and reshape for MLP input
         x = self.norm(x)
         x = x.rebind(
@@ -485,7 +537,7 @@ class VisionTransformer(Module):
     Its incorporates Window Attention to address the quadratic computational complexity
     associated with processing images of varying sizes at native resolution. This module
     uses only 4 full attention layers and the rest are windowed to reduces computational
-    overhead while maintaining native resolution. Window Attention cost ensures scales
+    overhead while maintaining native resolution. Window Attention cost scales
     linearly with the number of patches rather than quadratically.
 
     For positional encoding, it adopts 2D Rotary Positional Embedding (RoPE). For videos,
@@ -499,8 +551,8 @@ class VisionTransformer(Module):
     - RMSNorm for normalization
     - window-based attention
 
-    This module processes images by splitting them into patches with a stride of 14,
-    generating a set of image features (embeddings).
+    This module consumes processed images that are split into patches with a stride of 14,
+    generating a set of image features (embeddings), one for each patch.
 
     To address the efficiency challenges posed by long sequences of image features,
     it groups spatially adjacent sets of four patch features, then concatenate them
@@ -513,41 +565,35 @@ class VisionTransformer(Module):
 
     def __init__(
         self,
-        dtype: DType,
-        device: DeviceRef,
-        patch_size: int,
-        temporal_patch_size: int,
-        in_channels: int,
-        embed_dim: int,
-        num_heads: int,
-        depth: int,
-        intermediate_size: int,
-        out_hidden_size: int,
-        spatial_merge_size: int,
-        fullatt_block_indexes: list[int],
-        rms_norm_eps: float = 1e-6,
+        config: VisionConfig,
     ):
         super().__init__()
 
-        # Store parameters
-        self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
-        self.fullatt_block_indexes = fullatt_block_indexes
+        self.devices = config.devices
+        self.spatial_merge_unit = (
+            config.spatial_merge_size * config.spatial_merge_size
+        )
+        self.fullatt_block_indexes = config.fullatt_block_indexes
 
         # Create patch embedding layer
         self.patch_embed = VisionPatchEmbed(
-            dtype=dtype,
-            device=device,
-            patch_size=patch_size,
-            temporal_patch_size=temporal_patch_size,
-            in_channels=in_channels,
-            embed_dim=embed_dim,
+            dtype=config.dtype,
+            devices=self.devices,
+            patch_size=config.patch_size,
+            temporal_patch_size=config.temporal_patch_size,
+            in_channels=config.in_channels,
+            embed_dim=config.hidden_size,
             spatial_merge_unit=self.spatial_merge_unit,
         )
+        self.patch_embed.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        self.patch_embed_shards = self.patch_embed.shard(self.devices)
 
         # Create rotary position embedding
         self.rotary_pos_emb = VisionRotaryEmbedding(
-            dim=embed_dim,
-            n_heads=num_heads,
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
             theta=10000.0,
         )
 
@@ -555,35 +601,36 @@ class VisionTransformer(Module):
         self.blocks = LayerList(
             [
                 VisionBlock(
-                    dtype=dtype,
-                    device=device,
-                    hidden_size=embed_dim,
-                    num_heads=num_heads,
-                    intermediate_size=intermediate_size,
-                    rms_norm_eps=rms_norm_eps,
+                    dtype=config.dtype,
+                    devices=self.devices,
+                    hidden_size=config.hidden_size,
+                    num_heads=config.num_attention_heads,
+                    intermediate_size=config.intermediate_size,
+                    rms_norm_eps=config.rms_norm_eps,
                 )
-                for _ in range(depth)
+                for _ in range(config.depth)
             ]
         )
 
         # Create patch merger
         self.merger = PatchMerger(
-            dtype=dtype,
-            device=device,
-            hidden_size=embed_dim,
-            out_hidden_size=out_hidden_size,
-            spatial_merge_size=spatial_merge_size,
+            dtype=config.dtype,
+            devices=self.devices,
+            hidden_size=config.hidden_size,
+            out_hidden_size=config.out_hidden_size,
+            spatial_merge_size=config.spatial_merge_size,
         )
 
     def __call__(
         self,
-        pixel_values: TensorValue,
-        rot_pos_ids: TensorValue,
-        window_index: TensorValue,
-        attention_mask_window: TensorValue,
-        attention_mask_full: TensorValue,
-        max_grid_size: TensorValue,
-    ) -> TensorValue:
+        pixel_values: Sequence[TensorValue],
+        rot_pos_ids: Sequence[TensorValue],
+        window_index: Sequence[TensorValue],
+        attention_mask_window: Sequence[TensorValue],
+        attention_mask_full: Sequence[TensorValue],
+        max_grid_size: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> Sequence[TensorValue]:
         """Outputs raw hidden states of the transformer model on input `x`.
 
         1. Patch Embedding: Converts raw input into patches and embeds them.
@@ -606,52 +653,64 @@ class VisionTransformer(Module):
                 their valid segments for  Self Attention mechanism.
             max_grid_size: max value in spatial dimensions in the grid of image and video patches.
                 It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
+            signal_buffers: Communication buffers for distributed execution.
 
         Returns:
-            TensorValue : output of vision transformer projected into the decoder's hidden_size.
+            Sequence[TensorValue] : Image embeddings tensor, one per device, flattened for language model.
 
         Shapes:
             Input: pixel_values shape = (seq_len, in_channels * temporal_patch_size * patch_size * patch_size)
                 where seq_len = no. of patches in all images and videos.
-            Output:
+            Output: Sequence[TensorValue] each of shape (seq_len, hidden_size)
         """
         # Pass input images or videos through a conv to obtain patch embeddings ordered by window_index.
-        h = self.patch_embed(
-            pixel_values, window_index
-        )  # Shape = [seq_len, hidden_size]
-        seq_len = h.shape[0]
+        hs = [
+            embed(pixels, window_idx)
+            for embed, pixels, window_idx in zip(
+                self.patch_embed_shards, pixel_values, window_index
+            )
+        ]
+        seq_len = hs[0].shape[0]
 
         # Compute rotary positional encodings to input patches ordered by window_index.
         position_embeddings = self.rotary_pos_emb.generate_rot_pos_embeddings(
-            rot_pos_ids,
-            window_index,
+            rot_pos_ids[0],
+            window_index[0],
             self.spatial_merge_unit,
-            max_grid_size,
+            max_grid_size[0],
             seq_len,
         )
 
+        h = hs[0]
         # Cast input attention masks to bfloat16 because they are computed
         # as float32 (due to numpy not supporting bfloat16).
-        attention_mask_full = attention_mask_full.cast(h.dtype)
-        attention_mask_window = attention_mask_window.cast(h.dtype)
+        attention_mask_full = [
+            attention_mask_full_i.cast(h.dtype)
+            for attention_mask_full_i in attention_mask_full
+        ]
+        attention_mask_window = [
+            attention_mask_window_i.cast(h.dtype)
+            for attention_mask_window_i in attention_mask_window
+        ]
 
         # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
         for layer_num, blk in enumerate(self.blocks):
             if layer_num in self.fullatt_block_indexes:
-                attention_mask = attention_mask_full
+                attention_mask = attention_mask_full[0]
             else:
-                attention_mask = attention_mask_window
+                attention_mask = attention_mask_window[0]
             h = blk(
                 h,
                 position_embeddings=position_embeddings,
                 attention_mask=attention_mask,
+                signal_buffers=signal_buffers,
             )
 
         # The merged features are projected via a linear layer to align with the language model's embedding space.
-        h = self.merger(h)
+        h = self.merger(h, signal_buffers=signal_buffers)
 
         # Re-order path embeddings (hidden_states) back to its original order before windowing.
         # TODO(GEX-1863): Implement ops.argsort
-        reverse_indices = ops.argsort(window_index)
+        reverse_indices = ops.argsort(window_index[0])
         h = ops.gather(h, reverse_indices, axis=0)
-        return h
+        return [h.to(dev) for dev in self.devices]
