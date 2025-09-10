@@ -189,13 +189,31 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
           isa_and_nonnull<StructDeclOp>(previous->getIfOperation());
       bool previousIsExtension =
           isa_and_nonnull<ExtensionDeclOp>(previous->getIfOperation());
-      bool previousIsNeither = !previousIsStruct && !previousIsExtension;
+      bool previousIsImport =
+          isa_and_nonnull<UnresolvedImportOp>(previous->getIfOperation());
+      bool previousNotStructRelated =
+          !previousIsStruct && !previousIsExtension && !previousIsImport;
       // This checks that we're not giving e.g. a function and a struct the same
       // name.
-      if (previousIsNeither) {
+      if (previousNotStructRelated) {
         auto diag = emitError(decl->getLoc(), "cannot define ")
                     << (addingStruct ? "a struct" : "an extension")
                     << " here with name " << name;
+        diag.attachNote(previous->getLoc())
+            << "conflicts with this previous declaration";
+        decl->setErroneous();
+        previous->setErroneous();
+        return;
+      }
+      // Check for import vs local struct conflicts
+      // An imported declaration cannot coexist with a locally defined struct
+      // because the import cannot be an extension of a struct we're currently
+      // defining. Search "#12090" for an example.
+      // TODO(MOCO-522): This deserves an arcana doc and a few references to it.
+      if (addingStruct && previousIsImport) {
+        auto diag =
+            emitError(decl->getLoc(), "cannot define a struct here with name ")
+            << name;
         diag.attachNote(previous->getLoc())
             << "conflicts with this previous declaration";
         decl->setErroneous();
@@ -350,21 +368,43 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
 
   auto [it, inserted] =
       context.declsInScope->insert({name, TinyPtrVector<ASTDecl *>(decls)});
+  // It succeeded and there was nothing in this scope by that name already, so
+  // we're done.
   if (inserted)
     return success();
+  // If we got here, it failed, there's already entries here by that name.
   TinyPtrVector<ASTDecl *> &entries = it->second;
 
-  // We hit an overlap, check to see if this is just resolving a module import.
-  // If so, replace the unresolved import with the real decls.
+  // If we get here, then we've hit an overlap. This is likely because we're
+  // seeing the import statement that's already here, and it's conflicting with
+  // the new entries we're bringing in.
+  // Check to see if that's the case, and if so, replace the unresolved import
+  // with the real decls from the target module.
   if (moduleName) {
-    auto importOp = dyn_cast_or_null<UnresolvedImportOp>(
-        it->second.back()->getIfOperation());
-    if (importOp && importOp.getModuleNameAttr() == moduleName &&
-        importOp.getDeclNameAttr() == declNameInModule) {
-      // Mark the placeholder imports as being resolved.
-      for (ASTDecl *decl : entries)
-        decl->resolvedness = DeclResolvedness::body;
-      entries = TinyPtrVector<ASTDecl *>(decls);
+    // Find and remove all matching imports (in case of duplicate imports).
+    // Keep in mind, the user may have imported the module twice, so we have to
+    // remove all matching imports (see test MSWGHRI).
+    bool foundMatchingImport = false;
+    for (int i = entries.size() - 1; i >= 0; --i) {
+      if (auto importOp = dyn_cast_or_null<UnresolvedImportOp>(
+              entries[i]->getIfOperation());
+          importOp && importOp.getModuleNameAttr() == moduleName &&
+          importOp.getDeclNameAttr() == declNameInModule) {
+        // Mark the import we're replacing as resolved in case anyone sees it
+        // (which would be weird, since we're about to remove it, but just in
+        // case).
+        entries[i]->resolvedness = DeclResolvedness::body;
+        // Remove this matching import. We'll replace it with the real decls
+        // further below.
+        entries.erase(entries.begin() + i);
+        foundMatchingImport = true;
+      }
+    }
+    if (foundMatchingImport) {
+      // Sure enough, we found an importOp that matches the module and decl
+      // name, let's replace the import with the real decls.
+      for (ASTDecl *decl : decls)
+        entries.push_back(decl);
     }
     return success();
   }
@@ -412,6 +452,18 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         entries.push_back(decl);
       return success();
     }
+  }
+
+  // If we're trying to add a struct and there's already an extension (or vice
+  // versa), allow them to coexist by merging them into the existing set.
+  if ((isa_and_nonnull<StructDeclOp>(frontDecl->getIfOperation()) &&
+       isa_and_nonnull<ExtensionDeclOp>(existing->getIfOperation())) ||
+      (isa_and_nonnull<ExtensionDeclOp>(frontDecl->getIfOperation()) &&
+       isa_and_nonnull<StructDeclOp>(existing->getIfOperation()))) {
+    // Merge the new decls into the existing set
+    for (ASTDecl *decl : decls)
+      entries.push_back(decl);
+    return success();
   }
 
   // Rejecting overlap is conservative and not what python does, but we can
