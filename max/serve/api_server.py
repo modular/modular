@@ -25,7 +25,6 @@ from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
-from max.serve.kvcache_agent import DispatcherFactory, TransportMessage
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -37,7 +36,6 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler.base import PayloadType
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config
@@ -77,13 +75,6 @@ async def lifespan(
     if settings.offline_inference:
         raise ValueError(
             "It is not valid to start the API Server if the server is in offline inference mode"
-        )
-
-    dispatcher_factory = None
-    if serving_settings.pipeline_config.pipeline_role.uses_dispatch_service:
-        dispatcher_factory = DispatcherFactory[PayloadType](
-            settings.dispatcher_config,
-            transport_payload_type=TransportMessage[PayloadType],
         )
 
     logger.info("Starting server...")

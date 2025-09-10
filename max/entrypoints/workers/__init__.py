@@ -112,7 +112,7 @@ def start_workers(
                 METRICS.pipeline_load(pipeline_config.model_config.model_path)
 
                 logger.info(
-                    "\n\n**********\nHeadless server ready (dispatcher + model worker) (Press CTRL+C to quit)\n**********\n"
+                    "\n\n**********\nHeadless server ready (Press CTRL+C to quit)\n**********\n"
                 )
 
                 # Wait for shutdown signal instead of infinite loop

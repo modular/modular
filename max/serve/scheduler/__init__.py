@@ -29,7 +29,6 @@ from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.pipelines.lib import PipelineConfig, PipelineRole
 from max.serve.config import Settings
-from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.queue.zmq_queue import create_zmq_push_pull_queues
 
 from .audio_generation_scheduler import (
