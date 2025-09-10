@@ -6837,8 +6837,10 @@ class TransferOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
+        out_chain: ChainType,
         input: max._core.Value[TensorType],
         always_elide_same_device_copy: max._core.dialects.builtin.BoolAttr,
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @overload
     def __init__(
@@ -6847,6 +6849,7 @@ class TransferOp(max._core.Operation):
         location: Location,
         input: max._core.Value[TensorType],
         dest_device: max._core.dialects.m.DeviceRefAttr,
+        in_chain: max._core.Value[ChainType],
         always_elide_same_device_copy: bool = True,
     ) -> None: ...
     @property
@@ -6857,6 +6860,8 @@ class TransferOp(max._core.Operation):
     def always_elide_same_device_copy(
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class TransposeOp(max._core.Operation):
     """
