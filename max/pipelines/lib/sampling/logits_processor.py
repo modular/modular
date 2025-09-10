@@ -17,7 +17,11 @@ from typing import TypeVar
 
 from max.driver import Tensor
 from max.interfaces.context import InputContext
-from max.interfaces.logit_processors_type import ProcessorInputs
+from max.interfaces.logit_processors_type import (
+    BatchLogitsProcessor,
+    BatchProcessorInputs,
+    ProcessorInputs,
+)
 
 T = TypeVar("T", bound=InputContext)
 
@@ -26,7 +30,23 @@ def apply_logits_processors(
     context_batch: list[T],
     batch_logits: Tensor,
     batch_logit_offsets: Tensor | None,
-) -> Tensor:
+    batch_processors: list[BatchLogitsProcessor] | None = None,
+) -> None:
+    """Applies logits processors to a batch of logits.
+
+    Args:
+        context_batch: The batch of contexts containing the inputs to the model.
+        batch_logits: The model logits, a float32 tensor with shape `(N_batch, vocab_size)`.
+        batch_logit_offsets: If the model returns multiple logits, this is a tensor with
+            shape `(batch_size + 1, 1)` that contains the offsets of each sequence in
+            the batch. Otherwise, this is `None`.
+        logits_processors: List of logits processors to apply to the logits for
+            each context in the batch. The length of this list must match the
+            number of contexts in the batch.
+        batch_processors: List of batch processors to apply to the batch logits.
+            These are applied in order after the individual context-level
+            processors.
+    """
     for i, context in enumerate(context_batch):
         processors = context.sampling_params.logits_processors
         if processors is None:
@@ -47,4 +67,13 @@ def apply_logits_processors(
                 context=context,
             )
             processor(inputs)
-    return batch_logits
+
+    if batch_processors is not None:
+        for batch_processor in batch_processors:
+            batch_processor(
+                BatchProcessorInputs(
+                    logits=batch_logits,
+                    logit_offsets=batch_logit_offsets,
+                    context_batch=context_batch,
+                )
+            )

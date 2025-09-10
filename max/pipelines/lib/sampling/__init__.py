@@ -18,8 +18,10 @@ from .sampling import (
     token_sampler,
 )
 from .sampling_config import SamplingConfig
+from .sampling_logits_processor import FusedSamplingProcessor
 
 __all__ = [
+    "FusedSamplingProcessor",
     "SamplingConfig",
     "apply_logits_processors",
     "rejection_sampler",
