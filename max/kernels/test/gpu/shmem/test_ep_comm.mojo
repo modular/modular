@@ -30,7 +30,7 @@ from sys import argv, size_of
 from sys.param_env import env_get_string
 from utils import IndexList
 
-from comm.ep_comm import dispatch_kernel, dispatch_cb_kernel
+from shmem.ep_comm import dispatch_kernel, dispatch_cb_kernel
 
 import time
 

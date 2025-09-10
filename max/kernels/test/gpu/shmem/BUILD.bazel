@@ -9,6 +9,7 @@ lit_tests(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     mojo_deps = [
+        "@mojo//:layout",
         "@mojo//:shmem",
         "@mojo//:stdlib",
     ],

@@ -12,6 +12,7 @@ mojo_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "@mojo//:layout",
         "@mojo//:stdlib",
     ],
 )

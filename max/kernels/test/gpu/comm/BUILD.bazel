@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_test")
+load("//bazel:api.bzl", "mojo_test")
 
 # Special configuration for multimem allreduce test - only runs on SM90+ hardware
 mojo_test(
@@ -25,27 +25,6 @@ mojo_test(
         "@mojo//:nn",
         "@mojo//:quantization",
         "@mojo//:stdlib",
-    ],
-)
-
-# Configuration for expert parallellism communication test - the shmem package only supports NVIDIA cards
-lit_tests(
-    name = "test",
-    srcs = ["test_ep_comm.mojo"],
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:h100_gpu",  # TODO: Investigate why this test times out on A10
-        "//:has_multi_gpu",
-    ],
-    mojo_deps = [
-        "@mojo//:comm",
-        "@mojo//:layout",
-        "@mojo//:shmem",
-        "@mojo//:stdlib",
-    ],
-    tags = ["gpu"],
-    tools = [
-        "//KGEN/tools/mojo",
     ],
 )
 
@@ -76,7 +55,6 @@ lit_tests(
         ["**/*.mojo"],
         exclude = [
             "test_multimem_allreduce.mojo",
-            "test_ep_comm.mojo",
         ],
     )
 ]
