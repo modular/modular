@@ -83,7 +83,7 @@ def test_compile_config_use_logger(
     result = output[0].to_numpy()
 
     # On the Mojo side the logger level is set to DEBUG, so the result should be 10.
-    assert result == [10]
+    assert result == [20]
 
     # On the Mojo side, the logger has printed "I'm a custom Mojo function!"
     # We need to capture the output and check that it matches.

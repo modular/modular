@@ -74,19 +74,24 @@ struct Level(
     alias NOTSET = Self(0)
     """Lowest level, used when no level is set."""
 
-    alias DEBUG = Self(10)
+    alias TRACE = Self(10)
+    """Repetitive trace information, Indicates repeated execution or IO-coupled 
+    activity, typically only of interest when diagnosing hangs or ensuring a 
+    section of code is executing."""
+
+    alias DEBUG = Self(20)
     """Detailed information, typically of interest only when diagnosing problems."""
 
-    alias INFO = Self(20)
+    alias INFO = Self(30)
     """Confirmation that things are working as expected."""
 
-    alias WARNING = Self(30)
+    alias WARNING = Self(40)
     """Indication that something unexpected happened, or may happen in the near future."""
 
-    alias ERROR = Self(40)
+    alias ERROR = Self(50)
     """Due to a more serious problem, the software has not been able to perform some function."""
 
-    alias CRITICAL = Self(50)
+    alias CRITICAL = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
 
     fn __eq__(self, other: Self) -> Bool:
@@ -168,6 +173,8 @@ struct Level(
         var lname = name.lower()
         if lname == "notset":
             return Self.NOTSET
+        if lname == "trace":
+            return Self.TRACE
         if lname == "debug":
             return Self.DEBUG
         if lname == "info":
@@ -188,6 +195,8 @@ struct Level(
         """
         if self is Self.NOTSET:
             writer.write("NOTSET")
+        elif self is Self.TRACE:
+            writer.write("TRACE")
         elif self is Self.DEBUG:
             writer.write("DEBUG")
         elif self is Self.INFO:
@@ -254,6 +263,21 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         if level == Level.NOTSET:
             return True
         return level > target_level
+
+    fn trace[*Ts: Writable](self, *values: *Ts):
+        """Logs a trace message.
+
+        Parameters:
+            Ts: The types of values to log.
+
+        Args:
+            values: The values to log.
+        """
+        alias target_level = Level.TRACE
+
+        @parameter
+        if not Self._is_disabled[target_level]():
+            self._write_out[target_level](values)
 
     fn debug[*Ts: Writable](self, *values: *Ts):
         """Logs a debug message.
