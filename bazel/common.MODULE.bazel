@@ -39,14 +39,14 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 # TODO: Remove when >0.6.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-EomhqfPeHmX75vwz2VO6KwnTPYkLJBkYXx8UHhVkPHU=",
+    integrity = "sha256-A1MAbMLCldUNaZGpz6/BphT5Bo6lKRbvjBOp0VF2wAM=",
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:rules_mojo_version.patch",
     ],
-    strip_prefix = "rules_mojo-c98800a96d8005db0bdc3541142a1582b4cace1a",
+    strip_prefix = "rules_mojo-df228391385e0ea0179d45846ffdecfc68964011",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/c98800a96d8005db0bdc3541142a1582b4cace1a.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/df228391385e0ea0179d45846ffdecfc68964011.tar.gz",
     ],
 )
 
