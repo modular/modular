@@ -40,6 +40,7 @@ Examples:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
@@ -57,3 +58,23 @@ class ProcessorInputs:
 
 
 LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
+
+
+@dataclass
+class BatchProcessorInputs:
+    """Arguments for a batch logits processor.
+
+    - logits: The model logits, a float32 tensor with shape `(N_batch, vocab_size)`.
+      `N_batch` is the number of logits returned by the model for each sequence in the batch.
+    - logit_offsets: If the model returns multiple logits, this is a tensor with
+      shape `(batch_size + 1, 1)` that contains the offsets of each sequence in
+      the batch. Otherwise, this is `None`.
+    - context_batch: The batch of contexts containing the inputs to the model.
+    """
+
+    logits: md.Tensor
+    logit_offsets: md.Tensor | None
+    context_batch: Sequence[InputContext]
+
+
+BatchLogitsProcessor: TypeAlias = Callable[[BatchProcessorInputs], None]

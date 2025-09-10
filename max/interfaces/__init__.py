@@ -15,7 +15,12 @@ from .context import (
     SamplingParamsInput,
 )
 from .log_probabilities import LogProbabilities
-from .logit_processors_type import LogitsProcessor, ProcessorInputs
+from .logit_processors_type import (
+    BatchLogitsProcessor,
+    BatchProcessorInputs,
+    LogitsProcessor,
+    ProcessorInputs,
+)
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import (
     Pipeline,
@@ -66,6 +71,8 @@ __all__ = [
     "AudioGeneratorOutput",
     "BaseContext",
     "BaseContextType",
+    "BatchLogitsProcessor",
+    "BatchProcessorInputs",
     "EmbeddingsGenerator",
     "EmbeddingsOutput",
     "GenerationStatus",
