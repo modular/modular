@@ -190,9 +190,9 @@ fn wgmma_e4m3_e4m3_f32[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         c_type,
-        Layout.row_major(M, K),
-        Layout.row_major(N, K) if transpose_b else Layout.row_major(K, N),
-        Layout.row_major(M, N),
+        a_tensor.layout,
+        b_tensor.layout,
+        c_tensor.layout,
         M,
         N,
         K,
@@ -201,7 +201,7 @@ fn wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_tensor,
         b_tensor,
         c_tensor,

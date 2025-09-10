@@ -194,7 +194,9 @@ fn run_mma_fp32_fp32(
     alias MMA_N = 16
     alias MMA_K = 4
 
-    ctx.enqueue_function[mma_kernel_fp32_fp32](
+    alias kernel = mma_kernel_fp32_fp32
+
+    ctx.enqueue_function_checked[kernel, kernel](
         a_device,
         b_device,
         c_device,
@@ -280,7 +282,9 @@ fn run_mma_fp32_fp16[
     alias MMA_N = 4 if mma_n_blocks == 16 else 16
     alias MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    ctx.enqueue_function[mma_kernel_fp32_fp16[mma_n_blocks]](
+    alias kernel = mma_kernel_fp32_fp16[mma_n_blocks]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         a_device,
         b_device,
         c_device,
@@ -372,7 +376,9 @@ fn run_mma_fp32_bf16[
     alias MMA_N = 4 if mma_n_blocks == 16 else 16
     alias MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    ctx.enqueue_function[mma_kernel_fp32_bf16[mma_n_blocks]](
+    alias kernel = mma_kernel_fp32_bf16[mma_n_blocks]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         a_device,
         b_device,
         c_device,

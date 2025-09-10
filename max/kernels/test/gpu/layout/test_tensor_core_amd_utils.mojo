@@ -59,12 +59,11 @@ fn test_load_c[
     dst_dtype: DType,
     dtype: DType,
     layout: Layout,
+    c_lane_layout: Layout,
     inst_shape: IndexList[3],
 ](
     c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
-    c_lane: LayoutTensor[
-        dst_dtype, Layout.row_major(WARP_SIZE, 4), MutableAnyOrigin
-    ],
+    c_lane: LayoutTensor[dst_dtype, c_lane_layout, MutableAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var c_reg_tile = mma.load_c(c)
@@ -206,19 +205,28 @@ def test_load_and_mma_and_multiply_operands[
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(c_device, c_host_ptr)
 
-    ctx.enqueue_function[test_load_a[dst_dtype, dtype, a_dev.layout, shape]](
+    alias kernel_load_a = test_load_a[dst_dtype, dtype, a_dev.layout, shape]
+    alias kernel_load_b = test_load_b[
+        dst_dtype, dtype, b_dev.layout, shape, transpose_b
+    ]
+    alias kernel_load_c = test_load_c[
+        dst_dtype, dtype, c_dev.layout, c_lane_dev.layout, shape
+    ]
+    alias kernel_store_d = test_store_d[dst_dtype, dtype, c_dev.layout, shape]
+
+    ctx.enqueue_function_checked[kernel_load_a, kernel_load_a](
         a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function[
-        test_load_b[dst_dtype, dtype, b_dev.layout, shape, transpose_b]
-    ](b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE))
+    ctx.enqueue_function_checked[kernel_load_b, kernel_load_b](
+        b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
+    )
 
-    ctx.enqueue_function[test_load_c[dst_dtype, dtype, c_dev.layout, shape]](
+    ctx.enqueue_function_checked[kernel_load_c, kernel_load_c](
         c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
-    ctx.enqueue_function[test_store_d[dst_dtype, dtype, c_dev.layout, shape]](
+    ctx.enqueue_function_checked[kernel_store_d, kernel_store_d](
         d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
     )
 
@@ -232,7 +240,7 @@ def test_load_and_mma_and_multiply_operands[
         transpose_b,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_dev,
         b_dev,
         c_dev,
