@@ -213,7 +213,7 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
         cluster_shape[2],
     )
     alias kernel = test_kernel[2, cluster_shape]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         cluster_dim,
         grid_dim=grid_dim,
         block_dim=(256),

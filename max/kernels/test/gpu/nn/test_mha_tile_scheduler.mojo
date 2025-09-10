@@ -46,7 +46,7 @@ fn test_kernel[schedule: MHASchedule]():
 def test[schedule: MHASchedule](ctx: DeviceContext):
     alias kernel = test_kernel[schedule]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         grid_dim=8,
         block_dim=1,
     )
