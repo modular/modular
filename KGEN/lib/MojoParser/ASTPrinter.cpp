@@ -313,8 +313,9 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
   for (auto paramDecl : paramDecls) {
     for (auto p : ASTType(paramDecl.getType()).getParamBindings()) {
       if (p == declRef) {
-        os << paramDecl.getName().strref() << "."
-           << demangleParameterName(declRef.getName());
+        // The param found may itself be an autoparam.  Recurse to print it.
+        ASTType::printParam(os, ParamDeclRefAttr::get(paramDecl), &shared);
+        os << "." << demangleParameterName(declRef.getName());
         return success();
       }
     }
