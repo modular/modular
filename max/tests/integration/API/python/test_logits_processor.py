@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import numpy as np
 from max.driver import Tensor
-from max.interfaces import ProcessorInputs, SamplingParams
+from max.interfaces import BatchProcessorInputs, ProcessorInputs, SamplingParams
 from max.pipelines import TextContext
 from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 
@@ -201,13 +201,10 @@ class TestApplyLogitsProcessors:
     def test_apply_logits_processors_no_offsets(self):
         """Test apply_logits_processors with no offsets."""
 
-        initial_array = np.arange(10).reshape(2, 5)
-        initial_logits = Tensor.from_numpy(initial_array)
+        logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))
 
-        final_logits = apply_logits_processors(
-            self.create_context_batch(), initial_logits, None
-        )
-        final_array = final_logits.to_numpy()
+        apply_logits_processors(self.create_context_batch(), logits, None)
+        final_array = logits.to_numpy()
         expected_array = np.arange(10).reshape(2, 5)
         expected_array[0, :] += 3
         expected_array[1, :] -= 1
@@ -219,16 +216,40 @@ class TestApplyLogitsProcessors:
 
         # Assume these 3 logits are returned for the first context
         # and 2 logits are returned for the second context.
-        initial_array = np.arange(30).reshape(5, 6)
-        initial_logits = Tensor.from_numpy(initial_array)
-
+        logits = Tensor.from_numpy(np.arange(30).reshape(5, 6))
         logit_offsets = Tensor.from_numpy(np.array([0, 3, 5]))
 
-        final_logits = apply_logits_processors(
-            self.create_context_batch(), initial_logits, logit_offsets
+        apply_logits_processors(
+            self.create_context_batch(), logits, logit_offsets
         )
-        final_array = final_logits.to_numpy()
+        final_array = logits.to_numpy()
         expected_array = np.arange(30).reshape(5, 6)
         expected_array[0:3, :] += 3
         expected_array[3:5, :] -= 1
+        assert np.all(final_array == expected_array)
+
+    def test_apply_logits_processors_with_batch_processors(self):
+        """Test apply_logits_processors with batch processors."""
+
+        logits = Tensor.from_numpy(np.arange(10).reshape(2, 5))
+        logit_offsets = Tensor.from_numpy(np.array([0, 3, 5]))
+        context_batch = [
+            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
+            TextContext(max_length=100, tokens=np.empty(1, dtype=np.int32)),
+        ]
+
+        def add_one(inputs: BatchProcessorInputs) -> None:
+            assert inputs.logits is logits
+            assert inputs.logit_offsets is logit_offsets
+            assert inputs.context_batch is context_batch
+            logits_np = inputs.logits.to_numpy()
+            for i in range(inputs.logits.shape[0]):
+                for j in range(inputs.logits.shape[1]):
+                    inputs.logits[i, j] = logits_np[i, j] + 1
+
+        apply_logits_processors(context_batch, logits, logit_offsets, [add_one])
+        final_array = logits.to_numpy()
+        expected_array = np.arange(10).reshape(2, 5)
+        expected_array[:] += 1
+
         assert np.all(final_array == expected_array)
