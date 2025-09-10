@@ -31,5 +31,5 @@ llama_vision_arch = SupportedArchitecture(
     pipeline_model=LlamaVision,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    supports_prefix_caching=False,
+    prefix_caching_supported=False,
 )

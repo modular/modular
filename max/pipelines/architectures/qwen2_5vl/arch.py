@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    SupportedEncoding,
-)
+from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import Qwen2_5VLModel
 from .tokenizer import Qwen2_5VLTokenizer
@@ -42,5 +39,5 @@ qwen2_5_vl_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen2_5VLModel,
     tokenizer=Qwen2_5VLTokenizer,
-    supports_prefix_caching=False,
+    prefix_caching_supported=False,
 )

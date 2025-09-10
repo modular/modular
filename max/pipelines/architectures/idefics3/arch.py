@@ -30,5 +30,5 @@ idefics3_arch = SupportedArchitecture(
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    supports_prefix_caching=False,
+    prefix_caching_supported=False,
 )

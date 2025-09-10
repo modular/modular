@@ -90,10 +90,11 @@ class SupportedArchitecture:
         task: PipelineTask,
         tokenizer: Callable[..., PipelineTokenizer],
         default_weights_format: WeightsFormat,
-        multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
-        supports_prefix_caching: bool = True,
+        # TODO: Create a new enum called PipelineMode that can hold all these flags.
+        multi_gpu_supported: bool = False,
+        prefix_caching_supported: bool = True,
     ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
 
@@ -144,10 +145,11 @@ class SupportedArchitecture:
             tokenizer: A callable that returns a `PipelineTokenizer` instance for
                 preprocessing model inputs.
             default_weights_format: The weights format expected by the `pipeline_model`.
-            multi_gpu_supported: Whether the architecture supports multi-GPU execution.
             rope_type: The type of RoPE (Rotary Position Embedding) used by the model.
             weight_adapters: A dictionary of weight format adapters for converting
                 checkpoints from different formats to the default format.
+            multi_gpu_supported: Whether the architecture supports multi-GPU execution.
+            prefix_caching_supported: Whether the architecture supports prefix caching.
         """
         self.name = name
         self.example_repo_ids = example_repo_ids
@@ -157,24 +159,26 @@ class SupportedArchitecture:
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
         self.multi_gpu_supported = multi_gpu_supported
+        self.prefix_caching_supported = prefix_caching_supported
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
-        self.supports_prefix_caching = supports_prefix_caching
 
     def __eq__(self, other: Any) -> bool:
         if other.__class__ == self.__class__:
             for field in [
-                "name",
-                "example_repo_ids",
                 "default_encoding",
-                "supported_encodings",
-                "pipeline_model",
-                "tokenizer",
                 "default_weights_format",
+                "example_repo_ids",
+                "multi_gpu_supported",
+                "name",
+                "pipeline_model",
+                "prefix_caching_supported",
                 "rope_type",
-                "weight_adapters",
+                "supported_encodings",
                 "task",
+                "tokenizer",
+                "weight_adapters",
             ]:
                 if not (hasattr(other, field) and hasattr(self, field)):
                     return False
