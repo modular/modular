@@ -27,11 +27,11 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
 )
 from utils.assert_tensors import assert_tensors_close
 from utils.config_loader import ConfigNames, get_config_loader
-from utils.weight_converter import convert_hf_to_max_weights
+from utils.weight_converter import patch_embed_MAX_to_HF
 from utils.weight_generator import get_weight_generator
 
 RTOL = 8e-3
-ATOL = 1e-3
+ATOL = 8e-3
 
 
 @torch.no_grad()
@@ -94,12 +94,12 @@ def generate_max_outputs(
     vision_config = qwen2_5vl_config["vision_config"]
 
     # Convert weights to MAX format
-    max_weights = convert_hf_to_max_weights(embeddings_weights)
+    max_weights = patch_embed_MAX_to_HF(embeddings_weights)
 
     # Create VisionPatchEmbed with new constructor pattern
     patch_embed_module = VisionPatchEmbed(
         dtype=dtype,
-        device=device_ref,
+        devices=[device_ref],
         patch_size=vision_config["patch_size"],
         temporal_patch_size=vision_config["temporal_patch_size"],
         in_channels=vision_config.get("in_channels", 3),

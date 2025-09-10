@@ -68,7 +68,7 @@ def generate_max_outputs(
         out_hidden_size=out_hidden_size,
         spatial_merge_size=spatial_merge_size,
         dtype=dtype,
-        device=DeviceRef.GPU(),
+        devices=[DeviceRef.GPU()],
     )
 
     # Prepare state dict for MAX (always includes bias)
@@ -97,7 +97,7 @@ def generate_max_outputs(
             ],
         ) as graph:
             inputs = graph.inputs[0]
-            output = patch_merger(inputs.tensor)
+            output = patch_merger(inputs.tensor, signal_buffers=[])
             graph.output(output)
         return graph
 

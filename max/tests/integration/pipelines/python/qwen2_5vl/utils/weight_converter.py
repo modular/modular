@@ -23,12 +23,33 @@ def convert_hf_to_max_weights(
     result = {}
     for k, v in hf_state_dict.items():
         new_key = k
+        if "patch_embed.proj." in new_key:
+            # Convert Conv2d weight to a Linear-equivalent format.
+            # Conv3D weight shape: (2, 14, 14, 3, 1152) when permuted
+            # Linear weight shape: (1152, 1176)
+            out_channels, in_channels, kernel_h, kernel_w, kernel_d = v.shape
+            v = v.reshape(out_channels, -1)
         # For  weights, no key transformation needed as MAX uses same naming
         # (qkv.weight, qkv.bias, proj.weight, proj.bias)
 
         result[new_key] = v
 
     return result
+
+
+def patch_embed_MAX_to_HF(
+    patch_embed_weights: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    """Convert MAX format weights to HuggingFace format for Qwen2.5VL."""
+    out_channels, in_channels, kernel_h, kernel_w, kernel_d = (
+        patch_embed_weights["proj.weight"].shape
+    )
+    state_dict = {
+        "proj.weight": patch_embed_weights["proj.weight"].reshape(
+            out_channels, -1
+        )
+    }
+    return state_dict
 
 
 def patch_merger_MAX_to_HF(
