@@ -34,7 +34,7 @@ from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY
-from .sampling_config import SamplingConfig
+from .sampling import SamplingConfig
 
 logger = logging.getLogger("max.pipelines")
 

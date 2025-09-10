@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 
-from .max_config import MAXConfig
+from ..max_config import MAXConfig
 
 logger = logging.getLogger("max.pipelines")
 

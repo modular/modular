@@ -49,11 +49,11 @@ from .profiling_config import ProfilingConfig
 from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
+    SamplingConfig,
     rejection_sampler,
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .sampling_config import SamplingConfig
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
