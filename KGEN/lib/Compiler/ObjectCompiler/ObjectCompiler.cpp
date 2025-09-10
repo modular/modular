@@ -949,11 +949,6 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (!llvmModule)
     return Error("translate module to LLVMIR failed");
 
-  ErrorOrSuccess linkResult =
-      linkBitcodeLibraries(module->getLoc(), *llvmModule, options);
-  if (failed(linkResult))
-    return linkResult.takeError();
-
   return llvmModule;
 }
 
@@ -1177,6 +1172,11 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             moduleLoc));
       }
 
+      // Link bitcode libraries.
+      if (failed(linkBitcodeLibraries(moduleLoc, *llvmModule, options)))
+        return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
+            Error("failed to link bitcode libraries"), moduleLoc));
+
       // Split the module into multiple slices and compile each in parallel.
       [[maybe_unused]] bool isNVPTX = isNVPTXBackend(options);
       assert((!isNVPTX || (isNVPTX && emitAssembly)) &&
@@ -1384,6 +1384,10 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
         return lowerAllFuncsToLLVM(ctx, module);
       }))
     return err.takeError();
+
+  // Link bitcode libraries.
+  if (failed(linkBitcodeLibraries(module->getLoc(), *llvmModule, options)))
+    return Error("failed to link bitcode libraries");
 
   auto machineOr = createTargetMachine(options, /*isJIT=*/false);
   if (failed(machineOr))
@@ -2041,6 +2045,15 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       DenseMap<EmitAs, BufferRef> emptyResults;
       std::move(resultBufs).emplace(std::move(emptyResults));
       std::move(resultKernelId).emplace(std::nullopt);
+      return;
+    }
+
+    // Link bitcode libraries.
+    ErrorOrSuccess linkResult = linkBitcodeLibraries(loc, *module, options);
+    if (failed(linkResult)) {
+      std::move(resultBufs)
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to link bitcode libraries", loc));
       return;
     }
 
