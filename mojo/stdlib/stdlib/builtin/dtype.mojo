@@ -59,7 +59,7 @@ struct DType(
       for SIMD vectors, tensors, and other data structures
     - **Type parameters**: Pass `DType` values as compile-time parameters to
       parameterized types like `SIMD[dtype, size]`
-    - **Type introspection**: Call methods like `.bitwidth()`, `.is_floating_point()`
+    - **Type introspection**: Call methods like `.bit_width()`, `.is_floating_point()`
       to query type properties at compile time
     - **Type conversion**: Use in casting operations to convert between different
       numeric representations
@@ -74,7 +74,7 @@ struct DType(
     var dtype = data.dtype
 
     print("Is float:", dtype.is_floating_point())  # True
-    print("Bit width:", dtype.bitwidth())          # 16
+    print("Bit width:", dtype.bit_width())          # 16
     print("Is signed:", dtype.is_signed())         # True
     ```
     """
@@ -662,7 +662,7 @@ struct DType(
         return size_of[DType.invalid]()
 
     @always_inline
-    fn bitwidth(self) -> Int:
+    fn bit_width(self) -> Int:
         """Returns the size in bits of the current DType.
 
         Returns:
@@ -686,7 +686,7 @@ struct DType(
             The mantissa width.
         """
         constrained[dtype.is_floating_point(), "dtype must be floating point"]()
-        return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
+        return dtype.bit_width() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
     @always_inline("nodebug")
@@ -837,7 +837,7 @@ struct DType(
         Parameters:
             func: A parametrized on dtype function to dispatch.
         """
-        var bitwidth = self.bitwidth()
+        var bitwidth = self.bit_width()
         if bitwidth == 8:
             func[DType.uint8]()
         elif bitwidth == 16:
@@ -1084,7 +1084,7 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
     if dtype.is_unsigned():
         return dtype
     elif dtype.is_integral():
-        return _uint_type_of_width[bit_width_of[dtype]()]()
+        return _uint_type_of_width[dtype.bit_width()]()
 
     elif dtype.is_float8():
         return DType.uint8

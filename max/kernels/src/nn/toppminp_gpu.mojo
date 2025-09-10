@@ -13,7 +13,7 @@
 
 
 from math import ceildiv
-from sys import align_of, bit_width_of
+from sys import align_of
 
 from buffer import NDBuffer, DimList
 from builtin.dtype import _uint_type_of_width
@@ -165,7 +165,7 @@ fn normalize(value: BFloat16) -> Scalar[DType.uint16]:
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
     var bits = reinterpret(value)
-    alias sign_bit_mask = (0b1 << (bit_width_of[DType.bfloat16]() - 1))
+    alias sign_bit_mask = (0b1 << (DType.bfloat16.bit_width() - 1))
     if bits & sign_bit_mask:
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -190,7 +190,7 @@ fn normalize(value: Int32) -> UInt32:
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    alias sign_bit_mask = (0b1 << (bit_width_of[DType.int32]() - 1))
+    alias sign_bit_mask = (0b1 << (DType.int32.bit_width() - 1))
 
     return reinterpret(value) ^ sign_bit_mask
 
@@ -210,7 +210,7 @@ fn normalize(value: Float32) -> UInt32:
         return bitcast[DType.uint32, 1](value)
 
     var bits = reinterpret(value)
-    alias sign_bit = bit_width_of[DType.float32]() - 1
+    alias sign_bit = DType.float32.bit_width() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> sign_bit)) | (0b1 << sign_bit))
@@ -219,7 +219,7 @@ fn normalize(value: Float32) -> UInt32:
 @always_inline
 fn normalize(
     value: Scalar,
-    out result: Scalar[_uint_type_of_width[bit_width_of[value.dtype]()]()],
+    out result: Scalar[_uint_type_of_width[value.dtype.bit_width()]()],
 ):
     """
     Normalize the value to the appropriate unsigned integer type. This is needed
@@ -509,7 +509,7 @@ fn run_radix_sort_pairs_gpu[
     var vocab_size = in_shape[1]
 
     @parameter
-    for current_bit in range(0, bit_width_of[dtype](), NUM_BITS_PER_PASS):
+    for current_bit in range(0, dtype.bit_width(), NUM_BITS_PER_PASS):
         alias kernel = radix_sort_pairs_kernel[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]

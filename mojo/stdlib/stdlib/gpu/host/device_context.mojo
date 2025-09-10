@@ -5710,7 +5710,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bit_width_of[dtype]()
+        alias bitwidth = dtype.bit_width()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",
@@ -5757,7 +5757,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bit_width_of[dtype]()
+        alias bitwidth = dtype.bit_width()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
             "bitwidth of memset dtype must be one of [8,16,32,64]",

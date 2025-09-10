@@ -273,7 +273,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if bit_width_of[dtype]() <= 16:
+            if dtype.bit_width() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue
