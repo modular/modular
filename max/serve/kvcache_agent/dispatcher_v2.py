@@ -13,8 +13,7 @@
 from __future__ import annotations
 
 import queue
-from dataclasses import dataclass
-from typing import Any, Generic, TypeVar, Union, cast
+from typing import Any, Generic, NewType, TypeVar, Union, cast
 
 import zmq
 from max.serve.queue.zmq_queue import (
@@ -28,9 +27,7 @@ Request = TypeVar("Request")
 Reply = TypeVar("Reply")
 
 
-@dataclass
-class ClientIdentity:
-    identity: bytes
+ClientIdentity = NewType("ClientIdentity", bytes)
 
 
 class DispatcherServerV2(Generic[Request, Reply]):
@@ -53,12 +50,14 @@ class DispatcherServerV2(Generic[Request, Reply]):
 
     def recv_request_nowait(self) -> tuple[Request, ClientIdentity]:
         identity, request = self._router.recv_multipart_nowait()
-        assert isinstance(identity, bytes)
-        assert isinstance(request, self._request_type)
+        if not isinstance(request, self._request_type):
+            raise ValueError(
+                f"Received request {request} is not of type {self._request_type}"
+            )
         return cast(Request, request), ClientIdentity(identity)
 
     def send_reply_nowait(self, reply: Reply, identity: ClientIdentity) -> None:
-        self._router.send_multipart(identity.identity, reply, flags=zmq.NOBLOCK)
+        self._router.send_multipart(identity, reply, flags=zmq.NOBLOCK)
 
 
 class DispatcherClientV2(Generic[Request, Reply]):
@@ -102,6 +101,9 @@ class DispatcherClientV2(Generic[Request, Reply]):
                 reply = dealer.recv_pyobj_nowait()
             except queue.Empty:
                 continue
-            assert isinstance(reply, self._reply_type)
+            if not isinstance(reply, self._reply_type):
+                raise ValueError(
+                    f"Received reply {reply} is not of type {self._reply_type}"
+                )
             return cast(Reply, reply)
         raise queue.Empty()
