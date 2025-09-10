@@ -15,6 +15,7 @@ from .context import (
     SamplingParamsInput,
 )
 from .log_probabilities import LogProbabilities
+from .logit_processors_type import LogitsProcessor, ProcessorInputs
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import (
     Pipeline,
@@ -75,6 +76,7 @@ __all__ = [
     "LoRAStatus",
     "LoRAType",
     "LogProbabilities",
+    "LogitsProcessor",
     "MAXPullQueue",
     "MAXPushQueue",
     "Pipeline",
@@ -85,6 +87,7 @@ __all__ = [
     "PipelineTokenizer",
     "PipelineTokenizer",
     "PipelinesFactory",
+    "ProcessorInputs",
     "Request",
     "RequestID",
     "SamplingParams",
