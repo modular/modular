@@ -25,7 +25,7 @@ common --platforms=@mojo_host_platform
 common --host_platform=@mojo_host_platform
 
 # TODO: remove when https://github.com/bazelbuild/bazel/issues/25145 is fixed
-info --platforms=
+info --platforms=@platforms//host
 
 # Improve sandboxed build performance by reusing symlink trees
 common --reuse_sandbox_directories
