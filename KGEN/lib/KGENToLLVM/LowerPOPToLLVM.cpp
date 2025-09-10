@@ -1695,7 +1695,10 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
         /*isNonTemporal=*/false,
         /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr(), false),
         /*isInvariantGroup=*/false,
-        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
+        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
+        /*syncscope=*/adaptor.getSyncscope()
+            ? cast<StringAttr>(*adaptor.getSyncscope())
+            : StringRef());
     return success();
   }
 };
