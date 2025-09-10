@@ -86,5 +86,5 @@ struct Issue3142IntList:
 
 fn test(lst: Issue3142IntList):
     # expected-error @+2 {{invalid call to '__setitem__': could not deduce parameter 'idx' of callee '__setitem__'}}
-    # expected-note @+1 {{failed to infer parameter 'idx', parameter isn't used in any argument}}
+    # expected-note @+1 {{failed to infer parameter 'idx', it isn't used in any argument}}
     lst[0] = 0

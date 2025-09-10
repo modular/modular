@@ -39,13 +39,13 @@ void InferenceFailure::emitSpecificNote(
     function_ref<InflightDiag &()> attachNote) const {
 
   if (isa<NotFoundFailure>(info)) {
-    attachNote() << "parameter isn't used in any argument";
+    attachNote() << "it isn't used in any argument";
     return;
   }
 
   if (isa<ValueConflictFailure>(info)) {
     auto failure = cast<ValueConflictFailure>(info);
-    attachNote() << "parameter inferred to two different values: " << failure.v1
+    attachNote() << "it inferred to two different values: " << failure.v1
                  << " and " << failure.v2
                  << ", try `rebind` them to one type if they will be "
                     "concretized to the same type";

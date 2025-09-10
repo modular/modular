@@ -851,7 +851,7 @@ fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
 fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
 fn test3830():
     # expected-error @below {{invalid call to 'direct3830':}}
-    # expected-note @below {{failed to infer parameter #1, parameter inferred to two different values}}
+    # expected-note @below {{failed to infer parameter #1, it inferred to two different values}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
 fn test3830_1[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
