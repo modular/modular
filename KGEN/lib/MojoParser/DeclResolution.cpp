@@ -1224,8 +1224,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Emit copies/casts for captures. Otherwise the incorrect lifetime rules will
   // be applied to the values in the closure.
   if (fnSignature.effects.isUnified()) {
-    ASTDecl *parent = decl.getParentDecl();
-    if (!parent || !isa_and_nonnull<FnOp>(parent->getIfOperation())) {
+    if (!funcOp->getParentOfType<FnOp>()) {
       p.emitError(funcOp.getLoc(),
                   "unified effect is only applicable on nested functions");
       return failure();

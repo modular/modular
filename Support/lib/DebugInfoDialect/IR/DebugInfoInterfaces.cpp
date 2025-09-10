@@ -153,12 +153,13 @@ LogicalResult Impl::verifySubprogramScoped(SubprogramScoped op) {
     return success();
   }
 
-  DIScopeAttr scope = fusedLoc.getMetadata();
-  auto funcScope = dyn_cast<DISubprogramAttr>(scope);
+  auto funcScope = op.getSubprogramScope();
   if (!funcScope) {
+    DIScopeAttr scope = fusedLoc.getMetadata();
     return op.emitOpError("must have subprogram scope in location, but got ")
            << scope;
   }
+
   ArrayRef<Location> locs = fusedLoc.getLocations();
   if (locs.size() != 1)
     return op.emitOpError("must contain exactly one location");

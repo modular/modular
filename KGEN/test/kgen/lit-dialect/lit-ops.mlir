@@ -474,13 +474,14 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 
 !Impl = !kgen.closure<@make_closure, "foo" registerpassable>
 #type_value = #kgen.type<!Impl, {"__del__" : !lit.generator<[1]("self":!lit.ref<!Impl, mut *[0,0]> owned_in_mem) -> !kgen.none> = #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<del>>}> : !kgen.type
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@String, imm Z> owned_in_mem) -> !kgen.none {
     // CHECK: lit.closure.init[#type_value]()(%arg0[y2]: index) -> index
-    // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>
+    // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>, #subprogram
     %1 = lit.closure.init[#type_value]()(%arg0[y2]: index) -> index {
       lit.end_fn
-    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>, #subprogram
     %0 = lit.call @useIt[imm C2]<:!kgen.type #type_value>(%1) : !lit.generator<[1](!lit.ref<!Impl, imm C2>) -> !kgen.none>
     lit.end_fn
 }

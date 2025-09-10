@@ -1713,10 +1713,25 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   builder.setInsertionPoint(nestedFn);
   MLIRContext *ctx = builder.getContext();
   StringAttr fnName = nestedFn.getSourceNameAttr();
+
+  ASTDecl *symbolParent = nestedFnDecl.getParentDecl();
+  do {
+    if (isa_and_nonnull<FnOp>(symbolParent->getIfOperation()))
+      break;
+    symbolParent = symbolParent->getParentDecl();
+  } while (symbolParent);
+  // The location of the closure init op should have its parent's subprogram as
+  // a scope. We will also store an independent scope on the op to validate the
+  // nested ops.
+  Location fileOnlyLoc = DebugInfo::extractSourceLoc(location);
+  Location opLoc = FusedLoc::get(
+      ctx, fileOnlyLoc,
+      cast<FnOp>(symbolParent->getIfOperation()).getSubprogramScope());
+
   // TODO: use effect to determine the memory kind for the closure
   KGEN::ClosureType closureType =
-      ClosureType::get(ctx, nestedFnDecl.getParentDecl()->getSymbolRef(),
-                       fnName, ClosureMemoryKind::NONESCAPING);
+      ClosureType::get(ctx, symbolParent->getSymbolRef(), fnName,
+                       ClosureMemoryKind::NONESCAPING);
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
   SmallVector<TypedAttr> origins;
@@ -1819,13 +1834,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       original.getArgConventions(), original.getFnEffects().setUnified(false),
       original.getFnMetadata(), original.getMetadata());
   auto closure = builder.create<LIT::ClosureInitOp>(
-      location, refType, withoutUnified, nestedFn.getFunctionType(),
+      opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       OriginSetAttr::get(ctx, origins), nestedFn.getInputParams(),
-      nestedFn.getInlineLevel(), origin, witnessTable);
+      nestedFn.getInlineLevel(), origin, witnessTable,
+      nestedFn.getSubprogramScope());
 
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
-  updateLocationScope(nestedFn->getLoc(), closure->getLoc(), closure);
 
   // (2) Create the wrapper instance and populate it with the closure init op
   // value.
@@ -1920,6 +1935,12 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   /// to create a temporary value to represent the change in the properties of
   /// the value in the body of the closure.
   CValue captureValue;
+  // Switch the DI Scope to the enclosing function before emitting the
+  // load so the debug information is accurate.
+  auto parentFn = funcOp->getParentOfType<FnOp>();
+  DebugInfo::DIBuilder::ScopeGuard diGuard;
+  if (shared.diBuilder)
+    diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
   switch (parsedConvention) {
   case CaptureConvention::kConventionMove: {
     Type type = valueInParent.getType().mlirType;

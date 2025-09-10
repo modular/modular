@@ -1727,6 +1727,7 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
 
 def LIT_ClosureInitOp : LITOp<"closure.init",
                 [FunctionLike, SingleBlock, DeclInterface,
+                DeclareOpInterfaceMethods<DebugInfo_SubprogramScoped, ["getSubprogramScope"]>,
                   DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>]>, OneParamDecl {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
@@ -1776,7 +1777,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_InlineLevelAttr:$inlineLevel,
                        KGEN_ParamDeclAttr:$paramDecl,
-                       TypedAttrInterface:$typeValue
+                       TypedAttrInterface:$typeValue,
+                       OptionalAttr<AnyAttr>:$nestedFnScope
                        );
   let results = (outs LIT_RefType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -1792,8 +1794,25 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                                     type($captures),
                                     type($result),
                                     $paramDecl,
-                                    $typeValue)  attr-dict
+                                    $typeValue, $nestedFnScope)  attr-dict
   }];
+
+  let builders = [
+    OpBuilder<(ins "Type":$result, "FnTypeGeneratorType":$funcTypeGenerator,
+                   "FunctionType":$functionType,
+                   "ValueRange":$captures,
+                   "ArrayAttr":$captureConventions,
+                   "TypedAttr":$captureOrigins,
+                   "ArrayRef<ParamDeclAttr>":$inputParams,
+                   "InlineLevel":$inlineLevel,
+                   "ParamDeclAttr":$paramDecl,
+                   "TypedAttr":$typeValue), [{
+      build($_builder, $_state, result, funcTypeGenerator, functionType, captures,
+            captureConventions, captureOrigins, inputParams, inlineLevel,
+            paramDecl, typeValue, {});
+    }]>
+  ];
+
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }

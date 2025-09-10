@@ -3,12 +3,24 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s AA BB CC | FileCheck %s
+# RUN: %mojo %s AA BB CC foo | FileCheck %s
 
 
 # COM: Check that the argument is augmented at the definition site.
 
 from sys import argv
+
+
+struct Mem(Copyable, ImplicitlyCopyable, Movable):
+    var str1: String
+    var str2: String
+
+    fn __init__(out self, str1: String, str2: String):
+        self.str1 = str1
+        self.str2 = str2
+
+    fn to_string(self) -> String:
+        return self.str1 + self.str2
 
 
 fn takeIt[T: fn () unified -> String](state: T):
@@ -49,3 +61,13 @@ def main():
 
     # CHECK: CC.v2
     takeIt(immRef)
+
+    # COM: the copy emitted by the compiler is emitted with the correct debug info and the destructor of that copy is emitted with the correct debug info
+    var x: String = argv()[4]
+    var mem = Mem(x, x)
+
+    fn myclosure() unified {var} -> String:
+        return mem.to_string()
+
+    # CHECK: captures:  foofoo
+    takeIt(myclosure)
