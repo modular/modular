@@ -82,6 +82,7 @@ def retrieve_mock_text_generation_pipeline(
             pipeline_model=MockPipelineModel,
             eos_token_id=eos_token,
             weight_adapters={},
+            tokenizer=tokenizer,
         )
 
         yield tokenizer, pipeline
