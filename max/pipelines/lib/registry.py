@@ -445,6 +445,7 @@ class PipelineRegistry:
                 pipeline_model=arch.pipeline_model,
                 eos_token_id=tokenizer.eos,
                 weight_adapters=arch.weight_adapters,
+                tokenizer=tokenizer,
             ),
         )
 

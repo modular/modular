@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.interfaces.context import InputContext
 from max.interfaces.logit_processors_type import (
     BatchLogitsProcessor,
@@ -47,6 +47,8 @@ def apply_logits_processors(
             These are applied in order after the individual context-level
             processors.
     """
+    if batch_logit_offsets and not batch_logit_offsets.device.is_host:
+        batch_logit_offsets = batch_logit_offsets.to(CPU())
     for i, context in enumerate(context_batch):
         processors = context.sampling_params.logits_processors
         if processors is None:

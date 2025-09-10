@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, TypeVar
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import (
@@ -26,7 +28,13 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import EmbeddingsGenerator, EmbeddingsOutput, InputContext
+from max.interfaces import (
+    EmbeddingsGenerator,
+    EmbeddingsOutput,
+    InputContext,
+    PipelineTokenizer,
+    TextGenerationRequest,
+)
 from max.nn import ReturnLogits
 from max.profiler import Tracer, traced
 
@@ -48,7 +56,11 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         pipeline_model: type[PipelineModel[T]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
+        tokenizer: PipelineTokenizer[
+            T, npt.NDArray[np.integer[Any]], TextGenerationRequest
+        ],
     ) -> None:
+        del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
         self._weight_adapters = weight_adapters
         # Initialize Session.

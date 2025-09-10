@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -35,12 +35,14 @@ from max.graph.weights import (
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
+    PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
+    TextGenerationRequest,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import traced
 from transformers import AutoConfig
@@ -48,13 +50,21 @@ from transformers import AutoConfig
 from .config_enums import RepoType
 from .hf_utils import download_weight_files
 from .pipeline import (
+    GenerateMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
-from .sampling import rejection_sampler_with_residuals, token_sampler
+from .sampling import (
+    apply_logits_processors,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
+
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -134,18 +144,27 @@ class SpeculativeDecodingTextGenerationPipeline(
     Pipeline[
         TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
         TextGenerationOutput,
-    ]
+    ],
+    GenerateMixin[
+        Union[TextContext, TextAndVisionContext], TextGenerationRequest
+    ],
 ):
     """Generalized token generator pipeline with speculative decoding."""
 
     def __init__(
         self,
-        pipeline_config: Any,  # PipelineConfig
+        pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel[TextContext | TextAndVisionContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
+        tokenizer: PipelineTokenizer[
+            Union[TextContext, TextAndVisionContext],
+            npt.NDArray[np.integer[Any]],
+            TextGenerationRequest,
+        ],
     ) -> None:
-        self.pipeline_config = pipeline_config
+        self._pipeline_config = pipeline_config
+        self._tokenizer = tokenizer
 
         # Load target model
         self.target_devices = load_devices(
@@ -243,6 +262,7 @@ class SpeculativeDecodingTextGenerationPipeline(
             self.pipeline_config.profiling_config.gpu_profiling
         )
 
+        assert self.pipeline_config.draft_model_config is not None
         draft_config = (
             self.pipeline_config.draft_model_config.huggingface_config
         )
@@ -370,6 +390,26 @@ class SpeculativeDecodingTextGenerationPipeline(
             )
         )
 
+    @property
+    def pipeline_config(self) -> PipelineConfig:
+        return self._pipeline_config
+
+    @property
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        TextContext | TextAndVisionContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ]:
+        return self._tokenizer
+
+    @property
+    def kv_managers(
+        self,
+    ) -> list[KVCacheManager[TextContext | TextAndVisionContext]]:
+        return [self._draft_model.kv_manager, self._target_model.kv_manager]
+
     @traced
     def calculate_num_steps(
         self,
@@ -407,9 +447,6 @@ class SpeculativeDecodingTextGenerationPipeline(
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):  # noqa: B007
-            if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.external_claim(context.request_id)
-
             # Calculate num_steps.
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
@@ -616,6 +653,12 @@ class SpeculativeDecodingTextGenerationPipeline(
         # Generate target tokens.
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
+        # Apply logits processors
+        apply_logits_processors(
+            context_batch=context_batch,
+            batch_logits=target_outputs.logits,
+            batch_logit_offsets=target_outputs.logit_offsets,
+        )
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
