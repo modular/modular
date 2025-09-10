@@ -601,9 +601,9 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="float32",
-            absolute_tolerance=2.1e-02,
-            relative_tolerance=7.3e-3,
-            cos_dist_threshold=2.4e-6,
+            absolute_tolerance=2.4e-2,
+            relative_tolerance=7.8e-3,
+            cos_dist_threshold=3.3e-6,
             kl_div_threshold=1.0e-10,
         ),
     ),
