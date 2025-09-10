@@ -220,7 +220,7 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<10, :array<10, f32> array>()
    fnToCall[Int(10)._mlir_value, array]()
 
-# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<[""]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
+# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<["value`"]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
   pass
 
@@ -275,7 +275,7 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
 
-    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, !Int, !Int, !Int, !Int>
+    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.generator<<?, "a`": !Int, "b`1": !Int, "a`2": !Int, "b`3": !Int>
     # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
     alias partial_bind = implicit_params_with_others[1]
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
@@ -306,7 +306,7 @@ fn autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
     return x.a + y.b
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias_params
-# CHECK-SAME: <[""][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams<:!Int [[A0]], :!Int {2}>
+# CHECK-SAME: <["a`"][[A0:.*]]: !Int, x: !Int, +, y: {{.*}}TwoParams<:!Int [[A0]], :!Int {2}>
 fn autoparam_param_alias_params[x: Int, //, y: TwoParamsSwap[2, _]]():
     pass
 
@@ -318,12 +318,12 @@ struct IndexParam[x: Index]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_params
-# CHECK-SAME: <[""]*"x`", a, +, b: {{.*}}IndexParam<*"x`">, c: {{.*}}IndexParam<a>
+# CHECK-SAME: <["x`"]*"x`", a, +, b: {{.*}}IndexParam<*"x`">, c: {{.*}}IndexParam<a>
 fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
-# CHECK-SAME: <[""]*"x`1", +, a: meta<!lit.struct<#IndexParam <*"x`1">>>>
+# CHECK-SAME: <["x`1"]*"x`1", +, a: meta<!lit.struct<#IndexParam <*"x`1">>>>
 fn autoparam_of_struct_metatype_params[a: __type_of(IndexParam)]():
     pass
 
@@ -334,13 +334,13 @@ struct DependentParams[x: Index, //, p: IndexParam[x]]:
 
 
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
-# CHECK-SAME: <[""]*"x`", [""]*"p`1": {{.*}}IndexParam<*"x`">, +, dp: {{.*}}DependentParams<*"x`", :{{.*}}IndexParam<*"x`"> *"p`1">>
+# CHECK-SAME: <["x`"]*"x`", ["p`1"]*"p`1": {{.*}}IndexParam<*"x`">, +, dp: {{.*}}DependentParams<*"x`", :{{.*}}IndexParam<*"x`"> *"p`1">>
 fn autoparam_of_dependent_params[dp: DependentParams]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<[""][[G_LT:.*]]: origin.set, [""][[F_LT:.*]]: origin.set, +
+# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["__origins__`1"][[G_LT:.*]]: origin.set, ["__origins__`"][[F_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
 fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> None]():
@@ -354,13 +354,13 @@ fn function_autoparam[f: fn () capturing [_] -> None, g: fn () capturing [_] -> 
 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
+# CHECK-SAME: ()"<f: !lit.generator<<"__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
 fn nonprop_capture_set[f: fn[g: fn () capturing [_] -> None] () -> None]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_param_vararg
-# CHECK-SAME: <[""]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> pos_vararg>
+# CHECK-SAME: <["__origins__`"]*"__origins__`": origin.set, +, f: {{.*}}, x: variadic<index> pos_vararg>
 fn autoparam_param_vararg[f: fn () [_] -> None, *x: Index]():
     pass
 

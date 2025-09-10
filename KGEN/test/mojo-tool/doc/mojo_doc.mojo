@@ -641,7 +641,7 @@ fn fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[o1: Origin[$0], o2: MutableOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
+# CHECK:     "signature": "fn_with_origins[o1: Origin[mut], o2: MutableOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
 fn fn_with_origins[
     o1: Origin[_], o2: Origin[True]
 ](ref [o1]arg1: Int, ref [o2]arg2: Int) -> ref [arg1] Int:
@@ -929,7 +929,7 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:      "name": "S"
 # CHECK:      "path": "/stdlib/builtin/anytype/AnyType"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[__origins__: OriginSet, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[

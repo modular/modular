@@ -645,7 +645,7 @@ struct TakeAnything[T: AnyType, //, a: T]:
 struct SomeParamStruct[x: HasSize]: pass
 
 fn auto_param_of_autoparam[a: SomeParamStruct]():
-    # expected-error @+1 {{cannot be converted from 'HasSize[a.x.]' to 'HasSize[4]'}}
+    # expected-error @+1 {{cannot be converted from 'HasSize[a.x.size]' to 'HasSize[4]'}}
     takes4(HasSize[a.x.size]())
 
 # expected-note @below {{function declared here}}

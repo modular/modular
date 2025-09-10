@@ -757,10 +757,10 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTType type,
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {
+    auto mangledName = paramList.declScope.mangleParamName(name);
     auto funcDecl =
-        ParamDeclAttr::get(paramList.declScope.mangleParamName(name),
-                           evaluator.getReboundType(type));
-    names.push_back(StringAttr::get(type.getContext()));
+        ParamDeclAttr::get(mangledName, evaluator.getReboundType(type));
+    names.push_back(mangledName);
     passingKinds.push_back(append ? PassingKind::Implicit
                                   : PassingKind::Inferred);
     paramDeclAttrs.push_back(funcDecl);
