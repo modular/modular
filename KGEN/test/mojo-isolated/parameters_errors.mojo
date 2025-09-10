@@ -642,8 +642,14 @@ struct TestAutoParams[f1: HasSize]:
 struct TakeAnything[T: AnyType, //, a: T]:
     fn __init__(out self): pass
 
+struct SomeParamStruct[x: HasSize]: pass
+
+fn auto_param_of_autoparam[a: SomeParamStruct]():
+    # expected-error @+1 {{cannot be converted from 'HasSize[a.x.]' to 'HasSize[4]'}}
+    takes4(HasSize[a.x.size]())
+
 # expected-note @below {{function declared here}}
 fn take_a_4(a: TakeAnything[4]): pass
-fn pass(x: String):
+fn pass_it(x: String):
   # expected-error @+1 {{cannot be converted from 'TakeAnything[__origin_of(x)]' to 'TakeAnything[4]'}}
   take_a_4(TakeAnything[__origin_of(x)]())
