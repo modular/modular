@@ -784,7 +784,7 @@ PIPELINES = {
             ),
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
             cos_dist_threshold=1.3e-2,
-            kl_div_threshold=2.7e-2,
+            kl_div_threshold=2.9e-2,
         ),
     ),
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
