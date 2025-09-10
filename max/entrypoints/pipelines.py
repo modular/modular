@@ -21,6 +21,7 @@ from typing import Any, Callable, TypeVar
 import click
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.entrypoints.workers import start_workers
+from max.interfaces import SamplingParams
 from max.serve.config import Settings
 from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
@@ -218,6 +219,12 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     type=str,  # Take them all in as strings
     help="Task-specific arguments to pass to the underlying model (can be used multiple times).",
 )
+@click.option(
+    "--pretty-print-config",
+    is_flag=True,
+    default=False,
+    help="Pretty Print Entire Config",
+)
 def cli_serve(
     profile_serve: bool,
     sim_failure: int,
@@ -226,6 +233,7 @@ def cli_serve(
     log_prefix: str | None,
     task: str,
     task_arg: tuple[str, ...],
+    pretty_print_config: bool,
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -248,6 +256,16 @@ def cli_serve(
         )
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
+
+    # Log Pipeline and Sampling Configuration
+    if pretty_print_config:
+        pipeline_config.log_pipeline_info()
+
+        # Log Default Sampling Configuration
+        sampling_params = SamplingParams()
+        sampling_params.log_sampling_info()
+    else:
+        pipeline_config.log_basic_config()
 
     failure_percentage = None
     if sim_failure > 0:

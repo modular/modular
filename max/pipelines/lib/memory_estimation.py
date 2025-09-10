@@ -220,17 +220,6 @@ class MemoryEstimator:
                 f"Current max batch size: {pipeline_config.max_batch_size}"
             )
 
-        logging_str = (
-            "\n"
-            f"\n\tEstimated memory consumption:"
-            f"{weights_str}"
-            f"{activation_str}"
-            f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {to_human_readable_bytes(static_memory_size + actual_kv_cache_size)} used{free_memory_str}"
-            f"\n\t{max_length_str}"
-            f"\n\t{max_batch_size_str}\n"
-        )
-        logger.info(logging_str)
         vram_usage_limit_scale = 0.95
 
         if isinstance(free_memory, (int, float)):
