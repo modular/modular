@@ -2333,7 +2333,7 @@ struct ArgNonZero:
     fn execute(
         output_buffer: OutputTensor[rank=2],
         input_buffer: InputTensor,
-    ):
+    ) raises:
         arg_nonzero.arg_nonzero(
             input_buffer.to_layout_tensor(),
             output_buffer.to_layout_tensor(),

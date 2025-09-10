@@ -17,7 +17,7 @@ from runtime.tracing import Trace, TraceLevel
 from collections.optional import OptionalReg
 
 
-fn test_op_logging[
+def test_op_logging[
     level: TraceLevel, target: Optional[StaticString] = None
 ](
     op_name: StaticString,
@@ -28,7 +28,7 @@ fn test_op_logging[
         pass
 
 
-fn main():
+def main():
     print("== test_op_logging")
     # CHECK-LABEL: test_op_logging
 

@@ -215,7 +215,10 @@ fn shmem_finalize():
     @parameter
     if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
-        _ = MPI_Finalize()
+        try:
+            _ = MPI_Finalize()
+        except e:
+            pass
     else:
         return CompilationTarget.unsupported_target_error[
             operation="shmem_finalize",

@@ -63,7 +63,22 @@ alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias APPLE_ACCELERATE = _Global["APPLE_ACCELERATE", _init_dylib]
+
+fn _on_error_msg() -> String:
+    return String(
+        (
+            "Cannot find the Apple Accelerate libraries. Please make sure that "
+            "the XCode package is installed and that the library path is "
+            "correctly set in one of the following paths ["
+        ),
+        ", ".join(LIB_ACC_PATH),
+        "].",
+    )
+
+
+alias APPLE_ACCELERATE = _Global[
+    "APPLE_ACCELERATE", _init_dylib, on_error_msg=_on_error_msg
+]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
@@ -72,15 +87,13 @@ fn _init_dylib() -> _OwnedDLHandle:
     try:
         return _OwnedDLHandle(LIB_ACC_PATH)
     except:
-        return abort[_OwnedDLHandle](
-            "the accelerate library was not found at " + LIB_ACC_PATH
-        )
+        return _OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     constrained[
         CompilationTarget.is_macos(), "operating system must be macOS"
     ]()
@@ -92,7 +105,7 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn get_cblas_f32_function() -> cblas_gemm_type:
+fn get_cblas_f32_function() raises -> cblas_gemm_type:
     # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
     #                  const enum CBLAS_TRANSPOSE TRANSA,
     #                  const enum CBLAS_TRANSPOSE TRANSB,
@@ -199,7 +212,7 @@ fn _cblas_f32[
     c_ptr: UnsafePointer[Float32, **_],
     a_ptr: UnsafePointer[Float32, **_],
     b_ptr: UnsafePointer[Float32, **_],
-):
+) raises:
     var cblas_gemm = get_cblas_f32_function()
 
     _cblas_f32[transpose_b=transpose_b](

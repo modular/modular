@@ -27,6 +27,8 @@ from sys.ffi import (
     c_int,
     c_size_t,
 )
+from os import abort
+
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -41,7 +43,25 @@ alias NVSHMEM_LIBRARY_PATHS = List[Path](
     "/usr/lib/x86_64-linux-gnu/nvshmem/12/libnvshmem_host.so",
 )
 
-alias NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
+
+fn _on_error_msg() -> String:
+    return String(
+        (
+            "Cannot find the NVShmem libraries. Please make sure that "
+            "the CUDA toolkit is installed and that the library path is "
+            "correctly set in one of the following paths ["
+        ),
+        ", ".join(NVSHMEM_LIBRARY_PATHS),
+        (
+            "]. You may need to make sure that you are using the non-slim"
+            " version of the MAX container."
+        ),
+    )
+
+
+alias NVSHMEM_LIBRARY = _Global[
+    "NVSHMEM_LIBRARY", _init_nvshmem_dylib, on_error_msg=_on_error_msg
+]
 
 
 fn _init_nvshmem_dylib() -> _OwnedDLHandle:
@@ -52,11 +72,14 @@ fn _init_nvshmem_dylib() -> _OwnedDLHandle:
 fn _get_nvshmem_function[
     func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
-    return _get_dylib_function[
-        NVSHMEM_LIBRARY(),
-        func_name,
-        result_type,
-    ]()
+    try:
+        return _get_dylib_function[
+            NVSHMEM_LIBRARY(),
+            func_name,
+            result_type,
+        ]()
+    except e:
+        return abort[result_type](String(e))
 
 
 # ===-----------------------------------------------------------------------===#

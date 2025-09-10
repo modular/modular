@@ -57,6 +57,7 @@ from .shmem_api import (
     shmem_barrier_all_on_stream,
     shmem_module_init,
 )
+from os import abort
 
 
 struct SHMEMContext(ImplicitlyCopyable, Movable):
@@ -135,9 +136,12 @@ struct SHMEMContext(ImplicitlyCopyable, Movable):
 
         Automatically finalizes SHMEM when exiting the context.
         """
-        self.finalize()
+        try:
+            self.finalize()
+        except e:
+            abort(String(e))
 
-    fn finalize(mut self):
+    fn finalize(mut self) raises:
         """Finalizes the SHMEM runtime environment.
 
         Cleans up SHMEM and MPI resources.

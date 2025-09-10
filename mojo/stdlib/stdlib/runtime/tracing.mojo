@@ -570,7 +570,7 @@ struct Trace[
         )
 
     @always_inline
-    fn __enter__(mut self):
+    fn __enter__(mut self) raises:
         """Enters the trace context.
 
         This begins recording of the trace event.
@@ -668,7 +668,7 @@ struct Trace[
         ](self.event_id)
 
     @always_inline
-    fn __exit__(self):
+    fn __exit__(self) raises:
         """Exits the trace context.
 
         This finishes recording of the trace event.
@@ -697,7 +697,7 @@ struct Trace[
         ](0)
 
     @always_inline
-    fn mark(self):
+    fn mark(self) raises:
         """Marks the tracer with the info at the specific point of time.
 
         This creates a point event in the trace timeline rather than a range.
@@ -742,7 +742,7 @@ struct Trace[
             return ""
 
     @always_inline
-    fn start(mut self):
+    fn start(mut self) raises:
         """Start recording trace event.
 
         This begins recording of the trace event, similar to __enter__.
@@ -750,7 +750,7 @@ struct Trace[
         self.__enter__()
 
     @always_inline
-    fn end(mut self):
+    fn end(mut self) raises:
         """End recording trace event.
 
         This finishes recording of the trace event, similar to __exit__.

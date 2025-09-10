@@ -16,6 +16,7 @@ from sys.ffi import external_call
 from sys import size_of
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr
+from os import abort
 
 from .shmem_api import shmem_malloc, shmem_free
 

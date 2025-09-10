@@ -30,14 +30,14 @@ from .types import (
 from .utils import _get_dylib_function
 
 
-fn rocblas_create_handle(handle: UnsafePointer[Handle]) -> Status:
+fn rocblas_create_handle(handle: UnsafePointer[Handle]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
         fn (UnsafePointer[Handle]) -> Status,
     ]()(handle)
 
 
-fn rocblas_destroy_handle(handle: Handle) -> Status:
+fn rocblas_destroy_handle(handle: Handle) raises -> Status:
     return _get_dylib_function[
         "rocblas_destroy_handle",
         fn (Handle) -> Status,
@@ -53,7 +53,7 @@ fn rocblas_ctpsv_64(
     _ap: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_64",
         fn (
@@ -83,7 +83,7 @@ fn rocblas_ctbsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched",
         fn (
@@ -133,7 +133,7 @@ fn rocblas_sdgmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -242,7 +242,7 @@ fn rocblas_dtbsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched",
         fn (
@@ -290,7 +290,7 @@ fn rocblas_chbmv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -393,7 +393,7 @@ fn rocblas_ctpmv_batched(
     x: UnsafePointer[UnsafePointer[ComplexFloat32]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched",
         fn (
@@ -422,7 +422,7 @@ fn rocblas_ctrtri_strided_batched(
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_strided_batched",
         fn (
@@ -463,7 +463,7 @@ fn rocblas_cher_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -537,7 +537,7 @@ fn rocblas_bfdot_64(
     y: UnsafePointer[BFloat16],
     incy: Int64,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_64",
         fn (
@@ -566,7 +566,7 @@ fn rocblas_tstgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched",
         fn (
@@ -597,7 +597,7 @@ fn rocblas_sdot(
     y: UnsafePointer[Float32],
     incy: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -661,7 +661,7 @@ fn rocblas_zgbmv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_64",
         fn (
@@ -691,7 +691,7 @@ fn rocblas_sscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -750,7 +750,7 @@ fn rocblas_srotm_strided_batched(
     param: UnsafePointer[Float32],
     stride_param: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -851,7 +851,7 @@ fn rocblas_csyr2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_batched",
         fn (
@@ -896,7 +896,7 @@ fn rocblas_scopy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_batched_64",
         fn (
@@ -921,7 +921,7 @@ fn rocblas_dsyr_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched_64",
         fn (
@@ -952,7 +952,7 @@ fn rocblas_stbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_strided_batched_64",
         fn (
@@ -1002,7 +1002,7 @@ fn rocblas_dsyr2_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched_64",
         fn (
@@ -1048,7 +1048,7 @@ fn rocblas_ssyr_64(
     incx: Int64,
     _a: UnsafePointer[Float32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_64",
         fn (
@@ -1072,7 +1072,7 @@ fn rocblas_zdotu(
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu",
         fn (
@@ -1097,7 +1097,7 @@ fn rocblas_nrm2_batched_ex(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief BLAS_EX API.
 
@@ -1187,7 +1187,7 @@ fn rocblas_cdgmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_batched",
         fn (
@@ -1218,7 +1218,7 @@ fn rocblas_dotc_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex",
         fn (
@@ -1267,7 +1267,7 @@ fn rocblas_csyr2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_strided_batched",
         fn (
@@ -1321,7 +1321,7 @@ fn rocblas_hdot_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched_64",
         fn (
@@ -1349,7 +1349,7 @@ fn rocblas_zrot_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched_64",
         fn (
@@ -1374,7 +1374,7 @@ fn rocblas_srotmg_batched_64(
     y1: OpaquePointer,
     param: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_batched_64",
         fn (
@@ -1402,7 +1402,7 @@ fn rocblas_strsm_64(
     lda: Int64,
     _b: UnsafePointer[Float32],
     ldb: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_64",
         fn (
@@ -1429,7 +1429,7 @@ fn rocblas_dzasum_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched_64",
         fn (
@@ -1449,7 +1449,7 @@ fn rocblas_snrm2(
     x: UnsafePointer[Float32],
     incx: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -1499,7 +1499,7 @@ fn rocblas_dsyrk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_strided_batched",
         fn (
@@ -1550,7 +1550,7 @@ fn rocblas_dtrsm_batched_64(
     _b: OpaquePointer,
     ldb: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched_64",
         fn (
@@ -1593,7 +1593,7 @@ fn rocblas_zscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched_64",
         fn (
@@ -1617,7 +1617,7 @@ fn rocblas_cher_64(
     incx: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_64",
         fn (
@@ -1641,7 +1641,7 @@ fn rocblas_cdotu(
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu",
         fn (
@@ -1663,7 +1663,7 @@ fn rocblas_sasum_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -1715,7 +1715,7 @@ fn rocblas_dtpmv_batched_64(
     x: UnsafePointer[UnsafePointer[Float64]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched_64",
         fn (
@@ -1746,7 +1746,7 @@ fn rocblas_dtbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched",
         fn (
@@ -1790,7 +1790,7 @@ fn rocblas_sspr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -1884,7 +1884,7 @@ fn rocblas_ztbsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched_64",
         fn (
@@ -1934,7 +1934,7 @@ fn rocblas_cher2_strided_batched(
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -2046,7 +2046,7 @@ fn rocblas_srot_strided_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_strided_batched_64",
         fn (
@@ -2079,7 +2079,7 @@ fn rocblas_ctrsm_batched(
     _b: OpaquePointer,
     ldb: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched",
         fn (
@@ -2120,7 +2120,7 @@ fn rocblas_sscal(
     alpha: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -2166,7 +2166,7 @@ fn rocblas_ztbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched",
         fn (
@@ -2211,7 +2211,7 @@ fn rocblas_dswap_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched",
         fn (
@@ -2240,7 +2240,7 @@ fn rocblas_dsymv(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv",
         fn (
@@ -2265,7 +2265,7 @@ fn rocblas_dnrm2_64(
     x: UnsafePointer[Float64],
     incx: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_64",
         fn (
@@ -2286,7 +2286,7 @@ fn rocblas_ssyrk(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -2388,7 +2388,7 @@ fn rocblas_strtri_strided_batched(
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -2479,7 +2479,7 @@ fn rocblas_chpr_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_strided_batched_64",
         fn (
@@ -2505,7 +2505,7 @@ fn rocblas_izamax_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched",
         fn (
@@ -2530,7 +2530,7 @@ fn rocblas_ztpsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched_64",
         fn (
@@ -2564,7 +2564,7 @@ fn rocblas_zhbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched",
         fn (
@@ -2613,7 +2613,7 @@ fn rocblas_dspr(
     x: UnsafePointer[Float64],
     incx: Int32,
     _ap: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr",
         fn (
@@ -2637,7 +2637,7 @@ fn rocblas_zspr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched_64",
         fn (
@@ -2666,7 +2666,7 @@ fn rocblas_ssyrk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -2773,7 +2773,7 @@ fn rocblas_zherk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_batched",
         fn (
@@ -2802,7 +2802,7 @@ fn rocblas_dspr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched",
         fn (
@@ -2830,7 +2830,7 @@ fn rocblas_dtbmv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched_64",
         fn (
@@ -2855,7 +2855,7 @@ fn rocblas_dzasum(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum",
         fn (
@@ -2875,7 +2875,7 @@ fn rocblas_crotg_batched_64(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched_64",
         fn (
@@ -2905,7 +2905,7 @@ fn rocblas_cgemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_batched",
         fn (
@@ -2956,7 +2956,7 @@ fn rocblas_ztbmv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched",
         fn (
@@ -2988,7 +2988,7 @@ fn rocblas_srotmg_strided_batched(
     param: UnsafePointer[Float32],
     stride_param: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -3088,7 +3088,7 @@ fn rocblas_zaxpy_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_64",
         fn (
@@ -3114,7 +3114,7 @@ fn rocblas_ctrmv_batched_64(
     x: UnsafePointer[UnsafePointer[ComplexFloat32]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched_64",
         fn (
@@ -3147,7 +3147,7 @@ fn rocblas_zgeru_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched_64",
         fn (
@@ -3198,7 +3198,7 @@ fn rocblas_rot_batched_ex_64(
     cs_type: DataType,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_batched_ex_64",
         fn (
@@ -3248,7 +3248,7 @@ fn rocblas_zsyrk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_strided_batched",
         fn (
@@ -3297,7 +3297,7 @@ fn rocblas_sdgmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -3378,7 +3378,7 @@ fn rocblas_chemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -3465,7 +3465,7 @@ fn rocblas_ztbmv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv",
         fn (
@@ -3493,7 +3493,7 @@ fn rocblas_ztrsv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv",
         fn (
@@ -3522,7 +3522,7 @@ fn rocblas_zsymv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_64",
         fn (
@@ -3551,7 +3551,7 @@ fn rocblas_dtrsv(
     lda: Int32,
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv",
         fn (
@@ -3580,7 +3580,7 @@ fn rocblas_zdgmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_batched",
         fn (
@@ -3609,7 +3609,7 @@ fn rocblas_stpmv_batched(
     x: UnsafePointer[UnsafePointer[Float32]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -3686,7 +3686,7 @@ fn rocblas_icamax_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched_64",
         fn (
@@ -3716,7 +3716,7 @@ fn rocblas_dgeam_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_batched",
         fn (
@@ -3762,7 +3762,7 @@ fn rocblas_zsyr(
     incx: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr",
         fn (
@@ -3789,7 +3789,7 @@ fn rocblas_cdotc_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched",
         fn (
@@ -3815,7 +3815,7 @@ fn rocblas_dzasum_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched_64",
         fn (
@@ -3842,7 +3842,7 @@ fn rocblas_cher_strided_batched_64(
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_strided_batched_64",
         fn (
@@ -3884,7 +3884,7 @@ fn rocblas_zhpmv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_64",
         fn (
@@ -3915,7 +3915,7 @@ fn rocblas_zhbmv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_64",
         fn (
@@ -3948,7 +3948,7 @@ fn rocblas_rot_ex(
     s: OpaquePointer,
     cs_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -4063,7 +4063,7 @@ fn rocblas_zgemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_batched",
         fn (
@@ -4114,7 +4114,7 @@ fn rocblas_ctbsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched",
         fn (
@@ -4151,7 +4151,7 @@ fn rocblas_cher2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -4297,7 +4297,7 @@ fn rocblas_sscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_strided_batched_64",
         fn (
@@ -4327,7 +4327,7 @@ fn rocblas_zherk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_strided_batched",
         fn (
@@ -4373,7 +4373,7 @@ fn rocblas_scal_ex(
     x_type: DataType,
     incx: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -4452,7 +4452,7 @@ fn rocblas_dtrsm(
     lda: Int32,
     _b: UnsafePointer[Float64],
     ldb: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm",
         fn (
@@ -4480,7 +4480,7 @@ fn rocblas_isamax_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -4533,7 +4533,7 @@ fn rocblas_caxpy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched",
         fn (
@@ -4563,7 +4563,7 @@ fn rocblas_dgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched_64",
         fn (
@@ -4596,7 +4596,7 @@ fn rocblas_zhpr2(
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2",
         fn (
@@ -4629,7 +4629,7 @@ fn rocblas_hgemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_batched",
         fn (
@@ -4681,7 +4681,7 @@ fn rocblas_strsm(
     lda: Int32,
     _b: UnsafePointer[Float32],
     ldb: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -4803,7 +4803,7 @@ fn rocblas_stpsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -4908,7 +4908,7 @@ fn rocblas_dtrsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched_64",
         fn (
@@ -4951,7 +4951,7 @@ fn rocblas_zcopy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched",
         fn (
@@ -4979,7 +4979,7 @@ fn rocblas_crotg_strided_batched_64(
     s: UnsafePointer[ComplexFloat32],
     stride_s: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched_64",
         fn (
@@ -5013,7 +5013,7 @@ fn rocblas_zgbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched",
         fn (
@@ -5062,7 +5062,7 @@ fn rocblas_dcopy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched",
         fn (
@@ -5085,7 +5085,7 @@ fn rocblas_zrotg_64(
     b: UnsafePointer[ComplexFloat64],
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_64",
         fn (
@@ -5107,7 +5107,7 @@ fn rocblas_cdotu_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched",
         fn (
@@ -5131,7 +5131,7 @@ fn rocblas_saxpy_64(
     incx: Int64,
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_64",
         fn (
@@ -5158,7 +5158,7 @@ fn rocblas_chpmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -5256,7 +5256,7 @@ fn rocblas_srotmg_batched(
     y1: OpaquePointer,
     param: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -5329,7 +5329,7 @@ fn rocblas_ssymv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_batched_64",
         fn (
@@ -5356,7 +5356,7 @@ fn rocblas_drotmg(
     x1: UnsafePointer[Float64],
     y1: UnsafePointer[Float64],
     param: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg",
         fn (
@@ -5381,7 +5381,7 @@ fn rocblas_daxpy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched_64",
         fn (
@@ -5410,7 +5410,7 @@ fn rocblas_scal_strided_batched_ex_64(
     stridex: Int64,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_strided_batched_ex_64",
         fn (
@@ -5454,7 +5454,7 @@ fn rocblas_dotc_strided_batched_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex_64",
         fn (
@@ -5499,7 +5499,7 @@ fn rocblas_caxpy_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_64",
         fn (
@@ -5533,7 +5533,7 @@ fn rocblas_dgemm_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_strided_batched",
         fn (
@@ -5589,7 +5589,7 @@ fn rocblas_cdotu_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched",
         fn (
@@ -5617,7 +5617,7 @@ fn rocblas_ctpsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched",
         fn (
@@ -5649,7 +5649,7 @@ fn rocblas_zherkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_batched",
         fn (
@@ -5694,7 +5694,7 @@ fn rocblas_haxpy(
     incx: Int32,
     y: UnsafePointer[Float16],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -5748,7 +5748,7 @@ fn rocblas_dsyr2(
     incy: Int32,
     _a: UnsafePointer[Float64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2",
         fn (
@@ -5775,7 +5775,7 @@ fn rocblas_dtpmv(
     _a: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv",
         fn (
@@ -5801,7 +5801,7 @@ fn rocblas_nrm2_batched_ex_64(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_batched_ex_64",
         fn (
@@ -5839,7 +5839,7 @@ fn rocblas_zdotc_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched",
         fn (
@@ -5869,7 +5869,7 @@ fn rocblas_ssyr_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_strided_batched_64",
         fn (
@@ -5898,7 +5898,7 @@ fn rocblas_idamax_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched",
         fn (
@@ -5928,7 +5928,7 @@ fn rocblas_ztrmm(
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm",
         fn (
@@ -5980,7 +5980,7 @@ fn rocblas_csyrk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_strided_batched",
         fn (
@@ -6026,7 +6026,7 @@ fn rocblas_csrot_64(
     incy: Int64,
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_64",
         fn (
@@ -6056,7 +6056,7 @@ fn rocblas_dtrsm_batched(
     _b: OpaquePointer,
     ldb: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched",
         fn (
@@ -6100,7 +6100,7 @@ fn rocblas_hdot_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched_64",
         fn (
@@ -6129,7 +6129,7 @@ fn rocblas_ssbmv(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -6202,7 +6202,7 @@ fn rocblas_drotm(
     y: UnsafePointer[Float64],
     incy: Int32,
     param: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm",
         fn (
@@ -6230,7 +6230,7 @@ fn rocblas_chemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_batched_64",
         fn (
@@ -6265,7 +6265,7 @@ fn rocblas_zgerc_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched_64",
         fn (
@@ -6315,7 +6315,7 @@ fn rocblas_strmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_strided_batched_64",
         fn (
@@ -6359,7 +6359,7 @@ fn rocblas_cspr_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched_64",
         fn (
@@ -6390,7 +6390,7 @@ fn rocblas_sgemv_64(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_64",
         fn (
@@ -6417,7 +6417,7 @@ fn rocblas_csscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched_64",
         fn (
@@ -6448,7 +6448,7 @@ fn rocblas_dsbmv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched_64",
         fn (
@@ -6500,7 +6500,7 @@ fn rocblas_sdgmm(
     incx: Int32,
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -6575,7 +6575,7 @@ fn rocblas_dtbsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched_64",
         fn (
@@ -6619,7 +6619,7 @@ fn rocblas_chpr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_batched_64",
         fn (
@@ -6650,7 +6650,7 @@ fn rocblas_cgbmv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv",
         fn (
@@ -6681,7 +6681,7 @@ fn rocblas_cdotu_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched_64",
         fn (
@@ -6706,7 +6706,7 @@ fn rocblas_srotm_batched(
     incy: Int32,
     param: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -6781,7 +6781,7 @@ fn rocblas_zgeam(
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam",
         fn (
@@ -6812,7 +6812,7 @@ fn rocblas_ctrsv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv",
         fn (
@@ -6846,7 +6846,7 @@ fn rocblas_zgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched_64",
         fn (
@@ -6901,7 +6901,7 @@ fn rocblas_zhbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched_64",
         fn (
@@ -6937,7 +6937,7 @@ fn rocblas_zgemm(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm",
         fn (
@@ -6983,7 +6983,7 @@ fn rocblas_cspr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched",
         fn (
@@ -7012,7 +7012,7 @@ fn rocblas_zhemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched_64",
         fn (
@@ -7045,7 +7045,7 @@ fn rocblas_cgemv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_64",
         fn (
@@ -7078,7 +7078,7 @@ fn rocblas_dtrmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched",
         fn (
@@ -7124,7 +7124,7 @@ fn rocblas_drotmg_strided_batched(
     param: UnsafePointer[Float64],
     stride_param: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched",
         fn (
@@ -7169,7 +7169,7 @@ fn rocblas_zgeru_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched",
         fn (
@@ -7199,7 +7199,7 @@ fn rocblas_daxpy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched",
         fn (
@@ -7226,7 +7226,7 @@ fn rocblas_crot(
     incy: Int32,
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot",
         fn (
@@ -7252,7 +7252,7 @@ fn rocblas_zhpr2_64(
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_64",
         fn (
@@ -7269,18 +7269,16 @@ fn rocblas_zhpr2_64(
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
-fn rocblas_initialize() -> NoneType:
+fn rocblas_initialize() raises:
     """
-    \\brief Initialize rocBLAS on the current HIP device, to avoid costly startup time at the first call on that device.
+    Initialize rocBLAS on the current HIP device, to avoid costly startup
+    time at the first call on that device.
 
-    \\details
-
-    Calling `rocblas_initialize()` allows upfront initialization including device specific kernel setup.
-    Otherwise this function is automatically called on the first function call that requires these initializations (mainly GEMM).
-
-    ****************************************************************************.
+    Calling `rocblas_initialize()` allows upfront initialization including
+    device specific kernel setup. Otherwise this function is automatically called
+    on the first function call that requires these initializations (mainly GEMM).
     """
-    return _get_dylib_function["rocblas_initialize", fn () -> NoneType]()()
+    _get_dylib_function["rocblas_initialize", fn () -> NoneType]()()
 
 
 fn rocblas_drotm_strided_batched(
@@ -7295,7 +7293,7 @@ fn rocblas_drotm_strided_batched(
     param: UnsafePointer[Float64],
     stride_param: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched",
         fn (
@@ -7345,7 +7343,7 @@ fn rocblas_sgemmt_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -7476,7 +7474,7 @@ fn rocblas_dtpmv_batched(
     x: UnsafePointer[UnsafePointer[Float64]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched",
         fn (
@@ -7499,7 +7497,7 @@ fn rocblas_dasum(
     x: UnsafePointer[Float64],
     incx: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum",
         fn (
@@ -7517,7 +7515,7 @@ fn rocblas_csyr_64(
     incx: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_64",
         fn (
@@ -7540,7 +7538,7 @@ fn rocblas_dasum_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched",
         fn (
@@ -7564,7 +7562,7 @@ fn rocblas_sswap_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_strided_batched_64",
         fn (
@@ -7595,7 +7593,7 @@ fn rocblas_zherkx(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx",
         fn (
@@ -7628,7 +7626,7 @@ fn rocblas_cgeru_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched",
         fn (
@@ -7657,7 +7655,7 @@ fn rocblas_strmv_64(
     lda: Int64,
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_64",
         fn (
@@ -7683,7 +7681,7 @@ fn rocblas_haxpy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -7735,7 +7733,7 @@ fn rocblas_idamin_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched_64",
         fn (
@@ -7766,7 +7764,7 @@ fn rocblas_tssgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched_64",
         fn (
@@ -7822,7 +7820,7 @@ fn rocblas_chpmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -7953,7 +7951,7 @@ fn rocblas_zsyr2k(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k",
         fn (
@@ -8004,7 +8002,7 @@ fn rocblas_gemm_strided_batched_ex(
     algo: Algorithm,
     solution_index: Int32,
     flags: UInt32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -8212,7 +8210,7 @@ fn rocblas_ztrtri(
     lda: Int32,
     inv_a: UnsafePointer[ComplexFloat64],
     ldinv_a: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri",
         fn (
@@ -8238,7 +8236,7 @@ fn rocblas_ctrmv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv",
         fn (
@@ -8266,7 +8264,7 @@ fn rocblas_dtrmv_batched_64(
     x: UnsafePointer[UnsafePointer[Float64]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched_64",
         fn (
@@ -8299,7 +8297,7 @@ fn rocblas_sger_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_strided_batched_64",
         fn (
@@ -8346,7 +8344,7 @@ fn rocblas_dtpsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched_64",
         fn (
@@ -8372,7 +8370,7 @@ fn rocblas_sdot_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_batched_64",
         fn (
@@ -8395,7 +8393,7 @@ fn rocblas_dznrm2_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched",
         fn (
@@ -8421,7 +8419,7 @@ fn rocblas_ddgmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_batched",
         fn (
@@ -8451,7 +8449,7 @@ fn rocblas_srotg_strided_batched_64(
     s: UnsafePointer[Float32],
     stride_s: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_strided_batched_64",
         fn (
@@ -8484,7 +8482,7 @@ fn rocblas_dgbmv_64(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_64",
         fn (
@@ -8513,7 +8511,7 @@ fn rocblas_sasum_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_batched_64",
         fn (
@@ -8542,7 +8540,7 @@ fn rocblas_dspmv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched",
         fn (
@@ -8596,7 +8594,7 @@ fn rocblas_chbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_strided_batched_64",
         fn (
@@ -8645,7 +8643,7 @@ fn rocblas_zswap_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched_64",
         fn (
@@ -8677,7 +8675,7 @@ fn rocblas_sgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -8790,7 +8788,7 @@ fn rocblas_csrot_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched_64",
         fn (
@@ -8814,7 +8812,7 @@ fn rocblas_idamin_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched",
         fn (
@@ -8835,7 +8833,7 @@ fn rocblas_zswap_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_64",
         fn (
@@ -8860,7 +8858,7 @@ fn rocblas_strsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -8949,7 +8947,7 @@ fn rocblas_zhbmv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv",
         fn (
@@ -8981,7 +8979,7 @@ fn rocblas_zrot_strided_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched_64",
         fn (
@@ -9012,7 +9010,7 @@ fn rocblas_zher_strided_batched_64(
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched_64",
         fn (
@@ -9054,7 +9052,7 @@ fn rocblas_ztrsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched",
         fn (
@@ -9082,7 +9080,7 @@ fn rocblas_dtrmv_64(
     lda: Int64,
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_64",
         fn (
@@ -9105,7 +9103,7 @@ fn rocblas_crotg(
     b: UnsafePointer[ComplexFloat32],
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg",
         fn (
@@ -9130,7 +9128,7 @@ fn rocblas_dtbsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched",
         fn (
@@ -9157,7 +9155,7 @@ fn rocblas_cswap_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched",
         fn (
@@ -9184,7 +9182,7 @@ fn rocblas_zsyr2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched",
         fn (
@@ -9214,7 +9212,7 @@ fn rocblas_caxpy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched",
         fn (
@@ -9239,7 +9237,7 @@ fn rocblas_izamin_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched",
         fn (
@@ -9263,7 +9261,7 @@ fn rocblas_dtpsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched",
         fn (
@@ -9292,7 +9290,7 @@ fn rocblas_ssyr2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_batched_64",
         fn (
@@ -9319,7 +9317,7 @@ fn rocblas_cdotc(
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc",
         fn (
@@ -9343,7 +9341,7 @@ fn rocblas_sspr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_batched_64",
         fn (
@@ -9371,7 +9369,7 @@ fn rocblas_csrot_strided_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched",
         fn (
@@ -9402,7 +9400,7 @@ fn rocblas_zher2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched",
         fn (
@@ -9429,7 +9427,7 @@ fn rocblas_zcopy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched_64",
         fn (
@@ -9457,7 +9455,7 @@ fn rocblas_zsymv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched",
         fn (
@@ -9485,7 +9483,7 @@ fn rocblas_sasum_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_strided_batched_64",
         fn (
@@ -9506,7 +9504,7 @@ fn rocblas_isamin_64(
     x: UnsafePointer[Float32],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_64",
         fn (
@@ -9524,7 +9522,7 @@ fn rocblas_dsyr(
     incx: Int32,
     _a: UnsafePointer[Float64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr",
         fn (
@@ -9554,7 +9552,7 @@ fn rocblas_sgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -9636,7 +9634,7 @@ fn rocblas_ctpmv_batched_64(
     x: UnsafePointer[UnsafePointer[ComplexFloat32]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched_64",
         fn (
@@ -9656,7 +9654,7 @@ fn rocblas_ctpmv_batched_64(
 fn rocblas_device_malloc_ptr(
     ptr: UnsafePointer[MallocBase],
     res: UnsafePointer[OpaquePointer],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_ptr",
         fn (
@@ -9681,7 +9679,7 @@ fn rocblas_sger_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -9783,7 +9781,7 @@ fn rocblas_daxpy(
     incx: Int32,
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy",
         fn (
@@ -9805,7 +9803,7 @@ fn rocblas_icamin_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched_64",
         fn (
@@ -9834,7 +9832,7 @@ fn rocblas_ssyr2_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -9941,7 +9939,7 @@ fn rocblas_hssgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched",
         fn (
@@ -9994,7 +9992,7 @@ fn rocblas_cgeru_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched_64",
         fn (
@@ -10026,7 +10024,7 @@ fn rocblas_ctrmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched_64",
         fn (
@@ -10070,7 +10068,7 @@ fn rocblas_chpmv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_64",
         fn (
@@ -10101,7 +10099,7 @@ fn rocblas_dotc_batched_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex",
         fn (
@@ -10152,7 +10150,7 @@ fn rocblas_dgeam_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_strided_batched",
         fn (
@@ -10214,7 +10212,7 @@ fn rocblas_dgbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched",
         fn (
@@ -10271,7 +10269,7 @@ fn rocblas_ssymv(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -10352,7 +10350,7 @@ fn rocblas_ssbmv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_strided_batched_64",
         fn (
@@ -10405,7 +10403,7 @@ fn rocblas_sger_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -10475,7 +10473,7 @@ fn rocblas_izamax_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched",
         fn (
@@ -10508,7 +10506,7 @@ fn rocblas_cgbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched_64",
         fn (
@@ -10561,7 +10559,7 @@ fn rocblas_csscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched",
         fn (
@@ -10588,7 +10586,7 @@ fn rocblas_cgerc_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched",
         fn (
@@ -10617,7 +10615,7 @@ fn rocblas_dspr2(
     y: UnsafePointer[Float64],
     incy: Int32,
     _ap: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2",
         fn (
@@ -10645,7 +10643,7 @@ fn rocblas_zspr_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched_64",
         fn (
@@ -10671,7 +10669,7 @@ fn rocblas_scnrm2_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched",
         fn (
@@ -10702,7 +10700,7 @@ fn rocblas_zgemmt_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_batched",
         fn (
@@ -10759,7 +10757,7 @@ fn rocblas_csymm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_strided_batched",
         fn (
@@ -10812,7 +10810,7 @@ fn rocblas_csyr_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched",
         fn (
@@ -10842,7 +10840,7 @@ fn rocblas_zsyrk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_batched",
         fn (
@@ -10876,7 +10874,7 @@ fn rocblas_sgeam(
     ldb: Int32,
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -10958,7 +10956,7 @@ fn rocblas_dznrm2_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched_64",
         fn (
@@ -10985,7 +10983,7 @@ fn rocblas_zhpmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched_64",
         fn (
@@ -11020,7 +11018,7 @@ fn rocblas_strsm_strided_batched_64(
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_strided_batched_64",
         fn (
@@ -11071,7 +11069,7 @@ fn rocblas_ztbsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched",
         fn (
@@ -11102,7 +11100,7 @@ fn rocblas_csyrk(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk",
         fn (
@@ -11133,7 +11131,7 @@ fn rocblas_axpy_ex(
     y_type: DataType,
     incy: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -11227,7 +11225,7 @@ fn rocblas_zrotg_batched(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched",
         fn (
@@ -11241,7 +11239,9 @@ fn rocblas_zrotg_batched(
     ]()(handle, a, b, c, s, batch_count)
 
 
-fn rocblas_get_version_string(buf: UnsafePointer[Int8], len: Int) -> Status:
+fn rocblas_get_version_string(
+    buf: UnsafePointer[Int8], len: Int
+) raises -> Status:
     """\\brief   Loads char* buf with the rocblas library version. size_t len
     is the maximum length of char* buf.
 
@@ -11275,7 +11275,7 @@ fn rocblas_csyr2_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched_64",
         fn (
@@ -11324,7 +11324,7 @@ fn rocblas_dsyr_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched",
         fn (
@@ -11363,7 +11363,7 @@ fn rocblas_ssymm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -11501,7 +11501,7 @@ fn rocblas_idamax_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched_64",
         fn (
@@ -11532,7 +11532,7 @@ fn rocblas_rot_strided_batched_ex_64(
     cs_type: DataType,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_strided_batched_ex_64",
         fn (
@@ -11579,7 +11579,7 @@ fn rocblas_sswap_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_batched_64",
         fn (
@@ -11608,7 +11608,7 @@ fn rocblas_chbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_batched_64",
         fn (
@@ -11638,7 +11638,7 @@ fn rocblas_sdot_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -11709,7 +11709,7 @@ fn rocblas_dtrsm_strided_batched_64(
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched_64",
         fn (
@@ -11756,7 +11756,7 @@ fn rocblas_isamin_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -11818,7 +11818,7 @@ fn rocblas_cgeam_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_strided_batched",
         fn (
@@ -11869,7 +11869,7 @@ fn rocblas_ccopy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched",
         fn (
@@ -11899,7 +11899,7 @@ fn rocblas_sgbmv_64(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_64",
         fn (
@@ -11923,7 +11923,7 @@ fn rocblas_sgbmv_64(
 
 fn rocblas_device_malloc_success(
     ptr: UnsafePointer[MallocBase],
-) -> Bool:
+) raises -> Bool:
     return _get_dylib_function[
         "rocblas_device_malloc_success",
         fn (UnsafePointer[MallocBase]) -> Bool,
@@ -11938,7 +11938,7 @@ fn rocblas_chpr_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_64",
         fn (
@@ -11962,7 +11962,7 @@ fn rocblas_stpsv(
     _ap: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -12046,7 +12046,7 @@ fn rocblas_csyrkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_strided_batched",
         fn (
@@ -12104,7 +12104,7 @@ fn rocblas_dger_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched_64",
         fn (
@@ -12154,7 +12154,7 @@ fn rocblas_ctrmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched",
         fn (
@@ -12199,7 +12199,7 @@ fn rocblas_zrot_strided_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched",
         fn (
@@ -12237,7 +12237,7 @@ fn rocblas_hgemm_kernel_name(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_kernel_name",
         fn (
@@ -12292,7 +12292,7 @@ fn rocblas_scopy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_strided_batched_64",
         fn (
@@ -12317,7 +12317,7 @@ fn rocblas_icamax_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched",
         fn (
@@ -12343,7 +12343,7 @@ fn rocblas_zhpr_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched_64",
         fn (
@@ -12374,7 +12374,7 @@ fn rocblas_ztrsm_64(
     lda: Int64,
     _b: UnsafePointer[ComplexFloat64],
     ldb: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_64",
         fn (
@@ -12406,7 +12406,7 @@ fn rocblas_stpsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_strided_batched_64",
         fn (
@@ -12447,7 +12447,7 @@ fn rocblas_csyr_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched_64",
         fn (
@@ -12473,7 +12473,7 @@ fn rocblas_ctpmv_64(
     _a: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_64",
         fn (
@@ -12505,7 +12505,7 @@ fn rocblas_strmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -12684,7 +12684,7 @@ fn rocblas_ztrsm(
     lda: Int32,
     _b: UnsafePointer[ComplexFloat64],
     ldb: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm",
         fn (
@@ -12719,7 +12719,7 @@ fn rocblas_zdgmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_strided_batched",
         fn (
@@ -12762,7 +12762,7 @@ fn rocblas_icamin_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_64",
         fn (
@@ -12789,7 +12789,7 @@ fn rocblas_dsyr2k(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k",
         fn (
@@ -12817,7 +12817,7 @@ fn rocblas_zrotg_batched_64(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched_64",
         fn (
@@ -12850,7 +12850,7 @@ fn rocblas_dtrmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_strided_batched",
         fn (
@@ -12905,7 +12905,7 @@ fn rocblas_drot_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched",
         fn (
@@ -12939,7 +12939,7 @@ fn rocblas_zgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched",
         fn (
@@ -12990,7 +12990,7 @@ fn rocblas_dtrtri_batched(
     inv_a: OpaquePointer,
     ldinv_a: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_batched",
         fn (
@@ -13021,7 +13021,7 @@ fn rocblas_cgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched_64",
         fn (
@@ -13057,7 +13057,7 @@ fn rocblas_strmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -13162,7 +13162,7 @@ fn rocblas_dznrm2_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_64",
         fn (
@@ -13183,7 +13183,7 @@ fn rocblas_zdscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched",
         fn (
@@ -13207,7 +13207,7 @@ fn rocblas_daxpy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched_64",
         fn (
@@ -13232,7 +13232,7 @@ fn rocblas_chpr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -13322,7 +13322,7 @@ fn rocblas_dcopy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched_64",
         fn (
@@ -13349,7 +13349,7 @@ fn rocblas_zcopy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched_64",
         fn (
@@ -13380,7 +13380,7 @@ fn rocblas_ssyr2k(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -13490,7 +13490,7 @@ fn rocblas_dswap_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched",
         fn (
@@ -13513,7 +13513,7 @@ fn rocblas_scopy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -13565,7 +13565,7 @@ fn rocblas_izamin(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin",
         fn (
@@ -13589,7 +13589,7 @@ fn rocblas_sspr_strided_batched_64(
     _ap: UnsafePointer[Float32],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_strided_batched_64",
         fn (
@@ -13615,7 +13615,7 @@ fn rocblas_dzasum_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched",
         fn (
@@ -13636,7 +13636,7 @@ fn rocblas_icamax(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax",
         fn (
@@ -13661,7 +13661,7 @@ fn rocblas_dsyr2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched_64",
         fn (
@@ -13694,7 +13694,7 @@ fn rocblas_strsm_batched(
     _b: OpaquePointer,
     ldb: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -13824,7 +13824,7 @@ fn rocblas_zhpmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched",
         fn (
@@ -13869,7 +13869,7 @@ fn rocblas_dspr_64(
     x: UnsafePointer[Float64],
     incx: Int64,
     _ap: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_64",
         fn (
@@ -13902,7 +13902,7 @@ fn rocblas_ssyr2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -14051,7 +14051,7 @@ fn rocblas_stpsv_64(
     _ap: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_64",
         fn (
@@ -14074,7 +14074,7 @@ fn rocblas_scasum_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched",
         fn (
@@ -14100,7 +14100,7 @@ fn rocblas_ztpsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched_64",
         fn (
@@ -14138,7 +14138,7 @@ fn rocblas_zswap(
     incx: Int32,
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap",
         fn (
@@ -14158,7 +14158,7 @@ fn rocblas_scnrm2_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_64",
         fn (
@@ -14184,7 +14184,7 @@ fn rocblas_strsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_strided_batched_64",
         fn (
@@ -14224,7 +14224,7 @@ fn rocblas_dcopy(
     incx: Int32,
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy",
         fn (
@@ -14247,7 +14247,7 @@ fn rocblas_zdotu_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched_64",
         fn (
@@ -14272,7 +14272,7 @@ fn rocblas_bfdot_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched",
         fn (
@@ -14299,7 +14299,7 @@ fn rocblas_stbmv_64(
     lda: Int64,
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_64",
         fn (
@@ -14326,7 +14326,7 @@ fn rocblas_saxpy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched",
         fn (
@@ -14352,7 +14352,7 @@ fn rocblas_zher_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched_64",
         fn (
@@ -14376,7 +14376,7 @@ fn rocblas_icamin_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched",
         fn (
@@ -14400,7 +14400,7 @@ fn rocblas_ztrmv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv",
         fn (
@@ -14431,7 +14431,7 @@ fn rocblas_cher2k(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -14539,7 +14539,7 @@ fn rocblas_zspr_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_64",
         fn (
@@ -14565,7 +14565,7 @@ fn rocblas_cgeru_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_64",
         fn (
@@ -14594,7 +14594,7 @@ fn rocblas_zhpr2_batched_64(
     incy: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched_64",
         fn (
@@ -14621,7 +14621,7 @@ fn rocblas_caxpy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched_64",
         fn (
@@ -14651,7 +14651,7 @@ fn rocblas_zsyrkx(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx",
         fn (
@@ -14683,7 +14683,7 @@ fn rocblas_ddgmm(
     incx: Int32,
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm",
         fn (
@@ -14717,7 +14717,7 @@ fn rocblas_cgemmt_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_batched",
         fn (
@@ -14767,7 +14767,7 @@ fn rocblas_sspmv(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -14838,7 +14838,7 @@ fn rocblas_ctbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched",
         fn (
@@ -14891,7 +14891,7 @@ fn rocblas_chemm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -15037,7 +15037,7 @@ fn rocblas_dtbsv_64(
     lda: Int64,
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_64",
         fn (
@@ -15066,7 +15066,7 @@ fn rocblas_ztbmv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_64",
         fn (
@@ -15100,7 +15100,7 @@ fn rocblas_chemv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -15218,7 +15218,7 @@ fn rocblas_zgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched_64",
         fn (
@@ -15256,7 +15256,7 @@ fn rocblas_zgemmt(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt",
         fn (
@@ -15299,7 +15299,7 @@ fn rocblas_idamin(
     x: UnsafePointer[Float64],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin",
         fn (
@@ -15316,7 +15316,7 @@ fn rocblas_drotm_64(
     y: UnsafePointer[Float64],
     incy: Int64,
     param: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_64",
         fn (
@@ -15339,7 +15339,7 @@ fn rocblas_cscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched_64",
         fn (
@@ -15366,7 +15366,7 @@ fn rocblas_zsyrk(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk",
         fn (
@@ -15395,7 +15395,7 @@ fn rocblas_dspr2_64(
     y: UnsafePointer[Float64],
     incy: Int64,
     _ap: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_64",
         fn (
@@ -15420,7 +15420,7 @@ fn rocblas_icamin_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched",
         fn (
@@ -15446,7 +15446,7 @@ fn rocblas_dsyr2_64(
     incy: Int64,
     _a: UnsafePointer[Float64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_64",
         fn (
@@ -15475,7 +15475,7 @@ fn rocblas_cgerc(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc",
         fn (
@@ -15511,7 +15511,7 @@ fn rocblas_zsyrkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_strided_batched",
         fn (
@@ -15573,7 +15573,7 @@ fn rocblas_cgemmt_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_strided_batched",
         fn (
@@ -15631,7 +15631,7 @@ fn rocblas_dtrmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched_64",
         fn (
@@ -15680,7 +15680,7 @@ fn rocblas_cgbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched",
         fn (
@@ -15729,7 +15729,7 @@ fn rocblas_sspr2_64(
     y: UnsafePointer[Float32],
     incy: Int64,
     _ap: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_64",
         fn (
@@ -15757,7 +15757,7 @@ fn rocblas_zher2_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_64",
         fn (
@@ -15788,7 +15788,7 @@ fn rocblas_dsymv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched",
         fn (
@@ -15823,7 +15823,7 @@ fn rocblas_cher2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -15950,7 +15950,7 @@ fn rocblas_ztrtri_batched(
     inv_a: OpaquePointer,
     ldinv_a: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_batched",
         fn (
@@ -15979,7 +15979,7 @@ fn rocblas_ztpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched_64",
         fn (
@@ -16025,7 +16025,7 @@ fn rocblas_zsyr2_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched",
         fn (
@@ -16073,7 +16073,7 @@ fn rocblas_zsyr2_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_64",
         fn (
@@ -16093,7 +16093,7 @@ fn rocblas_zsyr2_64(
 
 fn rocblas_device_malloc_free(
     ptr: UnsafePointer[MallocBase],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_free",
         fn (UnsafePointer[MallocBase]) -> Status,
@@ -16114,7 +16114,7 @@ fn rocblas_zhpr2_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched_64",
         fn (
@@ -16157,7 +16157,7 @@ fn rocblas_icamin_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched_64",
         fn (
@@ -16178,7 +16178,7 @@ fn rocblas_idamax(
     x: UnsafePointer[Float64],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax",
         fn (
@@ -16198,7 +16198,7 @@ fn rocblas_ctrsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched",
         fn (
@@ -16227,7 +16227,7 @@ fn rocblas_zaxpy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched",
         fn (
@@ -16260,7 +16260,7 @@ fn rocblas_cgemm(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm",
         fn (
@@ -16303,7 +16303,7 @@ fn rocblas_crotg_64(
     b: UnsafePointer[ComplexFloat32],
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_64",
         fn (
@@ -16328,7 +16328,7 @@ fn rocblas_srot_strided_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -16394,7 +16394,7 @@ fn rocblas_srot(
     incy: Int32,
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -16450,7 +16450,7 @@ fn rocblas_zdotc_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched_64",
         fn (
@@ -16479,7 +16479,7 @@ fn rocblas_scal_strided_batched_ex(
     stridex: Int64,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -16576,7 +16576,7 @@ fn rocblas_cscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched",
         fn (
@@ -16605,7 +16605,7 @@ fn rocblas_dspr2_strided_batched(
     _ap: UnsafePointer[Float64],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched",
         fn (
@@ -16647,7 +16647,7 @@ fn rocblas_dnrm2_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched",
         fn (
@@ -16670,7 +16670,7 @@ fn rocblas_ddot_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched",
         fn (
@@ -16692,7 +16692,7 @@ fn rocblas_idamax_64(
     x: UnsafePointer[Float64],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_64",
         fn (
@@ -16716,7 +16716,7 @@ fn rocblas_csyr2_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched",
         fn (
@@ -16764,7 +16764,7 @@ fn rocblas_cdotu_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched_64",
         fn (
@@ -16801,7 +16801,7 @@ fn rocblas_hgemm_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_strided_batched",
         fn (
@@ -16861,7 +16861,7 @@ fn rocblas_dot_strided_batched_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -16988,7 +16988,7 @@ fn rocblas_ssbmv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -17107,7 +17107,7 @@ fn rocblas_zsymm(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm",
         fn (
@@ -17140,7 +17140,7 @@ fn rocblas_dtpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched",
         fn (
@@ -17178,7 +17178,7 @@ fn rocblas_zdscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched_64",
         fn (
@@ -17199,7 +17199,7 @@ fn rocblas_izamax_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched_64",
         fn (
@@ -17227,7 +17227,7 @@ fn rocblas_tssgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched_64",
         fn (
@@ -17265,7 +17265,7 @@ fn rocblas_cgerc_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched",
         fn (
@@ -17319,7 +17319,7 @@ fn rocblas_dgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched_64",
         fn (
@@ -17375,7 +17375,7 @@ fn rocblas_dgemm(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm",
         fn (
@@ -17418,7 +17418,7 @@ fn rocblas_zscal_64(
     alpha: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_64",
         fn (
@@ -17440,7 +17440,7 @@ fn rocblas_csyr(
     incx: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr",
         fn (
@@ -17472,7 +17472,7 @@ fn rocblas_ztrsm_strided_batched_64(
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched_64",
         fn (
@@ -17524,7 +17524,7 @@ fn rocblas_dsbmv(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv",
         fn (
@@ -17555,7 +17555,7 @@ fn rocblas_dger_64(
     incy: Int64,
     _a: UnsafePointer[Float64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_64",
         fn (
@@ -17588,7 +17588,7 @@ fn rocblas_ssymm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -17711,7 +17711,7 @@ fn rocblas_cdotc_64(
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_64",
         fn (
@@ -17738,7 +17738,7 @@ fn rocblas_stbsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_batched_64",
         fn (
@@ -17757,7 +17757,7 @@ fn rocblas_stbsv_batched_64(
     ]()(handle, uplo, trans_a, diag, n, k, _a, lda, x, incx, batch_count)
 
 
-fn rocblas_start_device_memory_size_query(handle: Handle) -> Status:
+fn rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
     """\\brief
     \\details
     Indicates that subsequent rocBLAS kernel calls should collect the optimal device memory size in bytes for their given kernel arguments
@@ -17784,7 +17784,7 @@ fn rocblas_zher2(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2",
         fn (
@@ -17809,7 +17809,7 @@ fn rocblas_dswap_64(
     incx: Int64,
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_64",
         fn (
@@ -17835,7 +17835,7 @@ fn rocblas_dsyrk(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk",
         fn (
@@ -17866,7 +17866,7 @@ fn rocblas_csrot_strided_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched_64",
         fn (
@@ -17892,7 +17892,7 @@ fn rocblas_sswap_64(
     incx: Int64,
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_64",
         fn (
@@ -17917,7 +17917,7 @@ fn rocblas_saxpy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched_64",
         fn (
@@ -17943,7 +17943,7 @@ fn rocblas_sswap_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -17999,7 +17999,7 @@ fn rocblas_ctbsv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv",
         fn (
@@ -18019,7 +18019,7 @@ fn rocblas_ctbsv(
 
 fn rocblas_stop_device_memory_size_query(
     handle: Handle, size: UnsafePointer[Int]
-) -> Status:
+) raises -> Status:
     """\\brief
     \\details
     Stops collecting optimal device memory size information.
@@ -18049,7 +18049,7 @@ fn rocblas_zgerc_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched",
         fn (
@@ -18077,7 +18077,7 @@ fn rocblas_daxpy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched",
         fn (
@@ -18100,7 +18100,7 @@ fn rocblas_dswap(
     incx: Int32,
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap",
         fn (
@@ -18129,7 +18129,7 @@ fn rocblas_chemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -18257,7 +18257,7 @@ fn rocblas_stpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_strided_batched_64",
         fn (
@@ -18300,7 +18300,7 @@ fn rocblas_ztrtri_strided_batched(
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_strided_batched",
         fn (
@@ -18340,7 +18340,7 @@ fn rocblas_dspr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched_64",
         fn (
@@ -18362,7 +18362,7 @@ fn rocblas_idamin_64(
     x: UnsafePointer[Float64],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_64",
         fn (
@@ -18380,7 +18380,7 @@ fn rocblas_scal_ex_64(
     x_type: DataType,
     incx: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_ex_64",
         fn (
@@ -18407,7 +18407,7 @@ fn rocblas_ztbsv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_64",
         fn (
@@ -18440,7 +18440,7 @@ fn rocblas_axpy_strided_batched_ex(
     stridey: Int64,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -18555,7 +18555,7 @@ fn rocblas_cspr(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr",
         fn (
@@ -18580,7 +18580,7 @@ fn rocblas_ztrsv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_64",
         fn (
@@ -18612,7 +18612,7 @@ fn rocblas_chpmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_strided_batched_64",
         fn (
@@ -18663,7 +18663,7 @@ fn rocblas_chpr2_strided_batched(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -18789,7 +18789,7 @@ fn rocblas_dsbmv_64(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_64",
         fn (
@@ -18816,7 +18816,7 @@ fn rocblas_dasum_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched_64",
         fn (
@@ -18836,7 +18836,7 @@ fn rocblas_zscal(
     alpha: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal",
         fn (
@@ -18858,7 +18858,7 @@ fn rocblas_ztpsv(
     _ap: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv",
         fn (
@@ -18885,7 +18885,7 @@ fn rocblas_chpr2_batched(
     incy: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -18984,7 +18984,7 @@ fn rocblas_csyr2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched_64",
         fn (
@@ -19013,7 +19013,7 @@ fn rocblas_ctrmv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_64",
         fn (
@@ -19047,7 +19047,7 @@ fn rocblas_zhbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched_64",
         fn (
@@ -19102,7 +19102,7 @@ fn rocblas_csyr2k(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k",
         fn (
@@ -19131,7 +19131,7 @@ fn rocblas_izamin_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched_64",
         fn (
@@ -19159,7 +19159,7 @@ fn rocblas_ctrsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched",
         fn (
@@ -19202,7 +19202,7 @@ fn rocblas_ssyr_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_batched_64",
         fn (
@@ -19230,7 +19230,7 @@ fn rocblas_zsyr2(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2",
         fn (
@@ -19259,7 +19259,7 @@ fn rocblas_dtbmv_64(
     lda: Int64,
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_64",
         fn (
@@ -19292,7 +19292,7 @@ fn rocblas_sgbmv(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -19391,7 +19391,7 @@ fn rocblas_ctrtri(
     lda: Int32,
     inv_a: UnsafePointer[ComplexFloat32],
     ldinv_a: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri",
         fn (
@@ -19414,7 +19414,7 @@ fn rocblas_scnrm2_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched",
         fn (
@@ -19444,7 +19444,7 @@ fn rocblas_sgbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_batched_64",
         fn (
@@ -19495,7 +19495,7 @@ fn rocblas_stbmv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_batched_64",
         fn (
@@ -19520,7 +19520,7 @@ fn rocblas_cscal_64(
     alpha: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_64",
         fn (
@@ -19543,7 +19543,7 @@ fn rocblas_cswap_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched",
         fn (
@@ -19575,7 +19575,7 @@ fn rocblas_cher2_strided_batched_64(
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_strided_batched_64",
         fn (
@@ -19625,7 +19625,7 @@ fn rocblas_axpy_batched_ex(
     incy: Int32,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -19731,7 +19731,7 @@ fn rocblas_ztrmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched_64",
         fn (
@@ -19774,7 +19774,7 @@ fn rocblas_ztpmv_batched(
     x: UnsafePointer[UnsafePointer[ComplexFloat64]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched",
         fn (
@@ -19803,7 +19803,7 @@ fn rocblas_dspmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched",
         fn (
@@ -19837,7 +19837,7 @@ fn rocblas_strmm(
     ldb: Int32,
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -20005,7 +20005,7 @@ fn rocblas_isamin_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_batched_64",
         fn (
@@ -20033,7 +20033,7 @@ fn rocblas_hshgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched",
         fn (
@@ -20062,7 +20062,7 @@ fn rocblas_scasum_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_64",
         fn (
@@ -20088,7 +20088,7 @@ fn rocblas_dsyrk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_batched",
         fn (
@@ -20123,7 +20123,7 @@ fn rocblas_ssyrk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -20251,7 +20251,7 @@ fn rocblas_dscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched_64",
         fn (
@@ -20282,7 +20282,7 @@ fn rocblas_dsymv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched_64",
         fn (
@@ -20335,7 +20335,7 @@ fn rocblas_dgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched",
         fn (
@@ -20369,7 +20369,7 @@ fn rocblas_crotg_strided_batched(
     s: UnsafePointer[ComplexFloat32],
     stride_s: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched",
         fn (
@@ -20404,7 +20404,7 @@ fn rocblas_trsm_batched_ex(
     inv_a: OpaquePointer,
     inv_a_size: Int32,
     compute_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -20583,7 +20583,7 @@ fn rocblas_dswap_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched_64",
         fn (
@@ -20609,7 +20609,7 @@ fn rocblas_zrot_64(
     incy: Int64,
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_64",
         fn (
@@ -20631,7 +20631,7 @@ fn rocblas_scnrm2(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2",
         fn (
@@ -20653,7 +20653,7 @@ fn rocblas_zdotc_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched",
         fn (
@@ -20675,7 +20675,7 @@ fn rocblas_csscal_64(
     alpha: UnsafePointer[Float32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_64",
         fn (
@@ -20695,7 +20695,7 @@ fn rocblas_sswap(
     incx: Int32,
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -20745,7 +20745,7 @@ fn rocblas_dtpsv_64(
     _ap: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_64",
         fn (
@@ -20767,7 +20767,7 @@ fn rocblas_icamax_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_64",
         fn (
@@ -20794,7 +20794,7 @@ fn rocblas_sgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_batched_64",
         fn (
@@ -20828,7 +20828,7 @@ fn rocblas_sdot_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -20906,7 +20906,7 @@ fn rocblas_dgbmv(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv",
         fn (
@@ -20940,7 +20940,7 @@ fn rocblas_stpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -21048,7 +21048,7 @@ fn rocblas_dsymv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched",
         fn (
@@ -21100,7 +21100,7 @@ fn rocblas_dotc_batched_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex_64",
         fn (
@@ -21144,7 +21144,7 @@ fn rocblas_cdgmm(
     incx: Int32,
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm",
         fn (
@@ -21171,7 +21171,7 @@ fn rocblas_haxpy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_batched_64",
         fn (
@@ -21206,7 +21206,7 @@ fn rocblas_dgbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched_64",
         fn (
@@ -21261,7 +21261,7 @@ fn rocblas_zsyr_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched_64",
         fn (
@@ -21286,7 +21286,7 @@ fn rocblas_sdot_64(
     y: UnsafePointer[Float32],
     incy: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_64",
         fn (
@@ -21315,7 +21315,7 @@ fn rocblas_rot_batched_ex(
     cs_type: DataType,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -21436,7 +21436,7 @@ fn rocblas_tstgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched_64",
         fn (
@@ -21489,7 +21489,7 @@ fn rocblas_srotm_strided_batched_64(
     param: UnsafePointer[Float32],
     stride_param: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_strided_batched_64",
         fn (
@@ -21528,7 +21528,7 @@ fn rocblas_zswap_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched",
         fn (
@@ -21557,7 +21557,7 @@ fn rocblas_dsyrkx(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx",
         fn (
@@ -21588,7 +21588,7 @@ fn rocblas_zswap_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched_64",
         fn (
@@ -21620,7 +21620,7 @@ fn rocblas_axpy_strided_batched_ex_64(
     stridey: Int64,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_strided_batched_ex_64",
         fn (
@@ -21672,7 +21672,7 @@ fn rocblas_cgeru_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched_64",
         fn (
@@ -21720,7 +21720,7 @@ fn rocblas_zdgmm(
     incx: Int32,
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm",
         fn (
@@ -21753,7 +21753,7 @@ fn rocblas_ssyrkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -21890,7 +21890,7 @@ fn rocblas_chemv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -21975,7 +21975,7 @@ fn rocblas_ztrsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched_64",
         fn (
@@ -22023,7 +22023,7 @@ fn rocblas_ssyr2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -22146,7 +22146,7 @@ fn rocblas_srotg_64(
     b: UnsafePointer[Float32],
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_64",
         fn (
@@ -22167,7 +22167,7 @@ fn rocblas_snrm2_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched_64",
         fn (
@@ -22189,7 +22189,7 @@ fn rocblas_snrm2_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -22243,7 +22243,7 @@ fn rocblas_zhpr_strided_batched(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched",
         fn (
@@ -22272,7 +22272,7 @@ fn rocblas_caxpy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched_64",
         fn (
@@ -22298,7 +22298,7 @@ fn rocblas_srotm(
     y: UnsafePointer[Float32],
     incy: Int32,
     param: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -22371,7 +22371,7 @@ fn rocblas_dgbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched_64",
         fn (
@@ -22421,7 +22421,7 @@ fn rocblas_ddot_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched_64",
         fn (
@@ -22452,7 +22452,7 @@ fn rocblas_zhemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched",
         fn (
@@ -22483,7 +22483,7 @@ fn rocblas_dger(
     incy: Int32,
     _a: UnsafePointer[Float64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger",
         fn (
@@ -22512,7 +22512,7 @@ fn rocblas_chpr2_batched_64(
     incy: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_batched_64",
         fn (
@@ -22539,7 +22539,7 @@ fn rocblas_zaxpy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched_64",
         fn (
@@ -22566,7 +22566,7 @@ fn rocblas_ztrmv_batched_64(
     x: UnsafePointer[UnsafePointer[ComplexFloat64]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched_64",
         fn (
@@ -22590,7 +22590,7 @@ fn rocblas_sscal_64(
     alpha: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_64",
         fn (
@@ -22614,7 +22614,7 @@ fn rocblas_zgeam_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_batched",
         fn (
@@ -22662,7 +22662,7 @@ fn rocblas_ctrsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched_64",
         fn (
@@ -22693,7 +22693,7 @@ fn rocblas_csyrk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_batched",
         fn (
@@ -22724,7 +22724,7 @@ fn rocblas_zhpr2_batched(
     incy: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched",
         fn (
@@ -22751,7 +22751,7 @@ fn rocblas_saxpy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched_64",
         fn (
@@ -22780,7 +22780,7 @@ fn rocblas_ssymv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -22863,7 +22863,7 @@ fn rocblas_dtbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched_64",
         fn (
@@ -22911,7 +22911,7 @@ fn rocblas_dgemv(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv",
         fn (
@@ -22942,7 +22942,7 @@ fn rocblas_chpmv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -23041,7 +23041,7 @@ fn rocblas_dgeam(
     ldb: Int32,
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam",
         fn (
@@ -23074,7 +23074,7 @@ fn rocblas_zhemv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_64",
         fn (
@@ -23107,7 +23107,7 @@ fn rocblas_sspr2_strided_batched_64(
     _ap: UnsafePointer[Float32],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_strided_batched_64",
         fn (
@@ -23149,7 +23149,7 @@ fn rocblas_srotmg_64(
     x1: UnsafePointer[Float32],
     y1: UnsafePointer[Float32],
     param: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_64",
         fn (
@@ -23178,7 +23178,7 @@ fn rocblas_zsyr2_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched_64",
         fn (
@@ -23230,7 +23230,7 @@ fn rocblas_zgerc_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched",
         fn (
@@ -23275,7 +23275,7 @@ fn rocblas_izamin_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched",
         fn (
@@ -23298,7 +23298,7 @@ fn rocblas_bfdot(
     y: UnsafePointer[BFloat16],
     incy: Int32,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot",
         fn (
@@ -23320,7 +23320,7 @@ fn rocblas_drotg_batched_64(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched_64",
         fn (
@@ -23352,7 +23352,7 @@ fn rocblas_ssyrkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -23504,7 +23504,7 @@ fn rocblas_stpmv(
     _a: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -23594,7 +23594,7 @@ fn rocblas_cgeru(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru",
         fn (
@@ -23628,7 +23628,7 @@ fn rocblas_dtrsm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched",
         fn (
@@ -23676,7 +23676,7 @@ fn rocblas_ddot_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched_64",
         fn (
@@ -23701,7 +23701,7 @@ fn rocblas_zdrot_64(
     incy: Int64,
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_64",
         fn (
@@ -23729,7 +23729,7 @@ fn rocblas_ztpsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched",
         fn (
@@ -23768,7 +23768,7 @@ fn rocblas_cspr_64(
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_64",
         fn (
@@ -23796,7 +23796,7 @@ fn rocblas_dtrsm_64(
     lda: Int64,
     _b: UnsafePointer[Float64],
     ldb: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_64",
         fn (
@@ -23833,7 +23833,7 @@ fn rocblas_dgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched",
         fn (
@@ -23880,7 +23880,7 @@ fn rocblas_izamax_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_64",
         fn (
@@ -23907,7 +23907,7 @@ fn rocblas_sspr2_strided_batched(
     _ap: UnsafePointer[Float32],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -24029,7 +24029,7 @@ fn rocblas_zdrot(
     incy: Int32,
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot",
         fn (
@@ -24051,7 +24051,7 @@ fn rocblas_zdscal(
     alpha: UnsafePointer[Float64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal",
         fn (
@@ -24080,7 +24080,7 @@ fn rocblas_sgemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -24193,7 +24193,7 @@ fn rocblas_stbmv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -24305,7 +24305,7 @@ fn rocblas_csyr_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched",
         fn (
@@ -24344,7 +24344,7 @@ fn rocblas_dsyr2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_strided_batched",
         fn (
@@ -24396,7 +24396,7 @@ fn rocblas_dtpmv_64(
     _a: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_64",
         fn (
@@ -24431,7 +24431,7 @@ fn rocblas_dgemmt_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_strided_batched",
         fn (
@@ -24488,7 +24488,7 @@ fn rocblas_dtpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched_64",
         fn (
@@ -24534,7 +24534,7 @@ fn rocblas_sspmv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_strided_batched_64",
         fn (
@@ -24584,7 +24584,7 @@ fn rocblas_dgemv_64(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_64",
         fn (
@@ -24619,7 +24619,7 @@ fn rocblas_zher2_strided_batched_64(
     lda: Int64,
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched_64",
         fn (
@@ -24666,7 +24666,7 @@ fn rocblas_strsv(
     lda: Int32,
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -24748,7 +24748,7 @@ fn rocblas_hdot_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched",
         fn (
@@ -24778,7 +24778,7 @@ fn rocblas_ctpsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched_64",
         fn (
@@ -24817,7 +24817,7 @@ fn rocblas_daxpy_64(
     incx: Int64,
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_64",
         fn (
@@ -24839,7 +24839,7 @@ fn rocblas_dcopy_64(
     incx: Int64,
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_64",
         fn (
@@ -24861,7 +24861,7 @@ fn rocblas_ccopy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched_64",
         fn (
@@ -24887,7 +24887,7 @@ fn rocblas_zrotg_strided_batched_64(
     s: UnsafePointer[ComplexFloat64],
     stride_s: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched_64",
         fn (
@@ -24912,7 +24912,7 @@ fn rocblas_dznrm2_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched_64",
         fn (
@@ -24933,7 +24933,7 @@ fn rocblas_dzasum_batched(
     incx: Int32,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched",
         fn (
@@ -24957,7 +24957,7 @@ fn rocblas_ztpsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched",
         fn (
@@ -24985,7 +24985,7 @@ fn rocblas_sspmv_64(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_64",
         fn (
@@ -25022,7 +25022,7 @@ fn rocblas_dgemm_kernel_name(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_kernel_name",
         fn (
@@ -25081,7 +25081,7 @@ fn rocblas_tssgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched",
         fn (
@@ -25120,7 +25120,7 @@ fn rocblas_rot_strided_batched_ex(
     cs_type: DataType,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -25249,7 +25249,7 @@ fn rocblas_csyrkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_batched",
         fn (
@@ -25300,7 +25300,7 @@ fn rocblas_zhemm(
     beta: UnsafePointer[ComplexFloat64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm",
         fn (
@@ -25333,7 +25333,7 @@ fn rocblas_csyr2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched",
         fn (
@@ -25370,7 +25370,7 @@ fn rocblas_zsymm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_strided_batched",
         fn (
@@ -25427,7 +25427,7 @@ fn rocblas_stbsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -25543,7 +25543,7 @@ fn rocblas_stpsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -25622,7 +25622,7 @@ fn rocblas_dasum_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched_64",
         fn (
@@ -25656,7 +25656,7 @@ fn rocblas_sgbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -25792,7 +25792,7 @@ fn rocblas_cdotc_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched",
         fn (
@@ -25818,7 +25818,7 @@ fn rocblas_chpr2_64(
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_64",
         fn (
@@ -25845,7 +25845,7 @@ fn rocblas_drot_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched_64",
         fn (
@@ -25874,7 +25874,7 @@ fn rocblas_dtpsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched_64",
         fn (
@@ -25914,7 +25914,7 @@ fn rocblas_strtri(
     lda: Int32,
     inv_a: UnsafePointer[Float32],
     ldinv_a: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -25985,7 +25985,7 @@ fn rocblas_dot_batched_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -26085,7 +26085,7 @@ fn rocblas_dot_batched_ex(
     )
 
 
-fn rocblas_get_version_string_size(len: UnsafePointer[Int]) -> Status:
+fn rocblas_get_version_string_size(len: UnsafePointer[Int]) raises -> Status:
     """\\brief   Queries the minimum buffer size for a successful call to
     \\ref rocblas_get_version_string.
 
@@ -26107,7 +26107,7 @@ fn rocblas_dnrm2(
     x: UnsafePointer[Float64],
     incx: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2",
         fn (
@@ -26122,7 +26122,7 @@ fn rocblas_dscal_64(
     alpha: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_64",
         fn (
@@ -26141,7 +26141,7 @@ fn rocblas_ctpsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched_64",
         fn (
@@ -26165,7 +26165,7 @@ fn rocblas_isamax_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_batched_64",
         fn (
@@ -26190,7 +26190,7 @@ fn rocblas_csyr2_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_64",
         fn (
@@ -26218,7 +26218,7 @@ fn rocblas_zdrot_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched_64",
         fn (
@@ -26247,7 +26247,7 @@ fn rocblas_dot_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_ex_64",
         fn (
@@ -26289,7 +26289,7 @@ fn rocblas_cgerc_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_64",
         fn (
@@ -26324,7 +26324,7 @@ fn rocblas_tstgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched",
         fn (
@@ -26380,7 +26380,7 @@ fn rocblas_dspmv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched_64",
         fn (
@@ -26429,7 +26429,7 @@ fn rocblas_drotm_strided_batched_64(
     param: UnsafePointer[Float64],
     stride_param: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched_64",
         fn (
@@ -26473,7 +26473,7 @@ fn rocblas_ztrsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched",
         fn (
@@ -26522,7 +26522,7 @@ fn rocblas_ssymv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -26635,7 +26635,7 @@ fn rocblas_axpy_ex_64(
     y_type: DataType,
     incy: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_ex_64",
         fn (
@@ -26673,7 +26673,7 @@ fn rocblas_drotmg_64(
     x1: UnsafePointer[Float64],
     y1: UnsafePointer[Float64],
     param: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_64",
         fn (
@@ -26699,7 +26699,7 @@ fn rocblas_csyr_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched_64",
         fn (
@@ -26735,7 +26735,7 @@ fn rocblas_dsyrkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_batched",
         fn (
@@ -26788,7 +26788,7 @@ fn rocblas_zhemv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched_64",
         fn (
@@ -26841,7 +26841,7 @@ fn rocblas_ctrsm_batched_64(
     _b: OpaquePointer,
     ldb: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched_64",
         fn (
@@ -26887,7 +26887,7 @@ fn rocblas_dtrsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched_64",
         fn (
@@ -26913,7 +26913,7 @@ fn rocblas_hdot(
     y: UnsafePointer[Float16],
     incy: Int32,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot",
         fn (
@@ -26938,7 +26938,7 @@ fn rocblas_srot_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -27002,7 +27002,7 @@ fn rocblas_zher2_strided_batched(
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched",
         fn (
@@ -27052,7 +27052,7 @@ fn rocblas_zsymv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched_64",
         fn (
@@ -27086,7 +27086,7 @@ fn rocblas_dsbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched",
         fn (
@@ -27124,7 +27124,7 @@ fn rocblas_sgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_strided_batched_64",
         fn (
@@ -27172,7 +27172,7 @@ fn rocblas_scopy(
     incx: Int32,
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -27222,7 +27222,7 @@ fn rocblas_ctrsv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_64",
         fn (
@@ -27247,7 +27247,7 @@ fn rocblas_zdotc_64(
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_64",
         fn (
@@ -27271,7 +27271,7 @@ fn rocblas_drot_64(
     incy: Int64,
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_64",
         fn (
@@ -27306,7 +27306,7 @@ fn rocblas_zgemmt_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_strided_batched",
         fn (
@@ -27363,7 +27363,7 @@ fn rocblas_drot_strided_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched_64",
         fn (
@@ -27393,7 +27393,7 @@ fn rocblas_cher2(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -27473,7 +27473,7 @@ fn rocblas_ctbsv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_64",
         fn (
@@ -27505,7 +27505,7 @@ fn rocblas_dspr2_strided_batched_64(
     _ap: UnsafePointer[Float64],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched_64",
         fn (
@@ -27550,7 +27550,7 @@ fn rocblas_cswap_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched_64",
         fn (
@@ -27583,7 +27583,7 @@ fn rocblas_chemv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_strided_batched_64",
         fn (
@@ -27634,7 +27634,7 @@ fn rocblas_zgerc_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched_64",
         fn (
@@ -27671,7 +27671,7 @@ fn rocblas_zsyr2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_strided_batched",
         fn (
@@ -27723,7 +27723,7 @@ fn rocblas_zher_64(
     incx: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_64",
         fn (
@@ -27745,7 +27745,7 @@ fn rocblas_icamin(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin",
         fn (
@@ -27764,7 +27764,7 @@ fn rocblas_sasum(
     x: UnsafePointer[Float32],
     incx: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -27812,7 +27812,7 @@ fn rocblas_dgemmt(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt",
         fn (
@@ -27856,7 +27856,7 @@ fn rocblas_isamin_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -27909,7 +27909,7 @@ fn rocblas_drotmg_strided_batched_64(
     param: UnsafePointer[Float64],
     stride_param: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched_64",
         fn (
@@ -27958,7 +27958,7 @@ fn rocblas_ztrsm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched",
         fn (
@@ -28005,7 +28005,7 @@ fn rocblas_dasum_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched",
         fn (
@@ -28037,7 +28037,7 @@ fn rocblas_hshgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched_64",
         fn (
@@ -28090,7 +28090,7 @@ fn rocblas_zher2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched_64",
         fn (
@@ -28118,7 +28118,7 @@ fn rocblas_srot_64(
     incy: Int64,
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_64",
         fn (
@@ -28151,7 +28151,7 @@ fn rocblas_hshgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched",
         fn (
@@ -28203,7 +28203,7 @@ fn rocblas_ddot_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched",
         fn (
@@ -28229,7 +28229,7 @@ fn rocblas_izamax_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched_64",
         fn (
@@ -28256,7 +28256,7 @@ fn rocblas_crot_strided_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched_64",
         fn (
@@ -28285,7 +28285,7 @@ fn rocblas_ztpmv_batched_64(
     x: UnsafePointer[UnsafePointer[ComplexFloat64]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched_64",
         fn (
@@ -28311,7 +28311,7 @@ fn rocblas_dsyr_64(
     incx: Int64,
     _a: UnsafePointer[Float64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_64",
         fn (
@@ -28339,7 +28339,7 @@ fn rocblas_sspmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -28412,7 +28412,7 @@ fn rocblas_ssyr(
     incx: Int32,
     _a: UnsafePointer[Float32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -28471,7 +28471,7 @@ fn rocblas_drotg(
     b: UnsafePointer[Float64],
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg",
         fn (
@@ -28488,7 +28488,7 @@ fn rocblas_device_malloc_alloc(
     handle: Handle,
     res: UnsafePointer[UnsafePointer[MallocBase]],
     count: Int,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_alloc",
         fn (
@@ -28510,7 +28510,7 @@ fn rocblas_ztrmv_batched(
     x: UnsafePointer[UnsafePointer[ComplexFloat64]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched",
         fn (
@@ -28539,7 +28539,7 @@ fn rocblas_zgerc_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_64",
         fn (
@@ -28571,7 +28571,7 @@ fn rocblas_csymm(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm",
         fn (
@@ -28605,7 +28605,7 @@ fn rocblas_rot_ex_64(
     s: OpaquePointer,
     cs_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_ex_64",
         fn (
@@ -28638,8 +28638,8 @@ fn rocblas_rot_ex_64(
     )
 
 
-fn rocblas_abort() -> NoneType:
-    return _get_dylib_function["rocblas_abort", fn () -> NoneType]()()
+fn rocblas_abort() raises:
+    _get_dylib_function["rocblas_abort", fn () -> NoneType]()()
 
 
 fn rocblas_dtrmv(
@@ -28652,7 +28652,7 @@ fn rocblas_dtrmv(
     lda: Int32,
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv",
         fn (
@@ -28686,7 +28686,7 @@ fn rocblas_hssgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched_64",
         fn (
@@ -28742,7 +28742,7 @@ fn rocblas_cherkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -28875,7 +28875,7 @@ fn rocblas_cdotc_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched_64",
         fn (
@@ -28903,7 +28903,7 @@ fn rocblas_sswap_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -28978,7 +28978,7 @@ fn rocblas_dsymm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_strided_batched",
         fn (
@@ -29029,7 +29029,7 @@ fn rocblas_scasum_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched",
         fn (
@@ -29054,7 +29054,7 @@ fn rocblas_ssyr_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -29122,7 +29122,7 @@ fn rocblas_dtbmv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched",
         fn (
@@ -29160,7 +29160,7 @@ fn rocblas_ctrmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_strided_batched",
         fn (
@@ -29214,7 +29214,7 @@ fn rocblas_cdotc_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched_64",
         fn (
@@ -29248,7 +29248,7 @@ fn rocblas_zgeam_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_strided_batched",
         fn (
@@ -29301,7 +29301,7 @@ fn rocblas_ccopy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched",
         fn (
@@ -29331,7 +29331,7 @@ fn rocblas_ztrmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched",
         fn (
@@ -29376,7 +29376,7 @@ fn rocblas_dtrtri_strided_batched(
     ldinv_a: Int32,
     stride_inv_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_strided_batched",
         fn (
@@ -29430,7 +29430,7 @@ fn rocblas_geam_ex(
     ldd: Int32,
     compute_type: DataType,
     geam_ex_op: GEAMExOp,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -29593,7 +29593,7 @@ fn rocblas_ctbmv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv",
         fn (
@@ -29611,7 +29611,7 @@ fn rocblas_ctbmv(
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
-fn rocblas_is_user_managing_device_memory(handle: Handle) -> Bool:
+fn rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
     """\\brief
     \\details
     Returns true when device memory in handle is managed by the user
@@ -29635,7 +29635,7 @@ fn rocblas_dtrsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched",
         fn (
@@ -29661,7 +29661,7 @@ fn rocblas_cswap_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched_64",
         fn (
@@ -29684,7 +29684,7 @@ fn rocblas_dnrm2_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched",
         fn (
@@ -29712,7 +29712,7 @@ fn rocblas_axpy_batched_ex_64(
     incy: Int64,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_batched_ex_64",
         fn (
@@ -29761,7 +29761,7 @@ fn rocblas_csymv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched_64",
         fn (
@@ -29815,7 +29815,7 @@ fn rocblas_dtrmm(
     ldb: Int32,
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm",
         fn (
@@ -29863,7 +29863,7 @@ fn rocblas_chpr_strided_batched(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -29962,7 +29962,7 @@ fn rocblas_strmv_batched_64(
     x: UnsafePointer[UnsafePointer[Float32]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_batched_64",
         fn (
@@ -29993,7 +29993,7 @@ fn rocblas_csymv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched_64",
         fn (
@@ -30027,7 +30027,7 @@ fn rocblas_chemm(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -30129,7 +30129,7 @@ fn rocblas_izamin_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_64",
         fn (
@@ -30156,7 +30156,7 @@ fn rocblas_chpr2_strided_batched_64(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_strided_batched_64",
         fn (
@@ -30203,7 +30203,7 @@ fn rocblas_ctpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched",
         fn (
@@ -30240,7 +30240,7 @@ fn rocblas_srotg(
     b: UnsafePointer[Float32],
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -30308,7 +30308,7 @@ fn rocblas_strsm_strided_batched(
     ldb: Int32,
     stride_b: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -30452,7 +30452,7 @@ fn rocblas_sgemm_kernel_name(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemm_kernel_name",
         fn (
@@ -30515,7 +30515,7 @@ fn rocblas_zherkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_strided_batched",
         fn (
@@ -30565,7 +30565,7 @@ fn rocblas_ccopy(
     incx: Int32,
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy",
         fn (
@@ -30594,7 +30594,7 @@ fn rocblas_cgerc_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched_64",
         fn (
@@ -30642,7 +30642,7 @@ fn rocblas_sspr2_batched(
     incy: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -30739,7 +30739,7 @@ fn rocblas_ccopy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched_64",
         fn (
@@ -30768,7 +30768,7 @@ fn rocblas_zherk(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk",
         fn (
@@ -30806,7 +30806,7 @@ fn rocblas_strmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -31007,7 +31007,7 @@ fn rocblas_ssyr2_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_strided_batched_64",
         fn (
@@ -31055,7 +31055,7 @@ fn rocblas_zaxpy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched_64",
         fn (
@@ -31089,7 +31089,7 @@ fn rocblas_dtrmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_batched",
         fn (
@@ -31143,7 +31143,7 @@ fn rocblas_zgbmv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv",
         fn (
@@ -31191,7 +31191,7 @@ fn rocblas_gemm_batched_ex(
     algo: Algorithm,
     solution_index: Int32,
     flags: UInt32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -31374,7 +31374,7 @@ fn rocblas_bfdot_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched_64",
         fn (
@@ -31401,7 +31401,7 @@ fn rocblas_sdot_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_strided_batched_64",
         fn (
@@ -31426,7 +31426,7 @@ fn rocblas_cscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched",
         fn (
@@ -31450,7 +31450,7 @@ fn rocblas_strtri_batched(
     inv_a: OpaquePointer,
     ldinv_a: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -31517,7 +31517,7 @@ fn rocblas_zher(
     incx: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher",
         fn (
@@ -31547,7 +31547,7 @@ fn rocblas_zher2k(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[ComplexFloat64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k",
         fn (
@@ -31582,7 +31582,7 @@ fn rocblas_hssgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched",
         fn (
@@ -31621,7 +31621,7 @@ fn rocblas_trsm_ex(
     inv_a: OpaquePointer,
     inv_a_size: Int32,
     compute_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -31798,7 +31798,7 @@ fn rocblas_zgeru_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched_64",
         fn (
@@ -31824,7 +31824,7 @@ fn rocblas_snrm2_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_batched_64",
         fn (
@@ -31850,7 +31850,7 @@ fn rocblas_chemv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_64",
         fn (
@@ -31882,7 +31882,7 @@ fn rocblas_ctrsm_64(
     lda: Int64,
     _b: UnsafePointer[ComplexFloat32],
     ldb: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_64",
         fn (
@@ -31912,7 +31912,7 @@ fn rocblas_zsyr_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched",
         fn (
@@ -31944,7 +31944,7 @@ fn rocblas_cgbmv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_64",
         fn (
@@ -31980,7 +31980,7 @@ fn rocblas_cherkx(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -32089,7 +32089,7 @@ fn rocblas_zdotu_64(
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_64",
         fn (
@@ -32116,7 +32116,7 @@ fn rocblas_zsyr_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched",
         fn (
@@ -32149,7 +32149,7 @@ fn rocblas_dger_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched",
         fn (
@@ -32179,7 +32179,7 @@ fn rocblas_csyr2(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2",
         fn (
@@ -32214,7 +32214,7 @@ fn rocblas_dsbmv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched",
         fn (
@@ -32269,7 +32269,7 @@ fn rocblas_zhbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched",
         fn (
@@ -32297,7 +32297,7 @@ fn rocblas_zscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched",
         fn (
@@ -32318,7 +32318,7 @@ fn rocblas_icamax_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched_64",
         fn (
@@ -32340,7 +32340,7 @@ fn rocblas_idamin_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched",
         fn (
@@ -32370,7 +32370,7 @@ fn rocblas_zsyr2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_batched",
         fn (
@@ -32418,7 +32418,7 @@ fn rocblas_haxpy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -32481,7 +32481,7 @@ fn rocblas_zdrot_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched",
         fn (
@@ -32514,7 +32514,7 @@ fn rocblas_sgemmt_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -32628,7 +32628,7 @@ fn rocblas_scasum_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched_64",
         fn (
@@ -32662,7 +32662,7 @@ fn rocblas_cgemm_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_strided_batched",
         fn (
@@ -32714,7 +32714,7 @@ fn rocblas_dscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched_64",
         fn (
@@ -32744,7 +32744,7 @@ fn rocblas_dgbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched",
         fn (
@@ -32796,7 +32796,7 @@ fn rocblas_strsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -32908,7 +32908,7 @@ fn rocblas_ztbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched_64",
         fn (
@@ -32959,7 +32959,7 @@ fn rocblas_cgbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched_64",
         fn (
@@ -33009,7 +33009,7 @@ fn rocblas_sspr2_batched_64(
     incy: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_batched_64",
         fn (
@@ -33043,7 +33043,7 @@ fn rocblas_zhemv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched",
         fn (
@@ -33089,7 +33089,7 @@ fn rocblas_sscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -33138,7 +33138,7 @@ fn rocblas_sasum_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -33197,7 +33197,7 @@ fn rocblas_dtbmv(
     lda: Int32,
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv",
         fn (
@@ -33226,7 +33226,7 @@ fn rocblas_ctbmv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_64",
         fn (
@@ -33252,7 +33252,7 @@ fn rocblas_dznrm2_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched",
         fn (
@@ -33279,7 +33279,7 @@ fn rocblas_chpmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_batched_64",
         fn (
@@ -33309,7 +33309,7 @@ fn rocblas_ssyr2(
     incy: Int32,
     _a: UnsafePointer[Float32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -33378,7 +33378,7 @@ fn rocblas_zsyr_64(
     incx: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_64",
         fn (
@@ -33410,7 +33410,7 @@ fn rocblas_ctrsm_strided_batched_64(
     ldb: Int64,
     stride_b: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_strided_batched_64",
         fn (
@@ -33467,7 +33467,7 @@ fn rocblas_sgeam_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -33614,7 +33614,7 @@ fn rocblas_ztrmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_strided_batched",
         fn (
@@ -33661,7 +33661,7 @@ fn rocblas_ztrmm_strided_batched(
 
 fn rocblas_set_optimal_device_memory_size_impl(
     handle: Handle, count: Int
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_optimal_device_memory_size_impl",
         fn (Handle, Int) -> Status,
@@ -33676,7 +33676,7 @@ fn rocblas_zdotc(
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc",
         fn (
@@ -33701,7 +33701,7 @@ fn rocblas_dsyr_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched",
         fn (
@@ -33730,7 +33730,7 @@ fn rocblas_ctbmv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched_64",
         fn (
@@ -33764,7 +33764,7 @@ fn rocblas_dotc_strided_batched_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex",
         fn (
@@ -33808,7 +33808,7 @@ fn rocblas_cswap(
     incx: Int32,
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap",
         fn (
@@ -33834,7 +33834,7 @@ fn rocblas_dot_ex(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -33935,7 +33935,7 @@ fn rocblas_cspr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched_64",
         fn (
@@ -33959,7 +33959,7 @@ fn rocblas_dswap_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched_64",
         fn (
@@ -33983,7 +33983,7 @@ fn rocblas_crot_64(
     incy: Int64,
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_64",
         fn (
@@ -34006,7 +34006,7 @@ fn rocblas_isamax_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -34052,7 +34052,7 @@ fn rocblas_drotg_64(
     b: UnsafePointer[Float64],
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_64",
         fn (
@@ -34074,7 +34074,7 @@ fn rocblas_zaxpy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched",
         fn (
@@ -34104,7 +34104,7 @@ fn rocblas_cgeam(
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam",
         fn (
@@ -34137,7 +34137,7 @@ fn rocblas_ztbsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched_64",
         fn (
@@ -34171,7 +34171,7 @@ fn rocblas_dot_strided_batched_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_strided_batched_ex_64",
         fn (
@@ -34219,7 +34219,7 @@ fn rocblas_stbmv(
     lda: Int32,
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -34316,7 +34316,7 @@ fn rocblas_stbmv(
 
 fn rocblas_set_workspace(
     handle: Handle, addr: OpaquePointer, size: Int
-) -> Status:
+) raises -> Status:
     """\\brief
     \\details
     Sets the device workspace for the handle to use.
@@ -34347,7 +34347,7 @@ fn rocblas_dscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched",
         fn (
@@ -34377,7 +34377,7 @@ fn rocblas_dsyr2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_batched",
         fn (
@@ -34426,7 +34426,7 @@ fn rocblas_cher_strided_batched(
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -34527,7 +34527,7 @@ fn rocblas_zsymm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_batched",
         fn (
@@ -34570,7 +34570,7 @@ fn rocblas_dasum_64(
     x: UnsafePointer[Float64],
     incx: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_64",
         fn (
@@ -34590,7 +34590,7 @@ fn rocblas_strmv_batched(
     x: UnsafePointer[UnsafePointer[Float32]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -34676,7 +34676,7 @@ fn rocblas_ssymv_64(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_64",
         fn (
@@ -34706,7 +34706,7 @@ fn rocblas_zgerc(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc",
         fn (
@@ -34735,7 +34735,7 @@ fn rocblas_drotg_strided_batched(
     s: UnsafePointer[Float64],
     stride_s: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched",
         fn (
@@ -34767,7 +34767,7 @@ fn rocblas_stbsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_strided_batched_64",
         fn (
@@ -34817,7 +34817,7 @@ fn rocblas_zsyrkx_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_batched",
         fn (
@@ -34863,7 +34863,7 @@ fn rocblas_dtpsv(
     _ap: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv",
         fn (
@@ -34892,7 +34892,7 @@ fn rocblas_zgemv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv",
         fn (
@@ -34923,7 +34923,7 @@ fn rocblas_sspr_strided_batched(
     _ap: UnsafePointer[Float32],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -35019,7 +35019,7 @@ fn rocblas_zscal_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched",
         fn (
@@ -35045,7 +35045,7 @@ fn rocblas_dtbsv(
     lda: Int32,
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv",
         fn (
@@ -35071,7 +35071,7 @@ fn rocblas_drotmg_batched_64(
     y1: OpaquePointer,
     param: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched_64",
         fn (
@@ -35093,7 +35093,7 @@ fn rocblas_icamax_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched",
         fn (
@@ -35118,7 +35118,7 @@ fn rocblas_sger_64(
     incy: Int64,
     _a: UnsafePointer[Float32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_64",
         fn (
@@ -35142,7 +35142,7 @@ fn rocblas_izamax(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax",
         fn (
@@ -35163,7 +35163,7 @@ fn rocblas_zhpr(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr",
         fn (
@@ -35193,7 +35193,7 @@ fn rocblas_dsymm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_batched",
         fn (
@@ -35243,7 +35243,7 @@ fn rocblas_cgemv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv",
         fn (
@@ -35273,7 +35273,7 @@ fn rocblas_zrot_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched",
         fn (
@@ -35305,7 +35305,7 @@ fn rocblas_sgemm(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -35414,7 +35414,7 @@ fn rocblas_dot_batched_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_batched_ex_64",
         fn (
@@ -35457,7 +35457,7 @@ fn rocblas_strsv_64(
     lda: Int64,
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_64",
         fn (
@@ -35485,7 +35485,7 @@ fn rocblas_dspr2_batched_64(
     incy: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched_64",
         fn (
@@ -35509,7 +35509,7 @@ fn rocblas_dzasum_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_64",
         fn (
@@ -35530,7 +35530,7 @@ fn rocblas_ddot(
     y: UnsafePointer[Float64],
     incy: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot",
         fn (
@@ -35556,7 +35556,7 @@ fn rocblas_cher2_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_64",
         fn (
@@ -35582,7 +35582,7 @@ fn rocblas_csscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched_64",
         fn (
@@ -35609,7 +35609,7 @@ fn rocblas_cgerc_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched_64",
         fn (
@@ -35642,7 +35642,7 @@ fn rocblas_tstgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched_64",
         fn (
@@ -35673,7 +35673,7 @@ fn rocblas_hdot_64(
     y: UnsafePointer[Float16],
     incy: Int64,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_64",
         fn (
@@ -35703,7 +35703,7 @@ fn rocblas_sgeam_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -35808,7 +35808,7 @@ fn rocblas_zdscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched",
         fn (
@@ -35833,7 +35833,7 @@ fn rocblas_ctrmv_batched(
     x: UnsafePointer[UnsafePointer[ComplexFloat32]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched",
         fn (
@@ -35866,7 +35866,7 @@ fn rocblas_cherk_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -35999,7 +35999,7 @@ fn rocblas_hgemm(
     beta: UnsafePointer[Float16],
     _c: UnsafePointer[Float16],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm",
         fn (
@@ -36042,7 +36042,7 @@ fn rocblas_zrotg(
     b: UnsafePointer[ComplexFloat64],
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg",
         fn (
@@ -36066,7 +36066,7 @@ fn rocblas_cspr_strided_batched(
     _ap: UnsafePointer[ComplexFloat32],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched",
         fn (
@@ -36094,7 +36094,7 @@ fn rocblas_stpsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_batched_64",
         fn (
@@ -36119,7 +36119,7 @@ fn rocblas_ddot_64(
     y: UnsafePointer[Float64],
     incy: Int64,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_64",
         fn (
@@ -36141,7 +36141,7 @@ fn rocblas_idamax_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched_64",
         fn (
@@ -36167,7 +36167,7 @@ fn rocblas_dotc_ex_64(
     result: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex_64",
         fn (
@@ -36213,7 +36213,7 @@ fn rocblas_dger_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched",
         fn (
@@ -36260,7 +36260,7 @@ fn rocblas_ztrmv_64(
     lda: Int64,
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_64",
         fn (
@@ -36292,7 +36292,7 @@ fn rocblas_ctrmm(
     ldb: Int32,
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm",
         fn (
@@ -36339,7 +36339,7 @@ fn rocblas_chpr2(
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -36429,7 +36429,7 @@ fn rocblas_zcopy_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_64",
         fn (
@@ -36453,7 +36453,7 @@ fn rocblas_scopy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -36518,7 +36518,7 @@ fn rocblas_sasum_64(
     x: UnsafePointer[Float32],
     incx: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_64",
         fn (
@@ -36544,7 +36544,7 @@ fn rocblas_cgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched",
         fn (
@@ -36604,7 +36604,7 @@ fn rocblas_zgbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched_64",
         fn (
@@ -36656,7 +36656,7 @@ fn rocblas_srotmg(
     x1: UnsafePointer[Float32],
     y1: UnsafePointer[Float32],
     param: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -36726,7 +36726,7 @@ fn rocblas_zher2k_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_strided_batched",
         fn (
@@ -36777,7 +36777,7 @@ fn rocblas_sspr(
     x: UnsafePointer[Float32],
     incx: Int32,
     _ap: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -36869,7 +36869,7 @@ fn rocblas_zgbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched_64",
         fn (
@@ -36915,7 +36915,7 @@ fn rocblas_idamax_batched(
     incx: Int32,
     batch_count: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched",
         fn (
@@ -36941,7 +36941,7 @@ fn rocblas_zhemv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv",
         fn (
@@ -36972,7 +36972,7 @@ fn rocblas_csymv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_64",
         fn (
@@ -36999,7 +36999,7 @@ fn rocblas_dcopy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched",
         fn (
@@ -37020,7 +37020,7 @@ fn rocblas_snrm2_64(
     x: UnsafePointer[Float32],
     incx: Int64,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_64",
         fn (
@@ -37035,7 +37035,7 @@ fn rocblas_zdscal_64(
     alpha: UnsafePointer[Float64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_64",
         fn (
@@ -37062,7 +37062,7 @@ fn rocblas_hssgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched_64",
         fn (
@@ -37092,7 +37092,7 @@ fn rocblas_zscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched_64",
         fn (
@@ -37115,7 +37115,7 @@ fn rocblas_zhpr_batched_64(
     incx: Int64,
     _ap: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched_64",
         fn (
@@ -37139,7 +37139,7 @@ fn rocblas_dcopy_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched_64",
         fn (
@@ -37169,7 +37169,7 @@ fn rocblas_sgemmt(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -37278,7 +37278,7 @@ fn rocblas_zhpmv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv",
         fn (
@@ -37304,7 +37304,7 @@ fn rocblas_drotmg_batched(
     y1: OpaquePointer,
     param: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched",
         fn (
@@ -37333,7 +37333,7 @@ fn rocblas_ctbsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched_64",
         fn (
@@ -37383,7 +37383,7 @@ fn rocblas_zgeru_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched",
         fn (
@@ -37434,7 +37434,7 @@ fn rocblas_strsm_batched_64(
     _b: OpaquePointer,
     ldb: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_batched_64",
         fn (
@@ -37477,7 +37477,7 @@ fn rocblas_zdscal_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched_64",
         fn (
@@ -37504,7 +37504,7 @@ fn rocblas_cherk(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -37606,7 +37606,7 @@ fn rocblas_dsyr2_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched",
         fn (
@@ -37655,7 +37655,7 @@ fn rocblas_dtbsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched_64",
         fn (
@@ -37693,7 +37693,7 @@ fn rocblas_cgbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched",
         fn (
@@ -37752,7 +37752,7 @@ fn rocblas_chbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -37860,7 +37860,7 @@ fn rocblas_dspmv_64(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_64",
         fn (
@@ -37892,7 +37892,7 @@ fn rocblas_ztrsm_batched_64(
     _b: OpaquePointer,
     ldb: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched_64",
         fn (
@@ -37935,7 +37935,7 @@ fn rocblas_snrm2_strided_batched(
     stridex: Int64,
     batch_count: Int32,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -37996,7 +37996,7 @@ fn rocblas_stbsv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -38088,7 +38088,7 @@ fn rocblas_ccopy_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_64",
         fn (
@@ -38114,7 +38114,7 @@ fn rocblas_sger_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_batched_64",
         fn (
@@ -38142,7 +38142,7 @@ fn rocblas_ctpmv(
     _a: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv",
         fn (
@@ -38170,7 +38170,7 @@ fn rocblas_drot_strided_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched",
         fn (
@@ -38201,7 +38201,7 @@ fn rocblas_cher2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_batched_64",
         fn (
@@ -38226,7 +38226,7 @@ fn rocblas_isamax_64(
     x: UnsafePointer[Float32],
     incx: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_64",
         fn (
@@ -38247,7 +38247,7 @@ fn rocblas_zsyr_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched_64",
         fn (
@@ -38282,7 +38282,7 @@ fn rocblas_cgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched",
         fn (
@@ -38312,7 +38312,7 @@ fn rocblas_scasum_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched_64",
         fn (
@@ -38338,7 +38338,7 @@ fn rocblas_dsyr2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched",
         fn (
@@ -38369,7 +38369,7 @@ fn rocblas_ssyr_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -38451,7 +38451,7 @@ fn rocblas_sgbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -38572,7 +38572,7 @@ fn rocblas_ztpsv_64(
     _ap: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_64",
         fn (
@@ -38596,7 +38596,7 @@ fn rocblas_zspr(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr",
         fn (
@@ -38624,7 +38624,7 @@ fn rocblas_sgemv(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -38699,7 +38699,7 @@ fn rocblas_dtrsv_64(
     lda: Int64,
     x: UnsafePointer[Float64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_64",
         fn (
@@ -38724,7 +38724,7 @@ fn rocblas_zcopy_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched",
         fn (
@@ -38755,7 +38755,7 @@ fn rocblas_ssymv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_strided_batched_64",
         fn (
@@ -38808,7 +38808,7 @@ fn rocblas_dsbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched_64",
         fn (
@@ -38841,7 +38841,7 @@ fn rocblas_ztpmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched",
         fn (
@@ -38888,7 +38888,7 @@ fn rocblas_dgemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_batched",
         fn (
@@ -38933,7 +38933,7 @@ fn rocblas_cscal(
     alpha: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal",
         fn (
@@ -38964,7 +38964,7 @@ fn rocblas_cherkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -39113,7 +39113,7 @@ fn rocblas_drotm_batched_64(
     incy: Int64,
     param: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched_64",
         fn (
@@ -39148,7 +39148,7 @@ fn rocblas_zgbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched",
         fn (
@@ -39200,7 +39200,7 @@ fn rocblas_csscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched",
         fn (
@@ -39224,7 +39224,7 @@ fn rocblas_crot_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched_64",
         fn (
@@ -39253,7 +39253,7 @@ fn rocblas_dsyr_strided_batched_64(
     lda: Int64,
     stride_a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched_64",
         fn (
@@ -39289,7 +39289,7 @@ fn rocblas_csymm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_batched",
         fn (
@@ -39337,7 +39337,7 @@ fn rocblas_zspr_strided_batched(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched",
         fn (
@@ -39366,7 +39366,7 @@ fn rocblas_ztbsv(
     lda: Int32,
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv",
         fn (
@@ -39390,7 +39390,7 @@ fn rocblas_isamin(
     x: UnsafePointer[Float32],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -39431,7 +39431,7 @@ fn rocblas_dtrtri(
     lda: Int32,
     inv_a: UnsafePointer[Float64],
     ldinv_a: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri",
         fn (
@@ -39456,7 +39456,7 @@ fn rocblas_cher(
     incx: Int32,
     _a: UnsafePointer[ComplexFloat32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -39533,7 +39533,7 @@ fn rocblas_zhpmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched_64",
         fn (
@@ -39578,7 +39578,7 @@ fn rocblas_srotm_64(
     y: UnsafePointer[Float32],
     incy: Int64,
     param: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_64",
         fn (
@@ -39599,7 +39599,7 @@ fn rocblas_dscal(
     alpha: UnsafePointer[Float64],
     x: UnsafePointer[Float64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal",
         fn (
@@ -39617,7 +39617,7 @@ fn rocblas_zhpr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched",
         fn (
@@ -39649,7 +39649,7 @@ fn rocblas_csymv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched",
         fn (
@@ -39697,7 +39697,7 @@ fn rocblas_ctpsv(
     _ap: UnsafePointer[ComplexFloat32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv",
         fn (
@@ -39724,7 +39724,7 @@ fn rocblas_srotg_strided_batched(
     s: UnsafePointer[Float32],
     stride_s: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -39790,7 +39790,7 @@ fn rocblas_ssbmv_64(
     beta: UnsafePointer[Float32],
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_64",
         fn (
@@ -39817,7 +39817,7 @@ fn rocblas_sscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_batched_64",
         fn (
@@ -39842,7 +39842,7 @@ fn rocblas_stbsv(
     lda: Int32,
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -39935,7 +39935,7 @@ fn rocblas_ddgmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_strided_batched",
         fn (
@@ -39983,7 +39983,7 @@ fn rocblas_dspmv(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv",
         fn (
@@ -40013,7 +40013,7 @@ fn rocblas_sspmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_batched_64",
         fn (
@@ -40047,7 +40047,7 @@ fn rocblas_zher2k_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_batched",
         fn (
@@ -40098,7 +40098,7 @@ fn rocblas_csyrkx(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx",
         fn (
@@ -40129,7 +40129,7 @@ fn rocblas_strmv(
     lda: Int32,
     x: UnsafePointer[Float32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -40206,7 +40206,7 @@ fn rocblas_zher_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched",
         fn (
@@ -40233,7 +40233,7 @@ fn rocblas_csrot_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched",
         fn (
@@ -40265,7 +40265,7 @@ fn rocblas_cgeru_strided_batched(
     lda: Int32,
     stride_a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched",
         fn (
@@ -40317,7 +40317,7 @@ fn rocblas_zhemm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_batched",
         fn (
@@ -40365,7 +40365,7 @@ fn rocblas_nrm2_strided_batched_ex_64(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_strided_batched_ex_64",
         fn (
@@ -40394,7 +40394,7 @@ fn rocblas_nrm2_strided_batched_ex_64(
     )
 
 
-fn rocblas_is_managing_device_memory(handle: Handle) -> Bool:
+fn rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
     """\\brief
     \\details
     Returns true when device memory in handle is managed by rocBLAS
@@ -40407,7 +40407,7 @@ fn rocblas_is_managing_device_memory(handle: Handle) -> Bool:
     ]()(handle)
 
 
-fn rocblas_set_device_memory_size(handle: Handle, size: Int) -> Status:
+fn rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
     """\\brief
     \\details
     Changes the size of allocated device memory at runtime.
@@ -40443,7 +40443,7 @@ fn rocblas_cdgmm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_strided_batched",
         fn (
@@ -40488,7 +40488,7 @@ fn rocblas_chpr(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     _ap: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -40578,7 +40578,7 @@ fn rocblas_stbmv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -40712,7 +40712,7 @@ fn rocblas_crot_strided_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched",
         fn (
@@ -40740,7 +40740,7 @@ fn rocblas_ztpmv(
     _a: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv",
         fn (
@@ -40776,7 +40776,7 @@ fn rocblas_trsm_strided_batched_ex(
     inv_a_size: Int32,
     stride_inv_a: Int64,
     compute_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -40976,7 +40976,7 @@ fn rocblas_ctbsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched_64",
         fn (
@@ -41006,7 +41006,7 @@ fn rocblas_dspr2_batched(
     incy: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched",
         fn (
@@ -41040,7 +41040,7 @@ fn rocblas_zsymv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched_64",
         fn (
@@ -41092,7 +41092,7 @@ fn rocblas_dsymv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched_64",
         fn (
@@ -41120,7 +41120,7 @@ fn rocblas_isamin_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_strided_batched_64",
         fn (
@@ -41144,7 +41144,7 @@ fn rocblas_zdotc_batched_64(
     incy: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched_64",
         fn (
@@ -41171,7 +41171,7 @@ fn rocblas_ssyr2_64(
     incy: Int64,
     _a: UnsafePointer[Float32],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_64",
         fn (
@@ -41202,7 +41202,7 @@ fn rocblas_dtrsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched",
         fn (
@@ -41244,7 +41244,7 @@ fn rocblas_drotm_batched(
     incy: Int32,
     param: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched",
         fn (
@@ -41279,7 +41279,7 @@ fn rocblas_sgbmv_strided_batched_64(
     incy: Int64,
     stride_y: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_strided_batched_64",
         fn (
@@ -41333,7 +41333,7 @@ fn rocblas_hdot_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[Float16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched",
         fn (
@@ -41362,7 +41362,7 @@ fn rocblas_chbmv_64(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_64",
         fn (
@@ -41389,7 +41389,7 @@ fn rocblas_srotg_batched_64(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_batched_64",
         fn (
@@ -41413,7 +41413,7 @@ fn rocblas_stpmv_batched_64(
     x: UnsafePointer[UnsafePointer[Float32]],
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_batched_64",
         fn (
@@ -41438,7 +41438,7 @@ fn rocblas_cdotu_64(
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
     result: UnsafePointer[ComplexFloat32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_64",
         fn (
@@ -41464,7 +41464,7 @@ fn rocblas_dspr_strided_batched(
     _ap: UnsafePointer[Float64],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched",
         fn (
@@ -41490,7 +41490,7 @@ fn rocblas_scnrm2_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched_64",
         fn (
@@ -41514,7 +41514,7 @@ fn rocblas_csrot(
     incy: Int32,
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot",
         fn (
@@ -41546,7 +41546,7 @@ fn rocblas_dgemmt_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_batched",
         fn (
@@ -41585,8 +41585,8 @@ fn rocblas_dgemmt_batched(
     )
 
 
-fn rocblas_device_malloc_set_default_memory_size(size: Int) -> NoneType:
-    return _get_dylib_function[
+fn rocblas_device_malloc_set_default_memory_size(size: Int) raises:
+    _get_dylib_function[
         "rocblas_device_malloc_set_default_memory_size", fn (Int) -> NoneType
     ]()(size)
 
@@ -41601,7 +41601,7 @@ fn rocblas_zswap_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched",
         fn (
@@ -41632,7 +41632,7 @@ fn rocblas_hshgemv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched_64",
         fn (
@@ -41669,7 +41669,7 @@ fn rocblas_ssbmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_batched_64",
         fn (
@@ -41702,7 +41702,7 @@ fn rocblas_ztbmv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched_64",
         fn (
@@ -41732,7 +41732,7 @@ fn rocblas_zgeru_64(
     incy: Int64,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_64",
         fn (
@@ -41762,7 +41762,7 @@ fn rocblas_ctpmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched_64",
         fn (
@@ -41801,7 +41801,7 @@ fn rocblas_caxpy(
     incx: Int32,
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy",
         fn (
@@ -41829,7 +41829,7 @@ fn rocblas_zgemv_64(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_64",
         fn (
@@ -41856,7 +41856,7 @@ fn rocblas_drotg_batched(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched",
         fn (
@@ -41884,7 +41884,7 @@ fn rocblas_ztrsm_batched(
     _b: OpaquePointer,
     ldb: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched",
         fn (
@@ -41934,7 +41934,7 @@ fn rocblas_cgemmt(
     beta: UnsafePointer[ComplexFloat32],
     _c: UnsafePointer[ComplexFloat32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt",
         fn (
@@ -41978,7 +41978,7 @@ fn rocblas_izamin_batched_64(
     incx: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched_64",
         fn (
@@ -41992,7 +41992,7 @@ fn rocblas_izamin_batched_64(
     ]()(handle, n, x, incx, batch_count, result)
 
 
-fn rocblas_status_to_string(status: Status) -> UnsafePointer[Int8]:
+fn rocblas_status_to_string(status: Status) raises -> UnsafePointer[Int8]:
     """BLAS Auxiliary API.
 
     \\details
@@ -42018,7 +42018,7 @@ fn rocblas_saxpy(
     incx: Int32,
     y: UnsafePointer[Float32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy",
         fn (
@@ -42045,7 +42045,7 @@ fn rocblas_cher2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -42127,7 +42127,7 @@ fn rocblas_ztpmv_64(
     _a: UnsafePointer[ComplexFloat64],
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_64",
         fn (
@@ -42158,7 +42158,7 @@ fn rocblas_sspmv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -42262,7 +42262,7 @@ fn rocblas_drot(
     incy: Int32,
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot",
         fn (
@@ -42290,7 +42290,7 @@ fn rocblas_zsymv(
     beta: UnsafePointer[ComplexFloat64],
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv",
         fn (
@@ -42315,7 +42315,7 @@ fn rocblas_csscal(
     alpha: UnsafePointer[Float32],
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal",
         fn (
@@ -42337,7 +42337,7 @@ fn rocblas_zrot(
     incy: Int32,
     c: UnsafePointer[Float64],
     s: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot",
         fn (
@@ -42372,7 +42372,7 @@ fn rocblas_zgemm_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_strided_batched",
         fn (
@@ -42429,7 +42429,7 @@ fn rocblas_zdrot_strided_batched(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched",
         fn (
@@ -42461,7 +42461,7 @@ fn rocblas_ctrsm(
     lda: Int32,
     _b: UnsafePointer[ComplexFloat32],
     ldb: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm",
         fn (
@@ -42494,7 +42494,7 @@ fn rocblas_ctrsv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched_64",
         fn (
@@ -42533,7 +42533,7 @@ fn rocblas_isamax(
     x: UnsafePointer[Float32],
     incx: Int32,
     result: UnsafePointer[Int32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -42576,7 +42576,7 @@ fn rocblas_ztrsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched_64",
         fn (
@@ -42608,7 +42608,7 @@ fn rocblas_ssymm(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -42715,7 +42715,7 @@ fn rocblas_dspmv_batched_64(
     y: OpaquePointer,
     incy: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched_64",
         fn (
@@ -42745,7 +42745,7 @@ fn rocblas_sger(
     incy: Int32,
     _a: UnsafePointer[Float32],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -42810,7 +42810,7 @@ fn rocblas_crotg_batched(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched",
         fn (
@@ -42837,7 +42837,7 @@ fn rocblas_srotmg_strided_batched_64(
     param: UnsafePointer[Float32],
     stride_param: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_strided_batched_64",
         fn (
@@ -42874,7 +42874,7 @@ fn rocblas_device_malloc_get(
     ptr: UnsafePointer[MallocBase],
     index: Int,
     res: UnsafePointer[OpaquePointer],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_get",
         fn (
@@ -42898,7 +42898,7 @@ fn rocblas_cherk_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -42999,7 +42999,7 @@ fn rocblas_crot_batched(
     c: UnsafePointer[Float32],
     s: UnsafePointer[ComplexFloat32],
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched",
         fn (
@@ -43024,7 +43024,7 @@ fn rocblas_zaxpy(
     incx: Int32,
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy",
         fn (
@@ -43047,7 +43047,7 @@ fn rocblas_dnrm2_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched_64",
         fn (
@@ -43074,7 +43074,7 @@ fn rocblas_ssyr2_batched(
     _a: OpaquePointer,
     lda: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -43148,7 +43148,7 @@ fn rocblas_nrm2_strided_batched_ex(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief BLAS_EX API.
 
@@ -43240,7 +43240,7 @@ fn rocblas_cswap_64(
     incx: Int64,
     y: UnsafePointer[ComplexFloat32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_64",
         fn (
@@ -43267,7 +43267,7 @@ fn rocblas_csymv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched",
         fn (
@@ -43296,7 +43296,7 @@ fn rocblas_nrm2_ex_64(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_ex_64",
         fn (
@@ -43322,7 +43322,7 @@ fn rocblas_scal_batched_ex(
     incx: Int32,
     batch_count: Int32,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -43413,7 +43413,7 @@ fn rocblas_zdotu_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched_64",
         fn (
@@ -43438,7 +43438,7 @@ fn rocblas_scopy_64(
     incx: Int64,
     y: UnsafePointer[Float32],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_64",
         fn (
@@ -43460,7 +43460,7 @@ fn rocblas_idamin_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched_64",
         fn (
@@ -43483,7 +43483,7 @@ fn rocblas_haxpy_64(
     incx: Int64,
     y: UnsafePointer[Float16],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_64",
         fn (
@@ -43507,7 +43507,7 @@ fn rocblas_nrm2_ex(
     results: OpaquePointer,
     result_type: DataType,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     """
     \\brief BLAS_EX API.
 
@@ -43587,7 +43587,7 @@ fn rocblas_ztrmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_batched",
         fn (
@@ -43634,7 +43634,7 @@ fn rocblas_sspr_64(
     x: UnsafePointer[Float32],
     incx: Int64,
     _ap: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_64",
         fn (
@@ -43657,7 +43657,7 @@ fn rocblas_zhpr_64(
     x: UnsafePointer[ComplexFloat64],
     incx: Int64,
     _ap: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_64",
         fn (
@@ -43684,7 +43684,7 @@ fn rocblas_dsymv_64(
     beta: UnsafePointer[Float64],
     y: UnsafePointer[Float64],
     incy: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_64",
         fn (
@@ -43718,7 +43718,7 @@ fn rocblas_cgeam_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_batched",
         fn (
@@ -43765,7 +43765,7 @@ fn rocblas_sspr2(
     y: UnsafePointer[Float32],
     incy: Int32,
     _ap: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -43860,7 +43860,7 @@ fn rocblas_zsyr2_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched_64",
         fn (
@@ -43889,7 +43889,7 @@ fn rocblas_ctrtri_batched(
     inv_a: OpaquePointer,
     ldinv_a: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_batched",
         fn (
@@ -43916,7 +43916,7 @@ fn rocblas_cher_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_batched_64",
         fn (
@@ -43935,7 +43935,7 @@ fn rocblas_cher_batched_64(
 
 fn rocblas_get_device_memory_size(
     handle: Handle, size: UnsafePointer[Int]
-) -> Status:
+) raises -> Status:
     """\\brief
     \\details
     Gets the current device memory size for the handle.
@@ -43964,7 +43964,7 @@ fn rocblas_dger_batched_64(
     _a: OpaquePointer,
     lda: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched_64",
         fn (
@@ -43997,7 +43997,7 @@ fn rocblas_zhpr2_strided_batched(
     _ap: UnsafePointer[ComplexFloat64],
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched",
         fn (
@@ -44041,7 +44041,7 @@ fn rocblas_zspr_batched(
     incx: Int32,
     _ap: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched",
         fn (
@@ -44069,7 +44069,7 @@ fn rocblas_csymv(
     beta: UnsafePointer[ComplexFloat32],
     y: UnsafePointer[ComplexFloat32],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv",
         fn (
@@ -44095,7 +44095,7 @@ fn rocblas_dscal_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched",
         fn (
@@ -44126,7 +44126,7 @@ fn rocblas_cgemv_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched_64",
         fn (
@@ -44178,7 +44178,7 @@ fn rocblas_stbsv_64(
     lda: Int64,
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_64",
         fn (
@@ -44214,7 +44214,7 @@ fn rocblas_zhemm_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_strided_batched",
         fn (
@@ -44264,7 +44264,7 @@ fn rocblas_dnrm2_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched_64",
         fn (
@@ -44289,7 +44289,7 @@ fn rocblas_zgeru(
     incy: Int32,
     _a: UnsafePointer[ComplexFloat64],
     lda: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru",
         fn (
@@ -44314,7 +44314,7 @@ fn rocblas_zcopy(
     incx: Int32,
     y: UnsafePointer[ComplexFloat64],
     incy: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy",
         fn (
@@ -44342,7 +44342,7 @@ fn rocblas_ssyrkx(
     beta: UnsafePointer[Float32],
     _c: UnsafePointer[Float32],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -44456,7 +44456,7 @@ fn rocblas_zdotu_batched(
     incy: Int32,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched",
         fn (
@@ -44484,7 +44484,7 @@ fn rocblas_ctpsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched",
         fn (
@@ -44527,7 +44527,7 @@ fn rocblas_zher_strided_batched(
     lda: Int32,
     stride__a: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched",
         fn (
@@ -44567,7 +44567,7 @@ fn rocblas_srotm_batched_64(
     incy: Int64,
     param: OpaquePointer,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_batched_64",
         fn (
@@ -44600,7 +44600,7 @@ fn rocblas_tssgemv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched",
         fn (
@@ -44649,7 +44649,7 @@ fn rocblas_isamax_strided_batched_64(
     stridex: Int64,
     batch_count: Int64,
     result: UnsafePointer[Int64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_strided_batched_64",
         fn (
@@ -44675,7 +44675,7 @@ fn rocblas_drotg_strided_batched_64(
     s: UnsafePointer[Float64],
     stride_s: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched_64",
         fn (
@@ -44700,7 +44700,7 @@ fn rocblas_scnrm2_batched_64(
     incx: Int64,
     batch_count: Int64,
     results: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched_64",
         fn (
@@ -44726,7 +44726,7 @@ fn rocblas_zdrot_strided_batched_64(
     c: UnsafePointer[Float64],
     s: UnsafePointer[Float64],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched_64",
         fn (
@@ -44757,7 +44757,7 @@ fn rocblas_ctbmv_batched(
     x: OpaquePointer,
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched",
         fn (
@@ -44787,7 +44787,7 @@ fn rocblas_bfdot_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched",
         fn (
@@ -44819,7 +44819,7 @@ fn rocblas_zgemv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched",
         fn (
@@ -44851,7 +44851,7 @@ fn rocblas_stpmv_64(
     _a: UnsafePointer[Float32],
     x: UnsafePointer[Float32],
     incx: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_64",
         fn (
@@ -44874,7 +44874,7 @@ fn rocblas_srotg_batched(
     c: OpaquePointer,
     s: OpaquePointer,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 1 API </b>.
 
@@ -44918,7 +44918,7 @@ fn rocblas_dznrm2(
     x: UnsafePointer[ComplexFloat64],
     incx: Int32,
     result: UnsafePointer[Float64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2",
         fn (
@@ -44945,7 +44945,7 @@ fn rocblas_ctbmv_strided_batched_64(
     incx: Int64,
     stride_x: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched_64",
         fn (
@@ -44994,7 +44994,7 @@ fn rocblas_ztbsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched",
         fn (
@@ -45041,7 +45041,7 @@ fn rocblas_zhpmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched",
         fn (
@@ -45071,7 +45071,7 @@ fn rocblas_dtrmv_batched(
     x: UnsafePointer[UnsafePointer[Float64]],
     incx: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched",
         fn (
@@ -45101,7 +45101,7 @@ fn rocblas_dtpsv_strided_batched(
     incx: Int32,
     stride_x: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched",
         fn (
@@ -45148,7 +45148,7 @@ fn rocblas_zsymv_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched",
         fn (
@@ -45198,7 +45198,7 @@ fn rocblas_strsv_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_batched_64",
         fn (
@@ -45234,7 +45234,7 @@ fn rocblas_dsyrkx_strided_batched(
     ldc: Int32,
     stride__c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_strided_batched",
         fn (
@@ -45288,7 +45288,7 @@ fn rocblas_haxpy_strided_batched_64(
     incy: Int64,
     stridey: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_strided_batched_64",
         fn (
@@ -45317,7 +45317,7 @@ fn rocblas_zrotg_strided_batched(
     s: UnsafePointer[ComplexFloat64],
     stride_s: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched",
         fn (
@@ -45345,7 +45345,7 @@ fn rocblas_srot_batched_64(
     c: UnsafePointer[Float32],
     s: UnsafePointer[Float32],
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_batched_64",
         fn (
@@ -45362,7 +45362,7 @@ fn rocblas_srot_batched_64(
     ]()(handle, n, x, incx, y, incy, c, s, batch_count)
 
 
-fn rocblas_is_device_memory_size_query(handle: Handle) -> Bool:
+fn rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
     return _get_dylib_function[
         "rocblas_is_device_memory_size_query", fn (Handle) -> Bool
     ]()(handle)
@@ -45387,7 +45387,7 @@ fn rocblas_sgemm_strided_batched(
     ldc: Int32,
     stride_c: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 3 API </b>.
 
@@ -45514,7 +45514,7 @@ fn rocblas_saxpy_strided_batched(
     incy: Int32,
     stridey: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched",
         fn (
@@ -45549,7 +45549,7 @@ fn rocblas_chbmv_strided_batched(
     incy: Int32,
     stride_y: Int64,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -45686,7 +45686,7 @@ fn rocblas_dspr_strided_batched_64(
     _ap: UnsafePointer[Float64],
     stride__a: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched_64",
         fn (
@@ -45710,7 +45710,7 @@ fn rocblas_scasum(
     x: UnsafePointer[ComplexFloat32],
     incx: Int32,
     result: UnsafePointer[Float32],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum",
         fn (
@@ -45737,7 +45737,7 @@ fn rocblas_ssbmv_batched(
     y: OpaquePointer,
     incy: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS Level 2 API </b>.
 
@@ -45820,7 +45820,7 @@ fn rocblas_bfdot_strided_batched_64(
     stridey: Int64,
     batch_count: Int64,
     result: UnsafePointer[BFloat16],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched_64",
         fn (
@@ -45849,7 +45849,7 @@ fn rocblas_zdotu_strided_batched(
     stridey: Int64,
     batch_count: Int32,
     result: UnsafePointer[ComplexFloat64],
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched",
         fn (
@@ -45883,7 +45883,7 @@ fn rocblas_ctrmm_batched(
     _c: OpaquePointer,
     ldc: Int32,
     batch_count: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_batched",
         fn (
@@ -45932,7 +45932,7 @@ fn rocblas_scal_batched_ex_64(
     incx: Int64,
     batch_count: Int64,
     execution_type: DataType,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_batched_ex_64",
         fn (
@@ -45973,7 +45973,7 @@ fn rocblas_dsymm(
     beta: UnsafePointer[Float64],
     _c: UnsafePointer[Float64],
     ldc: Int32,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm",
         fn (
@@ -46001,7 +46001,7 @@ fn rocblas_cscal_batched_64(
     x: OpaquePointer,
     incx: Int64,
     batch_count: Int64,
-) -> Status:
+) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched_64",
         fn (
@@ -46040,7 +46040,7 @@ fn rocblas_gemm_ex(
     algo: Algorithm,
     solution_index: Int32,
     flags: UInt32,
-) -> Status:
+) raises -> Status:
     """
     \\brief <b> BLAS EX API </b>.
 
@@ -46215,7 +46215,7 @@ fn rocblas_gemm_ex(
     )
 
 
-fn rocblas_set_stream(handle: Handle, stream: hipStream_t) -> Status:
+fn rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_stream", fn (Handle, hipStream_t) -> Status
     ]()(handle, stream)
