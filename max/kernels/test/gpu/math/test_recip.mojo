@@ -27,7 +27,9 @@ fn run_func[
         var result = recip(lhs)
         out_dev[0] = result
 
-    ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
+    ctx.enqueue_function_checked[kernel, kernel](
+        out, val, grid_dim=1, block_dim=1
+    )
     with out.map_to_host() as out_host:
         assert_almost_equal(
             out_host[0],
