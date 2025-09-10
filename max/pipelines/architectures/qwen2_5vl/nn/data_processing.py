@@ -250,7 +250,7 @@ def get_rope_index(
             video_nums = np.sum(vision_tokens == video_token_id)
 
             input_tokens = input_ids_row.tolist()
-            llm_pos_ids_list: list = []
+            llm_pos_ids_list: list[npt.NDArray[np.integer[Any]]] = []
             st = 0
             remain_images, remain_videos = image_nums, video_nums
 

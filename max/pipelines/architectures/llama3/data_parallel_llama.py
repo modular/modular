@@ -29,6 +29,7 @@ from max.graph import (
 )
 from max.nn import Module
 from max.nn.kv_cache import KVCacheManager
+from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
 
 from .llama3 import Llama3
@@ -74,7 +75,9 @@ class DataParallelLlama(Module):
 
     # Graph helpers.
     def input_types(
-        self, kv_manager: KVCacheManager, lora_manager: LoRAManager | None
+        self,
+        kv_manager: KVCacheManager[TextContext],
+        lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
 
@@ -126,7 +129,7 @@ class DataParallelLlama(Module):
         ]
         return tuple(inputs)
 
-    def _call_flat(self, *args: Value) -> tuple[TensorValue, ...]:
+    def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
         # TODO: Add better support for calling a module with
         # inputs that have been flattened.
         # Currently this function requires `input_types` to be called first,
@@ -259,7 +262,7 @@ def _data_parallel_split(
 
 def create_graph(
     config: Llama3Config,
-    kv_manager: KVCacheManager,
+    kv_manager: KVCacheManager[TextContext],
     state_dict: dict[str, Any],
 ) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)

@@ -257,7 +257,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> KVCacheManager:
+    ) -> KVCacheManager[TextContext]:
         return load_kv_manager(
             params=DeepseekV2Config.get_kv_params(
                 huggingface_config=self.huggingface_config,

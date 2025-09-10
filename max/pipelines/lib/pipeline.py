@@ -442,12 +442,10 @@ class PipelineModel(ABC, Generic[T]):
 
 
 @runtime_checkable
-class KVCacheMixin(Protocol):
+class KVCacheMixin(Protocol[T]):
     def load_kv_manager(
-        self,
-        session: InferenceSession,
-        available_cache_memory: Optional[int],
-    ) -> KVCacheManager:
+        self, session: InferenceSession, available_cache_memory: int | None
+    ) -> KVCacheManager[T]:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -497,8 +495,8 @@ class KVCacheMixin(Protocol):
 
 
 def get_paged_manager(
-    pipeline: Pipeline,
-) -> PagedKVCacheManager | None:
+    pipeline: Pipeline[Any, Any],
+) -> PagedKVCacheManager[Any] | None:
     if (
         hasattr(pipeline, "_pipeline_model")
         and hasattr(pipeline._pipeline_model, "kv_manager")
@@ -531,7 +529,7 @@ class TextGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[T]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],

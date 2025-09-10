@@ -35,11 +35,11 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 
-class SpeechTokenGenerationPipeline(TextGenerationPipeline):
+class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[TTSContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:

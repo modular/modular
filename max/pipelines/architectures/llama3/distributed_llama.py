@@ -36,6 +36,7 @@ from max.nn.kv_cache import (
     KVCacheManager,
     KVCacheStrategy,
 )
+from max.pipelines.core import TextContext
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding
@@ -204,7 +205,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_manager: KVCacheManager
+        self, kv_manager: KVCacheManager[TextContext]
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

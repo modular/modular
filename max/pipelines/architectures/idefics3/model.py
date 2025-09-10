@@ -240,7 +240,9 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Idefics3Model(
+    PipelineModel[TextAndVisionContext], KVCacheMixin[TextAndVisionContext]
+):
     """An Idefics3 pipeline model for multimodal text generation."""
 
     vision_model: Model
@@ -805,7 +807,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
+    ) -> KVCacheManager[TextAndVisionContext]:
         """Loads and initializes the KVCacheManager for the Idefics3 model."""
         return load_kv_manager(
             params=Idefics3Config.get_kv_params(

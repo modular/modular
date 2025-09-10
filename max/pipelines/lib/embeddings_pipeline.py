@@ -45,7 +45,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[T]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:

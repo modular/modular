@@ -46,8 +46,8 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes = Union[
-    TextGenerationPipeline,
-    EmbeddingsGenerator,
+    TextGenerationPipeline[Any],
+    EmbeddingsGenerator[Any],
     AudioGeneratorPipeline,
     SpeculativeDecodingTextGenerationPipeline,
     SpeechTokenGenerationPipeline,
@@ -57,8 +57,8 @@ PipelineTypes = Union[
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> (
-    type[TextGenerationPipeline]
-    | type[EmbeddingsPipeline]
+    type[TextGenerationPipeline[Any]]
+    | type[EmbeddingsPipeline[Any]]
     | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
     | type[SpeechTokenGenerationPipeline]
@@ -86,9 +86,9 @@ class SupportedArchitecture:
         example_repo_ids: list[str],
         default_encoding: SupportedEncoding,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         task: PipelineTask,
-        tokenizer: Callable[..., PipelineTokenizer],
+        tokenizer: Callable[..., PipelineTokenizer[Any, Any, Any]],
         default_weights_format: WeightsFormat,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
@@ -191,7 +191,7 @@ class SupportedArchitecture:
         return False
 
     @property
-    def tokenizer_cls(self) -> type[PipelineTokenizer]:
+    def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         if isinstance(self.tokenizer, type):
             return self.tokenizer
         # Otherwise fall back to PipelineTokenizer.
@@ -320,7 +320,7 @@ class PipelineRegistry:
     def _load_logging_message(
         self,
         pipeline_config: PipelineConfig,
-        tokenizer_type: type[PipelineTokenizer],
+        tokenizer_type: type[PipelineTokenizer[Any, Any, Any]],
         pipeline_name: str,
         pipeline_model: str,
         factory: bool,
@@ -369,7 +369,7 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
-    ) -> PipelineTokenizer:
+    ) -> PipelineTokenizer[Any, Any, Any]:
         """Retrieves a tokenizer for the given pipeline configuration.
 
         Args:
@@ -402,7 +402,7 @@ class PipelineRegistry:
             pipeline_config, huggingface_config=huggingface_config
         )
 
-        tokenizer: PipelineTokenizer
+        tokenizer: PipelineTokenizer[Any, Any, Any]
         if (
             arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
             and arch.tokenizer is TextTokenizer
@@ -431,8 +431,8 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[PipelineTokenizer, Callable[[], PipelineTypes]]:
-        tokenizer: PipelineTokenizer
+    ) -> tuple[PipelineTokenizer[Any, Any, Any], Callable[[], PipelineTypes]]:
+        tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
@@ -542,7 +542,7 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[PipelineTokenizer, PipelineTypes]:
+    ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
         tokenizer, pipeline_factory = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )

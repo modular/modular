@@ -32,7 +32,7 @@ import sys
 import time
 from functools import lru_cache
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -121,7 +121,9 @@ def to_rgb(pil_image: Image.Image) -> Image.Image:
         return pil_image.convert("RGB")
 
 
-def fetch_image(ele: dict, size_factor: int = IMAGE_FACTOR) -> Image.Image:
+def fetch_image(
+    ele: dict[str, Any], size_factor: int = IMAGE_FACTOR
+) -> Image.Image:
     if "image" in ele:
         image = ele["image"]
         if isinstance(image, dict):
@@ -184,7 +186,7 @@ def fetch_image(ele: dict, size_factor: int = IMAGE_FACTOR) -> Image.Image:
 
 
 def smart_nframes(
-    ele: dict,
+    ele: dict[str, Any],
     total_frames: int,
     video_fps: int | float,
 ) -> int:
@@ -241,7 +243,7 @@ def is_decord_available() -> bool:
 
 
 def calculate_video_frame_range(
-    ele: dict,
+    ele: dict[str, Any],
     total_frames: int,
     video_fps: float,
 ) -> tuple[int, int, int]:
@@ -300,7 +302,9 @@ def calculate_video_frame_range(
     return start_frame, end_frame, end_frame - start_frame + 1
 
 
-def _read_video_decord(ele: dict) -> tuple[npt.NDArray[np.integer[Any]], float]:
+def _read_video_decord(
+    ele: dict[str, Any],
+) -> tuple[npt.NDArray[np.integer[Any]], float]:
     """read video using decord.VideoReader
 
     Args:
@@ -372,7 +376,7 @@ def get_video_reader_backend() -> str:
 
 
 def fetch_video(
-    ele: dict, image_factor: int = IMAGE_FACTOR
+    ele: dict[str, Any], image_factor: int = IMAGE_FACTOR
 ) -> tuple[npt.NDArray[np.float32] | list[Image.Image], float]:
     if isinstance(ele["video"], str):
         video_reader_backend = get_video_reader_backend()
@@ -449,12 +453,15 @@ def fetch_video(
 
 
 def extract_vision_info(
-    conversations: list[dict] | list[list[dict]],
-) -> list[dict]:
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
     vision_infos = []
+    conversations_list: list[list[dict[str, Any]]]
     if isinstance(conversations[0], dict):
-        conversations = [conversations]  # type: ignore
-    for conversation in conversations:
+        conversations_list = [cast(list[dict[str, Any]], conversations)]
+    else:
+        conversations_list = cast(list[list[dict[str, Any]]], conversations)
+    for conversation in conversations_list:
         for message in conversation:
             if isinstance(message["content"], list):
                 for ele in message["content"]:
@@ -470,12 +477,12 @@ def extract_vision_info(
 
 
 def process_vision_info(
-    conversations: list[dict] | list[list[dict]],
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
     return_video_kwargs: bool = False,
 ) -> tuple[
     list[Image.Image] | None,
     list[npt.NDArray[np.floating[Any]] | list[Image.Image]] | None,
-    dict | None,
+    dict[str, Any] | None,
 ]:
     vision_infos = extract_vision_info(conversations)
     ## Read images or videos

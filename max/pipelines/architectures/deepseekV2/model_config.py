@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -70,7 +71,7 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     pretraining_tp: int = 1
     tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
-    rope_scaling: dict | None = None
+    rope_scaling: dict[str, Any] | None = None
     attention_bias: bool = False
     attention_dropout: float = 0.0
 

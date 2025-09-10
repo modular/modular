@@ -35,6 +35,7 @@ from max.nn.kv_cache import (
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
+from max.pipelines.core import TextContext
 
 from .layers.transformer import Olmo2TransformerBlock
 
@@ -193,7 +194,9 @@ class Olmo2(Transformer):
             embedding_multiplier=config.embedding_multiplier,
         )
 
-    def input_types(self, kv_manager: KVCacheManager) -> tuple[TensorType, ...]:
+    def input_types(
+        self, kv_manager: KVCacheManager[TextContext]
+    ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

@@ -191,7 +191,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray]:
+    ) -> dict[str, npt.NDArray[Any]]:
         """Process images for Qwen2.5VL.
 
         Args:
@@ -238,7 +238,7 @@ class Qwen2_5VLImageProcessor:
         images: list[Image.Image] | Image.Image,
         return_tensors: str = "np",
         **kwargs,
-    ) -> dict[str, npt.NDArray]:
+    ) -> dict[str, npt.NDArray[Any]]:
         """Alias for __call__ to match transformers interface."""
         return self.__call__(images, return_tensors=return_tensors, **kwargs)
 

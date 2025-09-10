@@ -41,6 +41,7 @@ from max.pipelines.architectures.llama3.llama3 import (
 )
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.core import TextContext
 
 
 class Qwen3(Transformer):
@@ -195,7 +196,9 @@ class Qwen3(Transformer):
             embedding_multiplier=config.embedding_multiplier,
         )
 
-    def input_types(self, kv_manager: KVCacheManager) -> tuple[TensorType, ...]:
+    def input_types(
+        self, kv_manager: KVCacheManager[TextContext]
+    ) -> tuple[TensorType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

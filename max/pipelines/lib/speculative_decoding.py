@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -141,7 +141,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def __init__(
         self,
         pipeline_config: Any,  # PipelineConfig
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[TextContext | TextAndVisionContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
@@ -373,10 +373,10 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def calculate_num_steps(
         self,
-        model: PipelineModel,
+        model: PipelineModel[TextContext | TextAndVisionContext],
         huggingface_config: AutoConfig,
         num_steps: int,
-        context: Union[TextContext, TextAndVisionContext],
+        context: TextContext | TextAndVisionContext,
         is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
@@ -396,14 +396,14 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        model: PipelineModel,
-        batch: list[Union[TextContext, TextAndVisionContext]],
+        model: PipelineModel[TextContext | TextAndVisionContext],
+        batch: list[TextContext | TextAndVisionContext],
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
-        draft_inputs: Optional[ModelInputs] = None,
-        merged_draft_tokens: Optional[Tensor] = None,
-        merged_draft_offsets: Optional[Tensor] = None,
+        draft_inputs: ModelInputs | None = None,
+        merged_draft_tokens: Tensor | None = None,
+        merged_draft_offsets: Tensor | None = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):  # noqa: B007
@@ -454,7 +454,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def sample_draft_logits(
         self,
-        batch: list[Union[TextContext, TextAndVisionContext]],
+        batch: list[TextContext | TextAndVisionContext],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
@@ -483,7 +483,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def generate_draft_tokens(
         self,
-        batch: list[Union[TextContext, TextAndVisionContext]],
+        batch: list[TextContext | TextAndVisionContext],
         num_steps: int,
         model_inputs: ModelInputs,
     ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
@@ -591,7 +591,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def verify_draft_tokens_with_target_model(
         self,
         draft_inputs: ModelInputs,
-        context_batch: list[Union[TextContext, TextAndVisionContext]],
+        context_batch: list[TextContext | TextAndVisionContext],
         num_draft_tokens_generated: int,
         draft_tokens: Tensor,
         draft_logits: Tensor,
@@ -636,7 +636,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        inputs: TextGenerationInputs[TextContext | TextAndVisionContext],
     ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
@@ -720,7 +720,7 @@ class SpeculativeDecodingTextGenerationPipeline(
 
     def update_contexts(
         self,
-        context_batch: list[Union[TextContext, TextAndVisionContext]],
+        context_batch: list[TextContext | TextAndVisionContext],
         first_rejected_tokens: npt.NDArray[np.integer[Any]],
         recovered_tokens: npt.NDArray[np.integer[Any]],
         bonus_tokens: npt.NDArray[np.integer[Any]],
@@ -781,8 +781,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         )
 
     def build_response(
-        self,
-        context_batch: list[Union[TextContext, TextAndVisionContext]],
+        self, context_batch: list[TextContext | TextAndVisionContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Build response from updated contexts.
 

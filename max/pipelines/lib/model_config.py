@@ -19,7 +19,7 @@ import os
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from huggingface_hub import constants as hf_hub_constants
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
@@ -109,7 +109,7 @@ class MAXModelConfig(MAXModelConfigBase):
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
 
-    vision_config_overrides: dict = field(default_factory=dict)
+    vision_config_overrides: dict[str, Any] = field(default_factory=dict)
     """Model-specific vision configuration overrides. For example, for InternVL: {"max_dynamic_patch": 24}"""
 
     rope_type: Optional[RopeType] = None

@@ -197,7 +197,9 @@ def _assert_image_embeddings_invariant(
         )
 
 
-class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class InternVLModel(
+    PipelineModel[TextAndVisionContext], KVCacheMixin[TextAndVisionContext]
+):
     """An InternVL pipeline model for multimodal text generation."""
 
     vision_model: Model
@@ -933,7 +935,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
+    ) -> KVCacheManager[TextAndVisionContext]:
         """Loads and initializes the KVCacheManager for the InternVL model."""
         return load_kv_manager(
             params=InternVLConfig.get_kv_params(

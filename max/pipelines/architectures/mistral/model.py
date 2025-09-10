@@ -266,7 +266,7 @@ class MistralModel(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> KVCacheManager:
+    ) -> KVCacheManager[TextContext]:
         assert self.devices, "devices must be provided to load kv manager."
         return load_kv_manager(
             params=MistralConfig.get_kv_params(

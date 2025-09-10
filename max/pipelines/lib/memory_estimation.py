@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from max.driver import Device
 from max.dtype import DType
@@ -38,7 +38,7 @@ class MemoryEstimator:
     def estimate_memory_footprint(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         model_config: MAXModelConfig,
         devices: list[Device],
     ) -> None:
@@ -256,7 +256,7 @@ class MemoryEstimator:
     def _find_valid_max_length(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
         huggingface_config: AutoConfig,
@@ -328,7 +328,7 @@ class MemoryEstimator:
     def _find_valid_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
@@ -389,7 +389,7 @@ class MemoryEstimator:
 
     def _calculate_kv_cache_size(
         self,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
@@ -414,7 +414,7 @@ class MemoryEstimator:
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
@@ -641,7 +641,7 @@ class MemoryEstimator:
     def _infer_optimal_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[Any]],
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],

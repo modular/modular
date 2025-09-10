@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.graph import Weight
@@ -290,7 +291,7 @@ class LoRAModel:
         return self._lora_bias
 
     @property
-    def adapter_config(self) -> dict:
+    def adapter_config(self) -> dict[str, Any]:
         """A dictionary containing metadata/configuration for the LoRA adapter."""
         return self._adapter_config
 
@@ -446,8 +447,12 @@ class LoRAManager:
         )
 
         self._lora_lock = threading.RLock()
-        self._request_processor: LoRARequestProcessor = LoRARequestProcessor(
-            self, config.lora_request_endpoint, config.lora_response_endpoint
+        self._request_processor: LoRARequestProcessor[Any] = (
+            LoRARequestProcessor(
+                self,
+                config.lora_request_endpoint,
+                config.lora_response_endpoint,
+            )
         )
 
         if config.lora_paths:
@@ -497,7 +502,7 @@ class LoRAManager:
     def get_lora_graph_inputs(
         self,
         context_batch: Sequence[T],
-        input_row_offsets: np.ndarray,
+        input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
     ) -> tuple[Tensor, ...]:
         """

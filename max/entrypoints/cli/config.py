@@ -102,6 +102,9 @@ def validate_field_type(field_type: Any) -> bool:
     else:
         test_type = field_type
 
+    if get_origin(test_type) is dict:
+        return True
+
     for valid_type in VALID_CONFIG_TYPES:
         if valid_type == test_type:
             return True

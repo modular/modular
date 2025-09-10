@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -97,7 +97,9 @@ class InternVLImageConfig:
     patch_size: int
     """Size of each patch."""
 
-    def __init__(self, config: AutoConfig, vision_overrides: dict) -> None:
+    def __init__(
+        self, config: AutoConfig, vision_overrides: dict[str, Any]
+    ) -> None:
         """Initialize from HuggingFace model configuration.
 
         Args:
@@ -353,7 +355,7 @@ class InternVLProcessor:
         self,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
         config: AutoConfig,
-        vision_overrides: dict | None = None,
+        vision_overrides: dict[str, Any] | None = None,
     ) -> None:
         self.tokenizer = tokenizer
         self.config = config
@@ -371,7 +373,7 @@ class InternVLProcessor:
 
     def apply_chat_template(
         self,
-        messages: list[dict],
+        messages: list[dict[str, Any]],
         tokenize: bool = False,
         add_generation_prompt: bool = True,
         **kwargs,
@@ -420,7 +422,7 @@ class InternVLProcessor:
         images: list[Image.Image] | None = None,
         add_special_tokens: bool = True,
         return_tensors: str = "np",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Process text and images for InternVL.
 
         This method needs to match the interface expected by TextAndVisionTokenizer.new_context().

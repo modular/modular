@@ -96,7 +96,7 @@ class Llama4Inputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
 
 
-class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
+class Llama4Model(PipelineModel[TextContext], KVCacheMixin[TextContext]):
     """A Llama 4 pipeline model for text generation.
 
     This class integrates the Llama 4 architecture with the MAX Engine pipeline
@@ -559,7 +559,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None
-    ) -> KVCacheManager:
+    ) -> KVCacheManager[TextContext]:
         """Loads and initializes the KVCacheManager for the Llama 4 model.
 
         Configures the KV cache manager based on model parameters, pipeline settings,
