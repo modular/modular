@@ -75,6 +75,9 @@ class BaseBenchmarkConfig(MAXConfig):
     tokenizer: Optional[str] = None
     """Name or path of the tokenizer, if not using the default tokenizer."""
 
+    model_max_length: Optional[int] = None
+    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
+
     trust_remote_code: bool = False
     """Trust remote code from huggingface."""
 

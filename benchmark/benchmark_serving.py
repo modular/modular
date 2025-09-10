@@ -465,10 +465,14 @@ def remove_prefix(text: str, prefix: str) -> str:
 
 
 def get_tokenizer(
-    pretrained_model_name_or_path: str, trust_remote_code: bool
+    pretrained_model_name_or_path: str,
+    model_max_length: Optional[int],
+    trust_remote_code: bool,
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
     return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path, trust_remote_code=trust_remote_code
+        pretrained_model_name_or_path,
+        model_max_length=model_max_length,
+        trust_remote_code=trust_remote_code,
     )
 
 
@@ -1285,7 +1289,9 @@ def main(args: argparse.Namespace) -> None:
 
     logger.info(f"getting tokenizer. api url: {api_url}")
     tokenizer = get_tokenizer(
-        tokenizer_id, trust_remote_code=args.trust_remote_code
+        tokenizer_id,
+        args.model_max_length,
+        trust_remote_code=args.trust_remote_code,
     )
 
     benchmark_dataset = BenchmarkDataset.from_flags(
