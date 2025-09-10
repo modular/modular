@@ -41,7 +41,7 @@ fn device_func(i: Int):
 
 fn test_infer_variadic():
     # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
-    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     infer_variadic[device_func]()
 
 
@@ -76,7 +76,7 @@ fn device_func(i: ZInt, j: ZInt):
 # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
 fn test_infer_variadic():
     # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
-    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     infer_variadic[device_func]()
 
 
@@ -138,7 +138,7 @@ fn compile[
 fn test_reject_generic_device_func_unusedT():
     # TODO(MOCO-1828): Better error message.
     # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
-    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     var thing = compile[device_func_unusedT]()
 
 
@@ -146,7 +146,7 @@ fn test_reject_generic_device_func_unusedT():
 fn test_reject_generic_device_func_usedT():
     # TODO(MOCO-1828): Better error message.
     # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
-    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     var thing = compile[device_func_usedT]()
 
 
@@ -197,7 +197,7 @@ fn compile[
 
 fn main():
     # expected-error @below {{invalid call to 'compile': failed to infer parameter 'ArgTypes'}}
-    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', it isn't used in any argument}}
     compile[device_func]()
 
 

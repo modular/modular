@@ -94,11 +94,11 @@ fn testSIMD(
     var x = a + a
     var y = b + b
     # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD'}}
-    # expected-note @below {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
+    # expected-note @below {{failed to infer parameter #0, it inferred to two different values: '2' and '1'}}
     var z = b + a
 
     # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size' of callee 'twoUses'}}
-    # expected-note @below {{failed to infer parameter 'size', parameter inferred to two different values: '1' and '2'}}
+    # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '1' and '2'}}
     twoUses(a, b)
 
 
@@ -124,7 +124,7 @@ fn left_to_right_implicit_conversion(
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
     # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a' of callee 'infer_then_convert'}}
-    # expected-note @below {{failed to infer parameter 'b', parameter inferred to two different values: '1' and '2'}}
+    # expected-note @below {{failed to infer parameter 'b', it inferred to two different values: '1' and '2'}}
     infer_then_convert(rhs, lhs)
 
 
@@ -353,7 +353,7 @@ fn test_pos_only():
     has_pos_only[b=1, a=3, c=2]()
 
     # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b' of callee 'has_pos_only'}}
-    # expected-note @below {{failed to infer parameter 'b', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'b', it isn't used in any argument}}
     has_pos_only[1, c=9]()
 
 
@@ -423,7 +423,7 @@ fn test_pos_only_struct():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
     # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct'}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     _ = PosOnlyStruct[1, c=9]()
 
 
@@ -442,7 +442,7 @@ struct CtadStruct[a: Int]:
 
 fn test_implicitly_parametric_static_methods_fails():
     # expected-error @below {{could not deduce parameter 'a' of parent struct 'CtadStruct'}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     CtadStruct.foo[5]()
 
 
@@ -508,7 +508,7 @@ struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
 
 struct BindStructField:
     # expected-error @below {{failed to infer parameter 'p'}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' missing required parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
@@ -520,22 +520,22 @@ struct BindStructField:
 
 fn invalid_params[f: fn (ParamType) -> None]():
     # expected-error @below {{invalid call to 'autoparams': could not deduce parameter 'a' of callee 'autoparams'}}
-    # expected-note @below {{failed to infer parameter 'a', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
     # expected-error @below {{failed to infer implicit parameter 'p' of argument 'x' type 'ParamType'}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     autoparams[1](1)
     # expected-error @below {{failed to infer implicit parameter}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     autoparams_mem(1)
     # expected-error @below {{failed to infer implicit parameter}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     autoparams_variadic(1)
 
     # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
-    # expected-note @below {{parameter isn't used in any argument}}
+    # expected-note @below {{it isn't used in any argument}}
     f(1)
 
 
@@ -581,7 +581,7 @@ struct UnusedInitSelfParam[A: Int]:
 
 fn unused_init_self_param():
     # expected-error @below {{invalid initialization: could not deduce parameter 'B' of callee '__init__'}}
-    # expected-note @below {{failed to infer parameter 'B', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'B', it isn't used in any argument}}
     var slice = UnusedInitSelfParam()
 
 

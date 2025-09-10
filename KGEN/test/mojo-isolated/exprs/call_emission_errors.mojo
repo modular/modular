@@ -351,7 +351,7 @@ fn call_param_inference_unrelated_error():
     alias x = "hello"
     alias y = "world"
     # expected-error @below {{invalid call to 'param_inference_unrelated_error': failed to infer implicit parameter 'value' of argument 'y' type 'FloatLiteral'}}
-    # expected-note @below {{failed to infer parameter 'value`1', parameter isn't used in any argument}}
+    # expected-note @below {{failed to infer parameter 'value`1', it isn't used in any argument}}
     param_inference_unrelated_error(x, y)
 
 
