@@ -1862,6 +1862,7 @@ class ClosureInitOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -1873,6 +1874,20 @@ class ClosureInitOp(max._core.Operation):
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
+        nested_fn_scope: max._core.Attribute,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: max._core.Type,
+        func_type_generator: FuncTypeGeneratorType,
+        function_type: max._core.dialects.builtin.FunctionType,
+        captures: Sequence[max._core.Value[max._core.Type]],
+        move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
+        input_params: Sequence[ParamDeclAttr],
+        inline_level: InlineLevel,
     ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
@@ -1904,6 +1919,10 @@ class ClosureInitOp(max._core.Operation):
     def inline_level(self) -> InlineLevel: ...
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
+    @property
+    def nested_fn_scope(self) -> max._core.Attribute | None: ...
+    @nested_fn_scope.setter
+    def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
 
 class CompileOffloadOp(max._core.Operation):
     """
