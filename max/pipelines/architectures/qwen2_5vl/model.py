@@ -91,12 +91,11 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Tensor
     """Number of logits to return, used by speculative decoding for example."""
 
-    image_token_indices: list[Tensor]
-    """Per-device pre-computed indices of image tokens in the input sequence."""
-
     kv_cache_inputs: KVCacheInputs
     """KV cache inputs for the model."""
 
+    image_token_indices: list[Tensor] | None = None
+    """Per-device pre-computed indices of image tokens in the input sequence."""
     # Vision inputs.
     pixel_values: list[Tensor] | None = None
     """Pixel values for vision inputs."""
@@ -124,7 +123,7 @@ class Qwen2_5VLInputs(ModelInputs):
         position_ids: Tensor,
         return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs,
-        image_token_indices: list[Tensor],
+        image_token_indices: list[Tensor] | None = None,
         pixel_values: list[Tensor] | None = None,
         window_index: list[Tensor] | None = None,
         vision_position_ids: list[Tensor] | None = None,
@@ -816,6 +815,7 @@ class Qwen2_5VLModel(
             assert model_inputs.attention_mask_window is not None
             assert model_inputs.attention_mask_full is not None
             assert model_inputs.max_grid_size is not None
+            assert model_inputs.image_token_indices is not None
 
             # Execute vision model: pixel_values -> image_embeddings (multi-GPU)
             # Flatten all vision inputs for the vision model execution
@@ -835,15 +835,16 @@ class Qwen2_5VLModel(
             vision_outputs = self.vision_model.execute(*vision_inputs_flat)
 
             # Extract image embeddings from vision outputs (one per device)
-
             assert isinstance(vision_outputs[0], Tensor)
             single_device_embeddings = vision_outputs[0]
             image_embeddings = [
                 single_device_embeddings.to(device) for device in self.devices
             ]
+            image_token_indices = model_inputs.image_token_indices
         else:
             # Initialize empty tensors for text-only mode
             image_embeddings = self._empty_image_embeddings
+            image_token_indices = self._empty_image_token_indices
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
@@ -851,7 +852,7 @@ class Qwen2_5VLModel(
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
-            *model_inputs.image_token_indices,
+            *image_token_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
             *model_inputs.kv_cache_inputs,
@@ -1029,7 +1030,7 @@ class Qwen2_5VLModel(
             position_ids=position_ids,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
-            image_token_indices=self._empty_image_token_indices,
+            image_token_indices=None,
             # Leave vision inputs empty since they are only processed on the
             # first step.
         )

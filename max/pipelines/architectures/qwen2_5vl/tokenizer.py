@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import functools
-import io
 import json
 import logging
 from collections.abc import Sequence
@@ -24,6 +23,7 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import TextGenerationRequest, TextGenerationRequestMessage
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
+    fetch_image,
     process_vision_info,
 )
 from max.pipelines.core import TextAndVisionContext
@@ -129,7 +129,7 @@ def qwen2_5vl_image_preprocessing(
     # Check if spatial merging is possible
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError(
-            "Spatial merging is not possible because grid_h % merge_size != 0 or grid_w % merge_size != 0"
+            f"Spatial merging is not possible because grid_h {grid_h} % merge_size {merge_size} != 0 or grid_w {grid_w} % merge_size {merge_size} != 0"
         )
     else:
         # Now reshape with spatial merging
@@ -339,6 +339,23 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
+            if request.images:
+                content = [
+                    {"type": "text", "text": request.prompt},
+                ] + [{"type": "image"} for _ in request.images]
+                messages = [
+                    TextGenerationRequestMessage(
+                        role="user",
+                        content=content,
+                    )
+                ]
+                new_request = TextGenerationRequest(
+                    request_id=request.request_id,
+                    model_name=request.model_name,
+                    messages=messages,
+                )
+                assert new_request.messages is not None
+                prompt = self.apply_chat_template(new_request.messages)
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages)
             add_special_tokens = False
@@ -358,11 +375,12 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )  # We ignore video_inputs for image-only use case
         else:
             # Fall back to using the loaded images
+            logger.info(
+                "Loading images from request.images rather than messages, not using process_vision_info"
+            )
             if request.images:
                 image_inputs = [
-                    _convert_image_mode(
-                        Image.open(io.BytesIO(image_data)), "RGB"
-                    )
+                    fetch_image({"image": image_data})
                     for image_data in request.images
                 ]
 
