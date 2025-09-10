@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import logging
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
@@ -15,6 +16,8 @@ from .log_probabilities import LogProbabilities
 from .logit_processors_type import LogitsProcessor
 from .request import RequestID
 from .status import GenerationStatus
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
@@ -126,6 +129,46 @@ class SamplingParams:
                 resolved_params[_field.name] = value
 
         return cls(**resolved_params)
+
+    def log_sampling_info(self) -> None:
+        """Log comprehensive sampling parameters information.
+
+        Displays all sampling parameters in a consistent visual format similar to
+        pipeline configuration logging.
+        """
+        logger.info("Sampling Default Runtime Parameters")
+        logger.info("=" * 60)
+
+        # Core sampling parameters
+        logger.info(f"    top_k:                  {self.top_k}")
+        logger.info(f"    top_p:                  {self.top_p}")
+        logger.info(f"    min_p:                  {self.min_p}")
+        logger.info(f"    temperature:            {self.temperature}")
+
+        # Penalty parameters
+        logger.info(f"    frequency_penalty:      {self.frequency_penalty}")
+        logger.info(f"    presence_penalty:       {self.presence_penalty}")
+        logger.info(f"    repetition_penalty:     {self.repetition_penalty}")
+
+        # Generation control parameters
+        logger.info(f"    max_new_tokens:         {self.max_new_tokens}")
+        logger.info(f"    min_new_tokens:         {self.min_new_tokens}")
+        logger.info(f"    ignore_eos:             {self.ignore_eos}")
+        logger.info(f"    detokenize:             {self.detokenize}")
+
+        # Stopping criteria
+        if self.stop:
+            stop_str = ", ".join(f'"{s}"' for s in self.stop)
+            logger.info(f"    stop_strings:           [{stop_str}]")
+        else:
+            logger.info("    stop_strings:           None")
+
+        if self.stop_token_ids:
+            stop_ids_str = ", ".join(str(id) for id in self.stop_token_ids)
+            logger.info(f"    stop_token_ids:         [{stop_ids_str}]")
+        else:
+            logger.info("    stop_token_ids:         None")
+        logger.info("")
 
     def __post_init__(self):
         if self.min_p < 0.0 or self.min_p > 1.0:
