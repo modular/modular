@@ -317,7 +317,8 @@ static SmallVector<StringAttr> getFunctionParameterNames(FnOp funcOp) {
   for (PogMetadataAttr pogAttr :
        funcOp.getFuncTypeGenerator().getParamListAttrs().getPogs())
     if (pogAttr.getPassingKind() != PassingKind::Implicit &&
-        !pogAttr.getName().empty())
+        // Ignore name mangled parameters, which are autoparams.
+        demangleParameterName(pogAttr.getName()) == pogAttr.getName())
       result.emplace_back(pogAttr.getName());
   return result;
 }

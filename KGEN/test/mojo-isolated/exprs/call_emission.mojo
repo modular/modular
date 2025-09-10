@@ -309,8 +309,8 @@ fn test_matrix_equal[
 fn partialBind(mut C: Matrix[`1`, `2`]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
-    # CHECK-SAME: <:!lit.generator<<?, index, index>[1](!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut, |) -> !kgen.none>
-    # CHECK-SAME: rebind(:!lit.generator<<?, index, index>[1]("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut) -> !kgen.none>
+    # CHECK-SAME: <:!lit.generator<<?, "rows`": index, "cols`1": index>[1](!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut, |) -> !kgen.none>
+    # CHECK-SAME: rebind(:!lit.generator<<?, "rows`": index, "cols`1": index>[1]("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> mut) -> !kgen.none>
     # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
     var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
 

@@ -72,6 +72,10 @@ static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
   if (passingKind == PassingKind::Implicit)
     return true;
 
+  // Ignore name mangled parameters, which are autoparams.
+  if (demangleParameterName(paramName) != paramName)
+    return true;
+
   // Exclude inferred parameters that were synthesized by the compiler
   // (identifiable by empty names).
   if (passingKind == PassingKind::Inferred && paramName.empty())
@@ -593,9 +597,8 @@ static ParameterEvaluator populatePublicParameterDecls(
 
     // Don't create documentation objects for internal compiler parameters
     // (implicit params) and anonymous inferred params (synthesized by compiler)
-    if (shouldExcludeParameterFromDocs(passingKind, paramName)) {
+    if (shouldExcludeParameterFromDocs(passingKind, paramName))
       continue;
-    }
 
     // Wrap the MLIR type in our AST wrapper for easier manipulation
     MojoASTTypeRef astType(reboundType);
