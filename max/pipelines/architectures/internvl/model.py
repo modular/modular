@@ -177,7 +177,7 @@ class InternVLInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-def _assert_image_embeddings_invariant(
+def assert_image_embeddings_invariant(
     image_embeddings: Sequence[Tensor], image_token_indices: Sequence[Tensor]
 ) -> None:
     # Check for shape mismatch that causes scatter_nd OOB access.
@@ -820,7 +820,7 @@ class InternVLModel(
             ]
             image_token_indices = model_inputs.image_token_indices
 
-            _assert_image_embeddings_invariant(
+            assert_image_embeddings_invariant(
                 image_embeddings, image_token_indices
             )
         else:
