@@ -16,7 +16,6 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 
 using namespace M;
@@ -51,16 +50,18 @@ struct Capture {
 };
 } // namespace
 
-static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
+static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
+                                Location loc) {
   TypedAttr elementType = TypeParamAttr::get(
       ptrType.getElementType(), TypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
   Value sizeOf = b.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+      loc, ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
   Value alignOf = b.create<ParamConstantOp>(
-      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
-  return b.create<POP::AlignedAllocOp>(ptrType, ValueRange{alignOf, sizeOf});
+      loc, ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
+  return b.create<POP::AlignedAllocOp>(loc, ptrType,
+                                       ValueRange{alignOf, sizeOf});
 }
 
 namespace {
@@ -147,6 +148,7 @@ struct ClosureLifter {
     ParamDeclAttr getSelfParam() const { return selfParam; }
     ParamClosureType getParamClosureType() const { return paramClosureType; }
     ClosureSymbolAttr closureSymbolForSourceName(StringRef sourceName) const;
+    Location getLiftedLocation() const { return liftedLocation; }
 
   private:
     llvm::SetVector<ParamDeclAttr> capturedParamDecls;
@@ -160,60 +162,61 @@ struct ClosureLifter {
     SmallVector<SymbolConstantAttr> moveSymbols;
     ParamDeclAttr selfParam;
     ParamClosureType paramClosureType;
+    Location liftedLocation;
   };
 
 private:
   /// Lift a register passable closure. The characterization is in the lifted
   /// signature: a register passable closure's lifted call function has an
   /// implicit self argument of struct type.
-  Value liftRegPassableClosure(ImplicitLocOpBuilder &b, ClosureInitData &data,
+  Value liftRegPassableClosure(OpBuilder &b, ClosureInitData &data,
                                TypedAttr capturedInstance,
                                ArrayRef<Capture> captureMechanisms,
                                Type loweredClosureType);
   /// Lift a closure with no captures. We can skip the loading/storing of
   /// captures and the self type is none or opaque pointer, depending on the
   /// register passable flag.
-  Value liftThinClosure(ImplicitLocOpBuilder &b, ClosureInitData &data,
+  Value liftThinClosure(OpBuilder &b, ClosureInitData &data,
                         TypedAttr capturedInstance, bool isRegisterPassable);
   /// Lift a non-register passable closure. The characterization is in the
   /// lifted signature: a non-register passable closure's lifted call function
   /// has an implicit self argument of pointer type.
-  Value liftNonRegPassableClosure(ImplicitLocOpBuilder &b,
+  Value liftNonRegPassableClosure(OpBuilder &b,
                                   ClosureInitData &closureInitData,
                                   TypedAttr capturedInstance,
                                   ArrayRef<Capture> captureMechanisms,
                                   Type loweredClosureType);
   /// Given closure metadata, lift the region of the closure init into a top
   /// level function.
-  LogicalResult liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+  LogicalResult liftCallFunction(OpBuilder &b, ClosureInitData &data,
                                  TypedAttr capturedInstance,
                                  Type loweredClosureType);
-  void liftMoveFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+  void liftMoveFunction(OpBuilder &b, ClosureInitData &data,
                         Type loweredClosureType,
                         ArrayRef<Capture> captureMechanisms,
                         TypedAttr capturedInstance);
-  void liftDelFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+  void liftDelFunction(OpBuilder &b, ClosureInitData &data,
                        Type loweredClosureType,
                        ArrayRef<Capture> captureMechanisms,
                        TypedAttr capturedInstance);
 
   void
-  createClosureGenerator(ImplicitLocOpBuilder &b,
-                         ClosureInitData &closureInitData, ClosureMethod method,
-                         FunctionType funcType, TypedAttr capturedInstance,
+  createClosureGenerator(OpBuilder &b, ClosureInitData &closureInitData,
+                         ClosureMethod method, FunctionType funcType,
+                         TypedAttr capturedInstance,
                          llvm::function_ref<void(GeneratorOp)> populateBody,
                          ArrayRef<ArgConvention> argConventions);
 
   /// Given closure metadata the captures, emit code that results in the storage
   /// of the captures into capture struct.
-  void storeCaptures(ImplicitLocOpBuilder &b, Value captureStructArg,
+  void storeCaptures(OpBuilder &b, Value captureStructArg,
                      ClosureInitData &closureInitData,
                      ArrayRef<Capture> captureMechanisms);
   /// Lift driving function. The loweredClosureType should be a kgen.struct with
   /// the captures and the replacement function is meant to emit the IR
   /// necessary for extracting the capture value out of the closure struct
   /// instance.
-  Value liftClosure(ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
+  Value liftClosure(OpBuilder &b, ClosureInitData &closureInitData,
                     TypedAttr capturedInstance,
                     ArrayRef<Capture> captureMechanisms,
                     Type loweredClosureType,
@@ -232,7 +235,11 @@ ClosureLifter::ClosureInitData::ClosureInitData(
     SmallVector<SymbolConstantAttr> &&moveSymbols)
     : capturedParamDecls(std::move(capturedParamDecls)),
       closureType(closureType), closureInit(closureInit), generator(generator),
-      moveSymbols(std::move(moveSymbols)) {
+      moveSymbols(std::move(moveSymbols)),
+      liftedLocation(FusedLoc::get(
+          generator->getContext(),
+          Location(DebugInfo::extractSourceLoc(closureInit->getLoc())),
+          closureInit.getSubprogramScope())) {
   // Create the capture struct.
   SmallVector<Type> paramTypes;
   MLIRContext *cxt = generator->getContext();
@@ -295,7 +302,7 @@ ClosureSymbolAttr ClosureLifter::ClosureInitData::closureSymbolForSourceName(
 /// Returns a map from the original captured parameter to the struct extraction
 /// expression so that the mapping can be reused in the signature remapping.
 static DenseMap<StringAttr, TypedAttr>
-unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
+unpackCapturesInto(OpBuilder &b, Region &region,
                    ClosureLifter::ClosureInitData &closureInitData) {
   DenseMap<StringAttr, TypedAttr> fromRefToExtract;
   // Only structs need unpacking.
@@ -309,6 +316,7 @@ unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
     TypedAttr extractedMember = StructExtractAttr::get(
         b.getContext(), selfParamRef, index, paramCapture.getType());
     b.create<ParamDeclareOp>(
+        closureInitData.getLiftedLocation(),
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType()),
         extractedMember);
     fromRefToExtract[paramCapture.getName()] = extractedMember;
@@ -323,8 +331,9 @@ unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
 /// struct extract expressions. The region is also provided so that rebinds can
 /// be emitted to adapt to the different representations of the same type.
 FunctionType
-remapFuncType(ImplicitLocOpBuilder &b, Region &region, FunctionType oldFuncType,
-              DenseMap<StringAttr, TypedAttr> const &fromRefToExtract) {
+remapFuncType(OpBuilder &b, Region &region, FunctionType oldFuncType,
+              DenseMap<StringAttr, TypedAttr> const &fromRefToExtract,
+              Location loc) {
   // We need to replace the captured parameters in the arguments of the region
   // with the extract expressions
   mlir::AttrTypeReplacer replacer;
@@ -341,7 +350,7 @@ remapFuncType(ImplicitLocOpBuilder &b, Region &region, FunctionType oldFuncType,
     Type newType = replacer.replace(arg.getType());
     if (newType != oldType) {
       arg.setType(newType);
-      Value newValue = b.create<KGEN::RebindOp>(oldType, arg);
+      Value newValue = b.create<KGEN::RebindOp>(loc, oldType, arg);
       arg.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
     }
   }
@@ -357,7 +366,7 @@ remapFuncType(ImplicitLocOpBuilder &b, Region &region, FunctionType oldFuncType,
       Type oldType = operand.getType();
       Type newType = resultTypes[index];
       if (newType != oldType) {
-        Value newValue = b.create<KGEN::RebindOp>(newType, operand);
+        Value newValue = b.create<KGEN::RebindOp>(loc, newType, operand);
         operand.replaceAllUsesExcept(newValue, newValue.getDefiningOp());
       }
     }
@@ -387,8 +396,8 @@ static ClosureType getClosureType(ClosureInitOp closureInit) {
 }
 
 void ClosureLifter::createClosureGenerator(
-    ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
-    ClosureMethod method, FunctionType funcType, TypedAttr capturedInstance,
+    OpBuilder &b, ClosureInitData &closureInitData, ClosureMethod method,
+    FunctionType funcType, TypedAttr capturedInstance,
     llvm::function_ref<void(GeneratorOp)> populateBody,
     ArrayRef<ArgConvention> argConventions) {
   GeneratorOp generator = closureInitData.getGenerator();
@@ -418,7 +427,8 @@ void ClosureLifter::createClosureGenerator(
       symtab, counter));
   b.setInsertionPoint(generator);
   auto closureGenerator = b.create<GeneratorOp>(
-      uniqueName, funcGenType, funcType, closureInitData.getSelfParam());
+      closureInitData.getLiftedLocation(), uniqueName, funcGenType, funcType,
+      closureInitData.getSelfParam());
   symtab.insert(closureGenerator);
 
   populateBody(closureGenerator);
@@ -426,7 +436,8 @@ void ClosureLifter::createClosureGenerator(
   auto fromParamToExtractExpr =
       unpackCapturesInto(b, closureGenerator.getBodyRegion(), closureInitData);
   auto newFuncType = remapFuncType(b, closureGenerator.getBodyRegion(),
-                                   funcType, fromParamToExtractExpr);
+                                   funcType, fromParamToExtractExpr,
+                                   closureInitData.getLiftedLocation());
   closureGenerator.setFunctionType(newFuncType);
 
   // Map from synthesized function to abstracted symbols.
@@ -444,11 +455,12 @@ void ClosureLifter::createClosureGenerator(
   liftedClosureSymbols[closureAttr] = sym;
 }
 
-void ClosureLifter::liftDelFunction(ImplicitLocOpBuilder &b,
+void ClosureLifter::liftDelFunction(OpBuilder &b,
                                     ClosureInitData &closureInitData,
                                     Type loweredClosureType,
                                     ArrayRef<Capture> captureMechanisms,
                                     TypedAttr capturedInstance) {
+  Location loc = closureInitData.getLiftedLocation();
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes;
   argTypes.push_back(selfType);
@@ -462,25 +474,26 @@ void ClosureLifter::liftDelFunction(ImplicitLocOpBuilder &b,
     Value source = delBlock.getArgument(0);
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
       if (capture.delSym.has_value()) {
-        Value field = b.create<KGEN::StructGEPOp>(source, index);
+        Value field = b.create<KGEN::StructGEPOp>(loc, source, index);
         SymbolConstantAttr delSymbol = *capture.delSym;
-        b.create<KGEN::CallOp>(delSymbol, field);
+        b.create<KGEN::CallOp>(loc, delSymbol, field);
       }
     }
-    auto noneAttr =
-        b.create<KGEN::ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
-    b.create<KGEN::ReturnOp>(noneAttr->getResults().front());
+    auto noneAttr = b.create<KGEN::ParamConstantOp>(
+        loc, KGEN::NoneAttr::get(b.getContext()));
+    b.create<KGEN::ReturnOp>(loc, noneAttr->getResults().front());
   };
   createClosureGenerator(b, closureInitData, ClosureMethod::DEL, funcType,
                          capturedInstance, populateBody,
                          {ArgConvention::OwnedMem});
 }
 
-void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
+void ClosureLifter::liftMoveFunction(OpBuilder &b,
                                      ClosureInitData &closureInitData,
                                      Type loweredClosureType,
                                      ArrayRef<Capture> captureMechanisms,
                                      TypedAttr capturedInstance) {
+  Location loc = closureInitData.getLiftedLocation();
   Type selfType = closureInitData.selfType(loweredClosureType);
   SmallVector<Type> argTypes{selfType, selfType};
   FunctionType funcType = FunctionType::get(
@@ -494,20 +507,21 @@ void ClosureLifter::liftMoveFunction(ImplicitLocOpBuilder &b,
     Value target = moveBlock.getArgument(1);
     unsigned moveIndex = 0;
     for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
-      Value targetField = b.create<KGEN::StructGEPOp>(target, index);
-      Value sourceField = b.create<KGEN::StructGEPOp>(source, index);
+      Value targetField = b.create<KGEN::StructGEPOp>(loc, target, index);
+      Value sourceField = b.create<KGEN::StructGEPOp>(loc, source, index);
       if (!capture.moveOrCopySym.has_value()) {
-        b.create<POP::StoreOp>(b.create<POP::LoadOp>(sourceField), targetField);
+        b.create<POP::StoreOp>(loc, b.create<POP::LoadOp>(loc, sourceField),
+                               targetField);
       } else {
         SymbolConstantAttr moveSymbol =
             closureInitData.getMoveSymbols()[moveIndex++];
-        b.create<KGEN::CallOp>(moveSymbol,
+        b.create<KGEN::CallOp>(loc, moveSymbol,
                                ValueRange{sourceField, targetField});
       }
     }
-    auto noneAttr =
-        b.create<KGEN::ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
-    b.create<KGEN::ReturnOp>(noneAttr->getResults().front());
+    auto noneAttr = b.create<KGEN::ParamConstantOp>(
+        loc, KGEN::NoneAttr::get(b.getContext()));
+    b.create<KGEN::ReturnOp>(loc, noneAttr->getResults().front());
   };
   createClosureGenerator(b, closureInitData, ClosureMethod::MOVE, funcType,
                          capturedInstance, populateBody,
@@ -590,10 +604,11 @@ static bool typesMatch(FuncTypeGeneratorType closureSymbolAttrType,
   return isMatch;
 }
 
-LogicalResult ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
+LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
                                               ClosureInitData &closureInitData,
                                               TypedAttr capturedInstance,
                                               Type loweredClosureType) {
+  Location loc = closureInitData.getLiftedLocation();
   Region &region = closureInitData.region();
   GeneratorOp generator = closureInitData.getGenerator();
   SmallVector<Type> argTypes;
@@ -625,7 +640,7 @@ LogicalResult ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
       (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
       counter));
   auto liftedWrapper =
-      b.create<GeneratorOp>(uniqueName, funcGenType, funcType, allParams);
+      b.create<GeneratorOp>(loc, uniqueName, funcGenType, funcType, allParams);
   symtab.insert(liftedWrapper);
 
   // Remap the symbol to not include the self param by only using input params
@@ -661,7 +676,8 @@ LogicalResult ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   packedClosureType[closureInitData.getClosureType()] =
       loweredClosureTypeMapped;
   FunctionType remappedFuncType =
-      remapFuncType(b, body, funcType, fromParamToExtractExpr);
+      remapFuncType(b, body, funcType, fromParamToExtractExpr,
+                    closureInitData.getLiftedLocation());
   liftedWrapper.setFunctionType(remappedFuncType);
 
   // The closure symbol does not have the implicit argument; remove it
@@ -690,32 +706,33 @@ LogicalResult ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   return success();
 }
 
-void ClosureLifter::storeCaptures(ImplicitLocOpBuilder &b, Value captureStruct,
+void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
                                   ClosureInitData &data,
                                   ArrayRef<Capture> captureMechanisms) {
   b.setInsertionPoint(data.getClosureInit());
+  Location location = data.getClosureInit()->getLoc();
   for (auto [index, captureMechanism] : llvm::enumerate(captureMechanisms)) {
-    auto slot = b.create<StructGEPOp>(captureStruct, index);
+    auto slot = b.create<StructGEPOp>(location, captureStruct, index);
     if (captureMechanism.moveOrCopySym.has_value()) {
       SymbolConstantAttr symbol = *captureMechanism.moveOrCopySym;
       StringRef name = symbol.getSymbol().getRootReference();
       Operation *op = symtab.lookup(name);
       GeneratorOp function = cast<GeneratorOp>(op);
       SmallVector<Value> values = {captureMechanism.origin, slot};
-      b.create<KGEN::CallOp>(function.getFunctionType().getResults(), symbol,
-                             ValueRange(values));
+      b.create<KGEN::CallOp>(location, function.getFunctionType().getResults(),
+                             symbol, ValueRange(values));
     } else {
-      b.create<POP::StoreOp>(captureMechanism.origin, slot);
+      b.create<POP::StoreOp>(location, captureMechanism.origin, slot);
     }
   }
 }
 
 Value ClosureLifter::liftClosure(
-    ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
-    TypedAttr capturedInstance, ArrayRef<Capture> captureMechanisms,
-    Type loweredClosureType,
+    OpBuilder &b, ClosureInitData &closureInitData, TypedAttr capturedInstance,
+    ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
     function_ref<Value(Capture, int, Value)> replacementFn) {
   Region &region = closureInitData.region();
+  Location loc = closureInitData.getClosureInit().getLoc();
   // Outline Closure.
   Type selfType = closureInitData.selfType(loweredClosureType);
   Value captureStructArg =
@@ -734,8 +751,9 @@ Value ClosureLifter::liftClosure(
   b.setInsertionPoint(closureInitData.getClosureInit());
   Value captureStruct =
       closureInitData.isEscaping()
-          ? allocateHeapMemory(cast<PointerType>(selfType), b)
+          ? allocateHeapMemory(cast<PointerType>(selfType), b, loc)
           : b.create<POP::StackAllocationOp>(
+                 loc,
                  /*markedLifetimes=*/true, PointerType::get(loweredClosureType))
                 .getResult();
   storeCaptures(b, captureStruct, closureInitData, captureMechanisms);
@@ -744,13 +762,14 @@ Value ClosureLifter::liftClosure(
   return captureStruct;
 }
 
-Value ClosureLifter::liftRegPassableClosure(ImplicitLocOpBuilder &b,
+Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                                             ClosureInitData &closureInitData,
                                             TypedAttr capturedInstance,
                                             ArrayRef<Capture> captureMechanisms,
                                             Type loweredClosureType) {
+  Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    return b.create<KGEN::StructExtractOp>(captureStructArg, index)
+    return b.create<KGEN::StructExtractOp>(loc, captureStructArg, index)
         ->getResults()
         .front();
   };
@@ -759,17 +778,19 @@ Value ClosureLifter::liftRegPassableClosure(ImplicitLocOpBuilder &b,
                   loweredClosureType, replacementFn);
   if (!captureStruct)
     return {};
-  return b.create<POP::LoadOp>(captureStruct);
+  return b.create<POP::LoadOp>(closureInitData.getClosureInit()->getLoc(),
+                               captureStruct);
 }
 
 Value ClosureLifter::liftNonRegPassableClosure(
-    ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
-    TypedAttr capturedInstance, ArrayRef<Capture> captureMechanisms,
-    Type loweredClosureType) {
+    OpBuilder &b, ClosureInitData &closureInitData, TypedAttr capturedInstance,
+    ArrayRef<Capture> captureMechanisms, Type loweredClosureType) {
+  Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    Value replacement = b.create<KGEN::StructGEPOp>(captureStructArg, index);
+    Value replacement =
+        b.create<KGEN::StructGEPOp>(loc, captureStructArg, index);
     if (!capture.moveOrCopySym.has_value())
-      replacement = b.create<POP::LoadOp>(replacement);
+      replacement = b.create<POP::LoadOp>(loc, replacement);
     return replacement;
   };
   Value captureStruct =
@@ -784,7 +805,7 @@ Value ClosureLifter::liftNonRegPassableClosure(
   return captureStruct;
 }
 
-Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
+Value ClosureLifter::liftThinClosure(OpBuilder &b,
                                      ClosureInitData &closureInitData,
                                      TypedAttr capturedInstance,
                                      bool isRegisterPassable) {
@@ -807,10 +828,12 @@ Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
   b.setInsertionPoint(closureInitData.getClosureInit());
+  Location loc = closureInitData.getClosureInit()->getLoc();
   return isRegisterPassable
-             ? b.create<ParamConstantOp>(NoneAttr::get(b.getContext()))
+             ? b.create<ParamConstantOp>(loc, NoneAttr::get(b.getContext()))
                    .getResult()
              : b.create<POP::StackAllocationOp>(
+                   loc,
                    /*markedLifetimes=*/true,
                    PointerType::get(loweredClosureType));
 }
@@ -856,8 +879,9 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
 }
 
 static TypedAttr
-createCaptureAttribute(ImplicitLocOpBuilder &b,
-                       ClosureLifter::ClosureInitData &closureInitData) {
+createCaptureAttribute(OpBuilder &b,
+                       ClosureLifter::ClosureInitData &closureInitData,
+                       Location loc) {
   TypedAttr capturedInstance;
   switch (closureInitData.getCapturedParamDecls().size()) {
   case 0:
@@ -879,7 +903,7 @@ createCaptureAttribute(ImplicitLocOpBuilder &b,
         cast<StructType>(closureInitData.getSelfParam().getType()));
     ParamDeclAttr paramDeclAttr = ParamDeclAttr::get(
         b.getStringAttr("CAPTURES"), closureInitData.getSelfParam().getType());
-    b.create<ParamDeclareOp>(paramDeclAttr, captureInstance);
+    b.create<ParamDeclareOp>(loc, paramDeclAttr, captureInstance);
     capturedInstance = ParamDeclRefAttr::get(paramDeclAttr);
     break;
   }
@@ -890,7 +914,7 @@ createCaptureAttribute(ImplicitLocOpBuilder &b,
 LogicalResult
 ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
                                StructGeneratorOp structGeneratorOp) {
-  ImplicitLocOpBuilder b(closureInit->getLoc(), closureInit.getContext());
+  OpBuilder b(closureInit.getContext());
   ClosureType closureType = getClosureType(closureInit);
   StringRef regionName = closureType.getName();
   ClosureMemoryKind memoryKind = closureType.getClosureMemoryKind();
@@ -954,7 +978,8 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
                                   closureInit, structGeneratorOp, generator,
                                   std::move(moveSymbols));
   // Replace parameter abstractions.
-  TypedAttr capturedInstance = createCaptureAttribute(b, closureInitData);
+  TypedAttr capturedInstance =
+      createCaptureAttribute(b, closureInitData, closureInit->getLoc());
   ClosureAttr captureAttr =
       ClosureAttr::get(b.getContext(), closureInitData.getParamClosureType());
   paramCaptureToStructAttr[captureAttr] = capturedInstance;

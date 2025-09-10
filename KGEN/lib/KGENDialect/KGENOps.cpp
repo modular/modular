@@ -1662,7 +1662,7 @@ static ParseResult parseClosureInitValue(
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
     ArrayAttr &moveOrCopyCaptureSymbols, ParamDeclArrayAttr &inputParams,
     InlineLevelAttr &inlineLevel, Region &body,
-    SmallVectorImpl<Type> &capturesTypes) {
+    SmallVectorImpl<Type> &capturesTypes, Type &resultType, Attribute &scope) {
   if (p.parseLParen())
     return failure();
 
@@ -1723,6 +1723,12 @@ static ParseResult parseClosureInitValue(
     copyOrMoveSymbols.push_back(memSymbolTriple);
   }
   moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), copyOrMoveSymbols);
+  if (p.parseComma() || p.parseType(resultType))
+    return failure();
+  if (succeeded(p.parseOptionalComma())) {
+    if (p.parseAttribute(scope))
+      return failure();
+  }
   return success();
 }
 
@@ -1740,7 +1746,8 @@ static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
                                   ArrayAttr moveOrCopyCaptureSymbols,
                                   ParamDeclArrayAttr inputParams,
                                   InlineLevelAttr inlineLevel, Region &body,
-                                  TypeRange capturesTypes) {
+                                  TypeRange capturesTypes, Type resultType,
+                                  Attribute scope) {
   p << "(";
   int i = 0;
   int n = captures.size();
@@ -1758,7 +1765,12 @@ static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
   p << '(';
   llvm::interleaveComma(capturesTypes, p,
                         [&](Type type) { p.printType(type); });
-  p << ')';
+  p << "), ";
+  p.printType(resultType);
+  if (scope) {
+    p << ", ";
+    p.printAttributeWithoutType(scope);
+  }
 }
 
 LogicalResult ClosureInitOp::verify() {
@@ -1793,6 +1805,17 @@ LogicalResult ClosureInitOp::verify() {
       return success();
   }
   return emitOpError("expected closure type");
+}
+
+/// The subprogram scope should represent the call lifted function.
+DebugInfo::DISubprogramAttr ClosureInitOp::getSubprogramScope() {
+  std::optional<Attribute> nestedScope = getNestedFnScope();
+  if (!nestedScope.has_value())
+    return {};
+  if (auto subprogramScope =
+          dyn_cast<DebugInfo::DISubprogramAttr>(*nestedScope))
+    return subprogramScope;
+  return {};
 }
 
 ///===----------------------------------------------------------------------===//

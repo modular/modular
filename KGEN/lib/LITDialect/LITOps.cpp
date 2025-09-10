@@ -1901,6 +1901,17 @@ static ParseResult parseRegionOnly(OpAsmParser &p,
   return success();
 }
 
+/// The subprogram scope should represent the call lifted function.
+DebugInfo::DISubprogramAttr LIT::ClosureInitOp::getSubprogramScope() {
+  std::optional<Attribute> nestedScope = getNestedFnScope();
+  if (!nestedScope.has_value())
+    return {};
+  if (auto subprogramScope =
+          dyn_cast<DebugInfo::DISubprogramAttr>(*nestedScope))
+    return subprogramScope;
+  return {};
+}
+
 static ParseResult parseMemSymbolTripleAttr(OpAsmParser &p,
                                             MemSymbolTripleAttr &triple) {
   SmallVector<SymbolConstantAttr> symbols;
@@ -1937,7 +1948,7 @@ static ParseResult parseClosureInitOpValue(
     ArrayAttr &captureConventions, TypedAttr &captureOrigins,
     KGEN::ParamDeclArrayAttr &inputParams, KGEN::InlineLevelAttr &inlineLevel,
     Region &bodyRegion, SmallVectorImpl<Type> &captureTypes, Type &resultType,
-    KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable) {
+    KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable, Attribute &scope) {
   if (p.parseLSquare() || p.parseAttribute(vtable) || p.parseRSquare())
     return failure();
   if (p.parseLParen())
@@ -2010,6 +2021,10 @@ static ParseResult parseClosureInitOpValue(
                        "expected symbols to match number of capture types");
   captureConventions = ArrayAttr::get(p.getContext(), captureConvs);
   captureOrigins = OriginSetAttr::get(p.getContext(), origins);
+  if (succeeded(p.parseOptionalComma())) {
+    if (p.parseAttribute(scope))
+      return failure();
+  }
   return success();
 }
 
@@ -2019,7 +2034,7 @@ static void printClosureInitOpValue(
     TypedAttr captureOrigins, KGEN::ParamDeclArrayAttr inputParams,
     KGEN::InlineLevelAttr inlineLevel, Region &bodyRegion,
     TypeRange captureTypes, Type resultType, KGEN::ParamDeclAttr paramDecl,
-    TypedAttr vtable) {
+    TypedAttr vtable, Attribute scope) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
     LIT::FnTypeGeneratorType fnTypeGen =
@@ -2070,6 +2085,10 @@ static void printClosureInitOpValue(
   p << ')';
   p << ", ";
   printVarDeclType(p, op, resultType, paramDecl);
+  if (scope) {
+    p << ", ";
+    p.printAttributeWithoutType(scope);
+  }
 }
 
 LogicalResult LIT::ClosureInitOp::verify() {

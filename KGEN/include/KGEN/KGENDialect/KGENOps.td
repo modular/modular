@@ -2040,7 +2040,8 @@ def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
 def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   FunctionLike,
   SingleBlock,
-  DeclInterface
+  DeclInterface,
+  DeclareOpInterfaceMethods<DebugInfo_SubprogramScoped, ["getSubprogramScope"]>
 ]> {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
@@ -2078,7 +2079,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    Variadic<AnyType>:$captures,
                    ArrayAttr:$moveOrCopyCaptureSymbols,
                    KGEN_ParamDeclArrayAttr:$inputParams,
-                   KGEN_InlineLevelAttr:$inlineLevel
+                   KGEN_InlineLevelAttr:$inlineLevel,
+                   OptionalAttr<AnyAttr>:$nestedFnScope
                   );
 
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -2087,9 +2089,20 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
     `` custom<ClosureInitValue>($funcTypeGenerator, $functionType,
                                    $captures, $moveOrCopyCaptureSymbols,
                                    $inputParams, $inlineLevel,$bodyRegion,
-                                   type($captures)) `,`
-                                    type($result) attr-dict
+                                   type($captures), type($result), $nestedFnScope) attr-dict
   }];
+  let builders = [
+    OpBuilder<(ins "Type":$result, "FuncTypeGeneratorType":$funcTypeGenerator,
+                   "FunctionType":$functionType,
+                   "ValueRange":$captures,
+                   "ArrayAttr":$moveOrCopyCaptureSymbols,
+                   "ArrayRef<ParamDeclAttr>":$inputParams,
+                   "InlineLevel":$inlineLevel), [{
+      build($_builder, $_state, result,
+            funcTypeGenerator, functionType, captures, moveOrCopyCaptureSymbols,
+            inputParams, inlineLevel, {});
+    }]>
+  ];
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
