@@ -210,6 +210,14 @@ kgen.func @load_atomic(%p: !kgen.pointer<scalar<f32>>) {
 
 // -----
 
+kgen.func @load_non_atomic_syncscope(%p: !kgen.pointer<scalar<f32>>) {
+  // expected-error @below {{cannot specify syncscope without an atomic load}}
+  pop.load atomic syncscope("singlethread") not_atomic %p: !kgen.pointer<scalar<f32>>
+  kgen.return
+}
+
+// -----
+
 kgen.func @store_atomic_invalid_ordering(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
   // expected-error @below {{invalid atomic ordering 'acquire' for store operation}}
   pop.store atomic acquire %v, %p : !kgen.pointer<scalar<f32>>

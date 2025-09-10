@@ -574,6 +574,8 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   %4 = pop.load invariant<1> %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: [[V5:%.*]] = pop.load atomic acquire %{{.*}} : !kgen.pointer<scalar<DT>>
   %5 = pop.load atomic acquire %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: [[V6:%.*]] = pop.load atomic syncscope("singlethread") acquire %{{.*}} : !kgen.pointer<scalar<DT>>
+  %6 = pop.load atomic syncscope("singlethread") acquire %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>
   pop.store %0, %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: pop.store %[[V1]], %{{.*}} : !kgen.pointer<scalar<DT>>

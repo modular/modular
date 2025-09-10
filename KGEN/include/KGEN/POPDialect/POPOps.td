@@ -767,7 +767,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     When using atomic ordering (`atomic` keyword), valid orderings are:
     `unordered`, `monotonic`, `acquire`, and `sequentially_consistent`.
     `release` and `acquire_release` orderings are invalid for load operations.
-    `volatile` or `invariant` loads cannot be atomic.
+    `volatile` or `invariant` loads cannot be atomic. An optional `syncscope`
+    can be provided for atomic loads.
 
     Example:
 
@@ -778,6 +779,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     %3 = pop.load volatile<1> %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     %4 = pop.load volatile<1> invariant<1> %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     %5 = pop.load atomic acquire %ptr0 : !kgen.pointer<scalar<f32>>
+    %6 = pop.load atomic syncscope("agent") acquire %ptr0 : !kgen.pointer<scalar<f32>>
     ```
   }];
 
@@ -786,12 +788,13 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                        OptionalAttr<AttrOfType<I1>>:$isVolatile,
                        OptionalAttr<AttrOfType<I1>>:$isInvariant,
                        DefaultValuedAttr<
-                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
+                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering,
+                       OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
     (`invariant` `<` custom<I1ParamValue>($isInvariant)^ `>`)?
-    (`atomic` $ordering^)?
+    (`atomic` (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering^)?
     $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
     qualified(type($ptr))
@@ -802,7 +805,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
                    CArg<"bool", "false">:$isVolatile,
                    CArg<"bool", "false">:$isInvariant,
-                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering)>,
+                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering,
+                   CArg<"std::optional<StringAttr>", "{}">:$syncscope)>,
   ];
 
   let hasFolder = 1;

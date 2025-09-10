@@ -209,10 +209,12 @@ LogicalResult SIMDSplatOp::verify() {
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    std::optional<unsigned> alignment, bool isVolatile,
-                   bool isInvariant, AtomicOrdering ordering) {
+                   bool isInvariant, AtomicOrdering ordering,
+                   std::optional<StringAttr> syncscope) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
         isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
-        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(), ordering);
+        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(), ordering,
+        syncscope ? *syncscope : TypedAttr());
 }
 
 LogicalResult LoadOp::verify() {
@@ -221,6 +223,9 @@ LogicalResult LoadOp::verify() {
       (getIsVolatile() || getIsInvariant()))
     return emitOpError(
         "invalid combination of volatile or invariant with atomic load");
+
+  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+    return emitOpError("cannot specify syncscope without an atomic load");
 
   if (llvm::is_contained(
           {AtomicOrdering::RELEASE, AtomicOrdering::ACQUIRE_RELEASE},
