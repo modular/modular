@@ -324,16 +324,36 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
   // If this is a function, it may be an auto-param for an argument type.
   if (auto fnDecl = dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
     auto fnSig = fnDecl.getFuncTypeGenerator();
-    for (auto [idx, arg] :
+    for (auto [idx, argType] :
          llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
+      auto printArgName = [&]() {
+        auto argName = fnSig.getArgName(idx).strref();
+        if (!argName.empty())
+          os << argName;
+        else
+          os << "arg" << idx;
+      };
+
       auto userArgType =
-          RefType::stripRefConvention(arg, fnSig.getArgConvention(idx));
+          RefType::stripRefConvention(argType, fnSig.getArgConvention(idx));
       if (llvm::is_contained(ASTType(userArgType).getParamBindings(),
                              declRef)) {
-        os << fnSig.getArgName(idx).strref() << "."
-           << demangleParameterName(declRef.getName());
+        printArgName();
+        os << "." << demangleParameterName(declRef.getName());
         return success();
       }
+
+      // If is possible that this parameter is an autoparam origin or mut bool
+      // for a ref argument.  Check to see if that is the case.
+      if (auto refType = dyn_cast<RefType>(argType))
+        if (auto refOrigin = dyn_cast<ParamDeclRefAttr>(refType.getOrigin())) {
+          if (refOrigin.getName() == declRef.getName()) {
+            os << "__origin_of(";
+            printArgName();
+            os << ")";
+            return success();
+          }
+        }
     }
   }
   return failure();
