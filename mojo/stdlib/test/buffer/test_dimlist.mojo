@@ -13,6 +13,8 @@
 
 from buffer.dimlist import Dim, DimList
 from testing import *
+from internal_utils._utils import ValOrDim, dynamic, static
+from math import ceildiv
 
 
 # CHECK-LABEL: test_dim_list
@@ -110,9 +112,19 @@ def test_dimlist_eq():
     )
 
 
+fn test_dim_ceildiv() raises:
+    fn test_dim_ceildiv(m: ValOrDim) -> Dim:
+        alias BLOCK_SCALE_M = 128
+        return ceildiv(m.dim, BLOCK_SCALE_M)
+
+    assert_equal(String(test_dim_ceildiv(dynamic(120))), "?")
+    assert_equal(String(test_dim_ceildiv(static[120]())), "1")
+
+
 def main():
     test_dim_list()
     test_dim()
     test_dim_to_string()
     test_dimlist_repr()
     test_dimlist_eq()
+    test_dim_ceildiv()
