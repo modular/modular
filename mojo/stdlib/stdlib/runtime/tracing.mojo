@@ -757,22 +757,23 @@ struct Trace[
         """
         self.__exit__()
 
-    fn _emit_op_log(self, action: StaticString) -> None:
+    fn _emit_op_log(self, op_name: StringSlice):
         """
         Emit a log message for op tracing to stderr.
         """
         var detail = self.detail
         if self.int_payload:
-            detail += ":" + String(self.int_payload.value())
+            detail += String(":", self.int_payload.value())
         print(
-            "[OP] "
-            + action
-            + " "
-            + self.name()
-            + " [id="
-            + String(self.event_id)
-            + "] "
-            + detail,
+            "[OP] ",
+            op_name,
+            " ",
+            self.name(),
+            " [id=",
+            String(self.event_id),
+            "] ",
+            detail,
+            sep="",
             file=stderr,
         )
 
