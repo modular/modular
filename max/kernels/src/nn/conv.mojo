@@ -1623,15 +1623,16 @@ struct ConvDirectNHWC[
 
         var input_curr_image = self.input.data.offset(n * W * H * C)
         var output_curr_image = self.output.data.offset(n * WO * HO * F)
+        var conv_attr_dyn = materialize[conv_attr]()
 
         for ho in range(
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         ):
-            var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+            var h = ho * conv_attr_dyn.strides()[0] - conv_attr_dyn.pad_bottom()
             # Point to (n, 0, ho, c_tile_offset) mapped in input
             var input_base = input_curr_image.offset(
-                c_tile_offset + C * (-conv_attr.pad_left() + W * h)
+                c_tile_offset + C * (-conv_attr_dyn.pad_left() + W * h)
             )
             # Point to (n, 0, ho, f_tile_offset) mapped in input
             var output_base = output_curr_image.offset(
@@ -1692,7 +1693,7 @@ struct ConvDirectNHWC[
                     0,  # beginning of wo dimension
                 )
                 input_base = input_base.offset(
-                    micro_kernel_height_lbound * conv_attr.strides()[1] * C
+                    micro_kernel_height_lbound * conv_attr_dyn.strides()[1] * C
                 )
                 output_base = output_base.offset(micro_kernel_height_lbound * F)
 
@@ -1721,7 +1722,7 @@ struct ConvDirectNHWC[
                         wo,
                     )
                     input_base = input_base.offset(
-                        height * conv_attr.strides()[1] * C
+                        height * conv_attr_dyn.strides()[1] * C
                     )
                     output_base = output_base.offset(height * F)
 
@@ -1831,17 +1832,18 @@ struct ConvDirectNHWC[
         alias WO = output_shape.get[2]()  # NHWC
         # Shift in input H when shifting 1 in filter stencil' R dimension.
         var h_shift = 0
+        var conv_attr_dyn = materialize[conv_attr]()
         # h index in input image
-        var h = ho * conv_attr.strides()[0] - conv_attr.pad_bottom()
+        var h = ho * conv_attr_dyn.strides()[0] - conv_attr_dyn.pad_bottom()
         for r in range(R):
             # Skip if row falls in padding.
             if h + h_shift < 0 or h + h_shift >= H:
-                h_shift += conv_attr.dilations()[0]
+                h_shift += conv_attr_dyn.dilations()[0]
                 continue
 
             var input_ptr = input_base.offset(h_shift * C * W)
             var filter_ptr = filter_base.offset(r * S * filter_S_stride)
-            var w = wo * conv_attr.strides()[1] - conv_attr.pad_left()
+            var w = wo * conv_attr_dyn.strides()[1] - conv_attr_dyn.pad_left()
 
             @parameter
             for s in range(S):
@@ -1890,7 +1892,7 @@ struct ConvDirectNHWC[
                 filter_ptr = filter_ptr.offset(filter_S_stride)
                 input_ptr = input_ptr.offset(s_stride_in_input)
 
-            h_shift += conv_attr.dilations()[0]
+            h_shift += conv_attr_dyn.dilations()[0]
 
         acc.store(output_micro_tile.data, micro_kernel_width * simd_size)
         # Store the micro tile
