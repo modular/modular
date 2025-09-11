@@ -712,7 +712,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     // Bind the clarifying parameter (see TAPCPTTT).
     evaluator.appendIndexBinding(ref);
   }
-  for (Type type : expected.getInputParamTypes()) {
+  for (Type type :
+       ArrayRef(thunkParamTypes).drop_front(mentionedParamRefs.size())) {
     // If there are "remaining input parameters", like in:
     //
     //     alias my_func_alias: fn[Y: Bool]() -> None = ...
