@@ -109,16 +109,16 @@ def test_take():
 
 def test_moveinit():
     var deleted = False
-    var b = OwnedPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
-    )
-    var p1 = b.unsafe_ptr()
+    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p1 = Int(b.unsafe_ptr())
 
     var b2 = b^
-    var p2 = b2.unsafe_ptr()
+    var p2 = Int(b2.unsafe_ptr())
 
     assert_false(deleted)
-    assert_equal(p1, p2)  # move should reuse the allocation
+
+    # move should reuse the allocation, having the same address
+    assert_equal(p1, p2)
 
     _ = b2^
 

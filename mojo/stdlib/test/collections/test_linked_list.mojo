@@ -545,10 +545,13 @@ def test_indexing():
 def test_list_dtor():
     var dtor_count = 0
 
-    var l = LinkedList[DelCounter]()
+    var ptr = UnsafePointer(to=dtor_count).origin_cast[
+        mut=False, origin=ImmutableAnyOrigin
+    ]()
+    var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
-    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
     l^.__del__()
