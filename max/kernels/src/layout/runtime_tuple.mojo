@@ -490,11 +490,13 @@ fn idx2crd[
         The index must be a scalar value (not a tuple).
     """
 
-    var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
-    for i in range(res.scalar_length):
-        res.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
-    return res
+
+    result = {}
+
+    @parameter
+    for i in range(result.scalar_length):
+        result.value[i] = (Int(idx) // stride.value[i]) % shape.value[i]
 
 
 # take shape as return type
