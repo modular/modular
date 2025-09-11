@@ -13,6 +13,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParameterInference.h"
 
@@ -788,7 +789,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         }
         // For each of the missing parameters, attach any parameter inference
         // diagnostics.
-        inferenceDiags.attach(paramListAttr, diag, numActual);
+        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
+                              funcIfDirect, diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t paramIdx, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
@@ -838,14 +840,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
               diag << " of parent struct '" << structOp.getDeclName().getValue()
                    << "'";
               diag.attachNote(structOp.getLoc()) << " struct declared here";
-              inferenceDiags.attach(paramListAttr, diag);
+              inferenceDiags.attach(paramListAttr,
+                                    signature.getInputParamTypes(),
+                                    funcIfDirect, diag);
               return;
             }
           }
         }
         emitMessage(signature);
         diag << " of callee '" << callable.baseName << "'";
-        inferenceDiags.attach(paramListAttr, diag);
+        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
+                              funcIfDirect, diag);
       },
       /*emitUnboundInVariadic=*/
       [&](const ExprNode *expr) {
@@ -864,8 +869,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         if (signature.getParamListAttrs().getPassingKind(paramIdx) ==
             PassingKind::Inferred) {
           diag << "failed to infer parameter ";
-          printNameOrIdx(signature.getParamName(paramIdx), paramIdx, diag);
-          inferenceDiags.attach(paramListAttr, diag);
+          auto name = signature.getParamName(paramIdx);
+          assert(!name.empty() && "No parameter name??");
+
+          // The parameter name is scoped to 'declScope'.
+          {
+            DeclResolver::DeclScopeChanger x(funcIfDirect);
+            diag << ParamDeclRefAttr::get(
+                name, signature.getInputParamTypes()[paramIdx]);
+          }
+          inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
+                                funcIfDirect, diag);
           return;
         }
 
@@ -898,7 +912,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
           if (walker.walk(argType).wasInterrupted())
             break;
         }
-        inferenceDiags.attach(paramListAttr, diag);
+        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
+                              funcIfDirect, diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

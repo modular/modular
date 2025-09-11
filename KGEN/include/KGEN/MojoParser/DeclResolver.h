@@ -259,6 +259,20 @@ public:
                                                    StringAttr newName,
                                                    ASTDecl &scope);
 
+  /// This struct is used to change the current declaration being processed.
+  /// This is used to ensure that error messages complaining about inferred
+  /// parameters and types correctly refer to ParamDeclRefAttr's in the correct
+  /// declaration.
+  struct DeclScopeChanger {
+    DeclScopeChanger(ASTDecl *declToUse);
+    ~DeclScopeChanger();
+
+  private:
+    DeclResolver *resolver = nullptr;
+    DenseMap<ASTDecl *, llvm::SMLoc> map;
+    std::vector<ASTDecl *> stack;
+  };
+
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should

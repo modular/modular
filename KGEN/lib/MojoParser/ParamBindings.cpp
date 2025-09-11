@@ -781,7 +781,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         }
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
-        inferenceDiags.attach(paramListAttr, *diag, numActual);
+        inferenceDiags.attach(paramListAttr, expectedParamTypes, &declScope,
+                              *diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t index, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
@@ -843,9 +844,14 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           else
             *diag << nameForPosOnly(paramIdx, "parameter");
         } else {
-          diag = shared.emitError(exprLoc) << "failed to infer parameter ";
-          printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, *diag);
-          inferenceDiags.attach(paramListAttr, *diag);
+          // The parameter name is scoped to 'declScope'.
+          DeclResolver::DeclScopeChanger x(&declScope);
+          diag = shared.emitError(exprLoc)
+                 << "failed to infer parameter "
+                 << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                          expectedParamTypes[paramIdx]);
+          inferenceDiags.attach(paramListAttr, expectedParamTypes, &declScope,
+                                *diag);
         }
       },
       /*emitUnboundInVariadic=*/
@@ -867,9 +873,14 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
-        diag = shared.emitError(exprLoc) << "failed to infer parameter ";
-        printNameOrIdx(paramListAttr.getName(paramIdx), paramIdx, *diag);
-        inferenceDiags.attach(paramListAttr, *diag);
+        // The parameter name is scoped to 'declScope'.
+        DeclResolver::DeclScopeChanger x(&declScope);
+        diag = shared.emitError(exprLoc)
+               << "failed to infer parameter "
+               << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                        expectedParamTypes[paramIdx]);
+        inferenceDiags.attach(paramListAttr, expectedParamTypes, &declScope,
+                              *diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

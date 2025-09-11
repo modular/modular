@@ -30,6 +30,27 @@ using namespace KGEN;
 using namespace LIT;
 
 //===----------------------------------------------------------------------===//
+// DeclScopeChanger
+//===----------------------------------------------------------------------===//
+
+DeclResolver::DeclScopeChanger::DeclScopeChanger(ASTDecl *declToUse) {
+  if (!declToUse)
+    return;
+  auto &shared = declToUse->getShared();
+  resolver = &*shared.declResolver;
+  map = std::move(resolver->declsCurrentlyProcessing.map);
+  stack = std::move(resolver->declsCurrentlyProcessing.stack);
+  (void)resolver->declsCurrentlyProcessing.insert(declToUse,
+                                                  declToUse->getLoc());
+}
+DeclResolver::DeclScopeChanger::~DeclScopeChanger() {
+  if (!resolver)
+    return;
+  resolver->declsCurrentlyProcessing.map = std::move(map);
+  resolver->declsCurrentlyProcessing.stack = std::move(stack);
+}
+
+//===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
 
