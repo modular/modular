@@ -800,6 +800,15 @@ loadBitcodeFromResource(llvm::LLVMContext &context,
 static ErrorOrSuccess linkBitcodeLibraries(Location loc,
                                            llvm::Module &llvmModule,
                                            const CompilationOptions &options) {
+  // Check if there are any extern functions in the module.
+  bool hasExternFunctions = false;
+  for (auto &fn : llvmModule.functions()) {
+    if (fn.isDeclaration() && fn.hasExternalLinkage() && !fn.isIntrinsic()) {
+      hasExternFunctions = true;
+      break;
+    }
+  }
+
   // AMD GPU only needs custom linking procedure both for when enabling ASAN,
   // and for when linking standard AMDGCN libraries.
   if (isAMDGPUBackend(options)) {
@@ -822,13 +831,16 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
       otherLibs.push_back(
           b.getStringAttr("/opt/rocm/amdgcn/bitcode/asanrtl.bc"));
     }
-    // Now add user-specified bitcode libraries.
-    for (StringRef libPath : options.bitcodeLibs)
-      otherLibs.push_back(b.getStringAttr(libPath));
 
-    // Add bitcode modules from packages.
-    for (DenseResourceElementsAttr bitcodeAttr : options.packageBitcodeModules)
-      otherLibs.push_back(bitcodeAttr);
+    // Add user-provided bitcode libraries if there are any extern functions.
+    if (hasExternFunctions) {
+      for (StringRef libPath : options.bitcodeLibs)
+        otherLibs.push_back(b.getStringAttr(libPath));
+
+      for (DenseResourceElementsAttr bitcodeAttr :
+           options.packageBitcodeModules)
+        otherLibs.push_back(bitcodeAttr);
+    }
 
     mlir::gpu::TargetOptions targetOptions(
         /*toolkitPath=*/"/opt/rocm", otherLibs);
@@ -839,6 +851,9 @@ static ErrorOrSuccess linkBitcodeLibraries(Location loc,
   }
 
   // Otherwise, use standard linking procedure.
+  if (!hasExternFunctions)
+    return success();
+
   if (options.bitcodeLibs.empty() && options.packageBitcodeModules.empty())
     return success();
 
