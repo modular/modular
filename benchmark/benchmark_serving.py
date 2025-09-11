@@ -1618,16 +1618,33 @@ def main(args: argparse.Namespace) -> None:
     logger.info("finished benchmark run: Success.")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(
+    config_file_path: Path | None = None, args: Sequence[str] | None = None
+) -> argparse.Namespace:
     """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
 
     This function leverages the enhanced ServingBenchmarkConfig.cli_parse_args() method
     to eliminate code duplication while providing proper CLI argument parsing
     with choices and help text.
+
+    Args:
+        config_file_path: Path to the configuration file.
+        args: Command line arguments to parse. If None, parse from sys.argv.
     """
+
     # Load configuration from YAML file to get defaults
-    # Use __file__ to get the directory of this module and construct the path
-    config_file_path = Path(__file__).parent / "serving_config.yaml"
+
+    if config_file_path is None:
+        logger.info(
+            "No benchmark serving configuration file path provided, using default serving_config.yaml file"
+        )
+        # Use __file__ to get the directory of this module and construct the path
+        config_file_path = Path(__file__).parent / "serving_config.yaml"
+
+    logger.info(
+        f"Using benchmark serving configuration file: {config_file_path}"
+    )
+
     benchmark_config = ServingBenchmarkConfig.from_config_file(config_file_path)
 
     # Create parser using the enhanced MAXConfig functionality with required model field
@@ -1639,7 +1656,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    return parser.parse_args()
+    if args is None:
+        return parser.parse_args()
+    return parser.parse_args(args)
 
 
 if __name__ == "__main__":
