@@ -116,18 +116,20 @@ public:
                          ArgConvention convention, Type expectedType,
                          size_t sequenceIndex = 0);
 
-  /// Emit all arguments and return their values in a vector. This function
-  /// iterates by expected arguments since we're building the argument list of
-  /// the call. Default arguments are applied (if available and an operand isn't
-  /// provided for the arg), and variadics (including packs) are collected from
-  /// the operand list and emitted as the appropriate variadic/pack type to the
-  /// callee.
-  FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
+  /// Emit all arguments and return their values in a vector. The associated bit
+  /// vector indicates whether the argment value is emitted via default value.
+  /// This function iterates by expected arguments since we're building the
+  /// argument list of the call. Default arguments are applied (if available and
+  /// an operand isn't provided for the arg), and variadics (including packs)
+  /// are collected from the operand list and emitted as the appropriate
+  /// variadic/pack type to the callee.
+  FailureOr<std::pair<SmallVector<ASTExprAnd<AnyValue>>, llvm::BitVector>>
   emitArgValues(const CallOperands &operands);
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
   Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
+                                             bool isDefaultArgVal,
                                              ArgConvention convention,
                                              Type declaredArgType,
                                              ArrayRef<Value> callArgsSoFar);
@@ -382,7 +384,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
            "cannot have variadics of this convention, so can pass in empty "
            "callArgsSoFar");
     Value argVal = emitPreemittedArgumentAsDynamicValue(
-        operand, convention, expectedType, ArrayRef<Value>());
+        operand, /*isDefaultArgVal=*/false, convention, expectedType,
+        ArrayRef<Value>());
     if (!argVal)
       return failure();
     args.push_back(argVal);
@@ -471,7 +474,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   return success();
 }
 
-FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
+FailureOr<std::pair<SmallVector<ASTExprAnd<AnyValue>>, llvm::BitVector>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
   // This is the index into the operands list for the next operand value to look
   // at for positional arguments.
@@ -484,6 +487,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   MRValue kwargsDict;
 
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
+  llvm::BitVector isDefaultMask(calleeSig.getNumArguments(), false);
   argumentValues.reserve(calleeSig.getNumArguments());
 
   PogListAttr argListAttr = calleeSig.getArgListAttrs();
@@ -599,6 +603,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     assert(defaultOr);
     assert(convention != ArgConvention::Mut &&
            "by_ref argument cannot have defaults");
+    isDefaultMask.set(argIdx);
     argumentValues.push_back({PValue(defaultOr), callExpr});
     continue;
   }
@@ -629,7 +634,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
                                 kwargsDest, CallSyntax::kMethodCall, callExpr);
   }
 
-  return argumentValues;
+  return std::make_pair(std::move(argumentValues), std::move(isDefaultMask));
 }
 
 /// Given a call to a function with a memory only result and the desired value
@@ -794,9 +799,12 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 /// This function emits the specified pre-emitted argument into a single MLIR
 /// Value suitable for passing to the callee with the specified convention.
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
-    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
-    Type declaredArgType, ArrayRef<Value> callArgsSoFar) {
+    ASTExprAnd<AnyValue> argValAndExpr, bool isDefaultArgVal,
+    ArgConvention convention, Type declaredArgType,
+    ArrayRef<Value> callArgsSoFar) {
   assert(emitter.builder && "Should only be called in dynamic context");
+
+  ExprContext ctx = isDefaultArgVal ? EC_CallArgDefaultValue : EC_CallArgValue;
 
   // This checks any returned MValue argument convention for validity.
   auto checkMValueAddrSpace = [&](AnyValue someMValue) -> Value {
@@ -828,8 +836,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
 
       // If this is a trivial value, then we can do a copy by doing a load.
-      auto srVal = emitter.emitSRValue({someMValue, expr}, EC_CallArgValue);
-      someMValue = emitter.emitMRValue({srVal, expr}, EC_CallArgValue);
+      auto srVal = emitter.emitSRValue({someMValue, expr}, ctx);
+      someMValue = emitter.emitMRValue({srVal, expr}, ctx);
       if (!someMValue)
         return {};
     }
@@ -841,12 +849,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
     // Promote PValue's if needed.
-    return checkMValueAddrSpace(
-        emitter.emitMRValue(argValAndExpr, EC_CallArgValue));
+    return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
     break;
   case ArgConvention::ReadReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
-      return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
+      return emitter.emitSRValue(argValAndExpr, ctx);
 
     // If this is an MBValue, the element must be register passable but not
     // loaded.
@@ -860,8 +867,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   case ArgConvention::ReadMem: {
     // Promote PValue's if needed.
-    Value result = checkMValueAddrSpace(
-        emitter.emitMBValue(argValAndExpr, EC_CallArgValue));
+    Value result =
+        checkMValueAddrSpace(emitter.emitMBValue(argValAndExpr, ctx));
 
     // Drop mutability for a MBValue.
     if (result && !cast<RefType>(result.getType()).isMutableKnown(false))
@@ -942,11 +949,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
-    ValueDest dlvBuffer(lv, EC_CallArgValue);
+    ValueDest dlvBuffer(lv, ctx);
     MLValue mlvBuffer = dlvBuffer.getMLValueForResult(
         argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
     // Emit the 'get' into the buffer.
-    ValueDest bufferDest(mlvBuffer, EC_CallArgValue);
+    ValueDest bufferDest(mlvBuffer, ctx);
     if (!emitter.emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
       bufferDest.resetForError(emitter);
       dlvBuffer.resetForError(emitter);
@@ -1548,13 +1555,13 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
 
   // We first emit all the arguments.
-  FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
-      callEmitter.emitArgValues(callOperands);
+  auto argumentValuesOr = callEmitter.emitArgValues(callOperands);
   if (failed(argumentValuesOr)) {
     dest.resetForError(*this);
     return {};
   }
-  ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
+  ArrayRef<ASTExprAnd<AnyValue>> argumentValues = (*argumentValuesOr).first;
+  const llvm::BitVector &isDefaultMask = (*argumentValuesOr).second;
 
   if (!builder || shouldEmitParameterCall(callee, argumentValues, shared)) {
     TypedAttr paramCallResult;
@@ -1588,6 +1595,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   SmallVector<TypedAttr> implicitOrigins;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
 
+  DefaultValueHandler defaultHandler(calleeSig.getArgListAttrs());
   for (auto [argIdx, argValAndExpr, conventionX, declaredArgTypeX] :
        llvm::enumerate(argumentValues, conventions, calleeSig.getArguments())) {
     ArgConvention convention = conventionX;
@@ -1632,8 +1640,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       }
     }
 
+    bool isDefaultArgVal = isDefaultMask.test(argIdx);
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
-        argValAndExpr, convention, declaredArgType, callArgs);
+        argValAndExpr, isDefaultArgVal, convention, declaredArgType, callArgs);
     if (!arg) {
       dest.resetForError(*this);
       return {};

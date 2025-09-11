@@ -41,7 +41,7 @@ fn anytype_result[T: AnyTrivialRegType]() -> T:
 @fieldwise_init
 @nonmaterializable(Thing)
 @register_passable
-struct NMType:
+struct NMType(ImplicitlyCopyable):
     pass
 
 
@@ -83,11 +83,15 @@ fn metatypes():
 @fieldwise_init
 struct StefStressTest[x: Int]:
     @staticmethod
-    fn increment() -> __type_of(StefStressTest[x+1]):
-      while True: pass
-      #return StefStressTest[x+1]  # Doesn't work yet.
+    fn increment() -> __type_of(StefStressTest[x + 1]):
+        while True:
+            pass
+        # return StefStressTest[x+1]  # Doesn't work yet.
 
-fn use_int(a: Int): pass
+
+fn use_int(a: Int):
+    pass
+
 
 # CHECK-LABEL: lit.fn @"access_param_from_metatype()"
 fn access_param_from_metatype():

@@ -415,7 +415,7 @@ struct MemoryType(ImplicitlyCopyable, Movable):
     fn __init__(out self, value: Int):
         self.value = value
 
-struct NonMovableMemoryType:
+struct NonMovableMemoryType(ImplicitlyCopyable):
     var value: Int
 
     @always_inline

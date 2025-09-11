@@ -56,6 +56,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in alias initializer";
   case EC_CallArgValue:
     return " in call argument";
+  case EC_CallArgDefaultValue:
+    return " in default call argument";
   case EC_CallRefArgValue:
     return " in 'ref' argument";
   case EC_CallCalleeValue:
@@ -822,11 +824,33 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     }
   }
 
-  // Otherwise, emit a generalized parameter constant.
-  return SRValue(
-      value.ir.getRValueType().isTrivial(value.expr->getLoc(), shared)
-          ? Value(builder->create<ParamConstantOp>(location, value.ir))
-          : builder->create<ParamMaterializeOp>(location, value.ir));
+  ASTType valueType = value.ir.getRValueType();
+
+  // If the type is trivial, materialize using param.constant.
+  if (valueType.isTrivial(value.expr->getLoc(), shared))
+    return SRValue(builder->create<ParamConstantOp>(location, value.ir));
+
+  // If the type is implicitly copyable, it should be cheap to be implicitly
+  // materialized as well.
+  //
+  // FIXME: we also leave a backdoor to allow implicit materialization for
+  // default argument. This is incorrect, but we parse default argument value
+  // into PValue at the moment, meaning that to emit the value for default
+  // argument, we will have to implicitly materialize it first. We should also
+  // probably not rely on `context` to tell whether we are generating default
+  // arg value, but it is much cleaner/simpler than passing a flag all the way
+  // down from `emitPreemittedArgumentAsDynamicValue`.
+  bool isDefaultArg = (context == EC_CallArgDefaultValue);
+  if (isDefaultArg ||
+      valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
+    return SRValue(builder->create<ParamMaterializeOp>(location, value.ir));
+
+  emitWarning(expr->getLoc(),
+              "Try to implicitly materialize non-'ImplicitlyCopyable' type ")
+      << value.ir.getType()
+      << ". Try explicit materialization with 'materialize[value: T]()'";
+
+  return SRValue(builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
 SRValue IREmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,

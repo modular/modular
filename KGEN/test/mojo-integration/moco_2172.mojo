@@ -14,6 +14,8 @@ alias num_set = Set(keys)
 
 def main():
     # CHECK: 5
-    print(len(num_set))
+    alias l = len(num_set)
+    print(l)
     # CHECK: True
-    print(num_set.__contains__(7))
+    alias contains = num_set.__contains__(7)
+    print(contains)

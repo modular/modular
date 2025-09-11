@@ -201,7 +201,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 # Need a way to get a origin of Self.
 # https://github.com/modularml/modular/issues/29069
 
-struct SelfRefTest:
+struct SelfRefTest(ImplicitlyCopyable):
   fn __init__(out self): pass
   fn __del__(deinit self): pass
   # CHECK-LABEL: lit.fn @"method
