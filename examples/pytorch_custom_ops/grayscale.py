@@ -22,7 +22,7 @@ from max.torch import CustomOpLibrary
 from PIL import Image
 
 # Load the Mojo custom operations from the `operations` directory.
-mojo_kernels = Path(__file__).parent / "operations.mojopkg"
+mojo_kernels = Path(__file__).parent / "operations"
 ops = CustomOpLibrary(mojo_kernels)
 
 
