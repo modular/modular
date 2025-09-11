@@ -39,17 +39,18 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     # Set up test hyperparameters.
     alias batch_size = 2
     alias start_positions = List[UInt32](0, 5)
-    alias lookup_table = List[UInt32](0, 1)
     alias seq_len = 3
     alias max_seq_len = 16
     alias num_layers = 1
+    var lookup_table = List[UInt32](0, 1)
 
     fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
-        max_item = items[0]
-        for i in range(1, len(items)):
-            if items[i] > max_item:
-                max_item = items[i]
+        items_dyn = materialize[items]()
+        max_item = items_dyn[0]
+        for i in range(1, len(items_dyn)):
+            if items_dyn[i] > max_item:
+                max_item = items_dyn[i]
         return max_item
 
     constrained[
@@ -76,29 +77,30 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
     # Initialize KV cache block buffer with golden values.
+    start_positions_dyn = materialize[start_positions]()
     k_cache_input_buffer = k_cache_input[dtype]()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
             dest=kv_cache_block._offset(
                 IndexList[6](
-                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                    batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
             ),
             src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
             count=seq_len * dim,
         )
         max_cache_len_in_batch = max(
-            max_cache_len_in_batch, Int(start_positions[batch_idx])
+            max_cache_len_in_batch, Int(start_positions_dyn[batch_idx])
         )
 
     # Create the actual KV cache type.
     kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
-            start_positions.unsafe_ptr(),
+            start_positions_dyn.unsafe_ptr(),
             DimList(
-                len(start_positions),
+                len(start_positions_dyn),
             ),
         ),
         lookup_table=NDBuffer[DType.uint32, 1](
@@ -171,7 +173,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
         assert_almost_equal(
             kv_cache_block._offset(
                 IndexList[6](
-                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
+                    batch_idx, 0, 0, Int(start_positions_dyn[batch_idx]), 0, 0
                 )
             ),
             expected_k_out_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
