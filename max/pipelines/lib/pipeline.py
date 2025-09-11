@@ -849,7 +849,7 @@ class TextGenerationPipeline(
             bitmask = None
 
         tracer.next("claim_cache_rows")
-        for batch in batches:
+        for replica_idx, batch in enumerate(batches):
             for i, context in enumerate(batch):
                 # Initialize a matcher if needed
                 if context.json_schema and context.matcher is None:
@@ -879,6 +879,27 @@ class TextGenerationPipeline(
                     jump_forward_tokens = context.matcher.compute_ff_tokens()
                     for token in jump_forward_tokens:
                         context.jump_ahead(token)
+
+                # Claim cache rows for context.
+                if not self._pipeline_model.kv_manager.contains(
+                    context.request_id
+                ):
+                    if (
+                        self._pipeline_config.model_config.data_parallel_degree
+                        > 1
+                    ):
+                        assert isinstance(
+                            self._pipeline_model.kv_manager,
+                            MultiPagedKVCacheManager,
+                        )
+                        assert isinstance(context, KVCacheAwareContext)
+                        self._pipeline_model.kv_manager.external_claim_for_replica(
+                            replica_idx, context.request_id
+                        )
+                    else:
+                        self._pipeline_model.kv_manager.external_claim(
+                            context.request_id
+                        )
 
                 # Update num_steps.
                 num_steps = self.calculate_num_steps(num_steps, context)
