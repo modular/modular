@@ -54,12 +54,7 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> __type_of(value):
         dtype.is_integral() and dtype.is_signed(),
         "This function is for signed integral types.",
     ]()
-
-    # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.index else (
-        DType.int32 if dtype.size_of() == 4 else DType.int64
-    )
-    return (value.cast[d]() >> (bit_width_of[d]() - 1)).cast[dtype]()
+    return value >> (bit_width_of[dtype]() - 1)
 
 
 @always_inline

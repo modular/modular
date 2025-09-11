@@ -64,14 +64,9 @@ fn count_leading_zeros[
         leading zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-
-    # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.index else (
-        DType.int32 if dtype.size_of() == 4 else DType.int64
-    )
-    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
-        val.cast[d](), False
-    ).cast[dtype]()
+    return llvm_intrinsic[
+        "llvm.ctlz", SIMD[dtype, width], has_side_effect=False
+    ](val, False)
 
 
 # ===-----------------------------------------------------------------------===#
