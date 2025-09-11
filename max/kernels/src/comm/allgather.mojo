@@ -104,7 +104,6 @@ fn _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    my_rank: Int,
     *,
     BLOCK_SIZE: Int,
 ](
@@ -113,6 +112,7 @@ fn _allgather_p2p_kernel[
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     lengths: StaticTuple[Int, ngpus],
     max_num_blocks: Int,
+    my_rank: Int,
 ):
     """P2P kernel for allgather operation.
 
@@ -182,19 +182,9 @@ fn _allgather_p2p[
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
-    # Prepare signal pointers
-    var rank_sigs_tuple = StaticTuple[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
-
-    @parameter
-    for i in range(ngpus):
-        rank_sigs_tuple[i] = rank_sigs[i]
-
     alias BLOCK_SIZE = 256
 
     # Launch kernel on each GPU.
-    @parameter
     for gpu_idx in range(ngpus):
         var curr_ctx = ctxs[gpu_idx]
 
@@ -224,15 +214,15 @@ fn _allgather_p2p[
                 dtype,
                 rank,
                 ngpus,
-                my_rank=gpu_idx,
                 BLOCK_SIZE=BLOCK_SIZE,
             ]
         ](
             output_ptrs,
             list_of_in_ptrs,
-            rank_sigs_tuple,
+            rank_sigs,
             lengths,
             max_num_blocks,
+            gpu_idx,
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
         )
