@@ -616,12 +616,12 @@ fn kernel_7[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     # + num_pipeline_stages is 1 * num_pipeline_stage so 8 bytes for each barrier at each stage
     var mma_mbar_ptr = tma_mbar_ptr + (num_pipeline_stages)
-    var math_barrier_base = mma_mbar_ptr + (num_pipeline_stages)
-    var ptr_tmem_addr = (math_barrier_base + 1).bitcast[UInt32]()
+    var compute_barrier_base = mma_mbar_ptr + (num_pipeline_stages)
+    var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
     tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
     mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    math_barrier = math_barrier_base.bitcast[SharedMemBarrier]()
+    compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -648,7 +648,7 @@ fn kernel_7[
             mma_mbar[i].init(
                 cluster_shape[0] // cta_group + cluster_shape[1] - 1
             )
-        math_barrier[].init()
+        compute_barrier[].init()
 
     cluster_sync()
 
@@ -751,10 +751,10 @@ fn kernel_7[
 
         # mma arrive multicast will track completion of all mma prior to this barrier.
         if elect_one_sync():
-            mma_arrive_multicast[cta_group](math_barrier, mma_complete_mask)
+            mma_arrive_multicast[cta_group](compute_barrier, mma_complete_mask)
 
     if WarpRole.is_epilogue():
-        math_barrier[].wait()
+        compute_barrier[].wait()
 
         multi_stage_store_C[
             accum_type=accum_type,
@@ -852,7 +852,7 @@ fn blackwell_kernel_7[
     # Usage reserved for mbar and others
     # - tma_mbar_ptr: 8 bytes per pipeline stage
     # - mma_mbar_ptr: 8 bytes per pipeline stage
-    # - math_barrier: 8 bytes
+    # - compute_barrier: 8 bytes
     # - tmem addr in shared memory: 4B
     alias mbar_per_stage = 16
     alias other_usage = 8 + 4
