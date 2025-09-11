@@ -246,7 +246,7 @@ alias HIPBLASLT_LIBRARY = _Global["HIPBLASLT_LIBRARY", _init_dylib]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["HIP BLAS LT"](HIPBLASLT_LIBRARY_PATHS)
+    return _find_dylib["HIP BLAS LT"](materialize[HIPBLASLT_LIBRARY_PATHS]())
 
 
 @always_inline

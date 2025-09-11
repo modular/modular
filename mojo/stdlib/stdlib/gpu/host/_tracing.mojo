@@ -74,7 +74,7 @@ fn _on_error_msg() -> String:
             "Cannot find the GPU Tracing libraries. Please make sure that "
             "the library path is correctly set in one of the following paths ["
         ),
-        ", ".join(LIBRARY_PATHS),
+        ", ".join(materialize[LIBRARY_PATHS]()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."

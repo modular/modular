@@ -35,7 +35,7 @@ fn _on_error_msg() -> String:
             "the CUDA toolkit is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(CUDA_CUFFT_LIBRARY_PATHS),
+        ", ".join(materialize[CUDA_CUFFT_LIBRARY_PATHS]()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."
@@ -49,7 +49,9 @@ alias CUDA_CUFFT_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib[abort_on_failure=False](CUDA_CUFFT_LIBRARY_PATHS)
+    return _find_dylib[abort_on_failure=False](
+        materialize[CUDA_CUFFT_LIBRARY_PATHS]()
+    )
 
 
 @always_inline

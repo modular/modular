@@ -37,7 +37,7 @@ fn _on_error_msg() -> String:
             "the ROCM toolkit is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(ROCM_ROCBLAS_LIBRARY_PATHS),
+        ", ".join(materialize[ROCM_ROCBLAS_LIBRARY_PATHS]()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."
@@ -51,7 +51,9 @@ alias ROCM_ROCBLAS_LIBRARY = _Global[
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib[abort_on_failure=False](ROCM_ROCBLAS_LIBRARY_PATHS)
+    return _find_dylib[abort_on_failure=False](
+        materialize[ROCM_ROCBLAS_LIBRARY_PATHS]()
+    )
 
 
 @always_inline

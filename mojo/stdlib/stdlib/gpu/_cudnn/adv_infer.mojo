@@ -47,7 +47,7 @@ alias CUDA_CUDNN_ADV_INFER_LIBRARY = _Global[
 
 fn _init_dylib() -> _OwnedDLHandle:
     return _find_dylib["CUDA cuDNN Adv Infer"](
-        CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS
+        materialize[CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS]()
     )
 
 

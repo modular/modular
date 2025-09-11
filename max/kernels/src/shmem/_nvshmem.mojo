@@ -51,7 +51,7 @@ fn _on_error_msg() -> String:
             "the CUDA toolkit is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(NVSHMEM_LIBRARY_PATHS),
+        ", ".join(materialize[NVSHMEM_LIBRARY_PATHS]()),
         (
             "]. You may need to make sure that you are using the non-slim"
             " version of the MAX container."
