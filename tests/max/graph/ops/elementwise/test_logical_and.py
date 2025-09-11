@@ -42,7 +42,6 @@ def test_logical_and__invalid_dtype(
     tensor_type: TensorType,
 ) -> None:
     assume(tensor_type.dtype != DType.bool)
-    raise ValueError("I want this test to always fail")
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
