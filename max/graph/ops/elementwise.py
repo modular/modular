@@ -505,6 +505,32 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
+
+bitwise_and = _elementwise_binary(rmo.bitwise_and_)
+"""
+Computes the bitwise and between two symbolic tensors.
+
+Only supports integer and boolean inputs. Tensors should have the same `dtype`.
+If ``lhs`` and ``rhs`` have different shapes,
+they will be broadcast to the same shape according to broadcasting rules
+before the operation.
+
+Args:
+    lhs: The symbol to use as left side of the bitwise and.
+    rhs: The symbol to use as right side of the bitwise and.
+
+Returns:
+    A symbolic tensor value representing the output of the and operation.
+    The result will be a tensor with the shape determined by
+    broadcasting the two input shapes and with the same dtype as ``lhs`` and ``rhs``.
+
+Raises:
+    Error: If the input values' shapes are not compatible for broadcasting.
+    Error: If ``lhs`` and ``rhs`` have different dtypes.
+    Error: If one of the input values has an unsupported dtype.
+    Error: If the two symbols are parts of different graphs.
+"""
+
 logical_or = _elementwise_binary(rmo.or_)
 """
 Computes the logical or between two symbolic tensors.
