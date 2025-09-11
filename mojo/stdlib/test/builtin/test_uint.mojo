@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bit_width_of
 
 from bit import count_trailing_zeros
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -89,7 +88,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if bit_width_of[DType.index]() == 32:
+    if DType.index.bit_width() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)

@@ -146,10 +146,10 @@ fn _shuffle_amd_helper[
         return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
             dtype
         ]()
-    elif bit_width_of[dtype]() == 16:
+    elif dtype.bit_width() == 16:
         var val_splatted = SIMD[dtype, 2](val._refine[size=1]())
         return _shuffle_amd_helper(dst_lane, val_splatted)[0]
-    elif bit_width_of[dtype]() == 64:
+    elif dtype.bit_width() == 64:
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)

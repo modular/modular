@@ -530,7 +530,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[dtype, size]()
 
         @parameter
-        if bit_width_of[dtype]() > bit_width_of[DType.index]():
+        if dtype.bit_width() > DType.index.bit_width():
             alias dt = _unsigned_integral_type_of[DType.index]()
             self = bitcast[dt](Scalar[DType.index](value.__int__())).cast[
                 dtype
@@ -624,7 +624,7 @@ struct SIMD[dtype: DType, size: Int](
                 raise cpy.unsafe_get_error()
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
-        elif dtype.is_integral() and dtype.bitwidth() <= 64:
+        elif dtype.is_integral() and dtype.bit_width() <= 64:
             self = Int(obj)
         else:
             self = Scalar[dtype]()
@@ -1164,7 +1164,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(bit_width_of[dtype]())),
+            all(rhs.lt(dtype.bit_width())),
             "unhandled value greater than size",
         )
         return Self(
@@ -1187,7 +1187,7 @@ struct SIMD[dtype: DType, size: Int](
         constrained[dtype.is_integral(), "must be an integral type"]()
         debug_assert(all(rhs.ge(0)), "unhandled negative value")
         debug_assert(
-            all(rhs.lt(bit_width_of[dtype]())),
+            all(rhs.lt(dtype.bit_width())),
             "unhandled value greater than size",
         )
         return Self(
@@ -2236,7 +2236,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn to_bits[
-        dtype: DType = _uint_type_of_width[bit_width_of[dtype]()]()
+        dtype: DType = _uint_type_of_width[dtype.bit_width()]()
     ](self) -> SIMD[dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
@@ -2251,7 +2251,7 @@ struct SIMD[dtype: DType, size: Int](
             "the target type must be unsigned integral",
         ]()
         constrained[
-            dtype.bitwidth() >= Self.dtype.bitwidth(),
+            dtype.bit_width() >= Self.dtype.bit_width(),
             "the target type must be at least as wide as the source type",
         ]()
 
@@ -3536,7 +3536,7 @@ fn _convert_f32_to_float8_scalar[
 
     alias FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     alias FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    alias FP32_NUM_BITS = bit_width_of[dtype]()
+    alias FP32_NUM_BITS = dtype.bit_width()
     alias FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
     alias FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
     alias FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
@@ -3885,7 +3885,7 @@ fn _floor(x: SIMD) -> __type_of(x):
         return x
 
     alias integral_type = FPUtils[x.dtype].integral_type
-    alias bitwidth = bit_width_of[x.dtype]()
+    alias bitwidth = x.dtype.bit_width()
     alias exponent_width = FPUtils[x.dtype].exponent_width()
     alias mantissa_width = FPUtils[x.dtype].mantissa_width()
     alias mask = FPUtils[x.dtype].exponent_mask()

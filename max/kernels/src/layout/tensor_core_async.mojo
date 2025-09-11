@@ -270,7 +270,7 @@ fn select_k_atom[
         `Layout` - A core matrix layout optimized for tensor core operations.
     """
     alias a = _select_k_atom_bits[swizzle_mode]()
-    return upcast(a, dtype.bitwidth())
+    return upcast(a, dtype.bit_width())
 
 
 fn _checked_tile_shape[

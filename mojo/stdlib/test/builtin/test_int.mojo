@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import bit_width_of
-
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_properties():
-    assert_equal(Int.MAX, (1 << bit_width_of[DType.index]() - 1) - 1)
-    assert_equal(Int.MIN, -(1 << bit_width_of[DType.index]() - 1))
+    assert_equal(Int.MAX, (1 << DType.index.bit_width() - 1) - 1)
+    assert_equal(Int.MIN, -(1 << DType.index.bit_width() - 1))
 
 
 def test_add():

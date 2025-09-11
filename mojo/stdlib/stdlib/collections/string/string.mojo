@@ -85,7 +85,7 @@ from collections.string.string_slice import (
 from hashlib.hasher import Hasher
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
-from sys import bit_width_of, size_of
+from sys import size_of
 from sys.info import is_32bit
 from sys.ffi import c_char
 
@@ -2335,9 +2335,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         42949672960,
     )
     var n = UInt32(n0)
-    var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
-    )
+    var log2 = Int((DType.uint32.bit_width() - 1) ^ count_leading_zeros(n | 1))
     return (n0 + lookup_table[Int(log2)]) >> 32
 
 
@@ -2375,7 +2373,7 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         var sign = 0 if n0 > 0 else 1
 
         @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        if is_32bit() or dtype.bit_width() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (

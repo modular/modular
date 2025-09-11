@@ -216,7 +216,7 @@ fn byte_swap[
     constrained[dtype.is_integral(), "must be integral"]()
 
     @parameter
-    if dtype.bitwidth() < 16:
+    if dtype.bit_width() < 16:
         return val
     return llvm_intrinsic["llvm.bswap", __type_of(val), has_side_effect=False](
         val
@@ -335,7 +335,7 @@ fn bit_width[
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    alias bitwidth = bit_width_of[dtype]()
+    alias bitwidth = dtype.bit_width()
 
     @parameter
     if dtype.is_unsigned():
@@ -398,7 +398,7 @@ fn log2_floor[
     """
     constrained[dtype.is_integral(), "dtype must be integral"]()
 
-    alias bitwidth = bit_width_of[dtype]()
+    alias bitwidth = dtype.bit_width()
     var res = bitwidth - count_leading_zeros(val) - 1
 
     @parameter

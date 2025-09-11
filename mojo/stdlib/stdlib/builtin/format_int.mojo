@@ -333,7 +333,7 @@ fn _try_write_int[
     # Stack allocate enough bytes to store any formatted integer up to 256 bits
     # TODO: use a dynamic size when #2194 is resolved
     # +1 for storing NUL terminator.
-    alias CAPACITY: Int = max(64, dtype.bitwidth()) + 1
+    alias CAPACITY: Int = max(64, dtype.bit_width()) + 1
 
     var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
 
