@@ -14,7 +14,7 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
-    VisionWindowSdpaAttention,
+    VisionWindowAttention,
 )
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
@@ -152,7 +152,7 @@ def generate_max_outputs(
     max_weights = convert_hf_to_max_weights(attention_weights)
 
     # Create the attention layer
-    attention = VisionWindowSdpaAttention(
+    attention = VisionWindowAttention(
         dtype=dtype,
         device=device_ref,
         dim=vision_config["hidden_size"],
@@ -170,25 +170,14 @@ def generate_max_outputs(
 
     # Generate proper attention mask based on cu_seqlens
     if use_window_attention:
-        cu_seqlens = generate_cu_seqlens_window_attention(cu_window_seqlens)
+        cu_seqlens_tensor = generate_cu_seqlens_window_attention(
+            cu_window_seqlens
+        )
     else:
-        cu_seqlens = generate_cu_seqlens_full_attention(grid_thw)
-
-    # Create attention mask from cu_seqlens
-    attention_mask = torch.full(
-        (1, seq_len, seq_len),
-        -10000.0,
-        dtype=torch.bfloat16,
-        device=input_tensor.device,
-    )
-
-    # Set valid attention regions based on cu_seqlens
-    for i in range(1, len(cu_seqlens)):
-        attention_mask[
-            ...,
-            cu_seqlens[i - 1] : cu_seqlens[i],
-            cu_seqlens[i - 1] : cu_seqlens[i],
-        ] = 0.0
+        cu_seqlens_tensor = generate_cu_seqlens_full_attention(grid_thw)
+    max_seqlen_tensor = torch.max(
+        cu_seqlens_tensor[1:] - cu_seqlens_tensor[:-1]
+    ).unsqueeze(0)
 
     cos_type = TensorType(
         dtype, shape=position_embeddings[0].shape, device=device_ref
@@ -196,17 +185,29 @@ def generate_max_outputs(
     sin_type = TensorType(
         dtype, shape=position_embeddings[1].shape, device=device_ref
     )
-    mask_type = TensorType(dtype, shape=attention_mask.shape, device=device_ref)
+    cu_seqlens_type = TensorType(
+        DType.uint32, shape=cu_seqlens_tensor.shape, device=device_ref
+    )
+    max_seqlen_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
+    )
 
     with Graph(
         "Qwen2_5VLVisionAttention",
-        input_types=(input_type, cos_type, sin_type, mask_type),
+        input_types=(
+            input_type,
+            cos_type,
+            sin_type,
+            cu_seqlens_type,
+            max_seqlen_type,
+        ),
     ) as graph:
-        x, cos, sin, mask = graph.inputs
+        x, cos, sin, cu_seqlens, max_seqlen = graph.inputs
         output = attention(
             x=x.tensor,
             position_embeddings=(cos.tensor, sin.tensor),
-            attention_mask=mask.tensor,
+            input_row_offsets=cu_seqlens.tensor,
+            max_seqlen=max_seqlen.tensor,
         )
         graph.output(output)
 
@@ -217,7 +218,10 @@ def generate_max_outputs(
         Tensor.from_dlpack(input_tensor).to(device),
         Tensor.from_dlpack(position_embeddings[0]).to(device),
         Tensor.from_dlpack(position_embeddings[1]).to(device),
-        Tensor.from_dlpack(attention_mask).to(device),
+        Tensor.from_dlpack(cu_seqlens_tensor.to(torch.uint32)).to(device),
+        Tensor.from_dlpack(
+            max_seqlen_tensor.to(dtype=torch.uint32, device="cpu")
+        ),
     )
     # Convert result back to torch tensor
     max_tensor = result[0]

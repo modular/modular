@@ -7,6 +7,7 @@
 
 import math
 from functools import partial
+from typing import Callable
 
 import numpy as np
 import pytest
@@ -17,7 +18,11 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flare_mla_prefill_ragged, flash_attention_gpu
+from max.nn.kernels import (
+    flare_mla_prefill_ragged,
+    flash_attention_gpu,
+    flash_attention_ragged_gpu,
+)
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
@@ -47,6 +52,10 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
+TORCH_DTYPE = torch.bfloat16
+
+
+torch.manual_seed(42)
 
 
 class CrossAttentionModel:
@@ -156,9 +165,11 @@ class CrossAttentionModel:
         [1, 2],
     ],
 )
-def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
+def test_cross_attention_gpu(
+    hidden_seq_lens: list[int], gpu_session: InferenceSession
+) -> None:
     cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
+    session = gpu_session
     session.set_debug_print_options("COMPACT")
 
     # Globally disable saving activations for backprop.
@@ -348,9 +359,9 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
-def test_kv_cache_paged_mla_prefill() -> None:
+def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
+    session = gpu_session
     num_q_heads = 32
     q_head_dim = 192
     k_head_dim = 128
@@ -500,8 +511,7 @@ def test_kv_cache_paged_mla_prefill() -> None:
 def causal_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> np.ndarray:
-    assert q.dtype == torch.bfloat16
-    dtype = DType.bfloat16
+    dtype = DType.from_torch(q.dtype)
     batch, q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -553,7 +563,6 @@ def causal_max_flash_attn(
     ],
 )
 def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
-    dtype = DType.bfloat16
     head_dim = 128
     batch_size = 1
     nheads = 6
@@ -563,9 +572,6 @@ def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
 
     q_shape = (batch_size, q_seqlen, nheads, head_dim)
     kv_shape = (batch_size, k_seqlen, nheads_k, head_dim)
-
-    # Set seed.
-    torch.random.manual_seed(42)
 
     q = torch.randn(q_shape, device=torch_device, dtype=torch_dtype)
     k = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
@@ -590,8 +596,7 @@ def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
 def null_mask_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> np.ndarray:
-    assert q.dtype == torch.bfloat16
-    dtype = DType.bfloat16
+    dtype = DType.from_torch(q.dtype)
     batch, q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -644,7 +649,6 @@ def null_mask_max_flash_attn(
     ],
 )
 def test_null_mask_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
-    dtype = DType.bfloat16
     head_dim = 128
     batch_size = 1
     nheads = 6
@@ -654,9 +658,6 @@ def test_null_mask_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
 
     q_shape = (batch_size, q_seqlen, nheads, head_dim)
     kv_shape = (batch_size, k_seqlen, nheads_k, head_dim)
-
-    # Set seed.
-    torch.random.manual_seed(42)
 
     q = torch.randn(q_shape, device=torch_device, dtype=torch_dtype)
     k = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
@@ -686,8 +687,7 @@ def padded_max_flash_attn(
     v: torch.Tensor,
     valid_length: torch.Tensor,
 ) -> torch.Tensor:
-    assert q.dtype == torch.bfloat16
-    dtype = DType.bfloat16
+    dtype = DType.from_torch(q.dtype)
     batch, q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -757,7 +757,6 @@ def padded_max_flash_attn(
 def test_padded_flash_attention_gpu(
     actual_seq_len: int, padded_seq_len: int
 ) -> None:
-    dtype = DType.bfloat16
     head_dim = 128
     batch_size = 1
     nheads = 1
@@ -766,8 +765,6 @@ def test_padded_flash_attention_gpu(
 
     actual_shape = (batch_size, actual_seq_len, nheads, head_dim)
     padded_shape = (batch_size, padded_seq_len, nheads, head_dim)
-
-    torch.random.manual_seed(42)
 
     q_actual = torch.randn(actual_shape, dtype=torch_dtype, device=torch_device)
     k_actual = torch.randn(actual_shape, dtype=torch_dtype, device=torch_device)
@@ -800,3 +797,171 @@ def test_padded_flash_attention_gpu(
     torch.testing.assert_close(
         out_null_mask, out_padded_trimmed, rtol=1e-2, atol=2e-2
     )
+
+
+@pytest.fixture
+def compute_ragged_max_flash_attn(
+    gpu_session: InferenceSession,
+    n_heads: int,
+    head_dim: int,
+) -> Callable[
+    [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    torch.Tensor,
+]:
+    dtype = DType.from_torch(TORCH_DTYPE)
+    # total_seq_len, nheads, head_dim = q_ragged.shape
+
+    # Graph types.
+    qkv_type = TensorType(
+        dtype,
+        shape=["total_seq_len", n_heads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], DeviceRef.GPU()
+    )
+    max_seq_len_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
+    )
+
+    # Construct and compile the MAX graph flash attention.
+    def construct() -> Graph:
+        with Graph(
+            "ragged_flash_attn",
+            input_types=[
+                qkv_type,
+                qkv_type,
+                qkv_type,
+                input_row_offsets_type,
+                max_seq_len_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            q, k, v, input_row_offsets, max_seq_len = g.inputs
+
+            result = flash_attention_ragged_gpu(
+                q,
+                k,
+                v,
+                input_row_offsets,
+                max_seq_len,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=math.sqrt(1.0 / head_dim),
+            )
+            g.output(result)
+        return g
+
+    graph = construct()
+
+    # Compile model.
+    model = gpu_session.load(graph)
+
+    def execute(
+        q_ragged: torch.Tensor,
+        k_ragged: torch.Tensor,
+        v_ragged: torch.Tensor,
+        input_row_offsets: torch.Tensor,
+        max_seq_len: torch.Tensor,
+    ) -> torch.Tensor:
+        # Execute.
+        output = model.execute(
+            q_ragged.detach(),
+            k_ragged.detach(),
+            v_ragged.detach(),
+            input_row_offsets.detach(),
+            max_seq_len.detach(),
+        )[0]
+        return torch.from_dlpack(output)
+
+    return execute
+
+
+@pytest.mark.parametrize(
+    "seq_lengths, n_heads, head_dim",
+    [
+        ([64, 64, 64, 16, 16, 4], 16, 80),  # Variable length sequences
+        ([64, 64, 64, 16, 16, 4], 16, 128),
+        ([100], 32, 80),  # Single sequence
+        ([100], 32, 128),
+    ],
+)
+def test_ragged_flash_attention_gpu(
+    seq_lengths: list[int],
+    n_heads: int,
+    head_dim: int,
+    compute_ragged_max_flash_attn: Callable[
+        [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        torch.Tensor,
+    ],
+) -> None:
+    torch_device = "cuda"
+    torch_dtype = TORCH_DTYPE
+
+    # Create input_row_offsets (prefix sum of sequence lengths)
+    input_row_offsets = [0] + list(
+        torch.cumsum(torch.tensor(seq_lengths), dim=0).tolist()
+    )
+    total_seq_len = input_row_offsets[-1]
+
+    # Generate ragged tensors
+    q_ragged = torch.randn(
+        total_seq_len,
+        n_heads,
+        head_dim,
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+    k_ragged = torch.randn(
+        total_seq_len,
+        n_heads,
+        head_dim,
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+    v_ragged = torch.randn(
+        total_seq_len,
+        n_heads,
+        head_dim,
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    input_row_offsets_tensor = torch.tensor(
+        input_row_offsets, dtype=torch.uint32, device=torch_device
+    )
+
+    # Run ragged flash attention
+    max_seq_len = max(seq_lengths)
+
+    out_ragged = compute_ragged_max_flash_attn(
+        q_ragged,
+        k_ragged,
+        v_ragged,
+        input_row_offsets_tensor,
+        torch.tensor([max_seq_len], dtype=torch.uint32, device="cpu"),
+    )
+
+    # Run reference attention for each batch element separately
+    reference_outputs = []
+    for i in range(len(seq_lengths)):
+        start_idx = input_row_offsets[i]
+        end_idx = input_row_offsets[i + 1]
+        q_single = q_ragged[start_idx:end_idx].unsqueeze(0)
+        k_single = k_ragged[start_idx:end_idx].unsqueeze(0)
+        v_single = v_ragged[start_idx:end_idx].unsqueeze(0)
+
+        # Run null mask flash attention on the single sequence
+        out_single = null_mask_max_flash_attn(q_single, k_single, v_single)
+        reference_outputs.append(out_single.squeeze(0))
+
+    # Compare ragged output with reference output
+    start_idx = 0
+    for i, seq_len in enumerate(seq_lengths):
+        end_idx = start_idx + seq_len
+        ragged_slice = out_ragged[start_idx:end_idx]
+        reference_slice = reference_outputs[i]
+
+        torch.testing.assert_close(
+            ragged_slice, reference_slice, rtol=1e-2, atol=2e-2
+        )
+        start_idx = end_idx
