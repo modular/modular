@@ -165,7 +165,7 @@ from nn.kv_cache_ragged import (
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
     generic_kv_cache_radd_dispatch,
 )
-from nn.mha import flash_attention
+from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
@@ -5334,6 +5334,78 @@ struct PaddedFlashAttentionGPU:
         ]()
 
 
+@compiler.register("mo.mha.ragged.no_cache")
+struct RaggedFlashAttentionGPU:
+    @staticmethod
+    fn execute[
+        rank: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[rank=rank],
+        q: InputTensor[rank=rank],
+        k: InputTensor[rank=rank],
+        v: InputTensor[rank=rank],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        q_max_seq_len: InputTensor[dtype = DType.uint32, rank=1],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`mo.mha.ragged.no_cache` computes flash attention for ragged inputs without KV cache.
+
+        The inputs q, k, v are in ragged format with shape [total_seq_len, num_heads, head_dim].
+        input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
+        """
+        constrained[is_gpu[target](), "only valid on GPUs"]()
+
+        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
+        var q_buffer = managed_tensor_slice_to_ndbuffer(q)
+        var k_buffer = managed_tensor_slice_to_ndbuffer(k)
+        var v_buffer = managed_tensor_slice_to_ndbuffer(v)
+
+        alias input_row_offsets_t = ManagedTensorSlice[
+            IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ]
+        _input_row_offsets = rebind[input_row_offsets_t](input_row_offsets)
+
+        alias num_kv_heads = k_buffer.shape.get[
+            1
+        ]() if k_buffer.shape.has_value[1]() else -1
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        fn _dispatch_flash_attention[
+            mask_t: MHAMask, score_mod_t: ScoreModTrait
+        ](mask: mask_t, score_mod: score_mod_t) raises:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+
+            flash_attention_ragged[use_score_mod=use_score_mod](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                _input_row_offsets,
+                managed_tensor_slice_to_ndbuffer(q_max_seq_len),
+                mask,
+                score_mod,
+                scale,
+                ctx[],
+            )
+
+        dispatch_mask_and_score_mod[
+            mask_str,
+            score_mod_str,
+            _dispatch_flash_attention,
+            local_window_size,
+            num_kv_heads,
+        ]()
+
+
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
@@ -7770,7 +7842,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        weight_offset: Scalar[dtype],
+        weight_offset: Scalar[dtype=dtype],
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_paged[

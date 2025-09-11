@@ -61,8 +61,8 @@ from transformers import AutoConfig
 
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import (
-    generate_attention_mask,
     get_rope_index,
+    get_seqlens,
     get_window_index,
     mrope_pos_ids_3d,
 )
@@ -114,14 +114,20 @@ class Qwen2_5VLInputs(ModelInputs):
     vision_position_ids: list[Tensor] | None = None
     """1D RoPE position IDs for the visual inputs."""
 
-    attention_mask_full: list[Tensor] | None = None
-    """Full attention masks for vision inputs."""
-
-    attention_mask_window: list[Tensor] | None = None
-    """Window attention masks for vision inputs."""
-
     max_grid_size: list[Tensor] | None = None
     """Maximum grid size for vision inputs."""
+
+    cu_seqlens: list[Tensor] | None = None
+    """Cumulative sequence lengths for full attention."""
+
+    cu_window_seqlens: list[Tensor] | None = None
+    """Cumulative window sequence lengths for window attention."""
+
+    max_seqlen: list[Tensor] | None = None
+    """Maximum sequence length for full attention for vision inputs."""
+
+    max_window_seqlen: list[Tensor] | None = None
+    """Maximum sequence length for window attention for vision inputs."""
 
     def __init__(
         self,
@@ -135,9 +141,11 @@ class Qwen2_5VLInputs(ModelInputs):
         pixel_values: list[Tensor] | None = None,
         window_index: list[Tensor] | None = None,
         vision_position_ids: list[Tensor] | None = None,
-        attention_mask_full: list[Tensor] | None = None,
-        attention_mask_window: list[Tensor] | None = None,
         max_grid_size: list[Tensor] | None = None,
+        cu_seqlens: list[Tensor] | None = None,
+        cu_window_seqlens: list[Tensor] | None = None,
+        max_seqlen: list[Tensor] | None = None,
+        max_window_seqlen: list[Tensor] | None = None,
     ) -> None:
         self.signal_buffers = signal_buffers
         self.input_ids = input_ids
@@ -149,9 +157,11 @@ class Qwen2_5VLInputs(ModelInputs):
         self.pixel_values = pixel_values
         self.window_index = window_index
         self.vision_position_ids = vision_position_ids
-        self.attention_mask_full = attention_mask_full
-        self.attention_mask_window = attention_mask_window
         self.max_grid_size = max_grid_size
+        self.cu_seqlens = cu_seqlens
+        self.cu_window_seqlens = cu_window_seqlens
+        self.max_seqlen = max_seqlen
+        self.max_window_seqlen = max_window_seqlen
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -445,6 +455,42 @@ class Qwen2_5VLModel(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
+        cu_seqlens_types = [
+            TensorType(
+                DType.uint32,
+                shape=["n_seqlens"],
+                device=DeviceRef.from_device(device),
+            )
+            for device in self.devices
+        ]
+
+        cu_window_seqlens_types = [
+            TensorType(
+                DType.uint32,
+                shape=["n_window_seqlens"],
+                device=DeviceRef.from_device(device),
+            )
+            for device in self.devices
+        ]
+
+        max_seqlen_types = [
+            TensorType(
+                DType.uint32,
+                shape=[1],
+                device=DeviceRef.CPU(),
+            )
+            for _ in self.devices
+        ]
+
+        max_window_seqlen_types = [
+            TensorType(
+                DType.uint32,
+                shape=[1],
+                device=DeviceRef.CPU(),
+            )
+            for _ in self.devices
+        ]
+
         # Build the vision graph
         with Graph(
             "qwen2_5vl_vision",
@@ -453,8 +499,10 @@ class Qwen2_5VLModel(
                     *pixel_values_types,
                     *rot_pos_ids_types,
                     *window_index_types,
-                    *attention_mask_window_types,
-                    *attention_mask_full_types,
+                    *cu_seqlens_types,
+                    *cu_window_seqlens_types,
+                    *max_seqlen_types,
+                    *max_window_seqlen_types,
                     *max_grid_size_types,
                     *signals.input_types(),
                 ]
@@ -471,16 +519,22 @@ class Qwen2_5VLModel(
             window_index_list = [
                 inp.tensor for inp in all_inputs[2 * n_devices : 3 * n_devices]
             ]
-            attention_mask_window_list = [
+            cu_seqlens_list = [
                 inp.tensor for inp in all_inputs[3 * n_devices : 4 * n_devices]
             ]
-            attention_mask_full_list = [
+            cu_window_seqlens_list = [
                 inp.tensor for inp in all_inputs[4 * n_devices : 5 * n_devices]
             ]
-            max_grid_size_list = [
+            max_seqlen_list = [
                 inp.tensor for inp in all_inputs[5 * n_devices : 6 * n_devices]
             ]
-            signal_buffers = [inp.buffer for inp in all_inputs[6 * n_devices :]]
+            max_window_seqlen_list = [
+                inp.tensor for inp in all_inputs[6 * n_devices : 7 * n_devices]
+            ]
+            max_grid_size_list = [
+                inp.tensor for inp in all_inputs[7 * n_devices : 8 * n_devices]
+            ]
+            signal_buffers = [inp.buffer for inp in all_inputs[8 * n_devices :]]
 
             # Execute vision transformer using the vision encoder module with multi-GPU support
             # For now, use the first device's inputs (keeping compatibility with single GPU approach)
@@ -489,8 +543,10 @@ class Qwen2_5VLModel(
                 pixel_values=pixel_values_list,
                 rot_pos_ids=rot_pos_ids_list,
                 window_index=window_index_list,
-                attention_mask_window=attention_mask_window_list,
-                attention_mask_full=attention_mask_full_list,
+                cu_seqlens=cu_seqlens_list,
+                cu_window_seqlens=cu_window_seqlens_list,
+                max_seqlen=max_seqlen_list,
+                max_window_seqlen=max_window_seqlen_list,
                 max_grid_size=max_grid_size_list,
                 signal_buffers=signal_buffers,
             )
@@ -701,10 +757,14 @@ class Qwen2_5VLModel(
             np.max(stacked_image_grid_thw[:, 1:])
         )  # Max of height and width dimensions
 
-        # Generate attention masks
-        attention_mask_full, attention_mask_window = generate_attention_mask(
+        # Generate attention masks and cumulative sequence lengths
+        (
+            cu_seqlens,
+            cu_window_seqlens_unique,
+            max_seqlen,
+            window_max_seqlen,
+        ) = get_seqlens(
             grid_thw=stacked_image_grid_thw,
-            seq_length=vision_seq_length,
             cu_win_seqlens=cu_window_seqlens,
         )
 
@@ -713,14 +773,18 @@ class Qwen2_5VLModel(
         position_ids_tensor = Tensor.from_numpy(
             vision_position_ids.astype(np.int64)
         )
-        attention_mask_full_tensor = Tensor.from_numpy(
-            attention_mask_full.astype(np.float32)
-        )
-        attention_mask_window_tensor = Tensor.from_numpy(
-            attention_mask_window.astype(np.float32)
-        )
         max_grid_size_tensor = Tensor.from_numpy(
             np.array(vision_max_grid_size, dtype=np.int32)
+        )
+        cu_seqlens_tensor = Tensor.from_numpy(cu_seqlens.astype(np.uint32))
+        cu_window_seqlens_tensor = Tensor.from_numpy(
+            cu_window_seqlens_unique.astype(np.uint32)
+        )
+        max_seqlen_tensor = Tensor.from_numpy(
+            np.array([max_seqlen], dtype=np.uint32)
+        )
+        max_window_seqlen_tensor = Tensor.from_numpy(
+            np.array([window_max_seqlen], dtype=np.uint32)
         )
 
         # Return all vision inputs as tensors distributed across devices
@@ -734,12 +798,15 @@ class Qwen2_5VLModel(
             "position_ids": [
                 position_ids_tensor.to(device) for device in self.devices
             ],
-            "attention_mask_full": [
-                attention_mask_full_tensor.to(device) for device in self.devices
+            "cu_seqlens": [
+                cu_seqlens_tensor.to(device) for device in self.devices
             ],
-            "attention_mask_window": [
-                attention_mask_window_tensor.to(device)
-                for device in self.devices
+            "cu_window_seqlens": [
+                cu_window_seqlens_tensor.to(device) for device in self.devices
+            ],
+            "max_seqlen": [max_seqlen_tensor for _ in self.devices],
+            "max_window_seqlen": [
+                max_window_seqlen_tensor for _ in self.devices
             ],
             "max_grid_size": [max_grid_size_tensor for _ in self.devices],
         }
@@ -828,8 +895,10 @@ class Qwen2_5VLModel(
             assert model_inputs.pixel_values is not None
             assert model_inputs.vision_position_ids is not None
             assert model_inputs.window_index is not None
-            assert model_inputs.attention_mask_window is not None
-            assert model_inputs.attention_mask_full is not None
+            assert model_inputs.cu_seqlens is not None
+            assert model_inputs.cu_window_seqlens is not None
+            assert model_inputs.max_seqlen is not None
+            assert model_inputs.max_window_seqlen is not None
             assert model_inputs.max_grid_size is not None
             assert model_inputs.image_token_indices is not None
 
@@ -839,8 +908,10 @@ class Qwen2_5VLModel(
                 *model_inputs.pixel_values,
                 *model_inputs.vision_position_ids,
                 *model_inputs.window_index,
-                *model_inputs.attention_mask_window,
-                *model_inputs.attention_mask_full,
+                *model_inputs.cu_seqlens,
+                *model_inputs.cu_window_seqlens,
+                *model_inputs.max_seqlen,
+                *model_inputs.max_window_seqlen,
                 *model_inputs.max_grid_size,
                 *model_inputs.signal_buffers,
             )
@@ -908,14 +979,17 @@ class Qwen2_5VLModel(
         vision_position_ids = (
             vision_inputs["position_ids"] if vision_inputs else None
         )
-        attention_mask_full = (
-            vision_inputs["attention_mask_full"] if vision_inputs else None
-        )
-        attention_mask_window = (
-            vision_inputs["attention_mask_window"] if vision_inputs else None
-        )
+
         max_grid_size = (
             vision_inputs["max_grid_size"] if vision_inputs else None
+        )
+        cu_seqlens = vision_inputs["cu_seqlens"] if vision_inputs else None
+        cu_window_seqlens = (
+            vision_inputs["cu_window_seqlens"] if vision_inputs else None
+        )
+        max_seqlen = vision_inputs["max_seqlen"] if vision_inputs else None
+        max_window_seqlen = (
+            vision_inputs["max_window_seqlen"] if vision_inputs else None
         )
 
         # Create input_row_offsets for each device
@@ -1001,9 +1075,11 @@ class Qwen2_5VLModel(
             pixel_values=pixel_values,
             window_index=window_index,
             vision_position_ids=vision_position_ids,
-            attention_mask_full=attention_mask_full,
-            attention_mask_window=attention_mask_window,
             max_grid_size=max_grid_size,
+            cu_seqlens=cu_seqlens,
+            cu_window_seqlens=cu_window_seqlens,
+            max_seqlen=max_seqlen,
+            max_window_seqlen=max_window_seqlen,
         )
 
     def prepare_next_token_inputs(
@@ -1048,8 +1124,10 @@ class Qwen2_5VLModel(
             pixel_values=None,
             window_index=None,
             vision_position_ids=None,
-            attention_mask_full=None,
-            attention_mask_window=None,
+            cu_seqlens=None,
+            cu_window_seqlens=None,
+            max_seqlen=None,
+            max_window_seqlen=None,
             max_grid_size=None,
         )
 

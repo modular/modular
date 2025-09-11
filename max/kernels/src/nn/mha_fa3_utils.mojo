@@ -399,13 +399,13 @@ fn _get_position[
         # from kv_input_row_offsets. This is when num_keys != seq_len
         @parameter
         if KVInputRowOffsetsType.is_null:
-            num_keys = seq_len + cache_len
+            num_keys = seq_len + Int(start_pos)
         else:
             var kv_row_offsets = kv_input_row_offsets.value()
             kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
             kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
             cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + cache_len
+            num_keys = cur_kv_len + Int(start_pos)
         q_row = seq_info.start_of_seq
 
     # NDBuffer inputs, homogeneous batching.

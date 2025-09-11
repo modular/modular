@@ -77,7 +77,12 @@ from nn.mha_amd import (
     mha_single_batch_amd,
 )
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
-from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
+from nn.mha_operand import (
+    KVCacheMHAOperand,
+    MHAOperand,
+    NDBufferMHAOperand,
+    RaggedMHAOperand,
+)
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import mha_sm90_dispatch
 from nn.mha_sm100 import mha_sm100_dispatch
@@ -1082,6 +1087,95 @@ fn flash_attention[
     )
 
 
+fn flash_attention_ragged[
+    rank: Int,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    type: DType,
+    q_shape: DimList, //,
+    use_score_mod: Bool = False,
+    config: MHAConfig = MHAConfig(
+        type,
+        UInt(q_shape.get[rank - 2]()),  # num_heads
+        UInt(q_shape.get[rank - 1]()),  # head_dim
+    ),
+    decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
+](
+    output: NDBuffer[mut=True, _, rank, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
+    k: NDBuffer[_, rank, *_],
+    v: NDBuffer[_, rank, *_],
+    input_row_offsets: ManagedTensorSlice[
+        IOUnknown,
+        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+    ],
+    max_prompt_len: NDBuffer[DType.uint32, 1, *_],
+    mask_functor: mask_t,
+    score_mod_functor: score_mod_t,
+    scale: Float32,
+    ctx: DeviceContext,
+    # if not set, we select num_partitions based on heuristics
+    num_partitions: OptionalReg[Int] = None,
+) raises:
+    # See the kV cache overloads for comments.
+
+    constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
+    constrained[
+        q.dtype == k.dtype == v.dtype == output.dtype,
+        "Q, K, V, output should have same type.",
+    ]()
+
+    constrained[
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
+        "Only support single and half precision.",
+    ]()
+
+    # Runtime dimensions.
+    # For ragged inputs: [total_seq_len, num_heads, head_dim]
+    # fmt: off
+    alias head_depth_known = q.shape.all_known[1, 3]() and k.shape.has_value[1]()
+    alias depth = q.shape.get[rank - 1]()
+    alias gpu_info = ctx.default_device_info
+    alias head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
+    alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
+    alias kv_num_heads = k.shape.get[1]()
+    # fmt: on
+
+    var is_token_generation = False
+
+    var cache_row_offsets: NDBuffer[
+        DType.uint32, 1, MutableAnyOrigin, *_
+    ] = managed_tensor_slice_to_ndbuffer(input_row_offsets)
+
+    var k_operand = RaggedMHAOperand(k, cache_row_offsets)
+    var v_operand = RaggedMHAOperand(v, cache_row_offsets)
+    flash_attention_dispatch[
+        kv_num_heads=kv_num_heads,
+        use_score_mod=use_score_mod,
+        config=config,
+        ragged=True,
+        _is_flash_attention_applicable=flash_attention_applicable,
+        _is_cache_length_accurate=True,
+        decoding_warp_split_k=decoding_warp_split_k,
+    ](
+        output,
+        q,
+        k_operand,
+        v_operand,
+        mask_functor,
+        score_mod_functor,
+        input_row_offsets,
+        Int(max_prompt_len[0]),
+        Int(max_prompt_len[0]),
+        scale,
+        is_token_generation,
+        ctx,
+        None,
+        num_partitions,
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # Flash attention for context encoding
 # ===-----------------------------------------------------------------------===#
@@ -1147,7 +1241,9 @@ fn mha[
         if seq_len < block_idx.x * config.block_m():
             return
 
-        start_pos = k.cache_length(batch_idx)
+        @parameter
+        if not _is_cache_length_accurate:
+            start_pos = k.cache_length(batch_idx)
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
@@ -4294,6 +4390,7 @@ fn mha_gpu_naive[
         p_type,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
+        _is_cache_length_accurate=_is_cache_length_accurate,
     ]
 
     ctx.enqueue_function[kernel](
@@ -4340,6 +4437,7 @@ fn mha_gpu_naive[
             v_t,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
+            _is_cache_length_accurate=_is_cache_length_accurate,
         ]
     ](
         output.data,
@@ -4371,6 +4469,7 @@ fn _bmm0_bs[
     p_type: DType,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
+    _is_cache_length_accurate: Bool = False,
 ](
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -4400,14 +4499,20 @@ fn _bmm0_bs[
     var cur_cache_len: Int
     var padded_num_keys = max_cache_size
     var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var start_pos: UInt32 = 0
 
     @parameter
     if ragged:
+
+        @parameter
+        if not _is_cache_length_accurate:
+            start_pos = k.cache_length(batch)
+
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
         q_offset = Int((seq_start * num_heads + head) * depth)
-        cur_cache_len = k.cache_length(batch) + cur_query_len
+        cur_cache_len = Int(start_pos) + cur_query_len
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         q_offset = Int(depth * (head + num_heads * max_prompt_len * batch))
@@ -4496,6 +4601,7 @@ fn _bmm1_bs[
     v_t: MHAOperand,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
+    _is_cache_length_accurate: Bool = False,
 ](
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
@@ -4522,14 +4628,20 @@ fn _bmm1_bs[
     var cur_cache_len: Int
     var padded_num_keys = max_cache_size
     var p_offset = batch_head * max_prompt_len * padded_num_keys
+    var start_pos: UInt32 = 0
 
     @parameter
     if ragged:
+
+        @parameter
+        if not _is_cache_length_accurate:
+            start_pos = v.cache_length(batch)
+
         seq_start = Int(valid_length[batch])
         seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
         output_offset = Int((seq_start * num_heads + head) * depth)
-        cur_cache_len = cur_query_len + v.cache_length(batch)
+        cur_cache_len = cur_query_len + Int(start_pos)
     elif _use_valid_length:
         cur_query_len = Int(valid_length[batch])
         output_offset = depth * (head + num_heads * max_prompt_len * batch)

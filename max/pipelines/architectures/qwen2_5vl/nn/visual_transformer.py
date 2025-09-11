@@ -35,6 +35,8 @@ from max.nn import (
     RMSNorm,
     Shardable,
 )
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module
 
 from ..model_config import VisionConfig
@@ -272,7 +274,7 @@ class VisionRotaryEmbedding(Module):
         raise NotImplementedError
 
 
-class VisionWindowSdpaAttention(Module):
+class VisionWindowAttention(Module):
     """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL."""
 
     def __init__(
@@ -281,6 +283,7 @@ class VisionWindowSdpaAttention(Module):
         device: DeviceRef,
         dim: int,
         n_heads: int,
+        flash_attention: bool = False,
     ):
         super().__init__()
         self.dim = dim
@@ -288,6 +291,7 @@ class VisionWindowSdpaAttention(Module):
         self.head_dim = dim // n_heads
         # Add explicit scaling factor like PyTorch implementation
         self.scaling = math.sqrt(1.0 / self.head_dim)
+        self.flash_attention = flash_attention
 
         # Create Linear layers using constructor pattern
         self.qkv = Linear(
@@ -331,29 +335,12 @@ class VisionWindowSdpaAttention(Module):
         k_embed = ops.cast(k_embed, orig_k_dtype)
         return q_embed, k_embed
 
-    @staticmethod
-    def scaled_dot_product_attention(
-        xq: TensorValue,
-        xk: TensorValue,
-        xv: TensorValue,
-        attention_mask: TensorValue,
-        scaling: float,
-    ):
-        """Computes scaled dot product attention on query, key and value tensors, using an attention mask.
-        Shape of xq, xk, and xv = (n_heads, seq_len, head_dim) = (16, 14308, 80).
-        """
-        scores = xq @ ops.transpose(xk, -2, -1)
-        # Note, the graph compiler currently requires the order of operands
-        # to be `scores * scale` in order to pattern match the fused attention
-        # operator.
-        scores = ops.softmax((scores * scaling) + attention_mask)
-        return scores @ xv
-
     def __call__(
         self,
         x: TensorValue,
         position_embeddings: tuple[TensorValue, TensorValue],
-        attention_mask: TensorValue,
+        input_row_offsets: TensorValue,
+        max_seqlen: TensorValue,
     ) -> TensorValue:
         """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
             1. Linear Projections Q, K, V
@@ -364,7 +351,10 @@ class VisionWindowSdpaAttention(Module):
         Args:
             x: Input tensor of shape (seq_len, hidden_size)
             position_embeddings: Tuple of (cos, sin) tensors for rotary embeddings
-            attention_mask: Attention mask of shape (1, seq_len, seq_len)
+            input_row_offsets: Tensor of shape [window_size + 1] with dtype uint32.
+                Indicates where each window starts and ends in the ragged tensors.
+                The values should be a prefix sum (cumulative sum) of window lengths.
+            max_seqlen: Maximum window length for flash attention.
 
         Returns:
             The output of applying sliding window attention on input `x` using `attention_mask`.
@@ -374,7 +364,8 @@ class VisionWindowSdpaAttention(Module):
             Input:
                 x: (seq_len, hidden_size)
                 position_embeddings: tuple of 2 tensors of shape (seq_len, head_dim)
-                attention_mask: (1, seq_len, seq_len)
+                input_row_offsets: (window_size + 1)
+                max_seqlen: (1)
             Output:
                 - tensor: (seq_len, hidden_size)
         """
@@ -387,16 +378,19 @@ class VisionWindowSdpaAttention(Module):
         # Split qkv into a tuple of tensors along the first dim: q, k, v. Equivalent to qkv.unbind(0)
         xq, xk, xv = qkv[0], qkv[1], qkv[2]
         cos, sin = position_embeddings
-        xq, xk = VisionWindowSdpaAttention.apply_rotary_pos_emb_vision(
+        xq, xk = VisionWindowAttention.apply_rotary_pos_emb_vision(
             xq, xk, cos, sin
         )
-        xq = xq.transpose(0, 1)
-        xk = xk.transpose(0, 1)
-        xv = xv.transpose(0, 1)
-        attn_output = VisionWindowSdpaAttention.scaled_dot_product_attention(
-            xq, xk, xv, attention_mask, self.scaling
+
+        attn_output = flash_attention_ragged_gpu(
+            xq,
+            xk,
+            xv,
+            input_row_offsets=input_row_offsets,
+            max_seq_len=max_seqlen,
+            mask_variant=MHAMaskVariant.NULL_MASK,
+            scale=self.scaling,
         )
-        attn_output = attn_output.transpose(0, 1)
         attn_output = attn_output.reshape((seq_length, -1))
         attn_output = self.proj(attn_output)
         return attn_output
@@ -433,7 +427,7 @@ class VisionBlock(Module):
         )
 
         # Create attention layer
-        self.attn = VisionWindowSdpaAttention(
+        self.attn = VisionWindowAttention(
             dtype=dtype,
             device=devices[0],
             dim=hidden_size,
@@ -454,13 +448,15 @@ class VisionBlock(Module):
         self,
         x: TensorValue,
         position_embeddings: tuple[TensorValue, TensorValue],
-        attention_mask: TensorValue,
+        input_row_offsets: TensorValue,
+        max_seqlen: TensorValue,
         signal_buffers: list[BufferValue],
     ) -> TensorValue:
         h = x + self.attn(
             self.norm1(x),
             position_embeddings=position_embeddings,
-            attention_mask=attention_mask,
+            input_row_offsets=input_row_offsets,
+            max_seqlen=max_seqlen,
         )
         h = h + self.mlp(self.norm2(h))
         return h
@@ -626,8 +622,10 @@ class VisionTransformer(Module):
         pixel_values: Sequence[TensorValue],
         rot_pos_ids: Sequence[TensorValue],
         window_index: Sequence[TensorValue],
-        attention_mask_window: Sequence[TensorValue],
-        attention_mask_full: Sequence[TensorValue],
+        cu_seqlens: Sequence[TensorValue],
+        cu_window_seqlens: Sequence[TensorValue],
+        max_seqlen: Sequence[TensorValue],
+        max_window_seqlen: Sequence[TensorValue],
         max_grid_size: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
@@ -647,12 +645,12 @@ class VisionTransformer(Module):
                 a 2D tensor of all patches in all images + a grid_thw representing the temporal and spatial coords of patches.
             rotary_pos_ids: Tensor of shape (seq_len, 2) generated by data_processing.mrope_pos_ids_3d(grid_thw, spatial_merge_size).
             window_index:  1D TensorValue generated by data_processing.get_window_index(grid_thw, window_size, spatial_merge_size, patch_size, spatial_merge_unit).
-            attention_mask_window: a tensor of shape [1, seq_len, seq_len] that restricts patches from interacting
-                outside their valid segments for Window Attention mechanism (same sequence and same window).
-            attention_mask_full: a tensor of shape [1, seq_len, seq_len] that restricts patches from interacting outside
-                their valid segments for  Self Attention mechanism.
             max_grid_size: max value in spatial dimensions in the grid of image and video patches.
                 It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
+            cu_seqlens: Cumulative sequence lengths for full attention blocks.
+            cu_window_seqlens: Cumulative window sequence lengths for window attention blocks.
+            max_seqlen: Maximum sequence length for full attention blocks.
+            max_window_seqlen: Maximum sequence length for window attention blocks.
             signal_buffers: Communication buffers for distributed execution.
 
         Returns:
@@ -682,27 +680,20 @@ class VisionTransformer(Module):
         )
 
         h = hs[0]
-        # Cast input attention masks to bfloat16 because they are computed
-        # as float32 (due to numpy not supporting bfloat16).
-        attention_mask_full = [
-            attention_mask_full_i.cast(h.dtype)
-            for attention_mask_full_i in attention_mask_full
-        ]
-        attention_mask_window = [
-            attention_mask_window_i.cast(h.dtype)
-            for attention_mask_window_i in attention_mask_window
-        ]
 
         # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
         for layer_num, blk in enumerate(self.blocks):
             if layer_num in self.fullatt_block_indexes:
-                attention_mask = attention_mask_full[0]
+                input_row_offsets = cu_seqlens[0]
+                seqlen = max_seqlen[0]
             else:
-                attention_mask = attention_mask_window[0]
+                input_row_offsets = cu_window_seqlens[0]
+                seqlen = max_window_seqlen[0]
             h = blk(
                 h,
                 position_embeddings=position_embeddings,
-                attention_mask=attention_mask,
+                input_row_offsets=input_row_offsets,
+                max_seqlen=seqlen,
                 signal_buffers=signal_buffers,
             )
 

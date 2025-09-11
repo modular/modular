@@ -133,18 +133,24 @@ def get_window_index(
     return np.concatenate(window_index, axis=0), np.array(cu_window_seqlens)
 
 
-def generate_attention_mask(
+def get_seqlens(
     grid_thw: npt.NDArray[np.integer[Any]],
-    seq_length: int,
     cu_win_seqlens: npt.NDArray[np.integer[Any]],
-) -> tuple[npt.NDArray[np.floating[Any]], npt.NDArray[np.floating[Any]]]:
+) -> tuple[
+    npt.NDArray[np.integer[Any]],
+    npt.NDArray[np.integer[Any]],
+    int,
+    int,
+]:
     """Generate attention masks for visual tokens using seq_length and cu_seqlens.
     cu_seqlens is used when the block is in fullatt_block_indexes.
 
     Args:
         grid_thw: number of patches in spatial and temporal dims in images. Shape = [n_images, 3]
-        seq_length: int represents total number of patches in all images and videos.
         cu_window_seqlens: cumulative window sequence lengths for the attention mechanism. Shape = [n_windows]
+
+    Returns:
+        Tuple of (attention_mask_full, attention_mask_window, cu_seqlens, cu_window_seqlens_unique)
     """
     cu_window_seqlens = np.array(cu_win_seqlens, dtype=np.int32)
     # 1. Remove consecutive duplicates (equivalent to torch.unique_consecutive)
@@ -160,30 +166,15 @@ def generate_attention_mask(
 
     # 3. Pad cu_seqlens with 0 at the beginning
     cu_seqlens = np.pad(cu_seqlens, (1, 0), constant_values=0)
+    max_seqlen = int(np.max(np.diff(cu_seqlens)))
+    window_max_seqlen = int(np.max(np.diff(cu_window_seqlens)))
 
-    # TODO(KERN-782): This fill_val should be -inf but softmax saturates with NaNs.
-    fill_val = -10000.0
-    attention_mask_full = np.full(
-        (1, seq_length, seq_length), fill_val, dtype=np.float32
+    return (
+        cu_seqlens,
+        cu_window_seqlens,
+        max_seqlen,
+        window_max_seqlen,
     )
-    attention_mask_window = np.full(
-        (1, seq_length, seq_length), fill_val, dtype=np.float32
-    )
-
-    for i in range(1, len(cu_seqlens)):
-        attention_mask_full[
-            ...,
-            cu_seqlens[i - 1] : cu_seqlens[i],
-            cu_seqlens[i - 1] : cu_seqlens[i],
-        ] = 0
-
-    for i in range(1, len(cu_window_seqlens)):
-        attention_mask_window[
-            ...,
-            cu_window_seqlens[i - 1] : cu_window_seqlens[i],
-            cu_window_seqlens[i - 1] : cu_window_seqlens[i],
-        ] = 0
-    return attention_mask_full, attention_mask_window
 
 
 def get_rope_index(

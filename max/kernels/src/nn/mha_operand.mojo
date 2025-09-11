@@ -18,7 +18,7 @@ from layout import Layout, LayoutTensor
 from layout.layout import DimList, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from layout.tma_async import TMANestedTensorTile, create_nested_tma_tile
-from utils import IndexList
+from utils import Index, IndexList, StaticTuple
 
 
 @register_passable("trivial")
@@ -228,20 +228,23 @@ struct NDBufferMHAOperand[
 
 
 @register_passable("trivial")
-struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
-    MHAOperand
-):
+struct RaggedMHAOperand[
+    dtype_: DType, rank: Int, shape: DimList, stride: DimList
+](MHAOperand):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
     alias dtype = dtype_
-    var buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride]
+    var buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride]
     var cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_]
 
     fn __init__(
         out self,
-        buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride],
+        buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride],
         cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
     ):
+        constrained[
+            buffer.rank == 3, "only support rank 3 inputs for ragged inputs."
+        ]()
         self.buffer = buffer
         self.cache_row_offsets = cache_row_offsets
 
@@ -259,7 +262,7 @@ struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer._offset(
-            IndexList[3](
+            StaticTuple[Int, rank](
                 Int(global_token_idx),
                 Int(head_idx),
                 Int(head_dim_idx),
