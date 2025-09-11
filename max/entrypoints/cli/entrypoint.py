@@ -20,9 +20,7 @@ import logging
 import click
 
 
-def configure_cli_logging(
-    level: str = "INFO", quiet: bool = False, verbose: bool = False
-) -> None:
+def configure_cli_logging(level: str = "INFO") -> None:
     """Configure logging for CLI operations without using Settings.
 
     Args:
@@ -30,13 +28,16 @@ def configure_cli_logging(
         quiet: If True, set logging to WARNING level
         verbose: If True, set logging to DEBUG level
     """
-    # Determine log level based on flags
-    if quiet:
-        log_level = logging.WARNING
-    elif verbose:
+    if level == "INFO":
+        log_level = logging.INFO
+    elif level == "DEBUG":
         log_level = logging.DEBUG
+    elif level == "WARNING":
+        log_level = logging.WARNING
+    elif level == "ERROR":
+        log_level = logging.ERROR
     else:
-        log_level = getattr(logging, level.upper(), logging.INFO)
+        raise ValueError(f"Unsupported log level: {level}")
 
     # Clear existing handlers to prevent duplicates
     root_logger = logging.getLogger()
@@ -45,7 +46,7 @@ def configure_cli_logging(
     # Create console handler
     console_handler = logging.StreamHandler()
     console_formatter = logging.Formatter(
-        "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s: %(name)s: %(message)s",
+        "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
     console_handler.setFormatter(console_formatter)

@@ -130,20 +130,6 @@ class ModelGroup(click.Group):
     help="Show the MAX version and exit.",
 )
 @click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    default=False,
-    help="Enable verbose logging (DEBUG level).",
-)
-@click.option(
-    "--quiet",
-    "-q",
-    is_flag=True,
-    default=False,
-    help="Enable quiet logging (WARNING level only).",
-)
-@click.option(
     "--log-level",
     type=click.Choice(
         ["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False
@@ -151,11 +137,9 @@ class ModelGroup(click.Group):
     default="INFO",
     help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
 )
-def main(
-    verbose: bool = False, quiet: bool = False, log_level: str = "INFO"
-) -> None:
+def main(log_level: str = "INFO") -> None:
     # Configure logging first, before any other initialization
-    configure_cli_logging(level=log_level, quiet=quiet, verbose=verbose)
+    configure_cli_logging(level=log_level)
     configure_telemetry()
 
 

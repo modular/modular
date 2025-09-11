@@ -203,14 +203,13 @@ def configure_logging(
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = jsonlogger.JsonFormatter(
-                f"{color_code}%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s{color_terminator}",
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{color_terminator}",
                 timestamp=True,
             )
         else:
             console_formatter = logging.Formatter(
                 (
-                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    f" %(name)s:{color_terminator} %(message)s"
+                    f"{color_code}%(asctime)s.%(msecs)03d %(levelname)s:{color_terminator} %(message)s"
                 ),
                 datefmt="%H:%M:%S",
             )
@@ -236,15 +235,12 @@ def configure_logging(
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
+                "%(levelname)s %(message)s %(request_id)s %(batch_id)s",
                 timestamp=True,
             )
         else:
             file_formatter = logging.Formatter(
-                (
-                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                    " %(name)s: %(message)s"
-                ),
+                ("%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"),
                 datefmt="%y:%m:%d-%H:%M:%S",
             )
 
