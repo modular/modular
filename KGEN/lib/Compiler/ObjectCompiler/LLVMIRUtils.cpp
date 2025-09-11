@@ -21,6 +21,7 @@
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -189,11 +190,6 @@ private:
   void collectImmediateDependencies(const llvm::Value *value,
                                     const llvm::GlobalValue *orig);
 
-  /// Collect the global variables that need to be included into every
-  /// submodule.
-  void collectForceIncludes(
-      llvm::MapVector<const llvm::GlobalValue *, unsigned> &forceInclude);
-
   /// The main LLVM module being split.
   LLVMModuleAndContext mainModule;
 
@@ -331,66 +327,6 @@ static bool isGlobalVarInGPUSharedMem(const llvm::Triple &triple,
          global.hasExternalLinkage();
 }
 
-/// Recursively collect all referenced GlobalValues from a constant value.
-/// This is used to discover the direct references in initializers such as
-/// @llvm.compiler.used.
-static void collectReferencedGlobalValues(
-    const llvm::Value *value,
-    llvm::SetVector<const llvm::GlobalValue *> &referenced,
-    llvm::SmallPtrSetImpl<const llvm::Value *> &visited) {
-  if (!value)
-    return;
-  if (!visited.insert(value).second)
-    return;
-
-  if (const auto *gv = llvm::dyn_cast<llvm::GlobalValue>(value)) {
-    referenced.insert(gv);
-    return;
-  }
-
-  const auto *c = llvm::dyn_cast<llvm::Constant>(value);
-  if (!c)
-    return;
-
-  // Recurse through operands of constant expressions/aggregates.
-  for (const llvm::Use &op : c->operands())
-    collectReferencedGlobalValues(op.get(), referenced, visited);
-}
-
-void LLVMModuleSplitterImpl::collectForceIncludes(
-    llvm::MapVector<const llvm::GlobalValue *, unsigned> &forceInclude) {
-  if (const llvm::GlobalVariable *compilerUsed =
-          mainModule->getGlobalVariable("llvm.compiler.used", true)) {
-    if (compilerUsed->hasInitializer()) {
-      llvm::SetVector<const llvm::GlobalValue *> referenced;
-      llvm::SmallPtrSet<const llvm::Value *, 16> visitedVals; /* temporary*/
-      collectReferencedGlobalValues(compilerUsed->getInitializer(), referenced,
-                                    visitedVals);
-
-      // Include the @llvm.compiler.used itself.
-      auto itInfo = infos.find(compilerUsed);
-      if (itInfo != infos.end())
-        forceInclude.insert({compilerUsed, itInfo->second.gvIdx});
-
-      // DFS over dependencies via the precomputed immediate dependency graph.
-      SmallVector<const llvm::GlobalValue *> worklist(referenced.begin(),
-                                                      referenced.end());
-      llvm::SmallPtrSet<const llvm::GlobalValue *, 32> visited;
-      while (!worklist.empty()) {
-        const llvm::GlobalValue *gv = worklist.pop_back_val();
-        if (!visited.insert(gv).second)
-          continue;
-
-        auto it = infos.find(gv);
-        if (it == infos.end())
-          continue;
-        forceInclude.insert({gv, it->second.gvIdx});
-        llvm::append_range(worklist, it->second.dependencies);
-      }
-    }
-  }
-}
-
 void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   // The use-def list is sparse. Use it to build a sparse dependency graph
   // between global values.
@@ -408,8 +344,7 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
     if (!global.hasInternalLinkage() && !global.hasPrivateLinkage() &&
-        !(isGlobalVarInGPUSharedMem(triple, global)) &&
-        !(global.getName() == "llvm.compiler.used"))
+        !(isGlobalVarInGPUSharedMem(triple, global)))
       transitiveDeps[&global];
   }
   for (const llvm::Function &fn : mainModule->functions()) {
@@ -477,11 +412,6 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     deps.complete = true;
   }
 
-  // Compute the transitive closure of dependencies to be force-included into
-  // every split, starting from values referenced by @llvm.compiler.used.
-  llvm::MapVector<const llvm::GlobalValue *, unsigned> forceInclude;
-  collectForceIncludes(forceInclude);
-
   // For each mutable global, grab all the transitive users and put them in one
   // module. If global A has user set A* and global B has user set B* where
   // A* and B* have an empty intersection, all values in A* will be assigned 0
@@ -533,13 +463,6 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     // included in mutable global sets.
     if (!deps.mutIdx)
       setsToProcess.push_back(&deps.deps);
-  }
-
-  // Union the force-include set into every split set.
-  if (!forceInclude.empty()) {
-    for (auto *set : setsToProcess)
-      for (auto &namedValue : forceInclude)
-        set->insert(namedValue);
   }
 
   if (setsToProcess.size() <= 1)
