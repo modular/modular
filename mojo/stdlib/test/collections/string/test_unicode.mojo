@@ -13,7 +13,9 @@
 
 from collections.string._unicode import _get_uppercase_mapping
 
-from testing import assert_equal
+from testing import assert_equal, assert_raises
+
+alias MAX_UNICODE_VALUE = 0x10FFFF
 
 
 def test_uppercase_conversion():
@@ -41,6 +43,45 @@ def test_uppercase_conversion():
     assert_equal(chars3[0], Codepoint.from_u32(0x0399).value())
     assert_equal(chars3[1], Codepoint.from_u32(0x0308).value())
     assert_equal(chars3[2], Codepoint.from_u32(0x0301).value())
+
+
+def test_codepoint_parsing():
+    # ASCII
+    for i in range(0x7F + 1):
+        alias L = List[UInt8]
+        assert_equal(String(from_codepoints=L(i)), chr(i))
+        assert_equal(String(from_codepoints=L(i), errors="replace"), chr(i))
+
+    # ISO-8859-1 aka. Latin-1
+    for i in range(0x7F + 1, 0xFF + 1):
+        alias L = List[UInt8]
+        assert_equal(String(from_codepoints=L(i)), chr(i))
+        assert_equal(String(from_codepoints=L(i), errors="replace"), chr(i))
+
+    # UInt16 range
+    for i in range(0xFF + 1, UInt16.MAX):
+        alias L = List[UInt16]
+        if 0xD800 <= i <= 0xDFFF:  # UTF-16 surrogate pairs
+            with assert_raises():
+                _ = String(from_codepoints=L(i))
+            assert_equal(String(from_codepoints=L(i), errors="replace"), "�")
+        else:
+            assert_equal(String(from_codepoints=L(i)), chr(i))
+            assert_equal(String(from_codepoints=L(i), errors="replace"), chr(i))
+
+    # UInt32 range
+    for i in range(0xFF + 1, MAX_UNICODE_VALUE + 1):
+        alias L = List[UInt32]
+        assert_equal(String(from_codepoints=L(i)), chr(i))
+        assert_equal(String(from_codepoints=L(i), errors="replace"), chr(i))
+
+    # invalid values
+    for i in range(MAX_UNICODE_VALUE + 1, UInt256.MAX):
+        with assert_raises():
+            _ = String(from_codepoints=List[UInt256](i))
+        assert_equal(
+            String(from_codepoints=List[UInt256](i), errors="replace"), "�"
+        )
 
 
 def main():

@@ -14,6 +14,7 @@
 from collections.string._unicode_lookups import *
 
 from memory import Span
+from sys.intrinsics import unlikely
 
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -235,3 +236,56 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
 @always_inline
 fn _estimate_needed_size(byte_len: Int) -> Int:
     return 3 * (byte_len >> 1) + 1
+
+
+fn _decode_codepoints[
+    dtype: DType, //,
+    strict: Bool = True,
+    replace: Codepoint = Codepoint.ord("�"),
+](*, from_codepoints: Span[mut=False, Scalar[dtype], **_]) raises -> String:
+    constrained[dtype.is_integral(), "The dtype must be integral"]()
+
+    # TODO: this could use reduce_sum with a function that calculates the utf8
+    # length from the utf32 codepoints. Performance needs to be measured
+    var length = 4 * UInt(len(from_codepoints))
+    var result = String(capacity=length)
+    var codepoints_ptr = from_codepoints.unsafe_ptr()
+    var c_idx = UInt(0)
+    var utf8_ptr = result.unsafe_ptr_mut()
+    var utf8_offset = UInt(0)
+
+    while c_idx < UInt(len(from_codepoints)):
+        var c = codepoints_ptr[c_idx].cast[DType.uint32]()
+
+        @parameter
+        if dtype.bitwidth() >= 32:
+            if unlikely(c > 0x10FFFF):
+
+                @parameter
+                if strict:
+                    raise Error(
+                        "Non-existent Unicode codepoint at index: ", c_idx
+                    )
+                else:
+                    c = replace.to_u32()
+        elif dtype.bitwidth() >= 16:
+            if unlikely(UInt32(0xD800) <= c <= UInt32(0xDFFF)):
+
+                @parameter
+                if strict:
+                    raise Error(
+                        "Invalid UTF-16 surrogate pair at index: ", c_idx
+                    )
+                else:
+                    c = replace.to_u32()
+
+        var codepoint = Codepoint(unsafe_unchecked_codepoint=c)
+        var num_bytes = codepoint.unsafe_write_utf8[
+            optimize_ascii=True, branchless=True
+        ](utf8_ptr + utf8_offset)
+
+        utf8_offset += num_bytes
+        c_idx += 1
+
+    result._set_byte_length(utf8_offset)
+    return result^
