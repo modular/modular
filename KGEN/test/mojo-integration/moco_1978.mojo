@@ -18,8 +18,8 @@ fn main():
     alias res0 = f0(
         not_used, List(List[String]("hello"), List[String]("world")), 0
     )
-    print(res0.__str__())
+    print(materialize[res0.__str__()]())
     alias res1 = f0(
         not_used, List(List[String]("hello"), List[String]("world")), 1
     )
-    print(res1.__str__())
+    print(materialize[res1.__str__()]())

@@ -44,6 +44,7 @@ enum ExprContext {
   EC_AttributeRefBase,     // x.field
   EC_AliasValue,           // alias something = x
   EC_CallArgValue,         // foo(x)
+  EC_CallArgDefaultValue,  // fn foo(x = 10) where x uses default value
   EC_CallRefArgValue,      // foo(x) where x is passed by 'ref'.
   EC_CallCalleeValue,      // x()
   EC_TypeParamValue,       // Vector[x]

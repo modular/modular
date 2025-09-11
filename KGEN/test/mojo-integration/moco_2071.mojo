@@ -26,7 +26,8 @@ alias COUNTRY_CODE_TO_REGION_CODE: Dict[
 
 fn _get_country_codes() -> List[String]:
     var result = List[String]()
-    for value in COUNTRY_CODE_TO_REGION_CODE.values():
+    var vals = materialize[COUNTRY_CODE_TO_REGION_CODE.values()]()
+    for value in vals:
         result += value.copy()
     return result^
 

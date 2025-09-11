@@ -149,7 +149,7 @@ fn existential_arg(x: Trait):
     pass
 
 
-trait SimpleTrait:
+trait SimpleTrait(ImplicitlyCopyable):
     fn method(self, y: Index):
         ...
 

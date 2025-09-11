@@ -607,6 +607,13 @@ trait ImplicitlyCopyable(Copyable):
     pass
 
 
+fn materialize[T: AnyType, //, value: T](out result: T):
+    """Explicitly materialize a compile time parameter into a runtime value."""
+    __mlir_op.`lit.materialize_into`[value=value](
+        __get_mvalue_as_litref(result)
+    )
+
+
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
     fn __moveinit__(out self, deinit existing: Self, /):
@@ -891,7 +898,7 @@ struct Pointer[
         return self._value  # allow lit.ref to convert.
 
 
-struct Tuple[*element_types: AnyType]:
+struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __init__(out self: Tuple[]):
         pass
 
