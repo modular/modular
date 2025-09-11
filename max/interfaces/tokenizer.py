@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
 from .request import RequestType
 
@@ -16,8 +16,7 @@ TokenizerEncoded = TypeVar("TokenizerEncoded")
 
 @runtime_checkable
 class PipelineTokenizer(
-    Generic[UnboundContextType, TokenizerEncoded, RequestType],
-    Protocol,
+    Protocol[UnboundContextType, TokenizerEncoded, RequestType]
 ):
     """Interface for LLM tokenizers."""
 
@@ -67,9 +66,7 @@ class PipelineTokenizer(
         ...
 
     async def encode(
-        self,
-        prompt: str,
-        add_special_tokens: bool,
+        self, prompt: str, add_special_tokens: bool
     ) -> TokenizerEncoded:
         """Encodes text prompts as tokens.
 
@@ -81,11 +78,7 @@ class PipelineTokenizer(
         """
         ...
 
-    async def decode(
-        self,
-        encoded: TokenizerEncoded,
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenizerEncoded, **kwargs) -> str:
         """Decodes response tokens to text.
 
         Args:
