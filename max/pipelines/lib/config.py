@@ -38,8 +38,8 @@ from .sampling import SamplingConfig
 
 logger = logging.getLogger("max.pipelines")
 
-# Default target number of tokens for chunked prefill and memory estimation.
-DEFAULT_TARGET_NUM_NEW_TOKENS = 8192
+# Default prefill chunk size for chunked prefill and memory estimation.
+DEFAULT_PREFILL_CHUNK_SIZE = 8192
 
 
 @dataclass(frozen=False)
@@ -101,7 +101,7 @@ class PipelineConfig(MAXConfig):
 
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
-    based on 'target_num_new_tokens'."""
+    based on 'prefill_chunk_size'."""
 
     enable_in_flight_batching: bool = False
     """When enabled, prioritizes token generation by batching it with context
@@ -112,7 +112,7 @@ class PipelineConfig(MAXConfig):
     configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
     models)."""
 
-    target_num_new_tokens: int = DEFAULT_TARGET_NUM_NEW_TOKENS
+    prefill_chunk_size: int = DEFAULT_PREFILL_CHUNK_SIZE
     """The target number of un-encoded tokens to include in each batch.
     This value is used for chunked prefill and memory estimation."""
 
@@ -696,7 +696,7 @@ class PipelineConfig(MAXConfig):
         logger.info(
             f"    chunked_prefill:        {self.enable_chunked_prefill}"
         )
-        logger.info(f"    target_new_tokens:      {self.target_num_new_tokens}")
+        logger.info(f"    prefill_chunk_size:     {self.prefill_chunk_size}")
         logger.info(
             f"    in_flight_batching:     {self.enable_in_flight_batching}"
         )
@@ -782,10 +782,10 @@ class PipelineConfig(MAXConfig):
             "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
             "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
             "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`. Default is true.",
+            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `prefill-chunk-size`. Default is true.",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
-            "target_num_new_tokens": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
+            "prefill_chunk_size": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
             "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",

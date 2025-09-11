@@ -17,6 +17,7 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 
 from __future__ import annotations
 
+import logging
 import socket
 from enum import Enum, IntEnum
 from pathlib import Path
@@ -26,6 +27,8 @@ from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger("max.serve")
 
 
 class APIType(Enum):
