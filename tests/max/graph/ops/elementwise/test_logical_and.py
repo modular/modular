@@ -41,6 +41,7 @@ def test_logical_and__invalid_dtype(
     graph_builder: GraphBuilder,
     tensor_type: TensorType,
 ) -> None:
+    raise ValueError("I want this test to fail")
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
