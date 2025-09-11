@@ -37,7 +37,7 @@ alias MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 fn _init_mpi_dylib() -> _OwnedDLHandle:
-    return _find_dylib["MPI"](MPI_LIBRARY_PATHS)
+    return _find_dylib["MPI"](materialize[MPI_LIBRARY_PATHS]())
 
 
 @always_inline

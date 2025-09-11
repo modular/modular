@@ -363,12 +363,13 @@ fn test_by_mode_composition() raises:
     alias layout0 = Layout.row_major(8, 4)
     alias tiler = MakeLayoutList(Layout(4, 1), Layout(2, 1))
     assert_equal(
-        composition(layout0, tiler), Layout(IntTuple(4, 2), IntTuple(4, 1))
+        composition(layout0, materialize[tiler]()),
+        Layout(IntTuple(4, 2), IntTuple(4, 1)),
     )
 
     alias layout1 = Layout.row_major(IntTuple(IntTuple(8, 6), 4, 2))
     assert_equal(
-        composition(layout1, tiler),
+        composition(layout1, materialize[tiler]()),
         Layout(IntTuple(4, 2, 2), IntTuple(48, 2, 1)),
     )
 

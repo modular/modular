@@ -21,7 +21,7 @@ from .utils_gpu import (
 fn create_matmul_configs_ampere[
     key: String, a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    alias dict = get_dispatch_table[a_type, b_type, c_type, transpose_b]()
+    var dict = get_dispatch_table[a_type, b_type, c_type, transpose_b]()
     try:
         return dict[key]
     except error:

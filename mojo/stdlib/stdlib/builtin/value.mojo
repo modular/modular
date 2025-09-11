@@ -146,6 +146,13 @@ trait ImplicitlyCopyable(Copyable):
 alias ExplicitlyCopyable = Copyable
 
 
+fn materialize[T: AnyType, //, value: T](out result: T):
+    """Explicitly materialize a compile time parameter into a runtime value."""
+    __mlir_op.`lit.materialize_into`[value=value](
+        __get_mvalue_as_litref(result)
+    )
+
+
 trait Defaultable:
     """The `Defaultable` trait describes a type with a default constructor.
 

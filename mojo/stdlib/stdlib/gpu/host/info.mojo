@@ -30,7 +30,7 @@ alias _KB = 1024
 
 
 @fieldwise_init
-@register_passable
+@register_passable("trivial")
 struct Vendor(Identifiable, Writable):
     """Represents GPU vendors.
 
@@ -1625,59 +1625,59 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
 
     @parameter
     if target_arch == "61":
-        return GTX1080Ti
+        return materialize[GTX1080Ti]()
     elif target_arch == "75":
-        return RTX2060
+        return materialize[RTX2060]()
     elif target_arch == "80":
-        return A100
+        return materialize[A100]()
     elif target_arch == "86":
-        return A10
+        return materialize[A10]()
     elif target_arch == "87":
-        return OrinNano
+        return materialize[OrinNano]()
     elif target_arch == "89":
-        return L4
+        return materialize[L4]()
     elif target_arch == "90" or target_arch == "90a":
-        return H100
+        return materialize[H100]()
     elif target_arch == "100" or target_arch == "100a":
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
-        return B200
+        return materialize[B200]()
     elif target_arch == "120" or target_arch == "120a":
-        return RTX5090
+        return materialize[RTX5090]()
     elif target_arch == "gfx942" or target_arch == "mi300x":
-        return MI300X
+        return materialize[MI300X]()
     elif target_arch == "gfx950" or target_arch == "mi355x":
-        return MI355X
+        return materialize[MI355X]()
     elif target_arch == "gfx1030":
-        return Radeon6900
+        return materialize[Radeon6900]()
     elif target_arch == "gfx1100":
-        return Radeon7900
+        return materialize[Radeon7900]()
     elif target_arch == "gfx1101":
-        return Radeon7800
+        return materialize[Radeon7800]()
     elif target_arch == "gfx1102":
-        return Radeon7600
+        return materialize[Radeon7600]()
     elif target_arch == "gfx1103":
-        return Radeon780m
+        return materialize[Radeon780m]()
     elif target_arch == "gfx1150":
-        return Radeon880m
+        return materialize[Radeon880m]()
     elif target_arch == "gfx1151":
-        return Radeon8060s
+        return materialize[Radeon8060s]()
     elif target_arch == "gfx1152":
-        return Radeon860m
+        return materialize[Radeon860m]()
     elif target_arch == "gfx1200":
-        return Radeon9060
+        return materialize[Radeon9060]()
     elif target_arch == "gfx1201":
-        return Radeon9070
+        return materialize[Radeon9070]()
     elif target_arch == "apple-m1":
-        return MetalM1
+        return materialize[MetalM1]()
     elif target_arch == "apple-m2":
-        return MetalM2
+        return materialize[MetalM2]()
     elif target_arch == "apple-m3":
-        return MetalM3
+        return materialize[MetalM3]()
     elif target_arch == "apple-m4":
-        return MetalM4
+        return materialize[MetalM4]()
     elif _accelerator_arch() == "":
-        return NoGPU
+        return materialize[NoGPU]()
     else:
         return _get_info_from_target[_accelerator_arch()]()
 

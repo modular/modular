@@ -137,7 +137,7 @@ alias numbers_to_test = [
 
 
 def test_atof_generate_cases():
-    for number, number_as_str in numbers_to_test:
+    for number, number_as_str in materialize[numbers_to_test]():
         for suffix in ["", "f", "F"]:
             for exponent in ["e", "E"]:
                 for multiplier in ["", "-"]:

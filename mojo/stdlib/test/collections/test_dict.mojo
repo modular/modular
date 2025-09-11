@@ -39,7 +39,7 @@ def test_dict_fromkeys():
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
-    var dict = Dict.fromkeys(keys, 1)
+    var dict = Dict.fromkeys(materialize[keys](), 1)
 
     assert_equal(len(dict), len(expected_dict))
 
@@ -57,7 +57,7 @@ def test_dict_fromkeys_optional():
         "b": None,
         "c": None,
     }
-    var dict = Dict[_, Int].fromkeys(keys)
+    var dict = Dict[_, Int].fromkeys(materialize[keys]())
 
     assert_equal(len(dict), len(expected_dict))
 

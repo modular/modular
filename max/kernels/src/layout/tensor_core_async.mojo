@@ -343,7 +343,7 @@ fn tile_to_descriptor[
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
         alias T = _CM_ROW_BYTES // dtype.size_of()
         alias tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
-        return logical_divide(layout, tiler)
+        return logical_divide(layout, materialize[tiler]())
     else:
         # We are not using atom layout for MN-major layouts.
         return layout

@@ -24,9 +24,14 @@ alias data4x4: List[List[Int8]] = [
 
 def grid4x4() -> Grid[4, 4]:
     grid = Grid[4, 4]()
+
+    @parameter
     for row in range(4):
+
+        @parameter
         for col in range(4):
-            grid[row, col] = data4x4[row][col]
+            alias v = data4x4[row][col]
+            grid[row, col] = v
     return grid
 
 
@@ -41,9 +46,14 @@ def test_gridv3_init():
 
 def test_gridv3_index():
     grid = grid4x4()
+
+    @parameter
     for row in range(4):
+
+        @parameter
         for col in range(4):
-            assert_equal(data4x4[row][col], grid[row, col])
+            alias v = data4x4[row][col]
+            assert_equal(v, grid[row, col])
             grid[row, col] = 1
             assert_equal(Int8(1), grid[row, col])
             grid[row, col] = 0

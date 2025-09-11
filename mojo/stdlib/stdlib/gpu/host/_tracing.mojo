@@ -93,7 +93,9 @@ fn _init_dylib() -> _OwnedDLHandle:
         return abort[_OwnedDLHandle]("cannot load dylib when disabled")
 
     try:
-        var dylib = _try_find_dylib["GPU tracing library"](LIBRARY_PATHS)
+        var dylib = _try_find_dylib["GPU tracing library"](
+            materialize[LIBRARY_PATHS]()
+        )
 
         @parameter
         if has_nvidia_gpu_accelerator():

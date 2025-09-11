@@ -131,6 +131,7 @@ from builtin.value import (
     ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
+    materialize,
 )
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private

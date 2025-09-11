@@ -421,7 +421,7 @@ fn _matmul_gpu[
     # NOTE: k has to be a multiple of BK * num_stages. Hard coded this condition to 128 for now.
     # TODO: Need to find a better dispatch strategy.
     var h100_matmul_cond = (
-        ctx.default_device_info is H100
+        materialize[ctx.default_device_info is H100]()
         and n % 8 == 0
         and a_type is DType.bfloat16
     )
@@ -651,10 +651,11 @@ fn _matmul_gpu[
                         var best_idx = 0
                         var idx = 0
 
-                        for block_m in block_sizes:
+                        var block_sizes_dyn = materialize[block_sizes]()
+                        for block_m in block_sizes_dyn:
                             var m_blocks = ceildiv(m, block_m)
 
-                            for block_n in block_sizes:
+                            for block_n in block_sizes_dyn:
                                 var n_blocks = ceildiv(static_N, block_n)
 
                                 var total_blocks = m_blocks * n_blocks
@@ -685,14 +686,15 @@ fn _matmul_gpu[
                         MatmulConfig[a_type, b_type, c_type, transpose_b]
                     ]()
 
+                    var block_sizes_dyn = materialize[block_sizes]()
                     for idx in range(len(emit_config)):
                         if not emit_config[idx]:
                             continue
 
                         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-                        var block_m = block_sizes[idx_m]
-                        var block_n = block_sizes[idx_n]
+                        var block_m = block_sizes_dyn[idx_m]
+                        var block_n = block_sizes_dyn[idx_n]
                         var block_k = _bk_base[a_type, True]()
 
                         alias max_num_warps: UInt = 4

@@ -43,7 +43,7 @@ fn _to_index[lookup: List[UInt32, **_]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
-    var result = lookup._binary_search_index(rune.to_u32())
+    var result = materialize[lookup]()._binary_search_index(rune.to_u32())
 
     if result:
         return Int(result.unsafe_value())
@@ -66,20 +66,20 @@ fn _get_uppercase_mapping(
 
     var index1 = _uppercase_mapping_index(char)
     if index1 != -1:
-        var rune = uppercase_mapping[index1]
+        var rune = materialize[uppercase_mapping]()[index1]
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
         return Tuple(UInt(1), array)
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
-        var runes = uppercase_mapping2[index2]
+        var runes = materialize[uppercase_mapping2]()[index2]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         return Tuple(UInt(2), array)
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
-        var runes = uppercase_mapping3[index3]
+        var runes = materialize[uppercase_mapping3]()[index3]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
@@ -89,13 +89,13 @@ fn _get_uppercase_mapping(
 
 
 fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var index: Optional[UInt] = has_lowercase_mapping._binary_search_index(
-        char.to_u32()
-    )
+    var index: Optional[UInt] = materialize[
+        has_lowercase_mapping
+    ]()._binary_search_index(char.to_u32())
 
     if index:
         # SAFETY: We just checked that `result` is present.
-        var codepoint = lowercase_mapping[index.unsafe_value()]
+        var codepoint = materialize[lowercase_mapping]()[index.unsafe_value()]
 
         # SAFETY:
         #   We know this is a valid `Codepoint` because the mapping data tables

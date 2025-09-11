@@ -74,7 +74,7 @@ fn test_distribute() raises:
                 frag[MixedTuple(Idx(i), Idx(j))] = counter
                 counter += 1
 
-    alias expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
+    var expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])
 
@@ -111,6 +111,6 @@ fn test_tile() raises:
     # Tile (0,1): values 4,5,6,7   -> positions [2,3], [6,7]
     # Tile (1,0): values 8,9,10,11 -> positions [8,9], [12,13]
     # Tile (1,1): values 12,13,14,15 -> positions [10,11], [14,15]
-    alias expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
+    var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
         assert_equal(ptr[i], expected[i])

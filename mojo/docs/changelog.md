@@ -152,6 +152,12 @@ language across multiple phases.
   qualified references (prepended with `Self.`), making it consistent with how
   accesses to member aliases and methods in a struct require `self.`.
 
+- The Mojo compiler now warns about implicitly materialization of a
+  non-`ImplicitlyCopyable` object, please either mark the type to be
+  `ImplicitlyCopyable` or using `materialize[value: T]()` to explicitly
+  materialize the parameter into a dynamic value. We are planning to upgrade the
+  warning to error in the future.
+
 ### Standard library changes
 
 - Added `Path(...).parts()` method to the `Path` type, for example instead of

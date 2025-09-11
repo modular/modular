@@ -79,7 +79,7 @@ struct Table[type: TuningConfig](Stringable):
         @parameter
         if len(domain):
             flag = List[Bool](length=self.num_configs, fill=False)
-            for idx in domain:
+            for idx in materialize[domain]():
                 flag[idx] = True
         else:
             flag = List[Bool](length=self.num_configs, fill=True)
@@ -104,8 +104,9 @@ struct Table[type: TuningConfig](Stringable):
         @always_inline
         @parameter
         fn _get_search_idx_list() -> List[Int]:
+            @parameter
             if idx_list:
-                return idx_list
+                return materialize[idx_list]()
             else:
                 return [idx for idx in range(self.num_configs)]
 

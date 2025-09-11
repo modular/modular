@@ -23,7 +23,7 @@ struct PyObjectFunction[
     func_type: AnyTrivialRegType,
     self_type: AnyType = NoneType,
     has_kwargs: Bool = False,
-]:
+](ImplicitlyCopyable):
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 

@@ -232,7 +232,7 @@ struct Level(
 # ===-----------------------------------------------------------------------===#
 
 
-struct Logger[level: Level = DEFAULT_LEVEL]:
+struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     """A logger that outputs messages at or above a specified severity level.
 
     Parameters:

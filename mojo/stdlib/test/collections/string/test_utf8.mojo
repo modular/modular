@@ -198,51 +198,60 @@ def test_bad_utf8_sequences():
 
 
 def test_stringslice_from_utf8():
+    @parameter
     for sequence in GOOD_SEQUENCES:
-        _ = StringSlice(from_utf8=Span(sequence))
+        _ = StringSlice(from_utf8=Span(materialize[sequence]()))
 
+    @parameter
     for sequence in BAD_SEQUENCES:
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice(from_utf8=Span(sequence))
+            _ = StringSlice(from_utf8=Span(materialize[sequence]()))
 
 
 def test_combination_good_utf8_sequences():
     # any combination of good sequences should be good
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + GOOD_SEQUENCES[j].copy()
+    var good_sequence = materialize[GOOD_SEQUENCES]()
+    for i in range(0, len(good_sequence)):
+        for j in range(i, len(good_sequence)):
+            var sequence = good_sequence[i] + good_sequence[j].copy()
             assert_true(validate_utf8(Span(sequence)))
 
 
 def test_combination_bad_utf8_sequences():
     # any combination of bad sequences should be bad
-    for i in range(0, len(BAD_SEQUENCES)):
-        for j in range(i, len(BAD_SEQUENCES)):
-            var sequence = BAD_SEQUENCES[i] + BAD_SEQUENCES[j].copy()
+    var bad_sequence = materialize[BAD_SEQUENCES]()
+    for i in range(0, len(bad_sequence)):
+        for j in range(i, len(bad_sequence)):
+            var sequence = bad_sequence[i] + bad_sequence[j].copy()
             assert_false(validate_utf8(Span(sequence)))
 
 
 def test_combination_good_bad_utf8_sequences():
     # any combination of good and bad sequences should be bad
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + BAD_SEQUENCES[j].copy()
+    var good_sequence = materialize[GOOD_SEQUENCES]()
+    var bad_sequence = materialize[BAD_SEQUENCES]()
+    for i in range(0, len(good_sequence)):
+        for j in range(0, len(bad_sequence)):
+            var sequence = good_sequence[i] + bad_sequence[j].copy()
             assert_false(validate_utf8(Span(sequence)))
 
 
 def test_combination_10_good_utf8_sequences():
     # any 10 combination of good sequences should be good
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + GOOD_SEQUENCES[j] * 10
+    var good_sequence = materialize[GOOD_SEQUENCES]()
+    for i in range(0, len(good_sequence)):
+        for j in range(i, len(good_sequence)):
+            var sequence = good_sequence[i] * 10 + good_sequence[j] * 10
             assert_true(validate_utf8(Span(sequence)))
 
 
 def test_combination_10_good_10_bad_utf8_sequences():
     # any 10 combination of good and bad sequences should be bad
-    for i in range(0, len(GOOD_SEQUENCES)):
-        for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + BAD_SEQUENCES[j] * 10
+    var good_sequence = materialize[GOOD_SEQUENCES]()
+    var bad_sequence = materialize[BAD_SEQUENCES]()
+    for i in range(0, len(good_sequence)):
+        for j in range(0, len(bad_sequence)):
+            var sequence = good_sequence[i] * 10 + bad_sequence[j] * 10
             assert_false(validate_utf8(Span(sequence)))
 
 

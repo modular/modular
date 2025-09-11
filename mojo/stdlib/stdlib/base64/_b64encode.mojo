@@ -60,8 +60,11 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
         alias perm = [1, 0, 2, 1]
         var res = IndexList[width]()
         for i in range(width // 4):
+
+            @parameter
             for j in range(4):
-                res[4 * i + j] = 3 * i + perm[j]
+                alias perm_j = perm[j]
+                res[4 * i + j] = 3 * i + perm_j
         return res
 
     @always_inline

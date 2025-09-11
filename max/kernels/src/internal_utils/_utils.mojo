@@ -444,7 +444,7 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """
     alias shape_str = env_get_string[name, default]()
     alias shape: List[Int] = parse_shape[shape_str]()
-    return shape
+    return materialize[shape]()
 
 
 fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
@@ -452,7 +452,8 @@ fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
     @parameter
     for i in range(len(x)):
-        t[i] = x[i]
+        alias xi = x[i]
+        t[i] = xi
     return t
 
 

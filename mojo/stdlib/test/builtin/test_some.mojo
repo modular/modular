@@ -38,7 +38,7 @@ def test_some_arg():
 
 
 fn takes_some_param[x: Some[Intable]]() -> Int:
-    return x.__int__()
+    return materialize[x]().__int__()
 
 
 def test_some_param():

@@ -65,7 +65,7 @@ alias NVSHMEM_LIBRARY = _Global[
 
 
 fn _init_nvshmem_dylib() -> _OwnedDLHandle:
-    return _find_dylib["NVSHMEM"](NVSHMEM_LIBRARY_PATHS)
+    return _find_dylib["NVSHMEM"](materialize[NVSHMEM_LIBRARY_PATHS]())
 
 
 @always_inline

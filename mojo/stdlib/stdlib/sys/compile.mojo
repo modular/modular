@@ -36,7 +36,7 @@ fn is_compile_time() -> Bool:
 
 
 @fieldwise_init
-struct _OptimizationLevel(Intable, Stringable, Writable):
+struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
     """Represents the optimization level used during compilation.
 
     The optimization level is determined by the __OPTIMIZATION_LEVEL environment

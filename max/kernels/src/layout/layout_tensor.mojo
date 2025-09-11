@@ -2616,7 +2616,7 @@ struct LayoutTensor[
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
         alias tiler = MakeTileLayoutList[*tile_sizes]()
-        return zipped_divide(layout, tiler)
+        return zipped_divide(layout, materialize[tiler]())
 
     @staticmethod
     fn _fast_varying_dim_tiler(shape: Int) -> Layout:
