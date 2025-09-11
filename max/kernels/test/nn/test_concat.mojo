@@ -12,15 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import (
-    LayoutTensor,
-    Layout,
-    IntTuple,
-    RuntimeLayout,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-)
-from layout.int_tuple import fill_like
+from buffer import NDBuffer
+from buffer.dimlist import DimList
 from nn.concat import (
     _concat_parallel,
     _concat_serial,
@@ -31,15 +24,12 @@ from utils import IndexList, StaticTuple
 
 
 fn _tuple_to_list[
-    origin: ImmutableOrigin, //,
     dtype: DType,
     rank: Int,
-](
-    elems: StaticTuple[
-        LayoutTensor[dtype, Layout.row_major[rank](), origin], *_
-    ]
-) -> List[LayoutTensor[dtype, Layout.row_major[rank](), origin]]:
-    var output = List[LayoutTensor[dtype, Layout.row_major[rank](), origin]](
+](elems: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], *_]) -> List[
+    NDBuffer[dtype, rank, MutableAnyOrigin]
+]:
+    var output = List[NDBuffer[dtype, rank, MutableAnyOrigin]](
         capacity=len(elems)
     )
     for i in range(len(elems)):
@@ -54,82 +44,55 @@ def test_concat():
     alias rank = 4
     alias concat_axis = 2
 
-    alias s1 = Layout.row_major(2, 2, 1, 2)
-    alias s2 = Layout.row_major(2, 2, 2, 2)
-    alias s3 = Layout.row_major(2, 2, 3, 2)
+    alias s1 = DimList(2, 2, 1, 2, 0)
+    alias s2 = DimList(2, 2, 2, 2, 0)
+    alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1_stack = InlineArray[Scalar[dtype], s1.size()](uninitialized=True)
-    var x1 = LayoutTensor[dtype, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[dtype], s2.size()](uninitialized=True)
-    var x2 = LayoutTensor[dtype, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[dtype], s3.size()](uninitialized=True)
-    var x3 = LayoutTensor[dtype, s3](x3_stack)
-    _ = x1.fill(0)
-    _ = x2.fill(1)
-    _ = x3.fill(2)
-    alias out_shape = Layout.row_major(2, 2, 6, 2)
-    var out_stack = InlineArray[Scalar[dtype], out_shape.size()](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var output = LayoutTensor[dtype, out_shape](out_stack)
-    _ = output.fill(-1)
-    var output_dyn = LayoutTensor[dtype, Layout.row_major[rank]()](
-        output.ptr,
-        RuntimeLayout[Layout.row_major[rank]()].row_major(
-            output.runtime_layout.shape.value.canonicalize()
-        ),
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
+        uninitialized=True
     )
-    alias lyt = Layout.row_major[output_dyn.rank]()
-    alias dyn_origin = ImmutableOrigin.cast_from[
-        __origin_of(x1_stack, x2_stack, x3_stack)
-    ]
-    var x1_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x1.ptr,
-        RuntimeLayout[lyt].row_major(
-            x1.runtime_layout.shape.value.canonicalize()
-        ),
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
+        uninitialized=True
     )
-    var x2_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x2.ptr,
-        RuntimeLayout[lyt].row_major(
-            x2.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    var x3_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x3.ptr,
-        RuntimeLayout[lyt].row_major(
-            x3.runtime_layout.shape.value.canonicalize()
-        ),
-    )
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
+    x1.fill(0)
+    x2.fill(1)
+    x3.fill(2)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
-    var input_tuple = StaticTuple[
-        LayoutTensor[dtype, Layout.row_major[output_dyn.rank](), dyn_origin],
-        3,
-    ](x1_dyn, x2_dyn, x3_dyn)
+    alias out_shape = DimList(2, 2, 6, 2, 0)
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
+    output.fill(-1)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
+
+    var input_tuple = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
+        x1_dyn, x2_dyn, x3_dyn
+    )
 
     @parameter
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[c_type, width]):
-        var idx = output.runtime_layout(
-            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](coords)
-        )
-        output.ptr.store[width=width](
-            idx,
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+        output.store[width=width](
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    concat[
-        input_origin=dyn_origin, dtype, False, epilogue_fn=epilogue_plus_one
-    ](output_dyn, concat_axis, input_tuple)
-
-    var flattened = LayoutTensor[output.dtype, Layout.row_major(UNKNOWN_VALUE)](
-        output.ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](output.size())
-        ),
+    concat[rank, dtype, False, epilogue_fn=epilogue_plus_one](
+        output_dyn, concat_axis, input_tuple
     )
+
     # CHECK: == test_concat
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
@@ -140,11 +103,8 @@ def test_concat():
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
-    for i in range(out_shape.size()):
-        var idx = flattened.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-        )
-        print(flattened.ptr[idx])
+    for i in range(out_shape.product[rank]().get()):
+        print(output.flatten()[i])
 
 
 def test_concat_parallel():
@@ -154,56 +114,38 @@ def test_concat_parallel():
     alias rank = 4
     alias concat_axis = 2
 
-    alias s1 = Layout.row_major(2, 2, 1, 2)
-    alias s2 = Layout.row_major(2, 2, 2, 2)
-    alias s3 = Layout.row_major(2, 2, 3, 2)
+    alias s1 = DimList(2, 2, 1, 2, 0)
+    alias s2 = DimList(2, 2, 2, 2, 0)
+    alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1_stack = InlineArray[Scalar[dtype], s1.size()](uninitialized=True)
-    var x1 = LayoutTensor[dtype, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[dtype], s2.size()](uninitialized=True)
-    var x2 = LayoutTensor[dtype, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[dtype], s3.size()](uninitialized=True)
-    var x3 = LayoutTensor[dtype, s3](x3_stack)
-    _ = x1.fill(0)
-    _ = x2.fill(1)
-    _ = x3.fill(2)
-    alias lyt = Layout.row_major[rank]()
-    alias dyn_origin = ImmutableOrigin.cast_from[
-        __origin_of(x1_stack, x2_stack, x3_stack)
-    ]
-    var x1_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x1.ptr,
-        RuntimeLayout[lyt].row_major(
-            x1.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    var x2_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x2.ptr,
-        RuntimeLayout[lyt].row_major(
-            x2.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    var x3_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x3.ptr,
-        RuntimeLayout[lyt].row_major(
-            x3.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-
-    alias out_shape = Layout.row_major(2, 2, 6, 2)
-    var out_stack = InlineArray[Scalar[dtype], out_shape.size()](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var output = LayoutTensor[dtype, out_shape](out_stack)
-    _ = output.fill(-1)
-    var output_dyn = LayoutTensor[dtype, lyt](
-        output.ptr,
-        RuntimeLayout[lyt].row_major(
-            output.runtime_layout.shape.value.canonicalize()
-        ),
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
+        uninitialized=True
     )
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
+        uninitialized=True
+    )
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
+    x1.fill(0)
+    x2.fill(1)
+    x3.fill(2)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
-    var input_tuple = StaticTuple[LayoutTensor[dtype, lyt, dyn_origin], 3](
+    alias out_shape = DimList(2, 2, 6, 2, 0)
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
+    output.fill(-1)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
+
+    var input_tuple = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -211,26 +153,17 @@ def test_concat_parallel():
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[c_type, width]):
-        var idx = output.runtime_layout(
-            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](coords)
-        )
-        output.ptr.store[width=width](
-            idx,
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+        output.store[width=width](
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[dtype, width]](val + 1),
         )
 
     var input_vec = _tuple_to_list(input_tuple)
-    _concat_parallel[dtype, epilogue_plus_one](
+    _concat_parallel[rank, dtype, epilogue_plus_one](
         output_dyn, concat_axis, input_vec
     )
 
-    var flattened = LayoutTensor[output.dtype, Layout.row_major(UNKNOWN_VALUE)](
-        output.ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](output.size())
-        ),
-    )
     # CHECK: == test_concat_parallel
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
@@ -241,11 +174,8 @@ def test_concat_parallel():
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
-    for i in range(output.size()):
-        var idx = flattened.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-        )
-        print(flattened.ptr[idx])
+    for i in range(out_shape.product[rank]().get()):
+        print(output.flatten()[i])
 
 
 # CHECK-LABEL: test_concat_inner
@@ -256,56 +186,38 @@ def test_concat_inner():
     alias rank = 5
     alias concat_axis = 2
 
-    alias s1 = Layout.row_major(1, 1, 1, 2, 2)
-    alias s2 = Layout.row_major(1, 1, 2, 2, 2)
-    alias s3 = Layout.row_major(1, 1, 3, 2, 2)
+    alias s1 = DimList(1, 1, 1, 2, 2)
+    alias s2 = DimList(1, 1, 2, 2, 2)
+    alias s3 = DimList(1, 1, 3, 2, 2)
 
-    var x1_stack = InlineArray[Scalar[dtype], s1.size()](uninitialized=True)
-    var x1 = LayoutTensor[dtype, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[dtype], s2.size()](uninitialized=True)
-    var x2 = LayoutTensor[dtype, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[dtype], s3.size()](uninitialized=True)
-    var x3 = LayoutTensor[dtype, s3](x3_stack)
-    _ = x1.fill(0)
-    _ = x2.fill(1)
-    _ = x3.fill(2)
-    alias lyt = Layout.row_major[rank]()
-    alias dyn_origin = ImmutableOrigin.cast_from[
-        __origin_of(x1_stack, x2_stack, x3_stack)
-    ]
-    var x1_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x1.ptr,
-        RuntimeLayout[lyt].row_major(
-            x1.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    var x2_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x2.ptr,
-        RuntimeLayout[lyt].row_major(
-            x2.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    var x3_dyn = LayoutTensor[dtype, lyt, dyn_origin](
-        x3.ptr,
-        RuntimeLayout[lyt].row_major(
-            x3.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-
-    alias out_shape = Layout.row_major(1, 1, 6, 2, 2)
-    var out_stack = InlineArray[Scalar[dtype], out_shape.size()](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var output = LayoutTensor[dtype, out_shape](out_stack)
-    _ = output.fill(-1)
-    var output_dyn = LayoutTensor[dtype, lyt](
-        output.ptr,
-        RuntimeLayout[lyt].row_major(
-            output.runtime_layout.shape.value.canonicalize()
-        ),
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
+        uninitialized=True
     )
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
+        uninitialized=True
+    )
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
+    x1.fill(0)
+    x2.fill(1)
+    x3.fill(2)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
-    var input_list = StaticTuple[LayoutTensor[dtype, lyt, dyn_origin], 3](
+    alias out_shape = DimList(1, 1, 6, 2, 2)
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
+    output.fill(-1)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
+
+    var input_list = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -315,31 +227,21 @@ def test_concat_inner():
     @always_inline
     fn epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[c_type, width]):
-        var idx = output.runtime_layout(
-            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](coords)
-        )
-        output.ptr.store[width=width](
-            idx,
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+        output.store[width=width](
+            rebind[IndexList[rank]](indices),
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    _concat_serial[dtype, epilogue_plus_one](output_dyn, concat_axis, input_vec)
-
-    var flattened = LayoutTensor[output.dtype, Layout.row_major(UNKNOWN_VALUE)](
-        output.ptr,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](output.size())
-        ),
+    _concat_serial[rank, dtype, epilogue_plus_one](
+        output_dyn, concat_axis, input_vec
     )
+
     # CHECK-COUNT-4: 1.0
     # CHECK-COUNT-8: 2.0
     # CHECK-COUNT-12: 3.0
-    for i in range(out_shape.size()):
-        var idx = flattened.runtime_layout(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-        )
-        print(flattened.ptr[idx])
+    for i in range(out_shape.product[rank]().get()):
+        print(output.flatten()[i])
 
 
 def main():

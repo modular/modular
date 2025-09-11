@@ -29,17 +29,35 @@ alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
     "/opt/rocm/lib/librocblas.so.4",
 )
 
-alias ROCM_ROCBLAS_LIBRARY = _Global["ROCM_ROCBLAS_LIBRARY", _init_dylib]()
+
+fn _on_error_msg() -> String:
+    return String(
+        (
+            "Cannot find the rocBLAS libraries. Please make sure that "
+            "the ROCM toolkit is installed and that the library path is "
+            "correctly set in one of the following paths ["
+        ),
+        ", ".join(ROCM_ROCBLAS_LIBRARY_PATHS),
+        (
+            "]. You may need to make sure that you are using the non-slim"
+            " version of the MAX container."
+        ),
+    )
+
+
+alias ROCM_ROCBLAS_LIBRARY = _Global[
+    "ROCM_ROCBLAS_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
+]()
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["ROCm rocBLAS library"](ROCM_ROCBLAS_LIBRARY_PATHS)
+    return _find_dylib[abort_on_failure=False](ROCM_ROCBLAS_LIBRARY_PATHS)
 
 
 @always_inline
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     return _ffi_get_dylib_function[
         ROCM_ROCBLAS_LIBRARY,
         func_name,

@@ -37,6 +37,7 @@ from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import Index, IndexList
+from os import abort
 
 
 struct _MatmulConfig:
@@ -435,7 +436,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         accumulate: Bool = False,
-    ):
+    ) raises:
         if M == 1:
 
             @parameter
@@ -788,20 +789,25 @@ struct _FlashAttention[
                             get_nd_index[is_kv=True](_n + kv_seq_idx, _k)
                         )
 
-                    Self._matmul._matmul[
-                        input_k_2d_fn,
-                        transpose_b=True,
-                        static_k = Self._depth_static_dim,
-                    ](
-                        count_m,
-                        kv_seq_cnt,
-                        depth_dim,
-                        q_ptr,
-                        q_seq_stride,
-                        packed_ptr,
-                        qk_block_ptr,
-                        Self._config.qk_block_n,
-                    )
+                    try:
+                        Self._matmul._matmul[
+                            input_k_2d_fn,
+                            transpose_b=True,
+                            static_k = Self._depth_static_dim,
+                        ](
+                            count_m,
+                            kv_seq_cnt,
+                            depth_dim,
+                            q_ptr,
+                            q_seq_stride,
+                            packed_ptr,
+                            qk_block_ptr,
+                            Self._config.qk_block_n,
+                        )
+                    except e:
+                        # This won't trigger in practice, but we want to keep
+                        # this function non-raising.
+                        abort(String(e))
 
                     @parameter
                     @always_inline
@@ -841,17 +847,20 @@ struct _FlashAttention[
                             get_nd_index[is_kv=True](_k + kv_seq_idx, n + _n)
                         )
 
-                    Self._matmul._matmul[input_v_2d_fn](
-                        count_m,
-                        count_n,
-                        kv_seq_cnt,
-                        qk_block_ptr,
-                        Self._config.qk_block_n,
-                        packed_ptr,
-                        o_block_ptr,
-                        Self._config.o_block_n,
-                        accumulate=(kv_seq_idx > 0),
-                    )
+                    try:
+                        Self._matmul._matmul[input_v_2d_fn](
+                            count_m,
+                            count_n,
+                            kv_seq_cnt,
+                            qk_block_ptr,
+                            Self._config.qk_block_n,
+                            packed_ptr,
+                            o_block_ptr,
+                            Self._config.o_block_n,
+                            accumulate=(kv_seq_idx > 0),
+                        )
+                    except e:
+                        abort(String(e))
                     _ = kv_seq_idx
 
                 _ = m
@@ -1028,7 +1037,7 @@ fn flash_attention_split_kv[
     mask_shape: IndexList[mask_rank],
     output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
-):
+) raises:
     """Variant of flash attention that takes the previous KV cache
     `input_{k,v}_cache_fn` and the current KV tensors `input_k_fn` and
     `input_v_fn` as separate arguments.

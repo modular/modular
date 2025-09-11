@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 from max.driver import DeviceStream
@@ -23,6 +23,7 @@ from max.interfaces import (
     BatchLogitsProcessor,
     GenerationStatus,
     LogProbabilities,
+    PipelineTokenizer,
     TextGenerationOutput,
 )
 from max.nn.kv_cache import KVCacheInputsSequence
@@ -43,9 +44,14 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         pipeline_model: type[PipelineModel[TTSContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
+        tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> None:
         super().__init__(
-            pipeline_config, pipeline_model, eos_token_id, weight_adapters
+            pipeline_config,
+            pipeline_model,
+            eos_token_id,
+            weight_adapters,
+            tokenizer,
         )
         self.d2h_stream = DeviceStream(self._devices[0])
 

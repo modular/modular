@@ -43,7 +43,7 @@ fn _init_mpi_dylib() -> _OwnedDLHandle:
 @always_inline
 fn _get_mpi_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     return _get_dylib_function[
         MPI_LIBRARY(),
         func_name,
@@ -62,7 +62,7 @@ alias MPIComm = UnsafePointer[OpaquePointer]
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) -> c_int:
+fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) raises -> c_int:
     """Initialize MPI."""
     return _get_mpi_function[
         "MPI_Init",
@@ -72,7 +72,7 @@ fn MPI_Init(argc: Int, argv: VariadicList[StaticString]) -> c_int:
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
 
 
-fn MPI_Finalize() -> c_int:
+fn MPI_Finalize() raises -> c_int:
     """Finalize MPI."""
     return _get_mpi_function[
         "MPI_Finalize",
@@ -80,7 +80,7 @@ fn MPI_Finalize() -> c_int:
     ]()()
 
 
-fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) -> c_int:
+fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) raises -> c_int:
     """Get the rank of the current process in the communicator."""
     return _get_mpi_function[
         "MPI_Comm_rank",
@@ -88,7 +88,7 @@ fn MPI_Comm_rank(comm: MPIComm, rank: UnsafePointer[c_int]) -> c_int:
     ]()(comm, rank)
 
 
-fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) -> c_int:
+fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) raises -> c_int:
     """Get the size of the communicator."""
     return _get_mpi_function[
         "MPI_Comm_size",
@@ -96,7 +96,7 @@ fn MPI_Comm_size(comm: MPIComm, size: UnsafePointer[c_int]) -> c_int:
     ]()(comm, size)
 
 
-fn get_mpi_comm_world() -> MPIComm:
+fn get_mpi_comm_world() raises -> MPIComm:
     """Get the MPI_COMM_WORLD communicator."""
     var handle = MPI_LIBRARY.get_or_create_ptr()[].handle()
     var comm_world_ptr = handle.get_symbol[OpaquePointer](

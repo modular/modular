@@ -1919,6 +1919,46 @@ struct LayoutTensor[
             self._offset(m, n)
         )
 
+    @always_inline("nodebug")
+    fn load[width: Int](self, coords: IndexList[**_]) -> SIMD[dtype, width]:
+        """Load a SIMD vector from the tensor at the specified 2D coordinates.
+
+        Performs a vectorized load operation from the tensor's memory,
+        retrieving `width` consecutive elements starting at position (m, n).
+        This method enables efficient SIMD operations on tensor data.
+
+        Parameters:
+            width: The number of elements to load into the SIMD vector. Should match
+                    the target hardware's vector width for optimal performance.
+
+        Args:
+            coords: The coordinates to index.
+
+        Returns:
+            A SIMD vector containing 'width' consecutive elements from the tensor.
+
+        Performance:
+
+        - Uses unaligned memory access which may be slower on some
+            architectures.
+        - For aligned access, use `aligned_load` instead when data alignment is
+            guaranteed.
+        - The load operation is optimized based on the tensor's memory layout.
+
+        Notes:
+
+        - No bounds checking is performed. Accessing out-of-bounds indices will
+            result in undefined behavior.
+        - The elements are loaded according to the tensor's stride configuration.
+        """
+        constrained[self.rank == coords.size]()
+        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+        var idx = self.runtime_layout(
+            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
+        )
+
+        return self.ptr.load[width=width, alignment = Self.alignment](idx)
+
     @always_inline
     fn prefetch(self, m: Int, n: Int):
         """Prefetch tensor data at the specified 2D coordinates into cache.
@@ -2027,10 +2067,51 @@ struct LayoutTensor[
         - The elements are stored according to the tensor's stride configuration.
         - This operation modifies the tensor's data in-place.
         """
-
         return self.ptr.store[alignment = Self.alignment](
             self._offset(m, n), val
         )
+
+    @always_inline("nodebug")
+    fn store[
+        width: Int
+    ](mut self, coords: IndexList[**_], val: SIMD[dtype, width]):
+        """Store a SIMD vector to the tensor at the specified 2D coordinates.
+
+        Performs a vectorized store operation to the tensor's memory, writing
+        'width' consecutive elements starting at position (m, n). This method
+        enables efficient SIMD operations on tensor data.
+
+        Parameters:
+            width: The number of elements in the SIMD vector to store. Should
+                match the target hardware's vector width for optimal performance.
+
+        Args:
+            coords: The coordinates to index.
+            val: The SIMD vector containing the values to store in the tensor.
+
+        Performance:
+
+        - Uses unaligned memory access which may be slower on some
+            architectures.
+        - For aligned access, use aligned_store instead when data alignment is
+            guaranteed.
+        - The store operation is optimized based on the tensor's memory layout.
+
+        Notes:
+
+        - No bounds checking is performed. Accessing out-of-bounds indices will
+            result in undefined behavior.
+        - The elements are stored according to the tensor's stride configuration.
+        - This operation modifies the tensor's data in-place.
+        """
+        constrained[self.rank == coords.size]()
+        constrained[Int(self.layout.stride[self.rank - 1]) == 1]()
+
+        var idx = self.runtime_layout(
+            RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](coords)
+        )
+
+        return self.ptr.store[alignment = Self.alignment](idx, val)
 
     @always_inline("nodebug")
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):

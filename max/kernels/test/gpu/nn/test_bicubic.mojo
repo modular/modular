@@ -655,9 +655,12 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     var output_dev = DeviceNDBuffer[dtype, 4, output_dim](output_dim, ctx=ctx)
 
     ctx.enqueue_copy(input_dev.buffer, input_host.tensor.data)
+    alias kernel = gpu_bicubic_kernel[
+        dtype, rank=4, output_shape=output_dim, input_shape=input_dim
+    ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
-    ctx.enqueue_function[gpu_bicubic_kernel[dtype, rank=4]](
+    ctx.enqueue_function_checked[kernel, kernel](
         output_dev.tensor,
         input_dev.tensor,
         grid_dim=(1, 3),

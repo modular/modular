@@ -363,13 +363,13 @@ fn sync_parallelize[
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
-            with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
-                "task", task_id=i, parent_id=parent_id
-            ):
-                try:
+            try:
+                with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
+                    "task", task_id=i, parent_id=parent_id
+                ):
                     func(i)
-                except e:
-                    abort(String(e))
+            except e:
+                abort(String(e))
 
     if num_work_items == 1:
         # Just run inline.

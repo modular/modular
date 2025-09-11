@@ -68,7 +68,23 @@ fn _setup_categories(
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
-alias GPU_TRACING_LIBRARY = _Global["GPU_TRACING_LIBRARY", _init_dylib]()
+fn _on_error_msg() -> String:
+    return String(
+        (
+            "Cannot find the GPU Tracing libraries. Please make sure that "
+            "the library path is correctly set in one of the following paths ["
+        ),
+        ", ".join(LIBRARY_PATHS),
+        (
+            "]. You may need to make sure that you are using the non-slim"
+            " version of the MAX container."
+        ),
+    )
+
+
+alias GPU_TRACING_LIBRARY = _Global[
+    "GPU_TRACING_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
+]()
 
 
 fn _init_dylib() -> _OwnedDLHandle:
@@ -89,26 +105,13 @@ fn _init_dylib() -> _OwnedDLHandle:
 
         return dylib^
     except e:
-        var msg = String(e, "\n")
-
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            msg += " please install the cuda toolkit. "
-            msg += "In apt-get this can be done with "
-            msg += (
-                "`sudo apt-get -y install cuda-toolkit-XX-Y`. Where XX and Y "
-            )
-            msg += "are the major and minor versions."
-        else:
-            msg += " please install ROCprofiler."
-
-        return abort[_OwnedDLHandle](msg)
+        return _OwnedDLHandle(unsafe_uninitialized=True)
 
 
 @always_inline
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     return _ffi_get_dylib_function[
         GPU_TRACING_LIBRARY,
         func_name,
@@ -255,7 +258,7 @@ struct _dylib_function[fn_name: StaticString, type: AnyTrivialRegType]:
     alias fn_type = type
 
     @staticmethod
-    fn load() -> type:
+    fn load() raises -> type:
         return _get_dylib_function[fn_name, type]()
 
 
@@ -316,10 +319,10 @@ alias _roctxRangeStop = _dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Mark(Defaultable):
+struct _Mark:
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
             self._fn = _nvtxMarkEx.load()
@@ -335,10 +338,10 @@ struct _Mark(Defaultable):
         self._fn[_roctxMarkA.fn_type](val)
 
 
-struct _RangeStart(Defaultable):
+struct _RangeStart:
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangeStartEx.load()
@@ -354,10 +357,10 @@ struct _RangeStart(Defaultable):
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
-struct _RangeEnd(Defaultable):
+struct _RangeEnd:
     var _fn: fn (RangeID) -> NoneType
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangeEnd.load()
@@ -368,10 +371,10 @@ struct _RangeEnd(Defaultable):
         self._fn(val)
 
 
-struct _RangePush(Defaultable):
+struct _RangePush:
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangePushEx.load()
@@ -387,10 +390,10 @@ struct _RangePush(Defaultable):
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
-struct _RangePop(Defaultable):
+struct _RangePop:
     var _fn: _nvtxRangePop.fn_type
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         @parameter
         if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangePop.load()
@@ -430,7 +433,7 @@ fn _start_range(
     message: String = "",
     category: Int = _TraceType_MAX,
     color: Optional[Color] = None,
-) -> RangeID:
+) raises -> RangeID:
     @parameter
     if _is_disabled():
         return 0
@@ -446,7 +449,7 @@ fn _start_range(
 
 
 @always_inline
-fn _end_range(id: RangeID):
+fn _end_range(id: RangeID) raises:
     @parameter
     if _is_disabled():
         return
@@ -459,7 +462,7 @@ fn _mark(
     message: String = "",
     color: Optional[Color] = None,
     category: Int = _TraceType_MAX,
-):
+) raises:
     @parameter
     if _is_disabled():
         return
@@ -487,7 +490,7 @@ struct Range:
         message: String = "",
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
-    ):
+    ) raises:
         constrained[_is_enabled(), "GPU tracing must be enabled"]()
         self._info = EventAttributes(
             message=message, color=color, category=category
@@ -519,7 +522,7 @@ struct Range:
         message: String = "",
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
-    ):
+    ) raises:
         _mark(message=message, color=color)
 
 
@@ -535,7 +538,7 @@ struct RangeStack:
         message: String = "",
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
-    ):
+    ) raises:
         constrained[_is_enabled(), "GPU tracing must be enabled"]()
         self._info = EventAttributes(
             message=message, color=color, category=category

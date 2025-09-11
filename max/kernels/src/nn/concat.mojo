@@ -22,18 +22,10 @@ from algorithm.functional import (
     elementwise,
     sync_parallelize,
 )
+from buffer import NDBuffer
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from layout import (
-    Layout,
-    LayoutTensor,
-    IntTuple,
-    RuntimeLayout,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-)
-from layout.int_tuple import fill_like
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -83,26 +75,24 @@ fn memcpy_or_fuse[
         # Cast
         var shape_1d = IndexList[1](typed_len)
         var typed_src = src_data.bitcast[Scalar[dtype]]()
-        alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
-        var input = LayoutTensor[dtype, layout_1d](
+        var input = NDBuffer[dtype, 1](
             typed_src,
-            RuntimeLayout[layout_1d].row_major(shape_1d),
+            shape_1d,
         )
 
         @parameter
         @always_inline
         fn epilogue_wrapper[
             simd_width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var idx = input.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](coords)
-            )
-            var load = input.ptr.load[width=simd_width](idx)
+        ](index: IndexList[_rank]):
+            var load = rebind[NDBuffer[dtype, _rank, input.origin]](input).load[
+                width=simd_width
+            ](index)
 
             # Convert the linearized address back to the nd indices.
             constrained[_rank == 1]()
             var out_index = _get_start_indices_of_nth_subvolume[0](
-                coords[0] + typed_offset,
+                index[0] + typed_offset,
                 out_shape,
             )
 
@@ -143,35 +133,28 @@ struct _CanonicallyReshapedBuffer(ImplicitlyCopyable, Movable):
 
 
 fn _canonical_reshape[
-    dtype: DType
-](
-    buf: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
-    axis: Int,
-) -> _CanonicallyReshapedBuffer:
-    var shape = buf.runtime_layout.shape.value.canonicalize()
+    rank: Int, dtype: DType
+](buf: NDBuffer[dtype, rank], axis: Int) -> _CanonicallyReshapedBuffer:
+    var shape = buf.get_shape()
     var h = product(shape, 0, axis)
     var w = buf.dim(axis)
-    var c = product(shape, axis + 1, buf.rank) * size_of[dtype]()
-    return _CanonicallyReshapedBuffer(buf.ptr.bitcast[Int8](), h, w, c)
+    var c = product(shape, axis + 1, rank) * size_of[dtype]()
+    return _CanonicallyReshapedBuffer(buf.data.bitcast[Int8](), h, w, c)
 
 
 fn _canonical_reshape_output[
-    input_origin: ImmutableOrigin, input_layout: Layout, //, dtype: DType
+    rank: Int, dtype: DType
 ](
-    out_buf: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, **_],
+    out_buf: NDBuffer[dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) -> _CanonicallyReshapedBuffer:
-    constrained[
-        input_layout.rank() == out_buf.rank,
-        "inputs and out_buf must have the same rank",
-    ]()
     var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
     for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
-        out_buf.ptr.bitcast[Int8](),
+        out_buf.data.bitcast[Int8](),
         input0_canon.h,
         out_w,
         input0_canon.c,
@@ -179,21 +162,14 @@ fn _canonical_reshape_output[
 
 
 fn _concat_parallel[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
     var output_h = output_canon.h
@@ -256,32 +232,28 @@ fn _concat_parallel[
                 if overlap_full_rel_end < overlap_full_rel_start:
                     # If we hit here, this was probably a bad chunking choice,
                     # but var's handle it correctly anyways.
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[rank, dtype, epilogue_fn](
                         output_data,
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
                         input_data.offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            output.runtime_layout.shape.value.canonicalize()
-                        ),
+                        output.dynamic_shape,
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
                     # nice solid middle section -- var's handle those
                     # separately.
                     # First, leading stragglers:
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[rank, dtype, epilogue_fn](
                         output_data,
                         output_wc_offset
                         + overlap_rel_start // input_wc * output_wc
                         + overlap_rel_start % input_wc,
                         input_data.offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            output.runtime_layout.shape.value.canonicalize()
-                        ),
+                        output.dynamic_shape,
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.offset(overlap_full_rel_start)
@@ -292,26 +264,22 @@ fn _concat_parallel[
                     )
 
                     while in_ptr < end_in_ptr:
-                        memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                        memcpy_or_fuse[rank, dtype, epilogue_fn](
                             output_data,
                             out_ptr_offset,
                             in_ptr,
                             input_wc,
-                            rebind[IndexList[output.rank]](
-                                output.runtime_layout.shape.value.canonicalize()
-                            ),
+                            output.dynamic_shape,
                         )
                         in_ptr += input_wc
                         out_ptr_offset += output_wc
                     # Lastly, trailing stragglers:
-                    memcpy_or_fuse[output.rank, dtype, epilogue_fn](
+                    memcpy_or_fuse[rank, dtype, epilogue_fn](
                         output_data,
                         out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
-                        rebind[IndexList[output.rank]](
-                            output.runtime_layout.shape.value.canonicalize()
-                        ),
+                        output.dynamic_shape,
                     )
 
             amount_traversed += input_byte_size
@@ -329,16 +297,13 @@ fn _concat_parallel[
 
 @always_inline
 fn _concat[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -351,13 +316,9 @@ fn _concat[
     contiguous slices along the h dimension.
 
     """
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
 
-    var h = product(inputs[0].runtime_layout.shape.value, 0, axis)
-    var c = product(inputs[0].runtime_layout.shape.value, axis + 1, output.rank)
+    var h = product(inputs[0].get_shape(), 0, axis)
+    var c = product(inputs[0].get_shape(), axis + 1, rank)
 
     var w_out: Int = 0
     for i in range(len(inputs)):
@@ -374,65 +335,52 @@ fn _concat[
             var input_offset = j * w * c
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
-            memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-                output.ptr.bitcast[Int8](),
+            memcpy_or_fuse[rank, dtype, epilogue_fn](
+                output.data.bitcast[Int8](),
                 output_offset * size_of[dtype](),
-                (inputs[i].ptr + input_offset).bitcast[Int8](),
+                (inputs[i].data + input_offset).bitcast[Int8](),
                 w * c * size_of[dtype](),
-                rebind[IndexList[output.rank]](
-                    output.runtime_layout.shape.value.canonicalize()
-                ),
+                output.dynamic_shape,
             )
         w_offset += w
 
 
 @always_inline
 fn _concat_inner[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    output: NDBuffer[mut=True, dtype, rank],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
-        memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-            output.ptr.bitcast[Int8](),
+        memcpy_or_fuse[rank, dtype, epilogue_fn](
+            output.data.bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
-            inputs[i].ptr.bitcast[Int8](),
+            inputs[i].data.bitcast[Int8](),
             buffer_len * size_of[dtype](),
-            rebind[IndexList[output.rank]](
-                output.runtime_layout.shape.value.canonicalize()
-            ),
+            output.dynamic_shape,
         )
         num_elems_copied += buffer_len
 
 
 @always_inline
 fn _check_input_consistency[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
-    dtype: DType,
-](axis: Int, inputs: List[LayoutTensor[dtype, input_layout, input_origin]],):
+    rank: Int, dtype: DType
+](axis: Int, inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]]):
     @parameter
     if not is_debug_build():
         return
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(inputs)):
         debug_assert(
-            inputs[0].rank == inputs[i].rank,
+            inputs[0].get_rank() == inputs[i].get_rank(),
             "all concat inputs must have the same rank",
         )
-        for j in range(inputs[i].rank):
+        for j in range(inputs[i].get_rank()):
             debug_assert(
                 j == axis or inputs[0].dim(j) == inputs[i].dim(j),
                 (
@@ -444,23 +392,15 @@ fn _check_input_consistency[
 
 @always_inline
 fn _concat_serial[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
-
-    _check_input_consistency[dtype](axis, inputs)
+    _check_input_consistency[rank, dtype](axis, inputs)
 
     var all_outer_dims_singvaron = True
     for i in range(axis):
@@ -471,30 +411,22 @@ fn _concat_serial[
         break
 
     if all_outer_dims_singvaron:
-        _concat_inner[dtype, epilogue_fn](output, inputs)
+        _concat_inner[rank, dtype, epilogue_fn](output, inputs)
         return
 
-    _concat[dtype, epilogue_fn](output, axis, inputs)
+    _concat[rank, dtype, epilogue_fn](output, axis, inputs)
 
 
 @always_inline
 fn _concat_small[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
-
     alias single_thread_blocking_override = True
     alias simd_width = simd_width_of[dtype]()
 
@@ -517,91 +449,74 @@ fn _concat_small[
         for i in range(len(inputs)):
             var input = inputs[i]
             # This is the input we should be loading/storing.
-            if target_dim < input.runtime_layout.shape.value[axis]:
+            if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
                 in_index[axis] = target_dim
-                var idx = input.runtime_layout(
-                    RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
-                        in_index
-                    )
-                )
-                var load = input.ptr.load[width=simd_width](idx)
+                var load = rebind[NDBuffer[dtype, rank, input.origin]](
+                    input
+                ).load[width=simd_width](in_index)
 
                 @parameter
                 if epilogue_fn:
                     alias func = epilogue_fn.value()
                     func[dtype, rank, simd_width](out_index, load)
                 else:
-                    var out_idx = output.runtime_layout(
-                        RuntimeTuple[
-                            fill_like(output.layout.shape, UNKNOWN_VALUE)
-                        ](out_index)
-                    )
-                    output.ptr.store[width=simd_width](out_idx, load)
+                    rebind[NDBuffer[dtype, rank, output.origin]](output).store[
+                        width=simd_width
+                    ](out_index, load)
                 return
             else:
                 # Keep looking...
-                target_dim -= input.runtime_layout.shape.value[axis]
+                target_dim -= input.dynamic_shape[axis]
 
     # We need to check it's safe to simd_load from each input.
     var inputs_simd_aligned = True
     for i in range(len(inputs)):
-        if (
-            inputs[i].runtime_layout.shape.value[output.rank - 1] % simd_width
-            != 0
-        ):
+        if inputs[i].dynamic_shape[rank - 1] % simd_width != 0:
             inputs_simd_aligned = False
 
     # If we are concat'ing along the last dimension we can do a simd load.
-    if axis == output.rank - 1 and inputs_simd_aligned:
+    if axis == rank - 1 and inputs_simd_aligned:
         elementwise[
             concat_lambda,
             simd_width=simd_width,
             use_blocking_impl=single_thread_blocking_override,
-        ](output.runtime_layout.shape.value)
+        ](output.dynamic_shape)
     else:
         # Otherwise we must run scalar.
         elementwise[
             concat_lambda,
             simd_width=1,
             use_blocking_impl=single_thread_blocking_override,
-        ](output.runtime_layout.shape.value)
+        ](output.dynamic_shape)
 
 
 @always_inline
 fn _concat_cpu[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, **_
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, input_layout, input_origin]],
+    inputs: List[NDBuffer[dtype, rank, MutableAnyOrigin]],
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
-
     @parameter
     if single_thread_blocking_override:
-        return _concat_small[dtype, epilogue_fn](output, axis, inputs)
+        return _concat_small[rank, dtype, epilogue_fn](output, axis, inputs)
 
-    _check_input_consistency[dtype](axis, inputs)
+    _check_input_consistency[rank, dtype](axis, inputs)
 
     @always_inline
     @parameter
     fn dispatch_serial(unused_thread_idx: Int) raises:
-        _concat_serial[dtype, epilogue_fn](output, axis, inputs)
+        _concat_serial[rank, dtype, epilogue_fn](output, axis, inputs)
 
     alias KB = 1024
     alias min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    var output_bytes = output.size() * size_of[dtype]()
+    var output_bytes = output.num_elements() * size_of[dtype]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
@@ -617,11 +532,7 @@ fn concat_shape[
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_bufs: List[
-        LayoutTensor[
-            input_type, Layout.row_major[input_rank](), MutableAnyOrigin
-        ]
-    ],
+    input_bufs: List[NDBuffer[input_type, input_rank, MutableAnyOrigin]],
     axis: Int,
 ) raises -> IndexList[input_rank]:
     """
@@ -659,12 +570,7 @@ fn concat_shape[
     for i in range(len(input_bufs)):
         concat_axis_dim_sum += input_bufs[i].dim(normalized_axis)
         if not shape_equal_ignore_axis(
-            rebind[IndexList[input_rank]](
-                input_bufs[0].runtime_layout.shape.value.canonicalize()
-            ),
-            rebind[IndexList[input_rank]](
-                input_bufs[i].runtime_layout.shape.value.canonicalize()
-            ),
+            input_bufs[0].get_shape(), input_bufs[i].get_shape()
         ):
             raise Error(
                 "[concat_from_list] input shapes must match except at concat"
@@ -672,37 +578,25 @@ fn concat_shape[
             )
 
     # compute and return the output shape
-    var output_shape = rebind[IndexList[input_rank]](
-        input_bufs[0].runtime_layout.shape.value.canonicalize()
-    )
+    var output_shape = input_bufs[0].get_shape()
     output_shape[normalized_axis] = concat_axis_dim_sum
     return output_shape
 
 
 @always_inline
 fn concat[
-    input_layout: Layout,
-    input_origin: ImmutableOrigin,
-    origin: MutableOrigin,
-    output_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
     epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, origin],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: StaticTuple[
-        LayoutTensor[dtype, input_layout, input_origin],
-        *_,
-    ],
+    inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
 
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
@@ -710,9 +604,9 @@ fn concat[
 
         @parameter
         if is_cpu[target]():
-            var inputVec = List[
-                LayoutTensor[dtype, input_layout, input_origin]
-            ](capacity=len(inputs))
+            var inputVec = List[NDBuffer[dtype, rank, MutableAnyOrigin]](
+                capacity=len(inputs)
+            )
 
             @parameter
             for i in range(inputs.size):
@@ -722,11 +616,11 @@ fn concat[
             # TODO: Should we just provide a separate implementation for
             # `concat_from_list`, since dynamic input size does not work with
             # static sized input lambda tuple.
-            _concat_cpu[dtype, epilogue_fn, single_thread_blocking_override](
-                output, axis, inputVec
-            )
+            _concat_cpu[
+                rank, dtype, epilogue_fn, single_thread_blocking_override
+            ](output, axis, inputVec)
         else:
-            _concat_gpu[dtype, epilogue_fn](
+            _concat_gpu[rank, dtype, epilogue_fn](
                 output,
                 axis,
                 inputs,
@@ -735,95 +629,51 @@ fn concat[
 
 
 fn _concat_inner_most_single_dim[
-    input_origin: ImmutableOrigin,
-    output_origin: MutableOrigin,
-    input_layout: Layout,
-    output_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
-        mut=True,
-        dtype,
-        output_layout,
-        output_origin,
-        address_space = AddressSpace.GENERIC,
-    ],
-    inputs: StaticTuple[
-        LayoutTensor[dtype, input_layout, input_origin],
-        num_inputs,
-    ],
+    output: NDBuffer[dtype, rank, MutableAnyOrigin],
+    inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], num_inputs],
 ):
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
     var idx = block_idx.x * block_size + thread_idx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value.canonicalize()
+        UInt(idx), output.dynamic_shape
     )
 
-    if index > output.size():
+    if index > output.num_elements():
         return
 
     @parameter
     for i in range(num_inputs):
         var out_index = index
-        out_index[output.rank - 1] = i
+        out_index[rank - 1] = i
 
         @parameter
         if epilogue_fn:
             alias func = epilogue_fn.value()
-            var in_idx = inputs[i].runtime_layout(
-                RuntimeTuple[fill_like(inputs[i].layout.shape, UNKNOWN_VALUE)](
-                    out_index
-                )
-            )
-            func[dtype, output.rank, 1](
-                rebind[IndexList[output.rank]](out_index.canonicalize()),
-                inputs[i].ptr[in_idx],
-            )
+            func[dtype, rank, 1](out_index.canonicalize(), inputs[i][index])
         else:
-            var out_idx = output.runtime_layout(
-                RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](
-                    out_index
-                )
-            )
-            var in_idx = inputs[i].runtime_layout(
-                RuntimeTuple[fill_like(inputs[i].layout.shape, UNKNOWN_VALUE)](
-                    out_index
-                )
-            )
-
-            output.ptr[out_idx] = inputs[i].ptr[in_idx]
+            output[out_index] = inputs[i][index]
 
 
 @always_inline
 fn _concat_gpu_elementwise[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
+    rank: Int,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: StaticTuple[
-        LayoutTensor[dtype, input_layout, input_origin],
-        num_inputs,
-    ],
+    inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], num_inputs],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
-
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
     @parameter
-    for i in range(output.rank):
+    for i in range(rank):
         if i == axis:
             return _concat_gpu_elementwise[axis=i, epilogue_fn=epilogue_fn](
                 output, inputs, ctx
@@ -832,25 +682,16 @@ fn _concat_gpu_elementwise[
 
 @always_inline
 fn _concat_gpu_elementwise[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout, //,
     axis: Int,
+    rank: Int,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, **_],
-    inputs: StaticTuple[
-        LayoutTensor[dtype, input_layout, input_origin],
-        num_inputs,
-    ],
+    output: NDBuffer[mut=True, dtype, rank],
+    inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], num_inputs],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
-
     @parameter
     @always_inline
     fn per_output_elem[
@@ -862,34 +703,23 @@ fn _concat_gpu_elementwise[
         @parameter
         for i in range(num_inputs):
             var input = inputs[i]
-            var input_shape = input.runtime_layout.shape.value.canonicalize()
+            var input_shape = input.get_shape()
 
             if in_index[axis] < input_shape[axis]:
 
                 @parameter
                 if epilogue_fn:
                     alias func = epilogue_fn.value()
-                    var in_idx = input.runtime_layout(
-                        RuntimeTuple[
-                            fill_like(input.layout.shape, UNKNOWN_VALUE)
-                        ](in_index)
-                    )
                     func[dtype, _rank, simd_width](
                         out_index,
-                        input.ptr[in_idx],
+                        rebind[NDBuffer[dtype, _rank, input.origin]](input)[
+                            in_index
+                        ],
                     )
                 else:
-                    var in_idx = input.runtime_layout(
-                        RuntimeTuple[
-                            fill_like(input.layout.shape, UNKNOWN_VALUE)
-                        ](in_index)
-                    )
-                    var out_idx = output.runtime_layout(
-                        RuntimeTuple[
-                            fill_like(output.layout.shape, UNKNOWN_VALUE)
-                        ](out_index)
-                    )
-                    output.ptr[out_idx] = output.ptr[in_idx]
+                    output[rebind[IndexList[rank]](out_index)] = input[
+                        rebind[IndexList[rank]](in_index)
+                    ]
                 return
 
             in_index[axis] -= input_shape[axis]
@@ -899,32 +729,20 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        output.runtime_layout.shape.value.canonicalize(), ctx
-    )
+    elementwise[per_output_elem, 1, target="gpu"](output.get_shape(), ctx)
 
 
 @always_inline
 fn _concat_gpu[
-    input_origin: ImmutableOrigin,
-    input_layout: Layout,
-    origin: MutableOrigin,
-    layout: Layout, //,
+    rank: Int,
     dtype: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, layout, origin],
+    output: NDBuffer[mut=True, dtype, rank],
     axis: Int,
-    inputs: StaticTuple[
-        LayoutTensor[dtype, input_layout, input_origin],
-        *_,
-    ],
+    inputs: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], *_],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        input_layout.rank() == output.rank,
-        "inputs and output must have the same rank",
-    ]()
     alias num_inputs = inputs.size
     # Size of outer dims, if 1 we should memcpy to the output buffer.
     var outer_dims = 1
@@ -940,18 +758,18 @@ fn _concat_gpu[
         @parameter
         for i in range(num_inputs):
             # Skip empty inputs.
-            if inputs[i].size() > 0:
+            if inputs[i].num_elements() > 0:
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
-                    output.ptr.offset(input_size),
-                    inputs[i].size(),
+                    output.data.offset(input_size),
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
                     ctx,
-                    inputs[i].ptr,
-                    inputs[i].size(),
+                    inputs[i].data,
+                    inputs[i].num_elements(),
                     owning=False,
                 )
                 ctx.enqueue_copy(
@@ -959,7 +777,7 @@ fn _concat_gpu[
                     inp,
                 )
 
-                input_size += inputs[i].size()
+                input_size += inputs[i].num_elements()
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
@@ -968,7 +786,7 @@ fn _concat_gpu[
         if outer_dims == 1:
             return _concat_buffers_contiguously()
 
-    if axis == output.rank - 1:
+    if axis == rank - 1:
         var inner_most_unit_dim = True
         for i in range(num_inputs):
             if inputs[i].dim(axis) != 1:
@@ -978,20 +796,13 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             alias block_size = 32
             alias kernel = _concat_inner_most_single_dim[
-                input_origin=input_origin,
-                output_origin = output.origin,
-                input_layout=input_layout,
-                output_layout = output.layout,
-                dtype,
-                num_inputs,
-                block_size,
-                epilogue_fn,
+                rank, dtype, num_inputs, block_size, epilogue_fn
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel](
                 output,
                 inputs,
-                grid_dim=(inputs[0].size() // block_size),
+                grid_dim=(inputs[0].num_elements() // block_size),
                 block_dim=(block_size),
             )
 
@@ -1011,7 +822,7 @@ fn _fused_concat_cpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContextPtr,
 ) raises:
     var offset = 0
@@ -1044,8 +855,7 @@ fn _fused_concat_cpu[
 
 @always_inline
 fn _fused_concat_inner_most_single_dim[
-    origin: MutableOrigin,
-    layout: Layout, //,
+    rank: Int,
     dtype: DType,
     block_size: Int,
     input_fn: fn[input_index: Int, width: Int, _rank: Int] (
@@ -1054,29 +864,27 @@ fn _fused_concat_inner_most_single_dim[
     output_0_fn: elementwise_epilogue_type,
     size: Int,
 ](
-    input_shapes: StaticTuple[IndexList[layout.rank()], size],
-    output: LayoutTensor[mut=True, dtype, layout, origin],
+    input_shapes: StaticTuple[IndexList[rank], size],
+    output: NDBuffer[mut=True, dtype, rank],
 ):
     alias num_inputs = input_shapes.size
 
     var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= product(input_shapes[0], output.rank):
+    if idx >= product(input_shapes[0], rank):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value.canonicalize()
+        UInt(idx), output.dynamic_shape
     )
 
     @parameter
     for i in range(num_inputs):
         var out_index = index
-        out_index[output.rank - 1] = i
+        out_index[rank - 1] = i
 
-        output_0_fn[dtype, output.rank, width=1](
-            rebind[IndexList[output.rank]](out_index.canonicalize()),
-            input_fn[i, 1, output.rank](
-                rebind[IndexList[output.rank]](index.canonicalize())
-            ),
+        output_0_fn[dtype, rank, width=1](
+            out_index.canonicalize(),
+            input_fn[i, 1, rank](index.canonicalize()),
         )
 
 
@@ -1092,7 +900,7 @@ fn _fused_concat_gpu_elementwise[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContext,
 ) raises:
     alias num_inputs = input_shapes.size
@@ -1123,9 +931,7 @@ fn _fused_concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        output.runtime_layout.shape.value.canonicalize(), ctx
-    )
+    elementwise[per_output_elem, 1, target="gpu"](output.get_shape(), ctx)
 
 
 @always_inline
@@ -1140,7 +946,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContext,
 ) raises:
     alias num_inputs = input_shapes.size
@@ -1158,8 +964,7 @@ fn _fused_concat_gpu[
         if inner_most_unit_dim:
             alias block_size = 32
             alias kernel = _fused_concat_inner_most_single_dim[
-                origin = output.origin,
-                layout = output.layout,
+                rank,
                 dtype,
                 block_size,
                 input_fn,
@@ -1167,7 +972,7 @@ fn _fused_concat_gpu[
                 size,
             ]
 
-            return ctx.enqueue_function_checked[kernel, kernel](
+            return ctx.enqueue_function[kernel](
                 input_shapes,
                 output,
                 grid_dim=(
@@ -1206,7 +1011,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: LayoutTensor[mut=True, dtype, **_],
+    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContextPtr,
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()

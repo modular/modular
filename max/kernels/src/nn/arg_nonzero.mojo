@@ -31,7 +31,7 @@ fn arg_nonzero[
 ](
     input_buffer: LayoutTensor[dtype, **_],
     output_buffer: LayoutTensor[mut=True, output_type, **_],
-):
+) raises:
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
 

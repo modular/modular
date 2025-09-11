@@ -32,6 +32,7 @@ from ._cpython import (
     PyObjectPtr,
 )
 from .python_object import PythonObject
+from os import abort
 
 alias _PYTHON_GLOBAL = _Global["Python", _init_python_global]
 
@@ -53,7 +54,7 @@ struct _PythonGlobal(Defaultable, Movable):
         self.cpython.destroy()
 
 
-fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
+fn _get_python_interface() raises -> Pointer[CPython, StaticConstantOrigin]:
     """Returns an immutable static pointer to the CPython global.
 
     The returned pointer is immutable to prevent invalid shared mutation of
@@ -78,7 +79,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     fn __init__(out self):
-        self._impl = _get_python_interface()
+        try:
+            self._impl = _get_python_interface()
+        except e:
+            abort[prefix="ERROR:"](String(e))
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self)
+            )
 
     fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
         """Construct a `Python` instance from an existing reference

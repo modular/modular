@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections import defaultdict
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
@@ -71,7 +72,7 @@ class DistributedLlama3(DistributedTransformer):
             interleaved_rope_weights=config.interleaved_rope_weights,
             rope_scaling_params=config.rope_scaling_params,
             longrope_scaling_params=config.longrope_scaling_params,
-            device=config.devices[0],
+            device=DeviceRef.CPU(),
         )
 
         create_distributed_norm = functools.partial(
@@ -85,6 +86,8 @@ class DistributedLlama3(DistributedTransformer):
         linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
 
         layers = []
+        sublayer_groupings_dict = defaultdict(list)
+
         for layer_idx in range(config.num_hidden_layers):
             # Deal with the float8 case where individual layers are ignored
             # specially: assume bfloat16 dtype for "ignored" layers in fp8
@@ -98,6 +101,10 @@ class DistributedLlama3(DistributedTransformer):
                 DType.bfloat16
                 if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
                 else config.dtype
+            )
+
+            sublayer_groupings_dict[(attn_qkv_dtype, mlp_dtype)].append(
+                layer_idx
             )
 
             mlp = MLP(
@@ -147,6 +154,8 @@ class DistributedLlama3(DistributedTransformer):
                     # residual_multiplier=config.residual_multiplier,
                 )
             )
+
+        subgraph_layer_groups = list(sublayer_groupings_dict.values())
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
@@ -199,6 +208,7 @@ class DistributedLlama3(DistributedTransformer):
             rope=rope,
             return_logits=config.return_logits,
             use_subgraphs=config.use_subgraphs,
+            subgraph_layer_groups=subgraph_layer_groups,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
             logits_scaling=config.logits_scaling,

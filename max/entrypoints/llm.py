@@ -28,13 +28,11 @@ import tqdm
 from max.interfaces import SamplingParams, TextGenerationRequest
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
-from max.serve.kvcache_agent import DispatcherFactory
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
 from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.base import PayloadType
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -139,7 +137,6 @@ def _run_async_worker(
     request_queue: queue.Queue[_Request],
     pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
     settings: Settings,
-    dispatcher_factory: DispatcherFactory[PayloadType] | None = None,
 ) -> None:
     asyncio.run(
         _async_worker(

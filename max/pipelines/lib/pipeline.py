@@ -15,11 +15,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from os import environ
 from pathlib import Path
@@ -51,13 +52,17 @@ from max.graph.weights import (
 )
 from max.interfaces import (
     BatchLogitsProcessor,
+    GenerationStatus,
     InputContext,
     LogProbabilities,
     Pipeline,
     PipelineOutputsDict,
+    PipelineTokenizer,
+    Request,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
+    TextGenerationRequest,
 )
 from max.nn.kv_cache import (
     KVCacheAwareContext,
@@ -71,7 +76,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -171,6 +176,7 @@ class ModelOutputs:
 
 
 T = TypeVar("T", bound=InputContext)
+RequestType = TypeVar("RequestType", bound=Request, contravariant=True)
 
 
 class PipelineModel(ABC, Generic[T]):
@@ -511,8 +517,151 @@ class BatchInfo:
     """Number of steps to do in the pipeline"""
 
 
+@runtime_checkable
+class _TextGenerationProtocol(Protocol, Generic[T, RequestType]):
+    @property
+    def kv_managers(self) -> list[KVCacheManager[T]]: ...
+
+    @property
+    def pipeline_config(self) -> PipelineConfig: ...
+
+    @property
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[T, npt.NDArray[np.integer[Any]], RequestType]: ...
+
+    def execute(
+        self,
+        inputs: TextGenerationInputs[T],
+    ) -> PipelineOutputsDict[TextGenerationOutput]: ...
+
+    def release(self, request_id: RequestID) -> None: ...
+
+
+class GenerateMixin(
+    _TextGenerationProtocol[T, RequestType], Generic[T, RequestType]
+):
+    def generate(
+        self, prompts: RequestType | list[RequestType]
+    ) -> list[TextGenerationOutput]:
+        """Generates outputs for the given prompts."""
+        if not isinstance(prompts, list):
+            prompts = [prompts]
+
+        async def _generate() -> list[TextGenerationOutput]:
+            res = [
+                TextGenerationOutput(
+                    request_id=prompt.request_id,
+                    tokens=[],
+                    final_status=GenerationStatus.ACTIVE,
+                )
+                for prompt in prompts
+            ]
+            async for outputs in self.generate_async(prompts):
+                for i, output in enumerate(outputs):
+                    res[i].tokens.extend(output.tokens)
+                    if output.is_done:
+                        res[i].final_status = output.final_status
+            return res
+
+        return asyncio.run(_generate())
+
+    async def generate_async(
+        self, prompts: RequestType | list[RequestType]
+    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
+        if not isinstance(prompts, list):
+            prompts = [prompts]
+
+        context_batch: list[T] = []
+        for prompt in prompts:
+            context = await self.tokenizer.new_context(prompt)
+            context_batch.append(context)
+
+        kv_managers = self.kv_managers
+        data_parallel_degree = (
+            self.pipeline_config.model_config.data_parallel_degree
+        )
+
+        # Create inputs to the model. If data parallelism is enabled, group them
+        # by replica.
+        batches: list[dict[RequestID, T]] = []
+        batch_to_replica_idx: dict[RequestID, int] = {}
+        if data_parallel_degree > 1:
+            if len(kv_managers) > 1:
+                # We don't support speculative decoding when data parallelism is
+                # enabled, because the KV cache managers might place the same
+                # context on different devices/replicas.
+                raise ValueError(
+                    "Having multiple KV managers (e.g. when using"
+                    " speculative decoding) is not supported when data "
+                    "parallelism is enabled."
+                )
+            kv_manager = kv_managers[0]
+            assert isinstance(
+                kv_manager,
+                MultiPagedKVCacheManager,
+            )
+            batches = [{} for _ in range(data_parallel_degree)]
+            for context in context_batch:
+                assert isinstance(context, KVCacheAwareContext)
+                replica_idx = kv_manager.get_or_recommend_replica(context)
+                kv_manager.external_claim_for_replica(
+                    replica_idx, context.request_id
+                )
+                batches[replica_idx][context.request_id] = context
+                batch_to_replica_idx[context.request_id] = replica_idx
+        else:
+            batches = [
+                {context.request_id: context for context in context_batch}
+            ]
+            for context in context_batch:
+                assert isinstance(context, KVCacheAwareContext)
+                for kv_manager in self.kv_managers:
+                    kv_manager.external_claim(context.request_id)
+                batches[0][context.request_id] = context
+                batch_to_replica_idx[context.request_id] = 0
+        inputs = TextGenerationInputs(
+            batches=batches,
+            num_steps=self.pipeline_config.max_num_steps,
+        )
+
+        # Generate outputs until all requests are done.
+
+        done = 0
+
+        try:
+            while done < len(context_batch):
+                step_outputs = self.execute(inputs)
+                outputs = []
+                for request_id, output in step_outputs.items():
+                    outputs.append(output)
+                    if output.is_done:
+                        done += 1
+                        # Remove the request from the batch passed to the next
+                        # call to execute.
+                        replica_idx = batch_to_replica_idx[request_id]
+                        batches[replica_idx].pop(request_id)
+
+                        self.release(request_id)
+                yield outputs
+
+                # Yield to the event loop.  If at no other point (e.g.
+                # tokenizer.decode which we await earlier does not yield to the
+                # event loop), it will be at this point that we'll receive a
+                # CancelledError if our future was canceled (e.g., we received a
+                # SIGINT).
+                await asyncio.sleep(0)
+            assert all(len(batch) == 0 for batch in batches)
+        finally:
+            # Release remaining requests if the generation was interrupted.
+            for batch in batches:
+                for request_id in batch:
+                    self.release(request_id)
+
+
 class TextGenerationPipeline(
-    Pipeline[TextGenerationInputs[T], TextGenerationOutput]
+    Pipeline[TextGenerationInputs[T], TextGenerationOutput],
+    GenerateMixin[T, TextGenerationRequest],
 ):
     """Generalized token generator pipeline."""
 
@@ -523,10 +672,14 @@ class TextGenerationPipeline(
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
+        tokenizer: PipelineTokenizer[
+            T, npt.NDArray[np.integer[Any]], TextGenerationRequest
+        ],
     ) -> None:
         self._pipeline_config = pipeline_config
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
+        self._tokenizer = tokenizer
 
         self.batch_info_output_fname = environ.get(
             "MAX_BATCH_INFO_FILENAME", None
@@ -560,13 +713,14 @@ class TextGenerationPipeline(
 
         # Create a grammar compiler if constrained decoding is enabled
         self.vocab_size = None
+
         if pipeline_config.sampling_config.enable_structured_output:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                pipeline_config.model_config.model_path
-            )
-            self.vocab_size = len(self.tokenizer)
+            assert hasattr(self.tokenizer, "delegate")
+            hf_tokenizer = self.tokenizer.delegate
+            assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
+            self.vocab_size = len(hf_tokenizer)
             self._tokenizer_info = llguidance.hf.from_tokenizer(
-                self.tokenizer, n_vocab=self.vocab_size
+                hf_tokenizer, n_vocab=self.vocab_size
             )
 
         # Initialize Session.
@@ -646,6 +800,22 @@ class TextGenerationPipeline(
             )
         )
 
+    @property
+    def pipeline_config(self) -> PipelineConfig:
+        return self._pipeline_config
+
+    @property
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        T, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]:
+        return self._tokenizer
+
+    @property
+    def kv_managers(self) -> list[KVCacheManager[T]]:
+        return [self._pipeline_model.kv_manager]
+
     def calculate_num_steps(
         self,
         num_steps: int,
@@ -679,7 +849,7 @@ class TextGenerationPipeline(
             bitmask = None
 
         tracer.next("claim_cache_rows")
-        for replica_idx, batch in enumerate(batches):
+        for batch in batches:
             for i, context in enumerate(batch):
                 # Initialize a matcher if needed
                 if context.json_schema and context.matcher is None:
@@ -709,27 +879,6 @@ class TextGenerationPipeline(
                     jump_forward_tokens = context.matcher.compute_ff_tokens()
                     for token in jump_forward_tokens:
                         context.jump_ahead(token)
-
-                # Claim cache rows for context.
-                if not self._pipeline_model.kv_manager.contains(
-                    context.request_id
-                ):
-                    if (
-                        self._pipeline_config.model_config.data_parallel_degree
-                        > 1
-                    ):
-                        assert isinstance(
-                            self._pipeline_model.kv_manager,
-                            MultiPagedKVCacheManager,
-                        )
-                        assert isinstance(context, KVCacheAwareContext)
-                        self._pipeline_model.kv_manager.external_claim_for_replica(
-                            replica_idx, context.request_id
-                        )
-                    else:
-                        self._pipeline_model.kv_manager.external_claim(
-                            context.request_id
-                        )
 
                 # Update num_steps.
                 num_steps = self.calculate_num_steps(num_steps, context)

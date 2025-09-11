@@ -63,6 +63,9 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             f"\n    {graph.name}{tuple(input_types)}"
         )
 
+    # Merge all active chains before crossing the subgraph boundary.
+    current_graph.merge_device_chains()
+
     call_args.append(current_graph._current_chain)
 
     # Add a call operation to the current graph
@@ -75,4 +78,9 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     )
 
     *results, current_graph._current_chain = call_results
+    # Respect device execution order in the subgraph by resetting all device
+    # chains with the subgraph result chain.
+    for device in current_graph.device_chains:
+        current_graph.device_chains[device] = current_graph._current_chain
+
     return results

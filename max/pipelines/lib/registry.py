@@ -19,7 +19,7 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
-from max.driver import Device, load_devices
+from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import EmbeddingsGenerator, PipelineTask, PipelineTokenizer
 from max.nn.kv_cache import KVCacheStrategy
@@ -317,54 +317,6 @@ class PipelineRegistry:
 
         return self._cached_huggingface_tokenizers[huggingface_repo]
 
-    def _load_logging_message(
-        self,
-        pipeline_config: PipelineConfig,
-        tokenizer_type: type[PipelineTokenizer[Any, Any, Any]],
-        pipeline_name: str,
-        pipeline_model: str,
-        factory: bool,
-        devices: list[Device],
-        architecture_id: Optional[str] = None,
-    ):
-        weight_path = ",\n        ".join(
-            [
-                f"                               {path}"
-                for path in pipeline_config.model_config.weight_path
-            ]
-        )
-        factory_str = "factory" if factory else ""
-
-        weights_repo_str = (
-            f"\n            weights_repo_id:        {pipeline_config.model_config._weights_repo_id}"
-            if pipeline_config.model_config._weights_repo_id
-            else ""
-        )
-
-        devices_str = ", ".join(f"{d.label}[{d.id}]" for d in devices)
-
-        quantization_encoding_str = str(
-            pipeline_config.model_config.quantization_encoding
-        )
-        if pipeline_config.model_config._applied_dtype_cast_from:
-            quantization_encoding_str = f"{quantization_encoding_str} (cast from {pipeline_config.model_config._applied_dtype_cast_from})"
-
-        message = f"""
-
-        Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
-            architecture:           {architecture_id if architecture_id else "UNKNOWN"}
-            devices:                {devices_str}
-            model_path:             {pipeline_config.model_config.model_path}{weights_repo_str}
-            huggingface_revision:   {pipeline_config.model_config.huggingface_model_revision}
-            quantization_encoding:  {quantization_encoding_str}
-            cache_strategy:         {pipeline_config.model_config.kv_cache_config.cache_strategy}
-            weight_path:            [
-        {weight_path}
-                                    ]
-        """
-
-        return message
-
     def retrieve_tokenizer(
         self,
         pipeline_config: PipelineConfig,
@@ -452,17 +404,6 @@ class PipelineRegistry:
         # Architecture should not be None here, as the engine is MAX.
         assert arch is not None
         devices = load_devices(pipeline_config.model_config.device_specs)
-        logger.info(
-            self._load_logging_message(
-                pipeline_config=pipeline_config,
-                tokenizer_type=arch.tokenizer_cls,
-                pipeline_model=arch.pipeline_model.__name__,
-                pipeline_name=pipeline_class.__name__,
-                architecture_id=arch.name,
-                factory=True,
-                devices=devices,
-            )
-        )
 
         max_length = arch.pipeline_model.calculate_max_seq_len(
             pipeline_config, huggingface_config=huggingface_config
@@ -504,6 +445,7 @@ class PipelineRegistry:
                 pipeline_model=arch.pipeline_model,
                 eos_token_id=tokenizer.eos,
                 weight_adapters=arch.weight_adapters,
+                tokenizer=tokenizer,
             ),
         )
 

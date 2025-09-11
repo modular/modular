@@ -20,12 +20,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from max.serve.config import Settings
-from max.serve.kvcache_agent import (
-    DispatcherFactory,
-    start_kvcache_agent_service,
-)
+from max.serve.kvcache_agent import start_kvcache_agent_service
 from max.serve.process_control import ProcessControl, ProcessMonitor
-from max.serve.scheduler.base import PayloadType
 
 logger = logging.getLogger("max.serve")
 
@@ -33,7 +29,6 @@ logger = logging.getLogger("max.serve")
 async def run_kvcache_agent_process(
     pc: ProcessControl,
     settings: Settings,
-    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> None:
     pid = os.getpid()
     logger.info("Starting KV Cache Agent on process %d!", pid)
@@ -42,8 +37,6 @@ async def run_kvcache_agent_process(
     kvcache_agent_service = start_kvcache_agent_service(
         kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
     )
-    dispatcher_service = dispatcher_factory.create_service()
-    await dispatcher_service.start()
 
     pc.set_started()
     logger.debug("Started KV Cache Agent!")
@@ -59,10 +52,9 @@ async def run_kvcache_agent_process(
 def _kvcache_agent_process_fn(
     pc: ProcessControl,
     settings: Settings,
-    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> None:
     try:
-        asyncio.run(run_kvcache_agent_process(pc, settings, dispatcher_factory))
+        asyncio.run(run_kvcache_agent_process(pc, settings))
     except KeyboardInterrupt:
         pass
     except Exception as e:
@@ -76,7 +68,6 @@ def _kvcache_agent_process_fn(
 @asynccontextmanager
 async def start_kv_cache_service(
     settings: Settings,
-    dispatcher_factory: DispatcherFactory[PayloadType],
 ) -> AsyncGenerator[None, None]:
     """Starts a kvcache agent and associated process."""
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
@@ -89,7 +80,7 @@ async def start_kv_cache_service(
         name=process_name,
         target=_kvcache_agent_process_fn,
         daemon=True,
-        args=(pc, settings, dispatcher_factory),
+        args=(pc, settings),
     )
     process.start()
     monitor = ProcessMonitor(pc, process, use_heartbeat=settings.use_heartbeat)

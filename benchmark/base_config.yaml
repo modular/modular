@@ -25,6 +25,7 @@ benchmark_config:
   # Model and tokenizer configuration
   model: null  # Required - must be set when using config
   tokenizer: null  # Optional tokenizer (defaults to model if not specified)
+  model_max_length: null # Override for tokenizer max length. Needed if server has a lower max length than the tokenizer.
   trust_remote_code: false
 
   # Dataset configuration (common across all benchmark types)

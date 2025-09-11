@@ -262,7 +262,8 @@ fn run_mma_fp32_tf32(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mma_kernel_fp32_tf32](
+        alias kernel = mma_kernel_fp32_tf32
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -309,17 +310,16 @@ fn run_mma_fp32_tf32(
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -429,7 +429,8 @@ fn run_mma_fp32_bf16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mma_kernel_fp32_bf16](
+        alias kernel = mma_kernel_fp32_bf16
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -475,17 +476,16 @@ fn run_mma_fp32_bf16(
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -593,7 +593,8 @@ fn run_mma_fp32_bf16_2(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mma_kernel_fp32_bf16_2](
+        alias kernel = mma_kernel_fp32_bf16_2
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -640,17 +641,16 @@ fn run_mma_fp32_bf16_2(
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                a_tensor.layout,
-                b_tensor.layout,
-                c_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -758,7 +758,8 @@ fn run_mma_fp32_fp16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mma_kernel_fp32_fp16](
+        alias kernel = mma_kernel_fp32_fp16
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -804,17 +805,17 @@ fn run_mma_fp32_fp16(
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                a_tensor.layout,
-                b_tensor.layout,
-                c_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
@@ -922,7 +923,8 @@ fn run_mma_fp16_fp16(
     @always_inline
     @parameter
     fn run_func_mma(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mma_kernel_fp16_fp16](
+        alias kernel = mma_kernel_fp16_fp16
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -968,17 +970,16 @@ fn run_mma_fp16_fp16(
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                a_tensor.layout,
-                b_tensor.layout,
-                c_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,

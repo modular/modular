@@ -2343,7 +2343,7 @@ struct ArgNonZero:
     fn execute(
         output_buffer: OutputTensor[rank=2],
         input_buffer: InputTensor,
-    ):
+    ) raises:
         arg_nonzero.arg_nonzero(
             input_buffer.to_layout_tensor(),
             output_buffer.to_layout_tensor(),
@@ -4386,7 +4386,7 @@ struct Concat:
         inputs: FusedInputVariadicTensors[dtype, rank, *_],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        var output_buf = output.to_layout_tensor()
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
@@ -4503,28 +4503,21 @@ struct ConcatFromList:
         constrained[
             target == "cpu", "only cpu is supported for concat_from_list"
         ]()
-        var output_buf = output.to_layout_tensor()
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        alias layout = Layout.row_major[rank]()
-        var input_as_layout_tensor = List[
-            LayoutTensor[dtype, layout, ImmutableAnyOrigin]
-        ](capacity=len(inputs))
+        var input_as_ndbuffer = List[NDBuffer[dtype, rank, MutableAnyOrigin]](
+            capacity=len(inputs)
+        )
         for i in range(len(inputs)):
-            var lt = inputs[i].to_layout_tensor()
-            input_as_layout_tensor.append(
-                LayoutTensor[lt.dtype, layout, ImmutableAnyOrigin](
-                    lt.ptr,
-                    RuntimeLayout[layout].row_major(
-                        lt.runtime_layout.shape.value.canonicalize(),
-                    ),
-                )
+            input_as_ndbuffer.append(
+                managed_tensor_slice_to_ndbuffer(inputs[i])
             )
 
-        _concat_cpu[dtype, None, False](
+        _concat_cpu[rank, dtype, None, False](
             output_buf,
             normalize_neg_index(Int(axis), rank),
-            input_as_layout_tensor,
+            input_as_ndbuffer,
         )
 
     @staticmethod

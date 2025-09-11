@@ -32,17 +32,35 @@ alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 )
 
-alias CUDA_CUDNN_LIBRARY = _Global["CUDA_CUDNN_LIBRARY", _init_dylib]
+
+fn _on_error_msg() -> String:
+    return String(
+        (
+            "Cannot find the CUDNN libraries. Please make sure that "
+            "the CUDA toolkit is installed and that the library path is "
+            "correctly set in one of the following paths ["
+        ),
+        ", ".join(CUDA_CUDNN_LIBRARY_PATHS),
+        (
+            "]. You may need to make sure that you are using the non-slim"
+            " version of the MAX container."
+        ),
+    )
+
+
+alias CUDA_CUDNN_LIBRARY = _Global[
+    "CUDA_CUDNN_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
+]
 
 
 fn _init_dylib() -> _OwnedDLHandle:
-    return _find_dylib["CUDA cuDNN"](CUDA_CUDNN_LIBRARY_PATHS)
+    return _find_dylib[abort_on_failure=False](CUDA_CUDNN_LIBRARY_PATHS)
 
 
 @always_inline
 fn _get_dylib_function[
     func_name: StaticString, result_type: AnyTrivialRegType
-]() -> result_type:
+]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUDNN_LIBRARY(),
         func_name,
@@ -55,7 +73,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-fn cudnnBackendInitialize(descriptor: OpaquePointer) -> cudnnStatus_t:
+fn cudnnBackendInitialize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendInitialize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
@@ -554,7 +572,7 @@ fn cudnnBackendSetAttribute(
     attribute_type: cudnnBackendAttributeType_t,
     element_count: Int64,
     array_of_elements: OpaquePointer,
-) -> cudnnStatus_t:
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
         fn (
@@ -816,7 +834,7 @@ struct cudnnBackendNumericalNote_t(EqualityComparable, Writable):
 fn cudnnBackendCreateDescriptor(
     descriptor_type: cudnnBackendDescriptorType_t,
     descriptor: UnsafePointer[OpaquePointer],
-) -> cudnnStatus_t:
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
         fn (
@@ -984,7 +1002,7 @@ struct cudnnRngDistribution_t(EqualityComparable, Identifiable, Writable):
         return Int(self._value)
 
 
-fn cudnnBackendFinalize(descriptor: OpaquePointer) -> cudnnStatus_t:
+fn cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendFinalize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
@@ -1948,7 +1966,7 @@ struct cudnnGenStatsMode_t(EqualityComparable, Identifiable, Writable):
 
 fn cudnnBackendDestroyDescriptor(
     descriptor: OpaquePointer,
-) -> cudnnStatus_t:
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
         fn (OpaquePointer) -> cudnnStatus_t,
@@ -1959,7 +1977,7 @@ fn cudnnBackendExecute(
     handle: UnsafePointer[cudnnContext],
     execution_plan: OpaquePointer,
     variant_pack: OpaquePointer,
-) -> cudnnStatus_t:
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
         fn (
@@ -2028,7 +2046,7 @@ fn cudnnBackendGetAttribute(
     requested_element_count: Int64,
     element_count: UnsafePointer[Int64],
     array_of_elements: OpaquePointer,
-) -> cudnnStatus_t:
+) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
         fn (

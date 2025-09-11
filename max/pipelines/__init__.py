@@ -33,6 +33,7 @@ from .lib.kv_cache_config import KVCacheConfig
 from .lib.memory_estimation import MEMORY_ESTIMATOR
 from .lib.model_config import MAXModelConfig
 from .lib.pipeline import (
+    GenerateMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
@@ -59,6 +60,7 @@ __all__ = [
     "PIPELINE_REGISTRY",
     "AudioGenerationConfig",
     "EmbeddingsPipeline",
+    "GenerateMixin",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "MAXModelConfig",

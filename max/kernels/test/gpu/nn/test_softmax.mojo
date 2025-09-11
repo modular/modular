@@ -246,16 +246,15 @@ fn test_gpu_online_softmax[
     rand[type](in_host_ptr, shape.flattened_length())
 
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
+    alias kernel = _online_softmax_kernel[
+        WM,
+        WN,
+        DType.float32,
+        Layout.row_major(shape[1], shape[2]),
+        transpose_fragments,
+    ]
 
-    ctx.enqueue_function[
-        _online_softmax_kernel[
-            WM,
-            WN,
-            DType.float32,
-            Layout.row_major(shape[1], shape[2]),
-            transpose_fragments,
-        ],
-    ](
+    ctx.enqueue_function_checked[kernel, kernel](
         in_device,
         out_device,
         grid_dim=1,

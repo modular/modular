@@ -71,6 +71,7 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
+from os import abort
 
 from .conv_utils import (
     ConvInfoStatic,
@@ -3109,14 +3110,14 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(Defaultable, ImplicitlyCopyable, Movable):
+struct CuDNNConvMeta(ImplicitlyCopyable, Movable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
     var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
 
-    fn __init__(out self):
+    fn __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext]()
         check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
 
@@ -3143,11 +3144,20 @@ struct CuDNNConvMeta(Defaultable, ImplicitlyCopyable, Movable):
         )
 
     fn __del__(deinit self):
-        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_output_desc))
-        check_cudnn_error(cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc))
-        check_cudnn_error(cudnnDestroyFilterDescriptor(self.ptr_filter_desc))
-        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
-        check_cudnn_error(cudnnDestroy(self.ptr_handle))
+        try:
+            check_cudnn_error(
+                cudnnDestroyTensorDescriptor(self.ptr_output_desc)
+            )
+            check_cudnn_error(
+                cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc)
+            )
+            check_cudnn_error(
+                cudnnDestroyFilterDescriptor(self.ptr_filter_desc)
+            )
+            check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
+            check_cudnn_error(cudnnDestroy(self.ptr_handle))
+        except e:
+            abort(String(e))
 
 
 fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:

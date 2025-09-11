@@ -16,57 +16,56 @@ from gpu.host import DeviceContext, HostBuffer
 from testing import assert_equal
 from gpu import block_idx, thread_idx, block_dim
 from random import random_float64
-from memory import Span
 
 
 fn simd_add_kernel[
     width: Int
 ](
-    a_span: Span[mut=True, Scalar[DType.float32]],
-    b_span: Span[mut=True, Scalar[DType.float32]],
-    c_span: Span[mut=True, Scalar[DType.float32]],
+    a_span: UnsafePointer[Float32],
+    b_span: UnsafePointer[Float32],
+    c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.unsafe_ptr().load[width=width](idx)
-    var vector_b = b_span.unsafe_ptr().load[width=width](idx)
+    var vector_a = a_span.load[width=width](idx)
+    var vector_b = b_span.load[width=width](idx)
     var vector_c = vector_a + vector_b
-    c_span.unsafe_ptr().store[width=width](idx, vector_c)
+    c_span.store[width=width](idx, vector_c)
 
 
 fn simd_mult_kernel[
     width: Int
 ](
-    a_span: Span[mut=True, Scalar[DType.float32]],
-    b_span: Span[mut=True, Scalar[DType.float32]],
-    c_span: Span[mut=True, Scalar[DType.float32]],
+    a_span: UnsafePointer[Float32],
+    b_span: UnsafePointer[Float32],
+    c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.unsafe_ptr().load[width=width](idx)
-    var vector_b = b_span.unsafe_ptr().load[width=width](idx)
+    var vector_a = a_span.load[width=width](idx)
+    var vector_b = b_span.load[width=width](idx)
     var vector_c = vector_a * vector_b
-    c_span.unsafe_ptr().store[width=width](idx, vector_c)
+    c_span.store[width=width](idx, vector_c)
 
 
 fn simd_fma_kernel[
     width: Int
 ](
-    a_span: Span[mut=True, Scalar[DType.float32]],
-    b_span: Span[mut=True, Scalar[DType.float32]],
-    c_span: Span[mut=True, Scalar[DType.float32]],
+    a_span: UnsafePointer[Float32],
+    b_span: UnsafePointer[Float32],
+    c_span: UnsafePointer[Float32],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.unsafe_ptr().load[width=width](idx)
-    var vector_b = b_span.unsafe_ptr().load[width=width](idx)
-    var vector_c = c_span.unsafe_ptr().load[width=width](idx)
+    var vector_a = a_span.load[width=width](idx)
+    var vector_b = b_span.load[width=width](idx)
+    var vector_c = c_span.load[width=width](idx)
     vector_c = vector_a.fma(vector_b, vector_c)
 
-    c_span.unsafe_ptr().store[width=width](idx, vector_c)
+    c_span.store[width=width](idx, vector_c)
 
 
 fn host_elementwise_add(
@@ -123,17 +122,6 @@ def test_arithmetic[
     var b_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
     var c_device_buffer = ctx.enqueue_create_buffer[DType.float32](buff_size)
 
-    # Convert device buffers to spans
-    var a_span = Span[Scalar[DType.float32]](
-        a_device_buffer.unsafe_ptr(), buff_size
-    )
-    var b_span = Span[Scalar[DType.float32]](
-        b_device_buffer.unsafe_ptr(), buff_size
-    )
-    var c_span = Span[Scalar[DType.float32]](
-        c_device_buffer.unsafe_ptr(), buff_size
-    )
-
     # Copy data from host to device
     ctx.enqueue_copy(a_device_buffer, a_host.unsafe_ptr())
     ctx.enqueue_copy(b_device_buffer, b_host.unsafe_ptr())
@@ -147,37 +135,37 @@ def test_arithmetic[
 
     @parameter
     if mode == "add":
-        alias kernel = simd_add_kernel
+        alias kernel = simd_add_kernel[width]
 
-        ctx.enqueue_function[kernel[width]](
-            a_span,
-            b_span,
-            c_span,
+        ctx.enqueue_function_checked[kernel, kernel](
+            a_device_buffer,
+            b_device_buffer,
+            c_device_buffer,
             grid_dim=block_count,
             block_dim=thread_count,
         )
         host_elementwise_add(a_host, b_host, c_expected, buff_size)
 
     elif mode == "mult":
-        alias kernel = simd_mult_kernel
+        alias kernel = simd_mult_kernel[width]
 
-        ctx.enqueue_function[kernel[width]](
-            a_span,
-            b_span,
-            c_span,
+        ctx.enqueue_function_checked[kernel, kernel](
+            a_device_buffer,
+            b_device_buffer,
+            c_device_buffer,
             grid_dim=block_count,
             block_dim=thread_count,
         )
         host_elementwise_mult(a_host, b_host, c_expected, buff_size)
 
     else:
-        alias kernel = simd_fma_kernel
+        alias kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
-        ctx.enqueue_function[kernel[width]](
-            a_span,
-            b_span,
-            c_span,
+        ctx.enqueue_function_checked[kernel, kernel](
+            a_device_buffer,
+            b_device_buffer,
+            c_device_buffer,
             grid_dim=block_count,
             block_dim=thread_count,
         )

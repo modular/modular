@@ -195,42 +195,6 @@ class MemoryEstimator:
             )
             total_size = model_weights_size + actual_kv_cache_size
 
-        if free_memory:
-            free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
-
-        weights_str = ""
-        if model_weights_size:
-            weights_str = f"\n\t    Weights:                {to_human_readable_bytes(model_weights_size)}"
-
-        activation_str = ""
-        if activation_memory_size:
-            activation_str = f"\n\t    Activation memory:      {to_human_readable_bytes(activation_memory_size)}"
-
-        if not user_provided_max_length:
-            max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
-        else:
-            max_length_str = (
-                f"Current max sequence length: {pipeline_config.max_length}"
-            )
-
-        if not user_provided_max_batch_size:
-            max_batch_size_str = f"Auto-inferred max batch size: {pipeline_config.max_batch_size}"
-        else:
-            max_batch_size_str = (
-                f"Current max batch size: {pipeline_config.max_batch_size}"
-            )
-
-        logging_str = (
-            "\n"
-            f"\n\tEstimated memory consumption:"
-            f"{weights_str}"
-            f"{activation_str}"
-            f"\n\t    KVCache allocation:     {to_human_readable_bytes(actual_kv_cache_size)}"
-            f"\n\t    Total estimated:        {to_human_readable_bytes(static_memory_size + actual_kv_cache_size)} used{free_memory_str}"
-            f"\n\t{max_length_str}"
-            f"\n\t{max_batch_size_str}\n"
-        )
-        logger.info(logging_str)
         vram_usage_limit_scale = 0.95
 
         if isinstance(free_memory, (int, float)):

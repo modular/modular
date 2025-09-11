@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys import align_of, simd_width_of
+from sys import align_of, simd_width_of, size_of
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -28,6 +28,8 @@ from gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
+from gpu.intrinsics import buffer_store
+from layout.element import Element
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import (
@@ -38,7 +40,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup
+from layout._utils import TensorCoreKGroup, get_amd_buffer_descriptor
 from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
@@ -47,6 +49,55 @@ from utils.numerics import get_accum_type
 from ._multistage_gemm_gpu import warp_split_k_reduction
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
+
+
+@always_inline("nodebug")
+fn copy_local_to_dram_row_major[
+    dst_thread_layout: Layout,
+](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
+    # TODO: This is a temporary hack, we need to support this in copy_local_to_dram instead.
+    # write c in row major order
+    var worker_idx = lane_id()
+
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+
+    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
+    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    alias num_stores_per_thread = dst_fragments.layout.size()
+    alias m = dst_fragments.shape[0]()
+    alias n = dst_fragments.shape[1]()
+
+    @parameter
+    for i in range(m):
+
+        @parameter
+        for j in range(n):
+            alias idx = Layout.col_major(m, n)([i, j])
+            alias src_idx = src.layout(idx)
+            alias dst_static_idx = dst_fragments.layout(idx)
+            var dst_idx = dst_frag_offset
+
+            constrained[
+                dst_fragments.layout.all_dims_known(),
+                "dst_fragments.layout must have known dimensions",
+            ]()
+            dst_idx += dst_static_idx
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_idx),
+                src.runtime_element_layout,
+            )
+
+            alias element_stride = dst_fragments.element_layout.stride[
+                1
+            ].value()
+            constrained[element_stride == 1, "element_stride must be 1"]()
+            buffer_store(
+                descriptor,
+                Int32(dst_idx),
+                src_element.element_data.cast[dst.dtype](),
+            )
 
 
 struct MmaOpAMD[
@@ -737,9 +788,7 @@ fn gemm_kernel_amd[
                     )
     else:
         # Direct copy to global memory
-        copy_local_to_dram[
-            output_thread_layout, thread_scope = ThreadScope.WARP
-        ](
+        copy_local_to_dram_row_major[output_thread_layout](
             c_warp_tile.vectorize[1, 4](),
             mma_op.out_reg_tile.vectorize[1, 4](),
             c,
