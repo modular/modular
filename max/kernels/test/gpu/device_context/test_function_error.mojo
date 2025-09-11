@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
+from memory import OwnedPointer
 from testing import *
 
 
@@ -25,14 +26,21 @@ def test_function_error(ctx: DeviceContext):
     # CHECK: test_function_error
     print("== test_function_error")
     try:
-        var res_host = UnsafePointer[UInt32].alloc(1)
-        ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))
+        var res_ptr = UnsafePointer[UInt32].alloc(1)
+        var res_ptr_owned = OwnedPointer[UInt32](
+            unsafe_from_raw_pointer=res_ptr
+        )
+        var res_host = DeviceBuffer[DType.uint32](
+            ctx, res_ptr_owned.unsafe_ptr(), 1, owning=False
+        )
+        ctx.enqueue_function_checked[kernel, kernel](
+            res_host, block_dim=(1), grid_dim=(1)
+        )
         ctx.synchronize()
-        res_host.free()
     except e:
         # This error should occur at the synchronize call as the kernel launches
         # async by default.
-        # CHECK: open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:30:24
+        # CHECK: open-source/max/max/kernels/test/gpu/device_context/test_function_error.mojo:39:24
         print(e)
 
 
