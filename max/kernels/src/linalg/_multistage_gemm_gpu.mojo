@@ -269,7 +269,7 @@ fn multistage_mma[
     fn _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
     ):
-        return __type_of(tensor)(
+        return {
             tensor.ptr,
             RuntimeLayout[
                 element_type = tensor.layout_int_type,
@@ -280,7 +280,7 @@ fn multistage_mma[
                 ](num_rows, tensor.dim[1]()),
                 tensor.runtime_layout.stride,
             ),
-        )
+        }
 
     @always_inline
     @parameter

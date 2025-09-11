@@ -83,7 +83,7 @@ fn _block_swizzle_by_scale[
     bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
     by = by % grid_dim.data[1]
 
-    return __type_of(block_idx)(Int(bx), Int(by))
+    return {Int(bx), Int(by)}
 
 
 # ===------------------------------------------------------------------===#

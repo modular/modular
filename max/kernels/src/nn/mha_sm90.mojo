@@ -1240,7 +1240,7 @@ fn _mha_sm90[
         ],
     ):
         alias sz = BN * config.padded_depth
-        k_smem = __type_of(k_smem)(kv_smem + sz * idx)
+        k_smem = {kv_smem + sz * idx}
 
     @parameter
     @always_inline
@@ -1257,7 +1257,7 @@ fn _mha_sm90[
         ],
     ):
         alias sz = BN * config.padded_depth
-        v_smem = __type_of(v_smem)(kv_smem + sz * idx)
+        v_smem = {kv_smem + sz * idx}
 
     @parameter
     @always_inline
@@ -1392,7 +1392,7 @@ fn _mha_sm90[
                 element_layout=element_layout,
             ],
         ):
-            result = __type_of(result)(p_reg_tile.ptr)
+            result = {p_reg_tile.ptr}
 
         @parameter
         @always_inline
@@ -1405,7 +1405,7 @@ fn _mha_sm90[
                 element_layout=element_layout,
             ],
         ):
-            result = __type_of(result)(output_reg_tile.ptr)
+            result = {output_reg_tile.ptr}
 
         rowmax = LayoutTensor[
             accum_type,

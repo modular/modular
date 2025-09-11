@@ -1609,7 +1609,7 @@ fn mha_single_batch[
         fn _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
         ):
-            return __type_of(tensor)(
+            return {
                 tensor.ptr,
                 __type_of(tensor.runtime_layout)(
                     __type_of(tensor.runtime_layout.shape)(
@@ -1617,7 +1617,7 @@ fn mha_single_batch[
                     ),
                     tensor.runtime_layout.stride,
                 ),
-            )
+            }
 
         alias kv_num_vecs = BN * BK // simd_size
         alias async_copy_k_layout = Layout.row_major(
@@ -3220,17 +3220,12 @@ fn mha_decoding_single_batch[
     @always_inline
     @parameter
     fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
-    ):
-        return __type_of(tensor)(
+        tensor: LayoutTensor, num_rows: Int
+    ) -> __type_of(tensor):
+        return {
             tensor.ptr,
-            __type_of(tensor.runtime_layout)(
-                __type_of(tensor.runtime_layout.shape)(
-                    num_rows, tensor.dim[1]()
-                ),
-                tensor.runtime_layout.stride,
-            ),
-        )
+            {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
+        }
 
     @parameter
     for q_id in range(depth // BK):

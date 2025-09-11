@@ -48,8 +48,8 @@ from ._gpu.reduction import reduce_launch
 
 @always_inline
 fn _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int
-) -> __type_of(shape):
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: __type_of(shape)
+):
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
@@ -77,11 +77,11 @@ fn _get_nd_indices_from_flat_index(
     @parameter
     if shape.size == 2:
         if skip_dim == 1:
-            return __type_of(shape)(flat_index, 0)
+            return {flat_index, 0}
         else:
-            return __type_of(shape)(0, flat_index)
+            return {0, flat_index}
 
-    var out = __type_of(shape)()
+    res = {}
     var curr_index = flat_index
 
     @parameter
@@ -89,12 +89,10 @@ fn _get_nd_indices_from_flat_index(
         # There is one dimension we skip, this represents the inner loop that
         # is being traversed.
         if i == skip_dim:
-            out[i] = 0
+            res[i] = 0
         else:
-            out[i] = curr_index._positive_rem(shape[i])
+            res[i] = curr_index._positive_rem(shape[i])
             curr_index = curr_index._positive_div(shape[i])
-
-    return out
 
 
 # ===-----------------------------------------------------------------------===#

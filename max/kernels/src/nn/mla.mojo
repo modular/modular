@@ -469,11 +469,11 @@ fn mla_decoding[
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
-    var qk_max_batch_ptr = __type_of(qk_max_ptr)()
+    var qk_max_batch_ptr: __type_of(qk_max_ptr) = {}
     if qk_max_ptr:
         qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
 
-    var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
+    var exp_sum_batch_ptr: __type_of(exp_sum_ptr) = {}
     if exp_sum_ptr:
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
@@ -1972,15 +1972,10 @@ fn mla_prefill_single_batch[
         fn _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
         ):
-            return __type_of(tensor)(
+            return {
                 tensor.ptr,
-                __type_of(tensor.runtime_layout)(
-                    __type_of(tensor.runtime_layout.shape)(
-                        num_rows, tensor.dim[1]()
-                    ),
-                    tensor.runtime_layout.stride,
-                ),
-            )
+                {{num_rows, tensor.dim[1]()}, tensor.runtime_layout.stride},
+            }
 
         alias kv_num_vecs = BN * BK // simd_size
         alias async_copy_k_layout = Layout.row_major(
@@ -2328,17 +2323,17 @@ fn mla_prefill_single_batch[
     @parameter
     if use_cascade_attention:
         # load previous iteration's softmax stats, and previous attn output.
-        var prev_output_gmem_tile = __type_of(output_gmem_tile)(
+        var prev_output_gmem_tile: __type_of(output_gmem_tile) = {
             prev_output_ptr + Int(output_offset),
             output_gemm_runtime_layout,
-        )
+        }
         prev_output_gemm_warp_tile = prev_output_gmem_tile.tile[WM, WN_O](
             Int(warp_y), Int(warp_x)
         )
 
-        prev_softmax_info_gmem_tile = __type_of(softmax_info_gmem_tile)(
+        prev_softmax_info_gmem_tile: __type_of(softmax_info_gmem_tile) = {
             prev_softmax_info_ptr + Int(softmax_info_offset),
-        )
+        }
 
         var prev_output_reg_tile = LayoutTensor[
             accum_type,

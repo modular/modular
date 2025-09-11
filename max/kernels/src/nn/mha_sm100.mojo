@@ -263,9 +263,9 @@ fn local_tensor_type[
         element_layout=element_layout,
     ]
 ):
-    dummy_arg = __type_of(dummy_arg)(
+    dummy_arg = {
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.LOCAL]()
-    )
+    }
 
 
 @register_passable("trivial")
@@ -491,7 +491,7 @@ struct TMemAccumulator[
         ],
     ):
         Self.check_constraints()
-        res = __type_of(res)(src.ptr)
+        res = {src.ptr}
 
     @staticmethod
     @always_inline
@@ -2266,8 +2266,8 @@ fn _mha_sm100[
                 kv_smem,
                 produced_mbar_kv,
                 consumed_mbar_kv,
-                __type_of(produced_mbar_kv)(),
-                __type_of(consumed_mbar_kv)(),
+                {},
+                {},
                 kv_lut,
                 position,
                 partition,
@@ -2518,14 +2518,14 @@ fn _mha_sm100[
         fn vectorize_p_reg_tile(
             out result: VecPType,
         ):
-            result = __type_of(result)(p_reg_tile.ptr)
+            result = {p_reg_tile.ptr}
 
         @parameter
         @always_inline
         fn vectorize_o_reg_tile(
             out result: VecOType,
         ):
-            result = __type_of(result)(output_reg_tile.ptr)
+            result = {output_reg_tile.ptr}
 
         @parameter
         @always_inline

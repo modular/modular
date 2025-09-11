@@ -30,7 +30,7 @@ fn reshape[
     input: NDBuffer[dtype, rank, *_, **_],
     new_shape: IndexList[output_rank],
 ) -> NDBuffer[dtype, output_rank, input.origin]:
-    var stride_tuple = __type_of(new_shape)()
+    var stride_tuple: __type_of(new_shape) = {}
     var stride: Int = 1
 
     # Create contiguous strides.

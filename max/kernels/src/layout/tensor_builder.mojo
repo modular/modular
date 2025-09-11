@@ -220,11 +220,11 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).row_major(
                 Index[dtype = res.__layout_int_type](shape0.value, shape1.value)
             )
-        )
+        }
 
     fn row_major(
         self,
@@ -248,13 +248,13 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).row_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
-        )
+        }
 
     fn row_major(
         self,
@@ -282,13 +282,13 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).row_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
-        )
+        }
 
     fn row_major(
         self,
@@ -318,7 +318,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).row_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value,
@@ -328,7 +328,7 @@ struct LayoutTensorBuild[
                     shape4.value,
                 )
             )
-        )
+        }
 
     fn col_major[
         *shapes: Int
@@ -350,7 +350,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with column-major layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn col_major(
         self,
@@ -372,11 +372,11 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with column-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).col_major(
                 Index[dtype = res.__layout_int_type](shape0.value, shape1.value)
             )
-        )
+        }
 
     fn col_major(
         self,
@@ -400,13 +400,13 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with column-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).col_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
-        )
+        }
 
     fn col_major(
         self,
@@ -434,13 +434,13 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with column-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).col_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
-        )
+        }
 
     fn col_major(
         self,
@@ -470,7 +470,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with column-major layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).col_major(
                 Index[dtype = res.__layout_int_type](
                     shape0.value,
@@ -480,7 +480,7 @@ struct LayoutTensorBuild[
                     shape4.value,
                 )
             )
-        )
+        }
 
     fn layout[
         shape0: Int
@@ -554,14 +554,14 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified custom layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout)(
                 shape.cast[__type_of(res.runtime_layout.shape).element_type](),
                 stride.cast[
                     __type_of(res.runtime_layout.stride).element_type
                 ](),
             )
-        )
+        }
 
     fn layout(
         self,
@@ -583,11 +583,11 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified layout.
         """
-        return __type_of(res)(
+        return {
             __type_of(res.runtime_layout).col_major(
                 Index[dtype = res.__layout_int_type](shape0.value)
             )
-        )
+        }
 
     @always_inline
     fn shared(
@@ -609,13 +609,13 @@ struct LayoutTensorBuild[
             is_gpu(),
             "shared memory is supported on NVIDIA and AMD GPU devices only.",
         ]()
-        return __type_of(res)(
+        return {
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
                     res.__layout_int_type, linear_idx_type = res.__index_type
                 ]()
             )
-        )
+        }
 
     @always_inline
     fn local(
@@ -637,13 +637,13 @@ struct LayoutTensorBuild[
             is_gpu(),
             "local memory is supported on NVIDIA and AMD GPU devices only.",
         ]()
-        return __type_of(res)(
+        return {
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
                     res.__layout_int_type, linear_idx_type = res.__index_type
                 ]()
             )
-        )
+        }
 
     @always_inline
     fn alloc(
@@ -705,14 +705,14 @@ struct LayoutTensorBuild[
 
         @parameter
         if __layout.all_dims_known():
-            return __type_of(res)(ptr)
+            return {ptr}
         else:
-            return __type_of(res)(
+            return {
                 ptr,
                 self.runtime_layout.cast[
                     res.layout_int_type, linear_idx_type = res.linear_idx_type
                 ](),
-            )
+            }
 
     @always_inline
     fn circular(
@@ -731,11 +731,11 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with circular indexing enabled.
         """
-        return __type_of(res)(
+        return {
             self.runtime_layout.cast[
                 res.__layout_int_type, linear_idx_type = res.__index_type
             ]()
-        )
+        }
 
     @always_inline
     fn iter(
@@ -770,4 +770,4 @@ struct LayoutTensorBuild[
             __layout.all_dims_known(),
             "Cannot create dynamic iterator",
         ]()
-        return __type_of(res)(ptr, bound, self.runtime_layout)
+        return {ptr, bound, self.runtime_layout}
