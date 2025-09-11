@@ -105,10 +105,6 @@ void emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 
-/// Helper to consistently print a parameter/argument name or index (if the name
-/// is empty) in diagnostics.
-void printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag);
-
 /// Emit diagnostics when the user tries to call or subscript a module.
 void emitModuleCallSubscriptDiag(InflightDiag &diag, StructMetaType metaType,
                                  const Twine &callOrSubscript, llvm::SMLoc loc,

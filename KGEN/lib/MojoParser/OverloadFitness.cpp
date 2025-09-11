@@ -866,51 +866,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
-        if (signature.getParamListAttrs().getPassingKind(paramIdx) ==
-            PassingKind::Inferred) {
-          diag << "failed to infer parameter ";
-          auto name = signature.getParamName(paramIdx);
-          assert(!name.empty() && "No parameter name??");
+        diag << "failed to infer parameter ";
+        auto name = signature.getParamName(paramIdx);
+        assert(!name.empty() && "No parameter name??");
 
-          // The parameter name is scoped to 'declScope'.
-          {
-            DeclResolver::DeclScopeChanger x(funcIfDirect);
-            diag << ParamDeclRefAttr::get(
-                name, signature.getInputParamTypes()[paramIdx]);
-          }
-          inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
-                                funcIfDirect, diag);
-          return;
-        }
-
-        // Find the parameter number and potentially name of the type of the
-        // argument that failed to be inferred.
-        mlir::AttrTypeWalker walker;
-        size_t idx;
-        walker.addWalk([&](StructType type) {
-          for (auto [i, value] : llvm::enumerate(type.getParamValues())) {
-            if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value);
-                indexRef && !indexRef.getDepth() &&
-                indexRef.getIndex() == paramIdx) {
-              diag << "failed to infer implicit parameter ";
-              auto structDecl = ASTType(type).getDecl(shared);
-              assert(structDecl);
-              auto structDeclOp =
-                  cast<StructDeclOp>(structDecl->getIfOperation());
-              printNameOrIdx(structDeclOp.getSignature().getParamName(i), i,
-                             diag);
-              diag << " of argument ";
-              printNameOrIdx(signature.getArgName(idx), idx, diag);
-              diag << " type '" << structDeclOp.getSymName() << "'";
-              return WalkResult::interrupt();
-            }
-          }
-          return WalkResult::advance();
-        });
-        for (auto [i, argType] : llvm::enumerate(signature.getArguments())) {
-          idx = i;
-          if (walker.walk(argType).wasInterrupted())
-            break;
+        // The parameter name is scoped to 'declScope'.
+        {
+          DeclResolver::DeclScopeChanger x(funcIfDirect);
+          diag << ParamDeclRefAttr::get(
+              name, signature.getInputParamTypes()[paramIdx]);
         }
         inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
                               funcIfDirect, diag);
