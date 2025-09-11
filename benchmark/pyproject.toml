@@ -5,6 +5,7 @@ dependencies = [
     "datasets",
     "huggingface-hub",
     "hf-transfer",
+    "msgspec",
     "numpy",
     "tqdm",
     "transformers",
