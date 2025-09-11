@@ -506,7 +506,7 @@ Raises:
 """
 
 
-bitwise_and = _elementwise_binary(rmo.bitwise_and_)
+bitwise_and = _elementwise_binary(rmo.bitwise_and)
 """
 Computes the bitwise and between two symbolic tensors.
 
