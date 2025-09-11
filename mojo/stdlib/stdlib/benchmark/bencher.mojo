@@ -1051,14 +1051,13 @@ struct Bench(Stringable, Writable):
 
         # Write the timing labels
         if self.config.verbose_timing:
-            alias labels = __type_of(self.config).VERBOSE_TIMING_LABELS
-
+            var labels = materialize[
+                __type_of(self.config).VERBOSE_TIMING_LABELS
+            ]()
             # skip the met label
-            @parameter
             for i in range(len(labels)):
-                alias label = labels[i]
-                writer.write(sep, label)
-                writer.write(self.pad(timing_widths[i + 1], label))
+                writer.write(sep, labels[i])
+                writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
         # Write the sep line between the header and the data in MD format.
         if self.config.format == Format.table:
@@ -1075,10 +1074,10 @@ struct Bench(Stringable, Writable):
                 writer.write(self.pad["-"](metric.value.max_width, ""))
 
             if self.config.verbose_timing:
-                alias labels = __type_of(self.config).VERBOSE_TIMING_LABELS
-
+                var labels = materialize[
+                    __type_of(self.config).VERBOSE_TIMING_LABELS
+                ]()
                 # skip the met label
-                @parameter
                 for i in range(len(labels)):
                     writer.write(sep)
                     writer.write(self.pad["-"](timing_widths[i + 1], ""))

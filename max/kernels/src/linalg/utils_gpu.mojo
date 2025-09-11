@@ -399,8 +399,7 @@ fn select_config[
 
     alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
-    @parameter
-    for bmnk_stage in opt_list:
+    for bmnk_stage in materialize[opt_list]():
         var bm = bmnk_stage[0]
         var bn = bmnk_stage[1]
         var bk = bmnk_stage[2]

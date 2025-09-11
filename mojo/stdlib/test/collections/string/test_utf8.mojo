@@ -198,14 +198,12 @@ def test_bad_utf8_sequences():
 
 
 def test_stringslice_from_utf8():
-    @parameter
-    for sequence in GOOD_SEQUENCES:
-        _ = StringSlice(from_utf8=Span(materialize[sequence]()))
+    for sequence in materialize[GOOD_SEQUENCES]():
+        _ = StringSlice(from_utf8=Span(sequence))
 
-    @parameter
-    for sequence in BAD_SEQUENCES:
+    for sequence in materialize[BAD_SEQUENCES]():
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice(from_utf8=Span(materialize[sequence]()))
+            _ = StringSlice(from_utf8=Span(sequence))
 
 
 def test_combination_good_utf8_sequences():
