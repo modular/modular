@@ -94,10 +94,11 @@ fn test_simd_f32_to_ue8m0():
 fn test_simd_f32_to_ue8m0_ptx_kernel[
     size: Int,
     target: DType,
-](x: SIMD[DType.float32, size], last_idx: Int):
+    idx: Int,
+](x: SIMD[DType.float32, size]):
     var x_casted = _convert_f32_to_float8_ue8m0[target](x)
 
-    for i in range(last_idx):
+    for i in range(idx):
         print(
             x_casted[i],
         )
@@ -168,9 +169,9 @@ fn test_simd_f32_to_ue8m0_ptx_path(ctx: DeviceContext) raises:
     f32_simd[i] = bitcast[DType.float32, 1](UInt32(0x7F000000))
     i += 1
 
-    alias kernel = test_simd_f32_to_ue8m0_ptx_kernel[M, DType.uint8]
+    alias kernel = test_simd_f32_to_ue8m0_ptx_kernel[M, DType.uint8, 18]
     ctx.enqueue_function_checked[kernel, kernel](
-        f32_simd, i, grid_dim=1, block_dim=1
+        f32_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 
