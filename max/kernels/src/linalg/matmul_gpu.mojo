@@ -549,6 +549,10 @@ fn _matmul_gpu[
             fn _multistage_gemm[
                 config: MatmulConfig[a_type, b_type, c_type, transpose_b]
             ]() raises:
+                @parameter
+                if config.num_k_partitions > 1:
+                    return _multistage_gemm[config](config)
+
                 return multistage_gemm[
                     transpose_b=transpose_b,
                     config=config,
