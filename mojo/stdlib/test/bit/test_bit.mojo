@@ -483,7 +483,7 @@ fn _log2_ceil(n: Int) -> Int:
 
 @always_inline
 fn _log2_ceil(n: Scalar) -> __type_of(n):
-    return __type_of(n)(ceil(log2(Float64(n))))
+    return {ceil(log2(Float64(n)))}
 
 
 def test_log2_floor():

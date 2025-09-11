@@ -313,7 +313,7 @@ struct Pointer[
         Args:
             other: The `Pointer` to cast.
         """
-        self = __type_of(self)(_mlir_value=other._value)
+        self = {_mlir_value = other._value}
 
     @doc_private
     @always_inline("nodebug")
@@ -421,6 +421,4 @@ struct Pointer[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(
-            _mlir_value=self._value
-        )  # allow lit.ref to convert.
+        return {_mlir_value = self._value}  # allow lit.ref to convert.

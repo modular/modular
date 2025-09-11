@@ -202,7 +202,7 @@ fn _compute_ndbuffer_stride[
 
     @parameter
     if rank == 1:
-        return __type_of(shape)(1)
+        return {1}
 
     var stride = shape
     stride[rank - 1] = 1
@@ -624,11 +624,11 @@ struct NDBuffer[
             A new `NDBuffer` object with the same type and the same address,
             as the original `NDBuffer` and the new specified mutability and origin.
         """
-        result = __type_of(result)(
+        result = {
             self.data.origin_cast[mut, origin](),
             self.dynamic_shape,
             self.dynamic_stride,
-        )
+        }
 
     @always_inline
     fn get_rank(self) -> Int:
@@ -1204,7 +1204,7 @@ struct NDBuffer[
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
         )
-        return __type_of(result)(self.data, self.size())
+        return {self.data, self.size()}
 
     @always_inline
     fn make_dims_unknown(

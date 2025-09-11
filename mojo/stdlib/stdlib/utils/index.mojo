@@ -55,7 +55,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 @always_inline
 fn _int_tuple_binary_apply[
     binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
-](a: IndexList, b: __type_of(a)) -> __type_of(a):
+](a: IndexList, b: __type_of(a), out c: __type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
 
@@ -72,15 +72,13 @@ fn _int_tuple_binary_apply[
         Tuple containing the result.
     """
 
-    var c = __type_of(a)()
+    c = {}
 
     @parameter
     for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
         c.__setitem__[i](binary_fn[a.element_type](a_elem, b_elem))
-
-    return c
 
 
 @always_inline
@@ -815,7 +813,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x))
+    return {Int(x)}
 
 
 @always_inline
@@ -833,7 +831,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x))
+    return {Int(x)}
 
 
 @always_inline
@@ -854,7 +852,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y))
+    return {Int(x), Int(y)}
 
 
 @always_inline
@@ -873,7 +871,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y))
+    return {Int(x), Int(y)}
 
 
 @always_inline
@@ -900,7 +898,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z))
+    return {Int(x), Int(y), Int(z)}
 
 
 @always_inline
@@ -930,7 +928,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z), Int(w))
+    return {Int(x), Int(y), Int(z), Int(w)}
 
 
 @always_inline
@@ -970,7 +968,7 @@ fn Index[
     Returns:
         The constructed IndexList.
     """
-    return __type_of(result)(Int(x), Int(y), Int(z), Int(w), Int(v))
+    return {Int(x), Int(y), Int(z), Int(w), Int(v)}
 
 
 # ===-----------------------------------------------------------------------===#

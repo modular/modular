@@ -119,12 +119,12 @@ struct HostNDBuffer[
             dtype, Layout.row_major(IntTuple(shape)), MutableAnyOrigin
         ],
     ):
-        result = __type_of(result)(
+        result = {
             self.tensor.data,
             RuntimeLayout[__type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
-        )
+        }
 
 
 @fieldwise_init
@@ -224,12 +224,12 @@ struct DeviceNDBuffer[
             dtype, Layout.row_major(IntTuple(shape)), __origin_of(self.buffer)
         ],
     ):
-        result = __type_of(result)(
+        result = {
             self.buffer,
             RuntimeLayout[__type_of(result).layout](
                 self.tensor.get_shape(), self.tensor.get_strides()
             ),
-        )
+        }
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC

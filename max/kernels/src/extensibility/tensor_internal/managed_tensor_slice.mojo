@@ -1150,11 +1150,11 @@ struct ManagedTensorSlice[
             and _is_consistent[new_static_strides](new_runtime_strides)
         )
 
-        return __type_of(result)(
+        return {
             offset_ptr.or_else(self._ptr),
             new_runtime_shape,
             new_runtime_strides,
-        )
+        }
 
     @always_inline
     fn to_layout_tensor(
@@ -1312,9 +1312,7 @@ struct VariadicTensors[
         """
         constrained[index < size]()
         var tensor = self._tensors[index]
-        return __type_of(result)(
-            tensor._ptr, tensor._spec, tensor._runtime_strides
-        )
+        return {tensor._ptr, tensor._spec, tensor._runtime_strides}
 
 
 # ===----------------------------------------------------------------------=== #

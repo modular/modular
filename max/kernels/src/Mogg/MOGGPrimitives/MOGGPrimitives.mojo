@@ -1236,7 +1236,7 @@ fn build_static_tensor_specs_tuple[
     array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
     out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
 ):
-    return __type_of(result)(array_of_specs)
+    return {array_of_specs}
 
 
 # TODO: this should take IOSpec as a param -- will require graph compiler changes

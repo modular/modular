@@ -803,7 +803,7 @@ struct SplitKTileScheduler[
         alias BM = workspace_layout.shape[1].value()
         alias BN = workspace_layout.shape[2].value()
 
-        return __type_of(reshaped_workspace)(
+        return {
             reduction_workspace.ptr + reduction_tile_idx * BM * BN,
             RuntimeLayout[reshaped_workspace.layout].row_major(Index(BM, BN)),
-        )
+        }

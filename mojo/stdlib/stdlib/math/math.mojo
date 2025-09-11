@@ -199,19 +199,18 @@ fn sqrt(x: Int) -> Int:
 
 
 @always_inline
-fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
+fn _sqrt_nvvm(x: SIMD, out res: __type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
     alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
-    var res = __type_of(x)()
+    res = {}
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
             instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
-    return res
 
 
 @always_inline
@@ -261,20 +260,19 @@ fn sqrt[
 
 
 @always_inline
-fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
+fn _isqrt_nvvm(x: SIMD, out res: __type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
     alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
-    var res = __type_of(x)()
+    res = {}
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
             instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
-    return res
 
 
 @always_inline
@@ -320,20 +318,19 @@ fn isqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
 
 
 @always_inline
-fn _recip_nvvm(x: SIMD) -> __type_of(x):
+fn _recip_nvvm(x: SIMD, out res: __type_of(x)):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
     alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
-    var res = __type_of(x)()
+    res = {}
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
             instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
-    return res
 
 
 @always_inline
@@ -2780,15 +2777,14 @@ fn _call_ptx_intrinsic[
 
 
 @always_inline
-fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD) -> __type_of(x):
-    var res = __type_of(x)()
+fn _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: __type_of(x)):
+    res = {}
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[intrin, Scalar[x.dtype], has_side_effect=False](
             x[i]
         )
-    return res
 
 
 @always_inline

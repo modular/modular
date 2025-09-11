@@ -972,15 +972,12 @@ fn _matmul_common[
         # something to ensure we don't segfault.
         var c_ptr = UnsafePointer[Scalar[output_dtype]].alloc(TOTAL_SEQ_LEN * N)
 
-        c_nd = __type_of(c_nd)(
-            c_ptr,
-            IndexList[2](TOTAL_SEQ_LEN, N),
-        )
+        c_nd = {c_ptr, IndexList[2](TOTAL_SEQ_LEN, N)}
     else:
-        c_nd = __type_of(c_nd)(
+        c_nd = {
             UnsafePointer[Scalar[output_dtype]](),
             IndexList[2](TOTAL_SEQ_LEN, N),
-        )
+        }
 
     matmul[
         target=target,
@@ -1011,10 +1008,10 @@ fn _qmatmul_common[
     alias N = weight.shape.get[0]()
     var c_nd: NDBuffer[dtype, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
-    c_nd = __type_of(c_nd)(
+    c_nd = {
         UnsafePointer[Scalar[dtype]](),
         IndexList[2](TOTAL_SEQ_LEN, N),
-    )
+    }
 
     matmul_gpu_qint4_impl[
         target=target,
@@ -1691,10 +1688,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     # something to ensure we don't segfault.
     var c_ptr = UnsafePointer[Scalar[DType.float32]].alloc(TOTAL_SEQ_LEN * N)
 
-    c_nd = __type_of(c_nd)(
-        c_ptr,
-        IndexList[2](TOTAL_SEQ_LEN, N),
-    )
+    c_nd = {c_ptr, IndexList[2](TOTAL_SEQ_LEN, N)}
 
     _qmatmul_gguf_quantized_common[
         quantization_encoding, elementwise_lambda_fn

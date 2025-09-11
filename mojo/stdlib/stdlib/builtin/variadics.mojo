@@ -372,7 +372,7 @@ struct VariadicListMem[
         Returns:
             An iterator to the start of the list.
         """
-        return __type_of(result)(0, self)
+        return {0, self}
 
 
 # ===-----------------------------------------------------------------------===#

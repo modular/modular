@@ -611,10 +611,10 @@ struct Span[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(
-            ptr=self._data.origin_cast[result.mut, result.origin](),
-            length=UInt(self._len),
-        )
+        return {
+            ptr = self._data.origin_cast[result.mut, result.origin](),
+            length = UInt(self._len),
+        }
 
     fn reverse[
         dtype: DType, O: MutableOrigin, //

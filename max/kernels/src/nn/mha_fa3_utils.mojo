@@ -271,7 +271,7 @@ struct MHAPosition[
             masked=True,
         ],
     ):
-        gmem_block = __type_of(gmem_block)(
+        gmem_block = {
             ptr + self.q_out_offset,
             __type_of(gmem_block.runtime_layout)(
                 __type_of(gmem_block.runtime_layout.shape)(
@@ -279,7 +279,7 @@ struct MHAPosition[
                 ),
                 __type_of(gmem_block.runtime_layout.stride)(Self.q_stride, 1),
             ),
-        )
+        }
 
     @always_inline
     fn mask_status[
@@ -431,14 +431,7 @@ fn _get_position[
         q_row += seq_info.prompt_offset
         q_col = seq_info.head_idx * depth
         q_offset = Int(depth * q_num_heads) * Int(q_row) + Int(q_col)
-    ret = __type_of(ret)(
-        q_row,
-        q_col,
-        q_offset,
-        num_keys,
-        start_pos,
-        seq_info,
-    )
+    ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
 
 
 alias QTMATile[
@@ -819,7 +812,7 @@ fn produce[
         ],
     ):
         alias sz = BN * padded_depth
-        k_smem = __type_of(k_smem)(kv_smem + sz * idx)
+        k_smem = {kv_smem + sz * idx}
 
     @parameter
     @always_inline
@@ -836,7 +829,7 @@ fn produce[
         ],
     ):
         alias sz = BN * padded_depth
-        v_smem = __type_of(v_smem)(kv_smem + sz * idx)
+        v_smem = {kv_smem + sz * idx}
 
     @parameter
     @always_inline("nodebug")

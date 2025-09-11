@@ -382,7 +382,7 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return __type_of(result)(UnsafePointer(to=self.mbar))
+        return {UnsafePointer(to=self.mbar)}
 
     @always_inline
     fn arrive_cluster(

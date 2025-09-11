@@ -3255,13 +3255,13 @@ fn _tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
 
 @always_inline
 fn _pow[
-    simd_width: Int
-](base: SIMD[_, simd_width], exp: SIMD[_, simd_width]) -> __type_of(base):
+    width: Int
+](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
     """Computes the power of the elements of a SIMD vector raised to the
     corresponding elements of another SIMD vector.
 
     Parameters:
-        simd_width: The width of the input and output SIMD vectors.
+        width: The width of the input and output SIMD vectors.
 
     Args:
         base: Base of the power operation.
@@ -3281,12 +3281,11 @@ fn _pow[
         if all(exp.eq(3)):
             return base * base * base
 
-        var result = __type_of(base)()
+        result = {}
 
         @parameter
-        for i in range(simd_width):
+        for i in range(width):
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
-        return result
     else:
         constrained[False, "unsupported type combination"]()
         return {}
@@ -3311,19 +3310,16 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
 
 @always_inline
 fn _powf[
-    simd_width: Int
-](base: SIMD[_, simd_width], exp: SIMD[_, simd_width]) -> __type_of(base):
+    width: Int
+](base: SIMD[_, width], exp: SIMD[_, width], out result: __type_of(base)):
     constrained[
         exp.dtype.is_floating_point(), "exponent must be floating point"
     ]()
-
-    var result = __type_of(base)()
+    result = {}
 
     @parameter
-    for i in range(simd_width):
+    for i in range(width):
         result[i] = _powf_scalar(base[i], exp[i])
-
-    return result
 
 
 @always_inline
@@ -3860,10 +3856,10 @@ fn _modf(x: SIMD) -> Tuple[__type_of(x), __type_of(x)]:
 
     @parameter
     if x.dtype.is_integral():
-        return (x, __type_of(x)(0))
+        return (x, {0})
 
-    var result_int = __type_of(x)()
-    var result_frac = __type_of(x)()
+    var result_int: __type_of(x) = {}
+    var result_frac: __type_of(x) = {}
 
     @parameter
     for i in range(x.size):

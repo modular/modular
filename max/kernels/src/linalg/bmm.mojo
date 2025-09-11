@@ -88,18 +88,16 @@ alias elementwise_epilogue_type = fn[
 @always_inline
 fn _get_batch_dims[
     rank: Int
-](flat_index: Int, shape: IndexList[rank, **_]) -> __type_of(shape):
-    var out = __type_of(shape)()
+](flat_index: Int, shape: IndexList[rank, **_], out res: __type_of(shape)):
+    res = {}
     var curr_index = flat_index
 
     @parameter
     for idx in range(rank - 2):
         # Count from the back, skipping last two dims.
         alias i = rank - idx - 3
-        out[i] = curr_index % shape[i]
+        res[i] = curr_index % shape[i]
         curr_index //= shape[i]
-
-    return out
 
 
 # A utility to reshape NDBuffer with rank > 3 to rank-3.
