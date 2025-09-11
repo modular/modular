@@ -16,7 +16,6 @@ import logging
 import queue
 import time
 import uuid
-from typing import Union
 
 from max.interfaces import (
     Pipeline,
@@ -55,11 +54,11 @@ class PrefillScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationInputs[TextContext | TextAndVisionContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager,
+        paged_cache: PagedKVCacheManager[TextContext | TextAndVisionContext],
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
@@ -67,7 +66,7 @@ class PrefillScheduler(Scheduler):
         self.paged_cache = paged_cache
         # Initialize Scheduler state.
         self.active_transfers: dict[
-            str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
+            str, tuple[TextAndVisionContext | TextContext, XferReqData]
         ] = {}
         self.request_id_to_reply_context: dict[
             str, tuple[ClientIdentity, str, list[int]]
@@ -286,7 +285,7 @@ class PrefillScheduler(Scheduler):
 
 def load_prefill_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationInputs[TextContext | TextAndVisionContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,

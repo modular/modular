@@ -16,7 +16,6 @@ import logging
 import queue
 import time
 import uuid
-from typing import Union
 
 from max.interfaces import (
     MAXPullQueue,
@@ -62,14 +61,14 @@ class DecodeScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+            TextGenerationInputs[TextContext | TextAndVisionContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager,
+        paged_manager: PagedKVCacheManager[TextContext | TextAndVisionContext],
         *,
         request_queue: MAXPullQueue[
-            tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+            tuple[RequestID, TextContext | TextAndVisionContext]
         ],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -93,7 +92,7 @@ class DecodeScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[
-            RequestID, Union[TextContext, TextAndVisionContext]
+            RequestID, TextContext | TextAndVisionContext
         ] = OrderedDict()
         self.pending_prefill_requests: set[RequestID] = set()
 
@@ -143,14 +142,14 @@ class DecodeScheduler(Scheduler):
     def send_prefill_request(
         self,
         request_id: RequestID,
-        data: Union[TextContext, TextAndVisionContext],
+        data: TextContext | TextAndVisionContext,
         dst_idxs: list[int],
     ) -> None:
         """Pushes a request to the prefill socket.
 
         Args:
             request_id: The ID of the request to send
-            data: The Union[TextContext, TextAndVisionContext] containing the request data
+            data: The context containing the request data
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
@@ -390,12 +389,12 @@ class DecodeScheduler(Scheduler):
 
 def load_decode_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationInputs[TextContext | TextAndVisionContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[
-        tuple[RequestID, Union[TextContext, TextAndVisionContext]]
+        tuple[RequestID, TextContext | TextAndVisionContext]
     ],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]

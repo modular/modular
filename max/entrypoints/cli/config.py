@@ -137,7 +137,7 @@ def get_field_type(field_type: Any):
     return field_type
 
 
-def get_default(dataclass_field: Field) -> Any:
+def get_default(dataclass_field: Field[Any]) -> Any:
     if dataclass_field.default_factory != MISSING:
         default = dataclass_field.default_factory()
     elif dataclass_field.default != MISSING:
@@ -152,7 +152,9 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
-def get_normalized_flag_name(dataclass_field: Field, field_type: Any) -> str:
+def get_normalized_flag_name(
+    dataclass_field: Field[Any], field_type: Any
+) -> str:
     normalized_name = dataclass_field.name.lower().replace("_", "-")
 
     if is_flag(field_type):
@@ -163,9 +165,9 @@ def get_normalized_flag_name(dataclass_field: Field, field_type: Any) -> str:
 
 def create_click_option(
     help_for_fields: dict[str, str],
-    dataclass_field: Field,
+    dataclass_field: Field[Any],
     field_type: Any,
-) -> Callable[[Callable], Callable]:
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     # Get Help text.
     help_text = help_for_fields.get(dataclass_field.name, None)
 

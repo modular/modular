@@ -20,7 +20,7 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic
+from typing import Any, Callable, Generic, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -28,10 +28,11 @@ from max.interfaces import (
     AudioGenerationRequest,
     AudioGeneratorContext,
     AudioGeneratorOutput,
-    BaseContextType,
     GenerationStatus,
+    InputContext,
     LogProbabilities,
     PipelineTokenizer,
+    RequestID,
     TextGenerationRequest,
 )
 from max.profiler import Tracer
@@ -40,6 +41,8 @@ from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+
+ContextType = TypeVar("ContextType", bound=InputContext)
 
 logger = logging.getLogger("max.serve")
 
@@ -58,15 +61,15 @@ class EmbeddingsGeneratorOutput:
     embeddings: npt.NDArray[np.floating[Any]]
 
 
-class TokenGeneratorPipeline(Generic[BaseContextType]):
+class TokenGeneratorPipeline(Generic[ContextType]):
     """Base class for LLM text generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer,
-        engine_queue: EngineQueue[BaseContextType, Any],
-        lora_queue: LoRAQueue | None = None,
+        tokenizer: PipelineTokenizer[ContextType, int, TextGenerationRequest],
+        engine_queue: EngineQueue[ContextType, Any],
+        lora_queue: LoRAQueue[RequestID] | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.TokenGeneratorPipeline"
@@ -93,8 +96,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
             for token_id, value in top_log_probs.items():
                 decoded_log_probs[
                     await self.tokenizer.decode(
-                        token_id,
-                        skip_special_tokens=skip_special_tokens,
+                        token_id, skip_special_tokens=skip_special_tokens
                     )
                 ] = value
             top_log_probabilities.append(decoded_log_probs)
@@ -138,8 +140,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
                         # the nsys trace to be overly noisy since this is an async loop.
                         tracer = Tracer("tokenizer.decode")
                         decoded_token = await self.tokenizer.decode(
-                            token,
-                            skip_special_tokens=skip_special_tokens,
+                            token, skip_special_tokens=skip_special_tokens
                         )
                         del tracer  # tokenizer.decode
 
@@ -237,7 +238,7 @@ class TokenGeneratorPipeline(Generic[BaseContextType]):
                     total_sw.elapsed_ms,
                 )
 
-    async def __aenter__(self) -> TokenGeneratorPipeline:
+    async def __aenter__(self) -> TokenGeneratorPipeline[ContextType]:
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
@@ -314,9 +315,11 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer,
+        tokenizer: PipelineTokenizer[
+            AudioGeneratorContext, object, AudioGenerationRequest
+        ],
         engine_queue: EngineQueue[AudioGeneratorContext, Any],
-        lora_queue: LoRAQueue | None = None,
+        lora_queue: LoRAQueue[RequestID] | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.AudioGeneratorPipeline"

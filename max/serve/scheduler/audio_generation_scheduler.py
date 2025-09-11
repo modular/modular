@@ -206,14 +206,14 @@ class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: AudioGenerationSchedulerConfig,
-        pipeline: AudioGenerator,
+        pipeline: AudioGenerator[TTSContext],
         *,
         request_queue: MAXPullQueue[tuple[RequestID, TTSContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager,
+        paged_manager: PagedKVCacheManager[TTSContext],
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

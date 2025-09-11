@@ -51,12 +51,12 @@ class LoRAQueue(Generic[ReqId]):
             ).decode,
         )
 
-        self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
+        self.pending_out_queues: dict[ReqId, asyncio.Queue[LoRAResponse]] = {}
 
     @contextlib.contextmanager
     def open_channel(
         self, req_id: ReqId, request: LoRARequest
-    ) -> Generator[asyncio.Queue, None, None]:
+    ) -> Generator[asyncio.Queue[LoRAResponse], None, None]:
         try:
             if req_id in self.pending_out_queues:
                 raise RuntimeError(
@@ -65,7 +65,7 @@ class LoRAQueue(Generic[ReqId]):
                     "Please ensure that the `req_id` is unique for each request."
                 )
 
-            out_queue: asyncio.Queue = asyncio.Queue()
+            out_queue: asyncio.Queue[LoRAResponse] = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
 
             # put_nowait will fail if the request_push_socket is unavailable

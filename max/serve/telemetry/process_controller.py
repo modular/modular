@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -21,7 +23,7 @@ import threading
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
@@ -59,7 +61,7 @@ class ProcessMetricClient(MetricClient):
     def __init__(
         self,
         settings: Settings,
-        q: multiprocessing.queues.Queue,
+        q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     ) -> None:
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
@@ -127,7 +129,7 @@ class ProcessMetricClient(MetricClient):
 
 @asynccontextmanager
 async def _reconstruct_client(
-    settings: Settings, q: multiprocessing.queues.Queue
+    settings: Settings, q: multiprocessing.queues.Queue[list[MaxMeasurement]]
 ) -> AsyncGenerator[MetricClient, None]:
     yield ProcessMetricClient(settings, q)
 
@@ -136,7 +138,7 @@ async def _reconstruct_client(
 class ProcessTelemetryController:
     pc: ProcessControl
     process: multiprocessing.process.BaseProcess
-    queue: multiprocessing.queues.Queue
+    queue: multiprocessing.queues.Queue[list[MaxMeasurement]]
 
     def Client(self, settings: Settings) -> MetricClient:
         return ProcessMetricClient(settings, self.queue)
@@ -144,12 +146,12 @@ class ProcessTelemetryController:
 
 @asynccontextmanager
 async def start_process_consumer(
-    settings: Settings, handle_fn: Optional[TelemetryFn] = None
+    settings: Settings, handle_fn: TelemetryFn | None = None
 ) -> AsyncGenerator[ProcessTelemetryController, None]:
     ctx = multiprocessing.get_context("spawn")
     pc = ProcessControl(ctx, "telemetry-worker", health_fail_s=5.0)
 
-    q = ctx.Queue()
+    q: multiprocessing.Queue[list[MaxMeasurement]] = ctx.Queue()
 
     if handle_fn is None:
         handle_fn = _sync_commit
@@ -186,7 +188,7 @@ async def start_process_consumer(
 def init_and_process(
     pc: ProcessControl,
     settings: Settings,
-    q: multiprocessing.queues.Queue,  # Queue[MaxMeasurement]
+    q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     commit_fn: TelemetryFn,
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
@@ -225,7 +227,7 @@ def init_and_process(
 def process_telemetry(
     pc: ProcessControl,
     settings: Settings,
-    q: multiprocessing.queues.Queue,  # Queue[MaxMeasurement]
+    q: multiprocessing.queues.Queue[list[MaxMeasurement]],
     commit_fn: TelemetryFn,
 ) -> None:
     """Long running function to read from a queue & process each element"""

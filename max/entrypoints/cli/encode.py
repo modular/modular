@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 """Utilities for encoding text in the cli."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from typing import Optional
 
 from max.interfaces import (
     EmbeddingsGenerator,
@@ -26,7 +26,7 @@ from max.interfaces import (
     PipelineTokenizer,
     TextGenerationRequest,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 
 from .metrics import EmbeddingsMetrics
 
@@ -36,10 +36,10 @@ MODEL_NAME = "model"
 
 
 async def _run_pipeline_encode(
-    pipeline: EmbeddingsGenerator,
-    tokenizer: PipelineTokenizer,
+    pipeline: EmbeddingsGenerator[TextContext],
+    tokenizer: PipelineTokenizer[TextContext, int, TextGenerationRequest],
     prompt: str,
-    metrics: Optional[EmbeddingsMetrics] = None,
+    metrics: EmbeddingsMetrics | None = None,
 ) -> EmbeddingsOutput:
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(

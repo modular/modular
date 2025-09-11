@@ -77,7 +77,7 @@ def is_valid_zmq_address(address: str) -> bool:
 
 
 def _wait_for_peer_connection(
-    socket: zmq.Socket, timeout: float, expected_event: int
+    socket: zmq.Socket[bytes], timeout: float, expected_event: int
 ) -> None:
     """
     Wait for peer connection using ZMQ socket monitoring.
@@ -161,7 +161,7 @@ def _open_zmq_socket(
     path: str,
     mode: int,
     bind: bool = True,
-) -> zmq.Socket:
+) -> zmq.Socket[bytes]:
     """Open a ZMQ socket with the proper bind/connect semantics."""
     mem = psutil.virtual_memory()
 
@@ -265,7 +265,7 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
         self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
-        self._push_socket: Optional[zmq.Socket] = None
+        self._push_socket: Optional[zmq.Socket[bytes]] = None
 
         # State management
         self._closed = False
@@ -274,7 +274,7 @@ class ZmqPushSocket(Generic[T], MAXPushQueue[T]):
         if not lazy:
             self.initialize_socket()
 
-    def initialize_socket(self) -> zmq.Socket:
+    def initialize_socket(self) -> zmq.Socket[bytes]:
         """
         Initialize the push socket if needed and return it.
 
@@ -408,7 +408,7 @@ class ZmqPullSocket(Generic[T]):
         self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
-        self._pull_socket: Optional[zmq.Socket] = None
+        self._pull_socket: Optional[zmq.Socket[bytes]] = None
 
         # State management
         self._closed = False
@@ -417,7 +417,7 @@ class ZmqPullSocket(Generic[T]):
         if not lazy:
             self.initialize_socket()
 
-    def initialize_socket(self) -> zmq.Socket:
+    def initialize_socket(self) -> zmq.Socket[bytes]:
         """
         Initialize the pull socket if needed and return it.
 
@@ -525,7 +525,7 @@ class ZmqRouterSocket(Generic[T]):
         self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
-        self.router_socket: Optional[zmq.Socket] = None
+        self.router_socket: Optional[zmq.Socket[bytes]] = None
 
         # State management
         self._closed = False
@@ -534,7 +534,7 @@ class ZmqRouterSocket(Generic[T]):
         if not lazy:
             self.initialize_socket()
 
-    def initialize_socket(self) -> zmq.Socket:
+    def initialize_socket(self) -> zmq.Socket[bytes]:
         """
         Initialize the router socket if needed and return it.
 
@@ -670,7 +670,7 @@ class ZmqDealerSocket(Generic[T]):
         self._peer_timeout = peer_timeout
 
         # Initialize socket (lazily)
-        self.dealer_socket: Optional[zmq.Socket] = None
+        self.dealer_socket: Optional[zmq.Socket[bytes]] = None
 
         # State management
         self._closed = False
@@ -679,7 +679,7 @@ class ZmqDealerSocket(Generic[T]):
         if not lazy:
             self.initialize_socket()
 
-    def initialize_socket(self) -> zmq.Socket:
+    def initialize_socket(self) -> zmq.Socket[bytes]:
         """
         Initialize the dealer socket if needed and return it.
 

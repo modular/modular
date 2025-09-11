@@ -59,7 +59,9 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
-        self.pending_out_queues: dict[RequestID, asyncio.Queue] = {}
+        self.pending_out_queues: dict[
+            RequestID, asyncio.Queue[SchedulerResult[PipelineOutputType]]
+        ] = {}
         self.worker_monitor = worker_monitor
 
     def is_worker_healthy(self) -> bool:
@@ -73,7 +75,9 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
     @contextlib.contextmanager
     def open_channel(
         self, req_id: RequestID, data: BaseContextType
-    ) -> Generator[asyncio.Queue, None, None]:
+    ) -> Generator[
+        asyncio.Queue[SchedulerResult[PipelineOutputType]], None, None
+    ]:
         """
         Context manager to open a communication channel for a specific request.
 
@@ -99,7 +103,9 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
                     "Please ensure that the `req_id` is unique for each request."
                 )
 
-            out_queue: asyncio.Queue = asyncio.Queue()
+            out_queue: asyncio.Queue[SchedulerResult[PipelineOutputType]] = (
+                asyncio.Queue()
+            )
             self.pending_out_queues[req_id] = out_queue
 
             # put_nowait will fail if the request_push_socket is unavailable

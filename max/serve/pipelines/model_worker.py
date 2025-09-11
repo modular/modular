@@ -204,7 +204,7 @@ async def start_model_worker(
     settings: Settings,
     metric_client: MetricClient,
     pipeline_task: PipelineTask,
-) -> AsyncGenerator[EngineQueue, None]:
+) -> AsyncGenerator[EngineQueue[BaseContext, Any], None]:
     """Starts a model worker and associated process.
 
     Args:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import TypeVar, Union
+from typing import Any, Union
 
 from max.interfaces import (
     AudioGenerator,
@@ -51,11 +51,11 @@ __all__ = [
     "load_scheduler",
 ]
 
-T = TypeVar("T")
-
 
 def load_scheduler(
-    pipeline: Pipeline | EmbeddingsGenerator | AudioGenerator[TTSContext],
+    pipeline: Pipeline[Any, Any]
+    | EmbeddingsGenerator[TextContext]
+    | AudioGenerator[TTSContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> Scheduler:

@@ -44,7 +44,7 @@ class EmbeddingsScheduler(Scheduler):
     def __init__(
         self,
         scheduler_config: EmbeddingsSchedulerConfig,
-        pipeline: EmbeddingsGenerator,
+        pipeline: EmbeddingsGenerator[TextContext],
         request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[EmbeddingsOutput]]

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 import json
+from typing import Any
 
 import regex
 
@@ -34,9 +34,9 @@ _JSON_REGEX_STR = r"""
 _JSON_REGEX = regex.compile(_JSON_REGEX_STR, regex.VERBOSE | regex.DOTALL)  # type: ignore[attr-defined]
 
 
-def parse_json_from_text(text: str) -> list[dict]:
+def parse_json_from_text(text: str) -> list[Any]:
     """Parse JSON from text."""
-    json_objects = []
+    json_objects: list[Any] = []
     cursor = 0
     while cursor < len(text):
         match = _JSON_REGEX.search(text, pos=cursor)

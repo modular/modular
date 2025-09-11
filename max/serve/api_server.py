@@ -19,10 +19,16 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
+from max.interfaces import (
+    PipelinesFactory,
+    PipelineTask,
+    PipelineTokenizer,
+    RequestID,
+)
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
@@ -54,7 +60,7 @@ class ServingTokenGeneratorSettings:
     # Pipeline config
     model_factory: PipelinesFactory
     pipeline_config: PipelineConfig
-    tokenizer: PipelineTokenizer
+    tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
 
 
@@ -97,7 +103,7 @@ async def lifespan(
                 )
             )
 
-            lora_queue: LoRAQueue | None = (
+            lora_queue: LoRAQueue[RequestID] | None = (
                 LoRAQueue(
                     serving_settings.pipeline_config.lora_config.lora_request_endpoint,
                     serving_settings.pipeline_config.lora_config.lora_response_endpoint,
@@ -109,7 +115,7 @@ async def lifespan(
             METRICS.pipeline_load(
                 serving_settings.pipeline_config.model_config.model_name
             )
-            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
+            pipeline: TokenGeneratorPipeline[Any] | AudioGeneratorPipeline[Any]
             if serving_settings.pipeline_task in (
                 PipelineTask.TEXT_GENERATION,
                 PipelineTask.EMBEDDINGS_GENERATION,

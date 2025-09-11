@@ -28,7 +28,7 @@ BatchType = dict[RequestID, T]
 def split_by_replica_idx(
     batch: BatchType[T],
     num_replicas: int,
-    paged_cache: PagedKVCacheManager | None = None,
+    paged_cache: PagedKVCacheManager[T] | None = None,
 ) -> list[BatchType[T]]:
     """Splits a batch into a list of batches."""
     if num_replicas == 1:
@@ -36,7 +36,7 @@ def split_by_replica_idx(
 
     assert isinstance(paged_cache, MultiPagedKVCacheManager)
 
-    batches: list[BatchType] = [{} for _ in range(num_replicas)]
+    batches: list[BatchType[T]] = [{} for _ in range(num_replicas)]
 
     # First pass: place requests that already have a replica idx
     for req_id, context in batch.items():
