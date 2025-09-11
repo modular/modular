@@ -57,7 +57,7 @@ struct _DictEntryIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Iterator over immutable DictEntry references.
 
     Parameters:
@@ -115,7 +115,7 @@ struct _DictKeyIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -156,7 +156,7 @@ struct _DictValueIter[
     H: Hasher,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 

@@ -982,7 +982,7 @@ struct _DequeIter[
     T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:

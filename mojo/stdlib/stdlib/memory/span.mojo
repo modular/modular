@@ -36,7 +36,7 @@ struct _SpanIter[
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[T](),
-](Copyable, Movable):
+](ImplicitlyCopyable, Movable):
     """Iterator for Span.
 
     Parameters:
