@@ -67,6 +67,13 @@ from transformers import (
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
+BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
+    "This command runs comprehensive benchmark tests on a model server to measure "
+    "performance metrics including throughput, latency, and resource utilization. "
+    "Make sure that the MAX server is running and hosting a model before running "
+    "this command."
+)
+
 logger = logging.getLogger("benchmark_serving")
 
 
@@ -1649,11 +1656,7 @@ def parse_args(
 
     # Create parser using the enhanced MAXConfig functionality with required model field
     parser = benchmark_config.cli_arg_parsers(
-        description=(
-            "Benchmark the online serving throughput. "
-            "Make sure that the MAX server is running and hosting a model "
-            "before running this script."
-        ),
+        description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
     )
 
     if args is None:

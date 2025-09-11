@@ -16,9 +16,13 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import sys
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import click
+from click import shell_completion
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.entrypoints.workers import start_workers
 from max.interfaces import SamplingParams
@@ -90,7 +94,7 @@ class WithLazyPipelineOptions(click.Command):
 
     def shell_complete(
         self, ctx: click.Context, incomplete: str
-    ) -> list[click.shell_completion.CompletionItem]:
+    ) -> list[shell_completion.CompletionItem]:
         self._ensure_options_loaded()
         return super().shell_complete(ctx, incomplete)
 
@@ -430,6 +434,64 @@ def cli_list(json: bool) -> None:
         list_pipelines_to_json()
     else:
         list_pipelines_to_console()
+
+
+# Because we already have an argparser for benchmark_serving.py, we shouldn't have
+# to maintain a whole list of benchmark_serving CLI arg options here. This makes
+# it harder to keep them in sync and is error prone. We unroll all the args
+# instead and let BenchmarkCommand (which wraps benchmark_serving.py) handle them.
+@main.command(
+    name="benchmark",
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "help_option_names": [],
+    },
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def cli_benchmark(args: Sequence[str]) -> None:
+    """Run benchmark tests on a serving model.
+
+    This command runs comprehensive benchmark tests on a model server to measure
+    performance metrics including throughput, latency, and resource utilization.
+    Make sure that the MAX server is running and hosting a model before running
+    this command.
+    """
+    # For benchmark command, we want to handle all arguments directly
+    # and bypass Click's argument processing
+    # args = ctx.params.get("args", [])
+
+    from benchmark_serving import main as benchmark_main
+    from benchmark_serving import parse_args as benchmark_parse_args
+
+    # Default to serving_config.yaml in the benchmark directory for now.
+    # Based on how we're packaging our benchmark/ in max, this should be the correct path.
+    config_file_path = (
+        Path(__file__).parent.parent / "benchmark" / "serving_config.yaml"
+    )
+
+    logger.debug("Using config file path: %s", config_file_path)
+    logger.debug("Running benchmark subcommand with args: %s", args)
+    try:
+        argparse_namespace = benchmark_parse_args(
+            config_file_path=config_file_path, args=args
+        )
+
+        # Run the benchmark
+        click.echo("Starting benchmark...")
+        benchmark_main(argparse_namespace)
+        click.echo("Benchmark completed successfully!")
+    except SystemExit as e:
+        # argparse calls sys.exit() for help and errors, we need to handle this
+        if e.code == 0:
+            # Help was requested and printed, just return
+            return
+        else:
+            # There was an error, exit with the same code
+            sys.exit(e.code)
+    except Exception as e:
+        click.echo(f"Benchmark failed: {e}", err=True)
+        sys.exit(1)
 
 
 def print_version(
