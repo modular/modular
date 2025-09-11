@@ -63,7 +63,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function[copy_via_shared](
+    ctx.enqueue_function_checked[copy_via_shared, copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -84,8 +84,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
 
 
 fn copy_with_src_size(
-    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
+    src: UnsafePointer[Float32],
+    dst: UnsafePointer[Float32],
     src_size: Int,
 ):
     var smem = stack_allocation[
@@ -96,12 +96,16 @@ fn copy_with_src_size(
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16, fill = Float32(0)](src, smem, src_size)
+    async_copy[16, fill = Float32(0)](
+        src.address_space_cast[AddressSpace.GLOBAL](), smem, src_size
+    )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16, fill = Float32(0)](src + 4, smem + 4, 0)
+    async_copy[16, fill = Float32(0)](
+        src.address_space_cast[AddressSpace.GLOBAL]() + 4, smem + 4, 0
+    )
     async_copy_wait_all()
 
     for i in range(8):
@@ -110,10 +114,7 @@ fn copy_with_src_size(
 
 fn copy_with_non_zero_fill[
     smem_size: Int
-](
-    src: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-):
+](src: UnsafePointer[BFloat16], dst: UnsafePointer[BFloat16],):
     var smem = stack_allocation[
         smem_size, DType.bfloat16, address_space = AddressSpace.SHARED
     ]()
@@ -123,10 +124,14 @@ fn copy_with_non_zero_fill[
 
     var offset = smem_size // 2
 
-    async_copy[16, fill = BFloat16(32)](src, smem, predicate=True)
+    async_copy[16, fill = BFloat16(32)](
+        src.address_space_cast[AddressSpace.GLOBAL](), smem, predicate=True
+    )
 
     async_copy[16, fill = BFloat16(32)](
-        src + offset, smem + offset, predicate=False
+        (src + offset).address_space_cast[AddressSpace.GLOBAL](),
+        smem + offset,
+        predicate=False,
     )
     async_copy_wait_all()
 
@@ -155,7 +160,7 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     alias kernel = copy_with_src_size
     alias src_size = 3 * size_of[DType.float32]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_device,
         b_device,
         src_size,
@@ -204,10 +209,9 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     alias src_size = 3 * size_of[DType.bfloat16]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a_device,
         b_device,
-        src_size,
         grid_dim=(1, 1, 1),
         block_dim=(1, 1, 1),
     )

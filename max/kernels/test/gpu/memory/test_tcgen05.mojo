@@ -86,7 +86,9 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_st_ld_roundtrip_kernel[M, N]](
+
+    alias kernel = tcgen05_st_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),
@@ -238,7 +240,8 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
         DType.float32,
         Layout.row_major(M, N),
     ](ctx)
-    ctx.enqueue_function[tcgen05_cp_ld_roundtrip_kernel[M, N]](
+    alias kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]
+    ctx.enqueue_function_checked[kernel, kernel](
         data.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(M),

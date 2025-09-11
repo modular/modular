@@ -126,7 +126,8 @@ fn check_ldmatrix_fp8[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    ctx.enqueue_function[test_ldmatrix_fp8[input_type]](
+    alias kernel_func = test_ldmatrix_fp8[input_type]
+    ctx.enqueue_function_checked[kernel_func, kernel_func](
         c_device,
         a_device,
         b_device,
@@ -159,18 +160,17 @@ fn check_ldmatrix_fp8[
         ),  # N x K for transpose_b=True
     )
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            input_type,
-            input_type,
-            c_tensor_ref.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-            transpose_b=True,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        DType.float32,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+        transpose_b=True,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

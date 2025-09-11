@@ -70,13 +70,14 @@ fn run_vector_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    ctx.enqueue_function[semaphore_vector_reduce[dtype, N, num_parts]](
+    alias kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,
         lock_dev,
@@ -157,7 +158,7 @@ fn run_matrix_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -165,7 +166,8 @@ fn run_matrix_reduction[
 
     var block_size = 1024
 
-    ctx.enqueue_function[semaphore_matrix_reduce[dtype, M, N, num_parts]](
+    alias kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_device,
         a_device,
         lock_dev,
