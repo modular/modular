@@ -551,6 +551,7 @@ struct And(ElementwiseBinaryOp):
         constrained[dtype == DType.bool, "expected bool operands for mo.and"]()
         return lhs & rhs
 
+
 @compiler.register("mo.bitwise_and")
 struct BitwiseAnd(ElementwiseBinaryOp):
     @staticmethod
@@ -558,7 +559,10 @@ struct BitwiseAnd(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[dtype.is_integral(), "expected bool or integral operands for mo.bitwise_and"]()
+        constrained[
+            dtype.is_integral(),
+            "expected bool or integral operands for mo.bitwise_and",
+        ]()
         return lhs & rhs
 
 
