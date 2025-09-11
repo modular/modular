@@ -407,7 +407,9 @@ fn test_shared_and_local() raises:
             arange(t_local)
             print_tensor_info[True](t_local)
 
-        ctx.enqueue_function[test_shared_and_local](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_checked[
+            test_shared_and_local, test_shared_and_local
+        ](grid_dim=1, block_dim=1)
         ctx.synchronize()
 
 

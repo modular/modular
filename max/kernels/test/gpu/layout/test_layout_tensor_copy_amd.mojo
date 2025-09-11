@@ -35,12 +35,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](
-    input_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GLOBAL
-    ],
-    m: Int,
-):
+](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     alias layout = Layout.row_major(BM, BN)
     alias q_tile_type = LayoutTensor[
         dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
@@ -53,7 +48,7 @@ fn copy_dram_to_sram_buffer_load_kernel[
     ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr,
+        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
         runtime_layout,
     )
     var smem = tb[dtype]().row_major[BM, BN]().shared().alloc()
@@ -95,12 +90,11 @@ fn run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
         input_tensor.layout.size()
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
-    ctx.enqueue_function[
-        copy_dram_to_sram_buffer_load_kernel[
-            DType.bfloat16, 4, 16, 8, thread_layout
-        ],
-    ](
-        device_tensor.unsafe_ptr(),
+    alias kernel = copy_dram_to_sram_buffer_load_kernel[
+        DType.bfloat16, 4, 16, 8, thread_layout
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
+        device_tensor,
         3,
         grid_dim=1,
         block_dim=(thread_layout.size()),
@@ -115,12 +109,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](
-    input_ptr: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.GLOBAL
-    ],
-    m: Int,
-):
+](input_ptr: UnsafePointer[Scalar[dtype]], m: Int,):
     alias layout = Layout.row_major(BM, BN)
     alias q_tile_type = LayoutTensor[
         dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
@@ -133,7 +122,7 @@ fn copy_dram_to_local_buffer_load_kernel[
     ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
     var q_tile = q_tile_type(
-        input_ptr,
+        input_ptr.address_space_cast[AddressSpace.GLOBAL](),
         runtime_layout,
     )
 
@@ -190,12 +179,11 @@ fn run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
         input_tensor.layout.size()
     )
     ctx.enqueue_copy(device_tensor, input_tensor.ptr)
-    ctx.enqueue_function[
-        copy_dram_to_local_buffer_load_kernel[
-            DType.bfloat16, 4, 16, 8, thread_layout
-        ],
-    ](
-        device_tensor.unsafe_ptr(),
+    alias kernel = copy_dram_to_local_buffer_load_kernel[
+        DType.bfloat16, 4, 16, 8, thread_layout
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
+        device_tensor,
         3,
         grid_dim=1,
         block_dim=(thread_layout.size()),

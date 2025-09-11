@@ -73,7 +73,7 @@ fn test_naive_matmul_kernel(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, BM, BN
     ]
 
-    ctx.enqueue_function[naive_matmul_kernel](
+    ctx.enqueue_function_checked[naive_matmul_kernel, naive_matmul_kernel](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -210,7 +210,9 @@ fn test_sram_blocked_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
     ]
 
-    ctx.enqueue_function[sram_blocked_matmul_kernel](
+    ctx.enqueue_function_checked[
+        sram_blocked_matmul_kernel, sram_blocked_matmul_kernel
+    ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -310,7 +312,10 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
         layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
-    ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel_kernel](
+    ctx.enqueue_function_checked[
+        single_warp_mma_sync_m16n8k8_kernel_kernel,
+        single_warp_mma_sync_m16n8k8_kernel_kernel,
+    ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -328,13 +333,16 @@ fn test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
 
 fn sram_blocked_matmul_dynamic_nd_buffer[
     thread_layout: Layout,
+    dst_shape: DimList,
+    lhs_shape: DimList,
+    rhs_shape: DimList,
     BM: Int,
     BN: Int,
     BK: Int,
 ](
-    dst: NDBuffer[mut=True, DType.float32, 2, _, DimList.create_unknown[2]()],
-    lhs: NDBuffer[mut=True, DType.float32, 2, _, DimList.create_unknown[2]()],
-    rhs: NDBuffer[mut=True, DType.float32, 2, _, DimList.create_unknown[2]()],
+    dst: NDBuffer[DType.float32, 2, MutableAnyOrigin, dst_shape],
+    lhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, lhs_shape],
+    rhs: NDBuffer[DType.float32, 2, MutableAnyOrigin, rhs_shape],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
@@ -463,10 +471,13 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     )
 
     alias sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[
-        thread_layout, BM, BN, BK
+        thread_layout, mat_c.shape, mat_a.shape, mat_b.shape, BM, BN, BK
     ]
 
-    ctx.enqueue_function[sram_blocked_matmul_dynamic_nd_buffer_kernel](
+    ctx.enqueue_function_checked[
+        sram_blocked_matmul_dynamic_nd_buffer_kernel,
+        sram_blocked_matmul_dynamic_nd_buffer_kernel,
+    ](
         mat_c,
         mat_a,
         mat_b,

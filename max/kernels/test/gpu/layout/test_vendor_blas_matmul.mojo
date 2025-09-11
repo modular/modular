@@ -75,18 +75,17 @@ fn test_matmul[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            input_type,
-            input_type,
-            c_tensor_ref.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-            transpose_b=True,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        DType.float32,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+        transpose_b=True,
+    ]
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor_ref,
         a_tensor,
         b_tensor,

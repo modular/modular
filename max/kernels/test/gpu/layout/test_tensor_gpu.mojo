@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import block_idx, grid_dim
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,
@@ -36,7 +36,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
         layout: Layout,
     ](
         dram_tensor: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
-        flag: UnsafePointer[Bool],
+        flag: UnsafePointer[Scalar[DType.bool]],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
@@ -57,9 +57,16 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
                 if sram_tensor[r, c] != r * 16 + col_offset + c:
                     flag[] = False
 
-    ctx.enqueue_function[copy_to_sram_test_kernel[tensor_layout]](
+    alias kernel = copy_to_sram_test_kernel[tensor_layout]
+    var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
+    ctx.enqueue_function_checked[kernel, kernel](
         tensor.device_tensor(),
-        UnsafePointer(to=check_state),
+        DeviceBuffer[DType.bool](
+            ctx,
+            rebind[UnsafePointer[Scalar[DType.bool]]](ptr),
+            1,
+            owning=False,
+        ),
         grid_dim=(4),
         block_dim=(1),
     )

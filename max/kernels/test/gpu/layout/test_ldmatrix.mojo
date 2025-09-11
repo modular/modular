@@ -171,7 +171,8 @@ fn check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    ctx.enqueue_function[test_ldmatrix_transposed[input_type, output_type]](
+    alias kernel_type = test_ldmatrix_transposed[input_type, output_type]
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         c_device,
         a_device,
         b_device,
@@ -189,17 +190,16 @@ fn check_ldmatrix_transposed_bf16[
 
     # Run naive matmul.
     alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            output_type,
-            input_type,
-            input_type,
-            a_tensor.layout,
-            b_tensor.layout,
-            c_tensor_ref.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel_naive_type = matmul_kernel_naive[
+        output_type,
+        input_type,
+        input_type,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,
@@ -265,7 +265,8 @@ fn check_ldmatrix(
     alias MMA_N = 8
     alias MMA_K = 8
 
-    ctx.enqueue_function[test_ldmatrix_fp32](
+    alias kernel_type = test_ldmatrix_fp32
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         c_device,
         a_device,
         b_device,
@@ -300,17 +301,17 @@ fn check_ldmatrix(
     # Run naive matmul.
     alias BLOCK_DIM = 16
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            a_tensor.layout,
-            b_tensor.layout,
-            c_tensor_ref.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel_naive_type = matmul_kernel_naive[
+        DType.float32,
+        DType.float32,
+        DType.float32,
+        c_tensor_ref.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+
+    ctx.enqueue_function_checked[kernel_naive_type, kernel_naive_type](
         c_tensor_ref,
         a_tensor,
         b_tensor,

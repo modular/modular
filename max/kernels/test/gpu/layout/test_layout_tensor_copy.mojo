@@ -97,7 +97,8 @@ fn test_async_copy[
 
     arange(input.tensor())
 
-    ctx.enqueue_function[async_copy_kernel[layout, BM, BN]](
+    alias kernel = async_copy_kernel[layout, BM, BN]
+    ctx.enqueue_function_checked[kernel, kernel](
         input.device_tensor(), grid_dim=(N // BN, M // BM), block_dim=(BM, BN)
     )
 
@@ -237,7 +238,7 @@ fn test_swizzle_copy[
         num_threads,
     ]
 
-    ctx.enqueue_function[copy](
+    ctx.enqueue_function_checked[copy, copy](
         a_tensor.device_tensor(),
         b_tensor.device_tensor(),
         grid_dim=(ceildiv(M, BM), 1, 1),
@@ -378,7 +379,7 @@ fn test_partial_copy_dram_to_sram_async[
     alias kernel_type = partial_copy_dram_to_sram_async_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function[kernel_type](
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -486,7 +487,7 @@ fn test_copy_dram_to_sram[
     alias kernel_type = copy_dram_to_sram_kernel[
         layout, thread_layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function[kernel_type](
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -532,6 +533,7 @@ fn copy_sram_to_dram_kernel[
     layout: Layout,
     M: Int,
     N: Int,
+    skew_M: Int,
     num_threads: Int,
     block_dim_count: Int,
     binary_op: OptionalReg[binary_op_type] = None,
@@ -541,6 +543,8 @@ fn copy_sram_to_dram_kernel[
     alias thread_layout = Layout.row_major(
         num_threads // (M // simd_size), N // simd_size
     )
+
+    var input_tile = input.tile[M - skew_M, N](0, 0)
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -555,7 +559,7 @@ fn copy_sram_to_dram_kernel[
         block_dim_count=block_dim_count,
         binary_op=binary_op,
     ](
-        input.vectorize[1, simd_size](),
+        input_tile.vectorize[1, simd_size](),
         smem_tile.vectorize[1, simd_size](),
     )
 
@@ -596,16 +600,19 @@ fn test_copy_sram_to_dram[
     var input = managed_layout_tensor_type(runtime_layout, ctx)
     _ = input.tensor().fill(-1.0)
 
-    alias tile_layout = Layout.row_major(M - skew_M, N)
-
-    var tile_tensor = input.device_tensor().tile[M - skew_M, N](0, 0)
-
     alias num_threads = block_dim_x * block_dim_y * block_dim_z
     alias kernel_type = copy_sram_to_dram_kernel[
-        dtype, tile_layout, M, N, num_threads, block_dim_count, binary_op
+        dtype,
+        input.layout,
+        M,
+        N,
+        skew_M,
+        num_threads,
+        block_dim_count,
+        binary_op,
     ]
-    ctx.enqueue_function[kernel_type](
-        tile_tensor,
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
+        input.device_tensor(),
         grid_dim=(1,),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
     )
@@ -764,7 +771,7 @@ fn test_copy_local_to_local[
     alias kernel_type = copy_local_to_local_kernel[
         dtype, layout, WM, WN, MMA_M, MMA_N, num_threads, block_dim_count
     ]
-    ctx.enqueue_function[kernel_type](
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
@@ -905,7 +912,7 @@ fn test_copy_dram_to_local[
     alias kernel_type = copy_dram_to_local_kernel[
         layout, num_threads, block_dim_count
     ]
-    ctx.enqueue_function[kernel_type](
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         input.device_tensor(),
         output.device_tensor(),
         grid_dim=(1,),
@@ -1051,7 +1058,7 @@ fn test_copy_local_to_sram[
         num_threads,
         block_dim_count,
     ]
-    ctx.enqueue_function[kernel_type](
+    ctx.enqueue_function_checked[kernel_type, kernel_type](
         output.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(block_dim_x, block_dim_y, block_dim_z),
