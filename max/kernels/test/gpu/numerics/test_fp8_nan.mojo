@@ -36,4 +36,4 @@ fn test():
 
 def main():
     with DeviceContext() as ctx:
-        ctx.enqueue_function[test](grid_dim=1, block_dim=1)
+        ctx.enqueue_function_checked[test, test](grid_dim=1, block_dim=1)

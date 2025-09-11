@@ -555,7 +555,7 @@ fn test_repack_Q4_0_for_sm8x(
         DType.bfloat16,
     ]
 
-    ctx.enqueue_function[repack](
+    ctx.enqueue_function_checked[repack, repack](
         gguf_b_tensor,
         repacked_b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -573,7 +573,7 @@ fn test_repack_Q4_0_for_sm8x(
         pack_factor,
     ]
 
-    ctx.enqueue_function[dequan](
+    ctx.enqueue_function_checked[dequan, dequan](
         repacked_b_tensor,
         repacked_dequan_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
@@ -761,7 +761,7 @@ fn test_quantized[
         pack_factor,
     ]
 
-    ctx.enqueue_function[dequan](
+    ctx.enqueue_function_checked[dequan, dequan](
         b_tensor,
         b_ref_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),

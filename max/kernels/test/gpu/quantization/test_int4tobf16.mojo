@@ -65,10 +65,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
 fn call_int4tobf16[
     no_lop: Bool
-](
-    i4: Int32,
-    out_ptr: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-):
+](i4: Int32, out_ptr: UnsafePointer[BFloat16],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
@@ -79,8 +76,9 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
-    ctx.enqueue_function[call_int4tobf16[no_lop]](
-        UInt32(0x76543210), out_device, grid_dim=1, block_dim=1
+    alias kernel = call_int4tobf16[no_lop]
+    ctx.enqueue_function_checked[kernel, kernel](
+        Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
     ctx.enqueue_copy(out_host.data, out_device)

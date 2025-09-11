@@ -606,7 +606,8 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float16]](
+    alias kernel = test_simd_float8[DType.float8_e5m2, M, DType.float16]
+    ctx.enqueue_function_checked[kernel, kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
@@ -653,7 +654,8 @@ fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    ctx.enqueue_function[test_simd_float8[DType.float8_e5m2, M, DType.float32]](
+    alias kernel = test_simd_float8[DType.float8_e5m2, M, DType.float32]
+    ctx.enqueue_function_checked[kernel, kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
@@ -746,7 +748,8 @@ fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     for i in range(M):
         f32_simd[i] = i - 256
 
-    ctx.enqueue_function[test_simd_float32[M, DType.float8_e5m2]](
+    alias kernel = test_simd_float32[M, DType.float8_e5m2]
+    ctx.enqueue_function_checked[kernel, kernel](
         f32_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
