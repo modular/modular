@@ -243,6 +243,19 @@ def test_range_compile_time():
         assert_true(i <= 10)
 
 
+def test_range_iterable():
+    var ai = 0
+    var bi = UInt8(0)
+    var ci = 0
+    for a, b, c in zip(range(0, 10), range(UInt8(10)), range(0, 20, 2)):
+        assert_equal(a, ai)
+        assert_equal(b, bi)
+        assert_equal(c, ci)
+        ai += 1
+        bi += 1
+        ci += 2
+
+
 def main():
     test_range_len()
     test_range_len_uint()
@@ -254,3 +267,4 @@ def main():
     test_indexing()
     test_range_bounds()
     test_range_compile_time()
+    test_range_iterable()

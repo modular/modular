@@ -41,7 +41,8 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
+struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Int
     var curr: Int
     var end: Int
@@ -52,7 +53,7 @@ struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -82,13 +83,14 @@ struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Iterator, ReversibleRange, Sized):
+struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Int
     var start: Int
     var end: Int
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -117,11 +119,16 @@ struct _SequentialRange(Iterator, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(Iterator, Sized):
+struct _StridedRangeIterator(Iterable, Iterator, Sized):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Int
     var start: Int
     var end: Int
     var step: Int
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
 
     @always_inline
     fn __len__(self) -> Int:
@@ -145,7 +152,10 @@ struct _StridedRangeIterator(Iterator, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(Iterator, ReversibleRange, Sized):
+struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
+    alias IteratorType[
+        mut: Bool, //, origin: Origin[mut]
+    ]: Iterator = _StridedRangeIterator
     alias Element = Int
     var start: Int
     var end: Int
@@ -158,7 +168,7 @@ struct _StridedRange(Iterator, ReversibleRange, Sized):
         self.step = 1
 
     @always_inline
-    fn __iter__(self) -> _StridedRangeIterator:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return _StridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -385,7 +395,8 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(Iterator, UIntSized):
+struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = UInt
     var curr: UInt
     var end: UInt
@@ -396,7 +407,7 @@ struct _UIntZeroStartingRange(Iterator, UIntSized):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -421,11 +432,16 @@ struct _UIntZeroStartingRange(Iterator, UIntSized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(Iterator, UIntSized):
+struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
 
     @always_inline
     fn __len__(self) -> UInt:
@@ -443,7 +459,10 @@ struct _UIntStridedRangeIterator(Iterator, UIntSized):
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(Iterator, UIntSized):
+struct _UIntStridedRange(Iterable, Iterator, UIntSized):
+    alias IteratorType[
+        mut: Bool, //, origin: Origin[mut]
+    ]: Iterator = _UIntStridedRangeIterator
     alias Element = UInt
     var start: UInt
     var end: UInt
@@ -466,7 +485,7 @@ struct _UIntStridedRange(Iterator, UIntSized):
         self.step = step
 
     @always_inline
-    fn __iter__(self) -> _UIntStridedRangeIterator:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return _UIntStridedRangeIterator(self.start, self.end, self.step)
 
     @always_inline
@@ -527,7 +546,10 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 
 @register_passable("trivial")
-struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
+struct _ZeroStartingScalarRange[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Scalar[dtype]
     var curr: Scalar[dtype]
     var end: Scalar[dtype]
@@ -538,7 +560,7 @@ struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
         self.end = self.curr
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -570,13 +592,16 @@ struct _ZeroStartingScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
+struct _SequentialScalarRange[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
 
     @always_inline
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
     @always_inline
@@ -608,11 +633,18 @@ struct _SequentialScalarRange[dtype: DType](Iterator & ImplicitlyCopyable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[dtype: DType](Iterator & ImplicitlyCopyable):
+struct _StridedScalarRangeIterator[dtype: DType](
+    Iterable, Iterator & ImplicitlyCopyable
+):
+    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
     alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
     var step: Scalar[dtype]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
 
     @always_inline
     fn __has_next__(self) -> Bool:

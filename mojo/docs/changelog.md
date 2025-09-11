@@ -160,6 +160,8 @@ language across multiple phases.
 
 ### Standard library changes
 
+- `zip` and `enumerate` are now builtins.
+
 - Added `Path(...).parts()` method to the `Path` type, for example instead of
   writing:
 
