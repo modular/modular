@@ -58,7 +58,8 @@ public:
 
   /// Attach failed parameter inference diagnostics for parameters with no
   /// values to the overload resolution diagnostic.
-  void attach(PogListAttr params, InflightDiag &diag, size_t numActual = 0);
+  void attach(PogListAttr params, ArrayRef<Type> paramTypes,
+              ASTDecl *funcIfDirect, InflightDiag &diag, size_t numActual = 0);
 
   size_t getNumFailures() const { return diags.size(); }
 

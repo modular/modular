@@ -198,7 +198,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     auto addParam = [&](const Twine &name, Type type) -> TypedAttr {
       auto paramDecl =
           ParamDeclAttr::get(paramList.declScope.mangleParamName(name), type);
-      paramList.names.push_back(StringAttr::get(type.getContext()));
+      paramList.names.push_back(paramDecl.getName());
       paramList.passingKinds.push_back(PassingKind::Implicit);
       paramList.paramDeclAttrs.push_back(paramDecl);
       paramList.locations.push_back(origExpr ? origExpr->getLoc() : SMLoc());

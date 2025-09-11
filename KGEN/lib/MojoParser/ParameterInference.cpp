@@ -8,6 +8,7 @@
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "ParamBindings.h"
@@ -81,6 +82,8 @@ void InferenceFailure::emitSpecificNote(
 //===----------------------------------------------------------------------===//
 
 void ParameterInferenceDiagnostics::attach(PogListAttr params,
+                                           ArrayRef<Type> paramTypes,
+                                           ASTDecl *funcIfDirect,
                                            InflightDiag &diag,
                                            size_t numActual) {
   // Pick the first diagnostic for the earliest parameter after numActual.
@@ -104,9 +107,13 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
     return;
 
   best->info.emitSpecificNote([&]() -> InflightDiag & {
+    // The parameter name is scoped to 'funcIfDirect' when we have it.
+    DeclResolver::DeclScopeChanger x(funcIfDirect);
+
+    auto name = params.getName(best->paramIdx);
     diag.attachNote(best->argExpr->getLoc())
-        << best->argExpr->getRange() << "failed to infer parameter ";
-    printNameOrIdx(params.getName(best->paramIdx), best->paramIdx, diag);
+        << best->argExpr->getRange() << "failed to infer parameter "
+        << ParamDeclRefAttr::get(name, paramTypes[best->paramIdx]);
     return diag << ", ";
   });
 }
