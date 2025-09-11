@@ -519,22 +519,22 @@ struct BindStructField:
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
-    # expected-error @below {{invalid call to 'autoparams': could not deduce parameter 'a' of callee 'autoparams'}}
+    # expected-error @below {{could not deduce parameter 'a' of callee 'autoparams'}}
     # expected-note @below {{failed to infer parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{failed to infer implicit parameter 'p' of argument 'x' type 'ParamType'}}
+    # expected-error @below {{failed to infer parameter 'x.p'}}
     # expected-note @below {{it isn't used in any argument}}
     autoparams[1](1)
-    # expected-error @below {{failed to infer implicit parameter}}
+    # expected-error @below {{failed to infer parameter 'x.p'}}
     # expected-note @below {{it isn't used in any argument}}
     autoparams_mem(1)
-    # expected-error @below {{failed to infer implicit parameter}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     # expected-note @below {{it isn't used in any argument}}
     autoparams_variadic(1)
 
-    # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
+    # expected-error @below {{failed to infer parameter 'p'}}
     # expected-note @below {{it isn't used in any argument}}
     f(1)
 

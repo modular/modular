@@ -350,7 +350,7 @@ fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral[_]):
 fn call_param_inference_unrelated_error():
     alias x = "hello"
     alias y = "world"
-    # expected-error @below {{failed to infer implicit parameter 'value' of argument 'y' type 'FloatLiteral'}}
+    # expected-error @below {{failed to infer parameter 'y.value'}}
     # expected-note @below {{failed to infer parameter 'y.value', it isn't used in any argument}}
     param_inference_unrelated_error(x, y)
 
