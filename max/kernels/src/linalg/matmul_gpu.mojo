@@ -660,12 +660,11 @@ fn _matmul_gpu[
 
                                 var total_blocks = m_blocks * n_blocks
                                 var batch, extra = divmod(
-                                    total_blocks, sm_count
+                                    total_blocks - 1, sm_count
                                 )
-                                var score_extra = (
-                                    sm_count - extra if extra > 0 else 0
+                                var score = batch * sm_count + (
+                                    sm_count - extra - 1
                                 )
-                                var score = batch * sm_count + score_extra
 
                                 if score < best_score or (
                                     score == best_score and emit_config[idx]
@@ -765,9 +764,8 @@ fn _matmul_gpu[
 
                         var m_blocks = ceildiv(m, block_m)
                         var total_blocks = m_blocks * n_blocks
-                        var batch, extra = divmod(total_blocks, sm_count)
-                        var score_extra = sm_count - extra if extra > 0 else 0
-                        var score = batch * sm_count + score_extra
+                        var batch, extra = divmod(total_blocks - 1, sm_count)
+                        var score = batch * sm_count + (sm_count - extra - 1)
 
                         if score < best_score:
                             best_idx = i
