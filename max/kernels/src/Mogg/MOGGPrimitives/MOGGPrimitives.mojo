@@ -814,7 +814,7 @@ fn mgp_buffer_host_to_device[
 @no_inline
 fn mgp_buffer_get_cached(
     ctx: StateContext,
-    buffer_slot: Int,
+    buffer_slot: UInt,
     storage_ref_addr: UnsafePointer[OpaquePointer],
 ) raises -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
     var buffer_size: UInt64 = 0
