@@ -77,6 +77,8 @@ from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
+from collections.string._utf8 import _is_valid_utf8
+from collections.string._utf16 import _decode_utf16
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
     CodepointSliceIter,
@@ -251,6 +253,75 @@ struct String(
         var length = len(bytes)
         self = Self(unsafe_uninit_length=UInt(length))
         memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+
+    fn __init__[
+        dtype: DType, //
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], **_],
+        errors: __type_of("strict") = "strict",
+    ) raises:
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Raises:
+            An exception is raised if the provided buffer byte values do not
+            form valid UTF-16 encoded codepoints.
+        """
+        var result = _decode_utf16[strict=True](from_utf16=from_utf16)
+        # NOTE: the decoder should've already raised/replaced when invalid data
+        # was encountered
+        debug_assert(
+            _is_valid_utf8(result.as_bytes().get_immutable()),
+            "Buffer is not valid UTF-16.",
+        )
+        self = result^
+
+    fn __init__[
+        dtype: DType, //,
+        *,
+        replace: Codepoint = Codepoint.ord("�"),
+    ](
+        out self,
+        *,
+        from_utf16: Span[mut=False, Scalar[dtype], **_],
+        errors: __type_of("replace"),
+    ):
+        """Construct a new `String` from a buffer containing UTF-16 encoded
+        data.
+
+        Parameters:
+            dtype: The dtype of the buffer.
+            replace: What codepoint to replace the invalid codepoints with.
+
+        Args:
+            from_utf16: A span of bytes containing UTF-16 encoded data.
+            errors: The action to take when encountering a decoding error.
+
+        Notes:
+            This constructor replaces invalid data with the specified codepoint.
+        """
+        try:
+            var result = _decode_utf16[strict=False, replace=replace](
+                from_utf16=from_utf16
+            )
+            # NOTE: the decoder should've already raised/replaced when invalid
+            # data was encountered
+            debug_assert(
+                _is_valid_utf8(result.as_bytes().get_immutable()),
+                "Buffer is not valid UTF-16.",
+            )
+            self = result^
+        except:
+            self = abort[Self]("This should never happen")
 
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
@@ -527,7 +598,7 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=Int(unsafe_uninit_length))
-        self.set_byte_length(Int(unsafe_uninit_length))
+        self._set_byte_length(Int(unsafe_uninit_length))
 
     fn __init__(
         out self,
@@ -876,7 +947,7 @@ struct String(
         var len = self.byte_length()
         self.reserve(UInt(len) + 1)
         self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(Int(len + 1))
+        self._set_byte_length(Int(len + 1))
 
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -900,7 +971,7 @@ struct String(
             other.unsafe_ptr(),
             other_len,
         )
-        self.set_byte_length(new_len)
+        self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1278,7 +1349,7 @@ struct String(
         else:
             return self._len_or_data
 
-    fn set_byte_length(mut self, new_len: Int):
+    fn _set_byte_length(mut self, new_len: Int):
         if self._is_inline():
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
@@ -1812,7 +1883,7 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
-        self.set_byte_length(length)
+        self._set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
@@ -1828,7 +1899,7 @@ struct String(
         self._clear_nul_terminator()
         if UInt(unsafe_uninit_length) > self.capacity():
             self.reserve(UInt(unsafe_uninit_length))
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
@@ -1848,7 +1919,7 @@ struct String(
     fn _inline_string(mut self):
         var length = len(self)
         var new_string = Self()
-        new_string.set_byte_length(length)
+        new_string._set_byte_length(length)
         var dst = UnsafePointer(to=new_string).bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):
