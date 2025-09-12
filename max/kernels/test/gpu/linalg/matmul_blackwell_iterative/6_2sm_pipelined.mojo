@@ -675,11 +675,9 @@ fn kernel_6[
     var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
         Scalar[b_type]
     ]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size * num_pipeline_stages)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
+        Scalar[c_type]
+    ]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -689,7 +687,7 @@ fn kernel_6[
         alignment=128,
         circular=False,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size * num_pipeline_stages,
     )
 
@@ -701,7 +699,7 @@ fn kernel_6[
         alignment=128,
         circular=False,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size * num_pipeline_stages,
     )
 

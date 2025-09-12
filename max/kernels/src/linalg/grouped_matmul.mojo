@@ -470,7 +470,7 @@ fn grouped_matmul_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
@@ -478,7 +478,7 @@ fn grouped_matmul_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
         circular=True,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -486,7 +486,7 @@ fn grouped_matmul_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
@@ -751,9 +751,7 @@ fn grouped_matmul_kernel_sm100[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -807,11 +805,7 @@ fn grouped_matmul_kernel_sm100[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -824,12 +818,8 @@ fn grouped_matmul_kernel_sm100[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

@@ -565,9 +565,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
         self._slice = Span[Byte, origin](
-            ptr=unsafe_from_utf8.unsafe_ptr()
-            .address_space_cast[Span[Byte, origin].address_space]()
-            .static_alignment_cast[Span[Byte, origin].alignment](),
+            ptr=unsafe_from_utf8.unsafe_ptr().address_space_cast[
+                Span[Byte, origin].address_space
+            ](),
             length=UInt(unsafe_from_utf8.__len__()),
         )
 

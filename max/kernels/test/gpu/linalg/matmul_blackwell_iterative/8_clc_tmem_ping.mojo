@@ -609,11 +609,7 @@ fn kernel_8[
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -622,7 +618,7 @@ fn kernel_8[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
@@ -633,7 +629,7 @@ fn kernel_8[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 

@@ -62,10 +62,10 @@ def bench_unary[
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String):
     alias alignment = 64
-    var input_ptr = UnsafePointer[Scalar[dtype], alignment2=alignment].alloc(
+    var input_ptr = UnsafePointer[Scalar[dtype],].alloc[alignment=alignment](
         size
     )
-    var output_ptr = UnsafePointer[Scalar[dtype], alignment2=alignment].alloc(
+    var output_ptr = UnsafePointer[Scalar[dtype],].alloc[alignment=alignment](
         size
     )
 

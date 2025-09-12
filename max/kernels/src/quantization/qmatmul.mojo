@@ -1216,10 +1216,9 @@ fn _matmul_qint4[
 
     alias aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = UnsafePointer[
-        Scalar[aq_type],
-        alignment2=alignment,
-    ].alloc(M * K)
+    var a_quant_base_ptr = UnsafePointer[Scalar[aq_type]].alloc[
+        alignment=alignment
+    ](M * K)
     var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
 
     var a_quant = NDBuffer[aq_type, 2](a_quant_base_ptr, Index(M, K))

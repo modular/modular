@@ -662,7 +662,10 @@ fn _get_pointer_constraint() -> StaticString:
 
 @always_inline
 fn store_release[
-    dtype: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
@@ -673,6 +676,7 @@ fn store_release[
         dtype: The data type to store.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the data.
 
     Args:
         ptr: Pointer to the memory location to store to.
@@ -705,7 +709,7 @@ fn store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment = ptr.alignment2._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
@@ -716,7 +720,11 @@ fn store_release[
 
 @always_inline
 fn load_acquire[
-    dtype: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
+    dtype: DType, //,
+    *,
+    scope: Scope = Scope.SYSTEM,
+    memory: Bool = True,
+    alignment: Int = align_of[Scalar[dtype]](),
 ](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
@@ -727,6 +735,7 @@ fn load_acquire[
         dtype: The data type to load.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
+        alignment: The alignment of the pointer.
 
     Args:
         ptr: Pointer to the memory location to load from.
@@ -761,7 +770,7 @@ fn load_acquire[
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
         return __mlir_op.`pop.load`[
-            alignment = ptr.alignment2._mlir_value,
+            alignment = alignment._mlir_value,
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:

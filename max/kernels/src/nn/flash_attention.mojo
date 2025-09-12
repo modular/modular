@@ -708,12 +708,11 @@ struct _FlashAttention[
                 dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
             ]().stack_allocation()
 
-            var packed_ptr = UnsafePointer[
-                Scalar[dtype],
-                alignment2 = align_of[SIMD[dtype, simd_width]](),
-            ]()
+            var packed_ptr = UnsafePointer[Scalar[dtype]]()
             if max_seq_len != 1:
-                packed_ptr = packed_ptr.alloc(packed_size)
+                packed_ptr = packed_ptr.alloc[
+                    alignment = align_of[SIMD[dtype, simd_width]]()
+                ](packed_size)
 
             var q_seq_stride = num_heads * depth_dim
 

@@ -867,7 +867,7 @@ fn external_memory[
     address_space: _AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, address_space=address_space, alignment2=alignment]:
+]() -> UnsafePointer[dtype, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -893,13 +893,12 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], address_space=address_space, alignment2=alignment
+        StaticTuple[dtype, 0], address_space=address_space
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
                 StaticTuple[dtype, 0],
                 address_space=address_space,
-                alignment2=alignment,
             ]._mlir_type,
             name = _get_kgen_string[name](),
             alignment = alignment._mlir_value,

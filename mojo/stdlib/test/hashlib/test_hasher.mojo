@@ -136,7 +136,7 @@ def test_update_with_bytes():
 
 
 alias _hash_with_hasher = hash[
-    HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+    _, HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 ]
 
 

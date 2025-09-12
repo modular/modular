@@ -868,7 +868,7 @@ struct SM100TensorAccumulatorSS[
     ]
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ]
     var pipeline: PipelineState[pipeline_stages]
 
@@ -895,7 +895,7 @@ struct SM100TensorAccumulatorSS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+            SharedMemBarrier, address_space = AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1096,7 +1096,7 @@ struct SM100TensorAccumulatorTS[
     ]()
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ]
     var phase: UInt32
 
@@ -1120,7 +1120,7 @@ struct SM100TensorAccumulatorTS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+            SharedMemBarrier, address_space = AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -2159,11 +2159,7 @@ fn _mha_sm100[
         )
 
     # actually 16 byte alignment
-    produced_mbar_kv = (
-        (kv_smem + kv_smem_size)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[8]()
-    )
+    produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     consumed_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
     mma_mbar = consumed_mbar_kv + pipeline_stages  # 16
     umma_0 = UMMA0Type(mma_mbar)  # needs num_s

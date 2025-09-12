@@ -207,17 +207,11 @@ fn kernel_4[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (c_smem + c_size)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = (
-        (mma_mbar + 1).bitcast[UInt32]().static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

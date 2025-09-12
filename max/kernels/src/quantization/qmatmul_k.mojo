@@ -400,15 +400,10 @@ fn _pack_block_Q4_K[
     block_n: Int,
     src_origin: MutableOrigin,
     dst_origin: MutableOrigin,
-    alignment: Int,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q4_K, origin=src_origin, alignment2=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q4_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q4_K_packed[block_n], origin=dst_origin, alignment2=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q4_K_packed[block_n], origin=dst_origin],
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
@@ -526,15 +521,10 @@ fn _pack_block_Q6_K[
     block_n: Int,
     src_origin: MutableOrigin,
     dst_origin: MutableOrigin,
-    alignment: Int,
 ](
-    var src_ptr: UnsafePointer[
-        _block_Q6_K, origin=src_origin, alignment2=alignment
-    ],
+    var src_ptr: UnsafePointer[_block_Q6_K, origin=src_origin],
     stride: Int,
-    mut dst_ptr: UnsafePointer[
-        _block_Q6_K_packed[block_n], origin=dst_origin, alignment2=alignment
-    ],
+    mut dst_ptr: UnsafePointer[_block_Q6_K_packed[block_n], origin=dst_origin],
 ):
     alias group_count = _block_Q6_K.group_count
 

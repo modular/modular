@@ -344,7 +344,7 @@ def test_issue_1625():
 
 
 def test_issue_20421():
-    var a = UnsafePointer[UInt8, alignment2=64].alloc(count=16 * 64)
+    var a = UnsafePointer[UInt8].alloc[alignment=64](count=16 * 64)
     for i in range(16 * 64):
         a[i] = i & 255
     var av16 = (

@@ -49,7 +49,7 @@ def test_matmul(
     n: Int,
     k: Int,
 ):
-    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
+    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc[alignment=alignment](
         m * n
     )
     var golden = NDBuffer[c.type, 2](golden_ptr, Index(m, n))
@@ -96,9 +96,9 @@ def test_matmul(
 
 
 def test_matmul(m: Int, n: Int, k: Int):
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
+    var c_ptr = UnsafePointer[Scalar[c_type]].alloc[alignment=alignment](m * n)
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc[alignment=alignment](m * k)
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc[alignment=alignment](k * n)
 
     var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
@@ -149,7 +149,7 @@ def test_batched_matmul(
     n: Int,
     k: Int,
 ):
-    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
+    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc[alignment=alignment](
         batches * m * n
     )
     var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
@@ -208,13 +208,13 @@ def test_batched_matmul(
 
 
 def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(
+    var c_ptr = UnsafePointer[Scalar[c_type]].alloc[alignment=alignment](
         batch * m * n
     )
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc[alignment=alignment](
         batch * m * k
     )
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc[alignment=alignment](
         batch * k * n
     )
 

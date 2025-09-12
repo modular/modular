@@ -577,7 +577,7 @@ fn kernel_7[
         alignment=128,
         circular=False,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size * num_pipeline_stages,
     )
 
@@ -589,15 +589,13 @@ fn kernel_7[
         alignment=128,
         circular=False,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size * num_pipeline_stages,
     )
 
-    var c_smem_base = (
-        (b_smem_base + b_smem_size * num_pipeline_stages)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
+        Scalar[c_type]
+    ]()
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),

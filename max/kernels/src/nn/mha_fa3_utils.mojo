@@ -719,22 +719,22 @@ fn produce[
         is_k_major=False,
     ],
     q_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment2=128
+        Scalar[qkv_type], address_space = AddressSpace.SHARED
     ],
     kv_smem: UnsafePointer[
-        Scalar[qkv_type], address_space = AddressSpace.SHARED, alignment2=128
+        Scalar[qkv_type], address_space = AddressSpace.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -1026,9 +1026,7 @@ fn output_reg_to_smem[
     local_warp_group_idx: UInt32,
     warp_x: UInt32,
     warp_y: UInt32,
-    q_smem: UnsafePointer[
-        Scalar[kv_type], address_space = AddressSpace.SHARED, alignment2=128
-    ],
+    q_smem: UnsafePointer[Scalar[kv_type], address_space = AddressSpace.SHARED],
     output_reg_tile: LayoutTensor[
         accum_type,
         reg_layout,

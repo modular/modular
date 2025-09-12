@@ -170,10 +170,10 @@ fn load_AB[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -277,10 +277,10 @@ fn consumer_main_loop[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -578,10 +578,10 @@ fn multi_stage_store_C[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -775,10 +775,10 @@ fn store_C[
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt, UInt],
@@ -1120,11 +1120,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -1133,7 +1129,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
@@ -1144,7 +1140,7 @@ fn blackwell_tma_umma_warp_specialized_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 
@@ -1746,9 +1742,7 @@ fn matmul_sm100_fallback_kernel[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],
@@ -1789,11 +1783,7 @@ fn matmul_sm100_fallback_kernel[
     var b_smem_tile = b_smem_tile_t(b_smem)
 
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (
-        (b_smem + b_size)
-        .bitcast[UInt32]()
-        .static_alignment_cast[alignment=16]()
-    )
+    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
 
     alias accum_type = get_accum_type[a_type]()
 
@@ -1806,12 +1796,8 @@ fn matmul_sm100_fallback_kernel[
     alias b_expected_bytes = b_size * size_of[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (
-        (ptr_tmem_addr + 2)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
-    mma_mbar = (tma_mbar + 1).static_alignment_cast[alignment=8]()
+    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()

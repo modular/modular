@@ -112,7 +112,6 @@ struct Span[
         mut=mut,
         origin=origin,
         address_space=address_space,
-        alignment2=alignment,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
@@ -165,7 +164,6 @@ struct Span[
         self._data = (
             list.unsafe_ptr()
             .address_space_cast[address_space]()
-            .static_alignment_cast[alignment]()
             .origin_cast[mut, origin]()
         )
         self._len = list._len
@@ -188,7 +186,6 @@ struct Span[
             UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
-            .static_alignment_cast[alignment]()
             .origin_cast[mut, origin]()
         )
         self._len = size
@@ -432,13 +429,7 @@ struct Span[
     @always_inline("builtin")
     fn unsafe_ptr(
         self,
-    ) -> UnsafePointer[
-        T,
-        mut=mut,
-        origin=origin,
-        address_space=address_space,
-        alignment2=alignment,
-    ]:
+    ) -> UnsafePointer[T, mut=mut, origin=origin, address_space=address_space,]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:

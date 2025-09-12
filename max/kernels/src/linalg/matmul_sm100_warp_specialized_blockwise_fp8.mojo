@@ -165,10 +165,10 @@ fn load_AB[
         alignment=128,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -427,14 +427,14 @@ fn promote_accumulators[
     ],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
     accum_full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     accum_empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tmem_addr: UInt32,
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     work_tile_coord: Tuple[UInt, UInt],
@@ -810,16 +810,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()
-    var c_smem_base = (
-        (b_smem_base + b_smem_size)
-        .bitcast[Scalar[c_type]]()
-        .static_alignment_cast[128]()
-    )
-    var a_scales_smem_base = (
-        (c_smem_base + c_smem_size)
-        .bitcast[Scalar[a_scales_type]]()
-        .static_alignment_cast[128]()
-    )
+    var c_smem_base = (b_smem_base + b_smem_size).bitcast[Scalar[c_type]]()
+    var a_scales_smem_base = (c_smem_base + c_smem_size).bitcast[
+        Scalar[a_scales_type]
+    ]()
 
     var a_smem = LayoutTensorIter[
         a_type,
@@ -828,7 +822,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_smem_base.static_alignment_cast[128](),
+        a_smem_base,
         a_smem_size,
     )
 
@@ -839,7 +833,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        b_smem_base.static_alignment_cast[128](),
+        b_smem_base,
         b_smem_size,
     )
 
@@ -858,7 +852,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ](
-        a_scales_smem_base.static_alignment_cast[128](),
+        a_scales_smem_base,
         a_scales_smem_size,
     )
     var smem_pool = (a_scales_smem_base + a_scales_smem_size).bitcast[Int64]()

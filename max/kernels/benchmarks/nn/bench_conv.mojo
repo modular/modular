@@ -92,15 +92,15 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = UnsafePointer[
-        Scalar[input_type], alignment2=alignment
-    ].alloc(input_alloc_size * num_copies)
-    var filter_ptr = UnsafePointer[
-        Scalar[filter_type], alignment2=alignment
-    ].alloc(num_copies * filter_alloc_size)
-    var output_ptr = UnsafePointer[
-        Scalar[output_type], alignment2=alignment
-    ].alloc(num_copies * output_alloc_size)
+    var input_ptr = UnsafePointer[Scalar[input_type]].alloc[
+        alignment=alignment
+    ](input_alloc_size * num_copies)
+    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc[
+        alignment=alignment
+    ](num_copies * filter_alloc_size)
+    var output_ptr = UnsafePointer[Scalar[output_type]].alloc[
+        alignment=alignment
+    ](num_copies * output_alloc_size)
 
     rand[input_type](input_ptr, num_copies * input_alloc_size)
     rand[filter_type](filter_ptr, num_copies * filter_alloc_size)

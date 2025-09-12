@@ -96,9 +96,7 @@ fn gemv_tma_kernel[
     var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
 
     var a_smem_base = rebind[
-        UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED, alignment2=128
-        ]
+        UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[dtype],
@@ -140,13 +138,11 @@ fn gemv_tma_kernel[
         b_size * NUM_PIPELINE_STAGES,
     )
 
-    var tma_mbar_ptr = (
-        (b_smem_base + b_size * NUM_PIPELINE_STAGES)
-        .bitcast[SharedMemBarrier]()
-        .static_alignment_cast[alignment=8]()
-    )
+    var tma_mbar_ptr = (b_smem_base + b_size * NUM_PIPELINE_STAGES).bitcast[
+        SharedMemBarrier
+    ]()
     var tma_mbar = UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ](tma_mbar_ptr)
 
     # Initialize dot products for all rows before column processing.

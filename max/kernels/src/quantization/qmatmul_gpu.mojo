@@ -540,10 +540,11 @@ fn multistage_qgemm_kernel[
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
+    alias alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
         address_space = AddressSpace.SHARED,
-        alignment = align_of[SIMD[a_type, simd_size]](),
+        alignment=alignment,
     ]()
     alias a_smem_size = num_pipeline_stages * BM * BK
 
@@ -551,7 +552,7 @@ fn multistage_qgemm_kernel[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = a_smem.alignment2,
+        alignment=alignment,
         circular=True,
     ](
         a_smem + warp_k_part_id * a_smem_size,

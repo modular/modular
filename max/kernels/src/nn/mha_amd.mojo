@@ -1038,18 +1038,13 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment2 = Self.alignment,
     ]:
         return self.k_v_smem.bitcast[Scalar[dtype]]()
 
     @always_inline
     fn get_p_ptr(
         self,
-    ) -> UnsafePointer[
-        Scalar[dtype],
-        address_space = AddressSpace.SHARED,
-        alignment2 = Self.alignment,
-    ]:
+    ) -> UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED,]:
         return self.p_smem.bitcast[Scalar[dtype]]()
 
     @always_inline
@@ -1213,7 +1208,6 @@ struct GlobalMemoryManager[
             ptr.origin,
             masked=True,
             address_space = ptr.address_space,
-            alignment = ptr.alignment2,
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
@@ -1290,7 +1284,7 @@ fn mha_single_batch_amd[
         tb[accum_type]()
         .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
         .local()
-        .alloc()
+        .alloc()  # ALIGN-TODO: align?
         .fill(0)
     )
 

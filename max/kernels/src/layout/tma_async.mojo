@@ -367,7 +367,6 @@ struct SharedMemBarrier(ImplicitlyCopyable, Movable):
     ) -> UnsafePointer[
         Int64,
         address_space = AddressSpace.SHARED,
-        alignment2=8,
         mut = Origin(__origin_of(self)).mut,
         origin = __origin_of(self),
     ]:

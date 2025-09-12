@@ -193,12 +193,8 @@ fn consumer_main_loop[
         *_, **_,
     ],
     mut read_pipeline_states: PipelineState[pipeline_stages],
-    full: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
-    ],
-    empty: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
-    ],
+    full: UnsafePointer[SharedMemBarrier, address_space = AddressSpace.SHARED],
+    empty: UnsafePointer[SharedMemBarrier, address_space = AddressSpace.SHARED],
     wgmma_op: TensorCoreAsync[
         accum_type,
         a_type,
@@ -1006,14 +1002,14 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -1021,7 +1017,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
@@ -1315,14 +1311,14 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -1330,7 +1326,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages
@@ -1928,14 +1924,14 @@ fn cpasync_wgmma_kernel[
         a_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](a_smem.static_alignment_cast[128](), a_smem_size)
+    ](a_smem, a_smem_size)
 
     var b_smem_iter = LayoutTensorIter[
         b_type,
         b_smem_layout,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](b_smem.static_alignment_cast[128](), b_smem_size)
+    ](b_smem, b_smem_size)
 
     var c_smem_tile = LayoutTensor[
         c_type,
@@ -1943,7 +1939,7 @@ fn cpasync_wgmma_kernel[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ](c_smem.static_alignment_cast[128]())
+    ](c_smem)
 
     var a_mbars_ptr = smem_pool.bitcast[Int64]()
     var b_mbars_ptr = smem_pool.bitcast[Int64]() + pipeline_stages

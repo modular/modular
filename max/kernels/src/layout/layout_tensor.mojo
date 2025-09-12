@@ -353,7 +353,6 @@ struct LayoutTensor[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -7522,7 +7521,6 @@ struct LayoutTensorIter[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -7579,7 +7577,6 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],
@@ -7626,7 +7623,6 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],
@@ -8020,9 +8016,9 @@ struct LayoutTensorIter[
         return Self.BitcasType[
             new_type, address_space=address_space, alignment=alignment
         ](
-            self.ptr.bitcast[Scalar[new_type]]()
-            .address_space_cast[address_space]()
-            .static_alignment_cast[alignment](),
+            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+                address_space
+            ](),
             Int(self.bound),
             self.runtime_layout,
             Int(self.stride),
