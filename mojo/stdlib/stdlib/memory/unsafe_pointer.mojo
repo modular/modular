@@ -1103,10 +1103,10 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn address_space_cast[
-        address_space: AddressSpace = Self.address_space,
+        target_address_space: AddressSpace = Self.address_space,
     ](self) -> UnsafePointer[
         type,
-        address_space=address_space,
+        address_space=target_address_space,
         alignment2=alignment2,
         mut=mut,
         origin=origin,
@@ -1114,7 +1114,7 @@ struct UnsafePointer[
         """Casts an UnsafePointer to a different address space.
 
         Parameters:
-            address_space: The address space of the result.
+            target_address_space: The address space of the result.
 
         Returns:
             A new UnsafePointer object with the same type and the same address,
@@ -1122,7 +1122,7 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment2=alignment2
+                type, address_space=target_address_space, alignment2=alignment2
             ]._mlir_type,
         ](self.address)
 

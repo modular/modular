@@ -2238,7 +2238,7 @@ fn _mha_sm100[
         )
 
     var position: PositionType = get_position(initial_seq_info)
-    startend = position.get_start_and_end_for_partitions[BN=BN](partition)
+    startend = position.get_start_and_end_for_partitions(partition)
     var kv_tile_start_row: UInt32 = startend[0]
     var end: UInt32 = startend[1]
 
@@ -2280,9 +2280,7 @@ fn _mha_sm100[
                 kv_input_row_offsets,
             )
         elif tid // 32 == 0:  # warp id == 0: Q @ K'
-            startend = position.get_start_and_end_for_partitions[BN=BN](
-                partition
-            )
+            startend = position.get_start_and_end_for_partitions(partition)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
@@ -2363,9 +2361,7 @@ fn _mha_sm100[
                 kv_pipeline_states.step()
 
         elif tid // 32 == 1:  # warp id 1: P @ V
-            startend = position.get_start_and_end_for_partitions[BN=BN](
-                partition
-            )
+            startend = position.get_start_and_end_for_partitions(partition)
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 

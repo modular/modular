@@ -594,9 +594,7 @@ struct QueuedTileScheduler[
         out self,
         gidx_ptr: UnsafePointer[UInt32],
     ):
-        self.gidx_ptr = gidx_ptr.address_space_cast[
-            address_space = AddressSpace.GLOBAL
-        ]()
+        self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
 
     @always_inline
     fn get_current_work_info[
