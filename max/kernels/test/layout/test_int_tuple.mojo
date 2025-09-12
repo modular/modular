@@ -423,6 +423,26 @@ def test_compact_order():
     )
 
 
+def test_iter():
+    var a = IntTuple(2, 3)
+    var it = iter(a)
+    assert_equal(Int(next(it)), 2)
+    assert_equal(Int(next(it)), 3)
+    assert_equal(it.__has_next__(), False)
+    var b = IntTuple(4, 5, 6)
+    var it2 = zip(a, b)
+    var elem = next(it2)
+    assert_equal(Int(elem[0]), 2)
+    assert_equal(Int(elem[1]), 4)
+    elem = next(it2)
+    assert_equal(Int(elem[0]), 3)
+    assert_equal(Int(elem[1]), 5)
+    # zipping shortest
+    assert_equal(it.__has_next__(), False)
+    var c = IntTuple()
+    assert_equal(iter(c).__has_next__(), False)
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -445,3 +465,5 @@ def main():
     test_compact_order()
 
     test_unknown_value_arith()
+
+    test_iter()

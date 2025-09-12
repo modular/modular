@@ -287,9 +287,13 @@ that are not known at compile time or have not been specified.
 
 @register_passable("trivial")
 struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
-    Iterator
+    Iterable, Iterator
 ):
     """Iterator for traversing elements of an IntTuple."""
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
 
     alias Element = IntTuple[origin]
 
@@ -318,12 +322,17 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
         self.idx += 1
         return self.src[][idx]
 
+    @always_inline("nodebug")
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
+
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Defaultable,
     EqualityComparable,
     ImplicitlyCopyable,
     Intable,
+    Iterable,
     Movable,
     Sized,
     Stringable,
@@ -341,6 +350,12 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Parameters:
         origin: Origin tracking for memory safety. Defaults to the current origin.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _IntTupleIter[
+        ImmutableOrigin.cast_from[iterable_origin], origin
+    ]
 
     var _store: IntArray
     """The underlying storage for the `IntTuple`.
@@ -1065,7 +1080,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         return self._store[0]
 
     @always_inline("nodebug")
-    fn __iter__(self) -> _IntTupleIter[__origin_of(self), origin]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """
         Returns an iterator over the elements of the `IntTuple`.
 
