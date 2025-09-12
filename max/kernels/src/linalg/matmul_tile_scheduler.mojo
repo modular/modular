@@ -100,10 +100,10 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 struct MatmulSchedule(ImplicitlyCopyable, Movable):
     var _value: Int32
 
-    alias NONE = Self(-1)
-    alias TILE1D = Self(0)
-    alias TILE2D = Self(1)
-    alias DS_SCHEDULER = Self(2)
+    alias NONE = Self(0)
+    alias TILE1D = Self(1)
+    alias TILE2D = Self(2)
+    alias DS_SCHEDULER = Self(3)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:

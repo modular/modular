@@ -2163,7 +2163,9 @@ fn warp_specialize_gemm_with_multicasting[
     logger.info("mma_shape:", config.mma_shape)
 
     @parameter
-    if schedule == MatmulSchedule.DS_SCHEDULER:
+    if schedule == MatmulSchedule.NONE:
+        pass
+    elif schedule == MatmulSchedule.DS_SCHEDULER:
         constrained[
             grid_shape is not None,
             "Grid shape must be provided for DS scheduler",

@@ -1363,53 +1363,143 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     @parameter
     if env_get_bool["AUTOTUNING_MODE", False]():
-        # CLUSTER_DIM_X = 2^m for m in range[0-3]
+        alias static_N = c.shape.get[1]()
+        alias static_K = a.shape.get[1]()
+
+        alias IS_LARGE_GEMM_SHAPE = env_get_bool[
+            "TUNE_LARGE_GEMM_SHAPE", True
+        ]()
         alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
         alias CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-
-        # GRID_DIM_X = 2^n for n in range[0-7]
-        alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
-        alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
-
         alias NUM_PIPELINE_STAGES = env_get_int["TUNE_NUM_PIPELINE_STAGES", 4]()
         alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
         alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
         alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
-
+        alias PARTITIONED_MULTICAST = env_get_bool[
+            "TUNE_PARTITIONED_MULTICAST", False
+        ]()
         alias SCHEDULE_TYPE = MatmulSchedule(
-            env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+            env_get_int["TUNE_SCHEDULE_TYPE", 0]()
         )
 
-        alias H100_TUNING_CONFIG = MatmulConfig[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-        ](
-            block_tile_shape=Index(
-                BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
-            ),
-            mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
-            cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
-            num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
-            num_consumer=UInt(NUM_CONSUMER),
-            partitioned_multicast=False,
-            pdl_level=pdl_level,
-        )
-        warp_specialize_gemm_with_multicasting[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            config=H100_TUNING_CONFIG,
-            grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
-            schedule=SCHEDULE_TYPE,
-        ](
-            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-            ctx,
-        )
-        return DISPATCH_HIT
+        @parameter
+        if IS_LARGE_GEMM_SHAPE:
+            # GRID_DIM_X = 2^n for n in range[0-7]
+            alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+
+            alias H100_TUNING_CONFIG = MatmulConfig[
+                a_type,
+                b_type,
+                c_type,
+                transpose_b,
+            ](
+                block_tile_shape=Index(
+                    BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
+                ),
+                mma_shape=Index(64, WGMMA_N // size_factor, mma_k),
+                cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                num_pipeline_stages=UInt(NUM_PIPELINE_STAGES),
+                num_consumer=UInt(NUM_CONSUMER),
+                partitioned_multicast=PARTITIONED_MULTICAST,
+                pdl_level=pdl_level,
+            )
+            warp_specialize_gemm_with_multicasting[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                config=H100_TUNING_CONFIG,
+                grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                schedule=SCHEDULE_TYPE,
+            ](
+                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                ctx,
+            )
+            return DISPATCH_HIT
+
+        else:
+            alias IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
+
+            @parameter
+            if not IS_SPLITK:
+                alias NUM_PIPELINE_STAGES = env_get_int[
+                    "TUNE_NUM_PIPELINE_STAGES", 4
+                ]()
+                alias GRID_DIM_X = H100.sm_count
+                alias GRID_DIM_Y = 1
+
+                constrained[
+                    SCHEDULE_TYPE != MatmulSchedule.DS_SCHEDULER
+                    or (
+                        CLUSTER_DIM_X == 1
+                        and CLUSTER_DIM_Y == 1
+                        and (not PARTITIONED_MULTICAST)
+                    ),
+                    "Deepseek scheduler dose not support multicasting",
+                ]()
+
+                alias SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                ](
+                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    num_pipeline_stages=NUM_PIPELINE_STAGES,
+                    num_consumer=NUM_CONSUMER,
+                    partitioned_multicast=PARTITIONED_MULTICAST,
+                    pdl_level=pdl_level,
+                    mma_shape=Index(64, WGMMA_N, 16),
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
+                    grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                    schedule=SCHEDULE_TYPE,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+
+            else:
+                alias SPLITS = env_get_int["TUNE_SPLITS", 2]()
+
+                alias SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                ](
+                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    num_pipeline_stages=NUM_PIPELINE_STAGES,
+                    num_consumer=NUM_CONSUMER,
+                    partitioned_multicast=PARTITIONED_MULTICAST,
+                    pdl_level=pdl_level,
+                    mma_shape=Index(64, WGMMA_N, 16),
+                )
+                warp_specialize_gemm_with_multicasting_splitk[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK,
+                    splits=SPLITS,
+                    raster_order = RasterOrder.AlongM,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
 
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
