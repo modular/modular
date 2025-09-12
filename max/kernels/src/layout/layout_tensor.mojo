@@ -840,23 +840,27 @@ struct LayoutTensor[
     fn bitcast[
         new_dtype: DType,
         /,
-        address_space: AddressSpace = Self.address_space,
+        target_address_space: AddressSpace = Self.address_space,
         element_layout: Layout = Self.element_layout,
-    ](self) -> Self.BitcastType[new_dtype, address_space, element_layout]:
+    ](self) -> Self.BitcastType[
+        new_dtype, target_address_space, element_layout
+    ]:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
             new_dtype: The new data type it is casting to.
-            address_space: The address space of the returned `LayoutTensor`.
+            target_address_space: The address space of the returned `LayoutTensor`.
             element_layout: The element layout of the returned `LayoutTensor`.
 
         Returns:
             A new `LayoutTensor` with the same memory location but with the
             specified data type, address space, and element layout.
         """
-        return Self.BitcastType[new_dtype, address_space, element_layout](
+        return Self.BitcastType[
+            new_dtype, target_address_space, element_layout
+        ](
             self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
-                address_space
+                target_address_space
             ](),
             self.runtime_layout,
         )
@@ -916,19 +920,19 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn address_space_cast[
-        address_space: AddressSpace = Self.address_space,
-    ](self) -> Self.AddressSpaceCastType[address_space]:
+        target_address_space: AddressSpace = Self.address_space,
+    ](self) -> Self.AddressSpaceCastType[target_address_space]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
-            address_space: The new address space.
+            target_address_space: The new address space.
 
         Returns:
             A new `LayoutTensor` object with the same type and origin
             as the original `LayoutTensor`, and the new specified address_space.
         """
-        return Self.AddressSpaceCastType[address_space](
-            self.ptr.address_space_cast[address_space](),
+        return Self.AddressSpaceCastType[target_address_space](
+            self.ptr.address_space_cast[target_address_space](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
@@ -7991,8 +7995,8 @@ struct LayoutTensorIter[
     fn bitcast[
         new_type: DType,
         *,
-        address_space: AddressSpace = Self.address_space,
-        alignment: Int = Self.alignment,
+        target_address_space: AddressSpace = Self.address_space,
+        target_alignment: Int = Self.alignment,
     ](self) -> Self.BitcasType[
         new_type, address_space=address_space, alignment=alignment
     ]:
@@ -8005,9 +8009,9 @@ struct LayoutTensorIter[
 
         Parameters:
             new_type: The target data type to cast to.
-            address_space: The memory address space for the new
+            target_address_space: The memory address space for the new
                 iterator (defaults to current).
-            alignment: Memory alignment requirement for the new
+            target_alignment: Memory alignment requirement for the new
                 iterator (defaults to current).
 
         Returns:
