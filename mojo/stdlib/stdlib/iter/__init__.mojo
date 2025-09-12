@@ -17,7 +17,7 @@ trait Iterable:
     iterator.
     """
 
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator
+    alias IteratorType[mut: Bool, //, iterable_origin: Origin[mut]]: Iterator
 
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         ...
@@ -61,7 +61,9 @@ struct _Enumerate[InnerIteratorType: Iterator](
     """
 
     alias Element = Tuple[Int, InnerIteratorType.Element]
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+    alias IteratorType[
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = Self
     var _inner: InnerIteratorType
     var _count: Int
 
@@ -110,7 +112,9 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
 ):
     alias Element = Tuple[IteratorTypeA.Element, IteratorTypeB.Element]
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+    alias IteratorType[
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = Self
 
     var _inner_a: IteratorTypeA
     var _inner_b: IteratorTypeB
@@ -135,7 +139,9 @@ struct _Zip3[
     alias Element = Tuple[
         IteratorTypeA.Element, IteratorTypeB.Element, IteratorTypeC.Element
     ]
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+    alias IteratorType[
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = Self
 
     var _inner_a: IteratorTypeA
     var _inner_b: IteratorTypeB
@@ -173,7 +179,9 @@ struct _Zip4[
         IteratorTypeC.Element,
         IteratorTypeD.Element,
     ]
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+    alias IteratorType[
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = Self
 
     var _inner_a: IteratorTypeA
     var _inner_b: IteratorTypeB

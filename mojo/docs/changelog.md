@@ -160,6 +160,9 @@ language across multiple phases.
 
 ### Standard library changes
 
+- `Iterable`'s `origin` parameter is now named `iterable_origin`
+  to avoid naming collisions.
+
 - `zip` and `enumerate` are now builtins.
 
 - Added `Path(...).parts()` method to the `Path` type, for example instead of

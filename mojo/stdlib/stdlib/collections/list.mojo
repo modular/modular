@@ -51,7 +51,9 @@ struct _ListIter[
 
     alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
 
-    alias IteratorType[mut: Bool, //, origin: Origin[mut]]: Iterator = Self
+    alias IteratorType[
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = Self
 
     var index: Int
     var src: Pointer[List[Self.Element, hint_trivial_type], origin]
@@ -245,8 +247,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     """The amount of elements that can fit in the list without resizing it."""
 
     alias IteratorType[
-        mut: Bool, //, origin: Origin[mut]
-    ]: Iterator = _ListIter[T, hint_trivial_type, origin, True]
+        mut: Bool, //, iterable_origin: Origin[mut]
+    ]: Iterator = _ListIter[T, hint_trivial_type, iterable_origin, True]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
