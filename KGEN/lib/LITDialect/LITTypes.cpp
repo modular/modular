@@ -1442,9 +1442,8 @@ FnTypeGeneratorType::prependParams(FnTypeGeneratorType sigGen,
 
   FnType sig = sigGen.getBody();
   FnMetadataAttrInterface fnMetadata = remapper.replace(sig.getMetadata());
-  GeneratorMetadataAttrInterface genMetadata =
-      remapper.replace(sigGen.getMetadata().prependPosParams(
-          parentParams.size(), parentVariadics));
+  GeneratorMetadataAttrInterface genMetadata = remapper.replace(
+      sigGen.getMetadata().prependPosParams(parentParams, parentVariadics));
 
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),

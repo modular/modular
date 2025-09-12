@@ -253,6 +253,7 @@ def GeneratorMetadataAttrInterface
       input parameters prepended, determined from the number of declared by the
       given ops. The given operations must implement `DeclInterface`.
     }], "GeneratorMetadataAttrInterface", "prependPosParamsFromOps", (ins
+      "ArrayRef<ParamDeclAttr>":$newParams,
       "ArrayRef<Operation *>":$ops)>,
   ];
 }

@@ -94,7 +94,7 @@ fn testSIMD(
     var x = a + a
     var y = b + b
     # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD'}}
-    # expected-note @below {{failed to infer parameter '', it inferred to two different values: '2' and '1'}}
+    # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '2' and '1'}}
     var z = b + a
 
     # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size' of callee 'twoUses'}}

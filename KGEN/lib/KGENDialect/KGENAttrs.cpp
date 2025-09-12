@@ -802,8 +802,8 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 
     GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
     if (genMetadata) {
-      genMetadata = remapper.replace(
-          genMetadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
+      genMetadata = remapper.replace(genMetadata.prependPosParamsFromOps(
+          paramDecls, llvm::drop_end(symbolOps)));
     }
 
     FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();

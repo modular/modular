@@ -231,9 +231,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
 
     /// Get a new metadata attribute for a generator with the given number of
     /// positional input parameters prepended to the generator. An additional
-    /// array of bool corresponding to the variadic mask of the prepended
-    /// parameters is also required.
-    PogListAttr prependPosParams(size_t numNewParams,
+    /// array of variadic info for each new parameter is also required.
+    PogListAttr prependPosParams(ArrayRef<ParamDeclAttr> newParams,
                                  ArrayRef<VariadicKind> variadics) const;
   }];
 
