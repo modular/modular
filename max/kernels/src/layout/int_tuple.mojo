@@ -62,6 +62,7 @@ from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
 from memory.pointer import _GPUAddressSpace
+from iter import _Zip2
 
 from utils.numerics import max_finite
 
@@ -650,10 +651,27 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, zipper: _zip[_, 2]):
+    fn __init__[
+        tuple0_origin0: ImmutableOrigin,
+        tuple0_origin1: ImmutableOrigin,
+        tuple1_origin0: ImmutableOrigin,
+        tuple1_origin1: ImmutableOrigin,
+    ](
+        out self,
+        zipper: _Zip2[
+            _IntTupleIter[tuple0_origin0, tuple0_origin1],
+            _IntTupleIter[tuple1_origin0, tuple1_origin1],
+        ],
+    ):
         """Initialize an `IntTuple` from a zip iterator.
 
         Creates an `IntTuple` by appending each element from the zip iterator.
+
+        Parameters:
+            tuple0_origin0: The first tuple's container origin.
+            tuple0_origin1: The first tuple's inner origin.
+            tuple1_origin0: The second tuple's container origin.
+            tuple1_origin1: The second tuple's inner origin.
 
         Args:
             zipper: A zip iterator containing pairs of elements to append.
@@ -663,8 +681,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """
         # FIXME: massively inefficient
         self = Self()
-        for z in zipper:
-            self.append(z)
+        for z0, z1 in zipper:
+            var tup = IntTuple()
+            tup.append(z0)
+            tup.append(z1)
+            self.append(tup)
 
     @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
@@ -1476,162 +1497,6 @@ fn is_tuple(t: IntTuple) -> Bool:
     return t.is_tuple()
 
 
-struct _ZipIter[origin: ImmutableOrigin, n: Int](ImplicitlyCopyable, Movable):
-    """Iterator for zipped `IntTuple` collections."""
-
-    alias Element = IntTuple[origin]
-
-    var index: Int
-    var ts: InlineArray[Pointer[IntTuple, origin], n]
-    var len: Int
-
-    @always_inline("nodebug")
-    fn __init__(
-        out self, index: Int, ts: InlineArray[Pointer[IntTuple, origin], n]
-    ):
-        """Initialize a zip iterator."""
-        self.index = index
-        self.ts = ts
-
-        var min_len = len(self.ts[0][])
-
-        @parameter
-        for i in range(1, n):
-            min_len = min(min_len, len(self.ts[i][]))
-        self.len = min_len
-
-    @always_inline("nodebug")
-    fn __has_next__(self) -> Bool:
-        return self.index < self.len
-
-    @always_inline("nodebug")
-    fn __next__(mut self) -> IntTuple[origin]:
-        """Get the next tuple of elements."""
-        var idx = self.index
-        self.index += 1
-
-        @parameter
-        if n == 2:
-            return IntTuple[origin](self.ts[0][][idx], self.ts[1][][idx])
-        elif n == 3:
-            return IntTuple[origin](
-                self.ts[0][][idx],
-                self.ts[1][][idx],
-                self.ts[2][][idx],
-            )
-        else:
-
-            @parameter
-            if INT_TUPLE_VALIDATION:
-                abort("Only zip[2] or zip[3] are supported.")
-
-            var result = IntTuple[origin](self.ts[0][][idx])
-            for i in range(1, n):
-                result.append(self.ts[i][][idx])
-            return result
-
-
-@fieldwise_init
-struct _zip[origin: ImmutableOrigin, n: Int](ImplicitlyCopyable, Movable):
-    """Container for zipped `IntTuple` collections."""
-
-    var ts: InlineArray[Pointer[IntTuple, origin], n]
-
-    @always_inline("nodebug")
-    fn __iter__(self) -> _ZipIter[origin, n]:
-        """Create an iterator for the zipped collections."""
-        return _ZipIter[origin, n](0, self.ts)
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the minimum length among all zipped collections."""
-        var min_len = len(self.ts[0][])
-
-        @parameter
-        for i in range(1, n):
-            min_len = min(min_len, len(self.ts[i][]))
-        return min_len
-
-
-@always_inline("nodebug")
-fn zip[
-    origin: ImmutableOrigin, n: Int
-](ts: InlineArray[Pointer[IntTuple, origin], n]) -> _zip[origin, n]:
-    """Create a zip iterator from an array of `IntTuple` pointers.
-
-    This function creates a zip iterator that allows simultaneous traversal
-    of multiple `IntTuple` collections.
-
-    Parameters:
-        origin: The origin tracking parameter for memory safety.
-        n: The number of `IntTuple` collections being zipped together.
-
-    Args:
-        ts: Array of pointers to the `IntTuple` collections to zip.
-
-    Returns:
-        A `_zip` object that can be iterated over.
-    """
-    return _zip[origin, n](ts)
-
-
-@always_inline("nodebug")
-fn zip(
-    a: IntTuple,
-    b: IntTuple,
-    out result: _zip[__origin_of(a, b), 2],
-):
-    """Create a zip iterator for two `IntTuple`s.
-
-    This function creates a zip iterator that allows simultaneous traversal
-    of two `IntTuple`s, yielding pairs of corresponding elements.
-
-    Args:
-        a: First `IntTuple` to zip.
-        b: Second `IntTuple` to zip.
-
-    Returns:
-        The resulting zip iterator for the input `IntTuple`s.
-    """
-    alias common_type = Pointer[IntTuple, __origin_of(a, b)]
-    return {
-        InlineArray[common_type, 2](
-            rebind[common_type](Pointer(to=a)),
-            rebind[common_type](Pointer(to=b)),
-        )
-    }
-
-
-@always_inline("nodebug")
-fn zip(
-    a: IntTuple,
-    b: IntTuple,
-    c: IntTuple,
-    out result: _zip[__origin_of(a, b, c), 3],
-):
-    """Create a zip iterator for three `IntTuple`s.
-
-    This function creates a zip iterator that allows simultaneous traversal
-    of three `IntTuple`s, yielding triplets of corresponding elements.
-
-    Args:
-        a: First `IntTuple` to zip.
-        b: Second `IntTuple` to zip.
-        c: Third `IntTuple` to zip.
-
-    Returns:
-        The resulting zip iterator for the input `IntTuple`s.
-    """
-    alias common_type = Pointer[IntTuple, __origin_of(a, b, c)]
-    return {
-        InlineArray[common_type, 3](
-            rebind[common_type](Pointer(to=a)),
-            rebind[common_type](Pointer(to=b)),
-            rebind[common_type](Pointer(to=c)),
-        )
-    }
-
-
 # Python-style reduce
 
 
@@ -2360,7 +2225,8 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     if is_int(a) == 1:
         return init
 
-    return _prefix_product2(a, init)
+    var init_tuple = IntTuple(init)
+    return _prefix_product2(a, init_tuple)
 
 
 fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
@@ -2448,11 +2314,13 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             var r = IntTuple()
             for v in a:
                 r.append(shape_div(v, vb))
-                vb = Int(shape_div(vb, product(v)))
+                var prod_v = IntTuple(product(v))
+                vb = Int(shape_div(vb, prod_v))
             return r
     else:
         if is_tuple(b):  # "int" tuple
-            return shape_div(a, product(b))
+            var prod_b = IntTuple(product(b))
+            return shape_div(a, prod_b)
         else:  # "int" "int"
             var va = Int(a)
             var vb = Int(b)
@@ -2701,8 +2569,10 @@ fn crd2idx(
                 # Handle complex nested strides with minimal recursion
                 else:
                     # We know len(_stride) == 2, use direct indexing
-                    return crd2idx(c0, shape[0], _stride[0]) + crd2idx(
-                        c1, shape[1], _stride[1]
+                    var c0_tuple = IntTuple(c0)
+                    var c1_tuple = IntTuple(c1)
+                    return crd2idx(c0_tuple, shape[0], _stride[0]) + crd2idx(
+                        c1_tuple, shape[1], _stride[1]
                     )
 
     # Original implementation for all other cases
