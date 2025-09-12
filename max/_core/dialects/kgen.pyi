@@ -441,9 +441,14 @@ class EnvAttr(max._core.Attribute):
     """
     The `#kgen.env` attribute defines a generic dictionary of environment
     parameters that can be accessed through parameter operators. The values
-    contained can be integers, represented with the `index` type, unit, the
-    presence of which indicates something, and strings, represented as
-    `!kgen.string` types.
+    contained can be:
+    - integers, represented with the `index` type
+    - strings, represented as `!kgen.string` types
+    - unit attributes, the presence of which indicates something
+
+    Note that EnvAttr does not support storing BoolAttr in it.
+    Instead, a boolean true is represented as a UnitAttr, and boolean false
+    is not represented at all (absence of a value evaluates to false).
 
     Example:
 
