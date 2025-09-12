@@ -97,7 +97,7 @@ fn test_vectorize_2() raises:
     alias layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
-    var heap = UnsafePointer[Int32, alignment=8].alloc(64)
+    var heap = UnsafePointer[Int32, alignment2=8].alloc(64)
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,

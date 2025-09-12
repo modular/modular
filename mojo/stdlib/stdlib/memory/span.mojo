@@ -112,7 +112,7 @@ struct Span[
         mut=mut,
         origin=origin,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment,
     ]
     """The UnsafePointer type that corresponds to this `Span`."""
     # Fields
@@ -437,7 +437,7 @@ struct Span[
         mut=mut,
         origin=origin,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment,
     ]:
         """Retrieves a pointer to the underlying memory.
 

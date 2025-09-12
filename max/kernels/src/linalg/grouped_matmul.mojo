@@ -752,7 +752,7 @@ fn grouped_matmul_kernel_sm100[
 
     a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
+            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
         ]
     ](
         external_memory[

@@ -868,7 +868,7 @@ struct SM100TensorAccumulatorSS[
     ]
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ]
     var pipeline: PipelineState[pipeline_stages]
 
@@ -895,7 +895,7 @@ struct SM100TensorAccumulatorSS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
         ],
     ):
         Self.check_constraints()
@@ -1096,7 +1096,7 @@ struct SM100TensorAccumulatorTS[
     ]()
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ]
     var phase: UInt32
 
@@ -1120,7 +1120,7 @@ struct SM100TensorAccumulatorTS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+            SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
         ],
     ):
         Self.check_constraints()

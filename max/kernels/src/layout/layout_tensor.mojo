@@ -353,7 +353,7 @@ struct LayoutTensor[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -7518,7 +7518,7 @@ struct LayoutTensorIter[
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]
@@ -7575,7 +7575,7 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment=alignment,
+            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],
@@ -7622,7 +7622,7 @@ struct LayoutTensorIter[
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
-            alignment=alignment,
+            alignment2=alignment,
             mut=mut,
             origin=origin,
         ],

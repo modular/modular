@@ -662,7 +662,7 @@ struct MemoryElement[
     """
 
     var ptr: UnsafePointer[
-        Scalar[dtype], address_space=address_space, alignment=alignment
+        Scalar[dtype], address_space=address_space, alignment2=alignment
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -686,7 +686,7 @@ struct MemoryElement[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[dtype], address_space=address_space, alignment=alignment
+            Scalar[dtype], address_space=address_space, alignment2=alignment
         ],
         runtime_layout: RuntimeLayout[
             layout,

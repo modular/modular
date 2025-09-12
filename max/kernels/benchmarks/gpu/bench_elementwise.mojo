@@ -134,10 +134,10 @@ fn run_elementwise[
         // size_of[dtype]()
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
+    var in_host_ptr = UnsafePointer[Scalar[dtype], alignment2=align].alloc(
         N_cache
     )
-    var out_host_ptr = UnsafePointer[Scalar[dtype], alignment=align].alloc(
+    var out_host_ptr = UnsafePointer[Scalar[dtype], alignment2=align].alloc(
         N_cache
     )
 

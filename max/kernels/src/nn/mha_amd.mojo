@@ -1038,7 +1038,7 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment = Self.alignment,
+        alignment2 = Self.alignment,
     ]:
         return self.k_v_smem.bitcast[Scalar[dtype]]()
 
@@ -1048,7 +1048,7 @@ struct SharedMemoryManager[
     ) -> UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
-        alignment = Self.alignment,
+        alignment2 = Self.alignment,
     ]:
         return self.p_smem.bitcast[Scalar[dtype]]()
 
@@ -1213,7 +1213,7 @@ struct GlobalMemoryManager[
             ptr.origin,
             masked=True,
             address_space = ptr.address_space,
-            alignment = ptr.alignment,
+            alignment = ptr.alignment2,
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout

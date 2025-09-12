@@ -46,7 +46,7 @@ struct UnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[type](),
+    alignment2: Int = align_of[type](),
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
@@ -152,7 +152,7 @@ struct UnsafePointer[
     Parameters:
         type: The type the pointer points to.
         address_space: The address space associated with the UnsafePointer allocated memory.
-        alignment: The minimum alignment of this pointer known statically.
+        alignment2: The minimum alignment of this pointer known statically.
         mut: Whether the origin is mutable.
         origin: The origin of the memory being addressed.
     """
@@ -250,7 +250,7 @@ struct UnsafePointer[
     ) -> UnsafePointer[
         type,
         address_space = AddressSpace.GENERIC,
-        alignment=alignment,
+        alignment2=alignment2,
         # This is a newly allocated pointer, so should not alias anything
         # already existing.
         origin = MutableOrigin.empty,
@@ -283,7 +283,7 @@ struct UnsafePointer[
         """
         alias size_of_t = size_of[type]()
         constrained[size_of_t > 0, "size must be greater than zero"]()
-        return _malloc[type, alignment=alignment](size_of_t * count)
+        return _malloc[type, alignment=alignment2](size_of_t * count)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -483,7 +483,7 @@ struct UnsafePointer[
             UnsafePointer[
                 type,
                 address_space=address_space,
-                alignment=_,
+                alignment2=_,
                 mut=_,
                 origin=_,
             ]
@@ -493,7 +493,7 @@ struct UnsafePointer[
         mut = mut & other_type.origin.mut,
         origin = __origin_of(origin, other_type.origin),
         address_space=address_space,
-        alignment = min(alignment, other_type.alignment),
+        alignment2 = min(alignment2, other_type.alignment2),
     ]:
         """Returns a pointer merged with the specified `other_type`.
 
@@ -1018,7 +1018,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         T,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment2,
         mut=mut,
         origin=origin,
     ]:
@@ -1033,17 +1033,17 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                T, address_space=address_space, alignment=alignment
+                T, address_space=address_space, alignment2=alignment2
             ]._mlir_type,
         ](self.address)
 
     @always_inline("builtin")
     fn static_alignment_cast[
-        alignment: Int = Self.alignment
+        alignment: Int = Self.alignment2
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment,
         mut=mut,
         origin=origin,
     ]:
@@ -1068,7 +1068,7 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type, address_space=address_space, alignment2=alignment
             ]._mlir_type,
         ](self.address)
 
@@ -1081,7 +1081,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment2,
         mut=target_mut,
         origin=target_origin,
     ]:
@@ -1097,7 +1097,7 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type, address_space=address_space, alignment2=alignment2
             ]._mlir_type,
         ](self.address)
 
@@ -1107,7 +1107,7 @@ struct UnsafePointer[
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
-        alignment=alignment,
+        alignment2=alignment2,
         mut=mut,
         origin=origin,
     ]:
@@ -1122,7 +1122,7 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
-                type, address_space=address_space, alignment=alignment
+                type, address_space=address_space, alignment2=alignment2
             ]._mlir_type,
         ](self.address)
 

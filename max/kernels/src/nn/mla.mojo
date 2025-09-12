@@ -607,7 +607,7 @@ fn mla_decoding_single_batch[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -616,7 +616,7 @@ fn mla_decoding_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),
@@ -1689,7 +1689,7 @@ fn mla_prefill_single_batch[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -1698,7 +1698,7 @@ fn mla_prefill_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),

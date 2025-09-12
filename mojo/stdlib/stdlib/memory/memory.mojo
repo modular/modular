@@ -434,7 +434,7 @@ fn stack_allocation[
                 count = count._mlir_value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type = UnsafePointer[
-                    type, address_space=address_space, alignment=alignment
+                    type, address_space=address_space, alignment2=alignment
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -446,7 +446,7 @@ fn stack_allocation[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
                 _type = UnsafePointer[
-                    type, address_space=address_space, alignment=alignment
+                    type, address_space=address_space, alignment2=alignment
                 ]._mlir_type,
                 alignment = alignment._mlir_value,
             ]()
@@ -466,11 +466,11 @@ fn stack_allocation[
                 ]._mlir_type
             ](generic_ptr)
 
-    # Perofrm a stack allocation of the requested size, alignment, and type.
+    # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
         count = count._mlir_value,
         _type = UnsafePointer[
-            type, address_space=address_space, alignment=alignment
+            type, address_space=address_space, alignment2=alignment
         ]._mlir_type,
         alignment = alignment._mlir_value,
     ]()
@@ -488,7 +488,7 @@ fn _malloc[
     *,
     alignment: Int = align_of[type]() if is_gpu() else 1,
 ](size: Int, /) -> UnsafePointer[
-    type, address_space = AddressSpace.GENERIC, alignment=alignment
+    type, address_space = AddressSpace.GENERIC, alignment2=alignment
 ]:
     @parameter
     if is_gpu():

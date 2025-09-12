@@ -1448,7 +1448,7 @@ fn mha_single_batch[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -1457,7 +1457,7 @@ fn mha_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),
@@ -2161,7 +2161,7 @@ fn mha_single_batch_pipelined[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -2170,7 +2170,7 @@ fn mha_single_batch_pipelined[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),
@@ -3155,7 +3155,7 @@ fn mha_decoding_single_batch[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -3164,7 +3164,7 @@ fn mha_decoding_single_batch[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),
@@ -3828,7 +3828,7 @@ fn mha_decoding_single_batch_pipelined[
         q_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = q_smem.alignment,
+        alignment = q_smem.alignment2,
     ](
         rebind[
             __type_of(
@@ -3837,7 +3837,7 @@ fn mha_decoding_single_batch_pipelined[
                     Layout.row_major(BM, BK),
                     q_smem.origin,
                     address_space = AddressSpace.SHARED,
-                    alignment = q_smem.alignment,
+                    alignment = q_smem.alignment2,
                 ]().ptr
             )
         ](q_smem),

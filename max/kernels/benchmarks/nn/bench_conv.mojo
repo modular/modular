@@ -93,13 +93,13 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     # Allocate input and output buffers.
     var input_ptr = UnsafePointer[
-        Scalar[input_type], alignment=alignment
+        Scalar[input_type], alignment2=alignment
     ].alloc(input_alloc_size * num_copies)
     var filter_ptr = UnsafePointer[
-        Scalar[filter_type], alignment=alignment
+        Scalar[filter_type], alignment2=alignment
     ].alloc(num_copies * filter_alloc_size)
     var output_ptr = UnsafePointer[
-        Scalar[output_type], alignment=alignment
+        Scalar[output_type], alignment2=alignment
     ].alloc(num_copies * output_alloc_size)
 
     rand[input_type](input_ptr, num_copies * input_alloc_size)

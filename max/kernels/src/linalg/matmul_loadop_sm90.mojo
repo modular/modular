@@ -75,10 +75,10 @@ fn async_load_AB[
     rank_m: UInt,
     mut write_pipeline_states: PipelineState[pipeline_stages],
     empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
     full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
 ):
     alias a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
@@ -275,10 +275,10 @@ fn async_load_AB[
     ],
     mut write_pipeline_states: PipelineState[pipeline_stages],
     empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
     full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
 ):
     alias BM = block_tile_shape[0]

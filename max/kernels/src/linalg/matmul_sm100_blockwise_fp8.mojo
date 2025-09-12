@@ -161,7 +161,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
+            Scalar[a_type], address_space = AddressSpace.SHARED, alignment2=128
         ]
     ](
         external_memory[

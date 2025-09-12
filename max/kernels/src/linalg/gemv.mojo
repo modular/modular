@@ -578,7 +578,7 @@ fn gemv_gpu_dispatch[
                     b.type,
                     b_layout_template,
                     MutableAnyOrigin,
-                    alignment = aligned_b.alignment,
+                    alignment = aligned_b.alignment2,
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 

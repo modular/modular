@@ -194,10 +194,10 @@ fn consumer_main_loop[
     ],
     mut read_pipeline_states: PipelineState[pipeline_stages],
     full: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
     empty: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ],
     wgmma_op: TensorCoreAsync[
         accum_type,

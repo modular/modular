@@ -548,7 +548,7 @@ fn multistage_qgemm_kernel[
         a_type,
         Layout.row_major(BM, BK),
         address_space = AddressSpace.SHARED,
-        alignment = a_smem.alignment,
+        alignment = a_smem.alignment2,
         circular=True,
     ](
         a_smem + warp_k_part_id * a_smem_size,

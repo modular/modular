@@ -519,7 +519,7 @@ fn multistage_dual_gemm_kernel[
         a_type,
         Layout.row_major(BM, BK),
         address_space = a_smem.address_space,
-        alignment = a_smem.alignment,
+        alignment = a_smem.alignment2,
         circular=True,
     ](
         a_smem,

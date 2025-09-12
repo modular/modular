@@ -51,19 +51,19 @@ def test_gemv():
     alias m = 4096
     alias k = 11008
 
-    var lhs_storage = UnsafePointer[Scalar[type], alignment=alignment].alloc(
+    var lhs_storage = UnsafePointer[Scalar[type], alignment2=alignment].alloc(
         m * k
     )
     var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
 
-    var rhs_storage = UnsafePointer[Scalar[type], alignment=alignment].alloc(k)
+    var rhs_storage = UnsafePointer[Scalar[type], alignment2=alignment].alloc(k)
     var rhs = NDBuffer[type, 1, _, Dim(k)](rhs_storage)
 
-    var out_storage = UnsafePointer[Scalar[type], alignment=alignment].alloc(m)
+    var out_storage = UnsafePointer[Scalar[type], alignment2=alignment].alloc(m)
     var out = NDBuffer[type, 1, _, Dim(m)](out_storage)
 
     var ref_out_storage = UnsafePointer[
-        Scalar[type], alignment=alignment
+        Scalar[type], alignment2=alignment
     ].alloc(m)
     var ref_out = NDBuffer[type, 1, _, Dim(m)](ref_out_storage)
 

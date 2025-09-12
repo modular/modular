@@ -1218,7 +1218,7 @@ fn _matmul_qint4[
 
     var a_quant_base_ptr = UnsafePointer[
         Scalar[aq_type],
-        alignment=alignment,
+        alignment2=alignment,
     ].alloc(M * K)
     var a_scale_base_ptr = UnsafePointer[Float32].alloc(M * k_groups)
 

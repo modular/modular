@@ -32,7 +32,7 @@ from layout import LayoutTensor, Layout, IntTuple
 
 fn alloc_test_fn[cta_group: Int32]():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED, alignment2=16
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
@@ -57,7 +57,7 @@ fn test_tcgen05_alloc() raises:
 
 fn alloc_dealloc_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED, alignment2=16
     ]()
     var tmem_addr: UInt32 = 0
     var num_cols: UInt32 = 32
@@ -79,7 +79,7 @@ fn test_tcgen05_dealloc() raises:
 
 fn ld_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED, alignment2=16
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -107,7 +107,7 @@ fn test_tcgen05_ld() raises:
 
 fn st_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED, alignment2=16
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -134,7 +134,7 @@ fn test_tcgen05_st() raises:
 
 fn cp_test_fn():
     var ptr_tmem_addr = UnsafePointer[
-        UInt32, address_space = AddressSpace.SHARED, alignment=16
+        UInt32, address_space = AddressSpace.SHARED, alignment2=16
     ]()
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)

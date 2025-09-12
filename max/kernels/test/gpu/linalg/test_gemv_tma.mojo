@@ -92,7 +92,7 @@ fn gemv_tma_kernel[
 
     var a_smem_base = rebind[
         UnsafePointer[
-            Scalar[dtype], address_space = AddressSpace.SHARED, alignment=128
+            Scalar[dtype], address_space = AddressSpace.SHARED, alignment2=128
         ]
     ](
         external_memory[
@@ -147,7 +147,7 @@ fn gemv_tma_kernel[
         .static_alignment_cast[alignment=8]()
     )
     var tma_mbar = UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment2=8
     ](tma_mbar_ptr)
 
     # Initialize dot products for all rows before column processing.

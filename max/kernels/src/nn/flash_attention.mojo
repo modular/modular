@@ -710,7 +710,7 @@ struct _FlashAttention[
 
             var packed_ptr = UnsafePointer[
                 Scalar[dtype],
-                alignment = align_of[SIMD[dtype, simd_width]](),
+                alignment2 = align_of[SIMD[dtype, simd_width]](),
             ]()
             if max_seq_len != 1:
                 packed_ptr = packed_ptr.alloc(packed_size)

@@ -405,7 +405,7 @@ struct Pipeline[
             UnsafePointer[
                 Scalar[a_type],
                 address_space = AddressSpace.SHARED,
-                alignment=128,
+                alignment2=128,
             ]
         ](
             external_memory[

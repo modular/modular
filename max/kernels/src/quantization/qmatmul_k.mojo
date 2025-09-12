@@ -403,11 +403,11 @@ fn _pack_block_Q4_K[
     alignment: Int,
 ](
     var src_ptr: UnsafePointer[
-        _block_Q4_K, origin=src_origin, alignment=alignment
+        _block_Q4_K, origin=src_origin, alignment2=alignment
     ],
     stride: Int,
     mut dst_ptr: UnsafePointer[
-        _block_Q4_K_packed[block_n], origin=dst_origin, alignment=alignment
+        _block_Q4_K_packed[block_n], origin=dst_origin, alignment2=alignment
     ],
 ):
     alias group_size = _block_Q4_K.group_size
@@ -529,11 +529,11 @@ fn _pack_block_Q6_K[
     alignment: Int,
 ](
     var src_ptr: UnsafePointer[
-        _block_Q6_K, origin=src_origin, alignment=alignment
+        _block_Q6_K, origin=src_origin, alignment2=alignment
     ],
     stride: Int,
     mut dst_ptr: UnsafePointer[
-        _block_Q6_K_packed[block_n], origin=dst_origin, alignment=alignment
+        _block_Q6_K_packed[block_n], origin=dst_origin, alignment2=alignment
     ],
 ):
     alias group_count = _block_Q6_K.group_count
