@@ -18,7 +18,6 @@ from stdlib.builtin.sort import (
     _heap_sort,
     _insertion_sort,
     _small_sort,
-    _SortWrapper,
     sort,
 )
 
@@ -44,10 +43,8 @@ fn randomize_list[
 @always_inline
 fn insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
     @parameter
-    fn _less_than(
-        lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]
-    ) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
+        return lhs < rhs
 
     _insertion_sort[_less_than](list)
 
@@ -55,10 +52,8 @@ fn insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
 @always_inline
 fn small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
     @parameter
-    fn _less_than(
-        lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]
-    ) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
+        return lhs < rhs
 
     _small_sort[size, Scalar[dtype], _less_than](list.unsafe_ptr())
 
@@ -66,10 +61,8 @@ fn small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
 @always_inline
 fn heap_sort[dtype: DType](mut list: List[Scalar[dtype]]):
     @parameter
-    fn _less_than(
-        lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]
-    ) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
+        return lhs < rhs
 
     _heap_sort[_less_than](list)
 

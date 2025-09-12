@@ -14,7 +14,7 @@
 from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
 
-from builtin.sort import _quicksort, _small_sort, _SortWrapper
+from builtin.sort import _quicksort, _small_sort
 from collections.string.string_slice import _to_string_list
 from testing import assert_equal, assert_false, assert_true
 
@@ -67,8 +67,8 @@ fn test_sort_small_3() raises:
     list.append(2)
 
     @parameter
-    fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     _small_sort[length, Int, _less_than](list.unsafe_ptr())
 
@@ -89,8 +89,8 @@ fn test_sort_small_5() raises:
     list.append(4)
 
     @parameter
-    fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     _small_sort[length, Int, _less_than](list.unsafe_ptr())
 
@@ -157,7 +157,7 @@ fn test_sort3_dupe_elements() raises:
     alias length = 3
 
     fn test[
-        cmp_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [_] -> Bool,
+        cmp_fn: fn (Int, Int) capturing [_] -> Bool,
     ]() raises:
         var list = List[Int](capacity=3)
         list.append(5)
@@ -171,8 +171,8 @@ fn test_sort3_dupe_elements() raises:
             assert_equal(expected[i], list[i])
 
     @parameter
-    fn _lt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    fn _lt(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     test[_lt]()
 
@@ -322,10 +322,8 @@ fn test_quick_sort_repeated_val() raises:
         list.append(i + 1)
 
     @parameter
-    fn _greater_than(
-        lhs: _SortWrapper[Float32], rhs: _SortWrapper[Float32]
-    ) -> Bool:
-        return lhs.data > rhs.data
+    fn _greater_than(lhs: Float32, rhs: Float32) -> Bool:
+        return lhs > rhs
 
     _quicksort[_greater_than](list)
 
@@ -371,10 +369,8 @@ fn test_quick_sort_repeated_val() raises:
         assert_equal(expected[i], list[i])
 
     @parameter
-    fn _less_than(
-        lhs: _SortWrapper[Float32], rhs: _SortWrapper[Float32]
-    ) -> Bool:
-        return lhs.data < rhs.data
+    fn _less_than(lhs: Float32, rhs: Float32) -> Bool:
+        return lhs < rhs
 
     expected = List[Float32](
         1.0,
@@ -443,10 +439,8 @@ fn test_sort_stress() raises:
     @__copy_capture(random_seed)
     @parameter
     fn test[
-        cmp_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [_] -> Bool,
-        check_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [
-            _
-        ] -> Bool,
+        cmp_fn: fn (Int, Int) capturing [_] -> Bool,
+        check_fn: fn (Int, Int) capturing [_] -> Bool,
     ](length: Int) raises:
         var list = List[Int](capacity=length)
         for _ in range(length):
@@ -459,23 +453,23 @@ fn test_sort_stress() raises:
 
     @parameter
     @always_inline
-    fn _gt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data > rhs.data
+    fn _gt(lhs: Int, rhs: Int) -> Bool:
+        return lhs > rhs
 
     @parameter
     @always_inline
-    fn _geq(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data >= rhs.data
+    fn _geq(lhs: Int, rhs: Int) -> Bool:
+        return lhs >= rhs
 
     @parameter
     @always_inline
-    fn _lt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    fn _lt(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     @parameter
     @always_inline
-    fn _leq(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data <= rhs.data
+    fn _leq(lhs: Int, rhs: Int) -> Bool:
+        return lhs <= rhs
 
     for i in range(len(lens)):
         var length = lens[i]

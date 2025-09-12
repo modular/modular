@@ -27,16 +27,11 @@ from memory import Span
 alias insertion_sort_threshold = 32
 
 
-@fieldwise_init("implicit")
-struct _SortWrapper[T: Copyable & Movable](Copyable, Movable):
-    var data: T
-
-
 @always_inline
 fn _insertion_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
@@ -61,7 +56,7 @@ fn _insertion_sort[
 fn _quicksort_partition_right[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -92,7 +87,7 @@ fn _quicksort_partition_right[
 fn _quicksort_partition_left[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -120,7 +115,7 @@ fn _quicksort_partition_left[
 fn _heap_sort_fix_down[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin], idx: Int):
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -143,7 +138,7 @@ fn _heap_sort_fix_down[
 fn _heap_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -172,7 +167,7 @@ fn _estimate_initial_height(size: Int) -> Int:
 fn _delegate_small_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -203,7 +198,7 @@ fn _delegate_small_sort[
 fn _quicksort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -269,7 +264,7 @@ fn _merge[
     T: Copyable & Movable,
     span_origin: ImmutableOrigin,
     result_origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     span1: Span[T, span_origin],
     span2: Span[T, span_origin],
@@ -327,7 +322,7 @@ fn _stable_sort_impl[
     T: Copyable & Movable,
     span_life: MutableOrigin,
     tmp_life: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, span_life], temp_buff: Span[T, tmp_life]):
     var size = len(span)
     if size <= 1:
@@ -354,7 +349,7 @@ fn _stable_sort_impl[
 fn _stable_sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]):
     var temp_buff = UnsafePointer[T].alloc(len(span))
     var temp_buff_span = Span(ptr=temp_buff, length=UInt(len(span)))
@@ -371,7 +366,7 @@ fn _stable_sort[
 fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
     if size <= 1:
@@ -404,7 +399,7 @@ fn _partition[
 fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](var span: Span[T, origin], var k: Int):
     while True:
         var pivot = _partition[cmp_fn](span)
@@ -438,11 +433,7 @@ fn partition[
         k: Index of the partition element.
     """
 
-    @parameter
-    fn _cmp_fn(lhs: _SortWrapper[T], rhs: _SortWrapper[T]) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _partition[_cmp_fn](span, k)
+    _partition[cmp_fn](span, k)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -454,7 +445,7 @@ fn partition[
 fn _sort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
 ](span: Span[T, origin]):
@@ -497,11 +488,7 @@ fn sort[
         span: The span to be sorted.
     """
 
-    @parameter
-    fn _cmp_fn(lhs: _SortWrapper[T], rhs: _SortWrapper[T]) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _sort[_cmp_fn, stable=stable](span)
+    _sort[cmp_fn, stable=stable](span)
 
 
 fn sort[
@@ -522,11 +509,7 @@ fn sort[
         span: The span to be sorted.
     """
 
-    @parameter
-    fn _cmp_fn(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _sort[_cmp_fn, stable=stable](span)
+    _sort[cmp_fn, stable=stable](span)
 
 
 fn sort[
@@ -584,7 +567,7 @@ fn sort[
 @always_inline
 fn _sort2[
     T: Copyable & Movable,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
         T, address_space = AddressSpace.GENERIC, mut=True, **_
@@ -602,7 +585,7 @@ fn _sort2[
 @always_inline
 fn _sort3[
     T: Copyable & Movable,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
         T, address_space = AddressSpace.GENERIC, mut=True, **_
@@ -619,7 +602,7 @@ fn _sort3[
 @always_inline
 fn _sort_partial_3[
     T: Copyable & Movable,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
         T, address_space = AddressSpace.GENERIC, mut=True, **_
@@ -646,7 +629,7 @@ fn _sort_partial_3[
 fn _small_sort[
     n: Int,
     T: Copyable & Movable,
-    cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
+    cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](array: UnsafePointer[T, address_space = AddressSpace.GENERIC, mut=True, **_]):
     @parameter
     if n == 2:
