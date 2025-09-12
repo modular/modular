@@ -10,7 +10,7 @@
 #include "../tools/mojo-lsp-test-client/LSPBatchClient.h"
 #include "lldb/API/LLDB.h"
 
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 
 namespace M {
 

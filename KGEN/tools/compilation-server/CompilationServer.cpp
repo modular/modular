@@ -7,15 +7,15 @@
 #include "CompilationServer.h"
 #include "LLVMServer.h"
 #include "Protocol.h"
-#include "mlir/Tools/lsp-server-support/Logging.h"
-#include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/LSP/Logging.h"
+#include "llvm/Support/LSP/Transport.h"
 
 #define DEBUG_TYPE "compilation-server"
 
 namespace json = llvm::json;
 using namespace mlir;
-using namespace mlir::lsp;
+using namespace llvm::lsp;
 using namespace M::KGEN::CSP;
 
 //===----------------------------------------------------------------------===//

@@ -16,39 +16,39 @@ class Document {
 public:
   Document(StringRef uri, StringRef text);
 
-  mlir::lsp::URIForFile getURI() const { return uri; }
+  llvm::lsp::URIForFile getURI() const { return uri; }
 
   StringRef getContents() const { return contents; }
 
   /// Get the full range of the entire text.
-  mlir::lsp::Range getFullRange() const;
+  llvm::lsp::Range getFullRange() const;
 
   /// Get the position of the first occurrence of the given substring in the
   /// document within a single line.
   /// Skip lines with `# skip` at the end.
-  std::optional<mlir::lsp::Position> findFirstPos(StringRef substr) const;
+  std::optional<llvm::lsp::Position> findFirstPos(StringRef substr) const;
 
   /// Get the position of the last occurrence of the given substring in the
   /// document within a single line.
   /// Skip lines with `# skip` at the end.
-  std::optional<mlir::lsp::Position> findLastPos(StringRef substr) const;
+  std::optional<llvm::lsp::Position> findLastPos(StringRef substr) const;
 
   /// Get the range of the first occurrence of the given substring in the
   /// document within a single line.
   /// Skip lines with `# skip` at the end.
-  std::optional<mlir::lsp::Range> findFirstRange(StringRef substr) const;
+  std::optional<llvm::lsp::Range> findFirstRange(StringRef substr) const;
 
   /// Get the range of the last occurrence of the given substring in the
   /// document within a single line.
   /// Skip lines with `# skip` at the end.
-  std::optional<mlir::lsp::Range> findLastRange(StringRef substr) const;
+  std::optional<llvm::lsp::Range> findLastRange(StringRef substr) const;
 
   /// Get the ranges of all the occurrences of a given substring in the
   /// document. One occurrence per line. Skip lines with `# skip` at the end.
-  std::vector<mlir::lsp::Range> findAllRanges(StringRef substr) const;
+  std::vector<llvm::lsp::Range> findAllRanges(StringRef substr) const;
 
 private:
-  mlir::lsp::URIForFile uri;
+  llvm::lsp::URIForFile uri;
   std::string contents;
   SmallVector<StringRef> lines;
 };
@@ -57,12 +57,12 @@ class NotebookDocument {
 public:
   NotebookDocument(StringRef uri, ArrayRef<StringRef> cellContents);
 
-  mlir::lsp::URIForFile getURI() const { return uri; }
+  llvm::lsp::URIForFile getURI() const { return uri; }
 
   ArrayRef<Document> getCells() const { return cells; }
 
 private:
-  mlir::lsp::URIForFile uri;
+  llvm::lsp::URIForFile uri;
   SmallVector<Document> cells;
 };
 
