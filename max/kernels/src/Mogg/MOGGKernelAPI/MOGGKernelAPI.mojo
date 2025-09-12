@@ -190,6 +190,7 @@ from nn.resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
+from nn.rope import rope_ragged
 
 from nn.bicubic import resize_bicubic
 from nn.roi_align import roi_align_nhwc
@@ -230,7 +231,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
@@ -6810,6 +6811,76 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             output,
             context,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# RoPE Ragged
+#
+# Expected kernel name format:
+# mo.rope.ragged
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.rope.ragged")
+struct Struct_rope_ragged_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType, //,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=3],
+        x: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        start_pos: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            return String(";").join(
+                trace_arg("output", output.shape()),
+                trace_arg("x", x.shape()),
+                trace_arg("input_row_offsets", input_row_offsets.shape()),
+                trace_arg("start_pos", start_pos.shape()),
+                trace_arg("freqs_cis", freqs_cis.shape()),
+                "interleaved=" + String(interleaved),
+                "target=" + String(target),
+            )
+
+        @always_inline
+        @parameter
+        fn output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+            output._lambda_store[width=width, element_alignment=alignment](
+                idx,
+                rebind[SIMD[dtype, width]](val),
+            )
+
+        var device_ctx: Optional[DeviceContext] = None
+
+        @parameter
+        if is_gpu[target]():
+            device_ctx = ctx.get_device_context()
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.rope.ragged",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        ):
+            rope_ragged[
+                interleaved=interleaved,
+                target=target,
+                output_fn=output_fn,
+            ](
+                x.to_layout_tensor(),
+                input_row_offsets.to_layout_tensor(),
+                start_pos.to_layout_tensor(),
+                freqs_cis.to_layout_tensor(),
+                device_ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
