@@ -27,7 +27,6 @@ from max.interfaces import (
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
-    RequestID,
 )
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
@@ -103,7 +102,7 @@ async def lifespan(
                 )
             )
 
-            lora_queue: LoRAQueue[RequestID] | None = (
+            lora_queue: LoRAQueue | None = (
                 LoRAQueue(
                     serving_settings.pipeline_config.lora_config.lora_request_endpoint,
                     serving_settings.pipeline_config.lora_config.lora_response_endpoint,

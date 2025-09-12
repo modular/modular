@@ -32,7 +32,6 @@ from max.interfaces import (
     InputContext,
     LogProbabilities,
     PipelineTokenizer,
-    RequestID,
     TextGenerationRequest,
 )
 from max.profiler import Tracer
@@ -69,7 +68,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
         model_name: str,
         tokenizer: PipelineTokenizer[ContextType, int, TextGenerationRequest],
         engine_queue: EngineQueue[ContextType, Any],
-        lora_queue: LoRAQueue[RequestID] | None = None,
+        lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.TokenGeneratorPipeline"
@@ -319,7 +318,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             AudioGeneratorContext, object, AudioGenerationRequest
         ],
         engine_queue: EngineQueue[AudioGeneratorContext, Any],
-        lora_queue: LoRAQueue[RequestID] | None = None,
+        lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
             "max.serve.pipelines.AudioGeneratorPipeline"

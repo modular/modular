@@ -22,11 +22,10 @@ import threading
 import uuid
 from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, NewType, TypeVar, cast
+from typing import Callable, TypeVar, cast
 
 import tqdm
-from max.interfaces import RequestID as _LoRARequestID
-from max.interfaces import SamplingParams, TextGenerationRequest
+from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
@@ -38,12 +37,10 @@ from max.serve.queue.lora_queue import LoRAQueue
 T = TypeVar("T")
 U = TypeVar("U")
 
-_RequestID = NewType("_RequestID", str)
-
 
 @dataclasses.dataclass
 class _Request:
-    id: _RequestID
+    id: RequestID
     prompts: Sequence[str]
     max_new_tokens: int | None
     use_tqdm: bool
@@ -63,7 +60,7 @@ class LLM:
     _pc: ProcessControl
     _async_runner: Thread
     _request_queue: queue.Queue[_Request]
-    _pending_requests: dict[_RequestID, queue.Queue[_Response]]
+    _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
         settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
@@ -116,7 +113,7 @@ class LLM:
             prompts = (prompts,)
 
         request = _Request(
-            id=_RequestID(str(uuid.uuid4())),
+            id=str(uuid.uuid4()),
             prompts=prompts,
             max_new_tokens=max_new_tokens,
             use_tqdm=use_tqdm,
@@ -136,7 +133,7 @@ def _run_async_worker(
     pc: ProcessControl,
     pipeline_config: PipelineConfig,
     request_queue: queue.Queue[_Request],
-    pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
+    pending_requests: Mapping[RequestID, queue.Queue[_Response]],
     settings: Settings,
 ) -> None:
     asyncio.run(
@@ -176,7 +173,7 @@ async def _async_worker(
     pc: ProcessControl,
     pipeline_config: PipelineConfig,
     request_queue: queue.Queue[_Request],
-    pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
+    pending_requests: Mapping[RequestID, queue.Queue[_Response]],
     settings: Settings,
 ) -> None:
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
@@ -188,7 +185,7 @@ async def _async_worker(
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
-    lora_queue: LoRAQueue[_LoRARequestID] | None = (
+    lora_queue: LoRAQueue | None = (
         LoRAQueue(
             pipeline_config.lora_config.lora_request_endpoint,
             pipeline_config.lora_config.lora_response_endpoint,
