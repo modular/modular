@@ -67,10 +67,72 @@ def numpy_encoder_hook(
     return encode_hook
 
 
+class MsgpackNumpyEncoder:
+    """A pickleable encoder class for msgpack data with numpy arrays.
+
+    This class wraps msgspec.msgpack.Encoder functionality in a pickleable
+    container by storing the encoder parameters and recreating the encoder
+    as needed.
+    """
+
+    def __init__(
+        self,
+        use_shared_memory: bool = False,
+        shared_memory_threshold: int = 0,
+    ):
+        """Initialize the encoder.
+
+        Args:
+            use_shared_memory: Whether to attempt shared memory conversion for numpy arrays
+            shared_memory_threshold: Minimum size in bytes for shared memory conversion.
+                                    If 0, all arrays are candidates for conversion.
+        """
+        self._use_shared_memory = use_shared_memory
+        self._shared_memory_threshold = shared_memory_threshold
+        self._encoder: msgspec.msgpack.Encoder | None = None
+        self._create_encoder()
+
+    def _create_encoder(self) -> None:
+        """Create the internal msgspec encoder."""
+        enc_hook = numpy_encoder_hook(
+            self._use_shared_memory, self._shared_memory_threshold
+        )
+        self._encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)
+
+    def __call__(self, obj: Any) -> bytes:
+        """Encode object into bytes.
+
+        Args:
+            obj: The object to encode
+
+        Returns:
+            The encoded bytes
+        """
+        if self._encoder is None:
+            self._create_encoder()
+
+        assert self._encoder is not None
+        return self._encoder.encode(obj)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Get state for pickling (excluding the non-pickleable encoder)."""
+        return {
+            "_use_shared_memory": self._use_shared_memory,
+            "_shared_memory_threshold": self._shared_memory_threshold,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state from pickling and recreate the encoder."""
+        self._use_shared_memory = state["_use_shared_memory"]
+        self._shared_memory_threshold = state["_shared_memory_threshold"]
+        self._encoder = None
+        self._create_encoder()
+
+
 def msgpack_numpy_encoder(
     use_shared_memory: bool = False,
     shared_memory_threshold: int = 0,
-) -> Callable[[Any], bytes]:
+) -> MsgpackNumpyEncoder:
     """Create an encoder function that handles numpy arrays.
 
     Args:
@@ -79,11 +141,9 @@ def msgpack_numpy_encoder(
                                 If 0, all arrays are candidates for conversion.
 
     Returns:
-        A function that encodes objects into bytes
+        A pickleable encoder instance that encodes objects into bytes
     """
-    enc_hook = numpy_encoder_hook(use_shared_memory, shared_memory_threshold)
-    encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)
-    return encoder.encode
+    return MsgpackNumpyEncoder(use_shared_memory, shared_memory_threshold)
 
 
 class MsgpackNumpyDecoder:
