@@ -23,5 +23,5 @@ pixi run mojo main.mojo
 You can run the unit tests by running the following command:
 
 ```bash
-pixi run tests
+pixi run test
 ```
