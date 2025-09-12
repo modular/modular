@@ -31,7 +31,6 @@ from linalg.utils_gpu import MatmulConfig
 from runtime.tracing import trace_arg
 from utils.numerics import get_accum_type
 from utils.index import IndexList
-from utils.numerics import max_finite, min_finite
 from .utils import elementwise_epilogue_type
 from gpu import global_idx
 from utils.index import Index
@@ -86,8 +85,8 @@ fn quantize_static_scaled_fp8[
 
             scaled_input_f32 = in_vec_f32[i] * inversed_scale
             in_vec_f32[i] = max(
-                Float32(min_finite[out_dtype]()),
-                min(Float32(max_finite[out_dtype]()), scaled_input_f32),
+                Float32(DType.min_finite[out_dtype]()),
+                min(Float32(DType.max_finite[out_dtype]()), scaled_input_f32),
             )
 
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()

@@ -40,7 +40,7 @@ from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span
 
-from utils.numerics import FPUtils, isnan, nan
+from utils.numerics import FPUtils, isnan
 from utils.static_tuple import StaticTuple
 
 from .constants import log2e
@@ -801,7 +801,9 @@ fn _log_base[
         y = exp.fma(ln2, y)
     else:
         y = y.fma(log2e, exp)
-    return x.eq(0).select(Scalar[dtype].MIN, x.gt(0).select(y, nan[dtype]()))
+    return x.eq(0).select(
+        Scalar[dtype].MIN, x.gt(0).select(y, DType.nan[dtype]())
+    )
 
 
 @always_inline
@@ -1654,9 +1656,9 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
-    alias nan_val = nan[x.dtype]()
-    alias inf_val = inf[x.dtype]()
-    alias neg_inf_val = -inf[x.dtype]()
+    alias nan_val = DType.nan[x.dtype]()
+    alias inf_val = DType.inf[x.dtype]()
+    alias neg_inf_val = -DType.inf[x.dtype]()
 
     var is_neg = x.lt(0)
     var x_abs = abs(x)
@@ -2505,7 +2507,7 @@ fn ulp[
     var nan_mask = isnan(x)
     var xabs = abs(x)
     var inf_mask = isinf(xabs)
-    alias inf_val = SIMD[dtype, width](inf[dtype]())
+    alias inf_val = SIMD[dtype, width](DType.inf[dtype]())
     var x2 = nextafter(xabs, inf_val)
     var x2_inf_mask = isinf(x2)
 

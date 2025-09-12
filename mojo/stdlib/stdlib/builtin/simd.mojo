@@ -81,14 +81,10 @@ from python import ConvertibleToPython, PythonObject, Python
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
 from utils.numerics import FPUtils
-from utils.numerics import inf as _inf
 from utils.numerics import isinf as _isinf
 from utils.numerics import isnan as _isnan
-from utils.numerics import max_finite as _max_finite
 from utils.numerics import max_or_inf as _max_or_inf
-from utils.numerics import min_finite as _min_finite
 from utils.numerics import min_or_neg_inf as _min_or_neg_inf
-from utils.numerics import nan as _nan
 
 from .dtype import (
     _integral_type_of,
@@ -410,10 +406,10 @@ struct SIMD[dtype: DType, size: Int](
     alias MIN = Self(_min_or_neg_inf[dtype]())
     """Gets the minimum value for the SIMD value, potentially -inf."""
 
-    alias MAX_FINITE = Self(_max_finite[dtype]())
+    alias MAX_FINITE = Self(DType.max_finite[dtype]())
     """Returns the maximum finite value of SIMD value."""
 
-    alias MIN_FINITE = Self(_min_finite[dtype]())
+    alias MIN_FINITE = Self(DType.min_finite[dtype]())
     """Returns the minimum (lowest) finite value of SIMD value."""
 
     alias _Mask = SIMD[DType.bool, size]
@@ -3305,7 +3301,7 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
         return _powi(base, integral.cast[DType.int32]())
 
     if fractional and base < 0:
-        return _nan[base.dtype]()
+        return DType.nan[base.dtype]()
 
     return math.exp(exponent.cast[base.dtype]() * math.log(base))
 
@@ -3398,19 +3394,19 @@ fn _convert_float8_to_f32_scalar[
         @parameter
         if dtype is DType.float8_e4m3fn:
             if exp_mantissa == 0x7F:
-                result = _nan[result_dtype]()
+                result = DType.nan[result_dtype]()
         else:
             if exp_mantissa == 0x7C:
-                result = _inf[result_dtype]()
+                result = DType.inf[result_dtype]()
             elif exp_mantissa > 0x7C:
-                result = _nan[result_dtype]()
+                result = DType.nan[result_dtype]()
 
     result = FPUtils.set_sign(result, FPUtils.get_sign(x))
 
     @parameter
     if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
         if x_bits == 0x80:
-            result = _nan[result_dtype]()
+            result = DType.nan[result_dtype]()
 
     return result
 
@@ -3566,7 +3562,7 @@ fn _convert_f32_to_float8_scalar[
 
     var sticky_bit: Int32 = 0
 
-    if abs(x) >= Scalar[dtype](_max_finite[target]()):
+    if abs(x) >= Scalar[dtype](DType.max_finite[target]()):
         # satfinite
         return bitcast[target](sign | FP8_MAX_FLT)
     elif exp >= FP8_MIN_EXPONENT:
@@ -3757,7 +3753,7 @@ fn _f32_to_bfloat16[
     var bf16 = SIMD[DType.bfloat16, width](
         from_bits=bf16_bits.cast[DType.uint16]()
     )
-    return _isnan(f32).select(_nan[DType.bfloat16](), bf16)
+    return _isnan(f32).select(DType.nan[DType.bfloat16](), bf16)
 
 
 # ===----------------------------------------------------------------------=== #

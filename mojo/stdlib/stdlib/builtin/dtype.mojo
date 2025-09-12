@@ -1044,6 +1044,256 @@ struct DType(
         """
         return Self.get_dtype[T]() is not DType.invalid
 
+    # ===------------------------------------------------------------------=== #
+    # nan
+    # ===------------------------------------------------------------------=== #
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn nan[dtype: DType]() -> Scalar[dtype]:
+        """Gets a NaN value for the given dtype.
+
+        Constraints:
+            Can only be used for FP dtypes.
+
+        Parameters:
+            dtype: The value dtype.
+
+        Returns:
+            The NaN value of the given dtype.
+        """
+        constrained[
+            dtype.is_floating_point(),
+            "Only floating point dtypes support NaN.",
+        ]()
+
+        @parameter
+        if dtype is DType.float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
+            )
+        elif dtype is DType.float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`,
+            )
+        elif dtype is DType.float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
+            )
+        elif dtype is DType.float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
+            )
+        elif dtype is DType.bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
+            )
+        elif dtype is DType.float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
+            )
+        elif dtype is DType.float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
+            )
+        elif dtype is DType.float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
+            )
+        else:
+            constrained[False, "unsupported float type"]()
+            return {}
+
+    # ===------------------------------------------------------------------=== #
+    # inf
+    # ===------------------------------------------------------------------=== #
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn inf[dtype: DType]() -> Scalar[dtype]:
+        """Gets a +inf value for the given dtype.
+
+        Constraints:
+            Can only be used for FP dtypes.
+
+        Parameters:
+            dtype: The value dtype.
+
+        Returns:
+            The +inf value of the given dtype.
+        """
+        constrained[
+            dtype.is_floating_point(),
+            "Only floating point dtypes support +inf.",
+        ]()
+
+        @parameter
+        if dtype is DType.float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
+            )
+        elif dtype is DType.float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`,
+            )
+        elif dtype is DType.float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
+            )
+        elif dtype is DType.bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
+            )
+        elif dtype is DType.float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f16>`,
+            )
+        elif dtype is DType.float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
+            )
+        elif dtype is DType.float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
+            )
+        else:
+            constrained[False, "unsupported float type"]()
+            return {}
+
+    # ===------------------------------------------------------------------=== #
+    # neg_inf
+    # ===------------------------------------------------------------------=== #
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn neg_inf[dtype: DType]() -> Scalar[dtype]:
+        """Gets a -inf value for the given dtype.
+
+        Constraints:
+            Can only be used for FP dtypes.
+
+        Parameters:
+            dtype: The value dtype.
+
+        Returns:
+            The -inf value of the given dtype.
+        """
+        constrained[
+            dtype.is_floating_point(),
+            "Only floating point dtypes support -inf.",
+        ]()
+
+        @parameter
+        if dtype is DType.float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
+            )
+        elif dtype is DType.float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`,
+            )
+        elif dtype is DType.float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`,
+            )
+        elif dtype is DType.float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`,
+            )
+        elif dtype is DType.bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
+            )
+        elif dtype is DType.float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f16>`,
+            )
+        elif dtype is DType.float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
+            )
+        elif dtype is DType.float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
+            )
+        else:
+            constrained[False, "unsupported float type"]()
+            return {}
+
+    # ===------------------------------------------------------------------=== #
+    # max_finite
+    # ===------------------------------------------------------------------=== #
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn max_finite[dtype: DType]() -> Scalar[dtype]:
+        """Returns the maximum finite value of type.
+
+        Parameters:
+            dtype: The value dtype.
+
+        Returns:
+            The maximum representable value of the type. Does not include
+            infinity for floating-point types.
+        """
+
+        @parameter
+        if dtype.is_unsigned():
+            return ~Scalar[dtype](0)
+        elif dtype.is_integral():
+            return Scalar[dtype](
+                ~Scalar[_unsigned_integral_type_of[dtype]()](0) >> 1
+            )
+        elif dtype is DType.float8_e4m3fn:
+            return 448
+        elif dtype is DType.float8_e4m3fnuz:
+            return 240
+        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz):
+            return 57344
+        elif dtype is DType.float16:
+            return 65504
+        elif dtype is DType.bfloat16:
+            return 3.38953139e38
+        elif dtype is DType.float32:
+            return 3.40282346638528859812e38
+        elif dtype is DType.float64:
+            return 1.79769313486231570815e308
+        elif dtype is DType.bool:
+            return Scalar(True)._refine[dtype]()
+        else:
+            constrained[False, "max_finite() called on unsupported dtype"]()
+            return {}
+
+    # ===------------------------------------------------------------------=== #
+    # min_finite
+    # ===------------------------------------------------------------------=== #
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn min_finite[dtype: DType]() -> Scalar[dtype]:
+        """Returns the minimum (lowest) finite value of type.
+
+        Parameters:
+            dtype: The value dtype.
+
+        Returns:
+            The minimum representable value of the type. Does not include negative
+            infinity for floating-point types.
+        """
+
+        @parameter
+        if dtype.is_unsigned():
+            return 0
+        elif dtype.is_integral():
+            return -DType.max_finite[dtype]() - 1
+        elif dtype.is_floating_point():
+            return -DType.max_finite[dtype]()
+        elif dtype is DType.bool:
+            return Scalar(False)._refine[dtype]()
+        else:
+            constrained[False, "min_finite() called on unsupported dtype"]()
+            return {}
+
 
 # ===-------------------------------------------------------------------===#
 # integral_type_of
