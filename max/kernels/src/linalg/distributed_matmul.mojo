@@ -113,6 +113,7 @@ fn _matmul_allreduce_split_m[
     var n = c_temp_buffers[0].dim[1]()
     var k = b_buffers[0].dim[1]()
     var m_part = m // num_partitions
+    var res_m = m - m_part * num_partitions
     var length = m_part * n
 
     alias a_part_static_shape = DimList(Dim(), a_static_shape.get[1]())
@@ -131,6 +132,7 @@ fn _matmul_allreduce_split_m[
 
     # Overlap matmul with previous partition's allreduce
     for stage in range(num_partitions):
+        var curr_m = m_part + res_m if stage == num_partitions - 1 else m_part
 
         @parameter
         for i in range(ngpus):
@@ -138,19 +140,19 @@ fn _matmul_allreduce_split_m[
                 a_dtype, 2, MutableAnyOrigin, a_part_static_shape
             ](
                 a_buffers[i].data + stage * m_part * k,
-                DimList(m_part, k),
+                DimList(curr_m, k),
             )
             C_parts[i] = NDBuffer[
                 out_dtype, 2, MutableAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
-                DimList(m_part, n),
+                DimList(curr_m, n),
             )
             Out_parts[i] = NDBuffer[
                 out_dtype, 2, MutableAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
-                DimList(m_part, n),
+                DimList(curr_m, n),
             )
             if stage == 0:
                 _matmul_gpu[
