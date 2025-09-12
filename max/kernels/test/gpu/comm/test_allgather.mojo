@@ -223,4 +223,6 @@ def main() -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](ctx, lengths)
+        all_gather_test[DType.bfloat16, rank=1, ngpus=num_gpus](
+            ctx, materialize[lengths]()
+        )

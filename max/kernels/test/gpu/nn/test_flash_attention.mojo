@@ -368,7 +368,8 @@ fn test[
 
 fn test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
     var depths = [64, 128]
-    if info is H100 or info is B200:
+
+    if info is materialize[H100]() or info is materialize[B200]():
         depths.append(80)
     return depths^
 
@@ -508,6 +509,8 @@ fn test_decoding[
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
         ](1, 11, ctx, use_index_input=use_index_input)
+
+        @parameter
         if (
             not is_sm8(ctx.default_device_info)
             or num_partitions
