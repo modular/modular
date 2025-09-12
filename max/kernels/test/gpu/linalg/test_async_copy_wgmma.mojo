@@ -13,6 +13,7 @@
 
 from sys import align_of
 
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -263,9 +264,13 @@ def test_cpasync_wgmma[
 
     vendor_blas.matmul(
         ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
+        rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](c_ref.device_buffer()),
+        rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+            a.device_buffer[update=False]()
+        ),
+        rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+            b.device_buffer[update=False]()
+        ),
         c_row_major=True,
         transpose_b=transpose_b,
     )

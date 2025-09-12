@@ -766,9 +766,15 @@ def test_tma_umma[
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b_col_major.device_buffer[update=True](),
+            rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](
+                c_ref.device_buffer()
+            ),
+            rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+                a.device_buffer[update=False]()
+            ),
+            rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+                b_col_major.device_buffer[update=True]()
+            ),
             c_row_major=True,
             transpose_b=True,
         )
@@ -776,9 +782,15 @@ def test_tma_umma[
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b.device_buffer[update=False](),
+            rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](
+                c_ref.device_buffer()
+            ),
+            rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
+                a.device_buffer[update=False]()
+            ),
+            rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
+                b.device_buffer[update=False]()
+            ),
             c_row_major=True,
             transpose_b=transpose_b,
         )

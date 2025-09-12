@@ -13,6 +13,7 @@
 
 from sys import size_of
 
+from buffer import NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
@@ -148,7 +149,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -304,7 +307,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -503,7 +508,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
 
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        rebind[NDBuffer[DType.bfloat16, 2, MutableAnyOrigin]](
+            new_src.device_buffer()
+        ),
         template_tma_tensormap,
         subtensors_m,
         tensormaps,

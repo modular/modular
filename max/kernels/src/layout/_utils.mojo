@@ -156,18 +156,19 @@ struct ManagedLayoutTensor[
 
     fn device_buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, 2, MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
         @parameter
         if update:
             self._update_device()
 
-        constrained[layout.rank() == 2, "Only support exporting 2D NDBuffer."]()
+        var shape = IndexList[layout.rank()]()
 
-        M = self.runtime_layout.dim(0)
-        N = self.runtime_layout.dim(1)
+        @parameter
+        for r in range(layout.rank()):
+            shape[r] = self.runtime_layout.dim(r)
 
-        return NDBuffer[dtype, 2](
-            self.device_data.value()._unsafe_ptr(), (M, N)
+        return NDBuffer[dtype, layout.rank()](
+            self.device_data.value()._unsafe_ptr(), shape
         )
 
     fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
@@ -188,17 +189,20 @@ struct ManagedLayoutTensor[
 
     fn buffer[
         update: Bool = True
-    ](self) raises -> NDBuffer[dtype, 2, MutableAnyOrigin]:
+    ](self) raises -> NDBuffer[dtype, layout.rank(), MutableAnyOrigin]:
         @parameter
         if update:
             self._update_host()
 
-        constrained[layout.rank() == 2, "Only support exporting 2D NDBuffer."]()
+        var shape = IndexList[layout.rank()]()
 
-        M = self.runtime_layout.dim(0)
-        N = self.runtime_layout.dim(1)
+        @parameter
+        for r in range(layout.rank()):
+            shape[r] = self.runtime_layout.dim(r)
 
-        return NDBuffer[dtype, 2](self.host_data.unsafe_ptr(), (M, N))
+        return NDBuffer[dtype, layout.rank()](
+            self.host_data.unsafe_ptr(), shape
+        )
 
     fn _update_device(self) raises:
         if self.ctx.api() != "cpu":
