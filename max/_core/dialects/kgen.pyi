@@ -1543,7 +1543,7 @@ class ClosureMemoryKind(enum.Enum):
 
     nonescaping = 1
 
-    registerpassable = 2
+    trivial = 2
 
 class ClosureMethod(enum.Enum):
     call = 0
