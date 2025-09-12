@@ -553,7 +553,7 @@ fn gemv_gpu_dispatch[
                 )
             else:
                 # runtime transpose since layout_tensor.transpose requires static shape
-                alias b_alignment = b.alignment
+                alias b_alignment = b.alignment2
                 var aligned_b = b.data.static_alignment_cast[b_alignment]()
 
                 alias has_K = a.shape.has_value[1]()

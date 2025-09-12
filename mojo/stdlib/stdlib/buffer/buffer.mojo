@@ -230,7 +230,7 @@ struct NDBuffer[
     shape: DimList = DimList.create_unknown[rank](),
     strides: DimList = DimList.create_unknown[rank](),
     *,
-    alignment: Int = 1,
+    alignment2: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
 ](
@@ -254,7 +254,7 @@ struct NDBuffer[
         origin: The origin of the memory being addressed.
         shape: The static size (if known) of the buffer.
         strides: The strides (if known) of the buffer.
-        alignment: The preferred address alignment of the buffer.
+        alignment2: The preferred address alignment of the buffer.
         address_space: The address space of the buffer.
         exclusive: The underlying memory allocation of the tensor is known
             only to be accessible through this pointer.
@@ -365,7 +365,8 @@ struct NDBuffer[
 
         # We can only downgrade our alignment
         constrained[
-            other.alignment >= alignment and other.alignment % alignment == 0,
+            other.alignment2 >= alignment2
+            and other.alignment2 % alignment2 == 0,
             "cannot convert between buffers with incompatible alignments",
         ]()
 
@@ -609,7 +610,7 @@ struct NDBuffer[
         target_origin,
         shape,
         strides,
-        alignment=alignment,
+        alignment2=alignment2,
         address_space=address_space,
         exclusive=exclusive,
     ]:
@@ -995,7 +996,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=alignment,
+            alignment2=alignment2,
             address_space=address_space,
             exclusive=exclusive,
         ],
@@ -1019,7 +1020,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=alignment,
+            alignment2=alignment2,
             address_space=address_space,
             exclusive=exclusive,
         ],
@@ -1048,7 +1049,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=_alignment,
+            alignment2=_alignment,
             address_space=address_space,
             exclusive=exclusive,
         ],
@@ -1085,7 +1086,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=_alignment,
+            alignment2=_alignment,
             address_space=address_space,
             exclusive=exclusive,
         ],
@@ -1257,7 +1258,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=alignment,
+            alignment2=alignment2,
             address_space=address_space,
             exclusive=exclusive,
         ],
@@ -1309,7 +1310,7 @@ struct NDBuffer[
             _,
             shape=shape,
             strides=strides,
-            alignment=alignment,
+            alignment2=alignment2,
             address_space=address_space,
             exclusive=exclusive,
         ],

@@ -1316,18 +1316,9 @@ fn managed_tensor_slice_to_ndbuffer[
     MutableAnyOrigin,
     spec.shape,
     spec.strides,
-    alignment = spec.alignment,
+    alignment2 = spec.alignment,
     address_space = spec.address_space,
     exclusive = spec.exclusive,
 ]:
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return NDBuffer[
-        spec.dtype,
-        spec.rank,
-        _,
-        spec.shape,
-        spec.strides,
-        alignment = spec.alignment,
-        address_space = spec.address_space,
-        exclusive = spec.exclusive,
-    ](ptr, tensor.shape(), tensor._runtime_strides)
+    return {ptr, tensor.shape(), tensor._runtime_strides}

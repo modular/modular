@@ -28,7 +28,7 @@ fn managed_tensor_slice_to_ndbuffer[
     MutableAnyOrigin,
     spec.shape,
     spec.strides,
-    alignment = spec.alignment,
+    alignment2 = spec.alignment,
     address_space = spec.address_space,
     exclusive = spec.exclusive,
 ]:
@@ -40,7 +40,7 @@ fn managed_tensor_slice_to_ndbuffer[
         _,
         spec.shape,
         spec.strides,
-        alignment = spec.alignment,
+        alignment2 = spec.alignment,
         address_space = spec.address_space,
         exclusive = spec.exclusive,
     ](ptr, tensor.shape(), tensor._runtime_strides)
