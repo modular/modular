@@ -255,24 +255,6 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
     )
 
-    request_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
-    )
-
-    response_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
-    )
-
-    cancel_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose Cancel ZMQ Socket for communication between the API and Model Worker(s)",
-        alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
-    )
-
     kv_cache_events_zmq_endpoint: str = Field(
         default_factory=generate_zmq_ipc_path,
         description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
