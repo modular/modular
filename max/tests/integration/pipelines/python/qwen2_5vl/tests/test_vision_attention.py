@@ -13,8 +13,8 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
-    VisionWindowAttention,
+from max.pipelines.architectures.qwen2_5vl.nn.vision_attention import (
+    DistributedVisionWindowAttention,
 )
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
@@ -152,11 +152,13 @@ def generate_max_outputs(
     max_weights = convert_hf_to_max_weights(attention_weights)
 
     # Create the attention layer
-    attention = VisionWindowAttention(
+    attention = DistributedVisionWindowAttention(
         dtype=dtype,
-        device=device_ref,
-        dim=vision_config["hidden_size"],
+        devices=[device_ref],
+        hidden_size=vision_config["hidden_size"],
         n_heads=vision_config["num_heads"],
+        head_dim=vision_config["hidden_size"] // vision_config["num_heads"],
+        flash_attention=True,
     )
 
     # Load weights using state_dict
