@@ -483,3 +483,62 @@ fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
     # CHECK: lit.alias.decl *"b`1":
     # CHECK-SAME: <:i1 0, :origin<0> #lit.any.origin>), {{.*}} store_to_mem(val)))>
     alias b = f(val)
+
+
+
+# COM: Avoid copies when unnecessary
+
+@fieldwise_init
+struct MyDictEntry[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
+    var key: K
+    var value: V
+
+
+struct MyDict[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
+    var _entries: List[MyDictEntry[K, V]]
+
+    fn __getitem__(
+        ref self, key: K
+    ) raises -> ref [self._entries[0].value] Self.V:
+        ref entry = self._entries[0]
+        return entry.value
+
+    fn __setitem__(mut self, var key: K, var value: V):
+        pass
+
+
+@fieldwise_init
+struct Value(Copyable, Movable):
+    var max_width: Int
+
+# CHECK-LABEL: lit.fn @"entry
+def entry(mut value: MyDict[String, Value], name: String):
+    # CHECK: lit.call @{{.*}}::@MyDict::@"__getitem__
+    # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
+    # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
+    # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !Int = <{12}>
+    # CHECK-NEXT: lit.ref.store [[V3]], [[V2]]
+    value[name].max_width = 12
+
+
+struct MyLinkedList[T: Copyable & Movable](Copyable, Movable):
+    var value: UnsafePointer[T]
+
+    fn __init__(out self, var value: UnsafePointer[T]):
+        self.value = value
+
+    fn clear(mut self):
+        pass
+
+    fn __getitem__(ref self, idx: Int) -> ref [self] T:
+        return self.value[]
+
+    fn __setitem__(mut self, idx: Int, var value: T):
+        pass
+
+
+# CHECK: lit.fn @"entry
+fn entry(mut list: MyLinkedList[MyLinkedList[Int]]):
+    # CHECK: [[V0:%.*]] = lit.call @{{.*}}::@MyLinkedList::@"__getitem__
+    # CHECK-NEXT: lit.call @{{.*}}::@MyLinkedList::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
+    list[0].clear()
