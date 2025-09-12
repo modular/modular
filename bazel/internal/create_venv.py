@@ -37,8 +37,11 @@ def _write_pth(site_packages: Path, imports: list[str]) -> None:
 
 
 def _create_symlink(src: Path, dest: Path, overwrite: bool = False) -> None:
+    if overwrite:
+        dest.unlink(missing_ok=True)
+
     # NOTE: Ignore duplicate files that would end up in the same place. First one wins.
-    if dest.exists() and not overwrite:
+    if dest.exists():
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
