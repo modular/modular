@@ -946,6 +946,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       if (lv.getMValueType().isDefaultAddrSpace())
         return checkMValueAddrSpace(ref);
     }
+    // If dynamic but getter returns reference then we can omit the copy and
+    // writeback.
+    if (DLValue dlv = lv.getIfDLValue()) {
+      if (Value ref =
+              dlv->emitAsRefValueIfOwned(argValAndExpr.expr->getLoc(), emitter))
+        return checkMValueAddrSpace(MLValue(ref));
+    }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
