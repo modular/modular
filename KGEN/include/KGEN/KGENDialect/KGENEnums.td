@@ -307,7 +307,7 @@ def KGEN_ClosureMethod : I32EnumAttr<"ClosureMethod", "closure method", [
 def KGEN_ClosureMemoryKind : I32EnumAttr<"ClosureMemoryKind", "closure memory kind", [
   I32EnumAttrCase<"ESCAPING",  0, "escaping">,
   I32EnumAttrCase<"NONESCAPING", 1, "nonescaping">,
-  I32EnumAttrCase<"REGISTER_PASSABLE", 2, "registerpassable">,
+  I32EnumAttrCase<"TRIVIAL", 2, "trivial">,
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

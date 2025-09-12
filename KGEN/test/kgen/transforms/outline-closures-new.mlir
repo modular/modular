@@ -175,12 +175,12 @@ kgen.generator @thin() {
 // COM: Register passable closures (TODO: remove none params MOCO 1762)
 
 // CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, struct<(index)>> : !kgen.type
-#type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, !kgen.closure<@"foo", "fn" registerpassable>> : !kgen.type
+#type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn">>, !kgen.closure<@"foo", "fn" trivial>> : !kgen.type
 
-kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" registerpassable> {
+kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" trivial> {
   // CHECK: kgen.witness "__call__" : (!kgen.struct<(index)>, index) -> index = @foo_fn<:none CAPTURES>
   kgen.conformance @"closure_trait" {
-    kgen.witness "__call__" : (!kgen.closure<@"foo", "fn" registerpassable>, index) -> index = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
+    kgen.witness "__call__" : (!kgen.closure<@"foo", "fn" trivial>, index) -> index = #kgen.closure.symbol<@"foo", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"foo" "fn"> CAPTURES>>
   }
 }
 
@@ -207,8 +207,8 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>, %arg1: index) -> index {
 kgen.generator @foo(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
     kgen.return %arg0 : index
-  } : (index), !kgen.closure<@foo, "fn" registerpassable>
-  %2 = kgen.call @consume<:type #type_value>(%3, %arg0) : (!kgen.closure<@foo, "fn" registerpassable>, index) -> index
+  } : (index), !kgen.closure<@foo, "fn" trivial>
+  %2 = kgen.call @consume<:type #type_value>(%3, %arg0) : (!kgen.closure<@foo, "fn" trivial>, index) -> index
   kgen.return
 }
 
@@ -217,12 +217,12 @@ kgen.generator @foo(%arg0 : index) {
 // COM: Register Passable Thin closures (todo: MOCO 1702 and MOCO 1762)
 
 // CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, none> : !kgen.type
-#type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, !kgen.closure<@"thin", "fn" registerpassable>> : !kgen.type
+#type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, !kgen.closure<@"thin", "fn" trivial>> : !kgen.type
 
-kgen.struct.generator @"thin::fn"<CAPTURES: !kgen.param_closure<@"thin" "fn">> = !kgen.closure<@"thin", "fn" registerpassable> {
+kgen.struct.generator @"thin::fn"<CAPTURES: !kgen.param_closure<@"thin" "fn">> = !kgen.closure<@"thin", "fn" trivial> {
   // CHECK: kgen.witness "__call__" : (!kgen.none, index) -> index = @thin_fn<:none CAPTURES>
   kgen.conformance @"closure_trait" {
-    kgen.witness "__call__" : (!kgen.closure<@"thin", "fn" registerpassable>, index) -> index = #kgen.closure.symbol<@"thin", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"thin" "fn"> CAPTURES>>
+    kgen.witness "__call__" : (!kgen.closure<@"thin", "fn" trivial>, index) -> index = #kgen.closure.symbol<@"thin", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"thin" "fn"> CAPTURES>>
   }
 }
 
@@ -243,8 +243,8 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>) -> index {
 kgen.generator @thin() {
   %3 = kgen.closure.init()(%arg2: index) -> index {
     kgen.return %arg2 : index
-  } : (), !kgen.closure<@thin, "fn" registerpassable>
-  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.closure<@thin, "fn" registerpassable>) -> index
+  } : (), !kgen.closure<@thin, "fn" trivial>
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.closure<@thin, "fn" trivial>) -> index
   kgen.return
 }
 

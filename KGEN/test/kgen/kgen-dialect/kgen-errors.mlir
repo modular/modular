@@ -704,7 +704,7 @@ kgen.generator @closure_types(%arg0 : index) {
   // expected-error @+1 {{'kgen.closure.init' op expected escaping/nonescaping closure type if type is a pointer}}
   %0 = kgen.closure.init(%arg0)(%arg3: index) -> index {
 	  kgen.return %arg0 : index
-  } : (index), !kgen.pointer<!kgen.closure<@closure_types, "another_closure3" registerpassable>>
+  } : (index), !kgen.pointer<!kgen.closure<@closure_types, "another_closure3" trivial>>
   kgen.return
 }
 
