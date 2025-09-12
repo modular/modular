@@ -175,14 +175,34 @@ class FusedSamplingProcessor:
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
         tensor_bitmask = None
-        if self.bitmask is not None:
+        if (
+            self.bitmask is not None
+            and self.bitmask.shape[1] != self.vocab_size
+        ):
             assert self.vocab_size is not None
             bits = 2 ** np.arange(32, dtype=np.int32)
             self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
             self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
                 np.bool_
             )
-            self.bitmask = self.bitmask[:, 0 : self.vocab_size]
+
+            if logits.shape[1] > self.vocab_size:
+                if self.bitmask.shape[1] > logits.shape[1]:
+                    self.bitmask = self.bitmask[:, 0 : logits.shape[1]]
+                else:
+                    self.bitmask = self.bitmask[:, 0 : self.vocab_size]
+                    # Pad up to shape[:, logits.shape[1]] with zeros
+                    pad_width = logits.shape[1] - self.bitmask.shape[1]
+                    if pad_width > 0:
+                        self.bitmask = np.pad(
+                            self.bitmask,
+                            ((0, 0), (0, pad_width)),
+                            mode="constant",
+                            constant_values=False,
+                        )
+            else:
+                self.bitmask = self.bitmask[:, 0 : self.vocab_size]
+
             tensor_bitmask = Tensor.from_numpy(self.bitmask).to(self.device)
 
         new_tokens, new_generated_tokens, new_seed = _sample_logits(
@@ -353,7 +373,6 @@ def _sample_logits(
     presence_penalty: Tensor | None = None,
     repetition_penalty: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    base_inputs = [logits, prev_tokens]
     opt_inputs = [logit_offsets, bitmask]
 
     base_inputs = [
