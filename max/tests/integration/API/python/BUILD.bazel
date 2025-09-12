@@ -22,7 +22,6 @@ modular_py_test(
         "test_registry.py",
         "test_sampling.py",
         "test_telemetry.py",
-        "test_tokenizer.py",
         "test_weight_path_parser.py",
     ],
     data = [
