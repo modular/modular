@@ -9,13 +9,13 @@
 
 #include "mlir/Support/LogicalResult.h"
 
-namespace mlir::lsp {
+namespace llvm::lsp {
 class JSONTransport;
-} // namespace mlir::lsp
+} // namespace llvm::lsp
 
 namespace M::KGEN {
 /// Run the main loop using the given transport.
-mlir::LogicalResult runCompilationServer(mlir::lsp::JSONTransport &transport,
+mlir::LogicalResult runCompilationServer(llvm::lsp::JSONTransport &transport,
                                          bool singleThreaded);
 } // namespace M::KGEN
 

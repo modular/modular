@@ -7,7 +7,7 @@
 #include "Document.h"
 
 using namespace M;
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 
 Document::Document(StringRef uri, StringRef text) : contents(text) {
   if (llvm::Expected<lsp::URIForFile> uriOr = lsp::URIForFile::fromURI(uri))
@@ -36,7 +36,7 @@ std::optional<lsp::Position> Document::findLastPos(StringRef substr) const {
   return {};
 }
 
-std::optional<mlir::lsp::Range>
+std::optional<llvm::lsp::Range>
 Document::findFirstRange(StringRef substr) const {
   for (size_t line = 0, e = lines.size(); line < e; ++line) {
     if (lines[line].ends_with("# skip"))
@@ -49,8 +49,8 @@ Document::findFirstRange(StringRef substr) const {
   return {};
 }
 
-std::vector<mlir::lsp::Range> Document::findAllRanges(StringRef substr) const {
-  std::vector<mlir::lsp::Range> ranges;
+std::vector<llvm::lsp::Range> Document::findAllRanges(StringRef substr) const {
+  std::vector<llvm::lsp::Range> ranges;
   for (size_t line = 0, e = lines.size(); line < e; ++line) {
     if (lines[line].ends_with("# skip"))
       continue;
@@ -62,7 +62,7 @@ std::vector<mlir::lsp::Range> Document::findAllRanges(StringRef substr) const {
   return ranges;
 }
 
-std::optional<mlir::lsp::Range>
+std::optional<llvm::lsp::Range>
 Document::findLastRange(StringRef substr) const {
   if (lines.empty())
     return {};

@@ -35,13 +35,13 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
-#include "mlir/Tools/lsp-server-support/Logging.h"
-#include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/LSP/Logging.h"
+#include "llvm/Support/LSP/Protocol.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <optional>
 #include <random>
@@ -55,7 +55,7 @@
 #define LSPRESPONDER_SPAN(responder, name)
 #endif
 
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 using namespace M;
 using namespace M::Mojo::LSP;
 using namespace M::KGEN::LIT;
@@ -65,7 +65,7 @@ using llvm::SMRange;
 /// Returns a language server range from the given diagnostic.
 static lsp::Range getRangeFromDiag(llvm::SourceMgr &mgr,
                                    const llvm::SMDiagnostic &diag) {
-  lsp::Range range(mgr, lsp::convertTokenLocToRange(diag.getLoc()));
+  lsp::Range range(mgr, mlir::lsp::convertTokenLocToRange(diag.getLoc()));
   if (!diag.getRanges().empty()) {
     range.start.character = diag.getRanges()[0].first;
     range.end.character = diag.getRanges()[0].second;
@@ -435,12 +435,12 @@ namespace {
 
 class ProgressManager {
 public:
-  ProgressManager(mlir::lsp::MessageHandler &handler) {
+  ProgressManager(llvm::lsp::MessageHandler &handler) {
     // window/workDoneProgress/create is intended to return a null result on
     // success; we use optional<std::string> to represent that in C++. We don't
     // actually care about the body, just that the request comes back without
     // an error.
-    createTokenFn = handler.outgoingRequest<mlir::lsp::WorkDoneProgressParams,
+    createTokenFn = handler.outgoingRequest<llvm::lsp::WorkDoneProgressParams,
                                             std::optional<std::string>>(
         "window/workDoneProgress/create",
         [&](llvm::json::Value id,
@@ -467,10 +467,10 @@ public:
         });
 
     startProgressFn = handler.outgoingNotification<
-        mlir::lsp::ProgressParams<mlir::lsp::WorkDoneProgressBeginParams>>(
+        llvm::lsp::ProgressParams<llvm::lsp::WorkDoneProgressBeginParams>>(
         "$/progress");
     endProgressFn = handler.outgoingNotification<
-        mlir::lsp::ProgressParams<mlir::lsp::WorkDoneProgressEndParams>>(
+        llvm::lsp::ProgressParams<llvm::lsp::WorkDoneProgressEndParams>>(
         "$/progress");
   }
 
@@ -515,14 +515,14 @@ public:
           };
     }
 
-    createTokenFn(mlir::lsp::WorkDoneProgressParams{token}, token);
+    createTokenFn(llvm::lsp::WorkDoneProgressParams{token}, token);
   }
 
   void setEnabled(bool newEnabled) { enabled = newEnabled; }
 
 private:
-  SendProgressFn<mlir::lsp::WorkDoneProgressBeginParams> startProgressFn;
-  SendProgressFn<mlir::lsp::WorkDoneProgressEndParams> endProgressFn;
+  SendProgressFn<llvm::lsp::WorkDoneProgressBeginParams> startProgressFn;
+  SendProgressFn<llvm::lsp::WorkDoneProgressEndParams> endProgressFn;
 
   /// Generates a new progress token.
   std::string generateToken() {
@@ -540,7 +540,7 @@ private:
   llvm::StringMap<llvm::unique_function<void(LogicalResult)>> responders;
   std::mutex respondersMutex;
 
-  llvm::unique_function<void(const mlir::lsp::WorkDoneProgressParams &,
+  llvm::unique_function<void(const llvm::lsp::WorkDoneProgressParams &,
                              llvm::json::Value)>
       createTokenFn;
 
@@ -1473,7 +1473,7 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
 
 void MojoDocument::onHover(
     const lsp::URIForFile &uri, const lsp::Position &pos,
-    LSPResponder<std::optional<mlir::lsp::Hover>> responder) {
+    LSPResponder<std::optional<llvm::lsp::Hover>> responder) {
   startTaskAfterParsing(
       [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         LSPRESPONDER_SPAN(responder, "onHover");
@@ -1742,7 +1742,7 @@ lsp::SignatureHelp MojoDocument::onSignatureHelpSync(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 void MojoDocument::onRename(const lsp::URIForFile &uri,
-                            const mlir::lsp::Position &pos, StringRef newName,
+                            const llvm::lsp::Position &pos, StringRef newName,
                             LSPResponder<lsp::WorkspaceEdit> responder) {
   // Convert newName to a string now, because the string ref may be invalidated
   // by the time we process this request.
@@ -1782,7 +1782,7 @@ static bool isLocalVariable(const Symbol &symbol) {
   return false;
 }
 
-ErrorOr<std::vector<mlir::lsp::TextEdit>>
+ErrorOr<std::vector<llvm::lsp::TextEdit>>
 MojoDocument::onRenameSync(SMLoc loc, const std::string &newName) {
   SymbolRef *symbolRef = context->symbolIndex.getSymbolAt(loc);
   if (!symbolRef)
@@ -2304,14 +2304,14 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
 struct MojoServer::Impl {
   Impl(ContextRef ctx, bool waitOnShutdown,
-       mlir::lsp::MessageHandler &messageHandler,
+       llvm::lsp::MessageHandler &messageHandler,
        ArrayRef<std::string> includeDirs)
       : ctx(ctx.copy()),
         lspTelemetryContext(*ctx->get<M::Telemetry::TelemetryContext>()),
         waitOnShutdown(waitOnShutdown), messageHandler(messageHandler),
         sendDiagnosticsFn(
             messageHandler
-                .outgoingNotification<mlir::lsp::PublishDiagnosticsParams>(
+                .outgoingNotification<llvm::lsp::PublishDiagnosticsParams>(
                     "textDocument/publishDiagnostics")),
         progressMgr(messageHandler), includeDirs(includeDirs) {}
 
@@ -2369,7 +2369,7 @@ struct MojoServer::Impl {
   /// shutdown, and instead wait for them to complete.
   bool waitOnShutdown;
 
-  mlir::lsp::MessageHandler &messageHandler;
+  llvm::lsp::MessageHandler &messageHandler;
 
   /// The function used to send diagnostics to the client.
   SendDiagnosticsFn sendDiagnosticsFn;
@@ -2401,7 +2401,7 @@ MojoServer::MojoServer(MojoServer &&) = default;
 
 ErrorOr<MojoServer>
 MojoServer::create(bool singleThreaded, bool waitOnShutdown,
-                   mlir::lsp::MessageHandler &messageHandler,
+                   llvm::lsp::MessageHandler &messageHandler,
                    ArrayRef<std::string> includeDirs) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server",
@@ -2789,7 +2789,7 @@ void MojoServer::onFoldingRange(
 
 void MojoServer::onHover(
     const lsp::TextDocumentPositionParams &params,
-    LSPResponder<std::optional<mlir::lsp::Hover>> responder) {
+    LSPResponder<std::optional<llvm::lsp::Hover>> responder) {
   if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
     doc->onHover(params.textDocument.uri, params.position,
                  std::move(responder));

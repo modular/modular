@@ -12,9 +12,9 @@
 #include "mlir/Support/LogicalResult.h"
 #include <memory>
 
-namespace mlir::lsp {
+namespace llvm::lsp {
 class JSONTransport;
-} // namespace mlir::lsp
+} // namespace llvm::lsp
 
 namespace M::AsyncRT {
 class WorkQueue;
@@ -23,7 +23,7 @@ class WorkQueue;
 namespace M::KGEN::LIT {
 /// Run the main loop using the given transport.
 mlir::LogicalResult
-runMojoLSPServer(mlir::lsp::JSONTransport &transport, bool singleThreaded,
+runMojoLSPServer(llvm::lsp::JSONTransport &transport, bool singleThreaded,
                  bool waitOnShutdown, ArrayRef<std::string> includeDirs,
                  std::unique_ptr<KGEN::TraceProfiler> profiler);
 } // namespace M::KGEN::LIT

@@ -57,7 +57,7 @@ StringRef toLspSemanticTokenModifier(SemanticTokenModifier modifier);
 /// This class represents a highlighted token.
 struct SemanticToken {
   SemanticToken() : kind(SemanticTokenKind::kCount) {}
-  SemanticToken(SemanticTokenKind kind, mlir::lsp::Range range,
+  SemanticToken(SemanticTokenKind kind, llvm::lsp::Range range,
                 uint32_t modifiers = 0)
       : kind(kind), modifiers(modifiers), range(range) {}
 
@@ -77,25 +77,25 @@ struct SemanticToken {
   uint32_t modifiers = 0;
 
   /// The range of the token.
-  mlir::lsp::Range range;
+  llvm::lsp::Range range;
 };
 
 /// Convert the given tokens into LSP semantic tokens. LSP semantic tokens need
 /// to be constructed at the same time, because the position fields of an LSP
 /// token are relative to the previous token.
-std::vector<mlir::lsp::SemanticToken>
+std::vector<llvm::lsp::SemanticToken>
 toLspSemanticTokens(ArrayRef<SemanticToken> tokens);
 
 /// Convert the given LSP semantic tokens into the Mojo equivalent. We process
 /// all at once because the position fields of an LSP token are relative to the
 /// previous token.
 std::vector<SemanticToken>
-fromLspSemanticTokens(ArrayRef<mlir::lsp::SemanticToken> tokens);
+fromLspSemanticTokens(ArrayRef<llvm::lsp::SemanticToken> tokens);
 
 /// Compute the difference between the two sets of tokens.
-std::vector<mlir::lsp::SemanticTokensEdit>
-diffTokens(ArrayRef<mlir::lsp::SemanticToken> before,
-           ArrayRef<mlir::lsp::SemanticToken> after);
+std::vector<llvm::lsp::SemanticTokensEdit>
+diffTokens(ArrayRef<llvm::lsp::SemanticToken> before,
+           ArrayRef<llvm::lsp::SemanticToken> after);
 
 } // namespace M::Mojo::LSP
 

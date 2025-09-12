@@ -39,7 +39,7 @@ struct LSPServerStdioFiles {
 class LSPBatchClient {
 private:
   using DiagnosticHandler =
-      std::function<void(const std::vector<mlir::lsp::Diagnostic> &)>;
+      std::function<void(const std::vector<llvm::lsp::Diagnostic> &)>;
 
   /// Type-erasure class used to dispatch a response of an LSP request.
   class ResponseHandler {
@@ -103,12 +103,12 @@ public:
 
   /// notebookDocument/didChange
   LSPBatchClient &
-  notebookDidChange(const mlir::lsp::DidChangeNotebookDocumentParams &params);
+  notebookDidChange(const llvm::lsp::DidChangeNotebookDocumentParams &params);
 
   /// textDocument/definition
   LSPBatchClient &definition(
-      const Document &doc, const mlir::lsp::Position &position,
-      std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
+      const Document &doc, const llvm::lsp::Position &position,
+      std::function<void(const std::vector<llvm::lsp::Location> &)> callback);
 
   /// textDocument/semanticTokens/full
   LSPBatchClient &semanticTokensFull(
@@ -117,64 +117,64 @@ public:
 
   /// textDocument/signatureHelp
   LSPBatchClient &signatureHelp(
-      const Document &doc, const mlir::lsp::Position &position,
-      std::function<void(const mlir::lsp::SignatureHelp2 &)> callback);
+      const Document &doc, const llvm::lsp::Position &position,
+      std::function<void(const llvm::lsp::SignatureHelp2 &)> callback);
 
   /// testDocument/codeAction
   LSPBatchClient &codeAction(
-      const Document &doc, const mlir::lsp::Range &range,
-      std::initializer_list<mlir::lsp::Diagnostic> diags,
-      std::function<void(const std::vector<mlir::lsp::CodeAction> &)> callback);
+      const Document &doc, const llvm::lsp::Range &range,
+      std::initializer_list<llvm::lsp::Diagnostic> diags,
+      std::function<void(const std::vector<llvm::lsp::CodeAction> &)> callback);
 
   /// textDocument/hover
   LSPBatchClient &
-  hover(const Document &doc, const mlir::lsp::Position &position,
-        std::function<void(const mlir::lsp::Hover2 &)> callback);
+  hover(const Document &doc, const llvm::lsp::Position &position,
+        std::function<void(const llvm::lsp::Hover2 &)> callback);
 
   LSPBatchClient &hoverNullable(
-      const Document &doc, const mlir::lsp::Position &position,
-      std::function<void(const std::optional<mlir::lsp::Hover2> &)> callback);
+      const Document &doc, const llvm::lsp::Position &position,
+      std::function<void(const std::optional<llvm::lsp::Hover2> &)> callback);
 
   /// textDocument/rename
   LSPBatchClient &
-  rename(const Document &doc, const mlir::lsp::Position &position,
+  rename(const Document &doc, const llvm::lsp::Position &position,
          std::string newName,
-         std::function<void(const mlir::lsp::WorkspaceEdit &)> callback);
+         std::function<void(const llvm::lsp::WorkspaceEdit &)> callback);
 
   /// textDocument/rename (error variant)
   LSPBatchClient &
-  renameError(const Document &doc, const mlir::lsp::Position &position,
+  renameError(const Document &doc, const llvm::lsp::Position &position,
               std::string newName,
-              std::function<void(const mlir::lsp::LSPError2 &)> callback);
+              std::function<void(const llvm::lsp::LSPError2 &)> callback);
 
   /// textDocument/documentSymbol
   LSPBatchClient &documentSymbol(
       const Document &doc,
-      std::function<void(const std::vector<mlir::lsp::DocumentSymbol> &)>
+      std::function<void(const std::vector<llvm::lsp::DocumentSymbol> &)>
           callback);
 
   /// textDocument/references
   LSPBatchClient &references(
-      const Document &doc, const mlir::lsp::Position &pos,
+      const Document &doc, const llvm::lsp::Position &pos,
       bool includeDeclaration,
-      std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
+      std::function<void(const std::vector<llvm::lsp::Location> &)> callback);
 
   /// textDocument/foldingRange
   LSPBatchClient &
   foldingRange(const Document &doc,
-               std::function<void(const std::vector<mlir::lsp::FoldingRange> &)>
+               std::function<void(const std::vector<llvm::lsp::FoldingRange> &)>
                    callback);
 
   /// textDocument/completion
   LSPBatchClient &
-  completion(const Document &doc, const mlir::lsp::Position &position,
-             std::function<void(const mlir::lsp::CompletionList &)> callback);
+  completion(const Document &doc, const llvm::lsp::Position &position,
+             std::function<void(const llvm::lsp::CompletionList &)> callback);
 
   /// textDocument/diagnostic
   LSPBatchClient &onDiagnostics(const Document &doc, DiagnosticHandler handler);
 
   /// Dispatch a document update
-  LSPBatchClient &update(const Document &doc, const mlir::lsp::Range &range,
+  LSPBatchClient &update(const Document &doc, const llvm::lsp::Range &range,
                          std::string change);
 
   /// Actual `execute` logic.
