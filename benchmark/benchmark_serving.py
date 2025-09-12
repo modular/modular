@@ -1663,9 +1663,7 @@ def parse_args(
         description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
     )
 
-    if args is None:
-        return parser.parse_args()
-    return parser.parse_args(args)
+    return parser.parse_args(args=args)
 
 
 if __name__ == "__main__":
