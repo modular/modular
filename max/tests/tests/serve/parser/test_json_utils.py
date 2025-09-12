@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 import json
 
-from max.serve.router.json_utils import parse_json_from_text
+from max.serve.parser import parse_json_from_text
 
 
 def test_json_parsing() -> None:

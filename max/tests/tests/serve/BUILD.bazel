@@ -81,3 +81,20 @@ modular_py_test(
         requirement("pyzmq"),
     ],
 )
+
+modular_py_test(
+    name = "parser_tests",
+    srcs = glob(
+        [
+            "parser/*.py",
+        ],
+    ),
+    data = [],
+    env = {
+        "MAX_SERVE_DISABLE_TELEMETRY": "True",
+        "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
+    },
+    deps = [
+        "//SDK/lib/API/python/max/serve/parser",
+    ],
+)
