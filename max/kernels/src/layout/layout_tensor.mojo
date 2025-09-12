@@ -2175,7 +2175,7 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation[
-        *, alignment: Int = Self.alignment
+        *, stack_alignment: Int = Self.alignment
     ]() -> Self.StackTensorType:
         """Allocates stack memory for a `LayoutTensor` with a fully static
         layout.
@@ -2192,7 +2192,7 @@ struct LayoutTensor[
                 alignment.
 
         Parameters:
-            alignment: Memory alignment value for the allocation in bytes. Must
+             stack_alignment: Memory alignment value for the allocation in bytes. Must
                 be a multiple of the tensor's minimum required alignment.
                 Default is the tensor's natural alignment based on its data type
                 and layout.
@@ -2218,9 +2218,9 @@ struct LayoutTensor[
 
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
         constrained[
-            alignment % Self.alignment == 0,
+            stack_alignment % Self.alignment == 0,
             "Stack allocation alignment ",
-            String(alignment),
+            String(stack_alignment),
             " must be multiple of tensor alignment ",
             String(Self.alignment),
         ]()
@@ -2229,7 +2229,7 @@ struct LayoutTensor[
             stack_allocation[
                 layout.size() * element_layout.size(),
                 dtype,
-                alignment=alignment,
+                alignment=stack_alignment,
                 address_space=address_space,
             ]()
         )
@@ -3226,7 +3226,7 @@ struct LayoutTensor[
     @always_inline
     fn split[
         axis: Int = 0,
-        alignment: Int = 1,
+        split_alignment: Int = 1,
     ](self, count: Int, idx: Int) -> Self.DynamicSplitType[axis]:
         """Retrieve a specific partition of the tensor after splitting along a
         specified axis.
@@ -3247,7 +3247,7 @@ struct LayoutTensor[
         Parameters:
             axis: The axis along which to split the tensor. Defaults to 0 (first
                 dimension).
-            alignment: Memory alignment value for the partition size. Defaults
+            split_alignment: Memory alignment value for the partition size. Defaults
                 to 1.
 
         Args:
@@ -3294,7 +3294,7 @@ struct LayoutTensor[
         var runtime_shape = Self.DynamicSplitType[
             axis
         ].RuntimeLayoutType.ShapeType()
-        var axis_partition_dim = align_up(axis_dim // count, alignment)
+        var axis_partition_dim = align_up(axis_dim // count, split_alignment)
 
         @parameter
         for i in range(flatten_rank):

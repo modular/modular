@@ -1534,7 +1534,7 @@ fn mha_single_batch[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -1543,7 +1543,7 @@ fn mha_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -2238,7 +2238,7 @@ fn mha_single_batch_pipelined[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -2247,7 +2247,7 @@ fn mha_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0)
     )
 
@@ -3210,7 +3210,7 @@ fn mha_decoding_single_batch[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     # Note that
     # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
@@ -3225,7 +3225,7 @@ fn mha_decoding_single_batch[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
     )
 
@@ -3875,7 +3875,7 @@ fn mha_decoding_single_batch_pipelined[
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
-    ].stack_allocation[alignment=p_frag_align]()
+    ].stack_allocation[stack_alignment=p_frag_align]()
 
     var output_reg_tile = (
         LayoutTensor[
@@ -3884,7 +3884,7 @@ fn mha_decoding_single_batch_pipelined[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
-        .stack_allocation[alignment=p_frag_align]()
+        .stack_allocation[stack_alignment=p_frag_align]()
         .fill(0.0)
     )
 
