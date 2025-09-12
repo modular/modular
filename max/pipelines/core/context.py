@@ -156,6 +156,16 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
                 f"min_tokens ({self.min_tokens}) + prompt_len ({self._prompt_len}) must be less than or equal to max_length ({self.max_length})"
             )
 
+        if self.target_endpoint is not None:
+            if not self.target_endpoint.startswith(("tcp://", "ipc://")):
+                raise ValueError(
+                    f"target_endpoint must be prefixed with 'tcp://' or 'ipc://': {self.target_endpoint}"
+                )
+            if ":" not in self.target_endpoint.split("://")[-1]:
+                raise ValueError(
+                    f"target_endpoint must contain a port: {self.target_endpoint}"
+                )
+
         # Resize Data Up
         # Ensure the tokens array is at least self._size
         if self._end_idx < self._size:
