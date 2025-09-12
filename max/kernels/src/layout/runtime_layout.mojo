@@ -202,25 +202,24 @@ struct RuntimeLayout[
         element_type: DType,
         /,
         *,
-        linear_idx_type: DType = linear_idx_type,
-    ](
-        self,
-        out result: RuntimeLayout[
-            layout, element_type=element_type, linear_idx_type=linear_idx_type
-        ],
-    ):
+        target_linear_idx_type: DType = linear_idx_type,
+    ](self) -> RuntimeLayout[
+        layout,
+        element_type=element_type,
+        linear_idx_type=target_linear_idx_type,
+    ]:
         """Cast the layout to use a different element bitwidth.
 
         Parameters:
             element_type: The target data type.
-            linear_idx_type: The target linear idx type.
+            target_linear_idx_type: The target linear idx type.
 
         Returns:
             A new `RuntimeLayout` with the shape cast to the specified type.
         """
         return {
             self.shape.cast[element_type](),
-            self.stride.cast[linear_idx_type](),
+            self.stride.cast[target_linear_idx_type](),
         }
 
     @no_inline

@@ -612,7 +612,8 @@ struct LayoutTensorBuild[
         return {
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
-                    res.__layout_int_type, linear_idx_type = res.__index_type
+                    res.__layout_int_type,
+                    target_linear_idx_type = res.__index_type,
                 ]()
             )
         }
@@ -640,7 +641,8 @@ struct LayoutTensorBuild[
         return {
             rebind[__type_of(res.runtime_layout)](
                 self.runtime_layout.cast[
-                    res.__layout_int_type, linear_idx_type = res.__index_type
+                    res.__layout_int_type,
+                    target_linear_idx_type = res.__index_type,
                 ]()
             )
         }
@@ -710,7 +712,8 @@ struct LayoutTensorBuild[
             return {
                 ptr,
                 self.runtime_layout.cast[
-                    res.layout_int_type, linear_idx_type = res.linear_idx_type
+                    res.layout_int_type,
+                    target_linear_idx_type = res.linear_idx_type,
                 ](),
             }
 
@@ -733,7 +736,7 @@ struct LayoutTensorBuild[
         """
         return {
             self.runtime_layout.cast[
-                res.__layout_int_type, linear_idx_type = res.__index_type
+                res.__layout_int_type, target_linear_idx_type = res.__index_type
             ]()
         }
 

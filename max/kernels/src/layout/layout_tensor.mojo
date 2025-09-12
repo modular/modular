@@ -458,7 +458,7 @@ struct LayoutTensor[
 
         self.ptr = span.unsafe_ptr()
         self.runtime_layout = runtime_layout.cast[
-            layout_int_type, linear_idx_type=linear_idx_type
+            layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
         self.runtime_element_layout = {}
 
@@ -494,10 +494,10 @@ struct LayoutTensor[
 
         self.ptr = span.unsafe_ptr()
         self.runtime_layout = runtime_layout.cast[
-            layout_int_type, linear_idx_type=linear_idx_type
+            layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
         self.runtime_element_layout = element_runtime_layout.cast[
-            DType.int32, linear_idx_type=linear_idx_type
+            DType.int32, target_linear_idx_type=linear_idx_type
         ]()
 
     @always_inline
@@ -559,7 +559,7 @@ struct LayoutTensor[
 
         self.ptr = ptr
         self.runtime_layout = runtime_layout.cast[
-            layout_int_type, linear_idx_type=linear_idx_type
+            layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
         self.runtime_element_layout = {}
 
@@ -587,10 +587,10 @@ struct LayoutTensor[
 
         self.ptr = ptr
         self.runtime_layout = runtime_layout.cast[
-            layout_int_type, linear_idx_type=linear_idx_type
+            layout_int_type, target_linear_idx_type=linear_idx_type
         ]()
         self.runtime_element_layout = element_runtime_layout.cast[
-            DType.int32, linear_idx_type=linear_idx_type
+            DType.int32, target_linear_idx_type=linear_idx_type
         ]()
 
     alias GenericLayoutTensorType = LayoutTensor[
