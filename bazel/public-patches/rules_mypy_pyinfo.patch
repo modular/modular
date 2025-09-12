@@ -1,0 +1,22 @@
+diff --git a/mypy/private/mypy.bzl b/mypy/private/mypy.bzl
+index 54dd825..a44e7c3 100644
+--- a/mypy/private/mypy.bzl
++++ b/mypy/private/mypy.bzl
+@@ -31,8 +31,6 @@ def _extract_import_dir(import_):
+ def _imports(target):
+     if RulesPythonPyInfo in target:
+         return target[RulesPythonPyInfo].imports.to_list()
+-    elif PyInfo in target:
+-        return target[PyInfo].imports.to_list()
+     else:
+         return []
+ 
+@@ -69,7 +67,7 @@ def _mypy_impl(target, ctx):
+     if target.label.workspace_root != "":
+         return []
+ 
+-    if RulesPythonPyInfo not in target and PyInfo not in target:
++    if RulesPythonPyInfo not in target:
+         return []
+ 
+     # disable if a target is tagged with at least one suppression tag

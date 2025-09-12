@@ -74,6 +74,8 @@ single_version_override(
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
+        # https://github.com/bazel-contrib/rules_mypy/pull/118
+        "//bazel/public-patches:rules_mypy_pyinfo.patch",
     ],
 )
 
@@ -86,19 +88,13 @@ single_version_override(
     ],
 )
 
+# TODO: Remove once >0.8.0 is out
 archive_override(
     module_name = "rules_pycross",
-    integrity = "sha256-DnwyjQfpS9MRtk5Uh8UbPHvbXnbs38ciht55/pJRFZE=",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/jvolkman/rules_pycross/pull/176
-        "//bazel/public-patches:rules_pycross_watch.patch",
-        # https://github.com/jvolkman/rules_pycross/pull/181
-        "//bazel/public-patches:rules_pycross_shebang.patch",
-    ],
-    strip_prefix = "rules_pycross-b4707803848b06ae264247bcba15ddf3ef4008e2",
+    integrity = "sha256-80I/HQ37qIGF7o632GMRKV7PK4/wpEvBGQyXJsnKkPo=",
+    strip_prefix = "rules_pycross-1d8bdc0e0a48ce338c0de8122c952af841d40d2d",
     urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/b4707803848b06ae264247bcba15ddf3ef4008e2.tar.gz",
+        "https://github.com/jvolkman/rules_pycross/archive/1d8bdc0e0a48ce338c0de8122c952af841d40d2d.tar.gz",
     ],
 )
 
@@ -170,6 +166,8 @@ single_version_override(
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
+        # https://github.com/grpc/grpc/pull/40687
+        "//bazel/public-patches:grpc-rules-python.patch",
     ],
     version = "1.73.1",
 )
