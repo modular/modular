@@ -1,7 +1,7 @@
 # ========================================
 # MAX Encode Examples
 # ========================================
-# 
+#
 # This file demonstrates how to use MAX encode with custom prompts.
 # Users can pass custom text or use the default prompt.
 #
@@ -27,11 +27,11 @@ version = "0.1.0"
 
 # Default encode - accepts custom prompt or uses default
 [tasks.encode]
-cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model-path roberta-base --prompt "${1:-An example sentence for embedding.}"', '--']
+cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model roberta-base --prompt "${1:-An example sentence for embedding.}"', '--']
 
 # Large model encode - more accurate embeddings
 [tasks.encode-large]
-cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model-path roberta-large --prompt "${1:-An example sentence for embedding.}"', '--']
+cmd = ['bash', '-c', 'max encode --custom-architectures roberta --model roberta-large --prompt "${1:-An example sentence for embedding.}"', '--']
 
 # ========================================
 # UTILITY TASKS

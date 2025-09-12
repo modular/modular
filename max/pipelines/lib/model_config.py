@@ -227,7 +227,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if len(self.weight_path) == 0:
             if self.model_path == "":
                 raise ValueError(
-                    "model-path must be provided and must be a valid Hugging Face repository"
+                    "model must be provided and must be a valid Hugging Face repository"
                 )
             elif not os.path.exists(os.path.expanduser(self.model_path)):
                 # Check if the model_path is a valid HuggingFace repository

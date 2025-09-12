@@ -35,7 +35,7 @@ API compatible serving endpoint.
 A full invocation within an environment with MAX installed looks like:
 
 ```sh
-python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model-path=Qwen/Qwen2.5-0.5B-Instruct
+python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model Qwen/Qwen2.5-0.5B-Instruct
 ```
 
 For more information, see the [Serve custom model

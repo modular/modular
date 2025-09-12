@@ -19,7 +19,7 @@ set -euo pipefail
 # - cc_binary: //KGEN/tools/mojo -- -h
 # - cc_test: //KGEN/unittests
 # - cc_test's underlying cc_binary: //KGEN/unittests:unittests.debug
-# - py_binary: //SDK/lib/API/python/max/entrypoints:pipelines -- generate --model-path modularai/Llama-3.1-8B-Instruct-GGUF --prompt "I believe the meaning of life is" --max-new-tokens 8 --max-batch-size 4 --cache-strategy=continuous --quantization-encoding float32
+# - py_binary: //SDK/lib/API/python/max/entrypoints:pipelines -- generate --model modularai/Llama-3.1-8B-Instruct-GGUF --prompt "I believe the meaning of life is" --max-new-tokens 8 --max-batch-size 4 --cache-strategy=continuous --quantization-encoding float32
 # - py_test: Support/python:unittests
 # - mojo_binary: Kernels/test/gpu-query
 # - mojo_test: open-source/max/mojo/stdlib/test:builtin/test_math.mojo.test

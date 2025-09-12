@@ -168,7 +168,7 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @click.option(
         "--served-model-name",
         type=str,
-        help="Model name used in HTTP API. If unspecified, the model name is equal to --model-path",
+        help="Model name used in HTTP API. If unspecified, the model name is equal to --model",
     )
     @click.option(
         "--sim-failure",

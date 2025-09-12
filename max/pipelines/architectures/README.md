@@ -80,7 +80,7 @@ Test your custom architecture locally using the `--custom-architectures` flag:
 
 ```bash
 max serve \
-  --model-path your-org/your-model-name \
+  --model your-org/your-model-name \
   --custom-architectures path/to/your/architecture
 ```
 

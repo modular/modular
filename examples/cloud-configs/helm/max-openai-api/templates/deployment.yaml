@@ -74,7 +74,7 @@ spec:
           args: {{- toYaml .Values.inferenceServer.args | nindent 12 }}
           {{- else }}
           args: [
-            "--model-path={{ .Values.maxServe.huggingfaceRepoId }}",
+            "--model={{ .Values.maxServe.huggingfaceRepoId }}",
             "--max-length={{ .Values.maxServe.maxLength }}",
             "--max-batch-size={{ .Values.maxServe.maxBatchSize }}",
             "--cache-strategy={{ .Values.maxServe.cacheStrategy }}",

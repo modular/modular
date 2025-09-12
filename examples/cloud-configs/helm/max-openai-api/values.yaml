@@ -150,7 +150,7 @@ inferenceServer:
   # -- Arguments to pass to the node entrypoint. If defined it overwrites the default args value set by .Values.max-serve
   # @default -- See `values.yaml`
   args: []
-  # - "--model-path=modularai/Llama-3.1-8B-Instruct-GGUF",
+  # - "--model=modularai/Llama-3.1-8B-Instruct-GGUF",
   # - "--max-length=2048",
   # - "--max-batch-size=250",
   # - "--cache-strategy=paged",

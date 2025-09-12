@@ -71,10 +71,10 @@ pip install modular --index-url https://dl.modular.com/public/nightly/python/sim
 pixi global install -c conda-forge -c https://conda.modular.com/max-nightly
 
 # Start OpenAI-compatible server
-max serve --model-path=modularai/Llama-3.1-8B-Instruct-GGUF
+max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
 
 # Run with Docker
-docker run --gpus=1 -p 8000:8000 docker.modular.com/modular/max-nvidia-full:latest --model-path modularai/Llama-3.1-8B-Instruct-GGUF
+docker run --gpus=1 -p 8000:8000 docker.modular.com/modular/max-nvidia-full:latest --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
 ## High-Level Architecture

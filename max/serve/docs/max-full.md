@@ -32,7 +32,7 @@ docker run \
   # MAX configs
   -p 8000:8000 \
   modular/max-full:<version> \
-  --model-path <model-provider/model-id>
+  --model <model-provider/model-id>
 ```
 
 For more information on AMD-specific command configurations, see [Running ROCm Docker containers](https://rocm.docs.amd.com/projects/install-on-linux/en/docs-6.1.1/how-to/docker.html#running-rocm-docker-containers).
@@ -49,7 +49,7 @@ docker run \
   # MAX configs
   -p 8000:8000 \
   modular/max-full:<version> \
-  --model-path <model-provider/model-id>
+  --model <model-provider/model-id>
 ```
 
 You can run a [MAX model](https://builds.modular.com/?category=models&type=MAX+Model) by referencing its HuggingFace model ID. For example, [`google/gemma-3-1b-it`](https://builds.modular.com/models/gemma-3-it/1B).

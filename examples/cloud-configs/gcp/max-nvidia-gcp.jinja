@@ -96,7 +96,7 @@ resources:
             -p 80:8000 \
             --ipc host \
             modular/max-nvidia-full:latest \
-            --model-path {{ properties['huggingFaceRepoId'] }}
+            --model {{ properties['huggingFaceRepoId'] }}
 
 # Add firewall rule directly in template
 - name: allow-http

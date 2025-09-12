@@ -21,7 +21,7 @@ docker run \
   --env "HF_TOKEN=<secret>" \
   -p 8000:8000 \
   modular/max-nvidia-full:<version> \
-  --model-path <model-provider/model-id>
+  --model <model-provider/model-id>
 ```
 
 You can run a [MAX-optimized model⁠](https://huggingface.co/modularai)⁠ by referencing its Hugging Face model ID. For example, `modularai/Llama-3.1-8B-Instruct-GGUF`
