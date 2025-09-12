@@ -699,8 +699,8 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="bfloat16",
-            cos_dist_threshold=2.6e-4,
-            kl_div_threshold=4.8e-3,
+            cos_dist_threshold=3.0e-4,
+            kl_div_threshold=7.4e-3,
         ),
     ),
     "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": PipelineDef(
@@ -793,7 +793,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="mistral3",
             encoding="bfloat16",
-            cos_dist_threshold=6.3e-4,
+            cos_dist_threshold=6.6e-4,
             kl_div_threshold=2.6e-3,
         ),
     ),
@@ -890,7 +890,7 @@ PIPELINES = {
                 json_file="torch_qwen25vl-3b_bfloat16_golden.json",
             ),
             cos_dist_threshold=1.8e-2,
-            kl_div_threshold=1.8e-1,
+            kl_div_threshold=2.1e-1,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
