@@ -772,6 +772,7 @@ fn log_shape[
         "_" if has_mode_2 else "",
         mode_2,
         ")",
+        sep="",
     )
 
 

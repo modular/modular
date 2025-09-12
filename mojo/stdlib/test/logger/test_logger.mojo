@@ -71,9 +71,20 @@ fn test_log_with_location():
     log.trace("hello")
 
 
+# CHECK-LABEL: Test logging with sep/end
+fn test_log_with_sep_end():
+    print("=== Test logging with sep/end")
+
+    var log = Logger[Level.TRACE]()
+
+    # CHECK: hello mojo world!!!
+    log.trace("hello", "world", sep=" mojo ", end="!!!\n")
+
+
 def main():
     test_log_trace()
     test_log_info()
     test_log_noset()
     test_log_with_prefix()
     test_log_with_location()
+    test_log_with_sep_end()

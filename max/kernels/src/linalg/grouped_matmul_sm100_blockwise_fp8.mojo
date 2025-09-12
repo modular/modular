@@ -566,7 +566,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     logger.info("Max tokens per expert: ", max_num_tokens_per_expert)
     logger.info("Number of active experts: ", num_active_experts)
     logger.info(
-        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]"
+        "A Scales Shape: [", a_scales.dim(0), ", ", a_scales.dim(1), "]", sep=""
     )
     logger.info(
         "B Scales Shape: [",
@@ -576,6 +576,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         ", ",
         b_scales.dim(2),
         "]",
+        sep="",
     )
 
     # LayoutTensors are already in the right format for TMA operations

@@ -2162,9 +2162,9 @@ fn warp_specialize_gemm_with_multicasting[
     var logger = Logger()
 
     logger.info("Executing Warp Specialized Gemm with Multicasting")
-    logger.info("block_tile_shape: ", config.block_tile_shape)
-    logger.info("cluster_shape: ", config.cluster_shape)
-    logger.info("mma_shape: ", config.mma_shape)
+    logger.info("block_tile_shape:", config.block_tile_shape)
+    logger.info("cluster_shape:", config.cluster_shape)
+    logger.info("mma_shape:", config.mma_shape)
 
     @parameter
     if schedule == MatmulSchedule.DS_SCHEDULER:

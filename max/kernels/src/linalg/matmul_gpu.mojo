@@ -370,11 +370,15 @@ fn _matmul_gpu[
 
     var logger = Logger()
     logger.info("---- MATMUL GPU execution started ----")
-    logger.info("MxNxK: ", m, "x", n, "x", k)
+    logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
     logger.info("Device: ", ctx.name())
     logger.info(
-        "Transpose B: ", transpose_b, " Use Tensor Core: ", use_tensor_core
+        "Transpose B: ",
+        transpose_b,
+        " Use Tensor Core: ",
+        use_tensor_core,
+        sep="",
     )
 
     alias matmul_supported_format_nvidia = (
@@ -1155,7 +1159,7 @@ fn multistage_gemm[
 
     var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
-    logger.info(String(config))
+    logger.info(config)
 
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
@@ -1245,8 +1249,8 @@ fn multistage_gemm[
 
     var logger = Logger()
     logger.info("------ Dispatching to Multistage GEMM ------")
-    logger.info(String(config))
-    logger.info("K partitions: ", runtime_config.num_k_partitions)
+    logger.info(config)
+    logger.info("K partitions:", runtime_config.num_k_partitions)
 
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)

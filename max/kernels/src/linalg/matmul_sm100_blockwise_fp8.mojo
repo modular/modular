@@ -709,20 +709,17 @@ fn matmul_sm100_blockwise_scaled_fp8[
         "Executing Basic 1D2D Blockwise Scaled FP8 GEMM (BLOCK_SCALE_SIZE ="
         " 128)"
     )
-    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]")
+    logger.info("Problem Shape: MNK=[", M, ", ", N, ", ", K, "]", sep="")
     logger.info(
         "A Scales Shape: [",
         a_scales_3D.dim(1),
         ", ",
         a_scales_3D.dim(2),
         "]",
+        sep="",
     )
     logger.info(
-        "B Scales Shape: [",
-        b_scales.dim(0),
-        ", ",
-        b_scales.dim(1),
-        "]",
+        "B Scales Shape: [", b_scales.dim(0), ", ", b_scales.dim(1), "]", sep=""
     )
 
     var a_tma_op = create_tma_tile[
