@@ -465,8 +465,10 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # and bypass Click's argument processing
     # args = ctx.params.get("args", [])
 
-    from benchmark_serving import main as benchmark_main
-    from benchmark_serving import parse_args as benchmark_parse_args
+    from max.benchmark.benchmark_serving import main as benchmark_main
+    from max.benchmark.benchmark_serving import (
+        parse_args as benchmark_parse_args,
+    )
 
     # Default to serving_config.yaml in the benchmark directory for now.
     # Based on how we're packaging our benchmark/ in max, this should be the correct path.
