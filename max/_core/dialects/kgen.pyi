@@ -79,7 +79,10 @@ class GeneratorMetadataAttrInterface(Protocol):
         /,
     ) -> GeneratorMetadataAttrInterface: ...
     def prepend_pos_params_from_ops(
-        self, arg: Sequence[max._core.Operation], /
+        self,
+        arg0: Sequence[ParamDeclAttr],
+        arg1: Sequence[max._core.Operation],
+        /,
     ) -> GeneratorMetadataAttrInterface: ...
 
 class IndexRefAttrInterface(Protocol):
