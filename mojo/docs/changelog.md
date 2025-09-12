@@ -161,7 +161,7 @@ language across multiple phases.
 ### Standard library changes
 
 - `Iterable`'s `origin` parameter is now named `iterable_origin`
-  to avoid naming collisions.
+  and its `mut` param is now named `iterator_mut` to avoid naming collisions.
 
 - `zip` and `enumerate` are now builtins.
 
