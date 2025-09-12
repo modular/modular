@@ -195,7 +195,7 @@ class TextTokenizer(
                 "- The model is not fully supported by the transformers python package\n"
                 "- Required configuration files are missing\n"
                 "- The model path is incorrect\n"
-                "- '--trust_remote_code=True' is needed but not set\n"
+                "- '--trust-remote-code' is needed but not set\n"
             )
             raise ValueError(msg) from e
 
