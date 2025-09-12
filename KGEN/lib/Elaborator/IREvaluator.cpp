@@ -429,20 +429,6 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
   return simplified;
 }
 
-static TypedAttr implicitConversion(Attribute stored, Type desired) {
-  if (!stored)
-    return {};
-
-  if (auto integerValue = dyn_cast<mlir::IntegerAttr>(stored)) {
-    if (auto desiredStringType = dyn_cast<StringType>(desired)) {
-      SmallString<32> strValue;
-      integerValue.getValue().toString(strValue, /*Radix=*/10, /*Signed=*/true);
-      return StringAttr::get(strValue, desiredStringType);
-    }
-  }
-  return {};
-}
-
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // Grab the module from the elaborator. This is a read operation of memory
   // that is not modified during elaboration, so no synchronization is needed.
@@ -454,37 +440,14 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
 
   // Get the `StringRef` out of the `StringAttr` because the latter comes with
   // a `StringType` type that makes pointer comparisons fails.
-  Attribute value = elaborator->env.getValues().get(name.getValue());
-  if (isa<IndexType, StringType>(op.getType()) && !value) {
-    emitError({*errorLoc, "define '" + name.getValue() +
-                              "' does not exist, please provide it via -D"});
+  ErrorOr<TypedAttr> result =
+      elaborator->env.queryValue(name.getValue(), op.getType());
+  if (result.isError()) {
+    emitError({*errorLoc, result.getError()});
     return failure();
   }
 
-  if (isa<IndexType>(op.getType())) {
-    if (auto intVal = dyn_cast<IntegerAttr>(value))
-      return {intVal};
-    emitError({*errorLoc, "define '" + name.getValue() +
-                              "' is not an integer, got " +
-                              mlir::debugString(value)});
-    return failure();
-  }
-
-  if (isa<StringType>(op.getType())) {
-    if (auto strVal = dyn_cast<StringAttr>(value))
-      return {strVal};
-    if (TypedAttr stringAttr = implicitConversion(value, op.getType()))
-      return {stringAttr};
-    emitError({*errorLoc, "define '" + name.getValue() +
-                              "' is not a string, got " +
-                              mlir::debugString(value)});
-    return failure();
-  }
-
-  // This must be an `i1` type. Return true or false based on whether the
-  // environment variable is present.
-  assert(cast<IntegerType>(op.getType()).isSignlessInteger(1));
-  return {BoolAttr::get(op.getContext(), static_cast<bool>(value))};
+  return result.get();
 }
 
 static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
