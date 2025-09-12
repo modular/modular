@@ -583,7 +583,7 @@ def calculate_metrics(
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
     gpu_metrics: dict[str, Any],
-    ttft_skip_requests: int,
+    skip_first_n_requests: int,
     max_concurrency: Optional[int],
     collect_gpu_stats: bool,
 ) -> tuple[BenchmarkMetrics, list[int]]:
@@ -608,36 +608,40 @@ def calculate_metrics(
         if outputs[i].cancelled:
             continue
         if outputs[i].success:
+            completed += 1
             # We use the tokenizer to count the number of output tokens for all
             # serving backends instead of looking at len(outputs[i].itl) since
             # multiple output tokens may be bundled together
             # Note : this may inflate the output token count slightly
+            total_input += outputs[i].prompt_len
             output_len = compute_output_len(tokenizer, outputs[i])
             actual_output_lens.append(output_len)
             nonempty_response_chunks += 1 if outputs[i].ttft != 0 else 0
             nonempty_response_chunks += len(outputs[i].itl)
 
-            total_input += outputs[i].prompt_len
+            max_input = max(max_input, outputs[i].prompt_len)
+            max_output = max(max_output, output_len)
+            max_total = max(max_total, outputs[i].prompt_len + output_len)
+
+            # We only skip these requests for client experience metrics like
+            # TTFT, ITL, TPOT, E2E. They are still considered for overall token
+            # counts and throughputs.
+            if i < skip_first_n_requests:
+                continue
+
             if output_len > 1:
                 tpots.append(
                     (outputs[i].latency - outputs[i].ttft) / (output_len - 1)
                 )
             itls += outputs[i].itl
-            if i >= ttft_skip_requests:
-                ttfts.append(outputs[i].ttft)
-                # Input throughput is fully calculated once we reach the first output token.
-                input_throughputs.append(
-                    outputs[i].prompt_len / outputs[i].ttft
-                )
-                # output throughput ignores the first token.
-                # It is just timing for the chain of output tokens.
-                output_throughputs.append(
-                    (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
-                )
-            completed += 1
-            max_input = max(max_input, outputs[i].prompt_len)
-            max_output = max(max_output, output_len)
-            max_total = max(max_total, outputs[i].prompt_len + output_len)
+            ttfts.append(outputs[i].ttft)
+            # Input throughput is fully calculated once we reach the first output token.
+            input_throughputs.append(outputs[i].prompt_len / outputs[i].ttft)
+            # output throughput ignores the first token.
+            # It is just timing for the chain of output tokens.
+            output_throughputs.append(
+                (output_len - 1) / (outputs[i].latency - outputs[i].ttft)
+            )
             latencies.append(outputs[i].latency)
         else:
             actual_output_lens.append(0)
@@ -846,7 +850,7 @@ async def benchmark(
     max_requests: int,
     num_chat_sessions: Optional[int],
     delay_between_chat_turns: Optional[int],
-    ttft_skip_requests: int,
+    skip_first_n_requests: int,
     max_output_len: Optional[int],
     temperature: float,
     top_p: float,
@@ -855,11 +859,11 @@ async def benchmark(
     ignore_first_turn_stats: bool = False,
     timing_data: Optional[dict[str, list[float]]] = None,
 ):
-    if ignore_first_turn_stats and ttft_skip_requests:
+    if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
-            "--ignore-first-turn-stats and --ttft-skip-requests both set. Ignoring --ttft-skip-requests due to first turn in each chat already being ignored."
+            "--ignore-first-turn-stats and --skip-first-n-requests both set. Ignoring --skip-first-n-requests due to first turn in each chat already being ignored."
         )
-        ttft_skip_requests = 0
+        skip_first_n_requests = 0
 
     full_backend = backend + ("-chat" if chat else "")
     if full_backend in ASYNC_REQUEST_FUNCS:
@@ -1048,7 +1052,7 @@ async def benchmark(
                     chat_session,
                     tokenizer.model_max_length,
                     delay_between_chat_turns,
-                    ttft_skip_requests,
+                    skip_first_n_requests,
                     ignore_first_turn_stats,
                 )
             async with semaphore:
@@ -1061,7 +1065,7 @@ async def benchmark(
                     chat_session,
                     tokenizer.model_max_length,
                     delay_between_chat_turns,
-                    ttft_skip_requests,
+                    skip_first_n_requests,
                     ignore_first_turn_stats,
                 )
 
@@ -1110,7 +1114,7 @@ async def benchmark(
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
         gpu_metrics=gpu_metrics,
-        ttft_skip_requests=ttft_skip_requests,
+        skip_first_n_requests=skip_first_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
     )
@@ -1499,7 +1503,7 @@ def main(args: argparse.Namespace) -> None:
             max_requests=args.num_prompts,
             num_chat_sessions=args.num_chat_sessions,
             delay_between_chat_turns=args.delay_between_chat_turns,
-            ttft_skip_requests=args.ttft_skip_requests,
+            skip_first_n_requests=args.skip_first_n_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
             top_p=args.top_p,
