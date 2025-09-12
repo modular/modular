@@ -106,3 +106,100 @@ def test_msgpack_numpy_decoder_pickle_preserves_parameters():
         # Verify internal parameters are preserved
         assert unpickled_decoder._type == type_
         assert unpickled_decoder._copy == copy
+
+
+def test_msgpack_numpy_encoder_pickle_serialization():
+    """Test that MsgpackNumpyEncoder can be pickled and unpickled successfully."""
+    # Create test data with a numpy array
+    original_array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+    test_data = SampleData(array=original_array, value=42)
+
+    # Create an encoder
+    original_encoder = msgpack_numpy_encoder()
+
+    # Test that the original encoder works
+    encoded_original = original_encoder(test_data)
+    assert len(encoded_original) > 0
+
+    # Pickle and unpickle the encoder
+    pickled_encoder = pickle.dumps(original_encoder)
+    unpickled_encoder = pickle.loads(pickled_encoder)
+
+    # Test that the unpickled encoder still works
+    encoded_unpickled = unpickled_encoder(test_data)
+    assert len(encoded_unpickled) > 0
+
+    # Verify both encoders produce identical results
+    assert encoded_original == encoded_unpickled
+
+    # Verify the encoded data can be decoded correctly
+    decoder = msgpack_numpy_decoder(SampleData, copy=True)
+    decoded_original = decoder(encoded_original)
+    decoded_unpickled = decoder(encoded_unpickled)
+
+    assert isinstance(decoded_original, SampleData)
+    assert isinstance(decoded_unpickled, SampleData)
+    assert np.array_equal(decoded_original.array, original_array)
+    assert np.array_equal(decoded_unpickled.array, original_array)
+    assert decoded_original.value == decoded_unpickled.value == 42
+
+
+def test_msgpack_numpy_encoder_pickle_with_shared_memory():
+    """Test pickling encoder with shared memory parameters."""
+    # Create test data
+    original_array = np.array([1, 2, 3, 4, 5], dtype=np.int64)
+    test_data = SampleData(array=original_array, value=123)
+
+    # Create an encoder with shared memory enabled
+    original_encoder = msgpack_numpy_encoder(
+        use_shared_memory=True, shared_memory_threshold=1000
+    )
+
+    # Pickle and unpickle the encoder
+    pickled_encoder = pickle.dumps(original_encoder)
+    unpickled_encoder = pickle.loads(pickled_encoder)
+
+    # Test both encoders
+    encoded_original = original_encoder(test_data)
+    encoded_unpickled = unpickled_encoder(test_data)
+
+    # Verify results are identical
+    assert encoded_original == encoded_unpickled
+
+    # Verify the encoded data can be decoded correctly
+    decoder = msgpack_numpy_decoder(SampleData, copy=True)
+    decoded_original = decoder(encoded_original)
+    decoded_unpickled = decoder(encoded_unpickled)
+
+    assert np.array_equal(decoded_original.array, original_array)
+    assert np.array_equal(decoded_unpickled.array, original_array)
+    assert decoded_original.value == decoded_unpickled.value == 123
+
+
+def test_msgpack_numpy_encoder_pickle_preserves_parameters():
+    """Test that pickling preserves encoder parameters correctly."""
+    # Test different parameter combinations
+    test_cases = [
+        (False, 0),
+        (True, 1000),
+        (False, 5000),
+        (True, 0),
+    ]
+
+    for use_shared_memory, shared_memory_threshold in test_cases:
+        # Create encoder with specific parameters
+        original_encoder = msgpack_numpy_encoder(
+            use_shared_memory=use_shared_memory,
+            shared_memory_threshold=shared_memory_threshold,
+        )
+
+        # Pickle and unpickle
+        pickled_encoder = pickle.dumps(original_encoder)
+        unpickled_encoder = pickle.loads(pickled_encoder)
+
+        # Verify internal parameters are preserved
+        assert unpickled_encoder._use_shared_memory == use_shared_memory
+        assert (
+            unpickled_encoder._shared_memory_threshold
+            == shared_memory_threshold
+        )
