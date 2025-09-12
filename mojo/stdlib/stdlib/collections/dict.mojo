@@ -1241,7 +1241,9 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__(self, key: Self.key_type) raises -> V:
+    fn __getitem__(
+        ref self, key: Self.key_type
+    ) raises -> ref [self._dict[key]] Self.V:
         """Retrieve a value out of the keyword dictionary.
 
         Args:
@@ -1253,17 +1255,17 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         Raises:
             "KeyError" if the key isn't present.
         """
-        return self._dict[key].copy()
+        return self._dict[key]
 
     @always_inline
-    fn __setitem__(mut self, key: Self.key_type, value: V):
+    fn __setitem__(mut self, key: Self.key_type, var value: V):
         """Set a value in the keyword dictionary by key.
 
         Args:
             key: The key to associate with the specified value.
             value: The data to store in the dictionary.
         """
-        self._dict[key] = value.copy()
+        self._dict[key] = value^
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
