@@ -61,8 +61,19 @@ fn test_log_with_prefix():
     log.trace("hello")
 
 
+# CHECK-LABEL: Test logging with location
+fn test_log_with_location():
+    print("=== Test logging with location")
+
+    alias log = Logger[Level.TRACE](prefix="", source_location=True)
+
+    # CHECK: test_logger.mojo:71:14] hello
+    log.trace("hello")
+
+
 def main():
     test_log_trace()
     test_log_info()
     test_log_noset()
     test_log_with_prefix()
+    test_log_with_location()

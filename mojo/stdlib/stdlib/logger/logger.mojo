@@ -41,6 +41,7 @@ import sys
 from os import abort
 from sys.param_env import env_get_string
 from io.write import _WriteBufferStack
+from builtin._location import __call_location, _SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
@@ -241,18 +242,25 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
     var _fd: FileDescriptor
     var _prefix: String
+    var _source_location: Bool
 
     fn __init__(
-        out self, fd: FileDescriptor = sys.stdout, *, prefix: String = ""
+        out self,
+        fd: FileDescriptor = sys.stdout,
+        *,
+        prefix: String = "",
+        source_location: Bool = False,
     ):
         """Initializes a new Logger.
 
         Args:
             fd: The file descriptor to write log messages to (defaults to stdout).
             prefix: The prefix to prepend to each log message (defaults to an empty string).
+            source_location: Whether to include the source location in the log message (defaults to False).
         """
         self._fd = fd
         self._prefix = prefix
+        self._source_location = source_location
 
     @always_inline
     @staticmethod
@@ -271,6 +279,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             return True
         return level > target_level
 
+    @always_inline
     fn trace[*Ts: Writable](self, *values: *Ts):
         """Logs a trace message.
 
@@ -284,8 +293,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
+    @always_inline
     fn debug[*Ts: Writable](self, *values: *Ts):
         """Logs a debug message.
 
@@ -299,8 +309,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
+    @always_inline
     fn info[*Ts: Writable](self, *values: *Ts):
         """Logs an info message.
 
@@ -314,8 +325,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
+    @always_inline
     fn warning[*Ts: Writable](self, *values: *Ts):
         """Logs a warning message.
 
@@ -329,8 +341,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
+    @always_inline
     fn error[*Ts: Writable](self, *values: *Ts):
         """Logs an error message.
 
@@ -344,8 +357,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
+    @always_inline
     fn critical[*Ts: Writable](self, *values: *Ts):
         """Logs a critical message and aborts execution.
 
@@ -359,13 +373,18 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         @parameter
         if not Self._is_disabled[target_level]():
-            self._write_out[target_level](values)
+            self._write_out[target_level](values, location=__call_location())
 
         abort()
 
     fn _write_out[
         level: Level
-    ](self, values: VariadicPack[element_trait=Writable]):
+    ](
+        self,
+        values: VariadicPack[element_trait=Writable],
+        *,
+        location: _SourceLocation,
+    ):
         var file = self._fd
         var buffer = _WriteBufferStack(file)
 
@@ -373,6 +392,9 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             buffer.write(self._prefix)
         else:
             buffer.write(level, "::: ")
+
+        if self._source_location:
+            buffer.write("[", location, "] ")
 
         alias length = values.__len__()
 
