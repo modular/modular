@@ -22,10 +22,7 @@ from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import Device, DLPackArray, Tensor
 from max.profiler import traced
-from mojo.paths import (
-    _build_mojo_source_package,
-    is_mojo_source_package_path,
-)
+from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
@@ -224,7 +221,7 @@ class PdlLevel(IntEnum):
 
 
 class AssertLevel(str, Enum):
-    """Internal use."""
+    """The AssertLevel specifies the assert level used by the Mojo Ops."""
 
     NONE = "none"
     WARN = "warn"
@@ -233,9 +230,10 @@ class AssertLevel(str, Enum):
 
 
 class LogLevel(str, Enum):
-    """Internal use."""
+    """The LogLevel specifies the log level used by the Mojo Ops."""
 
     NOTSET = "notset"
+    TRACE = "trace"
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
