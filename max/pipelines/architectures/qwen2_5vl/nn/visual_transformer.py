@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -30,16 +29,16 @@ from max.graph import (
 )
 from max.nn import (
     MLP,
+    Allreduce,
     LayerList,
     Linear,
     RMSNorm,
     Shardable,
 )
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module
 
 from ..model_config import VisionConfig
+from .vision_attention import DistributedVisionWindowAttention
 
 
 class VisionPatchEmbed(Module, Shardable):
@@ -274,130 +273,8 @@ class VisionRotaryEmbedding(Module):
         raise NotImplementedError
 
 
-class VisionWindowAttention(Module):
-    """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL."""
-
-    def __init__(
-        self,
-        dtype: DType,
-        device: DeviceRef,
-        dim: int,
-        n_heads: int,
-        flash_attention: bool = False,
-    ):
-        super().__init__()
-        self.dim = dim
-        self.n_heads = n_heads
-        self.head_dim = dim // n_heads
-        # Add explicit scaling factor like PyTorch implementation
-        self.scaling = math.sqrt(1.0 / self.head_dim)
-        self.flash_attention = flash_attention
-
-        # Create Linear layers using constructor pattern
-        self.qkv = Linear(
-            in_dim=dim,
-            out_dim=dim * 3,  # Q, K, V projections
-            dtype=dtype,
-            device=device,
-            has_bias=True,
-        )
-
-        self.proj = Linear(
-            in_dim=dim,
-            out_dim=dim,
-            dtype=dtype,
-            device=device,
-            has_bias=True,
-        )
-
-    @staticmethod
-    def apply_rotary_pos_emb_vision(
-        q: TensorValue, k: TensorValue, cos: TensorValue, sin: TensorValue
-    ) -> tuple[TensorValue, TensorValue]:
-        def _rotate_half(x: TensorValue) -> TensorValue:
-            """Rotates half the hidden dims of the input."""
-            head_dim = x.shape[-1]
-            half_dim = head_dim // 2
-            x1 = x[..., :half_dim]
-            x2 = x[..., half_dim:]
-            return ops.concat((-x2, x1), -1)
-
-        orig_q_dtype = q.dtype
-        orig_k_dtype = k.dtype
-        q, k = ops.cast(q, DType.float32), ops.cast(k, DType.float32)
-        cos, sin = (
-            ops.cast(ops.unsqueeze(cos, -2), DType.float32),
-            ops.cast(ops.unsqueeze(sin, -2), DType.float32),
-        )
-        q_embed = (q * cos) + (_rotate_half(q) * sin)
-        k_embed = (k * cos) + (_rotate_half(k) * sin)
-        q_embed = ops.cast(q_embed, orig_q_dtype)
-        k_embed = ops.cast(k_embed, orig_k_dtype)
-        return q_embed, k_embed
-
-    def __call__(
-        self,
-        x: TensorValue,
-        position_embeddings: tuple[TensorValue, TensorValue],
-        input_row_offsets: TensorValue,
-        max_seqlen: TensorValue,
-    ) -> TensorValue:
-        """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
-            1. Linear Projections Q, K, V
-            2. Apply Rotary position embeddings on the Linear Projections Q, and K
-            3. Scaled dot product attention
-            4. Final Linear projection layer
-
-        Args:
-            x: Input tensor of shape (seq_len, hidden_size)
-            position_embeddings: Tuple of (cos, sin) tensors for rotary embeddings
-            input_row_offsets: Tensor of shape [window_size + 1] with dtype uint32.
-                Indicates where each window starts and ends in the ragged tensors.
-                The values should be a prefix sum (cumulative sum) of window lengths.
-            max_seqlen: Maximum window length for flash attention.
-
-        Returns:
-            The output of applying sliding window attention on input `x` using `attention_mask`.
-            It applies rotary position embeddings `position_embeddings` in the process.
-
-        Shapes:
-            Input:
-                x: (seq_len, hidden_size)
-                position_embeddings: tuple of 2 tensors of shape (seq_len, head_dim)
-                input_row_offsets: (window_size + 1)
-                max_seqlen: (1)
-            Output:
-                - tensor: (seq_len, hidden_size)
-        """
-        seq_length = x.shape[0]
-        qkv = (
-            self.qkv(x)
-            .reshape([seq_length, 3, self.n_heads, -1])
-            .permute([1, 0, 2, 3])
-        )
-        # Split qkv into a tuple of tensors along the first dim: q, k, v. Equivalent to qkv.unbind(0)
-        xq, xk, xv = qkv[0], qkv[1], qkv[2]
-        cos, sin = position_embeddings
-        xq, xk = VisionWindowAttention.apply_rotary_pos_emb_vision(
-            xq, xk, cos, sin
-        )
-
-        attn_output = flash_attention_ragged_gpu(
-            xq,
-            xk,
-            xv,
-            input_row_offsets=input_row_offsets,
-            max_seq_len=max_seqlen,
-            mask_variant=MHAMaskVariant.NULL_MASK,
-            scale=self.scaling,
-        )
-        attn_output = attn_output.reshape((seq_length, -1))
-        attn_output = self.proj(attn_output)
-        return attn_output
-
-
 class VisionBlock(Module):
-    """Vision transformer block with attention and MLP."""
+    """Vision transformer block with distributed attention and MLP."""
 
     def __init__(
         self,
@@ -410,14 +287,20 @@ class VisionBlock(Module):
     ):
         super().__init__()
         self.devices = devices
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
 
-        # Create RMSNorm layers
+        # Norms replicated across devices
         self.norm1 = RMSNorm(
             dim=hidden_size,
             dtype=dtype,
             eps=rms_norm_eps,
             multiply_before_cast=False,
         )
+        self.norm1.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        self.norm1_shards = self.norm1.shard(self.devices)
 
         self.norm2 = RMSNorm(
             dim=hidden_size,
@@ -425,44 +308,89 @@ class VisionBlock(Module):
             eps=rms_norm_eps,
             multiply_before_cast=False,
         )
-
-        # Create attention layer
-        self.attn = VisionWindowAttention(
-            dtype=dtype,
-            device=devices[0],
-            dim=hidden_size,
-            n_heads=num_heads,
+        self.norm2.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
         )
+        self.norm2_shards = self.norm2.shard(self.devices)
 
-        # Create MLP layer with multi-GPU support
+        # Distributed attention (tensor-parallel)
+        head_dim = hidden_size // num_heads
+        self.attn = DistributedVisionWindowAttention(
+            dtype=dtype,
+            hidden_size=hidden_size,
+            n_heads=num_heads,
+            head_dim=head_dim,
+            devices=self.devices,
+            flash_attention=True,
+        )
+        self.attn.sharding_strategy = ShardingStrategy.stacked_qkv(
+            len(self.devices), num_heads, head_dim
+        )
+        self.attn_shards = self.attn.shard(self.devices)
+
+        # MLP tensor-parallel with allreduce
         self.mlp = MLP(
             dtype=dtype,
             quantization_encoding=None,
             hidden_dim=hidden_size,
             feed_forward_length=intermediate_size,
-            devices=[self.devices[0]],
+            devices=self.devices,
             has_bias=True,
         )
+        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+            len(self.devices)
+        )
+        self.mlp_shards = self.mlp.shard(self.devices)
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def __call__(
         self,
-        x: TensorValue,
-        position_embeddings: tuple[TensorValue, TensorValue],
-        input_row_offsets: TensorValue,
-        max_seqlen: TensorValue,
+        xs: Sequence[TensorValue],
+        position_embeddings: list[tuple[TensorValue, TensorValue]],
+        input_row_offsets: Sequence[TensorValue],
+        max_seqlen: Sequence[TensorValue],
         signal_buffers: list[BufferValue],
-    ) -> TensorValue:
-        h = x + self.attn(
-            self.norm1(x),
-            position_embeddings=position_embeddings,
-            input_row_offsets=input_row_offsets,
-            max_seqlen=max_seqlen,
-        )
-        h = h + self.mlp(self.norm2(h))
-        return h
+    ) -> list[TensorValue]:
+        # Norm 1
+        norm1_outs = [norm(x) for norm, x in zip(self.norm1_shards, xs)]
+
+        # Attention per device (ragged)
+        attn_outs = [
+            attn(
+                norm_out,
+                position_embeddings=pos_embs,
+                input_row_offsets=row_offsets,
+                max_seqlen=mx,
+            )
+            for attn, norm_out, pos_embs, row_offsets, mx in zip(
+                self.attn_shards,
+                norm1_outs,
+                position_embeddings,
+                input_row_offsets,
+                max_seqlen,
+            )
+        ]
+        # Allreduce attention outputs
+        attn_outs = self.allreduce(attn_outs, signal_buffers)
+
+        # Residual add
+        hs = [x + a for x, a in zip(xs, attn_outs)]
+
+        # Norm 2
+        norm2_outs = [norm(h) for norm, h in zip(self.norm2_shards, hs)]
+
+        # MLP per device
+        mlp_outs = [
+            mlp(norm_out) for mlp, norm_out in zip(self.mlp_shards, norm2_outs)
+        ]
+        mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+
+        # Residual add
+        outs = [h + m for h, m in zip(hs, mlp_outs)]
+        return outs
 
 
-class PatchMerger(Module):
+class PatchMerger(Module, Shardable):
     """Group spatially adjacent sets of four patch features then concatenate and
     pass through a two-layer multi-layer perceptron (MLP) to project them into a
     dimension that aligns with the text embeddings used in the LLM.
@@ -477,6 +405,9 @@ class PatchMerger(Module):
         spatial_merge_size: int,
     ):
         super().__init__()
+        self.dtype = dtype
+        self.hidden_size = hidden_size
+        self.spatial_merge_size = spatial_merge_size
         self.input_dim = hidden_size * (spatial_merge_size**2)
         self.spatial_merge_unit = spatial_merge_size * spatial_merge_size
         self.out_hidden_size = out_hidden_size
@@ -503,6 +434,57 @@ class PatchMerger(Module):
             device=devices[0],
             has_bias=True,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self.linear1.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        if strategy.is_replicate:
+            # Replicate all weights across devices
+            self.norm.weight.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+            self.linear1.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+            self.linear2.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+        else:
+            # Tensor parallel: first linear rowwise, second linear columnwise
+            self.norm.weight.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+            self.linear1.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.linear2.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[PatchMerger]:
+        # Shard underlying weights
+        norm_weight_shards = self.norm.weight.shard(devices)
+        linear1_shards = self.linear1.shard(devices)
+        linear2_shards = self.linear2.shard(devices)
+
+        shards: list[PatchMerger] = []
+        for idx, device in enumerate(devices):
+            sharded = PatchMerger(
+                dtype=self.dtype,
+                devices=[device],
+                hidden_size=self.hidden_size,
+                out_hidden_size=self.out_hidden_size,
+                spatial_merge_size=self.spatial_merge_size,
+            )
+            # Assign shards
+            sharded.norm.weight = norm_weight_shards[idx]
+            sharded.linear1 = linear1_shards[idx]
+            sharded.linear2 = linear2_shards[idx]
+            shards.append(sharded)
+        return shards
 
     def __call__(
         self, x: TensorValue, signal_buffers: Sequence[BufferValue]
@@ -616,6 +598,12 @@ class VisionTransformer(Module):
             out_hidden_size=config.out_hidden_size,
             spatial_merge_size=config.spatial_merge_size,
         )
+        # Use tensor parallel for merger: rowwise -> gelu -> columnwise, then allreduce
+        self.merger.sharding_strategy = ShardingStrategy.tensor_parallel(
+            len(self.devices)
+        )
+        self.merger_shards = self.merger.shard(self.devices)
+        self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def __call__(
         self,
@@ -671,26 +659,33 @@ class VisionTransformer(Module):
         seq_len = hs[0].shape[0]
 
         # Compute rotary positional encodings to input patches ordered by window_index.
-        position_embeddings = self.rotary_pos_emb.generate_rot_pos_embeddings(
-            rot_pos_ids[0],
-            window_index[0],
-            self.spatial_merge_unit,
-            max_grid_size[0],
-            seq_len,
+        position_embeddings_host = (
+            self.rotary_pos_emb.generate_rot_pos_embeddings(
+                rot_pos_ids[0],
+                window_index[0],
+                self.spatial_merge_unit,
+                max_grid_size[0],
+                seq_len,
+            )
         )
-
-        h = hs[0]
+        position_embeddings = [
+            (
+                position_embeddings_host[0].to(device),
+                position_embeddings_host[1].to(device),
+            )
+            for device in self.devices
+        ]
 
         # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
         for layer_num, blk in enumerate(self.blocks):
             if layer_num in self.fullatt_block_indexes:
-                input_row_offsets = cu_seqlens[0]
-                seqlen = max_seqlen[0]
+                input_row_offsets = cu_seqlens
+                seqlen = max_seqlen
             else:
-                input_row_offsets = cu_window_seqlens[0]
-                seqlen = max_window_seqlen[0]
-            h = blk(
-                h,
+                input_row_offsets = cu_window_seqlens
+                seqlen = max_window_seqlen
+            hs = blk(
+                hs,
                 position_embeddings=position_embeddings,
                 input_row_offsets=input_row_offsets,
                 max_seqlen=seqlen,
@@ -698,10 +693,18 @@ class VisionTransformer(Module):
             )
 
         # The merged features are projected via a linear layer to align with the language model's embedding space.
-        h = self.merger(h, signal_buffers=signal_buffers)
+        # Apply per-device merger, then concatenate back in original order
+        merged = [
+            merger(h, signal_buffers=signal_buffers)
+            for merger, h in zip(self.merger_shards, hs)
+        ]
+        merged = self.merger_allreduce(merged, signal_buffers)
 
         # Re-order path embeddings (hidden_states) back to its original order before windowing.
         # TODO(GEX-1863): Implement ops.argsort
-        reverse_indices = ops.argsort(window_index[0])
-        h = ops.gather(h, reverse_indices, axis=0)
-        return [h.to(dev) for dev in self.devices]
+        outputs: list[TensorValue] = []
+        for i in range(len(self.devices)):
+            reverse_indices = ops.argsort(window_index[i])
+            out_i = ops.gather(merged[i], reverse_indices, axis=0)
+            outputs.append(out_i.to(self.devices[i]))
+        return outputs
