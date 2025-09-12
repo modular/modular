@@ -216,3 +216,14 @@ fn foldable_requires_2[x: Int, y: Int]()
 fn foldable_requires_1[x: Int]()
     requires x, "x must be True":
         pass
+
+
+# CHECK-LABEL: lit.fn @"foldable_requires_passthru
+fn foldable_requires_passthru[a: Int, b: Int]()
+    requires a > 10
+    requires b < 1, "b must be less than 1"
+    requires b, "b must be truthy"
+    requires a, "a must be truthy":
+        foldable_requires_2[b, a]()
+        foldable_requires_1[a]()
+        foldable_requires_1[b]()

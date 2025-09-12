@@ -89,6 +89,23 @@ ASTDecl::getTraitConformanceLineage(bool createIfMissing) {
   return traitConformanceLineage.get();
 }
 
+void ASTDecl::getKnownAssumptionsIncludingParents(
+    SmallVectorImpl<ConstraintAttr> &assumptions) const {
+  const ASTDecl *decl = this;
+  while (decl) {
+    if (decl->knownAssumptions)
+      assumptions.append(decl->knownAssumptions->begin(),
+                         decl->knownAssumptions->end());
+    decl = decl->getParentDecl();
+  }
+}
+
+void ASTDecl::insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions) {
+  if (!knownAssumptions)
+    knownAssumptions.reset(new llvm::SetVector<ConstraintAttr>());
+  knownAssumptions->insert(assumptions.begin(), assumptions.end());
+}
+
 /// Return the nearest parameter scope (i.e. DeclInterface) for the given decl,
 /// as well as the total depth from the nearest file module.
 static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(

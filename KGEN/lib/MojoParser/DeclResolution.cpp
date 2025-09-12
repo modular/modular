@@ -1296,6 +1296,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (!signature)
     return failure();
 
+  decl.insertKnownAssumptions(tcSignature.paramList.constraints);
+
   /// configure FnOp
 
   // The implicitOriginDecls don't affect the signature, but they do get
