@@ -22,6 +22,7 @@ import queue
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
@@ -52,15 +53,14 @@ from max.interfaces import (
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
+from max.serve.parser import LlamaToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
-from max.serve.router.json_utils import parse_json_from_text
 from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
     ChatCompletionStreamOptions,
     ChatCompletionStreamResponseDelta,
@@ -181,6 +181,7 @@ async def get_pipeline(
     return pipeline
 
 
+@dataclass
 class OpenAIChatResponseGenerator(
     OpenAIResponseGenerator[CreateChatCompletionResponse]
 ):
@@ -188,9 +189,11 @@ class OpenAIChatResponseGenerator(
         self,
         pipeline: TokenGeneratorPipeline[InputContext],
         stream_options: ChatCompletionStreamOptions | None = None,
+        parser: LlamaToolParser = field(default_factory=LlamaToolParser),
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
+        self.parser = parser
 
     async def stream(self, request: TextGenerationRequest):
         self.logger.debug("Streaming: Start: %s", request)
@@ -321,38 +324,20 @@ class OpenAIChatResponseGenerator(
                 response_message = response_message[:idx]
 
             response_choices: list[Choice1] = []
-            if tool_use:
-                # Try to parse and handle tool calls if tool_use is enabled
-                tool_calls_resp = self._parse_resp_to_json(response_message)
-
-                if tool_calls_resp:
-                    tool_calls: list[ChatCompletionMessageToolCall] = []
-                    for tool_data in tool_calls_resp:
-                        self._handle_tool_calls_response(tool_data, tool_calls)
-
-                    response_choices.append(
-                        Choice1(
-                            index=0,
-                            message=ChatCompletionResponseMessage(
-                                content="",
-                                role="assistant",
-                                tool_calls=ChatCompletionMessageToolCalls(
-                                    root=tool_calls
-                                ),
-                                function_call=None,
-                                refusal=None,
-                            ),
-                            finish_reason="tool_calls",
-                            logprobs=Logprobs2(content=[], refusal=[]),
-                        )
+            if tool_use and request.response_format is None:
+                try:
+                    response_choices = self.parser(response_message)
+                except Exception as e:
+                    # If parser fails, handle as traditional text
+                    logging.warning(
+                        f"Parsing for tool use failed, handling as general text response. Original error: {e}"
                     )
-                else:
-                    # Handle as regular text response if JSON cannot be parsed
                     self._handle_text_response(
                         response_message, response_choices
                     )
+
             else:
-                # Handle as regular text response if tool_use is disabled
+                # Handle as regular text response if JSON cannot be parsed
                 self._handle_text_response(response_message, response_choices)
 
             usage = None

@@ -32,6 +32,7 @@ modular_py_library(
         ":debug",
         ":process_control",
         "//SDK/lib/API/python/max/serve/mocks",
+        "//SDK/lib/API/python/max/serve/parser",
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/recordreplay",
         "//SDK/lib/API/python/max/serve/router",
