@@ -273,6 +273,94 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_LOG_PREFIX",
     )
 
+    def log_server_info(self) -> None:
+        """Log comprehensive server configuration information.
+
+        Displays all server settings in a consistent visual format similar to
+        pipeline configuration logging.
+        """
+        # Build API types string
+        api_types_str = ", ".join(api_type.value for api_type in self.api_types)
+
+        # Build operation mode string
+        mode_flags = []
+        if self.offline_inference:
+            mode_flags.append("offline_inference")
+        if self.headless:
+            mode_flags.append("headless")
+        mode_str = ", ".join(mode_flags) if mode_flags else "standard"
+
+        # Build allowed roots string
+        allowed_roots_str = (
+            ", ".join(self.allowed_image_roots)
+            if self.allowed_image_roots
+            else "None"
+        )
+
+        # Build log components string
+        log_components_str = (
+            self.logs_enable_components
+            if self.logs_enable_components
+            else "None"
+        )
+
+        # Log Server Configuration
+        logger.info("")
+        logger.info("Server Configuration")
+        logger.info("=" * 60)
+        logger.info(f"    host:                   {self.host}")
+        logger.info(f"    port:                   {self.port}")
+        logger.info(f"    metrics_port:           {self.metrics_port}")
+        logger.info(f"    api_types:              {api_types_str}")
+        logger.info(f"    operation_mode:         {mode_str}")
+        logger.info("")
+
+        # File System Configuration
+        logger.info("File System Configuration")
+        logger.info("=" * 60)
+        logger.info(f"    allowed_image_roots:    {allowed_roots_str}")
+        logger.info(
+            f"    max_local_image_bytes:  {self.max_local_image_bytes:,} bytes ({self.max_local_image_bytes / 1_000_000:.1f} MB)"
+        )
+        logger.info("")
+
+        # Metrics and Telemetry Configuration
+        logger.info("Metrics and Telemetry Configuration")
+        logger.info("=" * 60)
+        logger.info(
+            f"    metric_recording:       {self.metric_recording.value}"
+        )
+        logger.info(
+            f"    metric_level:           {self.metric_level.name} ({self.metric_level.value})"
+        )
+        logger.info(
+            f"    detailed_buffer_factor: {self.detailed_metric_buffer_factor}"
+        )
+        logger.info(f"    disable_telemetry:      {self.disable_telemetry}")
+
+        # Transaction recording (part of telemetry)
+        if self.transaction_recording_file:
+            logger.info(
+                f"    transaction_recording:  {self.transaction_recording_file}"
+            )
+            logger.info(
+                f"    include_responses:      {self.transaction_recording_include_responses}"
+            )
+        else:
+            logger.info("    transaction_recording:  None")
+        logger.info("")
+
+        # Model Worker Configuration
+        logger.info("Model Worker Configuration")
+        logger.info("=" * 60)
+        logger.info(f"    use_heartbeat:          {self.use_heartbeat}")
+        logger.info(f"    timeout:                {self.mw_timeout_s:.1f}s")
+        logger.info(f"    health_fail_timeout:    {self.mw_health_fail_s:.1f}s")
+        logger.info(
+            f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
+        )
+        logger.info("")
+
 
 def api_prefix(settings: Settings, api_type: APIType):
     return "/" + str(api_type) if len(settings.api_types) > 1 else ""

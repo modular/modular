@@ -235,6 +235,19 @@ def cli_serve(
     from max.interfaces import PipelineTask
     from max.pipelines import AudioGenerationConfig, PipelineConfig
 
+    # Initialize Settings for API Server
+    setting_kwargs: dict[str, Any] = {}
+    if port is not None:
+        setting_kwargs["MAX_SERVE_PORT"] = port
+
+    if log_prefix is not None:
+        setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
+
+    if headless is not None:
+        setting_kwargs["MAX_SERVE_HEADLESS"] = headless
+
+    settings = Settings(**setting_kwargs)
+
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
@@ -247,30 +260,21 @@ def cli_serve(
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
+        # Log Pipeline Related Info
         pipeline_config.log_pipeline_info()
 
         # Log Default Sampling Configuration
         sampling_params = SamplingParams()
         sampling_params.log_sampling_info()
+
+        # Log API Server Related Info
+        settings.log_server_info()
     else:
         pipeline_config.log_basic_config()
 
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
-
-    # Initialize Settings
-    setting_kwargs: dict[str, Any] = {}
-    if port is not None:
-        setting_kwargs["MAX_SERVE_PORT"] = port
-
-    if log_prefix is not None:
-        setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
-
-    if headless is not None:
-        setting_kwargs["MAX_SERVE_HEADLESS"] = headless
-
-    settings = Settings(**setting_kwargs)
 
     # Configure Logging Globally
     configure_logging(settings)

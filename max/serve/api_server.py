@@ -219,8 +219,6 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    logger.info(f"Settings: {settings}")
-
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(
