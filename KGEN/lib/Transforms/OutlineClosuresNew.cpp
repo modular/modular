@@ -118,8 +118,7 @@ struct ClosureLifter {
                     StructGeneratorOp structGeneratorOp, GeneratorOp generator,
                     SmallVector<SymbolConstantAttr> &&moveSymbols);
     Type selfType(Type loweredClosureType) const {
-      return closureType.getClosureMemoryKind() ==
-                     ClosureMemoryKind::REGISTER_PASSABLE
+      return closureType.getClosureMemoryKind() == ClosureMemoryKind::TRIVIAL
                  ? loweredClosureType
                  : PointerType::get(loweredClosureType);
     }
@@ -136,8 +135,7 @@ struct ClosureLifter {
       return closureType.getClosureMemoryKind() == ClosureMemoryKind::ESCAPING;
     }
     bool isMem() const {
-      return closureType.getClosureMemoryKind() !=
-             ClosureMemoryKind::REGISTER_PASSABLE;
+      return closureType.getClosureMemoryKind() != ClosureMemoryKind::TRIVIAL;
     }
     ArrayRef<ParamDeclAttr> getCapturedParamDecls() const {
       return ArrayRef(capturedParamDecls.begin(), capturedParamDecls.end());
@@ -991,13 +989,12 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   if (isThin) {
     replacement = liftThinClosure(b, closureInitData, capturedInstance,
                                   /*isRegisterPassable=*/memoryKind ==
-                                      ClosureMemoryKind::REGISTER_PASSABLE);
+                                      ClosureMemoryKind::TRIVIAL);
   } else {
-    Type loweredClosureType =
-        StructType::get(b.getContext(), fieldTypes,
-                        memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
+    Type loweredClosureType = StructType::get(
+        b.getContext(), fieldTypes, memoryKind != ClosureMemoryKind::TRIVIAL);
     switch (memoryKind) {
-    case ClosureMemoryKind::REGISTER_PASSABLE:
+    case ClosureMemoryKind::TRIVIAL:
       replacement =
           liftRegPassableClosure(b, closureInitData, capturedInstance,
                                  captureMechanisms, loweredClosureType);

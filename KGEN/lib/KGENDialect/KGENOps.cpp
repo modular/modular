@@ -1785,8 +1785,7 @@ LogicalResult ClosureInitOp::verify() {
   // be register passable.
   if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
     if (auto closureType = dyn_cast<ClosureType>((ptr.getElementType()))) {
-      if (closureType.getClosureMemoryKind() ==
-          ClosureMemoryKind::REGISTER_PASSABLE)
+      if (closureType.getClosureMemoryKind() == ClosureMemoryKind::TRIVIAL)
         return emitOpError("expected escaping/nonescaping closure type if "
                            "type is a pointer");
       else
@@ -1797,8 +1796,7 @@ LogicalResult ClosureInitOp::verify() {
 
   // if register passable, it must be a closure type.
   if (auto closureType = dyn_cast<ClosureType>(getResult().getType())) {
-    if (closureType.getClosureMemoryKind() !=
-        ClosureMemoryKind::REGISTER_PASSABLE)
+    if (closureType.getClosureMemoryKind() != ClosureMemoryKind::TRIVIAL)
       return emitOpError(
           "expected register passable closure type if type is not a pointer");
     else

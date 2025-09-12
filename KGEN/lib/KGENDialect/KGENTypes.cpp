@@ -1464,11 +1464,11 @@ static ParseResult parseClosureTypes(AsmParser &p, SymbolRefAttr &symbol,
     closureMemoryKind = ClosureMemoryKind::ESCAPING;
   else if (succeeded(p.parseOptionalKeyword("nonescaping")))
     closureMemoryKind = ClosureMemoryKind::NONESCAPING;
-  else if (succeeded(p.parseOptionalKeyword("registerpassable")))
-    closureMemoryKind = ClosureMemoryKind::REGISTER_PASSABLE;
+  else if (succeeded(p.parseOptionalKeyword("trivial")))
+    closureMemoryKind = ClosureMemoryKind::TRIVIAL;
   else
     return p.emitError(p.getCurrentLocation(),
-                       "expected escaping, nonescaping, or registerpassable");
+                       "expected escaping, nonescaping, or trivial");
   return success();
 }
 
@@ -1485,8 +1485,8 @@ static void printClosureTypes(AsmPrinter &p, SymbolRefAttr symbol,
   case ClosureMemoryKind::NONESCAPING:
     p << " nonescaping";
     break;
-  case ClosureMemoryKind::REGISTER_PASSABLE:
-    p << " registerpassable";
+  case ClosureMemoryKind::TRIVIAL:
+    p << " trivial";
     break;
   }
 }
