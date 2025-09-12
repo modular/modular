@@ -109,7 +109,7 @@ def test_matmul[
     k: Int,
     kernel_type_m: Int,
 ) -> Int:
-    var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c1_ptr = UnsafePointer[Scalar[c_type]].alloc[alignment=alignment](m * n)
     var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
@@ -246,8 +246,8 @@ def test_matmul[
     alias b_shape = DimList.create_unknown[2]()
     alias c_shape = DimList.create_unknown[2]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc[alignment=alignment](m * k)
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc[alignment=alignment](k * n)
     var b = NDBuffer[b_type, 2, _, b_shape](
         b_ptr, Index(n, k) if transpose_b else Index(k, n)
     )
@@ -283,9 +283,9 @@ def test_matmul[
         padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
     )
 
-    var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c0_ptr = UnsafePointer[Scalar[c_type]].alloc[alignment=alignment](m * n)
 
-    var bp_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var bp_ptr = UnsafePointer[Scalar[b_type]].alloc[alignment=alignment](
         padded_k * padded_n
     )
 
@@ -490,7 +490,7 @@ def test_batched_matmul[
     n: Int,
     k: Int,
 ):
-    var golden_ptr = UnsafePointer[Scalar[c.type], alignment=alignment].alloc(
+    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc[alignment=alignment](
         batches * m * n
     )
     var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
@@ -606,13 +606,13 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
     alias a_type = DType.float32
     alias b_type = DType.float32
 
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(
+    var c_ptr = UnsafePointer[Scalar[c_type]].alloc[alignment=alignment](
         batch * m * n
     )
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(
+    var a_ptr = UnsafePointer[Scalar[a_type]].alloc[alignment=alignment](
         batch * m * k
     )
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var b_ptr = UnsafePointer[Scalar[b_type]].alloc[alignment=alignment](
         batch * k * n
     )
 
