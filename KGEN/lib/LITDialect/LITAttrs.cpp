@@ -316,18 +316,17 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 /// array of bool corresponding to the variadic mask of the prepended
 /// parameters is also required.
 PogListAttr
-PogListAttr::prependPosParams(size_t numNewParams,
+PogListAttr::prependPosParams(ArrayRef<ParamDeclAttr> newParams,
                               ArrayRef<VariadicKind> variadic) const {
-  assert(variadic.size() == numNewParams);
-  if (numNewParams == 0)
+  assert(variadic.size() == newParams.size());
+  if (newParams.empty())
     return *this;
 
-  auto emptyStr = StringAttr::get(getContext());
-  SmallVector<PogMetadataAttr> newPogs =
-      llvm::map_to_vector(variadic, [&](VariadicKind variadic) {
-        assert(variadic != VariadicKind::PackVarArg && "no param packs");
-        return PogMetadataAttr::get(emptyStr, PassingKind::PosOnly, variadic);
-      });
+  SmallVector<PogMetadataAttr> newPogs;
+  for (auto [param, variadic] : llvm::zip(newParams, variadic)) {
+    newPogs.push_back(
+        PogMetadataAttr::get(param.getName(), PassingKind::PosOnly, variadic));
+  }
 
   SmallVector<PogMetadataAttr> mergedPogs;
   for (size_t iNew = 0, iOld = 0, eOld = size(), eNew = newPogs.size();
@@ -351,9 +350,10 @@ PogListAttr::prependPosParams(size_t numNewParams,
 }
 
 GeneratorMetadataAttrInterface
-PogListAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
+PogListAttr::prependPosParamsFromOps(ArrayRef<ParamDeclAttr> newParams,
+                                     ArrayRef<Operation *> ops) const {
   SmallVector<VariadicKind> variadicMask = getContextualVariadicParams(ops);
-  return prependPosParams(variadicMask.size(), variadicMask);
+  return prependPosParams(newParams, variadicMask);
 }
 
 //===----------------------------------------------------------------------===//

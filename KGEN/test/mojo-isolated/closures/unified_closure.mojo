@@ -12,7 +12,8 @@
 # CHECK-DAG: [[TRAIT:!.*]] = !lit.trait<@"fn(y: Int) -> Int">
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
 
-# CHECK: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])  unspecified attributes {definesClosure, dtorSig = !kgen.generator<!lit.generator<<[[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> owned_in_mem, |) -> !kgen.none>>
+# CHECK: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`{{.*}}": [[TRAIT]]>([[PARENT]])
+# CHECK-SAME: unspecified attributes {definesClosure, dtorSig = !kgen.generator<!lit.generator<<"_Self`0x": [[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> owned_in_mem, |) -> !kgen.none>>
 # CHECK-NEXT:  lit.fn @"__call__({{.*}})"
 # CHECK-SAME: [mut *"self`"](%{{.*}}: !lit.ref<:!Int *"_Self`{{.*}}", mut *"self`"> read_mem, |, %y: [[INT]]) -> [[INT]]
 # CHECK-SAME: attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
