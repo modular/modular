@@ -255,5 +255,5 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             model=no_opaque_attention,
             kv_input_symbols=kv_input_symbols,
         )
-    assert "store_k_cache not implemented" in str(e.value)
+    assert "rope_no_opaque not implemented" in str(e.value)
     # assert torch.allclose(no_opaque_output, reference_output)
