@@ -74,13 +74,13 @@ fn run_matvec[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel](
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
-            UInt(M),
-            UInt(N),
-            UInt(K),
+            M,
+            N,
+            K,
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -123,23 +123,23 @@ fn run_matvec[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel_naive[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                c_tensor.layout,
-                a_tensor.layout,
-                b_tensor.layout,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel_naive[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            c_tensor.layout,
+            a_tensor.layout,
+            b_tensor.layout,
+            BLOCK_DIM,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_tensor,
             a_tensor,
             b_tensor,
-            UInt(M),
-            UInt(N),
-            UInt(K),
+            M,
+            N,
+            K,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )

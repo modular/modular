@@ -60,7 +60,7 @@ fn cpasync_wgmma_kernel[
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     """Test k_major @ mn_major with cp.async to simulate the 2nd matmul in mha.
     """
@@ -253,7 +253,7 @@ def test_cpasync_wgmma[
         b_swizzle=b_swizzle,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_checked[kernel, kernel](
         a.device_tensor(),
         b.device_tensor(),
         c.device_tensor(),

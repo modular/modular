@@ -64,18 +64,18 @@ def test_vendor_blas[
     var a_tensor = from_ndbuffer_row_major(a)
     var b_tensor = from_ndbuffer_row_major(b)
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            dtype,
-            dtype,
-            dtype,
-            c_ref_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-            transpose_b=transpose_b,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        dtype,
+        dtype,
+        dtype,
+        c_ref_tensor.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+        transpose_b=transpose_b,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         c_ref_tensor,
         a_tensor,
         b_tensor,

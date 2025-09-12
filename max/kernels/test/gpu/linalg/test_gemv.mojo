@@ -62,14 +62,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gemv_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                reduction_method=reduction_method,
-            ]
-        ](
+        alias kernel = gemv_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            reduction_method=reduction_method,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -83,14 +83,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_gevm(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            gevm_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                tile_size = WARP_SIZE * WARPS_PER_BLOCK,
-            ]
-        ](
+        alias kernel = gevm_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,
@@ -132,14 +132,14 @@ def run_matvec[
     @always_inline
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
-        ctx.enqueue_function[
-            matmul_kernel[
-                DType.float32,
-                DType.float32,
-                DType.float32,
-                BLOCK_DIM,
-            ]
-        ](
+        alias kernel = matmul_kernel[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            BLOCK_DIM,
+        ]
+
+        ctx.enqueue_function_checked[kernel, kernel](
             c_device,
             a_device,
             b_device,

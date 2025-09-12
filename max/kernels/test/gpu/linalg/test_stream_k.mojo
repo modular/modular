@@ -16,7 +16,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import Semaphore, block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
 from linalg.matmul_gpu import matmul_kernel_naive
 from testing import assert_almost_equal
 
@@ -155,19 +155,23 @@ fn first_wave_kernel[
     stride_bn: Int,
     stride_cm: Int,
     stride_cn: Int,
-    total_full_tiles_streamk: UInt,
-    total_partial_tiles_streamk: UInt,
-    iters_per_tile: UInt,
+    total_full_tiles_streamk: Int,
+    total_partial_tiles_streamk: Int,
+    iters_per_tile: Int,
 ):
     var pid = block_idx.x
 
     var start_iter = pid * total_full_tiles_streamk + (
         pid if pid
-        < total_partial_tiles_streamk else total_partial_tiles_streamk
+        < UInt(total_partial_tiles_streamk) else UInt(
+            total_partial_tiles_streamk
+        )
     )
     var last_iter = (pid + 1) * total_full_tiles_streamk + (
         (pid + 1) if (pid + 1)
-        < total_partial_tiles_streamk else total_partial_tiles_streamk
+        < UInt(total_partial_tiles_streamk) else UInt(
+            total_partial_tiles_streamk
+        )
     )
 
     while start_iter < last_iter:
@@ -221,7 +225,7 @@ fn full_tiles_kernel[
     stride_bn: Int,
     stride_cm: Int,
     stride_cn: Int,
-    total_tiles_streamk: UInt,
+    total_tiles_streamk: Int,
 ):
     var tile_id = block_idx.x + total_tiles_streamk
     var pid: IndexList[2]
@@ -345,6 +349,10 @@ fn matmul_stream_k[
         total_partial_tiles_streamk,
     )
 
+    var c_buffer = DeviceBuffer[c_type](ctx, c.data, c.size(), owning=False)
+    var a_buffer = DeviceBuffer[a_type](ctx, a.data, a.size(), owning=False)
+    var b_buffer = DeviceBuffer[b_type](ctx, b.data, b.size(), owning=False)
+
     if total_programs_streamk > 0:
         alias first_wave = first_wave_kernel[
             c_type,
@@ -356,10 +364,10 @@ fn matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function[first_wave, dump_asm=False](
-            c.data,
-            a.data,
-            b.data,
+        ctx.enqueue_function_checked[first_wave, first_wave](
+            c_buffer,
+            a_buffer,
+            b_buffer,
             M,
             N,
             K,
@@ -388,10 +396,10 @@ fn matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function[full_tiles](
-            c.data,
-            a.data,
-            b.data,
+        ctx.enqueue_function_checked[full_tiles, full_tiles](
+            c_buffer,
+            a_buffer,
+            b_buffer,
             M,
             N,
             K,
@@ -487,17 +495,17 @@ fn run_matmul_stream_k[
     var a_tensor = from_ndbuffer_row_major(a_buf)
     var b_tensor = from_ndbuffer_row_major(b_buf)
 
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            dtype,
-            dtype,
-            dtype,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
-            BLOCK_DIM,
-        ]
-    ](
+    alias kernel = matmul_kernel_naive[
+        dtype,
+        dtype,
+        dtype,
+        c_tensor.layout,
+        a_tensor.layout,
+        b_tensor.layout,
+        BLOCK_DIM,
+    ]
+
+    ctx.enqueue_function_checked[kernel, kernel](
         c_tensor,
         a_tensor,
         b_tensor,

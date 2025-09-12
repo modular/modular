@@ -1036,8 +1036,8 @@ struct TensorCore[
                         Layout.col_major(4, 8)
                     ](lane_id())
                     fragments[i, 0] = rebind[frag_type](
-                        rebind[SIMD[warp_tile.dtype, 4]](frags[0]).join(
-                            rebind[SIMD[warp_tile.dtype, 4]](frags[1])
+                        rebind[SIMD[warp_tile.dtype, 4]](frags[0, 0]).join(
+                            rebind[SIMD[warp_tile.dtype, 4]](frags[0, 1])
                         ),
                     )
 
