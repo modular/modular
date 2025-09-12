@@ -485,11 +485,14 @@ functions](/mojo/manual/functions#raising-and-non-raising-functions), we do not
 enforce `Raises` docs for `def` functions (to avoid noisy false positives).
 
 - Nightly `mojo` Python wheels are now available. To install everything needed
-  for Mojo development in a Python virtual environment, you can use
+  for Mojo development in a Python virtual environment, you can use:
 
   ```sh
-  pip install mojo --index-url https://dl.modular.com/public/nightly/python/simple/
+  pip install --pre mojo \
+   --index-url https://dl.modular.com/public/nightly/python/simple/
   ```
+
+  For more information, see the [Mojo install guide](/mojo/manual/install).
 
 - In preparation for a future Mojo 1.0, the `mojo` and `mojo-compiler` packages
 now have a `0.` prefixed to the version. Until the previous nightly packages
