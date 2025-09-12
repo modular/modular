@@ -15,10 +15,12 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -171,9 +173,10 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
 struct TypeDeclInfo {
   TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap,
                DenseMap<SymbolRefAttr, FnOp> &&funcMap,
-               DenseMap<SymbolRefAttr, LIT::TraitDeclOp> &&traitMap)
+               DenseMap<SymbolRefAttr, LIT::TraitDeclOp> &&traitMap,
+               Operation *module, mlir::LockedSymbolTableCollection *symtab)
       : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
-        traitMap(std::move(traitMap)) {}
+        traitMap(std::move(traitMap)), evaluationContext(module, *symtab) {}
 
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type) const;
@@ -202,8 +205,8 @@ struct TypeDeclInfo {
 
   /// Given the RValue type for a value that needs to be destroyed, return the
   /// destructor the invoke, or null if there is none.
-  TypedAttr getDestructorForType(Type type) const;
-  SymbolConstantAttr getMoveInitForType(Type type) const;
+  TypedAttr getDestructorForType(Type type, Location loc) const;
+  SymbolConstantAttr getMoveInitForType(Type type, Location loc) const;
 
   /// If this is a non-destructible/linear type, get the error message to emit.
   std::optional<StringRef> getErrorMsgIfLinearType(Type type) const;
@@ -217,10 +220,18 @@ struct TypeDeclInfo {
   /// The next anonymous origin number to use in this function.
   size_t nextAnonOriginNumber = 0;
 
+  LIT::LITSymTabEvaluationContext *getEvaluationContext() const {
+    return &evaluationContext;
+  }
+
 private:
   DenseMap<SymbolRefAttr, StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, TraitDeclOp> traitMap;
+
+  /// Used for evaluating things like get_witness when we generate destructor
+  /// calls.
+  mutable LIT::LITSymTabEvaluationContext evaluationContext;
 
   /// This keeps track of the number of fields in the struct specified by the
   /// (fully flattened) symbol and parameters.
@@ -251,7 +262,8 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
 
 static SymbolConstantAttr getSpecialMemberForType(
     Type type, const TypeDeclInfo *typeDecls,
-    llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember) {
+    llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember,
+    Location loc) {
   auto valueType = dyn_cast<LIT::StructType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
@@ -268,13 +280,14 @@ static SymbolConstantAttr getSpecialMemberForType(
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
   auto newSig = attr.getType().getSpecializedGenerator(
-      paramValues, /*evaluationContext=*/nullptr);
+      paramValues, typeDecls->getEvaluationContext(), loc);
+  assert(newSig && "Failed to specialize generator.");
   return SymbolConstantAttr::get(attr.getSymbol(), newSig, paramValues);
 }
 
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
+TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
@@ -293,7 +306,7 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
                                         VTableAttr::get(type.getContext(), {}));
           }
           auto specSig = dtorSig.getSpecializedGenerator(
-              {selfParam}, /*evaluationContext=*/nullptr);
+              {selfParam}, &evaluationContext, loc);
           auto delStr =
               StringAttr::get("__del__", StringType::get(type.getContext()));
           auto traitName = StringAttr::get(type.getContext(),
@@ -304,15 +317,16 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
     }
   }
 
-  return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
-    return structOp.getDestructorAttr();
-  });
+  return getSpecialMemberForType(
+      type, this,
+      [](StructDeclOp structOp) { return structOp.getDestructorAttr(); }, loc);
 }
 
-SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
-  return getSpecialMemberForType(type, this, [](StructDeclOp structOp) {
-    return structOp.getMoveInitAttr();
-  });
+SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type,
+                                                    Location loc) const {
+  return getSpecialMemberForType(
+      type, this,
+      [](StructDeclOp structOp) { return structOp.getMoveInitAttr(); }, loc);
 }
 
 /// If this is a non-destructible/linear type, get the error message to emit.
@@ -2097,7 +2111,8 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
                                             ImplicitLocOpBuilder &builder) {
   Type destroyedType =
       ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
-  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
+  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType,
+                                                              builder.getLoc());
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
     // linear type.  If linear, emit the error message.
@@ -2568,7 +2583,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
 
   // Otherwise, try to promote to a __moveinit__ call if present.
   SymbolConstantAttr moveCtor =
-      valueSet.typeDeclInfo.getMoveInitForType(destroyedType);
+      valueSet.typeDeclInfo.getMoveInitForType(destroyedType, builder.getLoc());
   if (!moveCtor)
     return CopyInitSuccess::Failed;
 
@@ -3780,9 +3795,13 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     auto [functionVector, funcMap, structMap, traitMap] =
         collectFunctionsAndTypes(getOperation());
 
+    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
+
     // Process all the structs into TypeDeclInfo.
     TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
-                              std::move(traitMap));
+                              std::move(traitMap), getOperation(),
+                              &sharedSymtabs);
     CachedOriginFinder originFinder;
 
     // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
