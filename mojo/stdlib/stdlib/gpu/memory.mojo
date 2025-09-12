@@ -1546,7 +1546,7 @@ fn _load_impl[
         eviction_policy=eviction_policy,
         alignment=alignment,
     ](ptr + width // 2)
-    return lhs.join(rhs)._refine[size=width]()
+    return lhs.join(rhs)._refine[new_size=width]()
 
 
 @always_inline

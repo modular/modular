@@ -1797,7 +1797,7 @@ struct SIMD[dtype: DType, size: Int](
             A PythonObject representing the value.
         """
         constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(self._refine[size=1]())
+        return PythonObject(self._refine[new_size=1]())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1822,7 +1822,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            var res = self._refine[size=1]().cast[DType.bool]()
+            var res = self._refine[new_size=1]().cast[DType.bool]()
             return Bool(mlir_value=res._mlir_value)
         else:
             return Bool(self.reduce_or())
@@ -1849,7 +1849,9 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return Int(self._refine[size=1]().cast[DType.index]()._mlir_value)
+            return Int(
+                self._refine[new_size=1]().cast[DType.index]()._mlir_value
+            )
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:
@@ -1875,7 +1877,7 @@ struct SIMD[dtype: DType, size: Int](
             The value as a float.
         """
         constrained[size == 1, "expected a scalar type"]()
-        return self._refine[size=1]().cast[DType.float64]()
+        return self._refine[new_size=1]().cast[DType.float64]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -2039,18 +2041,18 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     fn _refine[
-        dtype: DType = Self.dtype, size: Int = Self.size
-    ](self) -> SIMD[dtype, size]:
+        new_dtype: DType = Self.dtype, new_size: Int = Self.size
+    ](self) -> SIMD[new_dtype, new_size]:
         """Manually refines the SIMD vector to a specific element type and size.
 
         Parameters:
-            dtype: The target DType.
-            size: The target size of the SIMD vector.
+            new_dtype: The target DType.
+            new_size: The target size of the SIMD vector.
 
         Returns:
             The same SIMD vector with the specified element type and size.
         """
-        return rebind[SIMD[dtype, size]](self)
+        return rebind[SIMD[new_dtype, new_size]](self)
 
     @always_inline("nodebug")
     fn cast[target: DType](self) -> SIMD[target, size]:
@@ -2811,7 +2813,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == size_out:
-            return self._refine[size=size_out]()
+            return self._refine[new_size=size_out]()
         else:
             var lhs, rhs = self.split()
             return func(lhs, rhs).reduce[func, size_out]()
@@ -2843,15 +2845,15 @@ struct SIMD[dtype: DType, size: Int](
         if dtype.is_unsigned():
             return llvm_intrinsic[
                 "llvm.vector.reduce.umax", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
         elif dtype.is_integral():
             return llvm_intrinsic[
                 "llvm.vector.reduce.smax", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
         else:
             return llvm_intrinsic[
                 "llvm.vector.reduce.fmax", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
 
     @always_inline("nodebug")
     fn reduce_min[size_out: Int = 1](self) -> SIMD[dtype, size_out]:
@@ -2880,15 +2882,15 @@ struct SIMD[dtype: DType, size: Int](
         if dtype.is_unsigned():
             return llvm_intrinsic[
                 "llvm.vector.reduce.umin", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
         elif dtype.is_integral():
             return llvm_intrinsic[
                 "llvm.vector.reduce.smin", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
         else:
             return llvm_intrinsic[
                 "llvm.vector.reduce.fmin", Scalar[dtype], has_side_effect=False
-            ](self)._refine[size=size_out]()
+            ](self)._refine[new_size=size_out]()
 
     @always_inline
     fn reduce_add[size_out: Int = 1](self) -> SIMD[dtype, size_out]:

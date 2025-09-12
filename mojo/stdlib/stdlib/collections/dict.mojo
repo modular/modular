@@ -191,7 +191,9 @@ struct _DictValueIter[
         ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
-        return UnsafePointer(to=entry_ref.value).origin_cast[origin=origin]()[]
+        return UnsafePointer(to=entry_ref.value).origin_cast[
+            target_origin=origin
+        ]()[]
 
     @always_inline
     fn __next__(mut self) -> Self.Element:

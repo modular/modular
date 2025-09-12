@@ -81,7 +81,7 @@ def test_count():
 def test_steal_data_and_construct_from_raw_ptr():
     var deleted = False
     var leaked = ArcPointer(
-        ObservableDel(UnsafePointer(to=deleted).origin_cast[mut=False]())
+        ObservableDel(UnsafePointer(to=deleted).origin_cast[False]())
     )
 
     var raw = leaked^.steal_data()

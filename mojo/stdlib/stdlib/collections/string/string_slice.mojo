@@ -2624,7 +2624,7 @@ fn _split[
     out output: List[__type_of(src_str).Immutable],
 ):
     alias S = __type_of(src_str).Immutable
-    var ptr = src_str.unsafe_ptr().origin_cast[mut=False]()
+    var ptr = src_str.unsafe_ptr().origin_cast[False]()
     var sep_len = sep.byte_length()
     if sep_len == 0:
         var iterator = src_str.codepoint_slices()
@@ -2685,7 +2685,7 @@ fn _split[
     var lhs = 0
     var rhs: Int
     var items = 0
-    var ptr = src_str.unsafe_ptr().origin_cast[mut=False]()
+    var ptr = src_str.unsafe_ptr().origin_cast[False]()
 
     @always_inline("nodebug")
     fn _build_slice(p: __type_of(ptr), start: Int, end: Int) -> S:

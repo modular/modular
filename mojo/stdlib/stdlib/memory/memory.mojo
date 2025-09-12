@@ -264,14 +264,14 @@ fn memcpy[
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+            dest.bitcast[Byte]().origin_cast[True, MutableAnyOrigin](),
+            src.bitcast[Byte]().origin_cast[True, MutableAnyOrigin](),
             n,
         )
     else:
         _memcpy_impl(
-            dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
-            src.bitcast[Byte]().origin_cast[mut=False](),
+            dest.bitcast[Byte]().origin_cast[True, MutableAnyOrigin](),
+            src.bitcast[Byte]().origin_cast[False](),
             n,
         )
 

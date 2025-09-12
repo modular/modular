@@ -142,15 +142,15 @@ def test_unsafepointer_string():
 def test_eq():
     var local = 1
     # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
-    var p1 = UnsafePointer(to=local).origin_cast[mut=False]()
+    var p1 = UnsafePointer(to=local).origin_cast[False]()
     var p2 = p1
     assert_equal(p1, p2)
 
     var other_local = 2
-    var p3 = UnsafePointer(to=other_local).origin_cast[mut=False]()
+    var p3 = UnsafePointer(to=other_local).origin_cast[False]()
     assert_not_equal(p1, p3)
 
-    var p4 = UnsafePointer(to=local).origin_cast[mut=False]()
+    var p4 = UnsafePointer(to=local).origin_cast[False]()
     assert_equal(p1, p4)
     _ = local
     _ = other_local
@@ -208,7 +208,7 @@ def test_unsafepointer_alloc_origin():
 
     # Allocate pointer with MutableAnyOrigin.
     var ptr_1 = (
-        UnsafePointer[Int].alloc(1).origin_cast[origin=MutableAnyOrigin]()
+        UnsafePointer[Int].alloc(1).origin_cast[True, MutableAnyOrigin]()
     )
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))

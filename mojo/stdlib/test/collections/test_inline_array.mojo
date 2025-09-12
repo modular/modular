@@ -300,7 +300,7 @@ def test_move():
     # === 3. Check that the destructor is not called when moving. ===
 
     var del_counter = List[Int]()
-    var del_counter_ptr = UnsafePointer(to=del_counter).origin_cast[mut=False]()
+    var del_counter_ptr = UnsafePointer(to=del_counter).origin_cast[False]()
     var del_recorder = DelRecorder(0, del_counter_ptr)
     var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
 

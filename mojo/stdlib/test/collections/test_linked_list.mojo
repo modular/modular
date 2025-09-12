@@ -546,7 +546,7 @@ def test_list_dtor():
     var dtor_count = 0
 
     var ptr = UnsafePointer(to=dtor_count).origin_cast[
-        mut=False, origin=ImmutableAnyOrigin
+        False, ImmutableAnyOrigin
     ]()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)

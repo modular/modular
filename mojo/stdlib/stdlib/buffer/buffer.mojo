@@ -599,33 +599,32 @@ struct NDBuffer[
 
     @always_inline("nodebug")
     fn origin_cast[
-        mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
-    ](
-        self,
-        out result: NDBuffer[
-            dtype,
-            rank,
-            origin,
-            shape,
-            strides,
-            alignment=alignment,
-            address_space=address_space,
-            exclusive=exclusive,
+        target_mut: Bool = Self.mut,
+        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
+            Self.origin
         ],
-    ):
+    ](self) -> NDBuffer[
+        dtype,
+        rank,
+        target_origin,
+        shape,
+        strides,
+        alignment=alignment,
+        address_space=address_space,
+        exclusive=exclusive,
+    ]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
-            mut: Whether the origin is mutable.
-            origin: Origin of the destination pointer.
+            target_mut: Whether the origin is mutable.
+            target_origin: Origin of the destination pointer.
 
         Returns:
             A new `NDBuffer` object with the same type and the same address,
             as the original `NDBuffer` and the new specified mutability and origin.
         """
-        result = {
-            self.data.origin_cast[mut, origin](),
+        return {
+            self.data.origin_cast[target_mut, target_origin](),
             self.dynamic_shape,
             self.dynamic_stride,
         }

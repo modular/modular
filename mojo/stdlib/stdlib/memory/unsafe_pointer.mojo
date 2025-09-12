@@ -1074,20 +1074,22 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     fn origin_cast[
-        mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
+        target_mut: Bool = Self.mut,
+        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
+            Self.origin
+        ],
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
         alignment=alignment,
-        mut=mut,
-        origin=origin,
+        mut=target_mut,
+        origin=target_origin,
     ]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
-            mut: Whether the origin is mutable.
-            origin: Origin of the destination pointer.
+            target_mut: Whether the origin is mutable.
+            target_origin: Origin of the destination pointer.
 
         Returns:
             A new UnsafePointer object with the same type and the same address,

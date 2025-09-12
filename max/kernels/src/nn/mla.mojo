@@ -1353,10 +1353,10 @@ fn flare_mla_prefill[
             softmax_info,
             cache_offsets,
             OptionalReg[NDBuffer[output_type, rank, MutableAnyOrigin]](
-                output.origin_cast[mut=False]()
+                output.origin_cast[False]()
             ),
             OptionalReg[NDBuffer[softmax_type, 3, MutableAnyOrigin]](
-                softmax_info.value().origin_cast[mut=False]()
+                softmax_info.value().origin_cast[False]()
             ),
         )
 

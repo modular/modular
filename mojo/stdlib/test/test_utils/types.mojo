@@ -76,15 +76,15 @@ struct ObservableMoveOnly[actions_origin: ImmutableOrigin](Movable):
     fn __init__(out self, value: Int, actions: Self._U):
         self.actions = actions
         self.value = value
-        self.actions.origin_cast[mut=True]()[0].append("__init__")
+        self.actions.origin_cast[True]()[0].append("__init__")
 
     fn __moveinit__(out self, deinit existing: Self):
         self.actions = existing.actions
         self.value = existing.value
-        self.actions.origin_cast[mut=True]()[0].append("__moveinit__")
+        self.actions.origin_cast[True]()[0].append("__moveinit__")
 
     fn __del__(deinit self):
-        self.actions.origin_cast[mut=True]()[0].append("__del__")
+        self.actions.origin_cast[True]()[0].append("__del__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -214,7 +214,7 @@ struct DelRecorder[recorder_origin: ImmutableOrigin](
     ]
 
     fn __del__(deinit self):
-        self.destructor_recorder.origin_cast[mut=True]()[].append(self.value)
+        self.destructor_recorder.origin_cast[True]()[].append(self.value)
 
     fn copy(self) -> Self:
         return Self(self.value, self.destructor_recorder)
@@ -247,7 +247,7 @@ struct DelCounter[counter_origin: ImmutableOrigin](
     var counter: UnsafePointer[Int, mut=False, origin=counter_origin]
 
     fn __del__(deinit self):
-        self.counter.origin_cast[mut=True]()[] += 1
+        self.counter.origin_cast[True]()[] += 1
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("DelCounter(", self.counter[], ")")

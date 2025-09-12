@@ -878,22 +878,24 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn origin_cast[
-        mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
-    ](self) -> Self.OriginCastType[mut, origin]:
+        target_mut: Bool = Self.mut,
+        target_origin: Origin[target_mut] = Origin[target_mut].cast_from[
+            Self.origin
+        ],
+    ](self) -> Self.OriginCastType[target_mut, target_origin]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
-            mut: Whether the origin is mutable.
-            origin: Origin of the destination pointer.
+            target_mut: Whether the origin is mutable.
+            target_origin: Origin of the destination pointer.
 
         Returns:
             A new `LayoutTensor` object with the same type and the same address,
             as the original `LayoutTensor`, and the new specified mutability and
             origin.
         """
-        return Self.OriginCastType[mut, origin](
-            self.ptr.origin_cast[mut, origin](),
+        return Self.OriginCastType[target_mut, target_origin](
+            self.ptr.origin_cast[target_mut, target_origin](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
