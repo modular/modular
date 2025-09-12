@@ -75,8 +75,8 @@ struct Level(
     """Lowest level, used when no level is set."""
 
     alias TRACE = Self(10)
-    """Repetitive trace information, Indicates repeated execution or IO-coupled 
-    activity, typically only of interest when diagnosing hangs or ensuring a 
+    """Repetitive trace information, Indicates repeated execution or IO-coupled
+    activity, typically only of interest when diagnosing hangs or ensuring a
     section of code is executing."""
 
     alias DEBUG = Self(20)
@@ -240,14 +240,19 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
     """
 
     var _fd: FileDescriptor
+    var _prefix: String
 
-    fn __init__(out self, fd: FileDescriptor = sys.stdout):
+    fn __init__(
+        out self, fd: FileDescriptor = sys.stdout, *, prefix: String = ""
+    ):
         """Initializes a new Logger.
 
         Args:
             fd: The file descriptor to write log messages to (defaults to stdout).
+            prefix: The prefix to prepend to each log message (defaults to an empty string).
         """
         self._fd = fd
+        self._prefix = prefix
 
     @always_inline
     @staticmethod
@@ -260,6 +265,8 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         Returns:
             True if logging at the target level is disabled, False otherwise.
         """
+
+        @parameter
         if level == Level.NOTSET:
             return True
         return level > target_level
@@ -362,14 +369,18 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         var file = self._fd
         var buffer = _WriteBufferStack(file)
 
-        buffer.write(String(level))
-        buffer.write("::: ")
+        if self._prefix:
+            buffer.write(self._prefix)
+        else:
+            buffer.write(level, "::: ")
 
         alias length = values.__len__()
 
         @parameter
         for i in range(length):
             values[i].write_to(buffer)
+
+            @parameter
             if i < length - 1:
                 buffer.write(" ")
 

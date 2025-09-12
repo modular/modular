@@ -51,7 +51,18 @@ fn test_log_noset():
     log.info("hello")
 
 
+# CHECK-LABEL: Test logging with prefix
+fn test_log_with_prefix():
+    print("=== Test logging with prefix")
+
+    var log = Logger[Level.TRACE](prefix="[XYZ] ")
+
+    # CHECK: [XYZ] hello
+    log.trace("hello")
+
+
 def main():
     test_log_trace()
     test_log_info()
     test_log_noset()
+    test_log_with_prefix()
