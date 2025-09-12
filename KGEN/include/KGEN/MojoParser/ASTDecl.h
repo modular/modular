@@ -18,6 +18,10 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
+namespace M::KGEN {
+class ConstraintAttr;
+}
+
 namespace M::KGEN::LIT {
 class StructType;
 class DocStringAttr;
@@ -218,6 +222,13 @@ public:
   DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
   getTraitConformanceLineage(bool createIfMissing = false);
 
+  /// Get the set of assumptions for this decl and all its parent decls.
+  void getKnownAssumptionsIncludingParents(
+      SmallVectorImpl<ConstraintAttr> &assumptions) const;
+
+  /// Insert a set of assumptions into this decl.
+  void insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions);
+
   /// Dump the underlying IR value.
   void dump() const;
 
@@ -318,6 +329,11 @@ private:
   using TraitConformanceLineageType =
       DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>>;
   std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
+
+  /// This is the set of constraints that can be assumed to be true inside
+  /// this declaration. It may reference parameter declarations from this
+  /// ASTDecl or its parent ASTDecls.
+  std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
 };
 
 } // namespace M::KGEN::LIT
