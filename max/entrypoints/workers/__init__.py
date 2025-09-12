@@ -16,14 +16,19 @@ import signal
 import sys
 from contextlib import AsyncExitStack
 from types import FrameType
-from typing import Optional
+from typing import Any, Optional
 
 import uvloop
-from max.interfaces import PipelineTask
+from max.interfaces import PipelineTask, RequestID
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.core import get_request_payload_from_pipeline_task
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.queue.zmq_queue import (
+    ZmqPushSocket,
+    create_zmq_push_pull_queues,
+)
 from max.serve.telemetry.metrics import METRICS
 
 logger = logging.getLogger("max.entrypoints")
@@ -84,7 +89,7 @@ def start_workers(
         logger.info("Starting MAX Workers...")
 
         # Load the Tokenizer and Pipeline Factory
-        tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+        _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_task,
         )
@@ -98,6 +103,22 @@ def start_workers(
 
                 METRICS.configure(client=metric_client)
 
+                # Create Queues
+                _, request_pull_queue = create_zmq_push_pull_queues(
+                    payload_type=get_request_payload_from_pipeline_task(
+                        pipeline_task,
+                    ),
+                )
+
+                response_push_queue: ZmqPushSocket[Any]
+                response_push_queue, _ = create_zmq_push_pull_queues(
+                    payload_type=pipeline_task.output_type,
+                )
+
+                _, cancel_pull_queue = create_zmq_push_pull_queues(
+                    payload_type=list[RequestID]
+                )
+
                 # Start Model Worker
                 _ = await exit_stack.enter_async_context(
                     start_model_worker(
@@ -105,7 +126,9 @@ def start_workers(
                         pipeline_config,
                         settings,
                         metric_client,
-                        pipeline_task,
+                        request_queue=request_pull_queue,
+                        response_queue=response_push_queue,
+                        cancel_queue=cancel_pull_queue,
                     )
                 )
 

@@ -27,7 +27,9 @@ from max.interfaces import (
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
+    RequestID,
 )
+from max.pipelines.core import get_request_payload_from_pipeline_task
 from max.pipelines.lib import PipelineConfig
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
@@ -37,6 +39,11 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.queue.lora_queue import LoRAQueue
+from max.serve.queue.zmq_queue import (
+    ZmqPullSocket,
+    ZmqPushSocket,
+    create_zmq_push_pull_queues,
+)
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
@@ -89,16 +96,38 @@ async def lifespan(
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
             )
-
             METRICS.configure(client=metric_client)
+
+            request_push_queue, request_pull_queue = (
+                create_zmq_push_pull_queues(
+                    payload_type=get_request_payload_from_pipeline_task(
+                        serving_settings.pipeline_task
+                    ),
+                )
+            )
+
+            response_push_queue, response_pull_queue = (
+                create_zmq_push_pull_queues(  # type: ignore
+                    payload_type=serving_settings.pipeline_task.output_type,
+                )
+            )
+
+            cancel_pull_queue: ZmqPullSocket[list[RequestID]]
+            cancel_push_queue: ZmqPushSocket[list[RequestID]]
+            cancel_push_queue, cancel_pull_queue = create_zmq_push_pull_queues(
+                payload_type=list[RequestID]
+            )
+
             # start model worker
-            engine_queue = await exit_stack.enter_async_context(
+            worker_monitor = await exit_stack.enter_async_context(
                 start_model_worker(
                     serving_settings.model_factory,
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
-                    serving_settings.pipeline_task,
+                    request_queue=request_pull_queue,
+                    response_queue=response_push_queue,
+                    cancel_queue=cancel_pull_queue,
                 )
             )
 
@@ -114,7 +143,7 @@ async def lifespan(
             METRICS.pipeline_load(
                 serving_settings.pipeline_config.model_config.model_name
             )
-            pipeline: TokenGeneratorPipeline[Any] | AudioGeneratorPipeline[Any]
+            pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline[Any]
             if serving_settings.pipeline_task in (
                 PipelineTask.TEXT_GENERATION,
                 PipelineTask.EMBEDDINGS_GENERATION,
@@ -122,8 +151,11 @@ async def lifespan(
                 pipeline = TokenGeneratorPipeline(
                     model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
                     lora_queue=lora_queue,
+                    request_queue=request_push_queue,
+                    response_queue=response_pull_queue,
+                    cancel_queue=cancel_push_queue,
+                    worker_monitor=worker_monitor,
                 )
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
@@ -131,8 +163,11 @@ async def lifespan(
                 pipeline = AudioGeneratorPipeline(
                     model_name=serving_settings.pipeline_config.model_config.model_name,
                     tokenizer=serving_settings.tokenizer,
-                    engine_queue=engine_queue,
                     lora_queue=lora_queue,
+                    request_queue=request_push_queue,
+                    response_queue=response_pull_queue,
+                    cancel_queue=cancel_push_queue,
+                    worker_monitor=worker_monitor,
                 )
             else:
                 raise ValueError(

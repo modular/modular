@@ -22,10 +22,11 @@ import threading
 import uuid
 from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, TypeVar, cast
+from typing import Any, Callable, TypeVar, cast
 
 import tqdm
 from max.interfaces import RequestID, SamplingParams, TextGenerationRequest
+from max.pipelines.core import get_request_payload_from_pipeline_task
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
@@ -33,6 +34,11 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
 from max.serve.queue.lora_queue import LoRAQueue
+from max.serve.queue.zmq_queue import (
+    ZmqPullSocket,
+    ZmqPushSocket,
+    create_zmq_push_pull_queues,
+)
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -193,6 +199,20 @@ async def _async_worker(
         if pipeline_config.lora_config
         else None
     )
+    # Create Queues
+    request_push_queue, request_pull_queue = create_zmq_push_pull_queues(
+        payload_type=get_request_payload_from_pipeline_task(pipeline_task),
+    )
+
+    response_push_queue: ZmqPushSocket[Any]
+    response_pull_queue: ZmqPullSocket[Any]
+    response_push_queue, response_pull_queue = create_zmq_push_pull_queues(
+        payload_type=pipeline_task.output_type,
+    )
+
+    cancel_push_queue, cancel_pull_queue = create_zmq_push_pull_queues(
+        payload_type=list[RequestID]
+    )
     async with (
         start_telemetry_consumer(settings) as metric_client,
         start_model_worker(
@@ -200,13 +220,18 @@ async def _async_worker(
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
-            pipeline_task=pipeline_task,
-        ) as engine_queue,
+            request_queue=request_pull_queue,
+            response_queue=response_push_queue,
+            cancel_queue=cancel_pull_queue,
+        ) as worker_monitor,
         TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
-            engine_queue=engine_queue,
             lora_queue=lora_queue,
+            worker_monitor=worker_monitor,
+            request_queue=request_push_queue,
+            response_queue=response_pull_queue,
+            cancel_queue=cancel_push_queue,
         ) as pipeline,
     ):
         pc.set_started()

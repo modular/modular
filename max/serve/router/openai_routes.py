@@ -133,7 +133,7 @@ def record_request_end(
 
 
 class OpenAIResponseGenerator(ABC, Generic[_T]):
-    def __init__(self, pipeline: TokenGeneratorPipeline[InputContext]) -> None:
+    def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAIResponseGenerator"
         )
@@ -152,14 +152,10 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
 
 async def get_pipeline(
     request: Request, model_name: str
-) -> (
-    TokenGeneratorPipeline[InputContext]
-    | AudioGeneratorPipeline[AudioGeneratorContext]
-):
+) -> TokenGeneratorPipeline | AudioGeneratorPipeline[AudioGeneratorContext]:
     app_state: State = request.app.state
     pipeline: (
-        TokenGeneratorPipeline[InputContext]
-        | AudioGeneratorPipeline[AudioGeneratorContext]
+        TokenGeneratorPipeline | AudioGeneratorPipeline[AudioGeneratorContext]
     ) = app_state.pipeline
 
     models = [pipeline.model_name]
@@ -187,7 +183,7 @@ class OpenAIChatResponseGenerator(
 ):
     def __init__(
         self,
-        pipeline: TokenGeneratorPipeline[InputContext],
+        pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptions | None = None,
         parser: LlamaToolParser = field(default_factory=LlamaToolParser),
     ) -> None:
@@ -418,7 +414,7 @@ class OpenAIChatResponseGenerator(
 
 
 class OpenAIEmbeddingsResponseGenerator:
-    def __init__(self, pipeline: TokenGeneratorPipeline[InputContext]) -> None:
+    def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.pipeline = pipeline
 
     async def encode(
@@ -672,8 +668,7 @@ async def openai_create_chat_completion(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -846,8 +841,7 @@ async def openai_create_embeddings(
             request_json = await request.json()
         embeddings_request = CreateEmbeddingRequest.model_validate(request_json)
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
         ) = await get_pipeline(request, embeddings_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -1142,8 +1136,7 @@ async def openai_create_completion(
             ) / 1e6
 
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
         ) = await get_pipeline(request, completion_request.model)
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
@@ -1235,7 +1228,7 @@ async def health() -> Response:
 
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
-    pipeline: TokenGeneratorPipeline[InputContext] = request.app.state.pipeline
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     model_list = [
         Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
@@ -1254,7 +1247,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
-    pipeline: TokenGeneratorPipeline[InputContext] = request.app.state.pipeline
+    pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = Model(
         id=pipeline.model_name, object="model", created=None, owned_by=""
     )
@@ -1285,8 +1278,7 @@ async def create_streaming_audio_speech(
             request_json
         )
         pipeline: (
-            TokenGeneratorPipeline[InputContext]
-            | AudioGeneratorPipeline[InputContext]
+            TokenGeneratorPipeline | AudioGeneratorPipeline[InputContext]
         ) = await get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(

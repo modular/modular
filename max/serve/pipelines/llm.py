@@ -20,7 +20,7 @@ import signal
 from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable, Generic
 
 import numpy as np
 import numpy.typing as npt
@@ -28,20 +28,25 @@ from max.interfaces import (
     AudioGenerationRequest,
     AudioGeneratorContext,
     AudioGeneratorOutput,
+    EmbeddingsOutput,
     GenerationStatus,
-    InputContext,
     LogProbabilities,
+    MAXPullQueue,
+    MAXPushQueue,
     PipelineTokenizer,
+    RequestID,
+    SchedulerResult,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
+from max.serve.process_control import ProcessMonitor
 from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.scheduler.queues import EngineQueue
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-
-ContextType = TypeVar("ContextType", bound=InputContext)
 
 logger = logging.getLogger("max.serve")
 
@@ -55,19 +60,26 @@ class TokenGeneratorOutput:
     stop_sequence: str | None = None
 
 
-@dataclass(frozen=True)
-class EmbeddingsGeneratorOutput:
-    embeddings: npt.NDArray[np.floating[Any]]
-
-
-class TokenGeneratorPipeline(Generic[ContextType]):
+class TokenGeneratorPipeline:
     """Base class for LLM text generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[ContextType, int, TextGenerationRequest],
-        engine_queue: EngineQueue[ContextType, Any],
+        tokenizer: PipelineTokenizer[
+            TextContext | TextAndVisionContext, int, TextGenerationRequest
+        ],
+        worker_monitor: ProcessMonitor,
+        request_queue: MAXPushQueue[
+            tuple[RequestID, TextContext | TextAndVisionContext]
+        ],
+        response_queue: MAXPullQueue[
+            dict[
+                RequestID,
+                SchedulerResult[EmbeddingsOutput | TextGenerationOutput],
+            ]
+        ],
+        cancel_queue: MAXPushQueue[list[RequestID]],
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -78,10 +90,19 @@ class TokenGeneratorPipeline(Generic[ContextType]):
 
         self.model_name = model_name
         self.tokenizer = tokenizer
-        self.engine_queue = engine_queue
         self.lora_queue = lora_queue
 
         self._background_tasks: set[asyncio.Task[object]] = set()
+
+        self.engine_queue = EngineQueue[
+            Any,
+            Any,
+        ](
+            worker_monitor=worker_monitor,
+            request_queue=request_queue,
+            response_queue=response_queue,
+            cancel_queue=cancel_queue,
+        )
 
     async def _collect_log_probs(
         self,
@@ -130,8 +151,9 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 async for response in self.engine_queue.stream(
-                    request.request_id, context
+                    context.request_id, context
                 ):
+                    assert isinstance(response, TextGenerationOutput)
                     for i, token in enumerate(response.tokens):
                         # We intentionally do not use `with Trace(...)` to minimize
                         # nesting in code.
@@ -204,9 +226,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
         """Generates all tokens for the provided request."""
         return [token async for token in self.next_token(request)]
 
-    async def encode(
-        self, request: TextGenerationRequest
-    ) -> EmbeddingsGeneratorOutput:
+    async def encode(self, request: TextGenerationRequest) -> EmbeddingsOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -223,9 +243,8 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):
-                    return EmbeddingsGeneratorOutput(
-                        embeddings=response.embeddings
-                    )
+                    assert isinstance(response, EmbeddingsOutput)
+                    return response
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"
                 )
@@ -237,7 +256,7 @@ class TokenGeneratorPipeline(Generic[ContextType]):
                     total_sw.elapsed_ms,
                 )
 
-    async def __aenter__(self) -> TokenGeneratorPipeline[ContextType]:
+    async def __aenter__(self) -> TokenGeneratorPipeline:
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
@@ -317,7 +336,12 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         tokenizer: PipelineTokenizer[
             AudioGeneratorContext, object, AudioGenerationRequest
         ],
-        engine_queue: EngineQueue[AudioGeneratorContext, Any],
+        worker_monitor: ProcessMonitor,
+        request_queue: MAXPushQueue[tuple[RequestID, AudioGeneratorContext]],
+        response_queue: MAXPullQueue[
+            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
+        ],
+        cancel_queue: MAXPushQueue[list[RequestID]],
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -327,10 +351,17 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         self.model_name = model_name
         self.tokenizer = tokenizer
-        self.engine_queue = engine_queue
         self.lora_queue = lora_queue
 
         self._background_tasks: set[asyncio.Task[object]] = set()
+        self.engine_queue = EngineQueue[
+            AudioGeneratorContext, AudioGeneratorOutput
+        ](
+            worker_monitor=worker_monitor,
+            request_queue=request_queue,
+            response_queue=response_queue,
+            cancel_queue=cancel_queue,
+        )
 
     async def next_chunk(
         self, request: AudioGenerationRequest
