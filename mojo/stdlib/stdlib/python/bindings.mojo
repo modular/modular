@@ -527,7 +527,7 @@ struct PythonModuleBuilder:
         return self.module
 
 
-struct PythonTypeBuilder(ImplicitlyCopyable, Movable):
+struct PythonTypeBuilder(Copyable, Movable):
     """A builder for a Python 'type' binding.
 
     This is typically used to build a type description of a `PyMojoObject[T]`.

@@ -276,7 +276,7 @@ language across multiple phases.
   - The following Mojo standard library types are no longer implicitly copyable:
     `List`, `Dict`, `DictEntry`, `OwnedKwargsDict`, `Set`, `LinkedList`, `Node`
     `Counter`, `CountTuple`, `BitSet`, `UnsafeMaybeUninitialized`, `DLHandle`,
-    `BenchConfig`, `BenchmarkInfo`, `Report`.
+    `BenchConfig`, `BenchmarkInfo`, `Report`, `PythonTypeBuilder`.
 
     To create a copy of one of these types, call the `.copy()` method explicitly:
 
