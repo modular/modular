@@ -526,3 +526,5 @@ as the version for these packages.
 - Error messages involving types using implicit parameters from
   auto-parameterized types now include context information to solve a class of
   incorrect "T != T" error messages common in kernel code.
+- Parameter inference failures now refer to parameters by their user-provided
+  name, rather than complaining about a mysterious "parameter #4".
