@@ -421,12 +421,7 @@ def test_2d_dynamic_list():
 
     assert_equal(3, len(list[0]))
 
-    # TODO(MOCO-2394):
-    #   This should just be `list[0].clear()`, but that
-    #   triggers an unexpected implicit copy for some reason.
-    # list[0].clear()
-    ref first_elem = list[0]
-    first_elem.clear()
+    list[0].clear()
 
     assert_equal(0, len(list[0]))
 
