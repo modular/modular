@@ -75,7 +75,14 @@ class MAXModelConfig(MAXModelConfigBase):
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
     model_path: str = ""
-    """:obj:`repo_id` of a Hugging Face model repository to use."""
+    """:obj:`repo_id` of a Hugging Face model repository to use. This is functionally equivalent to `model` flag."""
+
+    model: str = ""
+    """:obj:`repo_id` of a Hugging Face model repository to use.
+    The only entrypoint for this model attribute is via --model max cli flag. Everything under the hood
+    after this MAXModelConfig is initialized should be handled via model_path, for now.
+    See post_init for more details on how this is done.
+    """
 
     served_model_name: Optional[str] = None
     """Optional override for client-facing model name. Defaults to model_path."""
@@ -152,6 +159,17 @@ class MAXModelConfig(MAXModelConfigBase):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    def __post_init__(self) -> None:
+        # if both are specified, throw an error.
+        if self.model_path != "" and self.model != "":
+            raise ValueError(
+                "model_path and model cannot both be specified. Please use only one of them."
+            )
+        elif self.model != "":
+            self.model_path = self.model
+        # We use self.model_path from here on out.
+        self.model = ""
 
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
@@ -860,7 +878,8 @@ class MAXModelConfig(MAXModelConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         max_model_help = {
-            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights. Equivalent to --model flag.",
+            "model": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "served_model_name": "Optional override for client-facing model name. Defaults to model_path.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
