@@ -1173,9 +1173,14 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
   let description = [{
     The `#kgen.env` attribute defines a generic dictionary of environment
     parameters that can be accessed through parameter operators. The values
-    contained can be integers, represented with the `index` type, unit, the
-    presence of which indicates something, and strings, represented as
-    `!kgen.string` types.
+    contained can be:
+    - integers, represented with the `index` type
+    - strings, represented as `!kgen.string` types
+    - unit attributes, the presence of which indicates something
+
+    Note that EnvAttr does not support storing BoolAttr in it.
+    Instead, a boolean true is represented as a UnitAttr, and boolean false
+    is not represented at all (absence of a value evaluates to false).
 
     Example:
 
@@ -1202,6 +1207,11 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
     /// Parse a defines list and create the environment from that.
     static ErrorOr<EnvAttr> parseDefines(MLIRContext *ctx,
                                          ArrayRef<std::string> defines);
+
+    /// Query an environment value by name and convert it to the requested output type.
+    /// Supports conversion between int/bool/string/unit types as needed.
+    /// Returns the converted TypedAttr on success, or an Error describing what went wrong.
+    ErrorOr<TypedAttr> queryValue(StringRef name, Type outputType) const;
 
     /// Extends the EnvAttr with another one. If the keys conflict, then the
     /// extended value would take precedence.

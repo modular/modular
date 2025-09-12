@@ -21,6 +21,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
@@ -1168,7 +1169,7 @@ bool VariantAttr::isConstant() const {
 
 LogicalResult EnvAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                               DictionaryAttr values) {
-  // Only index, string, and unit attributes are allowed.
+  // Only index, bool, string, and unit attributes are allowed.
   for (const NamedAttribute &attr : values) {
     Attribute value = attr.getValue();
     if (auto intVal = ::dyn_cast<IntegerAttr>(value)) {
@@ -1229,6 +1230,68 @@ EnvAttr EnvAttr::extend(EnvAttr attr) {
   }
 
   return EnvAttr::get(values.getDictionary(attr.getContext()));
+}
+
+static TypedAttr implicitConversionToString(Attribute stored, Type desired) {
+  if (!stored)
+    return {};
+  if (auto integerValue = dyn_cast<mlir::IntegerAttr>(stored)) {
+    if (auto desiredStringType = dyn_cast<StringType>(desired)) {
+      SmallString<32> strValue;
+      integerValue.getValue().toString(strValue, /*Radix=*/10, /*Signed=*/true);
+      return StringAttr::get(strValue, desiredStringType);
+    }
+  }
+  return {};
+}
+
+ErrorOr<TypedAttr> EnvAttr::queryValue(StringRef name, Type outputType) const {
+  MLIRContext *ctx = getContext();
+  Attribute value = getValues().get(name);
+
+  // Mental model of EnvAttr is a bit complicated.
+  //
+  // There are three possible types of stored values:
+  // int (index)
+  // string
+  // unit
+
+  // There are two types involved: (1) the type of the stored value,
+  // and (2) the type being requested by the ParamOperatorAttr.
+  // They do not necessarily match! It is permitted to query an integer
+  // attribute and request a string output, the code below handles that.
+  //
+  // If the requested type is string or index, the attribute MUST
+  // exist in the dictionary. If the requested type is bool and the attribute
+  // does not exist, then the code returns false.
+
+  if (isa<IndexType, StringType>(outputType) && !value) {
+    return Error("define '" + name +
+                 "' does not exist, please provide it via -D");
+  }
+
+  if (isa<IndexType>(outputType)) {
+    if (auto intVal = dyn_cast<IntegerAttr>(value))
+      return intVal;
+    return Error("define '" + name + "' is not an integer, got " +
+                 mlir::debugString(value));
+  }
+
+  if (isa<StringType>(outputType)) {
+    if (auto strVal = dyn_cast<StringAttr>(value))
+      return strVal;
+    // This supports converting from IntegerAttr to StringAttr.
+    if (TypedAttr stringAttr = implicitConversionToString(value, outputType))
+      return stringAttr;
+    return Error("define '" + name + "' is not a string, got " +
+                 mlir::debugString(value));
+  }
+
+  // Now, the only remaining legal type on the ParamOperatorAttr is i1.
+  assert(cast<IntegerType>(outputType).isSignlessInteger(1));
+  // The only legal attr is a UnitAttr, its absence/presence means True/False.
+  // Here we do not even cast the value to UnitAttr, just check its presence.
+  return BoolAttr::get(ctx, static_cast<bool>(value));
 }
 
 //===----------------------------------------------------------------------===//

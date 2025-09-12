@@ -1500,7 +1500,10 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
           [&](auto &&v) {
             using T = std::decay_t<decltype(v)>;
             if constexpr (std::is_same_v<T, bool>) {
-              envAttrs.set(k, BoolAttr::get(ctx, v));
+              // Subtle detail: a true value is represented as UnitAttr,
+              // and false value is just not represented at all.
+              if (BoolAttr::get(ctx, v) && v)
+                envAttrs.set(k, UnitAttr::get(ctx));
             } else if constexpr (std::is_same_v<T, int>) {
               envAttrs.set(k, IntegerAttr::get(IndexType::get(ctx), v));
             } else if constexpr (std::is_same_v<T, std::string>) {
