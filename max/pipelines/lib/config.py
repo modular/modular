@@ -16,11 +16,13 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import sys
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
@@ -121,6 +123,16 @@ class PipelineConfig(MAXConfig):
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
+
+    chat_template: Optional[Path] = None
+    """Optional custom chat template to override the one shipped with the
+    HuggingFace model config. Can be either:
+    - A Path pointing to a file containing the template
+
+    If a Path is provided, the file will be read during config resolution and
+    the content will be stored as a string. This allows customizing the prompt
+    formatting for different use cases. If None, the model's default chat
+    template will be used."""
 
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
@@ -348,6 +360,82 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
+    def retrieve_chat_template(self) -> Optional[str]:
+        # Read the file content
+        if self.chat_template is None:
+            return None
+
+        try:
+            with open(self.chat_template, encoding="utf-8") as f:
+                template_content = f.read()
+
+            # Try to parse as JSON and extract chat_template if present
+            try:
+                template_json = json.loads(template_content)
+                if (
+                    isinstance(template_json, dict)
+                    and "chat_template" in template_json
+                ):
+                    logger.info(
+                        f"Successfully loaded chat_template from JSON in {self.chat_template} "
+                        f"({len(template_json['chat_template'])} characters)"
+                    )
+                    return template_json["chat_template"]
+                else:
+                    # JSON but no chat_template key, use entire content
+                    logger.info(
+                        f"Successfully loaded custom prompt template from {self.chat_template} "
+                        f"({len(template_content)} characters, JSON without chat_template key)"
+                    )
+                    return template_content
+            except json.JSONDecodeError:
+                # Not valid JSON, use entire content as template
+                logger.info(
+                    f"Successfully loaded custom prompt template from {self.chat_template} "
+                    f"({len(template_content)} characters)"
+                )
+                return template_content
+
+        except (OSError, UnicodeDecodeError) as e:
+            raise ValueError(
+                f"Failed to read prompt template file {self.chat_template}: {str(e)}. "
+                f"Please ensure the file is readable and contains valid UTF-8 text."
+            ) from e
+
+    def _resolve_chat_template(self) -> None:
+        """
+        Resolve chat_template if it's a Path object by reading the file content.
+
+        This method handles the case where chat_template is a Path object,
+        validates that the file exists, reads its content, and stores the content
+        as a string in the chat_template field.
+
+        Raises:
+            FileNotFoundError: If the specified template file does not exist
+            ValueError: If there's an error reading the template file
+        """
+        if self.chat_template is None:
+            return
+
+        # Expand user home directory if present (e.g., ~/templates/custom.jinja)
+        self.chat_template = self.chat_template.expanduser()
+
+        # Convert relative paths to absolute paths
+        if not self.chat_template.is_absolute():
+            self.chat_template = Path.cwd() / self.chat_template
+
+        # Verify the file exists
+        if not self.chat_template.exists():
+            raise ValueError(
+                f"--chat-template path ({self.chat_template}) does not exist."
+            )
+
+        if not self.chat_template.is_file():
+            raise ValueError(
+                f"Prompt template path is not a file: {self.chat_template}. "
+                f"Please provide a path to a valid template file."
+            )
+
     def _import_custom_architectures(self) -> None:
         """
         Import custom model modules to add them to the registry.
@@ -387,6 +475,9 @@ class PipelineConfig(MAXConfig):
         """
         # Before anything else, import custom model modules to add them to the registry.
         self._import_custom_architectures()
+
+        # Resolve chat_template if it's a Path
+        self._resolve_chat_template()
 
         self.model_config.resolve()
         # Validate if a provided max_length is non-negative.

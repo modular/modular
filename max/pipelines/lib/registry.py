@@ -366,6 +366,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
+                chat_template=pipeline_config.retrieve_chat_template(),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -374,6 +375,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 pipeline_config=pipeline_config,
+                chat_template=pipeline_config.retrieve_chat_template(),
             )
 
         return tokenizer
@@ -428,6 +430,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
+                chat_template=pipeline_config.retrieve_chat_template(),
             )
         else:
             tokenizer = arch.tokenizer(
@@ -436,6 +439,7 @@ class PipelineRegistry:
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 pipeline_config=pipeline_config,
+                chat_template=pipeline_config.retrieve_chat_template(),
             )
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
