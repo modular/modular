@@ -845,12 +845,24 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
     return SRValue(builder->create<ParamMaterializeOp>(location, value.ir));
 
-  emitWarning(expr->getLoc(),
-              "Try to implicitly materialize non-'ImplicitlyCopyable' type ")
+  auto diag =
+      emitError(expr->getLoc(),
+                "cannot implicitly materialize compile-time value of type ")
       << value.ir.getType()
-      << ". Try explicit materialization with 'materialize[value: T]()'";
+      << "to runtime because it is not 'ImplicitlyCopyable'"
+      << expr->getRange();
 
-  return SRValue(builder->create<ParamMaterializeOp>(location, value.ir));
+  // Attach the fix it by wrapping materialize[]() around the (simple)
+  // expression. Using two `FixIt` before/after the range will leads to two
+  // separate (also incomplete) fixes, which is useless. We might want a
+  // `FixIt::wrapAroundRange()`.
+  if (auto declRef = dyn_cast<DeclRefNode>(expr))
+    diag << FixIt(expr->getRange(), "materialize[" + declRef->spelling + "]()");
+
+  diag.attachNote(expr->getLoc())
+      << "use 'materialize' to explicitly materialize the value.";
+
+  return {};
 }
 
 SRValue IREmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
