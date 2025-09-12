@@ -696,16 +696,6 @@ class PipelineConfig(MAXConfig):
         pipeline_class = get_pipeline_for_task(task, self)
         devices = load_devices(self.model_config.device_specs)
 
-        # Prepare logging information
-        if len(self.model_config.weight_path) == 1:
-            # Single weight path - keep it inline
-            weight_path = f" {self.model_config.weight_path[0]} "
-        else:
-            # Multiple weight paths - format each on a new line with proper indentation
-            weight_path = ",\n                                ".join(
-                f"{path}" for path in self.model_config.weight_path
-            )
-
         weights_repo_str = (
             f"\n            weights_repo_id:        {self.model_config._weights_repo_id}"
             if self.model_config._weights_repo_id
@@ -770,14 +760,19 @@ class PipelineConfig(MAXConfig):
             f"    huggingface_revision:   {self.model_config.huggingface_model_revision}"
         )
         logger.info(f"    quantization_encoding:  {quantization_encoding_str}")
+
         if len(self.model_config.weight_path) == 1:
             # Single weight path - format inline
-            logger.info(f"    weight_path:            [{weight_path}]")
+            logger.info(
+                f"    weight_path:             {self.model_config.weight_path[0]}"
+            )
         else:
             # Multiple weight paths - format on multiple lines
             logger.info("    weight_path:            [")
-            logger.info(f"                                {weight_path}")
-            logger.info("                                ]")
+            for path in self.model_config.weight_path:
+                logger.info(f"                              {path}")
+            logger.info("                            ]")
+
         logger.info("")
         logger.info("Pipeline Runtime Configuration:")
         logger.info("-" * 40)
@@ -831,16 +826,6 @@ class PipelineConfig(MAXConfig):
         # Get pipeline task
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
 
-        # Format weight_path the same way as log_pipeline_info
-        if len(self.model_config.weight_path) == 1:
-            # Single weight path - keep it inline
-            weight_path = f"{self.model_config.weight_path[0]}"
-        else:
-            # Multiple weight paths - format as comma-separated list
-            weight_path = ", ".join(
-                f"{path}" for path in self.model_config.weight_path
-            )
-
         # Get reserved memory info from KVCache config
         kv_config = self.model_config._kv_cache_config
         memory_str = "Not calculated"
@@ -854,9 +839,8 @@ class PipelineConfig(MAXConfig):
             "Pipeline Configuration (use --pretty-print-config to print full config)"
         )
         logger.info("=" * 70)
-        logger.info(f"    model_name:         {arch.name}")
+        logger.info(f"    model:              {self.model_config.model_path}")
         logger.info(f"    task:               {task}")
-        logger.info(f"    weight_path:        {weight_path}")
         logger.info(f"    max_batch_size:     {self.max_batch_size}")
         logger.info(f"    max_seq_len:        {self.max_length}")
         logger.info(f"    cache_memory:       {memory_str}")
