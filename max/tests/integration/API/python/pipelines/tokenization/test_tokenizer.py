@@ -462,3 +462,272 @@ async def test_tokenizer__generate_prompt_and_token_ids(
             prompt=None,
             messages=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_custom_prompt_template() -> None:
+    """Test that custom prompt_template parameter overrides the model's default template."""
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+
+    # Define a simple custom template for testing
+    custom_template = """{% for message in messages %}
+{% if message['role'] == 'user' %}
+USER: {{ message['content'] }}
+{% elif message['role'] == 'assistant' %}
+ASSISTANT: {{ message['content'] }}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}
+ASSISTANT: {% endif %}"""
+
+    # Create tokenizer with custom template
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+        chat_template=custom_template,
+    )
+
+    # Test messages
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content="Hello, how are you?",
+        )
+    ]
+
+    # Generate prompt with custom template
+    generated_prompt = tokenizer.apply_chat_template(
+        messages=messages,
+        tools=None,
+        chat_template_options={"add_generation_prompt": True},
+    )
+
+    # Verify the custom template was used
+    assert "USER: Hello, how are you?" in generated_prompt, (
+        f"Custom template not used. Generated prompt: {generated_prompt}"
+    )
+    assert "ASSISTANT:" in generated_prompt, (
+        f"Custom template not used. Generated prompt: {generated_prompt}"
+    )
+
+    # Compare with default template to ensure it's different
+    default_tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+    )
+
+    default_prompt = default_tokenizer.apply_chat_template(
+        messages=messages,
+        tools=None,
+        chat_template_options={"add_generation_prompt": True},
+    )
+
+    # Custom and default prompts should be different
+    assert generated_prompt != default_prompt, (
+        f"Custom template produced same result as default.\n"
+        f"Custom: {generated_prompt}\n"
+        f"Default: {default_prompt}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_custom_prompt_template_with_tools() -> None:
+    """Test that custom prompt_template works with tools."""
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+
+    # Define a custom template that includes tools
+    custom_template = """{% for message in messages %}
+{% if message['role'] == 'user' %}
+USER: {{ message['content'] }}
+{% elif message['role'] == 'assistant' %}
+ASSISTANT: {{ message['content'] }}
+{% endif %}
+{% endfor %}
+{% if tools %}
+TOOLS AVAILABLE:
+{% for tool in tools %}
+- {{ tool.function.name }}: {{ tool.function.description }}
+{% endfor %}
+{% endif %}
+{% if add_generation_prompt %}
+ASSISTANT: {% endif %}"""
+
+    # Create tokenizer with custom template
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+        chat_template=custom_template,
+    )
+
+    # Test with tools
+    tools = [
+        TextGenerationRequestTool(
+            type="function",
+            function=TextGenerationRequestFunction(
+                name="get_weather",
+                description="Get the current weather for a location.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The location to get weather for",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            ),
+        )
+    ]
+
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content="What's the weather like?",
+        )
+    ]
+
+    # Generate prompt with custom template and tools
+    generated_prompt = tokenizer.apply_chat_template(
+        messages=messages,
+        tools=tools,
+        chat_template_options={"add_generation_prompt": True},
+    )
+
+    # Verify the custom template was used with tools
+    assert "TOOLS AVAILABLE:" in generated_prompt, (
+        f"Custom template with tools not used. Generated prompt: {generated_prompt}"
+    )
+    assert "get_weather:" in generated_prompt, (
+        f"Tool not included in custom template. Generated prompt: {generated_prompt}"
+    )
+    assert "USER: What's the weather like?" in generated_prompt, (
+        f"User message not properly formatted. Generated prompt: {generated_prompt}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_custom_prompt_template_error_handling() -> None:
+    """Test error handling for broken custom prompt templates."""
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+
+    # Create a deliberately broken template (missing closing tag)
+    broken_template = """{% for message in messages %}
+{% if message['role'] == 'user' %}
+USER: {{ message['content']
+{% elif message['role'] == 'assistant' %}
+ASSISTANT: {{ message['content'] }}
+{% endif %}
+{% endfor %}"""  # Note: missing closing }} for first message['content']
+
+    # Create tokenizer with broken template
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+        chat_template=broken_template,
+    )
+
+    messages = [
+        TextGenerationRequestMessage(
+            role="user",
+            content="Hello",
+        )
+    ]
+
+    # This should raise a ValueError with helpful context
+    with pytest.raises(ValueError) as exc_info:
+        tokenizer.apply_chat_template(
+            messages=messages,
+            tools=None,
+            chat_template_options={"add_generation_prompt": True},
+        )
+
+    error_message = str(exc_info.value)
+
+    # Verify the error message contains the expected guidance
+    assert "Failed to apply custom chat template" in error_message
+    assert "Template variables available" in error_message
+    assert "messages: List of conversation messages" in error_message
+    assert "Original error" in error_message
+
+
+@pytest.mark.asyncio
+async def test_default_template_error_passthrough() -> None:
+    """Test that default template errors are passed through unchanged."""
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+
+    # Create tokenizer without custom template
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+    )
+
+    # Create an edge case that might cause an error with some models
+    # This test verifies that we don't wrap default template errors
+    empty_messages: list[TextGenerationRequestMessage] = []
+
+    try:
+        # Try to apply chat template with empty messages
+        tokenizer.apply_chat_template(
+            messages=empty_messages,
+            tools=None,
+            chat_template_options={"add_generation_prompt": True},
+        )
+        # If it doesn't error, that's also fine - just means the model handles empty messages
+    except Exception as e:
+        # If it does error, ensure it's NOT wrapped with our custom error message
+        error_str = str(e)
+        assert "Failed to apply custom chat template" not in error_str, (
+            f"Default template error was incorrectly wrapped: {error_str}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_custom_template_new_context_integration() -> None:
+    """Test that custom templates work correctly with new_context method."""
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+
+    # Simple custom template
+    custom_template = """{% for message in messages %}
+{{ message['role']|upper }}: {{ message['content'] }}
+{% endfor %}
+ASSISTANT: """
+
+    # Create tokenizer with custom template
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        trust_remote_code=True,
+        chat_template=custom_template,
+    )
+
+    # Create a request that will use the custom template
+    request = TextGenerationRequest(
+        request_id="test_custom_template",
+        model_name=model_name,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content="Test message",
+            )
+        ],
+        sampling_params=SamplingParams(
+            max_new_tokens=50,
+            temperature=0.7,
+        ),
+    )
+
+    # Create context - this should use our custom template internally
+    context = await tokenizer.new_context(request)
+
+    # Verify context was created successfully
+    assert context is not None
+    assert len(context.tokens) > 0
+
+    # Decode the prompt tokens to verify our custom template was used
+    prompt_tokens = context.prompt_tokens
+    decoded_prompt = await tokenizer.decode(prompt_tokens)
+
+    # Should contain our custom format
+    assert "USER: Test message" in decoded_prompt, (
+        f"Custom template not applied in new_context. Decoded prompt: {decoded_prompt}"
+    )
