@@ -780,9 +780,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     return success();
   }
 
-  // Otherwise, memory and register passable values are both passed by-reference
-  // so we need to copy/move them fieldwise, invoking the copy/move ctors as
-  // appropriate.
+  // Otherwise, invoke the copy/move ctors fieldwise as appropriate.
   bool isImplicitlyCopyableStruct =
       structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
                                                         shared);
@@ -798,13 +796,24 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       return failure();
 
     // Verify that this will work so we get a tailored error message.
-    if (!fieldType.isExplicitlyCopyable(fieldASTDecl.getLoc(), shared) &&
-        !fieldType.isMovable(fieldASTDecl.getLoc(), shared)) {
-      auto diag = emitError(fieldASTDecl.getLoc())
-                  << "cannot synthesize " << fn.getSpecialFunctionInfo().name
-                  << " because field '" << fieldOp.getName()
-                  << "' has non-copyable and non-movable type " << fieldType;
-      return failure();
+    if (isMove) {
+      // The move constructor can work with movable (preferably) or implicitly
+      // copyable (as a fallback) types.
+      if (!fieldType.isMovable(fieldASTDecl.getLoc(), shared) &&
+          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
+        return emitError(fieldASTDecl.getLoc())
+               << "cannot synthesize " << fn.getSpecialFunctionInfo().name
+               << " because field '" << fieldOp.getName()
+               << "' has non-copyable and non-movable type " << fieldType;
+      }
+    } else {
+      if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
+                                isImplicitlyCopyableStruct)) {
+        return emitError(fieldASTDecl.getLoc())
+               << "cannot synthesize " << fn.getSpecialFunctionInfo().name
+               << " because field '" << fieldOp.getName()
+               << "' has non-copyable type " << fieldType;
+      }
     }
 
     auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
@@ -819,10 +828,10 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     // struct T(ImplicitlyCopyable):
     //   var f: some Copyable
     // ```
-    emitter.emitStoreToLValue(
-        {src, SyntheticNode(location)}, MLValue(targetFieldOp),
-        EC_AttributeRefBase,
-        /*allowExplicitCopy=*/!isImplicitlyCopyableStruct);
+    emitter.emitStoreToLValue({src, SyntheticNode(location)},
+                              MLValue(targetFieldOp), EC_AttributeRefBase,
+                              /*allowExplicitCopy=*/!isMove &&
+                                  !isImplicitlyCopyableStruct);
   }
 
   SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());

@@ -871,7 +871,7 @@ fn test_deinit_fn_types():
 struct CantSynthesize(ImplicitlyCopyable, Movable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-# expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable type 'InMemStruct'}}
   var x : InMemStruct
 
 
@@ -921,7 +921,7 @@ struct NotRegisterPassable:
 @register_passable
 struct Outer34551(ImplicitlyCopyable, Movable): # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
-    # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
+    # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
     fn __init__(out self):
@@ -937,17 +937,15 @@ struct StructWithoutBody:
 
 @fieldwise_init
 @register_passable
-# TODO(MOCO-2385)
-# expected-error @below {{'StructWithoutBody' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
 struct OkayStruct(ImplicitlyCopyable):
+# expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
 @fieldwise_init
 @register_passable
-# TODO(MOCO-2385)
-# expected-error @below {{'StructWithoutBody' is not explicitly copyable because it does not conform to 'Copyable'}}
 struct ExplicitlyCopyableStructWithNonCopyableBody(Copyable):
+# expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
@@ -957,9 +955,8 @@ struct ExplicitlyCopyableStructWithoutBody(Copyable):
 
 @fieldwise_init
 @register_passable
-# TODO(MOCO-2385)
-# expected-error @below {{'ExplicitlyCopyableStructWithoutBody' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
 struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable):
+  # expected-error @below {{cannot synthesize __copyinit__ because field 'begin' has non-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
     var begin: ExplicitlyCopyableStructWithoutBody
 
 
@@ -1042,7 +1039,7 @@ fn invalid_trait_bind():
     trait_fn[NoTraits]() # expected-error {{cannot bind type 'NoTraits' to trait 'CFMTrait'}}
 
 fn non_copyable_trait[T: CFMTrait](value: T):
-    var copy = value # expected-error {{'T' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+    var copy = value # expected-error {{value of type 'T' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
 
 
 fn trait_fn_infer[T: CFMTrait](x: T):
@@ -1188,7 +1185,7 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
 struct AnyTypeMember[T: AnyType](ImplicitlyCopyable, Movable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
-# expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable and non-movable type 'T'}}
+# expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable type 'T'}}
     var value: T
 
 

@@ -1314,20 +1314,47 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
     return emitCResult(result, value.expr, dest);
   }
 
-  // Generate nicer error message for common cases.
+  // Verify that the type is copyable in this way so we can generate tailored
+  // error messages, rather than just allowing IREmitter to do it.
   if (!valueType.isCopyable(exprLoc, shared, !allowExplicitCopy)) {
-    if (valueType.isMovableFrom(value, shared) &&
-        !valueType.isRegisterPassable(exprLoc, shared)) {
-      emitError(exprLoc, "value of type ")
-          << valueType
-          << " can only be moved, but source value can only be copied"
-          << value.expr->getRange();
-    } else {
-      emitError(exprLoc) << valueType << " is not "
-                         << (allowExplicitCopy ? "explicitly" : "implicitly")
-                         << " copyable because it does not conform to '"
-                         << (allowExplicitCopy ? "" : "Implicitly")
-                         << "Copyable'" << value.expr->getRange();
+    StringRef traitName = allowExplicitCopy ? "Copyable" : "ImplicitlyCopyable";
+
+    auto diag = emitError(exprLoc, "value of type ")
+                << valueType << " cannot be "
+                << (allowExplicitCopy ? "explicitly" : "implicitly")
+                << " copied, it does not conform to '" << traitName << "'"
+                << value.expr->getRange();
+
+    // Decide if we can take ownership of the specified value.
+    auto canTransferFrom = [&]() -> bool {
+      // Can only transfer from an MValue.
+      if (!value.ir.isMValue())
+        return false;
+
+      Value val = OriginTrackable::findUnderlyingValueFromField(
+          value.ir.getMValueReference());
+      if (!val)
+        return false;
+      // Can't transfer from (e.g.) read arguments.
+      return cast<RefType>(val.getType()).isMutableKnown(true);
+    };
+
+    // Suggest transfer if the type is movable, or if it is a transferable
+    // MValue.
+    if (valueType.isMovable(exprLoc, shared) || canTransferFrom()) {
+      diag.attachNote(exprLoc)
+          << "consider transferring the value with '^'"
+          << FixIt::insertAfterToken(value.expr->getRangeEnd(), "^",
+                                     shared.diags);
+    }
+
+    // Suggest .copy() if the type is explicitly copyable and we're trying to
+    // implicitly copy it.
+    if (!allowExplicitCopy && valueType.isCopyable(exprLoc, shared, false)) {
+      diag.attachNote(exprLoc)
+          << "you can copy it explicitly with '.copy()'"
+          << FixIt::insertAfterToken(value.expr->getRangeEnd(), ".copy()",
+                                     shared.diags);
     }
     return {};
   }

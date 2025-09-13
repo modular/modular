@@ -19,7 +19,7 @@ struct StringNoCopy:
 fn makes_escaping_closurenocopy(m: StringNoCopy):
     # expected-error @below {{cannot synthesize fieldwise init because field 'field0' has non-copyable and non-movable type 'StringNoCopy'}}
     fn myclosure() -> StringNoCopy:
-        # expected-error @below {{'StringNoCopy' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+        # expected-error @below {{value of type 'StringNoCopy' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
         return m
 
     var y: fn () escaping -> None = myclosure
