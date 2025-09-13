@@ -13,7 +13,16 @@ import torch
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
@@ -26,7 +35,6 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
 )
 from max.nn.kv_cache.cache_params import KVCacheParams, KVCacheStrategy
-from max.nn.kv_cache.paged_cache.paged_cache import PagedCacheInputSymbols
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
@@ -34,7 +42,7 @@ AttentionFn = Callable[
     [
         TensorValue,
         TensorValue,
-        TensorValue,
+        BufferValue,
         TensorValue,
         TensorValue,
         TensorValue,
@@ -52,7 +60,7 @@ def build_and_execute_graph(
     attention_fn: AttentionFn,
     model: Module,
     kv_inputs: PagedKVCacheTensorsNoOpaque,
-    kv_input_symbols: PagedCacheInputSymbols,
+    kv_input_symbols: tuple[BufferType, TensorType, TensorType, TensorType],
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
     hidden_state_type = TensorType(
@@ -80,17 +88,17 @@ def build_and_execute_graph(
             blocks,
             cache_lengths,
             lookup_table,
-            is_cache_empty,
+            max_lengths,
         ) = g.inputs
         layer_idx = ops.constant(0, dtype=DType.uint32, device=device_ref)
 
         output = attention_fn(
             hidden_state.tensor,
             input_row_offsets_symbol.tensor,
-            blocks.tensor,
+            blocks.buffer,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_lengths.tensor,
             layer_idx.tensor,
         )
 
@@ -179,22 +187,31 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(*kv_manager.fetch(batch)[0])
-    kv_input_symbols = kv_manager.input_symbols()[0]
+    kv_input_symbols_immut = kv_manager.input_symbols()[0]
+    kv_input_symbols_mut: tuple[
+        BufferType, TensorType, TensorType, TensorType
+    ] = (
+        kv_input_symbols_immut[0].as_buffer(),
+        kv_input_symbols_immut[1],
+        kv_input_symbols_immut[2],
+        kv_input_symbols_immut[3],
+    )
 
     def reference_attention_fn(
         hidden_state: TensorValue,
         input_row_offsets: TensorValue,
-        blocks: TensorValue,
+        blocks: BufferValue,
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
-        is_cache_empty: TensorValue,
+        max_lengths: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
+        blocks_tensor = ops.buffer_load(blocks.buffer)
         kv_collection = fetch_op(
-            blocks.tensor,
+            blocks_tensor,
             cache_lengths.tensor,
             lookup_table.tensor,
-            is_cache_empty.tensor,
+            max_lengths.tensor,
         )
 
         return reference_attention(
@@ -208,17 +225,17 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     def no_opaque_attention_fn(
         hidden_state: TensorValue,
         input_row_offsets: TensorValue,
-        blocks: TensorValue,
+        blocks: BufferValue,
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
-        is_cache_empty: TensorValue,
+        max_lengths: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
         kv_cache_tensors = PagedKVCacheTensorsNoOpaque(
             blocks=blocks,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
-            is_cache_empty=is_cache_empty,
+            max_lengths=max_lengths,
         )
 
         return no_opaque_attention(
@@ -253,7 +270,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             no_opaque_attention_fn,
             kv_inputs=kv_inputs,
             model=no_opaque_attention,
-            kv_input_symbols=kv_input_symbols,
+            kv_input_symbols=kv_input_symbols_mut,
         )
-    assert "store_k_cache not implemented" in str(e.value)
+    assert "flash_attention_ragged_no_opaque not implemented" in str(e.value)
     # assert torch.allclose(no_opaque_output, reference_output)
