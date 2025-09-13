@@ -1545,6 +1545,8 @@ class ClosureMemoryKind(enum.Enum):
 
     trivial = 2
 
+    register_passable = 3
+
 class ClosureMethod(enum.Enum):
     call = 0
 
@@ -1577,6 +1579,8 @@ class FnEffects(enum.Enum):
     refresult = 32
 
     unified = 64
+
+    register_passable = 128
 
 class InlineLevel(enum.Enum):
     automatic = 0
