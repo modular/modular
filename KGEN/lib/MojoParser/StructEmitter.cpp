@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "StructEmitter.h"
+#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
@@ -795,6 +796,11 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                                                   fieldASTDecl.getLoc())))
       return failure();
 
+    auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
+    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
+    CValue src =
+        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
+
     // Verify that this will work so we get a tailored error message.
     if (isMove) {
       // The move constructor can work with movable (preferably) or implicitly
@@ -807,6 +813,13 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                << "' has non-copyable and non-movable type " << fieldType;
       }
     } else {
+      // We only synthesize __copyinit__ for `ImplicitlyCopyable` object iff all
+      // its fields are `ImplicitlyCopyable`. That is, we won't synthesize for
+      // the following struct:
+      // ```
+      // struct T(ImplicitlyCopyable):
+      //   var f: some Copyable
+      // ```
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct)) {
         return emitError(fieldASTDecl.getLoc())
@@ -814,24 +827,26 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                << " because field '" << fieldOp.getName()
                << "' has non-copyable type " << fieldType;
       }
+
+      // If this a copy constructor and the field is only `Copyable` but not
+      // implicitly copyable, generate the explicit call to `__copyinit__` so
+      // the rest of the compiler doesn't have to know about explicit copying.
+      // We only do this when not-implicitly copyable so we don't have to deal
+      // with the MLIR types.
+      if (!isImplicitlyCopyableStruct &&
+          !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared)) {
+
+        ValueDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
+        SyntheticNode expr(location);
+        (void)emitter.emitNamedMethodCall("__copyinit__", {{{src, &expr}}},
+                                          dest, CallSyntax::kImplicitCopyInit,
+                                          &expr);
+        continue;
+      }
     }
 
-    auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
-    Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
-    CValue src =
-        isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
-
-    // We only systhesize __copyinit__ for `ImplicitlyCopyable` object iff all
-    // its fields are `ImplicitlyCopyable`. That is, we won't synthesize for the
-    // following struct:
-    // ```
-    // struct T(ImplicitlyCopyable):
-    //   var f: some Copyable
-    // ```
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
-                              MLValue(targetFieldOp), EC_AttributeRefBase,
-                              /*allowExplicitCopy=*/!isMove &&
-                                  !isImplicitlyCopyableStruct);
+                              MLValue(targetFieldOp), EC_SynthesizedMethod);
   }
 
   SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
@@ -941,7 +956,6 @@ void StructEmitter::populateExplicitCopy(ASTDecl &fnDecl) {
   }
 
   emitter.emitNormalReturn(structDeclOp.getLoc(), resultToReturn);
-
   fnDecl.resolvedness = DeclResolvedness::body;
 }
 

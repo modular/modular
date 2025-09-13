@@ -88,6 +88,7 @@ enum ExprContext {
   EC_PyBindGen,            // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call
   EC_RefBinding,           // ref r = x
+  EC_SynthesizedMethod,    // synthesized method call
 };
 const char *getContextMessage(ExprContext context);
 
@@ -537,18 +538,12 @@ public:
   /// Emit a copy of the specified value, producing a new owned instance of the
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
-  /// When `allowExplicitCopy = true`, compiler is allowed to emit call to
-  /// `__copyinit__` even when the type of the value is only `Copyable` (and not
-  /// `ImplicitlyCopyable`). It can only happen when we are
-  /// synthesizing __copyinit__ itself.
-  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
-                         bool allowExplicitCopy = false);
+  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
 
   /// Given a value with a known type, emit a store to the specified LValue.
-  /// This returns an borrowed reference to the value after it is done.  The
-  /// types must match for this call, or be a nonmaterializable conversion.
+  /// This returns an borrowed reference to the value after it is done.
   CValue emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                           ExprContext context, bool allowExplicitCopy = false);
+                           ExprContext context);
 
   /// Emit IR for the specified expression without adding it to the current
   /// execution context.  This even allows evaluating dynamic expressions in a
