@@ -465,8 +465,8 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   var example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
-  # CHECK-NEXT: %anonymous2A = lit.var.decl
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK-NEXT: %anonymous2A = lit.var.decl
   # CHECK-NEXT: lifetime.start %anonymous2A
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %anonymous2A)
   # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}(%anonymous2A)

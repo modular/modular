@@ -105,11 +105,11 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # Pass memory only things by value as arguments.
 
-  # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.var.decl {{.*}}!MemoryOnlyPair
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
+  # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.var.decl {{.*}}!MemoryOnlyPair
   # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPPAIR]])
-  # CHECK-NEXT: [[TMPINT:%.*]] = lit.var.decl {{.*}}!MemoryOnlyInt
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
+  # CHECK-NEXT: [[TMPINT:%.*]] = lit.var.decl {{.*}}!MemoryOnlyInt
   # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPINT]])
   # CHECK-NEXT: lit.call @{{.*}}@"method{{.*}}([[TMPPAIR]], [[TMPINT]])
   a.method(regX)
