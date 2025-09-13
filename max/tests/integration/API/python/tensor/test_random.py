@@ -11,10 +11,8 @@ from conftest import assert_all_close
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import random
-from max.experimental.tensor import default_device
 
 
-@pytest.mark.skip("GEX-2512: these return the same value :facepalm:")
 def test_normal() -> None:
     t1 = random.normal([20], dtype=DType.float32, device=CPU())
     t2 = random.normal([20], dtype=DType.float32, device=CPU())
@@ -23,12 +21,9 @@ def test_normal() -> None:
         assert_all_close(t1, t2)
 
 
-@pytest.mark.skip("GEX-2512: these return the same value :facepalm:")
 def test_normal_defaults() -> None:
-    # `normal` not implemented on GPU yet
-    with default_device(CPU()):
-        t1 = random.normal([20])
-        t2 = random.normal([20])
+    t1 = random.normal([20])
+    t2 = random.normal([20])
 
     with pytest.raises(AssertionError):
         assert_all_close(t1, t2)
