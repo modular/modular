@@ -9,7 +9,12 @@
 @register_passable
 struct SomeNonTrivRegPassable: pass
 
-struct MemType: pass
+struct MemType:
+  fn __init__(out self):
+    pass
+
+  fn consume(var self): pass
+
 
 fn takes_pos_or_kw_arg(i: Index, j: Index):
     pass
@@ -272,8 +277,12 @@ def testLValuesRvalues() -> None:
   var nc1 = NonCopyable()
   var nc2 = NonCopyable()
 
-  var nc3 = nc1 # expected-error {{'NonCopyable' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
-  var nc4 = nc2 # expected-error {{'NonCopyable' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+  # expected-error @below {{value of type 'NonCopyable' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+  # expected-note @below {{consider transferring the value with '^'}}
+  var nc3 = nc1
+  # expected-error @below {{value of type 'NonCopyable' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+  # expected-note @below {{consider transferring the value with '^'}}
+  var nc4 = nc2
 
   var mpPair = MemoryOnlyPair()
 
@@ -864,7 +873,27 @@ fn test3830_2[o: ImmutableOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)
 
+struct MovableAndExplicitCopyable(Movable, Copyable):
+    fn __init__(out self): pass
 
+struct MovableOnly(Movable):
+    fn __init__(out self): pass
+
+fn test_implicit_copy_errors():
+    var a1 = MovableAndExplicitCopyable()
+    # expected-error @below {{value of type 'MovableAndExplicitCopyable' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @below {{consider transferring the value with '^'}}
+    # expected-note @below {{you can copy it explicitly with '.copy()'}}
+    var a2 = a1
+    var b1 = MovableOnly()
+    # expected-error @below {{value of type 'MovableOnly' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @below {{consider transferring the value with '^'}}
+    var b2 = b1
+
+    var x = MemType()
+    # expected-error @below {{value of type 'MemType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @below {{consider transferring the value with '^'}}
+    x.consume()
 
 
 ##===----------------------------------------------------------------------===##

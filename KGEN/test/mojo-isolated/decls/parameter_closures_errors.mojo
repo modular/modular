@@ -61,7 +61,8 @@ struct NoCopyType:
 fn makeClosure(x: MemType):
     var rp: NoCopyType = NoCopyType(x.a)
 
-    # expected-error @below {{'NoCopyType' is not implicitly copyable because it does not conform to 'ImplicitlyCopyable'}}
+    # expected-error @below {{value of type 'NoCopyType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @below {{consider transferring the value with '^'}}
     @__copy_capture(rp)
     @parameter
     fn writer() -> Index:
