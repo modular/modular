@@ -121,7 +121,9 @@ def flatten(value: int | object | Iterable) -> list[Any]:
 
 
 # TODO: remove and replace directly with subprocess.run
-def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
+def _run_cmdline(
+    cmd: list[str], dryrun: bool = False, timeout: int | None = None
+) -> ProcessOutput:
     """Execute a shell command with error handling."""
     try:
         if dryrun:
@@ -130,7 +132,22 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
 
         # Pass the current environment to subprocess, including MODULAR_MOJO_MAX_IMPORT_PATH
         env = os.environ.copy()
-        output = subprocess.run(cmd, check=False, capture_output=True, env=env)
+        if timeout is None:
+            output = subprocess.run(
+                cmd, check=False, capture_output=True, env=env
+            )
+        else:
+            try:
+                output = subprocess.run(
+                    cmd,
+                    check=False,
+                    capture_output=True,
+                    env=env,
+                    timeout=timeout,
+                )
+            except Exception as e:
+                return ProcessOutput(None, str(e), os.EX_OSERR)
+
         return ProcessOutput(
             output.stdout.decode("utf-8"),
             output.stderr.decode("utf-8"),
@@ -323,6 +340,7 @@ class SpecInstance:
         dryrun: bool = False,
         exec_prefix: list[str] = [],  # noqa: B006
         exec_suffix: list[str] = [],  # noqa: B006
+        timeout_secs: int | None = None,
     ) -> ProcessOutput:
         vars = self._get_vars
         cmd = []
@@ -333,7 +351,7 @@ class SpecInstance:
         if exec_suffix:
             cmd.extend(exec_suffix)
             logging.debug(f"exec-suffix: {exec_suffix}")
-        out = _run_cmdline(cmd, dryrun)
+        out = _run_cmdline(cmd, dryrun, timeout=timeout_secs)
         return out
 
     def to_obj(self) -> dict[str, Any]:
@@ -973,6 +991,7 @@ class Scheduler:
         profile,  # noqa: ANN001
         exec_prefix,  # noqa: ANN001
         exec_suffix,  # noqa: ANN001
+        timeout_secs: int | None = None,
     ) -> None:
         """Execute all the items in the scheduler"""
 
@@ -1003,6 +1022,7 @@ class Scheduler:
                 dryrun=build_item.dryrun,
                 exec_prefix=exec_prefix_item,
                 exec_suffix=exec_suffix_item,
+                timeout_secs=timeout_secs,
             )
             build_item.exec_output = exec_output
             build_item.exec_benchmark_time = time() - t_start
@@ -1235,6 +1255,7 @@ def run(
     verbose=False,  # noqa: ANN001
     output_dir=None,  # noqa: ANN001
     num_cpu=1,  # noqa: ANN001
+    timeout_secs: int | None = None,
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -1314,6 +1335,8 @@ def run(
             # - could not find executable in the unique list of scheduled build items
             unique_build_paths = scheduler.build_all()
             scheduler.close_pool()
+            obj_cache.dump()
+
             t_build_total = time() - t_start_total
 
             if mode in [KBENCH_MODE.RUN, KBENCH_MODE.TUNE]:
@@ -1348,6 +1371,7 @@ def run(
                             profile=profile,
                             exec_prefix=exec_prefix,
                             exec_suffix=exec_suffix,
+                            timeout_secs=timeout_secs,
                         )
 
                         scheduler.progress.update(exec_progress, advance=1)
@@ -1599,6 +1623,13 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     help="Any suffix options (treated as str and directly passed after binary.)",
     multiple=False,
 )
+@click.option(
+    "--timeout-secs",
+    default=None,
+    help="Timeout seconds for executing each binary. (default=None)",
+    multiple=False,
+    type=click.INT,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files,  # noqa: ANN001
@@ -1624,6 +1655,7 @@ def cli(
     profile,  # noqa: ANN001
     exec_prefix,  # noqa: ANN001
     exec_suffix,  # noqa: ANN001
+    timeout_secs,  # noqa: ANN001
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1698,6 +1730,7 @@ def cli(
             verbose=verbose,
             output_dir=output_dir,
             num_cpu=num_cpu,
+            timeout_secs=timeout_secs,
         )
         if obj_cache.is_active:
             obj_cache.dump()
