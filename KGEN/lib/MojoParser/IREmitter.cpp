@@ -144,6 +144,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in implicit '__merge_with__' call";
   case EC_RefBinding:
     return " in 'ref' binding";
+  case EC_SynthesizedMethod:
+    return " in synthesized method";
   }
   llvm_unreachable("invalid expr context");
 }
@@ -1236,8 +1238,7 @@ CValue IREmitter::emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest) {
 /// Emit a copy of the specified value, producing a new owned instance of the
 /// value in the specified destination.  This returns an RValue if
 /// there is no consuming dest, otherwise a BValue.
-CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
-                                  bool allowExplicitCopy) {
+CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
   if (!value.ir)
@@ -1316,13 +1317,10 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
 
   // Verify that the type is copyable in this way so we can generate tailored
   // error messages, rather than just allowing IREmitter to do it.
-  if (!valueType.isCopyable(exprLoc, shared, !allowExplicitCopy)) {
-    StringRef traitName = allowExplicitCopy ? "Copyable" : "ImplicitlyCopyable";
-
+  if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
     auto diag = emitError(exprLoc, "value of type ")
-                << valueType << " cannot be "
-                << (allowExplicitCopy ? "explicitly" : "implicitly")
-                << " copied, it does not conform to '" << traitName << "'"
+                << valueType << " cannot be implicitly"
+                << " copied, it does not conform to 'ImplicitlyCopyable'"
                 << value.expr->getRange();
 
     // Decide if we can take ownership of the specified value.
@@ -1341,7 +1339,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
 
     // Suggest transfer if the type is movable, or if it is a transferable
     // MValue.
-    if (valueType.isMovable(exprLoc, shared) || canTransferFrom()) {
+    if ((valueType.isMovable(exprLoc, shared) || canTransferFrom())) {
       diag.attachNote(exprLoc)
           << "consider transferring the value with '^'"
           << FixIt::insertAfterToken(value.expr->getRangeEnd(), "^",
@@ -1350,7 +1348,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
 
     // Suggest .copy() if the type is explicitly copyable and we're trying to
     // implicitly copy it.
-    if (!allowExplicitCopy && valueType.isCopyable(exprLoc, shared, false)) {
+    if (valueType.isExplicitlyCopyable(exprLoc, shared)) {
       diag.attachNote(exprLoc)
           << "you can copy it explicitly with '.copy()'"
           << FixIt::insertAfterToken(value.expr->getRangeEnd(), ".copy()",
@@ -1365,8 +1363,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                    ExprContext context,
-                                    bool allowExplicitCopy) {
+                                    ExprContext context) {
   // Convert nonmaterializables.
   if (auto nmTarget =
           value.ir.getRValueType().getNonmaterializableTarget(shared)) {
@@ -1465,26 +1462,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // has no __moveinit__, then copy it into the destination.
   if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared) ||
       value.ir.getIfPValue()) {
-    // If the value isn't either copy or movable from the source, but the source
-    // value is an RValue, then this is because the type isn't implementing
-    // either the copy or move init.  Complain precisely, instead of just
-    // complaining about copying.
-    auto isCopyable = [&](ASTType valueType) {
-      return allowExplicitCopy
-                 ? valueType.isExplicitlyCopyable(exprLoc, shared)
-                 : valueType.isImplicitlyCopyable(exprLoc, shared);
-    };
-    if (!isCopyable(valueType) && value.ir.getIfRValue() &&
-        !value.ir.getIfPValue()) {
-      emitError(exprLoc) << valueType
-                         << " is not copyable or movable because it has no "
-                            "'__copyinit__' or '__moveinit__' member"
-                         << value.expr->getRange();
-      return {};
-    }
-
     ValueDest dest(destLV, context);
-    auto result = emitCopyOfValue(value, dest, allowExplicitCopy);
+    auto result = emitCopyOfValue(value, dest);
     if (!result)
       dest.resetForError(*this);
     return result;
