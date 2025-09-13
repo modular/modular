@@ -72,6 +72,9 @@ from test_package.unknown_nested_module import bar
 import test_package
 
 fn assignPackageModule():
+  # FIXME: This error isn't great.
+  # expected-error @below {{cannot implicitly materialize compile-time value of type 'test_package'to runtime because it is not 'ImplicitlyCopyable'}}
+  # expected-note @below {{use 'materialize' to explicitly materialize the value.}}
   test_package = test_package
 
 # // -----
@@ -123,11 +126,21 @@ import imported_module
 import test_package
 
 fn baz():
-    # expected-error @below {{module 'imported_module' is not callable; did you mean to call imported_module.imported_module?}}
+    # expected-error @below {{'imported_module' does not implement the '__call__' method}}
     imported_module()
-    # expected-error @below {{module 'imported_module' is not subscriptable; did you mean to subscript imported_module.imported_module?}}
+    # expected-error @below {{'imported_module' is not subscriptable, it does not implement the `__getitem__`/`__setitem__` methods}}
     imported_module[`0`]
-    # expected-error @below {{module 'test_package' is not callable}}
+    # expected-error @below {{'test_package' does not implement the '__call__' method}}
     test_package()
-    # expected-error @below {{module 'test_package' is not subscriptable}}
+    # expected-error @below {{'test_package' is not subscriptable, it does not implement the `__getitem__`/`__setitem__` methods}}
     test_package[`0`]
+
+# // -----
+
+import test_package
+
+# expected-error @below {{cannot implicitly convert 'test_package' value to 'AnyType' in type parameter}}
+alias x = S[test_package]()
+
+struct S[a: AnyType]:
+    pass

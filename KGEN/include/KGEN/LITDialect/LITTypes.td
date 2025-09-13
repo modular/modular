@@ -76,6 +76,39 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ModuleType
+//===----------------------------------------------------------------------===//
+
+def LIT_ModuleType : LITType<"Module", "module"> {
+  let summary = "Reference to a module declaration.";
+  let description = [{
+    A `!lit.module` type references a module declaration.
+
+    Example:
+
+    ```mlir
+    !lit.module<@MyModule>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol);
+  let assemblyFormat = [{
+    `<` $symbol `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), symbol);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the name of the referenced type, ignoring packages.
+    StringAttr getName() { return getSymbol().getLeafReference(); }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // TypeSignatureType
 //===----------------------------------------------------------------------===//
 

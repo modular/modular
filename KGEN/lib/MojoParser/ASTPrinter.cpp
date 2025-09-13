@@ -1236,6 +1236,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (isa<OriginSetType>(type)) {
     // Use "OriginSet" type name instead of the internal "origin.set"
     os << "OriginSet";
+  } else if (auto module = dyn_cast<ModuleType>(type)) {
+    // Only print the leaf reference when pretty printing types.
+    printSymbol(os, module.getSymbol(), diagShared, /*isFunc=*/false);
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (diagShared)

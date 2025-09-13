@@ -949,8 +949,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this is a module or package declaration, form a module reference.
   if (isa_and_nonnull<FileModuleOp, PackageOp>(decl->getIfOperation())) {
-    PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
-        decl->getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
+    PValue result(ModuleAttr::get(LIT::ModuleType::get(decl->getSymbolRef())));
     return emitter.emitCResult(result, expr, dest);
   }
 
@@ -1345,19 +1344,7 @@ static PValue substituteParametersIntoUserDefinedType(
     SMLoc rhsLoc, IREmitter &emitter) {
   auto metaType = cast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl->getIfOperation());
-  if (!structOp) {
-    auto diag = emitter.emitError(loc);
-    if (isa_and_nonnull<FileModuleOp, PackageOp>(typeDecl->getIfOperation())) {
-      // Emit helpful error message when user tried to subscript a module.
-      emitModuleCallSubscriptDiag(diag, metaType, "subscript", loc,
-                                  emitter.shared);
-    } else {
-      diag << "unknown parameterized type " << ASTType(typeValue)
-           << SourceRange{loc, rhsLoc};
-    }
-    return {};
-  }
+  auto structOp = cast<StructDeclOp>(typeDecl->getIfOperation());
 
   // Notify the listener on the parameter binding.
   emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
