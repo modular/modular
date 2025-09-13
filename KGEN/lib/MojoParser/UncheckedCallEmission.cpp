@@ -950,8 +950,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // writeback.
     if (DLValue dlv = lv.getIfDLValue()) {
       if (Value ref =
-              dlv->emitAsRefValueIfOwned(argValAndExpr.expr->getLoc(), emitter))
-        return checkMValueAddrSpace(MLValue(ref));
+              dlv->tryEmitAsRefValue(argValAndExpr.expr->getLoc(), emitter))
+        return checkMValueAddrSpace(CValue::getMValueForRef(ref));
     }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into

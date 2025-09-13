@@ -41,8 +41,8 @@ Value BaseDLValue::emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const {
   return {};
 }
 
-Value BaseDLValue::emitAsRefValueIfOwned(llvm::SMLoc loc,
-                                         IREmitter &emitter) const {
+Value BaseDLValue::tryEmitAsRefValue(llvm::SMLoc loc,
+                                     IREmitter &emitter) const {
   return {};
 }
 
@@ -122,8 +122,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   }
   auto loc = expr->getLocation(emitter);
   // Try to bind the base (e.g., dict[key]) as a stored ref.
-  if (Value baseRef =
-          baseVal.ir->emitAsRefValueIfOwned(expr->getLoc(), emitter)) {
+  if (Value baseRef = baseVal.ir->tryEmitAsRefValue(expr->getLoc(), emitter)) {
     auto fieldPtr =
         emitter.builder->create<RefStructGEROp>(loc, baseRef, getField());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
@@ -207,18 +206,6 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                      storeDest, CallSyntax::kMethodCall, expr);
 }
 
-Value SubscriptDLValue::emitRef(IREmitter &emitter) const {
-  // Call the getter to get the ref.
-  ValueDest storeDest(EC_RefBinding);
-  auto ref = emitLoad(storeDest, emitter);
-  if (!ref)
-    return {}; // Error emitted by emitLoad.
-  if (ref.isMValue())
-    return ref.getMValueReference();
-  // getitem returned something that isn't a ref.
-  return {};
-}
-
 // Some subscripts, notably Dict, are defined with both a getter and a setter
 // but the getter returns a ref (and throws).  If we need to bind the dict entry
 // into a ref, call the getter.
@@ -227,23 +214,34 @@ Value SubscriptDLValue::emitAsRefValue(llvm::SMLoc loc,
   // If there is no getter, then this just fails like other computed lvalues.
   if (!getter)
     return BaseDLValue::emitAsRefValue(loc, emitter);
-  if (Value value = emitRef(emitter))
-    return value;
-  return BaseDLValue::emitAsRefValue(loc, emitter);
+
+  // Call the getter to get the ref.
+  ValueDest storeDest(EC_RefBinding);
+  auto ref = emitLoad(storeDest, emitter);
+  if (!ref)
+    return {}; // Error emitted by emitLoad.
+
+  // If we have a reference, we succeeded.
+  if (ref.isMValue())
+    return ref.getMValueReference();
+  // getitem returned something that isn't a ref.
+  emitter.emitError(
+      expr->getLoc(),
+      "getter did not return a reference required by this context");
+  return {};
 }
 
-Value SubscriptDLValue::emitAsRefValueIfOwned(llvm::SMLoc loc,
-                                              IREmitter &emitter) const {
+Value SubscriptDLValue::tryEmitAsRefValue(llvm::SMLoc loc,
+                                          IREmitter &emitter) const {
   // If there is no getter, then this just fails like other computed lvalues.
-  if (getter) {
-    // We only want to return a reference owned by the dlvalue. If the getter
-    // populates its result via a byref_result then we don't want to return a
-    // reference to the temporary.
-    if (!cast<FnTypeGeneratorType>(getter.getType()).isRefResult())
-      return {};
-    return emitRef(emitter);
-  }
-  return BaseDLValue::emitAsRefValueIfOwned(loc, emitter);
+  if (!getter)
+    return {};
+
+  // We only want to return a reference owned by the DLValue. If the getter
+  // returns a value instead of a reference, then fail.
+  if (!cast<FnTypeGeneratorType>(getter.getType()).isRefResult())
+    return {};
+  return emitAsRefValue(loc, emitter);
 }
 
 //===----------------------------------------------------------------------===//
