@@ -9,12 +9,10 @@
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # CHECK-LABEL: lit.struct.decl @MemExample
-struct MemExample(ImplicitlyCopyable):
+struct MemExample(ImplicitlyCopyable, Movable, Copyable):
   var x : Int
   fn __init__(out self): self.x = 42; pass
   fn noop(self): pass
-  fn __moveinit__(out self, deinit existing: Self): self.x = existing.x
-  fn __copyinit__(out self, existing: Self): self.x = existing.x
   fn __bool__(self) -> Bool: return True
 
   # Destructor should not recurse.
@@ -1305,39 +1303,36 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
 # CHECK-LABEL: lit.fn @"testConds3
 fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
               var m: RegExample, var n: RegExample):
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
-  # CHECK-NEXT:    lit.ownership.use %a
-  # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
-  # CHECK-NEXT:    hlcf.yield [[TMP]]
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:    lit.ownership.use %b
-  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %b
-  # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
-  # CHECK-NEXT: }
   # CHECK-NEXT: %t1 = lit.var.decl
-  # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
-  # CHECK-NEXT: lit.var.lifetime.start %t1
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IFI]], %t1)
+  # CHECK-NEXT: hlcf.if %cond
+  # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT:    lit.ownership.use %a
+  # CHECK-NEXT:    lit.var.lifetime.start %t1
+  # CHECK-NEXT:    lit.call {{.*}}__moveinit__{{.*}}(%a, %t1)
+  # CHECK-NEXT:    hlcf.yield
+  # CHECK-NEXT: } else {
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  # CHECK-NEXT:    lit.ownership.use %b
+  # CHECK-NEXT:    lit.var.lifetime.start %t1
+  # CHECK-NEXT:    lit.call {{.*}}__moveinit__{{.*}}(%b, %t1)
+  # CHECK-NEXT:    hlcf.yield
+  # CHECK-NEXT: }
   var t1 = a^ if cond else b^
 
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__del__{{.*}}(%n)
   # CHECK-NEXT:    lit.ownership.use %m
-  # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %m
+  # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %m
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
+  # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__del__{{.*}}(%m)
   # CHECK-NEXT:    lit.ownership.use %n
-  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %n
+  # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %n
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
   # CHECK-NEXT: %t2 = lit.var.decl
-  # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[IFI]])
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m)
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%n)
   # CHECK-NEXT: lit.var.lifetime.start %t2
-  # CHECK-NEXT: lit.ref.store [[TMP]], %t2
+  # CHECK-NEXT: lit.ref.store [[IF]], %t2
   var t2 = m^ if cond else n^
 
   consume(t1^)
