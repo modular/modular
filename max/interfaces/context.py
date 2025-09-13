@@ -490,6 +490,14 @@ class InputContext(BaseContext, Protocol):
         """
         ...
 
+    @property
+    def last_generated_token(self) -> int:
+        """Returns the most recently generated token. If no tokens have been generated, raises an error.
+        Returns:
+            int: The most recently generated token.
+        """
+        ...
+
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
