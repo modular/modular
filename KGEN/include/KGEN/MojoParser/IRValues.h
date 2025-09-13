@@ -754,8 +754,7 @@ public:
   virtual Value emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const;
   // This hook is called if the DLValue needs to be resolved to an owned ref but
   // fails silently, returning null on failure instead of emitting an error.
-  virtual Value emitAsRefValueIfOwned(llvm::SMLoc loc,
-                                      IREmitter &emitter) const;
+  virtual Value tryEmitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const;
   virtual CValue emitLoad(ValueDest &dest, IREmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,
                            IREmitter &emitter) const = 0;
