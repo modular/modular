@@ -49,6 +49,7 @@ benchmark_config:
   max_output_len: null  # Maximum output length per request
   temperature: 0.0  # Temperature for sampling
   top_p: 1.0  # Top-p for sampling
+  top_k: null  # Top-k for sampling
 
   # Traffic control (serving-specific)
   request_rate: inf  # Requests per second (finite rate for realistic benchmarking)

@@ -250,6 +250,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     top_p: float = field(default=1.0, metadata={"group": "Output Control"})
     """Top-p for sampling."""
 
+    top_k: Optional[int] = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Top-k for sampling."""
+
     # Traffic control (serving-specific)
     request_rate: float = field(
         default=float("inf"),

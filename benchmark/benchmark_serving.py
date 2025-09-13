@@ -122,6 +122,7 @@ class RequestFuncInput:
     session_id: Optional[str] = None
     temperature: float = 0.0
     top_p: float = 1.0
+    top_k: Optional[int] = None
 
 
 @dataclass
@@ -202,6 +203,8 @@ async def async_request_trt_llm(
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
+        if request_func_input.top_k is not None:
+            payload["top_k"] = request_func_input.top_k
 
         output = RequestFuncOutput()
         output.prompt_len = request_func_input.prompt_len
@@ -277,6 +280,9 @@ async def async_request_openai_completions(
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
+
+        if request_func_input.top_k is not None:
+            payload["top_k"] = request_func_input.top_k
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -382,6 +388,9 @@ async def async_request_openai_chat_completions(
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
+
+        if request_func_input.top_k is not None:
+            payload["top_k"] = request_func_input.top_k
 
         if request_func_input.img:
             # TODO: Remove this type ignore
@@ -854,6 +863,7 @@ async def benchmark(
     max_output_len: Optional[int],
     temperature: float,
     top_p: float,
+    top_k: Optional[int],
     max_benchmark_duration_s: Optional[int],
     warmup_delay_ms: float = 0,
     ignore_first_turn_stats: bool = False,
@@ -908,6 +918,7 @@ async def benchmark(
             ignore_eos=test_ignore_eos,
             img=test_img,
             lora=lora_id,
+            top_k=top_k,
         )
         test_output = await request_func(
             request_func_input=test_input,
@@ -1000,6 +1011,7 @@ async def benchmark(
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
+                top_k=top_k,
                 ignore_eos=ignore_eos,
                 img=request.encoded_img,
             )
@@ -1507,6 +1519,7 @@ def main(args: argparse.Namespace) -> None:
             max_output_len=args.max_output_len,
             temperature=args.temperature,
             top_p=args.top_p,
+            top_k=args.top_k,
             max_benchmark_duration_s=args.max_benchmark_duration_s,
             warmup_delay_ms=args.chat_warmup_delay_ms,
             ignore_first_turn_stats=args.ignore_first_turn_stats,
