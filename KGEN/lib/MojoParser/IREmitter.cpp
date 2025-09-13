@@ -1318,6 +1318,17 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   // Verify that the type is copyable in this way so we can generate tailored
   // error messages, rather than just allowing IREmitter to do it.
   if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
+    // If the value is an RValue, it might be that the type isn't copyable or
+    // movable at all. If so, give a specific error about this.
+    if (value.ir.getIfRValue() && !valueType.isMovable(exprLoc, shared) &&
+        !valueType.isExplicitlyCopyable(exprLoc, shared)) {
+      emitError(exprLoc, "value of type ")
+          << valueType
+          << " cannot be copied or moved; consider conforming it to 'Movable'"
+          << value.expr->getRange();
+      return {};
+    }
+
     auto diag = emitError(exprLoc, "value of type ")
                 << valueType << " cannot be implicitly"
                 << " copied, it does not conform to 'ImplicitlyCopyable'"
@@ -1325,8 +1336,9 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
     // Decide if we can take ownership of the specified value.
     auto canTransferFrom = [&]() -> bool {
-      // Can only transfer from an MValue.
-      if (!value.ir.isMValue())
+      // Can only transfer from an MValue.  If it is already an RValue, then
+      // transferring won't help!
+      if (!value.ir.isMValue() || value.ir.getIfRValue())
         return false;
 
       Value val = OriginTrackable::findUnderlyingValueFromField(
