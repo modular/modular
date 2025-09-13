@@ -21,6 +21,8 @@ from sys import (
     simd_width_of,
     size_of,
 )
+from sys.info import _accelerator_arch
+
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -340,6 +342,74 @@ fn _matmul_sm100[
 
 
 @always_inline
+fn _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
+    @parameter
+    if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
+
+        @parameter
+        if dtype.is_half_float():
+            return Index(16, 16, 32)
+
+    return get_mma_shape[dtype, DType.float32]()
+
+
+@always_inline
+fn _amdgpu_matmul_config_from_block_shape[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+    K: Int,
+    pdl_level: PDLLevel = PDLLevel(),
+](block_m: Int, block_n: Int) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
+    alias max_num_warps: UInt = 4
+
+    var block_k = _bk_base[a_type, True]()
+    var num_warps: UInt = 1
+    var num_warp_k_partitions: UInt = 1
+
+    if block_m <= 32 and block_n <= 32:
+        # Attempt to increase the number of warp_k partitions to improve processor
+        # utilization. A single warp needs to read two block_k buffers, so double
+        # that in order to expand the number of warp_k partitions.
+        var test_k = 2 * (block_k * 2)
+        while num_warps < max_num_warps and (K % test_k) == 0:
+            num_warp_k_partitions *= 2
+            num_warps *= 2
+            test_k *= 2
+    else:
+        # Improve shared memory utilization by expanding block_k.
+        var smem_a = block_m * block_k * size_of[a_type]()
+        var smem_b = block_n * block_k * size_of[b_type]()
+        if smem_a + smem_b <= 32 * 1024:
+            block_k *= 2
+
+    var block_tile_shape = Index(block_m, block_n, block_k)
+    var warp_tile_shape = block_tile_shape
+
+    # Warp partition block_m and block_n.
+    for i in reversed(range(2)):
+        if (
+            block_tile_shape[i] >= 32
+            and block_tile_shape[i] % 32 == 0
+            and num_warps < max_num_warps
+        ):
+            warp_tile_shape[i] = block_tile_shape[i] // 2
+            num_warps *= 2
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=block_tile_shape,
+        warp_tile_shape=warp_tile_shape,
+        mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
+        num_pipeline_stages=1,
+        num_warp_k_partitions=num_warp_k_partitions,
+        pdl_level=pdl_level,
+    )
+
+
+@always_inline
 fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
@@ -581,18 +651,6 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
-                fn mma_shape_helper() -> IndexList[3]:
-                    @parameter
-                    if transpose_b and ctx.default_device_info is MI355X:
-
-                        @parameter
-                        if a_type.is_half_float():
-                            return Index(16, 16, 32)
-
-                    return get_mma_shape[a_type, DType.float32]()
-
-                @always_inline
-                @parameter
                 fn kernel_helper[
                     block_m: Int,
                     block_n: Int,
@@ -609,7 +667,7 @@ fn _matmul_gpu[
                         warp_tile_shape=Index(
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
-                        mma_shape=mma_shape_helper(),
+                        mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=UInt(num_pipeline_stages),
                         num_k_partitions=UInt(num_k_partitions),
                         pdl_level=pdl_level,
@@ -635,7 +693,7 @@ fn _matmul_gpu[
                 ):
                     alias sm_count = Int(ctx.default_device_info.sm_count)
 
-                    alias block_sizes = [
+                    alias block_sizes_alias = [
                         16,
                         32,
                         64,
@@ -646,8 +704,9 @@ fn _matmul_gpu[
                         224,
                         256,
                     ]
-                    alias len_block_sizes = len(block_sizes)
+                    alias len_block_sizes = len(block_sizes_alias)
 
+                    var block_sizes = materialize[block_sizes_alias]()
                     var emit_config = InlineArray[
                         Bool, len_block_sizes * len_block_sizes
                     ](fill=False)
@@ -659,11 +718,10 @@ fn _matmul_gpu[
                         var best_idx = 0
                         var idx = 0
 
-                        var block_sizes_dyn = materialize[block_sizes]()
-                        for block_m in block_sizes_dyn:
+                        for block_m in block_sizes:
                             var m_blocks = ceildiv(m, block_m)
 
-                            for block_n in block_sizes_dyn:
+                            for block_n in block_sizes:
                                 var n_blocks = ceildiv(static_N, block_n)
 
                                 var total_blocks = m_blocks * n_blocks
@@ -693,63 +751,20 @@ fn _matmul_gpu[
                         MatmulConfig[a_type, b_type, c_type, transpose_b]
                     ]()
 
-                    var block_sizes_dyn = materialize[block_sizes]()
                     for idx in range(len(emit_config)):
                         if not emit_config[idx]:
                             continue
 
                         var idx_m, idx_n = divmod(idx, len_block_sizes)
 
-                        var block_m = block_sizes_dyn[idx_m]
-                        var block_n = block_sizes_dyn[idx_n]
-                        var block_k = _bk_base[a_type, True]()
-
-                        alias max_num_warps: UInt = 4
-
-                        var num_warps: UInt = 1
-                        var num_warp_k_partitions: UInt = 1
-
-                        if block_m <= 32 and block_n <= 32:
-                            # Attempt to increase the number of warp_k partitions to improve
-                            # processor utilization.
-                            var test_k = block_k * 2
-                            while (
-                                num_warps < max_num_warps
-                                and (static_K % test_k) == 0
-                            ):
-                                num_warp_k_partitions *= 2
-                                num_warps *= 2
-                                test_k *= 2
-                        else:
-                            # Improve shared memory utilization by expanding block_k.
-                            var smem_a = block_m * block_k * size_of[a_type]()
-                            var smem_b = block_n * block_k * size_of[b_type]()
-                            if smem_a + smem_b <= 32 * 1024:
-                                block_k *= 2
-
-                        block_tile_shape = Index(block_m, block_n, block_k)
-                        warp_tile_shape = block_tile_shape
-
-                        # Warp partition block_m and block_n.
-                        for i in reversed(range(2)):
-                            if (
-                                block_tile_shape[i] >= 32
-                                and block_tile_shape[i] % 32 == 0
-                                and num_warps < max_num_warps
-                            ):
-                                warp_tile_shape[i] = block_tile_shape[i] // 2
-                                num_warps *= 2
-
-                        config = MatmulConfig[
-                            a_type, b_type, c_type, transpose_b
-                        ](
-                            block_tile_shape=block_tile_shape,
-                            warp_tile_shape=warp_tile_shape,
-                            mma_shape=mma_shape_helper(),
-                            num_pipeline_stages=1,
-                            num_warp_k_partitions=num_warp_k_partitions,
-                            pdl_level=pdl_level,
-                        )
+                        var config = _amdgpu_matmul_config_from_block_shape[
+                            c_type,
+                            a_type,
+                            b_type,
+                            transpose_b,
+                            static_K,
+                            pdl_level,
+                        ](block_sizes[idx_m], block_sizes[idx_n])
 
                         config_list.append(config)
 
