@@ -4140,35 +4140,6 @@ struct RandomNormal:
         return unrolled_shape
 
 
-@compiler.register("mo.static.random.normal")
-struct StaticRandomNormal:
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        target: StaticString,
-    ](
-        output: FusedOutputTensor[dtype=dtype],
-        mean: Scalar[dtype],
-        variance: Scalar[dtype],
-        seed_value: Scalar,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        fn output_fn[
-            _width: Int,
-            _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
-            output._lambda_store[width=_width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
-            )
-
-        random_normal[output_fn, target=target](
-            output.shape(), mean, variance, UInt64(seed_value), ctx
-        )
-
-
 @compiler.register("mo.random.uniform")
 struct RandomUniform:
     @staticmethod
