@@ -1198,7 +1198,6 @@ modular_cc_library(
     name = "JIT",
     srcs = glob([
         "lib/ExecutionEngine/JIT/*.cpp",
-        "lib/ExecutionEngine/JIT/*.h",
     ]),
     hdrs = glob(["include/KGEN/ExecutionEngine/JIT/*.h"]),
     deps = [
