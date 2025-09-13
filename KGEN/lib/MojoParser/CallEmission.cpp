@@ -1230,19 +1230,6 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
       return {};
     }
 
-    // Emit helpful error message when user tried to call a module.
-    if (auto refType = dyn_cast<ParamType>(type)) {
-      if (auto moduleAttr = dyn_cast<LIT::ModuleAttr>(refType.getParam())) {
-        auto metaType = cast<StructMetaType>(moduleAttr.getType());
-        auto diag = emitError(expr->getLoc());
-        emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
-                                    shared);
-        diag << expr->getRange();
-        dest.resetForError(*this);
-        return {};
-      }
-    }
-
     // Diagnose implicit conversions with a custom message
     if (syntax == CallSyntax::kImplicitConvert) {
       ASTType singleOperandType;

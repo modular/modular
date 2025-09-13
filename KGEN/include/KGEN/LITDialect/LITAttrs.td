@@ -411,21 +411,22 @@ def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
 def ModuleAttr : LITTypedAttr<"Module", "module"> {
   let summary = "A module attribute.";
   let description = [{
-    The `#lit.module` attribute represents an unresolved module value. It always
-    has a meta-type type.
+    The `#lit.module` attribute represents an unresolved module value.
 
     Example:
 
     ```mlir
-    #lit.module : meta<!lit.struct<@some_module>>
+    #lit.module : !lit.module<@some_module>
     ```
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "StructMetaType">:$type);
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "LIT::ModuleType">:$type
+  );
   let assemblyFormat = "";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "StructMetaType":$type),
+    AttrBuilderWithInferredContext<(ins "LIT::ModuleType":$type),
                                    [{ return get(type.getContext(), type); }]>
   ];
 }

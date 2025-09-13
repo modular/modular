@@ -50,6 +50,8 @@ Type ASTType::getMetaType() const {
     return traitRef.getMetaType();
   if (auto closureType = dyn_cast<ClosureType>(mlirType))
     return TypeType::get(closureType.getContext());
+  if (auto module = dyn_cast<ModuleType>(mlirType))
+    return module; // Module's are their own metatype.
   // This is some generic MLIR type.
   return {};
 }
@@ -81,6 +83,9 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 
   if (auto traitType = dyn_cast<TraitType>(type))
     return shared.declResolver->getTraitDecl(traitType);
+
+  if (auto module = dyn_cast<ModuleType>(type))
+    return &shared.declResolver->getDeclForTypeSymbol(module.getSymbol());
 
   return nullptr;
 }

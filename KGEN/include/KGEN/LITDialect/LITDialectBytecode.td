@@ -17,6 +17,10 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
+def ModuleType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$symbol
+)>;
+
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
   ConcreteAttribute<"PogListAttr">:$paramListAttrs
@@ -139,7 +143,7 @@ def UnpackedAttr : DialectAttribute<(attr
 )>;
 
 def ModuleAttr : DialectAttribute<(attr
-  ConcreteType<"StructMetaType">:$type
+  ConcreteType<"ModuleType">:$type
 )>;
 
 def AnyOriginAttr : DialectAttribute<(attr

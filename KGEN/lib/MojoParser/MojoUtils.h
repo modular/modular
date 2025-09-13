@@ -105,11 +105,6 @@ void emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 
-/// Emit diagnostics when the user tries to call or subscript a module.
-void emitModuleCallSubscriptDiag(InflightDiag &diag, StructMetaType metaType,
-                                 const Twine &callOrSubscript, llvm::SMLoc loc,
-                                 SharedState &shared);
-
 } // namespace M::KGEN::LIT
 
 #endif // MOJOPARSER_MOJOUTILS_H

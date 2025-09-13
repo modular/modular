@@ -645,14 +645,17 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 static TraitType getDeclProvidedTrait(ASTDecl *decl) {
   // Collect all the symbols that the type explicitly provides.
   TraitType providedCanonTrait;
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
+
+  auto declOp = decl->getIfOperation();
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(declOp)) {
     providedCanonTrait = structOp.getCanonicalTrait();
-  } else if (auto traitOp =
-                 dyn_cast_or_null<TraitDeclOp>(decl->getIfOperation())) {
+  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(declOp)) {
     providedCanonTrait = traitOp.getCanonicalTrait();
   } else if (TraitType canonTraitType =
                  dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
     providedCanonTrait = canonTraitType;
+  } else if (isa<PackageOp>(declOp) || isa<FileModuleOp>(declOp)) {
+    providedCanonTrait = TraitType::get(decl->getContext(), {});
   } else {
     llvm_unreachable("Invalid decl kind");
   }
