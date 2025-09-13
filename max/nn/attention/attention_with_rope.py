@@ -1227,7 +1227,14 @@ class AttentionWithRopeNoOpaque(Module):
         # - we could also fuse this into a single kernel, not sure if that's useful.
         # - the graph compiler would fuse this output store in the output of the rope kernel above.
         store_k_cache(kv_collection, xk_rope, input_row_offsets, layer_idx)
-        store_v_cache(kv_collection, x_v, input_row_offsets, layer_idx)
+        store_v_cache(
+            kv_collection,
+            x_v.reshape(
+                (-1, self.kv_params.n_kv_heads, self.kv_params.head_dim)
+            ),
+            input_row_offsets,
+            layer_idx,
+        )
 
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged_no_opaque(

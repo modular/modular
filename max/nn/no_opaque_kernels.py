@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, fields
 
 from max.dtype import DType
-from max.graph import TensorType, TensorValue, ops
+from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn.kv_cache.cache_params import KVCacheParams
 
 from .attention.mask_config import MHAMaskVariant
@@ -25,10 +25,10 @@ from .attention.mask_config import MHAMaskVariant
 
 @dataclass
 class PagedKVCacheTensorsNoOpaque:
-    blocks: TensorValue
+    blocks: BufferValue
     cache_lengths: TensorValue
     lookup_table: TensorValue
-    is_cache_empty: TensorValue
+    max_lengths: TensorValue
 
     def __iter__(self) -> Iterator[TensorValue]:
         for field in fields(self):
@@ -113,8 +113,21 @@ def store_k_cache(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
-    # TODO: implement
-    raise NotImplementedError("store_k_cache not implemented")
+    """Stores key tensor into the KV cache.
+
+    Args:
+        kv_collection: The KV cache collection containing cache tensors
+        x_k: Key tensor to store, shape [total_seq_len, num_heads, head_dim]
+        input_row_offsets: Ragged tensor offsets indicating where each batch starts and ends
+        layer_idx: Layer index for the cache, must be uint32
+    """
+    _store_cache_common(
+        kv_collection=kv_collection,
+        x_cache=x_k,
+        input_row_offsets=input_row_offsets,
+        layer_idx=layer_idx,
+        key_or_value=0,  # 0 for key cache
+    )
 
 
 def store_v_cache(
@@ -123,8 +136,101 @@ def store_v_cache(
     input_row_offsets: TensorValue,
     layer_idx: TensorValue,
 ) -> None:
-    # TODO: implement
-    raise NotImplementedError("store_v_cache not implemented")
+    """Stores value tensor into the KV cache.
+
+    Args:
+        kv_collection: The KV cache collection containing cache tensors
+        x_v: Value tensor to store, shape [total_seq_len, num_heads, head_dim]
+        input_row_offsets: Ragged tensor offsets indicating where each batch starts and ends
+        layer_idx: Layer index for the cache, must be uint32
+    """
+    _store_cache_common(
+        kv_collection=kv_collection,
+        x_cache=x_v,
+        input_row_offsets=input_row_offsets,
+        layer_idx=layer_idx,
+        key_or_value=1,  # 1 for value cache
+    )
+
+
+def _store_cache_common(
+    kv_collection: PagedKVCacheTensorsNoOpaque,
+    x_cache: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    key_or_value: int,
+) -> None:
+    """Common implementation for storing key or value tensors into KV cache.
+
+    Args:
+        kv_collection: The KV cache collection containing cache tensors
+        x_cache: Tensor to store (key or value)
+        input_row_offsets: Ragged tensor offsets
+        layer_idx: Layer index for the cache
+        key_or_value: 0 for key cache, 1 for value cache
+    """
+    # Input validation
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    # Validate tensor ranks
+    x_cache_rank_expected = 3
+    if x_cache.rank != x_cache_rank_expected:
+        msg = f"expected x_cache to have rank {x_cache_rank_expected}, was {x_cache.rank}"
+        raise ValueError(msg)
+
+    if input_row_offsets.rank != 1:
+        msg = f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        raise ValueError(msg)
+
+    if kv_collection.blocks.rank != 6:
+        msg = f"expected blocks to have rank 6, was {kv_collection.blocks.rank}"
+        raise ValueError(msg)
+
+    if kv_collection.cache_lengths.rank != 1:
+        msg = f"expected cache_lengths to have rank 1, was {kv_collection.cache_lengths.rank}"
+        raise ValueError(msg)
+
+    if kv_collection.lookup_table.rank != 2:
+        msg = f"expected lookup_table to have rank 2, was {kv_collection.lookup_table.rank}"
+        raise ValueError(msg)
+
+    if kv_collection.max_lengths.rank != 2:
+        msg = f"expected max_lengths to have rank 2, was {kv_collection.max_lengths.rank}"
+        raise ValueError(msg)
+
+    # Validate scalar layer_idx
+    if layer_idx.rank != 0:
+        msg = f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
+        raise ValueError(msg)
+
+    # Set up parameters for the kernel
+    parameters: dict[str, int | str | DType] = {
+        "key_or_value": key_or_value,
+    }
+
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=x_cache.device,
+        values=[
+            x_cache,
+            kv_collection.blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
 
 
 def flash_attention_ragged_no_opaque(

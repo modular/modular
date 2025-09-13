@@ -164,6 +164,7 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
     generic_kv_cache_radd_dispatch,
+    kv_cache_store_ragged,
 )
 from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
@@ -7523,6 +7524,75 @@ struct Struct_kv_collection_ctor_continuous_batching:
             managed_tensor_slice_to_ndbuffer(cache_lengths),
             managed_tensor_slice_to_ndbuffer(lookup_table),
             managed_tensor_slice_to_ndbuffer(max_lengths),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Store
+#
+# Expected kernel name format:
+# mo.kv_cache.store.<continuous_batching/paged>.<ragged/padded>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.store.paged.ragged")
+struct Struct_kv_cache_store_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType, target: StaticString, key_or_value: Int
+    ](
+        inputs: FusedInputTensor[dtype=dtype, rank=3],
+        blocks: MutableInputTensor[dtype=dtype, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        alias page_size = blocks.static_spec.shape.get[3]()
+        alias head_dim = inputs.static_spec.shape.get[2]()
+        alias num_heads = inputs.static_spec.shape.get[1]()
+        var paged_kv_collection = generic_get_paged_cache[
+            kv_params = KVCacheStaticParams(UInt(num_heads), UInt(head_dim)),
+            page_size=page_size,
+        ](
+            managed_tensor_slice_to_ndbuffer(blocks),
+            managed_tensor_slice_to_ndbuffer(cache_lengths),
+            managed_tensor_slice_to_ndbuffer(lookup_table),
+            managed_tensor_slice_to_ndbuffer(max_lengths),
+        )
+
+        var cache: paged_kv_collection.CacheType
+
+        @parameter
+        if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        var cuda_ctx: Optional[DeviceContext] = None
+
+        @parameter
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        @parameter
+        fn input_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
+            return inputs._lambda_load[
+                width=width, element_alignment=alignment
+            ](
+                idx,
+            )
+
+        kv_cache_store_ragged[input_fn=input_fn, target=target](
+            cache,
+            inputs.shape(),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            cuda_ctx,
         )
 
 
