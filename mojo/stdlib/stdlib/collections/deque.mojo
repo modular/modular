@@ -30,7 +30,7 @@ from bit import next_power_of_two
 
 
 struct Deque[ElementType: Copyable & Movable](
-    Boolable, Copyable, Movable, Sized
+    Boolable, Copyable, Iterable, Movable, Sized
 ):
     """Implements a double-ended queue.
 
@@ -41,6 +41,10 @@ struct Deque[ElementType: Copyable & Movable](
         ElementType: The type of the elements in the deque.
             Must implement the traits `Copyable` and `Movable`.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _DequeIter[ElementType, iterable_origin]
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -332,7 +336,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn __iter__(
         ref self,
-    ) -> _DequeIter[ElementType, __origin_of(self)]:
+    ) -> Self.IteratorType[__origin_of(self)]:
         """Iterates over elements of the deque, returning the references.
 
         Returns:
@@ -982,7 +986,7 @@ struct _DequeIter[
     T: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     """Iterator for Deque.
 
     Parameters:
@@ -992,12 +996,15 @@ struct _DequeIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = T
 
     var index: Int
     var src: Pointer[Deque[T], origin]
 
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
