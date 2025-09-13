@@ -1555,7 +1555,18 @@ help_str = "Benchmarking toolkit for Mojo kernels"
 @click.option(
     "--target-accelerator",
     default=None,
-    help="Specify the mojo target accelerator.",
+    help="""\b
+    Specify the mojo target accelerator.
+    Allowed values for this option:
+    'cuda', 
+    'amdgpu:gfx942', 'amdgpu:gfx950',
+    'nvidia:sm_80', 'nvidia:sm_86',
+    'nvidia:sm_87', 'nvidia:sm_89',
+    'nvidia:sm_90', 'nvidia:sm_90a', 
+    'nvidia:sm_100', 'nvidia:sm_100a',
+    'nvidia:sm_120', 'nvidia:sm_120a', 
+    'nvidia:sm_94'
+    """,
 )
 @click.option(
     "--disable-warnings",
