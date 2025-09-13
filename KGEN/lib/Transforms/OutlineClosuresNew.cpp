@@ -639,6 +639,8 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
       counter));
   auto liftedWrapper =
       b.create<GeneratorOp>(loc, uniqueName, funcGenType, funcType, allParams);
+  liftedWrapper.setInlineLevel(
+      closureInitData.getClosureInit().getInlineLevel());
   symtab.insert(liftedWrapper);
 
   // Remap the symbol to not include the self param by only using input params
@@ -733,8 +735,8 @@ Value ClosureLifter::liftClosure(
   Location loc = closureInitData.getClosureInit().getLoc();
   // Outline Closure.
   Type selfType = closureInitData.selfType(loweredClosureType);
-  Value captureStructArg =
-      region.insertArgument((unsigned)0, selfType, region.getLoc());
+  Value captureStructArg = region.insertArgument(
+      (unsigned)0, selfType, closureInitData.getLiftedLocation());
   b.setInsertionPointToStart(&region.front());
   for (auto [index, capture] : llvm::enumerate(captureMechanisms))
     replaceAllUsesInRegionWith(capture.origin,
@@ -811,7 +813,8 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
   Type selfType = isRegisterPassable ? loweredClosureType
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
-  region.insertArgument((unsigned)0, selfType, region.getLoc());
+  region.insertArgument((unsigned)0, selfType,
+                        closureInitData.getLiftedLocation());
   if (failed(liftCallFunction(b, closureInitData, capturedInstance,
                               loweredClosureType)))
     return {};
@@ -991,14 +994,18 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
                                   /*isRegisterPassable=*/memoryKind ==
                                       ClosureMemoryKind::TRIVIAL);
   } else {
-    Type loweredClosureType = StructType::get(
-        b.getContext(), fieldTypes, memoryKind != ClosureMemoryKind::TRIVIAL);
+
+    Type loweredClosureType =
+        StructType::get(b.getContext(), fieldTypes,
+                        memoryKind != ClosureMemoryKind::TRIVIAL &&
+                            memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
     switch (memoryKind) {
     case ClosureMemoryKind::TRIVIAL:
       replacement =
           liftRegPassableClosure(b, closureInitData, capturedInstance,
                                  captureMechanisms, loweredClosureType);
       break;
+    case ClosureMemoryKind::REGISTER_PASSABLE:
     case ClosureMemoryKind::ESCAPING:
     case ClosureMemoryKind::NONESCAPING:
       replacement =

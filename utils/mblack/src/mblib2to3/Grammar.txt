@@ -31,8 +31,13 @@ decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt | simple_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [unified_capture] ['->' result_type] ['as' NAME] ':' suite
-unified_capture: UNIFIED ['{' [capture_list] '}']
+funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] ['as' NAME] ':' suite
+global_effects: global_effect_keyword*
+global_effect_keyword: 'raises' | 'escaping' | 'capturing'
+unified_capture: UNIFIED [effect_list] [captures]
+effect_list: effect_keyword*
+effect_keyword: NAME | 'raises'
+captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "mut y") and global capture
 # modes (e.g., "var", "var^", "read") used by unified closures. Only
@@ -207,7 +212,7 @@ classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' s
 
 typeconvexpr: atom trailer* | functype
 typeconv: (['*'|VAR|OWNED|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
-functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* [unified_capture] ['[' test ']'] ['->' test]
+functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* [global_effects] [unified_capture] ['[' test ']'] ['->' test]
 
 arglist: argument (',' argument)* [',']
 

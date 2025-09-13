@@ -197,6 +197,7 @@ public:
   bool isEscaping() { return getFnEffects().isEscaping(); }
   bool isRefResult() { return getFnEffects().isRefResult(); }
   bool isUnified() { return getFnEffects().isUnified(); }
+  bool isRegisterPassable() { return getFnEffects().isRegisterPassable(); }
 
   /// Return the convention for the specified value argument.
   ArgConvention getArgConvention(size_t inputNo) {

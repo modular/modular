@@ -115,7 +115,8 @@ private:
   /// instance in a struct renders it eligible to be handled properly by our
   /// check-lifetimes pass.
   StructDeclOp createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
-                                   ASTDecl &traitDecl, SMLoc location);
+                                   ASTDecl &traitDecl, SMLoc location,
+                                   TypeConvention typeConvention);
   /// Generate a witness table for a closure op.
   TypedAttr addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
                                       FnOp parent, ClosureType closureType,

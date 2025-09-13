@@ -1126,6 +1126,9 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
       handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
     } else if (spelling == "unified") {
       handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
+    } else if (spelling == "register_passable") {
+      handleEffect(&FnEffects::isRegisterPassable,
+                   &FnEffects::setRegisterPassable);
     } else {
       // If this isn't a known effect, then it could be an error like a missing
       // colon at the end of a function declaration.  If so, emit a nice error
@@ -1143,6 +1146,14 @@ ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p, ArgListKind kind,
     }
 
     p.consumeIdentifier();
+  }
+
+  // Temporary error while new closures are hidden behind unified effect
+  if (effects.isRegisterPassable() && !effects.isUnified()) {
+    SMLoc loc = p.getToken().getLoc();
+    p.emitError(loc,
+                "a function cannot be register passable unless it is unified");
+    return failure();
   }
 
   return success();

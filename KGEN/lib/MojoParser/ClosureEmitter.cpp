@@ -493,10 +493,10 @@ getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
   }
 }
 
-StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
-                                                 StringRef baseName,
-                                                 ASTDecl &traitDecl,
-                                                 SMLoc smLocation) {
+StructDeclOp
+ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
+                                    ASTDecl &traitDecl, SMLoc smLocation,
+                                    TypeConvention typeConvention) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -542,6 +542,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
                    implParameters, smLocation);
   ASTDecl &structDecl = pair.first;
   StructDeclOp declOp = pair.second;
+  declOp.setConvention(typeConvention);
   addFieldsToStruct(declOp, structDecl,
                     KGEN::ParamType::get(ParamDeclRefAttr::get(implType)),
                     *shared.declResolver);
@@ -575,14 +576,15 @@ StructDeclOp ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
           return replacer.replace(original);
         }));
     Type result = replacer.replace(wrapperSignature.getResults().front());
-    auto [op, decl] =
-        synthesizeFunction(structDecl, traitFnOp.getSourceNameAttr(),
-                           parameters, wrapperSignature.getParamListAttrs(),
-                           argumentTypes, wrapperSignature.getArgConventions(),
-                           wrapperSignature.getArgListAttrs(), result,
-                           traitFnOp.getSpecialFunctionKind(), smLocation, b,
-                           wrapperSignature.getFnEffects().setUnified(false),
-                           "", true, traitFnOp.getInlineLevel());
+    auto [op, decl] = synthesizeFunction(
+        structDecl, traitFnOp.getSourceNameAttr(), parameters,
+        wrapperSignature.getParamListAttrs(), argumentTypes,
+        wrapperSignature.getArgConventions(),
+        wrapperSignature.getArgListAttrs(), result,
+        traitFnOp.getSpecialFunctionKind(), smLocation, b,
+        wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
+            false),
+        "", true, traitFnOp.getInlineLevel());
     if (traitFnOp.getSelfDeinit())
       op.setSelfDeinit(true);
 
@@ -765,6 +767,7 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
     ASTDecl &moduleDecl, StringAttr name,
     FnTypeGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel) {
+  bool isRegisterPassable = dependentSignatureType.isRegisterPassable();
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
   SmallVector<StringRef> parents{"Movable", "AnyType"};
@@ -792,7 +795,8 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
         decl, callName, parameters, sig.getParamListAttrs(), argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
-        sig.getFnEffects().setUnified(false), "", true, inlineLevel);
+        sig.getFnEffects().setUnified(false).setRegisterPassable(false), "",
+        true, inlineLevel);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     builder.create<UnreachableOp>();
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -807,7 +811,10 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
   TraitDeclOp closureTrait = cast<TraitDeclOp>(traitDecl->getIfOperation());
   // Now create a wrapper struct that conforms to the trait we created.
   return {createStructWrapper(moduleDecl, name.getValue(), *traitDecl,
-                              nestedFunctionOrTypeLocation),
+                              nestedFunctionOrTypeLocation,
+                              isRegisterPassable
+                                  ? TypeConvention::RegisterPassable
+                                  : TypeConvention::MemoryOnly),
           closureTrait};
 }
 
@@ -1729,9 +1736,11 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       cast<FnOp>(symbolParent->getIfOperation()).getSubprogramScope());
 
   // TODO: use effect to determine the memory kind for the closure
+  bool isRegPassable = nestedFn.getFuncTypeGenerator().isRegisterPassable();
   KGEN::ClosureType closureType =
       ClosureType::get(ctx, symbolParent->getSymbolRef(), fnName,
-                       ClosureMemoryKind::NONESCAPING);
+                       isRegPassable ? ClosureMemoryKind::REGISTER_PASSABLE
+                                     : ClosureMemoryKind::NONESCAPING);
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
   SmallVector<TypedAttr> origins;
@@ -1770,6 +1779,14 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
             shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
         StructDeclOp structDeclOp =
             cast<StructDeclOp>(structDecl.getIfOperation());
+        if (isRegPassable && !structDeclOp.isRegisterPassable() &&
+            !structDeclOp.isRegisterPassableTrivial()) {
+          shared.emitError(
+              nestedFnDecl.getLoc(),
+              "cannot capture " + capture.getSpelling() +
+                  " by copy or move because it is not register passable and "
+                  "your closure is marked as register passable.");
+        }
         if (structDeclOp.getDestructor().has_value())
           del = *structDeclOp.getDestructor();
         if (!del) {
@@ -1831,7 +1848,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
   FnTypeGeneratorType withoutUnified = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
-      original.getArgConventions(), original.getFnEffects().setUnified(false),
+      original.getArgConventions(),
+      original.getFnEffects().setUnified(false).setRegisterPassable(false),
       original.getFnMetadata(), original.getMetadata());
   auto closure = builder.create<LIT::ClosureInitOp>(
       opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
@@ -1967,7 +1985,17 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     if (originalType.isTrivial(closure.getLoc(), shared)) {
       // Remap to trivial copy convention to avoid storing symbols.
       convention = CaptureConvention::kConventionTrivialCopy;
-      captureValue = valueInParent;
+      // if we are capturing by mutable copy and its trivial do not capture the
+      // reference.
+      if (isa<RefType>(valueInParent.getType())) {
+        SyntheticNode node(result->getLoc());
+        ASTExprAnd<LValue> valueInParentExpr{
+            MLValue(valueInParent.getMlirValue()), node};
+        ValueDest dest(EC_Capture);
+        captureValue = emitter.emitLoadOfLValue(valueInParentExpr, dest);
+      } else {
+        captureValue = valueInParent;
+      }
     } else {
       convention = parsedConvention;
       if (auto refType = dyn_cast<RefType>(valueInParent.getType().mlirType)) {

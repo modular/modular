@@ -251,6 +251,8 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
   /// Temporary effect to distinguish a closure under construction from current implementation.
   I16BitEnumAttrCaseBit<"Unified", 6, "unified">,
+  /// Temporary effect to special case memory type for closures.
+  I16BitEnumAttrCaseBit<"RegisterPassable", 7, "register_passable">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;
@@ -308,6 +310,7 @@ def KGEN_ClosureMemoryKind : I32EnumAttr<"ClosureMemoryKind", "closure memory ki
   I32EnumAttrCase<"ESCAPING",  0, "escaping">,
   I32EnumAttrCase<"NONESCAPING", 1, "nonescaping">,
   I32EnumAttrCase<"TRIVIAL", 2, "trivial">,
+  I32EnumAttrCase<"REGISTER_PASSABLE", 3, "register_passable">,
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;
