@@ -188,9 +188,6 @@ class PrefillScheduler(Scheduler):
             )
             assert len(src_idxs) == len(dst_idxs)
 
-            # Bump this back, so the token is returned.
-            context._completion_start_idx -= 1
-
             # Transfer only the blocks that are not already on decode node.
             num_already_cached_blocks = dst_idxs.count(-1)
             src_idxs = src_idxs[num_already_cached_blocks:]
@@ -218,7 +215,7 @@ class PrefillScheduler(Scheduler):
             self.dispatcher.send_reply_nowait(
                 PrefillResponse(
                     id=req_id,
-                    context=context,
+                    generated_token_id=context.last_generated_token,
                     transfer_metadata=xfer_data,
                 ),
                 identity,
