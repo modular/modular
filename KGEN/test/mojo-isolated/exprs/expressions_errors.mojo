@@ -895,6 +895,9 @@ fn test_implicit_copy_errors():
     # expected-note @below {{consider transferring the value with '^'}}
     x.consume()
 
+    # expected-error @below {{value of type 'MemType' cannot be copied or moved; consider conforming it to 'Movable'}}
+    var y = x^
+
 
 ##===----------------------------------------------------------------------===##
 # MergeWith
