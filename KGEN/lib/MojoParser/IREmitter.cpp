@@ -1359,24 +1359,9 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest,
     return {};
   }
 
-  // Handle non-trivial register passable types.
   // __copyinit__ has signature: `(existing: Self) -> Self`.
-  if (valueType.isRegisterPassable(exprLoc, shared)) {
-    return emitNamedMethodCall("__copyinit__", {{value}}, dest,
-                               CallSyntax::kImplicitCopyInit, value.expr);
-  }
-
-  // __copyinit__ has signature: `(existing: Self, out dest: Result)`.
-  MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
-  if (!destBuffer)
-    return {};
-
-  ValueDest copyDest(destBuffer, dest.getContext());
-  if (!emitNamedMethodCall("__copyinit__", {{value}}, copyDest,
-                           CallSyntax::kImplicitCopyInit, value.expr))
-    return {};
-  // If we required an implicit conversion, make sure it happens.
-  return emitCResult(MRValue(destBuffer), value.expr, dest);
+  return emitNamedMethodCall("__copyinit__", {{value}}, dest,
+                             CallSyntax::kImplicitCopyInit, value.expr);
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,

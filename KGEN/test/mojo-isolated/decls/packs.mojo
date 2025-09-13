@@ -63,8 +63,8 @@ fn test_owned_trait():
 
     # Argument expressions emitted first
     # CHECK-NEXT: lit.ownership.use %value1
-    # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT: [[V2I:%.*]] = lit.ref.immut %value2
+    # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[V2I]], [[ANONSLOT]])
 
     # Coerce to common origin

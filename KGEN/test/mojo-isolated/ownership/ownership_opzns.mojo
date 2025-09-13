@@ -253,8 +253,8 @@ fn optimizeCopyElision():
 
     # We need one copy of 'x' here, not two + dtor.
 
-    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[ANON]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
