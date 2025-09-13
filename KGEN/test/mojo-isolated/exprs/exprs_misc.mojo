@@ -502,3 +502,26 @@ struct MatchExample:
 
 fn test_match(a: MatchExample):
     a.match()
+
+
+##===----------------------------------------------------------------------===##
+# if/else expression
+##===----------------------------------------------------------------------===##
+
+struct MoveOnly(Movable):
+    pass
+
+# CHECK-LABEL: lit.fn @"test_if_else_move
+fn test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
+   # This should move a/b into t.
+   var t = b^ if r else a^
+
+   # CHECK: hlcf.if
+   # CHECK-NEXT: lit.ownership.use %b
+   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%b, %t)
+   # CHECK-NEXT: hlcf.yield
+   # CHECK-NEXT: } else {
+   # CHECK-NEXT: lit.ownership.use %a
+   # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %t)
+   # CHECK-NEXT: hlcf.yield
+   # CHECK-NEXT: }

@@ -3445,17 +3445,21 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // If both results were M values and both sides agree with the result type,
   // then we can propagate the result as an MValue that has a merged lifetime.
   auto handleTwoMValues = [&]() -> AnyValue {
+    // This only applies to things thare are already memory references.
     if (!falseVal.isMValue() || !trueVal.isMValue())
       return {};
 
-    Value falseMVal = falseVal.getMValueReference();
-    Value trueMVal = trueVal.getMValueReference();
+    // If both operands are MRValues then we can move the value into the
+    // destination instead of forming a reference that requires a copy. Maintain
+    // RValues.
+    if (falseVal.getIfMRValue() && trueVal.getIfMRValue())
+      return {};
 
     // See if the true and false values directly union together.  This
     // requires the rvalue types to be the same but allows the reference
     // types to be different.
-    RefType commonRefType = emitter.getCommonRefType(
-        cast<RefType>(falseMVal.getType()), cast<RefType>(trueMVal.getType()));
+    RefType commonRefType = emitter.getCommonRefType(falseVal.getMValueType(),
+                                                     trueVal.getMValueType());
     if (!commonRefType)
       return {};
 
@@ -3484,26 +3488,26 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       return false;
     };
 
+    Value falseMVal = falseVal.getMValueReference();
+    Value trueMVal = trueVal.getMValueReference();
     if (!isAcceptableSource(trueMVal) || !isAcceptableSource(falseMVal))
       return {};
 
-    // If this succeeded, we can emit a conversion to the common type in each
-    // branch and produce the result as the right MValue type.
-    auto handleBlock = [&](Block &block, const ExprNode *expr,
-                           Value value) -> LogicalResult {
+    // Ok, at this point we are committed.
+
+    // Emit a conversion to the common type in each branch and produce the
+    // result as the right MValue type.
+    auto handleBlock = [&](Block &block, const ExprNode *expr, Value value) {
       emitter.builder->setInsertionPointToEnd(&block);
       auto conv =
           emitter.emitZeroCostConvert({SRValue(value), expr}, commonRefType);
-      if (!conv)
-        return failure();
+      assert(conv && "getCommonRefType failed");
       auto convVal = conv.getIfSRValue();
       assert(convVal && "zero cost convert changed value type");
       emitter.builder->create<HLCF::YieldOp>(ifLoc, convVal);
-      return success();
     };
-    if (failed(handleBlock(ifOp.getThenBlock(), trueExpr, trueMVal)) ||
-        failed(handleBlock(ifOp.getElseBlock(), falseExpr, falseMVal)))
-      return {};
+    handleBlock(ifOp.getThenBlock(), trueExpr, trueMVal);
+    handleBlock(ifOp.getElseBlock(), falseExpr, falseMVal);
     emitter.builder->setInsertionPointAfter(ifOp);
 
     // Ensure the correct type is used.
