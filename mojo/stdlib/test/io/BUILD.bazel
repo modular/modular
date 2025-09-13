@@ -1,5 +1,14 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+_DATA = [
+    "test_file_dummy_input_ASCII.txt",
+    "UN_charter_AR.txt",
+    "UN_charter_EN.txt",
+    "UN_charter_ES.txt",
+    "UN_charter_RU.txt",
+    "UN_charter_zh-CN.txt",
+]
+
 _FILECHECK_TESTS = [
     "test_write_to_stdout.mojo",
 ]
@@ -28,6 +37,7 @@ _FILECHECK_TESTS = [
             "--debug-level",
             "full",
         ],
+        data = _DATA + [src],  # NOTE: some tests attempt to read their source files
         deps = [
             "@mojo//:stdlib",
             "@mojo//:test_utils",

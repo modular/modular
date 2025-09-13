@@ -31,6 +31,12 @@ with open("my_file.txt", "r") as f:
 
 """
 
+from collections.string._utf8 import (
+    _is_valid_utf8,
+    _count_utf8_continuation_bytes,
+    _is_utf8_continuation_byte,
+    _utf8_byte_type,
+)
 from os import PathLike, abort
 from sys import external_call, size_of
 from memory import AddressSpace, Span
@@ -135,14 +141,21 @@ struct FileHandle(Defaultable, Movable, Writer):
         self.handle = existing.handle
         # Destructor is already disabled on existing.
 
-    fn read(self, size: Int = -1) raises -> String:
+    fn read[
+        *, overallocate: Bool = True
+    ](self, codepoints: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
-        size is left as the default of -1, it will read to the end of the file.
-        Setting size to a number larger than what's in the file will set
-        the String length to the total number of bytes, and read all the data.
+        codepoints is left as the default of -1, it will read to the end of the
+        file.
+
+        Parameters:
+            overallocate: Whether to overallocate the string by
+                `4 * codepoints`, otherwise the algorithm progressively reserves
+                `codepoints - num_codepoints_read` bytes.
 
         Args:
-            size: Requested number of bytes to read (Default: -1 = EOF).
+            codepoints: Requested number of codepoints to read
+                (Default: -1 = EOF).
 
         Returns:
           The contents of the file.
@@ -160,32 +173,91 @@ struct FileHandle(Defaultable, Movable, Writer):
         var string = file.read()
         print(string)
         ```
-
-        Read the first 8 bytes, skip 2 bytes, and then read the next 8 bytes:
-
-        ```mojo
-        import os
-        var file = open("/tmp/example.txt", "r")
-        var word1 = file.read(8)
-        print(word1)
-        _ = file.seek(2, os.SEEK_CUR)
-        var word2 = file.read(8)
-        print(word2)
-        ```
-
-        Read the last 8 bytes in the file, then the first 8 bytes
-        ```mojo
-        _ = file.seek(-8, os.SEEK_END)
-        var last_word = file.read(8)
-        print(last_word)
-        _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
-        var first_word = file.read(8)
-        print(first_word)
-        ```
         """
+        if not self.handle:
+            raise Error("invalid file handle")
+        elif codepoints == 0:
+            return String()
 
-        var list = self.read_bytes(size)
-        return String(bytes=list)
+        var amnt = (codepoints * 4 if overallocate else codepoints) if (
+            codepoints > -1
+        ) else Int(String.INLINE_CAPACITY * 10)
+
+        var result = String(unsafe_uninit_length=UInt(amnt))
+
+        var err_msg = _OwnedStringRef()
+        var num_bytes_read = 0
+        var num_codepoints_read = 0
+        while True:
+            # res_ptr is declared inside the loop due to the resizes
+            var res_ptr = result.unsafe_ptr()
+            var ptr = res_ptr + num_bytes_read
+            # Read bytes into the list buffer and get the number of bytes
+            # successfully read. This may return with a partial read, and
+            # signifies EOF with a result of zero bytes.
+            var chunk_bytes_to_read = result.byte_length() - num_bytes_read
+            var chunk_bytes_read = external_call[
+                "KGEN_CompilerRT_IO_FileReadBytes", UInt
+            ](self.handle, ptr, chunk_bytes_to_read, Pointer(to=err_msg))
+            if err_msg:
+                raise err_msg^.consume_as_error()
+
+            var read = Span(ptr=ptr, length=chunk_bytes_read)
+            var amnt_cont = _count_utf8_continuation_bytes(read)
+            num_codepoints_read += chunk_bytes_read - amnt_cont
+            num_bytes_read += chunk_bytes_read
+
+            # If we read all of the codepoints then we're done.
+            if (
+                codepoints > -1 and num_codepoints_read >= codepoints
+            ) or chunk_bytes_read == 0:
+                var str_len = num_bytes_read
+
+                if num_codepoints_read == codepoints:
+                    # go forward if a multi-byte sequence was sliced
+                    var idx_b0 = str_len - 1
+                    while _is_utf8_continuation_byte(res_ptr[idx_b0]):
+                        idx_b0 -= 1
+                    var byte_type = Int(_utf8_byte_type(res_ptr[idx_b0]))
+                    if idx_b0 + byte_type >= str_len:
+                        # sliced multi-byte sequence
+                        var new_len = idx_b0 + byte_type + 1
+                        result.resize(unsafe_uninit_length=new_len)
+                        continue
+                else:
+                    # Trim off any extra codepoints
+                    while codepoints > -1 and num_codepoints_read > codepoints:
+                        while _is_utf8_continuation_byte(res_ptr[str_len - 1]):
+                            str_len -= 1
+                        str_len -= 1
+                        num_codepoints_read -= 1
+
+                    # get the current offset from the start of the file and add
+                    # what was read as valid utf-8
+                    var s = self.seek(0, os.SEEK_CUR) - num_bytes_read + str_len
+                    _ = self.seek(s)
+                result.resize(unsafe_uninit_length=str_len)
+                break
+
+            # If we are reading to EOF, keep reading the next chunk, taking
+            # bigger bites each time.
+            if codepoints < 0:
+                result.resize(unsafe_uninit_length=num_bytes_read * 2)
+            else:
+
+                @parameter
+                if not overallocate:
+                    # Read an extra `codepoints - num_codepoints_read` bytes
+                    # ahead until the required amount of codepoints is reached.
+                    if num_bytes_read >= codepoints:
+                        var delta = codepoints - num_codepoints_read
+                        var new_len = result.byte_length() + delta
+                        result.resize(unsafe_uninit_length=new_len)
+
+        if not _is_valid_utf8(result.as_bytes()):
+            raise Error("File contains invalid UTF-8 data.")
+
+        return result^
 
     fn read[
         dtype: DType, origin: Origin[True]
@@ -380,7 +452,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```mojo
         import os
         var f = open("/tmp/example.txt", "r")
-        _ = f.seek(-32, os.SEEK_END)
+        _ = f.seek(32, os.SEEK_END)
         ```
         """
         if not self.handle:

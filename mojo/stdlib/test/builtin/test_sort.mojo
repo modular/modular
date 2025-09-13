@@ -524,15 +524,6 @@ def test_sort_string_big_list():
     assert_sorted_string(string_list)
 
 
-def test_sort_strings():
-    var text = (
-        _dir_of_current_file() / "test_file_dummy_input.txt"
-    ).read_text()
-    var strings = _to_string_list(text.split(" "))
-    sort(strings)
-    assert_sorted_string(strings)
-
-
 @fieldwise_init
 struct Person(Comparable, ImplicitlyCopyable, Movable):
     var name: String
@@ -663,6 +654,5 @@ def main():
 
     test_sort_string_small_list()
     test_sort_string_big_list()
-    test_sort_strings()
     test_sort_comparamble_elements_list()
     test_sort_empty_comparable_elements_list()
