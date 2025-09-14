@@ -285,7 +285,9 @@ class MoE(Module, Shardable):
 
         permutated_states = ops.gather(
             x,
-            token_expert_order / self.num_experts_per_token,
+            ops.cast(
+                token_expert_order // self.num_experts_per_token, DType.int32
+            ),
             axis=0,
         )
 
