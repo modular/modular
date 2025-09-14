@@ -15,11 +15,11 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Process.h"
+#include "mlir/Tools/lsp-server-support/Logging.h"
+#include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/LSP/Logging.h"
-#include "llvm/Support/LSP/Transport.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -27,7 +27,7 @@ using namespace M;
 using namespace M::KGEN::Mojo;
 using namespace M::KGEN::LIT;
 using namespace M::Mojo::Jupyter;
-using namespace llvm::lsp;
+using namespace mlir::lsp;
 
 namespace {
 /// How to execute an executable test.

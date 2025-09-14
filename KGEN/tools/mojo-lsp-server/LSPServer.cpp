@@ -12,18 +12,18 @@
 #include "MojoServer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Transport.h"
+#include "mlir/Tools/lsp-server-support/Logging.h"
+#include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/LSP/Logging.h"
-#include "llvm/Support/LSP/Transport.h"
 #include <optional>
 
 #define DEBUG_TYPE "mojo-lsp-server"
 
-using namespace llvm::lsp;
+using namespace mlir::lsp;
 using namespace M;
 using namespace M::Mojo::LSP;
 

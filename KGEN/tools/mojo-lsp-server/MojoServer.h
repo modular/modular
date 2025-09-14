@@ -18,20 +18,20 @@ class WorkQueue;
 
 namespace M::Mojo::LSP {
 using SendDiagnosticsFn =
-    llvm::unique_function<void(const llvm::lsp::PublishDiagnosticsParams &)>;
+    llvm::unique_function<void(const mlir::lsp::PublishDiagnosticsParams &)>;
 using SendDiagnosticsFnRef =
-    function_ref<void(const llvm::lsp::PublishDiagnosticsParams &)>;
+    function_ref<void(const mlir::lsp::PublishDiagnosticsParams &)>;
 template <typename T>
 using OnSemanticTokensResultFn =
     llvm::unique_function<void(T result, bool outdated, bool invalid)>;
 
 template <typename T>
 using SendProgressFn =
-    llvm::unique_function<void(const llvm::lsp::ProgressParams<T> &)>;
+    llvm::unique_function<void(const mlir::lsp::ProgressParams<T> &)>;
 
 template <typename T>
 using SendProgressFnRef =
-    function_ref<void(const llvm::lsp::ProgressParams<T> &)>;
+    function_ref<void(const mlir::lsp::ProgressParams<T> &)>;
 
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
@@ -46,7 +46,7 @@ public:
 
   /// Create a new MojoServer instance.
   static ErrorOr<MojoServer> create(bool singleThreaded, bool waitOnShutdown,
-                                    llvm::lsp::MessageHandler &messageHandler,
+                                    mlir::lsp::MessageHandler &messageHandler,
                                     ArrayRef<std::string> includeDirs);
 
   // Get the telemetry context for this server.
@@ -64,18 +64,18 @@ public:
 
   /// Add the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
-  void addDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,
+  void addDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version);
 
   /// Update the document, with the provided `version`, at the given URI. Any
   /// diagnostics emitted for this document will be added to `diagnostics`.
   void
-  updateDocument(const llvm::lsp::URIForFile &uri,
-                 ArrayRef<llvm::lsp::TextDocumentContentChangeEvent> changes,
+  updateDocument(const mlir::lsp::URIForFile &uri,
+                 ArrayRef<mlir::lsp::TextDocumentContentChangeEvent> changes,
                  int64_t version);
 
   /// Remove the document with the given uri.
-  void removeDocument(const llvm::lsp::URIForFile &uri);
+  void removeDocument(const mlir::lsp::URIForFile &uri);
 
   //===--------------------------------------------------------------------===//
   // Notebook Document Management
@@ -83,20 +83,20 @@ public:
 
   /// Add the notebook document, with the provided `version`, at the given URI.
   /// Any diagnostics emitted for this document will be added to `diagnostics`.
-  void addNotebookDocument(const llvm::lsp::URIForFile &uri,
-                           ArrayRef<llvm::lsp::NotebookCell> cells,
+  void addNotebookDocument(const mlir::lsp::URIForFile &uri,
+                           ArrayRef<mlir::lsp::NotebookCell> cells,
                            int64_t version,
-                           ArrayRef<llvm::lsp::TextDocumentItem> cellDocuments);
+                           ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments);
 
   /// Remove the notebook document with the given uri.
   void removeNotebookDocument(
-      const llvm::lsp::URIForFile &uri,
-      ArrayRef<llvm::lsp::TextDocumentIdentifier> cellDocuments);
+      const mlir::lsp::URIForFile &uri,
+      ArrayRef<mlir::lsp::TextDocumentIdentifier> cellDocuments);
 
   /// Update the document, with the provided `version`, at the given URI.
   void
-  updateNotebookDocument(const llvm::lsp::URIForFile &uri, int64_t version,
-                         const llvm::lsp::NotebookDocumentChangeEvent &change);
+  updateNotebookDocument(const mlir::lsp::URIForFile &uri, int64_t version,
+                         const mlir::lsp::NotebookDocumentChangeEvent &change);
 
   //===--------------------------------------------------------------------===//
   // Queries
@@ -104,63 +104,63 @@ public:
 
   /// Get the set of code actions within the file.
   void
-  getCodeActions(const llvm::lsp::CodeActionParams &params,
-                 LSPResponder<std::vector<llvm::lsp::CodeAction>> responder);
+  getCodeActions(const mlir::lsp::CodeActionParams &params,
+                 LSPResponder<std::vector<mlir::lsp::CodeAction>> responder);
 
   /// Get the code completion list for the position within the given file.
-  void onCodeCompletion(const llvm::lsp::CompletionParams &params,
-                        LSPResponder<llvm::lsp::CompletionList> responder);
+  void onCodeCompletion(const mlir::lsp::CompletionParams &params,
+                        LSPResponder<mlir::lsp::CompletionList> responder);
 
   /// Get the identifier location of the symbol declarations that contain the
   /// given position.
-  void onDefinition(const llvm::lsp::TextDocumentPositionParams &params,
-                    LSPResponder<std::vector<llvm::lsp::Location>> responder);
+  void onDefinition(const mlir::lsp::TextDocumentPositionParams &params,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   /// Find all of the document symbols within the given file.
   void onDocumentSymbol(
-      const llvm::lsp::DocumentSymbolParams &params,
-      LSPResponder<std::vector<llvm::lsp::DocumentSymbol>> responder);
+      const mlir::lsp::DocumentSymbolParams &params,
+      LSPResponder<std::vector<mlir::lsp::DocumentSymbol>> responder);
 
   /// Find all of the folding ranges within the given file.
   void
-  onFoldingRange(const llvm::lsp::FoldingRangeParams &params,
-                 LSPResponder<std::vector<llvm::lsp::FoldingRange>> responder);
+  onFoldingRange(const mlir::lsp::FoldingRangeParams &params,
+                 LSPResponder<std::vector<mlir::lsp::FoldingRange>> responder);
 
   /// Get a `Hover` element corresponding to the given document position.
-  void onHover(const llvm::lsp::TextDocumentPositionParams &params,
-               LSPResponder<std::optional<llvm::lsp::Hover>> responder);
+  void onHover(const mlir::lsp::TextDocumentPositionParams &params,
+               LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
   /// Get inlay hints for the given document range.
-  void onInlayHint(const llvm::lsp::InlayHintsParams &params,
-                   LSPResponder<std::vector<llvm::lsp::InlayHint>> responder);
+  void onInlayHint(const mlir::lsp::InlayHintsParams &params,
+                   LSPResponder<std::vector<mlir::lsp::InlayHint>> responder);
 
   // Get the references of the symbol in the given location.
-  void onReferences(const llvm::lsp::ReferenceParams &params,
-                    LSPResponder<std::vector<llvm::lsp::Location>> responder);
+  void onReferences(const mlir::lsp::ReferenceParams &params,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   /// Get the semantic tokens for the given document.
   void onSemanticTokens(
-      const llvm::lsp::SemanticTokensParams &params,
-      LSPResponder<std::optional<llvm::lsp::SemanticTokens>> responder);
+      const mlir::lsp::SemanticTokensParams &params,
+      LSPResponder<std::optional<mlir::lsp::SemanticTokens>> responder);
 
   /// Get the delta of semantic tokens for the given document compared to the
   /// tokens at the given identifier (representing a previous result).
   void onSemanticTokensDelta(
-      const llvm::lsp::SemanticTokensDeltaParams &params,
-      LSPResponder<std::optional<llvm::lsp::SemanticTokensOrDelta>> responder);
+      const mlir::lsp::SemanticTokensDeltaParams &params,
+      LSPResponder<std::optional<mlir::lsp::SemanticTokensOrDelta>> responder);
 
   /// Get the signature help for the position within the given document.
-  void getSignatureHelp(const llvm::lsp::TextDocumentPositionParams &params,
-                        LSPResponder<llvm::lsp::SignatureHelp2> responder);
+  void getSignatureHelp(const mlir::lsp::TextDocumentPositionParams &params,
+                        LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
   /// Perform a rename operation at the position within the given document.
-  void onRename(const llvm::lsp::RenameParams &params,
-                LSPResponder<llvm::lsp::WorkspaceEdit> responder);
+  void onRename(const mlir::lsp::RenameParams &params,
+                LSPResponder<mlir::lsp::WorkspaceEdit> responder);
 
   /// Dump the parsed MLIR to a file for inspection.
   ///
   /// This is only available in debug builds.
-  void dumpParsedIR(const llvm::lsp::TextDocumentIdentifier &params);
+  void dumpParsedIR(const mlir::lsp::TextDocumentIdentifier &params);
 
 private:
   MojoServer(std::unique_ptr<Impl> &&);

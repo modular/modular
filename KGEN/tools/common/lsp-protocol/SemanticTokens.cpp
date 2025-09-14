@@ -70,10 +70,10 @@ bool SemanticToken::operator<(const SemanticToken &rhs) const {
          std::tie(rhs.range, rhs.kind, rhs.modifiers);
 }
 
-std::vector<llvm::lsp::SemanticToken>
+std::vector<mlir::lsp::SemanticToken>
 Mojo::LSP::toLspSemanticTokens(ArrayRef<SemanticToken> tokens) {
   assert(llvm::is_sorted(tokens) && "expected tokens to be sorted");
-  std::vector<llvm::lsp::SemanticToken> result;
+  std::vector<mlir::lsp::SemanticToken> result;
 
   for (auto [index, tok] : llvm::enumerate(tokens)) {
     if (tok.range.start.line != tok.range.end.line)
@@ -82,7 +82,7 @@ Mojo::LSP::toLspSemanticTokens(ArrayRef<SemanticToken> tokens) {
     if (tok.range.end.character < tok.range.start.character)
       llvm::report_fatal_error("expected token to have a positive length");
 
-    llvm::lsp::SemanticToken &newTok = result.emplace_back();
+    mlir::lsp::SemanticToken &newTok = result.emplace_back();
 
     // `deltaStart`/`deltaLine` should be computed relative to the last token if
     // possible.
@@ -109,11 +109,11 @@ Mojo::LSP::toLspSemanticTokens(ArrayRef<SemanticToken> tokens) {
 }
 
 std::vector<SemanticToken>
-Mojo::LSP::fromLspSemanticTokens(ArrayRef<llvm::lsp::SemanticToken> tokens) {
+Mojo::LSP::fromLspSemanticTokens(ArrayRef<mlir::lsp::SemanticToken> tokens) {
   std::vector<SemanticToken> result;
 
   SemanticToken *lastToken = nullptr;
-  for (const llvm::lsp::SemanticToken &token : tokens) {
+  for (const mlir::lsp::SemanticToken &token : tokens) {
     auto kind = static_cast<SemanticTokenKind>(token.tokenType);
 
     // Compute the range for the token (relative to the last token if possible).
@@ -127,7 +127,7 @@ Mojo::LSP::fromLspSemanticTokens(ArrayRef<llvm::lsp::SemanticToken> tokens) {
       if (token.deltaLine == 0)
         col += lastToken->range.start.character;
     }
-    llvm::lsp::Range range({line, col},
+    mlir::lsp::Range range({line, col},
                            {line, col + static_cast<int>(token.length)});
 
     lastToken = &result.emplace_back(kind, range, token.tokenModifiers);
@@ -135,9 +135,9 @@ Mojo::LSP::fromLspSemanticTokens(ArrayRef<llvm::lsp::SemanticToken> tokens) {
   return result;
 }
 
-std::vector<llvm::lsp::SemanticTokensEdit>
-Mojo::LSP::diffTokens(ArrayRef<llvm::lsp::SemanticToken> before,
-                      ArrayRef<llvm::lsp::SemanticToken> after) {
+std::vector<mlir::lsp::SemanticTokensEdit>
+Mojo::LSP::diffTokens(ArrayRef<mlir::lsp::SemanticToken> before,
+                      ArrayRef<mlir::lsp::SemanticToken> after) {
   // For now, just replace everything from the first-last modification.
   // FIXME: We should ideally use a real diff instead. The current behavior
   // isn't great for auto-insertion of imports.
@@ -154,7 +154,7 @@ Mojo::LSP::diffTokens(ArrayRef<llvm::lsp::SemanticToken> before,
   if (before.empty() && after.empty())
     return {};
 
-  llvm::lsp::SemanticTokensEdit edit;
+  mlir::lsp::SemanticTokensEdit edit;
   edit.startToken = offset;
   edit.deleteTokens = before.size();
   edit.tokens = after;
