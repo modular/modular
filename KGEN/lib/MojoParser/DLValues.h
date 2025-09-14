@@ -70,9 +70,6 @@ public:
                    CallOperands &&operands, ASTType elementType,
                    const ExprNode *expr);
 
-  // This hook is called if the DLValue needs to be resolved to a physical ref.
-  // This emits an error and returns null on failure.
-  Value emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const override;
   Value tryEmitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const override;
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
