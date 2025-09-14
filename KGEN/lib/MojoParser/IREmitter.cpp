@@ -911,15 +911,15 @@ MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value,
   if (auto mr = rVal.getIfMRValue())
     return mr;
 
-  // Promote SRValue to MRValue.
-  if (value.ir.isSValue() || value.ir.getIfPValue()) {
+  // Promote SRValue/PValue to MRValue.
+  if (rVal.isSValue() || rVal.getIfPValue()) {
     Location argLoc = value.expr->getLocation(*this);
     VarDeclOp varOp = emitVarDecl("anonymous*", rVal.getRValueType(), argLoc,
                                   VarDeclKind::Synthesized);
     if (!varOp)
       return {};
     ValueDest dest(MLValue(varOp), context);
-    if (!emitRValue(value, dest))
+    if (!emitRValue({rVal, value.expr}, dest))
       dest.resetForError(*this);
     return MRValue(varOp);
   }
