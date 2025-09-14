@@ -284,9 +284,9 @@ struct RegTraitType(TraitForReg):
 
 # CHECK-LABEL: lit.fn @"raising_method
 fn raising_method[T: TraitForReg](x: T) raises:
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "may_throw">][{{.*}}](%__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "may_throw">][{{.*}}](%__error__, %__call_result_tmp__
     _ = T.may_throw()
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "throwing_method">][{{.*}}](%{{.*}}, %__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!TraitForReg T, "traits::TraitForReg", "throwing_method">][{{.*}}](%{{.*}}, %__error__, %__call_result_tmp__
     x.throwing_method()
 
 

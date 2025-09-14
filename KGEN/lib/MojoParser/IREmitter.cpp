@@ -305,6 +305,23 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
 /// NOTE: This needs to be kept in sync with getLValueForResult.
 MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
                                              IREmitter &emitter) {
+  // Handle inference of a 'var' declaration's type.
+  if (auto *opDest = dyn_cast<Operation *>(representation)) {
+    // If the result type has a non-materializable type, then we infer the var
+    // to its materialized type.
+    ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
+    ASTType materializedType = nmTarget ? nmTarget : resultType;
+
+    auto varOp = cast<VarDeclOp>(opDest);
+    assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
+           "Cannot resolve an already-resolved vardecl");
+    varOp.getResult().setType(varOp.getType().getWithElement(materializedType));
+
+    // Now that we inferred the 'var' type, we can treat this like a normal
+    // MLValue.
+    representation = LValue(MLValue(varOp.getResult()));
+  }
+
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
@@ -367,18 +384,14 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
-    // Update the VarDecl or GlobalVarDeclOp.
-    Value typedRef;
-    if (auto varOp = dyn_cast<VarDeclOp>(opDest)) {
-      assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
-             "Cannot resolve an already-resolved vardecl");
-      varOp.getResult().setType(
-          varOp.getType().getWithElement(materializedType));
-      typedRef = varOp.getResult();
-    }
+    auto varOp = cast<VarDeclOp>(opDest);
+    assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
+           "Cannot resolve an already-resolved vardecl");
+    varOp.getResult().setType(varOp.getType().getWithElement(materializedType));
+
     // Now that we inferred the 'var' type, we can treat this like a normal
     // MLValue.
-    representation = LValue(MLValue(typedRef));
+    representation = LValue(MLValue(varOp.getResult()));
   }
 
   // We have several cases where we can produce an LValue but it may have the

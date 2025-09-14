@@ -8,10 +8,10 @@
 # COM: This tests that code generated to support capturing closures is located and scoped correctly.
 
 # CHECK-LABEL:    lit.fn @"makes_escaping_closure
-# CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
-# CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A)
+# CHECK-NEXT:    [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!escaping
+# CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, [[MEMTMP]])
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
-# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A, %myclosure)
+# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure)
 # CHECK-NEXT:    lit.ownership.use %myclosure
 # CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%myclosure, %__result__){{.*}} loc(#[[LOC26:.*]])
 
@@ -35,10 +35,10 @@ fn makes_escaping_closure(m: Index, z: Index) -> fn (n: Index) escaping -> Index
 
 # CHECK-LABEL: lit.fn @"closure_in_block
 # CHECK:       hlcf.elif
-# CHECK:         %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
-# CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A) : {{.*}} loc(#[[LOC0]])
+# CHECK:         [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : {{.*}} loc(#[[LOC0:.*]])
+# CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, [[MEMTMP]]) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A, %myclosure) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}([[MEMTMP]], %myclosure) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:     = lit.ref.immut %myclosure : {{.*}} loc(#[[LOC1:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 

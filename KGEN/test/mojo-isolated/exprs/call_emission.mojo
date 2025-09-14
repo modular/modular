@@ -322,7 +322,7 @@ fn test_implicit_conversion_bvalue():
     # CHECK-NEXT: Struct1::@"__init__
     var foo = Struct1()
     # CHECK-NEXT: lit.ownership.use %foo
-    # CHECK-NEXT: %anonymous2A = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}Struct2::@"__init__
     # CHECK-NEXT: lit.ref.immut
     # CHECK-NEXT: lit.call {{.*}}take_struct2
@@ -525,6 +525,7 @@ def entry(mut value: MyDict[String, Value], name: String):
 struct MyMutGetItemCollection[T: AnyType]:
     var state: Value
     fn clear(mut self): pass
+    fn __init__(out self): pass
     fn __getitem__(ref self, idx: Int) -> ref [self] T: pass
     fn __setitem__(mut self, idx: Int, var value: T): pass
 
@@ -540,8 +541,17 @@ fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCol
     # CHECK-NEXT: lit.call {{.*}}Value::@"mutate{{.*}}([[T2]])
     list[0].state.mutate()
 
-    # FIXME: Make sure this calls the setter, not using the mutable getter.
-    # CHECK: [[VALUETMP:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!Value,
+    # Mutating the element directly should call the setitem, not use a reference
+    # returned by a mutating getter.
+    # CHECK: [[VALUETMP:%.*]] = lit.var.decl "__call_result_tmp__"
+    # CHECK: lit.call {{.*}}MyMutGetItemCollection::@"__init__{{.*}}([[VALUETMP]])
+    # CHECK: lit.call {{.*}}MyMutGetItemCollection::@"__setitem__{{.*}}(%list, {{.*}}, [[VALUETMP]])
+    list[0] = MyMutGetItemCollection[Int]()
+
+    # Mutating the inner part of a computed LValue should use the reference
+    # returned by the getitem, because the getitem is guaranteed to have been
+    # called either way.
+    # CHECK: [[VALUETMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!Value,
     # CHECK: lit.call {{.*}}Value::@"__init__
     # CHECK: [[T1:%.*]] = lit.call {{.*}}MyMutGetItemCollection::@"__getitem__
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.struct.ger [[T1]][state]

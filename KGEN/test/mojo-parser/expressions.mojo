@@ -131,14 +131,14 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK-NEXT: [[SIMDVAL:%.*]] = lit.call {{.*}}SIMD::@"__init__{{.*}}()
 
-  # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
   _ = MemoryOnlyInt()
   # CHECK-NEXT: lit.ownership.use [[TMP]]
@@ -182,8 +182,8 @@ fn implicit_func_conversion():
     # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %f)
     var f: DummyFunc = take_int
     # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
-    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %anonymous2A)
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %__call_result_tmp__)
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %__call_result_tmp__
     # CHECK: call {{.*}}func_arg_conversion{{.*}}([[IMMREF]])
     func_arg_conversion(take_int)
 
@@ -868,13 +868,13 @@ struct MemoryOnlyIntArray:
 fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOnlyInt):
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
-  # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, %anonymous2A)
-  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %anonymous2A)
+  # CHECK: [[ANON:%.*]] = lit.var.decl "__call_result_tmp__"
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, %__call_result_tmp__
+  # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %__call_result_tmp__
   arr[x] = arr[x]
 
-  # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"anonymous*`
+  # CHECK: [[ANON:%.*]] = lit.var.decl "__call_result_tmp__"
+  # CHECK-SAME: : !lit.ref<!MemoryOnlyInt, mut *"__call_result_tmp__`
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[ANON]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[ANON]][x]
   # CHECK: %[[C1:.*]] = {{.*}}constant: !Int = <{1}>
@@ -883,7 +883,7 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOn
   arr[x].x = 1
 
   # Initialize in memory through a temp + setitem.
-  # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
+  # CHECK: [[ANON:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK: lit.call @{{.*}}__init__{{.*}}({{.*}}, [[ANON]])
   # CHECK: lit.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
@@ -893,12 +893,12 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOn
   # This is yuck, we're rematerializing the base for the rewrite back multiple
   # times: see the "Generalizing Mojo Writeback to Refs" doc in notion.
 
-  # CHECK: [[STORETMP:%.*]] = lit.var.decl "anonymous*" {{.*}} : !lit.ref<!MemoryOnlyInt, mut *"anonymous*`
+  # CHECK: [[STORETMP:%.*]] = lit.var.decl "__call_result_tmp__" {{.*}} : !lit.ref<!MemoryOnlyInt,
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[STORETMP]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.load [[XP]]
   # CHECK: lit.call {{.*}}Int::@"__iadd__
-  # CHECK: [[STORETMP:%.*]] = lit.var.decl "anonymous*" {{.*}} : !lit.ref<!MemoryOnlyInt, mut *"anonymous*`
+  # CHECK: [[STORETMP:%.*]] = lit.var.decl "__call_result_tmp__" {{.*}} : !lit.ref<!MemoryOnlyInt,
   # CHECK: lit.call {{.*}}__getitem__{{.*}}(%arr, %x, [[STORETMP]])
   # CHECK: [[XP:%.*]] = lit.ref.struct.ger [[STORETMP]][x]
   # CHECK: lit.ref.store {{.*}}, [[XP]]

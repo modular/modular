@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -split-input-file %s | FileCheck %s
+# RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
 
 # Tests that we correctly call get_vtable_entry when looking up a trait's alias.
@@ -868,7 +868,7 @@ fn bar[foo: FooTrait]():
 #  * Upcast it to an AA
 
 
-trait AA:
+trait AA(Movable):
     fn __init__(out self):
         ...
 
@@ -892,9 +892,11 @@ fn fa[T: A]() -> T.Type:
 
 # CHECK-LABEL: lit.fn @"fb
 fn fb[T: B]() -> T.Type:
-    # CHECK: %[[REBIND:.*]] = kgen.rebind {{.*}} : !lit.ref<:!BB #kgen.get_witness<:!B T, "associated_aliases::B", "Type">
-    # CHECK-SAME: to !lit.ref<:!AA #kgen.get_witness<:!A !kgen.param<:!B T>, "associated_aliases::A", "Type">
-    # CHECK: lit.call{{.*}}fa{{.*}}(%[[REBIND]])
+    # CHECK: %__call_result_tmp__ = lit.var.decl "
+    # CHECK: lit.call{{.*}}fa{{.*}}(%__call_result_tmp__)
+    # CHECK: [[REBIND:%.*]] = kgen.rebind %__call_result_tmp__ : !lit.ref<:!AA #kgen.get_witness<:!A !kgen.param<:!B T>, "associated_aliases::A", "Type">
+    # CHECK-SAME: to !lit.ref<:!BB #kgen.get_witness<:!B T, "associated_aliases::B", "Type">,
+    # CHECK-NEXT: lit.call{{.*}}__moveinit__{{.*}}([[REBIND]], %__result__)
     return fa[T]()
 
 
