@@ -847,11 +847,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         assert(!partial && "parameter deduction failure in a context that "
                            "doesn't allow deduction");
         if (paramListAttr.getPassingKind(paramIdx) != PassingKind::Inferred) {
-          diag = shared.emitError(exprLoc, baseName) << " missing required ";
-          if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
-            *diag << "parameter " << name;
-          else
-            *diag << nameForPosOnly(paramIdx, "parameter");
+          DeclResolver::DeclScopeChanger x(&declScope);
+          diag = shared.emitError(exprLoc, baseName)
+                 << " missing required parameter "
+                 << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                          expectedParamTypes[paramIdx]);
         } else {
           // The parameter name is scoped to 'declScope'.
           DeclResolver::DeclScopeChanger x(&declScope);

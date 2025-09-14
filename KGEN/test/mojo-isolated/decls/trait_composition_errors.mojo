@@ -45,14 +45,14 @@ fn use12Direct[T: Trait1 & Trait2](x: T):
 fn main_use():
     s4 = Struct4()
 
-    # expected-error @below {{invalid call to 'use1': could not deduce parameter 'T' of callee 'use1'}}
+    # expected-error @below {{invalid call to 'use1': could not deduce parameter 'T'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1'}}
     use1(s4)
 
-    # expected-error @below {{invalid call to 'use12Alias': could not deduce parameter 'T' of callee 'use12Alias'}}
+    # expected-error @below {{invalid call to 'use12Alias': could not deduce parameter 'T'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
     use12Alias(s4)
 
-    # expected-error @below {{invalid call to 'use12Direct': could not deduce parameter 'T' of callee 'use12Direct'}}
+    # expected-error @below {{invalid call to 'use12Direct': could not deduce parameter 'T'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
     use12Direct(s4)
