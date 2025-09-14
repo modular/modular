@@ -1564,14 +1564,15 @@ fn mha_single_batch[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
+            var sink_logit_log2 = (
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
+            )
             rowmax.store(
                 i,
-                SIMD[accum_type, 2](
-                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
-                ),
+                SIMD[accum_type, 2](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
-            rowsum.store(i, SIMD[accum_type, 2](SIMD[accum_type, 2](1)))
+            rowsum.store(i, SIMD[accum_type, 2](1))
         else:
             rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
             rowsum.store(i, SIMD[accum_type, 2](0))
@@ -2269,11 +2270,12 @@ fn mha_single_batch_pipelined[
                 Bool(sink_weights),
                 "expect sink_weights to be non-null when sink=true",
             )
+            var sink_logit_log2 = (
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
+            )
             rowmax.store(
                 i,
-                SIMD[accum_type, p_frag_simdwidth](
-                    sink_weights.value()[Int(head_idx)].cast[accum_type]()
-                ),
+                SIMD[accum_type, p_frag_simdwidth](sink_logit_log2),
             )
             # exp(sink_val-sink_val) = exp(0) = 1
             rowsum.store(i, SIMD[accum_type, p_frag_simdwidth](1))
@@ -3247,9 +3249,11 @@ fn mha_decoding_single_batch[
                 "expect sink_weights to be non-null when sink=true",
             )
             if thread_idx.x < UInt(4 * group):
-                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
-                    accum_type
-                ]()
+                var sink_logit_log2 = (
+                    sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+                    * log2e
+                )
+                rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and thread_idx.x % 4 == 0:
                     rowsum[i] = 1.0
                 else:
@@ -3913,9 +3917,11 @@ fn mha_decoding_single_batch_pipelined[
                 "expect sink_weights to be non-null when sink=true",
             )
             if thread_idx.x < UInt(4 * group):
-                rowmax[i] = sink_weights.value()[Int(q_head_idx)].cast[
-                    accum_type
-                ]()
+                var sink_logit_log2 = (
+                    sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+                    * log2e
+                )
+                rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and thread_idx.x % 4 == 0:
                     rowsum[i] = 1.0
                 else:

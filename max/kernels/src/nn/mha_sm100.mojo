@@ -2713,22 +2713,20 @@ fn _mha_sm100[
         wait_for_q_mul_k(read_idx_q)
         apply_mask(position, mask_status, kv_tile_start_row)
 
-        # Compute initial rowmax
-        var attention_rowmax = _rowmax_online_softmax[
-            1, mma_thread_layout, use_exp2=True
-        ](vectorize_p_reg_tile(), rowmax, init_rowmax=True)
-
         # Include sink_weights in rowmax computation if present
         @parameter
         if not SinkType.is_null:
             var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx]
+            var sink_weight = sink_weights_ptr[head_idx] * log2e
 
             @parameter
             for i in range(num_rows_per_warp):
-                attention_rowmax[i] = max(
-                    attention_rowmax[i], sink_weight.cast[accum_type]()
-                )
+                rowmax[i] = sink_weight.cast[accum_type]()
+
+        # Compute initial rowmax
+        var attention_rowmax = _rowmax_online_softmax[
+            1, mma_thread_layout, use_exp2=True
+        ](vectorize_p_reg_tile(), rowmax, init_rowmax=SinkType.is_null)
 
         rowmax.copy_from(attention_rowmax)
 
@@ -2746,12 +2744,14 @@ fn _mha_sm100[
         @parameter
         if not SinkType.is_null:
             var head_idx = position.head_idx
-            var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
+            var sink_weight = (
+                sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+            )
 
             @parameter
             for i in range(num_rows_per_warp):
                 # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                var sink_contribution = exp2((sink_weight - rowmax[i]) * log2e)
+                var sink_contribution = exp2(sink_weight - rowmax[i])
                 attention_rowsum[i] = attention_rowsum[i] + sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
@@ -2795,38 +2795,10 @@ fn _mha_sm100[
                 1, mma_thread_layout, use_exp2=True
             ](vectorize_p_reg_tile(), rowmax, False)
 
-            # Include sink_weights in rowmax if present
-            @parameter
-            if not SinkType.is_null:
-                var head_idx = position.head_idx
-                var sink_weight = sink_weights_ptr[head_idx]
-
-                @parameter
-                for i in range(num_rows_per_warp):
-                    current_rowmax[i] = max(
-                        current_rowmax[i], sink_weight.cast[accum_type]()
-                    )
-
             score_frag_rowmax = current_rowmax
             score_frag_rowsum = rebind[__type_of(rowsum)](
                 _rowsum[mma_thread_layout](vectorize_p_reg_tile())
             )
-
-            # Add sink weight contribution to score_frag_rowsum
-            @parameter
-            if not SinkType.is_null:
-                var head_idx = position.head_idx
-                var sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
-
-                @parameter
-                for i in range(num_rows_per_warp):
-                    # Compute exp2((sink_weight - rowmax[i]) * log2e)
-                    var sink_contribution = exp2(
-                        (sink_weight - rowmax[i]) * log2e
-                    )
-                    score_frag_rowsum[i] = (
-                        score_frag_rowsum[i] + sink_contribution
-                    )
 
             _online_softmax_correction[use_exp2=True](rowmax, score_frag_rowmax)
             # rowmax now holds score_frag_rowmax

@@ -1326,9 +1326,10 @@ fn mha_single_batch_amd[
             Bool(sink_weights),
             "expect sink_weights to be non-null when sink=true",
         )
-        rowmax = rowmax.fill(
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        var sink_weight = (
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
         )
+        rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)
     else:
         rowmax = rowmax.fill(min_or_neg_inf[accum_type]())
@@ -1862,9 +1863,10 @@ fn mha_decoding_single_batch_amd[
             Bool(sink_weights),
             "expect sink_weights to be non-null when sink=true",
         )
-        rowmax = rowmax.fill(
-            sink_weights.value()[Int(q_head_idx)].cast[accum_type]()
+        var sink_weight = (
+            sink_weights.value()[Int(q_head_idx)].cast[accum_type]() * log2e
         )
+        rowmax = rowmax.fill(sink_weight)
         rowsum = rowsum.fill(1)
     else:
         rowmax = rowmax.fill(min_or_neg_inf[accum_type]())
