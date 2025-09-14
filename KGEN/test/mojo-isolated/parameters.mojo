@@ -1539,27 +1539,27 @@ fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
 
 # CHECK-LABEL: lit.fn @"test_inference_from_Self_type
 fn test_inference_from_Self_type(x: Int):
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
   # CHECK-NEXT: lit.ownership.use [[TMP]]
   _ = StructWithSpecificSelfInitTypes()
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>(%x, [[TMP]])
   # CHECK-NEXT: lit.ownership.use [[TMP]]
   _ = StructWithSpecificSelfInitTypes(x)
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>(%x, %x, [[TMP]])
   # CHECK-NEXT: lit.ownership.use [[TMP]]
   _ = StructWithSpecificSelfInitTypes(x, x)
 
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>(%x, [[TMP]])
   # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
   # CHECK-NEXT: call {{.*}}implicit_convert_specific_Self{{.*}}([[IMM]])
   implicit_convert_specific_Self(x)
 
-  # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!Movable !Int>{{.*}}([[TMP]], {{.*}})
+  # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
+  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType !Int, :!Movable !Int>{{.*}}({{.*}}, [[TMP]])
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: Index, param: Index, default: Index = param]:

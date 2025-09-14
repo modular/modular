@@ -94,7 +94,7 @@ fn somethingThatRaises() raises:
 
 # CHECK-LABEL: lit.fn @"thing_that_raises
 fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
-    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none,
+    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<none,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
     # CHECK-NEXT: hlcf.if [[IS_ERR]]
@@ -228,7 +228,7 @@ fn may_throw() raises -> RegExample:
 
 # CHECK-LABEL: lit.fn @"propagate_reg_error
 fn propagate_reg_error() raises:
-    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!RegExample,
+    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!RegExample,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: %0 = lit.call {{.*}}may_throw{{.*}}(%__error__, [[RESULT]])
     # CHECK-NEXT: if %0
@@ -312,11 +312,11 @@ struct DestructSome:
 
     # CHECK-LABEL: lit.fn @"__init__
     fn __init__(out self, a: Field, b: Field) raises:
-        # CHECK:      lifetime.start %anonymous
+        # CHECK:      lifetime.start %__call_result_tmp__
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
         # CHECK-NEXT:   mark_consumed
-        # CHECK-NEXT:   lifetime.end %anonymous
+        # CHECK-NEXT:   lifetime.end %__call_result_tmp__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -325,13 +325,13 @@ struct DestructSome:
         # CHECK-NEXT: __copyinit__{{.*}}(%a, [[FIELD]])
         self.a = a
 
-        # CHECK:      lifetime.start %anonymous
+        # CHECK:      lifetime.start %__call_result_tmp__
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
         # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
-        # CHECK-NEXT:   mark_consumed %anonymous
-        # CHECK-NEXT:   lifetime.end %anonymous
+        # CHECK-NEXT:   mark_consumed %__call_result_tmp__
+        # CHECK-NEXT:   lifetime.end %__call_result_tmp__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -343,12 +343,12 @@ struct DestructSome:
         # At this point 'self' is fully initialized, so any exit out should
         # destroy the whole thing.
 
-        # CHECK:      lifetime.start %anonymous
+        # CHECK:      lifetime.start %__call_result_tmp__
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
         # CHECK-NEXT:   __del__{{.*}}(%self)
-        # CHECK-NEXT:   mark_consumed %anonymous
-        # CHECK-NEXT:   lifetime.end %anonymous
+        # CHECK-NEXT:   mark_consumed %__call_result_tmp__
+        # CHECK-NEXT:   lifetime.end %__call_result_tmp__
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         somethingThatRaises()
@@ -366,7 +366,7 @@ fn use(err: Error):
 fn raising_use(var value: MemExample):
     try:
         # CHECK:      [[BORROW:%.*]] = lit.ref.immut %value
-        # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "anonymous*"
+        # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "__call_result_tmp__"
         # CHECK-NEXT: lifetime.start %__try_error__
         # CHECK-NEXT: lifetime.start [[VAL]]
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}borrow_and_return{{.*}}([[BORROW]], %__try_error__, [[VAL]])

@@ -654,11 +654,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   if (calleeSig.isRefResult())
     return false;
 
-  // Check to see if the destination provides a buffer.  If not, it is safe to
-  // emit into it, but it doesn't actually matter.
+  // Check to see if the destination provides a buffer.  If not, we can't use
+  // the dest as a direct memory result.
   MLValue destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
   if (!destBuffer)
-    return true;
+    return false;
 
   // If this is a throwing function, then we cannot write to a field of a
   // origin tracked value.  Consider:

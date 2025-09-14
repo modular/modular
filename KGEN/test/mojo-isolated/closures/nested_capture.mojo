@@ -12,7 +12,7 @@ fn use(x: Index):
 
 # CHECK-LABEL: lit.fn @"direct
 fn direct(output: Index):
-    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%output, %anonymous2A)
+    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%output, %__call_result_tmp__)
     fn closure():
         @parameter
         fn body():
@@ -24,7 +24,7 @@ fn direct(output: Index):
 fn deep_runtime_capture(
     m: Index,
 ) -> fn (n: Index) escaping -> fn (o: Index) escaping -> Index:
-    # CHECK: lit.call {{.*}}_CI_{{.*}}__init__{{.*}}(%m, %anonymous2A)
+    # CHECK: lit.call {{.*}}_CI_{{.*}}__init__{{.*}}(%m, %__call_result_tmp__)
     fn myclosure(n: Index) -> fn (o: Index) escaping -> Index:
         fn my_inner_closure(o: Index) -> Index:
             var x = __mlir_op.`index.add`(o, m)

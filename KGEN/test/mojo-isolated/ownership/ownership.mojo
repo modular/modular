@@ -119,11 +119,11 @@ fn destructors(var arg0: MemExample):
   # CHECK-NEXT: lifetime.end %mem3
   consume(mem3^^^)
 
-  # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-  # CHECK-NEXT: lifetime.start %anonymous2A
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%anonymous2A)
-  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}(%anonymous2A)
-  # CHECK-NEXT: lifetime.end %anonymous2A
+  # CHECK-NEXT: [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+  # CHECK-NEXT: lifetime.start [[MEMTMP]]
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MEMTMP]])
+  # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[MEMTMP]])
+  # CHECK-NEXT: lifetime.end [[MEMTMP]]
   consume(MemExample()^)
 
   # CHECK-NEXT: %someInt = lit.var.decl
@@ -466,11 +466,11 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
-  # CHECK-NEXT: %anonymous2A = lit.var.decl
-  # CHECK-NEXT: lifetime.start %anonymous2A
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %anonymous2A)
-  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}(%anonymous2A)
-  # CHECK-NEXT: lifetime.end %anonymous2A
+  # CHECK-NEXT: [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+  # CHECK-NEXT: lifetime.start [[MEMTMP]]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[MEMTMP]])
+  # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[MEMTMP]])
+  # CHECK-NEXT: lifetime.end [[MEMTMP]]
   consumeMem(example)
 
   # This does consume example, so no copy needed.
@@ -1270,7 +1270,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
 
   # CHECK-NEXT: [[IF:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: hlcf.if %cond
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
   # CHECK-NEXT:   lit.var.lifetime.start [[IF]]

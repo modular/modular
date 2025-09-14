@@ -132,7 +132,7 @@ fn testWithRaising(a: ExampleCM) raises:
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[VAL]])
         noop(val)
 
-        # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %anonymous
+        # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %__call_result_tmp__
         raise_string()
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except {
@@ -179,7 +179,7 @@ fn testWithInTry(a: ExampleCM):
         with a as cm:
             # CHECK: %__inner_error__ = lit.var.decl
             # CHECK: lit.try %__inner_error__
-            # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %anonymous
+            # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_string{{.*}}(%__inner_error__, %__call_result_tmp__
             raise_string()
     except e:
         _ = e

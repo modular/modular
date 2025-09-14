@@ -17,10 +17,10 @@ struct MemType(ImplicitlyCopyable, Movable):
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure
-# CHECK: %anonymous2A = lit.var.decl "anonymous*"
-# CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}CI_[[F]]_{{.*}}"::@"__init__{{.*}}(%m, %anonymous2A)
+# CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
+# CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}CI_[[F]]_{{.*}}"::@"__init__{{.*}}(%m, %__call_result_tmp__)
 # CHECK-NEXT: %myclosure = lit.var.decl "myclosure"
-# CHECK-NEXT:  = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A, %myclosure)
+# CHECK-NEXT:  = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%__call_result_tmp__, %myclosure)
 # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: none
 # CHECK-NEXT: lit.return [[V3]]
 # CHECK-NEXT: lit.end_fn

@@ -156,7 +156,7 @@ fn rethrowsToRethrow():
     try:
         # CHECK: lit.try [[TRY_ERROR2:%.*]] :
         try:
-            # CHECK: lit.call {{.*}}maybeRaises{{.*}}([[TRY_ERROR2]], %anonymous
+            # CHECK: lit.call {{.*}}maybeRaises{{.*}}([[TRY_ERROR2]], %__call_result_tmp__
             maybeRaises()  # expected-warning {{'Int' value is unused}}
         # CHECK: } except {
         except:
