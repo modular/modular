@@ -97,7 +97,7 @@ fn testSIMD(
     # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '2' and '1'}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size' of callee 'twoUses'}}
+    # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size'}}
     # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '1' and '2'}}
     twoUses(a, b)
 
@@ -123,7 +123,7 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a' of callee 'infer_then_convert'}}
+    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a'}}
     # expected-note @below {{failed to infer parameter 'b', it inferred to two different values: '1' and '2'}}
     infer_then_convert(rhs, lhs)
 
@@ -352,7 +352,7 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b' of callee 'has_pos_only'}}
+    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b'}}
     # expected-note @below {{failed to infer parameter 'b', it isn't used in any argument}}
     has_pos_only[1, c=9]()
 
@@ -519,7 +519,7 @@ struct BindStructField:
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
-    # expected-error @below {{could not deduce parameter 'a' of callee 'autoparams'}}
+    # expected-error @below {{could not deduce parameter 'a'}}
     # expected-note @below {{failed to infer parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
@@ -580,7 +580,7 @@ struct UnusedInitSelfParam[A: Int]:
         pass
 
 fn unused_init_self_param():
-    # expected-error @below {{invalid initialization: could not deduce parameter 'B' of callee '__init__'}}
+    # expected-error @below {{invalid initialization: could not deduce parameter 'B'}}
     # expected-note @below {{failed to infer parameter 'B', it isn't used in any argument}}
     var slice = UnusedInitSelfParam()
 
@@ -591,7 +591,7 @@ struct SimpleSIMD[arg1: Int, size: Int]:
     fn __init__[T: AnyType](out self: SimpleSIMD[arg1, 1], value: T): pass
 
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
-    # expected-error @below {{could not deduce parameter 'T' of callee '__init__'}}
+    # expected-error @below {{could not deduce parameter 'T'}}
     x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}

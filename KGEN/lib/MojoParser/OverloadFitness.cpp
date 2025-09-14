@@ -821,12 +821,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {
-        auto emitMessage = [&](auto sig) {
-          diag << "could not deduce ";
-          if (StringAttr name = sig.getParamName(paramIdx); !name.empty())
-            diag << "parameter " << name;
-          else
-            diag << nameForPosOnly(paramIdx, "parameter");
+        {
+          DeclResolver::DeclScopeChanger x(funcIfDirect);
+          diag << "could not deduce parameter "
+               << ParamDeclRefAttr::get(
+                      paramListAttr.getName(paramIdx),
+                      signature.getInputParamTypes()[paramIdx]);
         };
 
         // If this is a method on a struct and we couldn't infer something from
@@ -836,7 +836,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                   cast<FnOp>(funcIfDirect->getIfOperation())->getParentOp())) {
             auto structSig = structOp.getSignature();
             if (paramIdx < structSig.getNumParams()) {
-              emitMessage(structSig);
               diag << " of parent struct '" << structOp.getDeclName().getValue()
                    << "'";
               diag.attachNote(structOp.getLoc()) << " struct declared here";
@@ -847,8 +846,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
             }
           }
         }
-        emitMessage(signature);
-        diag << " of callee '" << callable.baseName << "'";
+
         inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
                               funcIfDirect, diag);
       },

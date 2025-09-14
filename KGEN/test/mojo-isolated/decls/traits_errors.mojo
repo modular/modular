@@ -157,6 +157,6 @@ fn take_two_inferred_params[Size: Int](x: TakeInt[Size], y: TakeInt[Size]):
 
 
 fn call_take_two_inferred_params[T: SomeTrait](x: T):
-    # expected-error @below {{invalid call to 'take_two_inferred_params': could not deduce parameter 'Size' of callee 'take_two_inferred_params'}}
+    # expected-error @below {{invalid call to 'take_two_inferred_params': could not deduce parameter 'Size'}}
     # expected-note @below {{failed to infer parameter 'Size', it inferred to two different values: 'T.A' and '1'}}
     take_two_inferred_params(TakeInt[T.A](), TakeInt[1]())

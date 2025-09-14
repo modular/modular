@@ -252,9 +252,8 @@ tryGetSymbolNameAndParams(TypedAttr param) {
 /// knows what is going on, and we don't get a T != T error.
 ///
 /// This returns success when handled, failure otherwise.
-static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
-                                                  SharedState &shared,
-                                                  raw_ostream &os) {
+static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
+                                 raw_ostream &os) {
   ASTDecl *curDecl = shared.declResolver->getDeclCurrentlyProcessing();
 
   // Walk up the decl hierarchy to find the one that contains the parameter.
@@ -294,29 +293,42 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
     curDecl = curDecl->getParentDecl();
   }
 
+  // If this is an implicit parameter injected due to auto-parameterization,
+  // then it will have a uniquing identifier on it, rip that off.
+  auto demangledName = demangleParameterName(declRef.getName());
+
   // If we didn't find it, or is something like an implicit origin reference
   // then there is nothing to do.
-  if (paramIdx == -1)
-    return failure();
+  if (paramIdx == -1) {
+    os << demangledName;
+    return;
+  }
 
   // Handle implicit origins.
   if (size_t(paramIdx) >= paramListAttr.size()) {
     assert(isa<OriginType>(paramDecls[paramIdx].getType()) &&
            "Only unnamed thing should be an implicit origin");
-    os << "__origin_of(" << demangleParameterName(declRef.getName()) << ")";
-    return success();
+    os << "__origin_of(" << demangledName << ")";
+    return;
   }
 
-  // Otherwise, it is an autoparam.  It could be an autoparam of another
-  // parameter, or could be an autoparam for an argument type of a
+  // If the name wasn't mangled, then it is a normal user parameter, just
+  // print it.
+  if (demangledName == declRef.getName()) {
+    os << demangledName;
+    return;
+  }
+
+  // Otherwise, check to see if it is an autoparam.  It could be an autoparam of
+  // another parameter, or could be an autoparam for an argument type of a
   // function. Check parameters first (handling structs and functions).
   for (auto paramDecl : paramDecls) {
     for (auto p : ASTType(paramDecl.getType()).getParamBindings()) {
       if (p == declRef) {
         // The param found may itself be an autoparam.  Recurse to print it.
         ASTType::printParam(os, ParamDeclRefAttr::get(paramDecl), &shared);
-        os << "." << demangleParameterName(declRef.getName());
-        return success();
+        os << "." << demangledName;
+        return;
       }
     }
   }
@@ -339,8 +351,8 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
       if (llvm::is_contained(ASTType(userArgType).getParamBindings(),
                              declRef)) {
         printArgName();
-        os << "." << demangleParameterName(declRef.getName());
-        return success();
+        os << "." << demangledName;
+        return;
       }
 
       // If is possible that this parameter is an autoparam origin or mut bool
@@ -351,12 +363,13 @@ static LogicalResult printAutoParamScopeIfPresent(ParamDeclRefAttr declRef,
             os << "__origin_of(";
             printArgName();
             os << ")";
-            return success();
+            return;
           }
         }
     }
   }
-  return failure();
+
+  os << demangledName;
 }
 
 /// Pretty print a parameter value.
@@ -805,21 +818,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   // Print ParamDeclRefAttr as the name of the parameter.
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(param)) {
-    // If the parameter is an implicit parameter injected due to
-    // auto-parameterization, print the thing that is being parameterized.
-    StringRef name = declRef.getName();
+    if (!diagShared)
+      // Escape any weird characters in the parameter name that might have
+      // been introduced with backticks.
+      return printAsMojoStringLiteral(declRef.getName(), os);
 
-    if (diagShared) {
-      name = demangleParameterName(name);
-      if (name != declRef.getName()) // Add context for mangled names.
-        if (succeeded(printAutoParamScopeIfPresent(declRef, *diagShared, os)))
-          return;
-    }
-
-    // Escape any weird characters in the parameter name that might have
-    // been introduced with backticks.
-    printAsMojoStringLiteral(name, os);
-    return;
+    return prettyPrintParamName(declRef, *diagShared, os);
   }
 
   // These are origins but don't need __origin_of around them.
