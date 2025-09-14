@@ -749,9 +749,6 @@ public:
   virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
 
-  // This hook is called if the DLValue needs to be resolved to a mutable ref,
-  // but is allowed to fail if the DLValue can't.
-  virtual Value tryEmitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const;
   virtual CValue emitLoad(ValueDest &dest, IREmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,
                            IREmitter &emitter) const = 0;

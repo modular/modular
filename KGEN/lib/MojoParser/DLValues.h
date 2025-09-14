@@ -70,7 +70,6 @@ public:
                    CallOperands &&operands, ASTType elementType,
                    const ExprNode *expr);
 
-  Value tryEmitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const override;
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;

@@ -909,6 +909,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // byref_result can have a placeholder when there is no specified
     // destination, but can also have a destination specified directly.
     if (!argValAndExpr.ir) {
+      assert(convention == ArgConvention::ByRefResult &&
+             "value must be present for 'mut' convention");
       auto resultRValueType = cast<RefType>(declaredArgType).getElementType();
 
       // Often the result of the call will be directly assigned into a
@@ -942,33 +944,61 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // If this is already an MLValue in the default address space, we can pass
     // in the reference directly.
-    if (auto ref = lv.getIfMLValue()) {
+    if (MLValue ref = lv.getIfMLValue()) {
       if (lv.getMValueType().isDefaultAddrSpace())
-        return checkMValueAddrSpace(ref);
-    }
-    // If dynamic but getter returns reference then we can omit the copy and
-    // writeback.
-    if (DLValue dlv = lv.getIfDLValue()) {
-      if (Value ref =
-              dlv->tryEmitAsRefValue(argValAndExpr.expr->getLoc(), emitter))
-        return checkMValueAddrSpace(CValue::getMValueForRef(ref));
+        return ref;
     }
 
-    // If dynamic, we need to generate a temporary slot, emit a 'get' into
-    // that slot, pass the address, then write it back when we're done.
-    ValueDest dlvBuffer(lv, ctx);
-    MLValue mlvBuffer = dlvBuffer.getMLValueForResult(
-        argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
-    // Emit the 'get' into the buffer.
-    ValueDest bufferDest(mlvBuffer, ctx);
-    if (!emitter.emitRValue({lv, argValAndExpr.expr}, bufferDest)) {
-      bufferDest.resetForError(emitter);
-      dlvBuffer.resetForError(emitter);
-      return {};
+    // Otherwise, we have a computed lvalue or a stored lvalue in the wrong
+    // address space.  In general we need to do a load from the LValue into
+    // a temporary slot and then a writeback when we're done.  Start by loading
+    // the LValue, which for a DLValue will call the getter.
+    ValueDest tmpValueDest(lv.getRValueType(), EC_CallArgValue);
+    CValue loadVal;
+    if (DLValue dlv = lv.getIfDLValue()) {
+      // If the getter return as mutable reference, we don't want to force an
+      // RValue yet.
+      loadVal = dlv->emitLoad(tmpValueDest, emitter);
+    } else {
+      loadVal = emitter.emitRValue({lv, argValAndExpr.expr}, tmpValueDest);
     }
+    if (!loadVal)
+      return {};
+
+    // One interesting case to watch for are types like Dict.  These types have
+    // both a getter and a setter, but the getter will return a mutable
+    // reference when self is mutable.  The semantics of Dict are that we must
+    // call the setter to create an entry if it doesn't exist, as in:
+    //
+    //    dict[elt] = value
+    //
+    // But we prefer to use the mutable reference directly when possible, as in:
+    //
+    //    dict[elt] += 4
+    //
+    // This is because it avoids the need to load the element, add 4, then
+    // store the result back. We know this is safe, because the getter has to
+    // be called in any case.
+    if (auto mlVal = loadVal.getIfMLValue()) {
+      // Don't do this for assignments.
+      if (convention == ArgConvention::Mut &&
+          cast<RefType>(mlVal.getType()).isDefaultAddrSpace())
+        return mlVal;
+    }
+
+    // Okay, we really do need to do a write back.  Force loadVal to an MRValue
+    // so it lives in memory (dropping SRValues into a temp) and loading any
+    // immutable references returned by a getitem.
+    MRValue loadMR =
+        emitter.emitMRValue({loadVal, argValAndExpr.expr}, EC_CallArgValue);
+    if (!loadMR)
+      return {};
+
+    // After the call, write the updated value in loadMR back to the lvalue.
     afterCallActions.lvalueWritebacks.push_back(
-        {std::move(dlvBuffer), mlvBuffer});
-    return checkMValueAddrSpace(mlvBuffer);
+        {ValueDest(lv, ctx), MLValue(loadMR)});
+    // Use the address of the temporary for the call.
+    return checkMValueAddrSpace(loadMR);
   }
   }
 

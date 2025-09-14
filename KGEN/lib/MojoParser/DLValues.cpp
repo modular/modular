@@ -33,11 +33,6 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 
 BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
-Value BaseDLValue::tryEmitAsRefValue(llvm::SMLoc loc,
-                                     IREmitter &emitter) const {
-  return {};
-}
-
 //===----------------------------------------------------------------------===//
 // DiscardDLValue
 //===----------------------------------------------------------------------===//
@@ -205,36 +200,6 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
   return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
                                      storeDest, CallSyntax::kMethodCall, expr);
-}
-
-// Some subscripts, notably Dict, are defined with both a getter and a setter
-// but the getter returns a ref (and throws).  If we need to bind the dict entry
-// into a ref, call the getter.
-Value SubscriptDLValue::tryEmitAsRefValue(llvm::SMLoc loc,
-                                          IREmitter &emitter) const {
-  // If there is no getter, then this just fails like other computed lvalues.
-  if (!getter)
-    return {};
-
-  // We only want to return a reference owned by the DLValue. If the getter
-  // returns a value instead of a reference, then fail.
-  if (!cast<FnTypeGeneratorType>(getter.getType()).isRefResult())
-    return {};
-
-  // Call the getter to get the ref.
-  ValueDest storeDest(EC_RefBinding);
-  auto ref = emitLoad(storeDest, emitter);
-  if (!ref)
-    return {}; // Error emitted by emitLoad.
-
-  // If we have a reference, we succeeded.
-  if (ref.isMValue())
-    return ref.getMValueReference();
-  // getitem returned something that isn't a ref.
-  emitter.emitError(
-      expr->getLoc(),
-      "getter did not return a reference required by this context");
-  return {};
 }
 
 //===----------------------------------------------------------------------===//

@@ -111,9 +111,9 @@ fn takes_inout_int(mut a: Index):
 fn test_writeback1[
     x: Index, y: Index
 ](mut a: IndexArray, mut b: IndexArrayArray):
-    # CHECK: %[[LT:.*]] = lit.var.decl "anonymous*" synth
-    # CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <x>
+    # CHECK: %[[V0:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
+    # CHECK-NEXT: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: lit.ref.store %[[V1]], %[[LT]]
     # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT]])
     # CHECK-NEXT: %[[V3:.*]] = kgen.param.constant = <x>
@@ -125,19 +125,20 @@ fn test_writeback1[
 fn test_writeback2[
     x: Index, y: Index
 ](mut a: IndexArray, mut b: IndexArrayArray):
-    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl
-    # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT2]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V5:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[LT2]], %[[C2]])
 
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%b, %[[C1]], %[[LT2]])
+    # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl {{.*}}!lit.ref<index
     # CHECK-NEXT: lit.ref.store %[[V5]], %[[LT1]]
     # CHECK-NEXT: lit.call {{.*}}takes_inout_int{{.*}}(%[[LT1]])
-    # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl
+
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
+    # CHECK-NEXT: %[[LT3:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: lit.call {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT3]])
     # CHECK-NEXT: %[[C2:.*]] = kgen.param.constant = <y>
     # CHECK-NEXT: %[[V9:.*]] = lit.ref.load %[[LT1]]

@@ -266,8 +266,8 @@ fn mutate_in_addrspace(
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
 
     # Use a temporary to get an MLValue in the default address space.
-    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
+    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
     # CHECK-NEXT: lit.ref.store [[REGVAL]], %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"mutateArg{{.*}}(%a, %anonymous2A)
 
@@ -506,10 +506,10 @@ struct MyDict[K: KeyElement, V: Copyable & Movable](Copyable, Movable):
     fn __setitem__(mut self, var key: K, var value: V):
         pass
 
-
 @fieldwise_init
-struct Value(Copyable, Movable):
+struct Value(ImplicitlyCopyable, Movable):
     var max_width: Int
+    fn mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String):
@@ -521,24 +521,44 @@ def entry(mut value: MyDict[String, Value], name: String):
     value[name].max_width = 12
 
 
-struct MyLinkedList[T: Copyable & Movable](Copyable, Movable):
-    var value: UnsafePointer[T]
+# getitem on mutable list returns a mutable ref.
+struct MyMutGetItemCollection[T: AnyType]:
+    var state: Value
+    fn clear(mut self): pass
+    fn __getitem__(ref self, idx: Int) -> ref [self] T: pass
+    fn __setitem__(mut self, idx: Int, var value: T): pass
 
-    fn __init__(out self, var value: UnsafePointer[T]):
-        self.value = value
-
-    fn clear(mut self):
-        pass
-
-    fn __getitem__(ref self, idx: Int) -> ref [self] T:
-        return self.value[]
-
-    fn __setitem__(mut self, idx: Int, var value: T):
-        pass
-
-
-# CHECK: lit.fn @"entry
-fn entry(mut list: MyLinkedList[MyLinkedList[Int]]):
-    # CHECK: [[V0:%.*]] = lit.call @{{.*}}::@MyLinkedList::@"__getitem__
-    # CHECK-NEXT: lit.call @{{.*}}::@MyLinkedList::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
+# CHECK: lit.fn @"subscript_assignment_inplace
+fn subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCollection[Int]]):
+    # CHECK: [[V0:%.*]] = lit.call @{{.*}}::@MyMutGetItemCollection::@"__getitem__
+    # CHECK-NEXT: lit.call @{{.*}}::@MyMutGetItemCollection::@"clear{{.*}}"[{{.*}}]<{{.*}}>([[V0]])
     list[0].clear()
+
+    # Make sure this isn't copying 'state'.
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}MyMutGetItemCollection::@"__getitem__
+    # CHECK-NEXT: [[T2:%.*]] = lit.ref.struct.ger [[T1]][state]
+    # CHECK-NEXT: lit.call {{.*}}Value::@"mutate{{.*}}([[T2]])
+    list[0].state.mutate()
+
+    # FIXME: Make sure this calls the setter, not using the mutable getter.
+    # CHECK: [[VALUETMP:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!Value,
+    # CHECK: lit.call {{.*}}Value::@"__init__
+    # CHECK: [[T1:%.*]] = lit.call {{.*}}MyMutGetItemCollection::@"__getitem__
+    # CHECK-NEXT: [[T2:%.*]] = lit.ref.struct.ger [[T1]][state]
+    # CHECK-NEXT: lit.call {{.*}}Value::@"__moveinit__{{.*}}([[VALUETMP]], [[T2]])
+    list[0].state = Value(1)
+
+# getitem on mutable list returns a immutable ref so setitem is needed.
+struct MyImmutGetItemCollection[T: AnyType]:
+    fn __getitem__(self, idx: Int) -> ref [self] T: pass
+    fn __setitem__(mut self, idx: Int, var value: T): pass
+
+# CHECK: lit.fn @"subscript_assignment_writeback
+fn subscript_assignment_writeback(mut list: MyImmutGetItemCollection[Value]):
+    # This MUST perform a copy of the value, because getitem returns an
+    # immutable ref.
+
+    # CHECK: lit.call @{{.*}}::@MyImmutGetItemCollection::@"__getitem__
+    # CHECK: lit.call {{.*}}Value::@"mutate
+    # CHECK: lit.call @{{.*}}::@MyImmutGetItemCollection::@"__setitem__
+    list[0].mutate()
