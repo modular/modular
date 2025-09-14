@@ -161,7 +161,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
     device_tensors: list[Tensor]
     """List of tensors holding the KV cache blocks, one per device."""
 
-    host_tensor: Tensor | None
+    host_tensors: list[Tensor] | None
     """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
 
     total_num_host_pages: int
@@ -301,7 +301,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
             f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
         )
 
-        self.host_tensor = None
+        self.host_tensors = None
         self.total_num_host_pages = 0
         if params.enable_kvcache_swapping_to_host:
             GiB = 1024 * 1024 * 1024
@@ -311,8 +311,25 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 host_kvcache_swap_space_gb * GiB
             )
 
+            # The number of bytes that a single page will occupy on the host.
+            # Note that this considers n_kv_heads, not n_kv_heads_per_device.
+            single_page_size_bytes_on_host = (
+                2
+                * num_layers
+                * params.n_kv_heads
+                * params.head_dim
+                * page_size
+                * params.dtype.size_in_bytes
+            )
+            single_page_size_bytes_on_host_str = to_human_readable_bytes(
+                single_page_size_bytes_on_host
+            )
+            host_kvcache_swap_space_bytes_per_device = (
+                host_kvcache_swap_space_bytes // len(devices)
+            )
             self.total_num_host_pages = (
-                host_kvcache_swap_space_bytes // single_page_size_bytes
+                host_kvcache_swap_space_bytes_per_device
+                // single_page_size_bytes
             )
 
             if self.total_num_host_pages == 0:
@@ -321,42 +338,29 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 )
                 raise RuntimeError(
                     f"Insufficient host swap space to allocate even a single page. "
-                    f"One page requires {single_page_size_bytes_str} but only {human_readable_host_swap_space_gb} are available."
+                    f"One page requires {single_page_size_bytes_on_host_str} but only {human_readable_host_swap_space_gb} are available."
                 )
 
             logger.warning(
                 "Paged KVCache Manager will offload GPU blocks to host memory. This is an experimental feature and may not work correctly."
             )
             logger.info(
-                f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_str} per page."
+                f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_on_host_str} per page."
             )
-
-            # Determine if any of the devices are GPU devices.
-            gpu_device: Device | None = None
+            self.host_tensors = []
+            # Construct host tensors for each device.
             for dev in devices:
-                if not dev.is_host:
-                    gpu_device = dev
-                    break
-
-            # Create a kvcache allocation on the host.
-            if gpu_device is not None:
-                # Use pinned host memory when there is a GPU device.
-                # Pinned memory has faster memory transfer speeds compared to
-                # pageable memory and allows for the host to issue them
-                # asynchronously to the GPU.
-                self.host_tensor = Tensor(
-                    shape=self.block_shape(self.total_num_host_pages),  # type: ignore
-                    dtype=self.params.dtype,
-                    device=gpu_device,
-                    pinned=True,
-                )
-            else:
-                # Use normal pageable memory when there is no GPU device.
-                # Note that the memory transfers will be synchronous.
-                self.host_tensor = Tensor(
-                    shape=self.block_shape(self.total_num_host_pages),  # type: ignore
-                    dtype=self.params.dtype,
-                    device=Device.cpu(),
+                if dev.is_host:
+                    raise ValueError(
+                        "Host device detected. Paging to host is not supported when executing on CPU."
+                    )
+                self.host_tensors.append(
+                    Tensor(
+                        shape=self.block_shape(self.total_num_host_pages),  # type: ignore
+                        dtype=self.params.dtype,
+                        device=dev,
+                        pinned=True,
+                    )
                 )
 
         # Initialize block copy engine.
@@ -367,7 +371,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 num_device_blocks=self.total_num_pages,
                 device_tensors=self.device_tensors,
                 num_host_blocks=self.total_num_host_pages,
-                host_tensor=self.host_tensor,
+                host_tensors=self.host_tensors,
             )
 
         # Initialize block manager

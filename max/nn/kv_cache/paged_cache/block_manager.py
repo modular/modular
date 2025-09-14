@@ -590,6 +590,11 @@ class BlockManager(Generic[T]):
         # Commit the host block into the host prefix cache.
         self.host_block_pool.commit_into_prefix_cache(old_hash, host_block)
 
+        # Mark the host block as free. Host blocks are technically never
+        # "active" so ref_cnt should always be 0. We immediately mark it as
+        # free so it's added to the free block queue.
+        self.host_block_pool.free_block(host_block)
+
     @traced
     def allocate_device_block(self) -> KVCacheBlock:
         new_block, block_hash = self.device_block_pool.alloc_block()
