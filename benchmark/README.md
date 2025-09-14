@@ -41,12 +41,28 @@ OpenAI-compatible APIs as follows.
 
 First enter the local virtual environment:
 
-```cd
-git clone -b stable https://github.com/modular/modular.git
+```bash
+# Either clone main (nightly):
+git clone https://github.com/modular/modular.git
+# Or clone stable:
+# git clone -b stable https://github.com/modular/modular.git
 
 cd modular/benchmark
 
 pixi shell
+```
+
+Now install `modular` based on whether you cloned the main or stable branch:
+
+```bash
+pixi add pip
+
+# If you cloned main:
+pip install --pre modular \
+  --index-url https://dl.modular.com/public/nightly/python/simple/
+
+# If you cloned stable:
+# pip install modular
 ```
 
 Then run the benchmark script while specifying your active
