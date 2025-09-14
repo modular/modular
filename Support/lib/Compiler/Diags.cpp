@@ -479,6 +479,13 @@ void InflightDiag::addFixIt(FixIt fixIt) {
       SMFixIt(translateToSMRange(fixIt.range, diags), fixIt.replacement));
 }
 
+/// Get the location of the most recent message in the diagnostic.
+Location InflightDiag::getLastLoc() const { return messages.back().loc; }
+
+//===----------------------------------------------------------------------===//
+// FixIt Implementation
+//===----------------------------------------------------------------------===//
+
 FixIt::FixIt(SourceRange range, const Twine &replacement)
     : range(range), replacement(replacement.str()) {}
 

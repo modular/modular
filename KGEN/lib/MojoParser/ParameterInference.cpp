@@ -36,42 +36,41 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
-void InferenceFailure::emitSpecificNote(
-    function_ref<InflightDiag &()> attachNote) const {
-
+void InferenceFailure::addExplanation(InflightDiag &diag) const {
   if (isa<NotFoundFailure>(info)) {
-    attachNote() << "it isn't used in any argument";
+    diag << ", it isn't used in any argument";
     return;
   }
 
   if (isa<ValueConflictFailure>(info)) {
     auto failure = cast<ValueConflictFailure>(info);
-    attachNote() << "it inferred to two different values: " << failure.v1
-                 << " and " << failure.v2
-                 << ", try `rebind` them to one type if they will be "
-                    "concretized to the same type";
+    diag << ", it inferred to two different values: " << failure.v1 << " and "
+         << failure.v2;
+    diag.attachNote(diag.getLastLoc())
+        << "try `rebind` them to one type if they will be "
+           "concretized to the same type";
     return;
   }
 
   auto failure = cast<TypeConflictFailure>(info);
   if (isa<TypeType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
-      attachNote() << "argument type " << anyStruct.getType()
-                   << " is not a '@register_passable(\"trivial\")' type, so "
-                      "does not satisfy AnyTrivialRegType";
+      diag << ", argument type " << anyStruct.getType()
+           << " is not a '@register_passable(\"trivial\")' type, so "
+              "does not satisfy AnyTrivialRegType";
       return;
     }
   }
 
   if (isa<TraitType>(failure.paramType)) {
     if (auto anyStruct = dyn_cast<StructMetaType>(failure.argParamType)) {
-      attachNote() << "argument type " << anyStruct.getType()
-                   << " does not conform to trait " << failure.paramType;
+      diag << ", argument type " << anyStruct.getType()
+           << " does not conform to trait " << failure.paramType;
       return;
     }
     if (isa<TraitType>(failure.argParamType)) {
-      attachNote() << "argument type " << failure.argParamType
-                   << " is not a child trait of " << failure.paramType;
+      diag << ", argument type " << failure.argParamType
+           << " is not a child trait of " << failure.paramType;
       return;
     }
   }
@@ -81,17 +80,10 @@ void InferenceFailure::emitSpecificNote(
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
 
-void ParameterInferenceDiagnostics::attach(PogListAttr params,
-                                           ArrayRef<Type> paramTypes,
-                                           ASTDecl *funcIfDirect,
-                                           InflightDiag &diag,
-                                           size_t numActual) {
+void ParameterInferenceDiagnostics::addExplanation(InflightDiag &diag) {
   // Pick the first diagnostic for the earliest parameter after numActual.
   const FailedInference *best = nullptr;
   for (const FailedInference &failure : diags) {
-    // Ignore failures for things we know.  Why?
-    if (failure.paramIdx < numActual)
-      continue;
     // Don't report diagnostics when failure occurred from a default value,
     // we need a location.
     if (!failure.argExpr)
@@ -103,19 +95,8 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
     best = &failure;
   }
 
-  if (!best)
-    return;
-
-  best->info.emitSpecificNote([&]() -> InflightDiag & {
-    // The parameter name is scoped to 'funcIfDirect' when we have it.
-    DeclResolver::DeclScopeChanger x(funcIfDirect);
-
-    auto name = params.getName(best->paramIdx);
-    diag.attachNote(best->argExpr->getLoc())
-        << best->argExpr->getRange() << "failed to infer parameter "
-        << ParamDeclRefAttr::get(name, paramTypes[best->paramIdx]);
-    return diag << ", ";
-  });
+  if (best)
+    best->info.addExplanation(diag);
 }
 
 //===----------------------------------------------------------------------===//

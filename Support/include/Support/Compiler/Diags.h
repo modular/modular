@@ -171,6 +171,9 @@ public:
   InflightDiag attachNote(SMLoc loc) &&;
   InflightDiag &attachNote(SMLoc loc) &;
 
+  /// Get the location of the most recent message in the diagnostic.
+  Location getLastLoc() const;
+
   // Insertion operations for various things that contribute to the current
   // messages.  These are implemented with addToDiagnostic methods.
   template <typename Arg>
