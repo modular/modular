@@ -325,7 +325,11 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
                 for k in [256, 384, 512, 768, 1024]:
                     test_block_shape[block_m, block_n, k]()
             else:
-                test_block_shape[block_m, block_n, 768]()
+                # Exercise the logic where block_k is increased, but only if K is
+                # multiple of the increased block size.
+                @parameter
+                for k in [320, 768]:
+                    test_block_shape[block_m, block_n, k]()
 
 
 def main():

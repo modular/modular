@@ -380,11 +380,13 @@ fn _amdgpu_matmul_config_from_block_shape[
             num_warps *= 2
             test_k *= 2
     else:
-        # Improve shared memory utilization by expanding block_k.
-        var smem_a = block_m * block_k * size_of[a_type]()
-        var smem_b = block_n * block_k * size_of[b_type]()
-        if smem_a + smem_b <= 32 * 1024:
-            block_k *= 2
+        # Improve shared memory utilization by expanding block_k, but only if K is
+        # a multiple of that expanded block_k size.
+        if (K % (block_k * 2)) == 0:
+            var smem_a = block_m * block_k * size_of[a_type]()
+            var smem_b = block_n * block_k * size_of[b_type]()
+            if smem_a + smem_b <= 32 * 1024:
+                block_k *= 2
 
     var block_tile_shape = Index(block_m, block_n, block_k)
     var warp_tile_shape = block_tile_shape
