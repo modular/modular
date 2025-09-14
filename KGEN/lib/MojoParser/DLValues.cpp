@@ -111,40 +111,48 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   if (!emitter.builder) {
     emitter.emitErrorForDynamicValueInParameter(expr);
-    return BValue();
+    return CValue();
   }
+
   auto loc = expr->getLocation(emitter);
-  // Try to bind the base (e.g., dict[key]) as a stored ref.
-  if (Value baseRef = baseVal.ir->tryEmitAsRefValue(expr->getLoc(), emitter)) {
+
+  // To store to "base().x" we need to first emit a load of the base LValue.
+  ValueDest tmpValueDest(EC_AttributeRefBase);
+  auto loadVal = baseVal.ir->emitLoad(tmpValueDest, emitter);
+  if (!loadVal)
+    return CValue();
+
+  // If the result is a mutable ref (e.g. returned by a getter call), then we
+  // can use that directly.
+  if (auto baseRef = loadVal.getIfMLValue()) {
     auto fieldPtr =
         emitter.builder->create<RefStructGEROp>(loc, baseRef, getField());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
     // Done: no tmp, no __setitem__, in-place mutation via the ref.
-    return MLValue(baseRef);
+    return MBValue(baseRef);
   }
 
-  // tmp = load(base)
-  // tmp.field = value
-  // store(tmp -> base)
-  ASTType rvalueType = baseVal.ir->elementType;
-  Value tmpDecl = emitter.emitVarDecl("__store_tmp__", rvalueType, loc,
-                                      VarDeclKind::Synthesized);
-
-  // Load the entire base LValue into tmpDecl.
-  ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
-  auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
-  if (!base) {
-    tmpValueDest.resetForError(emitter);
+  // Otherwise, the getter will have returned an owned value, which we need to
+  // mutate and write-back.
+  //
+  //   tmp = load(base)
+  //   tmp.field = value
+  //   store(tmp -> base)
+  //
+  // It is either in a memory temporary, or in an SSA register.  If it is in a
+  // memory temp, we can commander it, but a register needs to be dropped into
+  // memory for us to mutate it.
+  MRValue loadMR = emitter.emitMRValue({loadVal, expr}, EC_AttributeRefBase);
+  if (!loadMR)
     return BValue();
-  }
 
   // Store into the field.
   auto fieldPtr =
-      emitter.builder->create<RefStructGEROp>(loc, tmpDecl, getField());
+      emitter.builder->create<RefStructGEROp>(loc, loadMR, getField());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transferring ownership as an MRValue.
-  return baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
+  return baseVal.ir->emitStore({loadMR, expr}, emitter);
 }
 
 //===----------------------------------------------------------------------===//
@@ -195,7 +203,6 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // with something more specific.
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
-
   return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
                                      storeDest, CallSyntax::kMethodCall, expr);
 }
