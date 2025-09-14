@@ -245,18 +245,42 @@ struct InlineArray[
         self = Self(storage=elems^)
 
     @always_inline
-    fn __init__(
-        out self,
-        *,
-        var storage: VariadicListMem[Self.ElementType, _],
-    ):
+    fn __init__[
+        batch_size: Int = 64
+    ](out self, *, var storage: VariadicListMem[Self.ElementType, _],):
         """Construct an array from a low-level internal representation.
+
+        Parameters:
+            batch_size: The number of elements to unroll for filling the array.
+                Default is 64, which optimizes for AVX512 operations on modern
+                CPUs. For large arrays (>2k elements), this batched approach
+                significantly improves compile times compared to full unrolling
+                while maintaining good runtime performance.
 
         Args:
             storage: The variadic list storage to construct from. Must match
                 array size.
-        """
 
+        Examples:
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
+
+        # For large arrays, consider adjusting batch_size to balance
+        # compile time and runtime performance:
+        var large = InlineArray[Int, 10000].__init__[batch_size=32](0)  # [0, 0, 0, ...]
+        ```
+
+        Notes:
+
+        - Full unrolling with large arrays (>2k elements) can cause significant
+            compiler slowdowns.
+        - Using batch_size=64 balances AVX512 efficiency and instruction cache
+            usage.
+        - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
+            further improve compilation speed while still maintaining good
+            runtime performance.
+        """
         debug_assert(
             len(storage) == size,
             "Expected variadic list of length ",
@@ -267,13 +291,35 @@ struct InlineArray[
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        var ptr = self.unsafe_ptr()
+        alias unroll_end = math.align_down(size, batch_size)
 
-        # Move each element into the array storage.
+        var ptr = self.unsafe_ptr()
+        var storage_index = 0
+
+        for _ in range(0, unroll_end, batch_size):
+
+            @parameter
+            for _ in range(batch_size):
+                UnsafePointer(to=storage[storage_index]).move_pointee_into(ptr)
+                ptr += 1
+                storage_index += 1
+
+        # Fill the remainder
         @parameter
-        for i in range(size):
-            UnsafePointer(to=storage[i]).move_pointee_into(ptr)
+        for _ in range(unroll_end, size):
+            UnsafePointer(to=storage[storage_index]).move_pointee_into(ptr)
             ptr += 1
+            storage_index += 1
+        debug_assert(
+            ptr == self.unsafe_ptr().offset(size),
+            "error during `InlineArray` initialization , please file a bug",
+            " report.",
+        )
+        debug_assert(
+            storage_index == size,
+            "error during `InlineArray` initialization , please file a bug",
+            " report.",
+        )
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
