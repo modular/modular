@@ -691,22 +691,6 @@ struct LinkedList[
         debug_assert(len(self) > 0, "unable to get item from empty list")
         return self._get_node_ptr(idx)[].value
 
-    fn __setitem__[I: Indexer](mut self, idx: I, var value: ElementType):
-        """Set the element at the specified index.
-
-        Parameters:
-            I: The type of index to use.
-
-        Args:
-            idx: The index of the element to set.
-            value: The new value to set.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        debug_assert(len(self) > 0, "unable to set item from empty list")
-        self._get_node_ptr(idx)[].value = value^
-
     fn __len__(self) -> Int:
         """Get the number of elements in the list.
 
