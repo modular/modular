@@ -22,9 +22,9 @@
 #include "Support/Filesystem/Paths.h"
 #include "Support/Process.h"
 #include "mlir/Support/IndentedOstream.h"
-#include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/LSP/Transport.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Regex.h"
@@ -38,7 +38,7 @@
 using namespace M;
 using namespace M::KGEN::LIT;
 using namespace M::KGEN::Mojo;
-using namespace mlir::lsp;
+using namespace llvm::lsp;
 
 //===----------------------------------------------------------------------===//
 // TestID

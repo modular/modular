@@ -808,7 +808,6 @@ modular_cc_library(
         "//Support:MDialect",
         "//Support:Threading",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:CopyOpInterface",
         "@llvm-project//mlir:IR",
     ],
 )
