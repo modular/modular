@@ -582,7 +582,7 @@ struct Int(
         """
         return Float64(self) / Float64(rhs)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
         """Return the division of `self` and `rhs` rounded down to the nearest
         integer.
@@ -600,7 +600,7 @@ struct Int(
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     fn __mod__(self, rhs: Int) -> Int:
         """Return the remainder of self divided by rhs.
 
