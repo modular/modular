@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
-from max.driver import CPU
+from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import (
@@ -69,6 +69,7 @@ def create_paged_manager(
     page_size: int,
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
+    device: Device = CPU(),
 ) -> PagedKVCacheManager[ContextType]:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
@@ -103,14 +104,14 @@ def create_paged_manager(
         host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
     )
 
-    session = InferenceSession(devices=[CPU()])
+    session = InferenceSession(devices=[device])
 
     kv_manager = PagedKVCacheManager[ContextType](
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
         num_layers=NUM_LAYERS,
-        devices=[CPU()],
+        devices=[device],
         session=session,
         cache_memory=cache_memory,
         page_size=page_size,
@@ -136,6 +137,7 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
+    device: Device = CPU(),
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[tuple[RequestID, ContextType]],
@@ -148,6 +150,7 @@ def create_paged_scheduler(
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        device=device,
     )
 
     # Create a scheduler with a paged manager
@@ -1018,6 +1021,19 @@ def test_paged_scheduler_dont_oom_during_cow() -> None:
     assert len(actual) == len(expected) and actual == expected
 
 
+def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
+    with pytest.raises(ValueError) as e:
+        create_paged_scheduler(
+            enable_kvcache_swapping_to_host=True,
+            enable_prefix_caching=True,
+            device=CPU(),
+        )
+    assert (
+        "Host device detected. Paging to host is not supported when executing on CPU."
+        in str(e.value)
+    )
+
+
 @pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
 def test_paged_scheduler_paging_to_host(
     enable_kvcache_swapping_to_host: bool,
@@ -1028,6 +1044,7 @@ def test_paged_scheduler_paging_to_host(
     num_new_tokens = 3
     # We only have 5 gpu blocks which is only enough for 1 request.
     num_gpu_blocks = 5
+    device = Accelerator(0)
     scheduler, request_queue = create_paged_scheduler(
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
@@ -1038,6 +1055,7 @@ def test_paged_scheduler_paging_to_host(
         target_tokens_per_batch_ce=200,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         max_seq_len=prompt_len + num_new_tokens,
+        device=device,
     )
 
     prompts = [rand(prompt_len) for _ in range(num_prompts)]
