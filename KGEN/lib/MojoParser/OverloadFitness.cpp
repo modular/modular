@@ -787,10 +787,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                countNumInferredKinds(paramListAttr);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
-        // For each of the missing parameters, attach any parameter inference
-        // diagnostics.
-        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
-                              funcIfDirect, diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t paramIdx, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
@@ -838,17 +834,13 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
             if (paramIdx < structSig.getNumParams()) {
               diag << " of parent struct '" << structOp.getDeclName().getValue()
                    << "'";
+              inferenceDiags.addExplanation(diag);
               diag.attachNote(structOp.getLoc()) << " struct declared here";
-              inferenceDiags.attach(paramListAttr,
-                                    signature.getInputParamTypes(),
-                                    funcIfDirect, diag);
               return;
             }
           }
         }
-
-        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
-                              funcIfDirect, diag);
+        inferenceDiags.addExplanation(diag);
       },
       /*emitUnboundInVariadic=*/
       [&](const ExprNode *expr) {
@@ -874,8 +866,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
           diag << ParamDeclRefAttr::get(
               name, signature.getInputParamTypes()[paramIdx]);
         }
-        inferenceDiags.attach(paramListAttr, signature.getInputParamTypes(),
-                              funcIfDirect, diag);
+        inferenceDiags.addExplanation(diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

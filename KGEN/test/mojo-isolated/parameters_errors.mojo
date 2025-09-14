@@ -93,12 +93,12 @@ fn testSIMD(
 ):
     var x = a + a
     var y = b + b
-    # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD'}}
-    # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '2' and '1'}}
+    # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD', it inferred to two different values: '2' and '1'}}
+    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size'}}
-    # expected-note @below {{failed to infer parameter 'size', it inferred to two different values: '1' and '2'}}
+    # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size', it inferred to two different values: '1' and '2'}}
+    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     twoUses(a, b)
 
 
@@ -123,8 +123,8 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a'}}
-    # expected-note @below {{failed to infer parameter 'b', it inferred to two different values: '1' and '2'}}
+    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a', it inferred to two different values: '1' and '2'}}
+    # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     infer_then_convert(rhs, lhs)
 
 
@@ -352,8 +352,7 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b'}}
-    # expected-note @below {{failed to infer parameter 'b', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b', it isn't used in any argument}}
     has_pos_only[1, c=9]()
 
 
@@ -422,8 +421,7 @@ fn test_pos_only_struct():
     _ = PosOnlyStruct[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
-    # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct', it isn't used in any argument}}
     _ = PosOnlyStruct[1, c=9]()
 
 
@@ -441,8 +439,7 @@ struct CtadStruct[a: Int]:
 
 
 fn test_implicitly_parametric_static_methods_fails():
-    # expected-error @below {{could not deduce parameter 'a' of parent struct 'CtadStruct'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{could not deduce parameter 'a' of parent struct 'CtadStruct', it isn't used in any argument}}
     CtadStruct.foo[5]()
 
 
@@ -466,8 +463,7 @@ fn take_some_trait[T: SomeTrait, //](x: T):
 
 
 fn pass_no_traits(x: NoTraitsType):
-    # expected-error @below {{invalid call to 'take_some_trait'}}
-    # expected-note @below {{failed to infer parameter 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
+    # expected-error @below {{invalid call to 'take_some_trait': failed to infer parameter 'T', argument type 'NoTraitsType' does not conform to trait 'SomeTrait'}}
     take_some_trait(x)
 
 
@@ -507,8 +503,7 @@ struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
 
 
 struct BindStructField:
-    # expected-error @below {{failed to infer parameter 'p'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' missing required parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
@@ -519,23 +514,18 @@ struct BindStructField:
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
-    # expected-error @below {{could not deduce parameter 'a'}}
-    # expected-note @below {{failed to infer parameter 'a', it isn't used in any argument}}
+    # expected-error @below {{could not deduce parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
-    # expected-error @below {{failed to infer parameter 'x.p'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'x.p', it isn't used in any argument}}
     autoparams[1](1)
-    # expected-error @below {{failed to infer parameter 'x.p'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'x.p', it isn't used in any argument}}
     autoparams_mem(1)
-    # expected-error @below {{failed to infer parameter 'p'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     autoparams_variadic(1)
 
-    # expected-error @below {{failed to infer parameter 'p'}}
-    # expected-note @below {{it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'p', it isn't used in any argument}}
     f(1)
 
 
@@ -580,8 +570,7 @@ struct UnusedInitSelfParam[A: Int]:
         pass
 
 fn unused_init_self_param():
-    # expected-error @below {{invalid initialization: could not deduce parameter 'B'}}
-    # expected-note @below {{failed to infer parameter 'B', it isn't used in any argument}}
+    # expected-error @below {{invalid initialization: could not deduce parameter 'B', it isn't used in any argument}}
     var slice = UnusedInitSelfParam()
 
 

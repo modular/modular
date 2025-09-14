@@ -207,20 +207,17 @@ fn badCalls(arg: Int):
   exampleByRefVariadic(1.0, x, 1)
 
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @below {{could not deduce parameter 'T'}}
-  # expected-note @below {{failed to infer parameter 'T', it isn't used in any argument}}
+  # expected-error @below {{could not deduce parameter 'T', it isn't used in any argument}}
   parameterizedVariadic()
-  # expected-error @below {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
-  # expected-note @below {{it isn't used in any argument}}
+  # expected-error @below {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct', it isn't used in any argument}}
   var z = ParameterizedStruct()
 
   # We can't infer `T` with two arguments of different types.
-  # expected-error @below {{invalid call to 'parameterizedVariadic': could not deduce parameter 'T'}}
-  # expected-note @below {{failed to infer parameter 'T', it inferred to two different values: 'Int' and 'FloatDyn'}}
+  # expected-error @below {{invalid call to 'parameterizedVariadic': could not deduce parameter 'T', it inferred to two different values: 'Int' and 'FloatDyn'}}
+  # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
   parameterizedVariadic(1, 2.0)
 
-  # expected-error @below {{invalid call to 'test': could not deduce parameter 'j'}}
-  # expected-note @below {{failed to infer parameter 'j', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'test': could not deduce parameter 'j', it isn't used in any argument}}
   TestTuple[Int, FloatLiteral]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
@@ -282,11 +279,9 @@ fn badPackCalls(value: Int):
   # expected-error-re @+1 {{invalid call to 'examplePack': argument #1 cannot be converted from 'index' to 'FloatDyn'}}
   examplePack[Int, FloatDyn](1, Int(2)._mlir_value)
   # expected-warning @below {{could not infer parameter type for this value, because it is not concrete}}
-  # expected-error @below {{invalid call to 'examplePack': could not deduce parameter 'Ts'}}
-  # expected-note @below {{failed to infer parameter 'Ts', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'examplePack': could not deduce parameter 'Ts', it isn't used in any argument}}
   examplePack(packArgOverload)
-  # expected-error @below {{invalid call to 'first_and_rest': could not deduce parameter 'T'}}
-  # expected-note @below {{failed to infer parameter 'T', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'first_and_rest': could not deduce parameter 'T', it isn't used in any argument}}
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
@@ -497,16 +492,14 @@ fn test_param_deduction_failure[
     # expected-error @+1 {{missing 1 required positional argument: 'b'}}
     takes_same_arg_types[_](u)
 
-    # expected-error @below {{invalid call to 'takes_same_arg_types': could not deduce parameter 'x'}}
-    # expected-note @below {{failed to infer parameter 'x', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'takes_same_arg_types': could not deduce parameter 'x', it isn't used in any argument}}
     takes_same_arg_types[_](u, v)
 
     # expected-error @+1 {{missing 1 required positional argument: 'd'}}
     func[_](u)
 
-    # TODO: This note is because we're not inferring signatures correctly
-    # expected-error @below {{invalid indirect call: could not deduce parameter 'y'}}
-    # expected-note @below {{failed to infer parameter 'y', it isn't used in any argument}}
+    # TODO: This is because we're not inferring signatures correctly
+    # expected-error @below {{invalid indirect call: could not deduce parameter 'y', it isn't used in any argument}}
     func[_](u, v)
 
 struct InitOverloaded:
@@ -997,8 +990,7 @@ trait TraitWithParams[T: AnyTrivialRegType]: # expected-error {{TODO: trait decl
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  # expected-error @below {{invalid call to 'parametric': could not deduce parameter 'x'}}
-  # expected-note @below {{failed to infer parameter 'x', it isn't used in any argument}}
+  # expected-error @below {{invalid call to 'parametric': could not deduce parameter 'x', it isn't used in any argument}}
   x.parametric()
 
 trait Shape(ImplicitlyCopyable, Movable):
