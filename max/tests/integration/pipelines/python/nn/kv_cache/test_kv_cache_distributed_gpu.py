@@ -135,8 +135,9 @@ async def test_swapping_to_host_multi_gpu(
 
     if enable_swapping_to_host:
         # Host tensor should be pinned
-        assert kv_manager.host_tensor is not None
-        assert kv_manager.host_tensor.pinned
+        assert kv_manager.host_tensors is not None
+        for i in range(len(kv_manager.host_tensors)):
+            assert kv_manager.host_tensors[i].pinned
         # Evictions should be scheduled on auxiliary stream
         assert kv_manager.block_manager.block_copy_engine is not None
         assert kv_manager.block_manager.block_copy_engine.supports_multistream()
