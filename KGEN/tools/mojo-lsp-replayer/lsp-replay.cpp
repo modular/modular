@@ -10,7 +10,7 @@
 #include "llvm/Support/InitLLVM.h"
 
 using namespace M;
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 
 static ErrorOr<StringRef>
 extractMethodString(const llvm::json::Value *methodValue) {

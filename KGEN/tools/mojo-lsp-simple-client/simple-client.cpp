@@ -9,7 +9,7 @@
 #include "llvm/Support/InitLLVM.h"
 
 using namespace M;
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 
 int main(int argc, char **argv) {
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);
@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
   LSPBatchClient(/*attachDebugger=*/attachDebugger)
       .open(doc)
       .documentSymbol(doc,
-                      [](const std::vector<mlir::lsp::DocumentSymbol> &) {
+                      [](const std::vector<llvm::lsp::DocumentSymbol> &) {
                         // This is left here for demonstrative purposes.
                         // Whenever you need to use this client, just specify
                         // the requests you want to send. You can use this

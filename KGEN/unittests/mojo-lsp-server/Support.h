@@ -9,7 +9,7 @@
 
 #include "../tools/mojo-lsp-test-client/LSPBatchClient.h"
 
-namespace lsp = mlir::lsp;
+namespace lsp = llvm::lsp;
 
 namespace M {
 
