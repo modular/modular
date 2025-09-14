@@ -214,3 +214,6 @@ test:ci-test --config=ci-no-config
 test:ci-test --remote_download_outputs=minimal
 
 test:ci-gpu-common --config=ci-test
+
+# TODO: Remove once transitives are fixed
+common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo

@@ -49,6 +49,8 @@ def _rebuild_wheel(rctx):
     rctx.file(
         "BUILD.bazel",
         """
+load("@rules_python//python:defs.bzl", "py_library")
+
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that
 # depend on some closed-source portions of the wheel.
@@ -93,6 +95,7 @@ def _modular_wheel_repository_impl(rctx):
     rctx.file("BUILD.bazel", """
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load("@@//bazel:api.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 alias(
     name = "wheel",
