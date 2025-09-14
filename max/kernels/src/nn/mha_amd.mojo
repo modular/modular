@@ -1801,12 +1801,16 @@ fn mha_decoding_single_batch_amd[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias use_transposed_layout = True
+    # Calculate c_frag_size based on the actual MMA shape for RDNA/CDNA compatibility
+    # For RDNA (16x16xK): c_frag_size = (16 * 16) / 64 = 4
+    # For CDNA (32x32xK): c_frag_size = (32 * 32) / 64 = 16
+    alias c_frag_size = (MMA_M * MMA_N) // WARP_SIZE
     alias fragment_layout = Layout.row_major(
-        1, 4
-    ) if use_transposed_layout else Layout.row_major(4, 1)
+        1, c_frag_size
+    ) if use_transposed_layout else Layout.row_major(c_frag_size, 1)
     alias warp_layout = Layout.col_major(
-        16, 4
-    ) if use_transposed_layout else Layout.row_major(4, 16)
+        16, c_frag_size
+    ) if use_transposed_layout else Layout.row_major(c_frag_size, 16)
     alias swap_a_b = use_transposed_layout
     alias k_group_size = 2
 
