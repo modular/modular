@@ -93,11 +93,11 @@ fn testSIMD(
 ):
     var x = a + a
     var y = b + b
-    # expected-error @below {{invalid call to '__add__': could not deduce parameter 'size' of parent struct 'MySIMD', it inferred to two different values: '2' and '1'}}
+    # expected-error @below {{invalid call to '__add__': failed to infer parameter 'size' of parent struct 'MySIMD', it inferred to two different values: '2' and '1'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     var z = b + a
 
-    # expected-error @below {{invalid call to 'twoUses': could not deduce parameter 'size', it inferred to two different values: '1' and '2'}}
+    # expected-error @below {{invalid call to 'twoUses': failed to infer parameter 'size', it inferred to two different values: '1' and '2'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     twoUses(a, b)
 
@@ -123,7 +123,7 @@ fn left_to_right_implicit_conversion(
     infer_then_convert(lhs, rhs)
     # This fails because 'a' and 'b' are inferred to '1' and '1', and 'lhs'
     # cannot implicit convert from 'TwoParams[1, 2]' to 'TwoParams[1, 1]'.
-    # expected-error @below {{invalid call to 'infer_then_convert': could not deduce parameter 'a', it inferred to two different values: '1' and '2'}}
+    # expected-error @below {{invalid call to 'infer_then_convert': failed to infer parameter 'a', it inferred to two different values: '1' and '2'}}
     # expected-note @below {{try `rebind` them to one type if they will be concretized to the same type}}
     infer_then_convert(rhs, lhs)
 
@@ -215,13 +215,13 @@ struct NotConvertible:
 
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: parameter_overloading parameter #0 has 'ConvertibleFromInt' type, but value has type 'NotConvertible'}}
+# expected-note @below {{candidate not viable: parameter_overloading parameter 'param' has 'ConvertibleFromInt' type, but value has type 'NotConvertible'}}
 fn parameter_overloading[param: ConvertibleFromInt]():
     pass
 
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: parameter_overloading parameter #0 has 'AlsoConvertibleFromInt' type, but value has type 'NotConvertible'}}
+# expected-note @below {{candidate not viable: parameter_overloading parameter 'param' has 'AlsoConvertibleFromInt' type, but value has type 'NotConvertible'}}
 fn parameter_overloading[param: AlsoConvertibleFromInt]():
     pass
 
@@ -352,7 +352,7 @@ fn test_pos_only():
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
-    # expected-error @below {{invalid call to 'has_pos_only': could not deduce parameter 'b', it isn't used in any argument}}
+    # expected-error @below {{invalid call to 'has_pos_only': failed to infer parameter 'b', it isn't used in any argument}}
     has_pos_only[1, c=9]()
 
 
@@ -421,7 +421,7 @@ fn test_pos_only_struct():
     _ = PosOnlyStruct[0, b=1, c=2]
     # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
-    # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'b' of parent struct 'PosOnlyStruct', it isn't used in any argument}}
     _ = PosOnlyStruct[1, c=9]()
 
 
@@ -439,7 +439,7 @@ struct CtadStruct[a: Int]:
 
 
 fn test_implicitly_parametric_static_methods_fails():
-    # expected-error @below {{could not deduce parameter 'a' of parent struct 'CtadStruct', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'a' of parent struct 'CtadStruct', it isn't used in any argument}}
     CtadStruct.foo[5]()
 
 
@@ -514,7 +514,7 @@ struct BindStructField:
 
 
 fn invalid_params[f: fn (ParamType) -> None]():
-    # expected-error @below {{could not deduce parameter 'a', it isn't used in any argument}}
+    # expected-error @below {{failed to infer parameter 'a', it isn't used in any argument}}
     autoparams[](ParamType[1]())
     # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
     autoparams[1, 2](ParamType[2]())
@@ -543,7 +543,7 @@ fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 # expected-note @below {{declared here}}
 fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
-    # expected-error @below {{'substitution_edge_case' parameter #2 has 'fn[Int]() -> ParamType[$0]' type, but value has type 'index'}}
+    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[Int]() -> ParamType[$0]' type, but value has type 'index'}}
     substitution_edge_case[`0`]
 
 
@@ -570,7 +570,7 @@ struct UnusedInitSelfParam[A: Int]:
         pass
 
 fn unused_init_self_param():
-    # expected-error @below {{invalid initialization: could not deduce parameter 'B', it isn't used in any argument}}
+    # expected-error @below {{invalid initialization: failed to infer parameter 'B', it isn't used in any argument}}
     var slice = UnusedInitSelfParam()
 
 
@@ -580,7 +580,7 @@ struct SimpleSIMD[arg1: Int, size: Int]:
     fn __init__[T: AnyType](out self: SimpleSIMD[arg1, 1], value: T): pass
 
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
-    # expected-error @below {{could not deduce parameter 'T'}}
+    # expected-error @below {{failed to infer parameter 'T'}}
     x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}

@@ -92,13 +92,13 @@ fn funcForMyTrait[T: MyTrait](t: T) -> Int:
 
 fn testError1():
     # TODO(MOCO-1152): Add more detailed errors for this
-    # expected-error @below {{invalid call to 'funcForMyTrait': could not deduce parameter 'T', argument type 'StructWithNoMatchingAlias' does not conform to trait 'MyTrait'}}
+    # expected-error @below {{invalid call to 'funcForMyTrait': failed to infer parameter 'T', argument type 'StructWithNoMatchingAlias' does not conform to trait 'MyTrait'}}
     var whatev: Int = funcForMyTrait(StructWithNoMatchingAlias())
 
 
 fn testError2():
     # TODO(MOCO-1152): Add more detailed errors for this
-    # expected-error @below {{invalid call to 'funcForMyTrait': could not deduce parameter 'T', argument type 'StructWithMismatchedAlias' does not conform to trait 'MyTrait'}}
+    # expected-error @below {{invalid call to 'funcForMyTrait': failed to infer parameter 'T', argument type 'StructWithMismatchedAlias' does not conform to trait 'MyTrait'}}
     var whatev: Int = funcForMyTrait(StructWithMismatchedAlias())
 
 

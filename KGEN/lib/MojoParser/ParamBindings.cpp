@@ -430,7 +430,7 @@ ParamBindings::verifyBindingsImpl(
           }
           // We tried but couldn't infer an unbound parameter, we must error.
           if (diagEmitter)
-            diagEmitter->emitDeductionFailure(idx);
+            diagEmitter->emitInferenceFailure(idx);
           return {{}, fitness};
         }
 
@@ -462,7 +462,7 @@ ParamBindings::verifyBindingsImpl(
         }
         // Otherwise, emit an inference failure.
         if (diagEmitter)
-          diagEmitter->emitInferOnlyFailure(idx);
+          diagEmitter->emitInferenceFailure(idx);
         return {{}, fitness};
       }
 
@@ -473,7 +473,7 @@ ParamBindings::verifyBindingsImpl(
                                                emitter, evaluator);
       if (!pValue) {
         if (diagEmitter)
-          diagEmitter->emitKwType(pog.getName(), binding, expectedType);
+          diagEmitter->emitTypeMismatch(idx, binding, expectedType);
         return {{}, fitness};
       }
       setParamValue(pValue);
@@ -500,7 +500,7 @@ ParamBindings::verifyBindingsImpl(
                                                  emitter, evaluator);
         if (!pValue) {
           if (diagEmitter)
-            diagEmitter->emitKwType(paramName, *binding, expectedType);
+            diagEmitter->emitTypeMismatch(idx, *binding, expectedType);
           return {{}, fitness};
         }
         setParamValue(pValue);
@@ -521,15 +521,6 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
 
-      // Otherwise, if this is a parameter that we expected to be inferred, emit
-      // an inference failure.
-      if (passingKind == PassingKind::Implicit ||
-          passingKind == PassingKind::Inferred) {
-        if (diagEmitter)
-          diagEmitter->emitInferOnlyFailure(idx);
-        return {{}, fitness};
-      }
-
       if (passingKind == PassingKind::KwOnly) {
         // If this is a missing keyword-only, we collect them. We put pretend
         // this is implicitly unbound, so we can error out in the end.
@@ -538,8 +529,9 @@ ParamBindings::verifyBindingsImpl(
         continue;
       }
 
+      // Emit an inference failure.
       if (diagEmitter)
-        diagEmitter->emitDeductionFailure(idx);
+        diagEmitter->emitInferenceFailure(idx);
       return {{}, fitness};
     }
 
@@ -556,7 +548,7 @@ ParamBindings::verifyBindingsImpl(
       }
       // We tried but couldn't infer an unbound parameter, we must error.
       if (diagEmitter)
-        diagEmitter->emitDeductionFailure(idx);
+        diagEmitter->emitInferenceFailure(idx);
       return {{}, fitness};
     }
 
@@ -596,7 +588,7 @@ ParamBindings::verifyBindingsImpl(
                                                emitter, evaluator);
       if (!pValue)
         if (diagEmitter)
-          diagEmitter->emitPosType(index, binding, expectedType);
+          diagEmitter->emitTypeMismatch(index, binding, expectedType);
       return pValue;
     };
 
@@ -791,24 +783,16 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
-      /*emitPosType=*/
+      /*emitTypeMismatch=*/
       [&](size_t index, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
         PValue paramVal = binding.ir.getIfPValue();
+        DeclResolver::DeclScopeChanger x(&declScope);
         diag = shared.emitError(binding.expr->getLoc(), baseName)
-               << " parameter #" << index << " has " << expectedType
-               << " type, but value has type " << paramVal.getType()
-               << binding.expr->getRange();
-        if (opLoc)
-          diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitKwType=*/
-      [&](StringAttr paramName, ASTExprAnd<AnyValue> binding,
-          ASTType expectedType) {
-        PValue paramVal = binding.ir.getIfPValue();
-        diag = shared.emitError(binding.expr->getLoc(), baseName)
-               << " parameter " << paramName << " has " << expectedType
-               << " type, but value has type " << paramVal.getType()
-               << binding.expr->getRange();
+               << " parameter "
+               << ParamDeclRefAttr::get(paramListAttr.getName(index),
+                                        expectedParamTypes[index])
+               << " has " << expectedType << " type, but value has type "
+               << paramVal.getType() << binding.expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
@@ -840,7 +824,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
       },
-      /*emitDeductionFailure=*/
+      /*emitInferenceFailure=*/
       [&](size_t paramIdx) {
         assert(!partial && "parameter deduction failure in a context that "
                            "doesn't allow deduction");
@@ -875,16 +859,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
               << " parameter" << expr->getRange();
         if (opLoc)
           diag->attachNote(*opLoc) << baseName << " declared here";
-      },
-      /*emitInferOnlyFailure=*/
-      [&](size_t paramIdx) {
-        // The parameter name is scoped to 'declScope'.
-        DeclResolver::DeclScopeChanger x(&declScope);
-        diag = shared.emitError(exprLoc)
-               << "failed to infer parameter "
-               << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
-                                        expectedParamTypes[paramIdx]);
-        inferenceDiags.addExplanation(*diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

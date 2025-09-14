@@ -114,9 +114,7 @@ public:
     /// number of positional-only parameters.
     std::function<void(size_t, bool)> emitParamCount;
     /// Emit diagnostics for incorrect type in a positional parameter.
-    std::function<void(size_t, ASTExprAnd<AnyValue>, ASTType)> emitPosType;
-    /// Emit diagnostics for incorrect type in a keyword parameter.
-    std::function<void(StringAttr, ASTExprAnd<AnyValue>, ASTType)> emitKwType;
+    std::function<void(size_t, ASTExprAnd<AnyValue>, ASTType)> emitTypeMismatch;
     /// Emit diagnostics for parameters specified by an unknown keyword.
     std::function<void(ArrayRef<StringAttr>)> emitUnknownKeywords;
     /// Emit diagnostics for a parameter specified both by position and keyword.
@@ -125,14 +123,12 @@ public:
     std::function<void(ArrayRef<StringAttr>)> emitPosOnlyPassedByKw;
     /// Emit diagnostics for out-of-order explicitly-specified inferred keyword.
     std::function<void(ArrayRef<StringAttr>)> emitOutOfOrderInferredKw;
-    /// Emit diagnostics for failure to deduce a parameter.
-    std::function<void(size_t)> emitDeductionFailure;
+    /// Emit diagnostics for failure to infer a parameter.
+    std::function<void(size_t)> emitInferenceFailure;
     /// Emit diagnostics when an unbound (i.e. `_`) is passed to a variadic.
     std::function<void(const ExprNode *)> emitUnboundInVariadic;
     /// Emit diagnostics when an unpacked unbind isn't the last parameter.
     std::function<void(const ExprNode *, bool)> emitUnpackedNotAtEnd;
-    /// Emit diagnostics for failure to deduce an infer-only parameter.
-    std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
     /// Emit diagnostics for constraint violations.
