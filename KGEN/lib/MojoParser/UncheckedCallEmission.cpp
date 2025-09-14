@@ -961,7 +961,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
         argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
     // Emit the 'get' into the buffer.
     ValueDest bufferDest(mlvBuffer, ctx);
-    if (!emitter.emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
+    if (!emitter.emitRValue({lv, argValAndExpr.expr}, bufferDest)) {
       bufferDest.resetForError(emitter);
       dlvBuffer.resetForError(emitter);
       return {};

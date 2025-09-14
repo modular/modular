@@ -620,8 +620,8 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return {};
 
   // Handle dynamic LValues by loading from them.
-  if (auto lv = value.ir.getIfDLValue()) {
-    value.ir = emitLoadOfLValue({lv, value.expr}, dest);
+  if (auto dlv = value.ir.getIfDLValue()) {
+    value.ir = dlv->emitLoad(dest, *this);
     if (!value.ir)
       return {};
   }
@@ -1230,17 +1230,6 @@ LValue IREmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
     return {}; // Error already diagnosed.
   }
   return emitLValue({anyValue, expr}, dest);
-}
-CValue IREmitter::emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest) {
-  // If this is a computed LValue emit call to the "getter".
-  if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitLoad(dest, *this);
-
-  // Decay a stored LValue to an MBValue.
-  auto ref = value.ir.getIfMLValue();
-  assert(ref && "unknown lvalue kind");
-  // Emit a non-consuming __copyinit__ or load of the value.
-  return emitCopyOfValue({MBValue(ref), value.expr}, dest);
 }
 
 /// Emit a copy of the specified value, producing a new owned instance of the

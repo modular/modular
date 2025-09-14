@@ -530,11 +530,6 @@ public:
     return emitExprLValue(expr, dest);
   }
 
-  /// Emit a call to the getter of the specified LValue, loading the value into
-  /// dest (if specified) or returning it if not.  This returns an RValue if
-  /// there is no consuming dest, otherwise a BValue.
-  CValue emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest);
-
   /// Emit a copy of the specified value, producing a new owned instance of the
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
