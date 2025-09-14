@@ -1989,10 +1989,9 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       // reference.
       if (isa<RefType>(valueInParent.getType())) {
         SyntheticNode node(result->getLoc());
-        ASTExprAnd<LValue> valueInParentExpr{
-            MLValue(valueInParent.getMlirValue()), node};
         ValueDest dest(EC_Capture);
-        captureValue = emitter.emitLoadOfLValue(valueInParentExpr, dest);
+        captureValue = emitter.emitRValue(
+            {MLValue(valueInParent.getMlirValue()), node}, dest);
       } else {
         captureValue = valueInParent;
       }
