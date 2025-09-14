@@ -41,8 +41,6 @@ struct DiagEmitter : public SharedStateUser {
         callSyntax(callSyntax) {}
 
   InflightDiag unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
-  InflightDiag wrongParamType(ASTExprAnd<AnyValue> actualBinding,
-                              size_t paramIdx, ASTType expectedType) const;
   InflightDiag wrongParamCount(size_t expectedNumParams,
                                size_t actualNumParams) const;
   InflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
@@ -108,15 +106,6 @@ DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
   InflightDiag diag = initDiag();
   emitUnknownKeywords(diag, unknownKwOperands, "argument");
   return diag;
-}
-
-InflightDiag DiagEmitter::wrongParamType(ASTExprAnd<AnyValue> actualBinding,
-                                         size_t paramIdx,
-                                         ASTType expectedType) const {
-  return initDiag() << "callee parameter #" << paramIdx << " has "
-                    << ASTType(expectedType) << " type, but value has type "
-                    << actualBinding.ir.getIfPValue().getType()
-                    << actualBinding.expr->getRange();
 }
 
 InflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
@@ -788,15 +777,13 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
       },
-      /*emitPosType=*/
+      /*emitTypeMismatch=*/
       [&](size_t paramIdx, ASTExprAnd<AnyValue> binding, ASTType expectedType) {
-        diag = emitDiagFor.wrongParamType(binding, paramIdx, expectedType);
-      },
-      /*emitKwType=*/
-      [&](StringAttr paramName, ASTExprAnd<AnyValue> binding,
-          ASTType expectedType) {
-        diag << "callee parameter " << paramName << " has " << expectedType
-             << " type, but value has type "
+        DeclResolver::DeclScopeChanger x(funcIfDirect);
+        diag << "callee parameter "
+             << ParamDeclRefAttr::get(paramListAttr.getName(paramIdx),
+                                      signature.getInputParamTypes()[paramIdx])
+             << " has " << ASTType(expectedType) << " type, but value has type "
              << binding.ir.getIfPValue().getType() << binding.expr->getRange();
       },
       /*emitUnknownKeywords=*/
@@ -815,11 +802,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       [&](ArrayRef<StringAttr> names) {
         emitOutOfOrderInferredKw(diag, names);
       },
-      /*emitDeductionFailure=*/
+      /*emitInferenceFailure=*/
       [&](size_t paramIdx) {
         {
           DeclResolver::DeclScopeChanger x(funcIfDirect);
-          diag << "could not deduce parameter "
+          diag << "failed to infer parameter "
                << ParamDeclRefAttr::get(
                       paramListAttr.getName(paramIdx),
                       signature.getInputParamTypes()[paramIdx]);
@@ -853,20 +840,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         diag << "unbound pack `" << (kw ? "**_" : "*_") << "` must be the last "
              << (kw ? "keyword" : "positional") << " parameter"
              << expr->getRange();
-      },
-      /*emitInferOnlyFailure=*/
-      [&](size_t paramIdx) {
-        diag << "failed to infer parameter ";
-        auto name = signature.getParamName(paramIdx);
-        assert(!name.empty() && "No parameter name??");
-
-        // The parameter name is scoped to 'declScope'.
-        {
-          DeclResolver::DeclScopeChanger x(funcIfDirect);
-          diag << ParamDeclRefAttr::get(
-              name, signature.getInputParamTypes()[paramIdx]);
-        }
-        inferenceDiags.addExplanation(diag);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

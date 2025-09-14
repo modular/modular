@@ -406,10 +406,10 @@ fn my_print_single[T: MyWritable](value: T):
 
 
 fn test_print_errors(s: MyStruct):
-    # expected-error @below {{invalid call to 'my_print_variadic': could not deduce parameter 'Ts', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+    # expected-error @below {{invalid call to 'my_print_variadic': failed to infer parameter 'Ts', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
     my_print_variadic(1, s)
 
-    # expected-error @below {{invalid call to 'my_print_single': could not deduce parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+    # expected-error @below {{invalid call to 'my_print_single': failed to infer parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
     my_print_single(s)
 
 
