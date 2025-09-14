@@ -93,16 +93,28 @@ fn vpdpbusd[
     if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.512", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
     elif width == 8:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.256", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
     else:
         constrained[width == 4]()
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.128", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,16 +133,28 @@ fn vpdpbusds[
     if width == 16:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.512", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
     elif width == 8:
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.256", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
     else:
         constrained[width == 4]()
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.128", SIMD[c_type, width]
-        ](src, a, b)
+        ](
+            src,
+            bitcast[DType.uint8, width * 4](a),
+            bitcast[DType.uint8, width * 4](b),
+        )
 
 
 fn _dot_i8_to_i32_16(
