@@ -1005,8 +1005,16 @@ PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 /// and returns the value of RefType for the result.
 /// This emits an error and returns null if emission fails.
 Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
-  if (auto dlValue = value.ir.getIfDLValue())
-    return dlValue->emitAsRefValue(value.expr->getLoc(), *this);
+  // A DLValue can be a ref when its "load" operation returns a ref.  This can
+  // happen when a computed getter returns a ref - e.g. for Dict.
+  if (auto dlValue = value.ir.getIfDLValue()) {
+    ValueDest dest(context);
+    value.ir = dlValue->emitLoad(dest, *this);
+    if (!value.ir) {
+      dest.resetForError(*this);
+      return {};
+    }
+  }
 
   // If this got resolved to an MValue then we're done.
   if (value.ir.isMValue())
