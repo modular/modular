@@ -837,6 +837,54 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         return ret_val^
 
+    fn pop(mut self, slice: Slice) -> Self:
+        """Pops a slice of items from the list.
+
+        Args:
+            slice: The slice of items to pop.
+
+        Returns:
+            A list of popped items.
+        """
+        var start, end, step = slice.indices(self._len)
+        var slice_range = range(start, end, step)
+        var slice_len = len(slice_range)
+
+        if not slice_len:
+            return Self()
+
+        var res = Self(capacity=slice_len)
+        var remaining_items_idx = 0
+
+        for pop_idx in slice_range:
+            res.append((self._data + pop_idx).take_pointee())
+
+        if step == 1 or step == -1:
+            remaining_items_idx = max(end, start + 1)
+        else:
+            var n_popped = 0
+            var previous_popped_idx = min(end, start - 1)
+
+            for pop_idx in slice_range if step > 1 else reversed(slice_range):
+                # Backfill the list to patch the hole from the previously popped element
+                for move_idx in range(previous_popped_idx + 1, pop_idx):
+                    var pop_ptr = self._data + move_idx - n_popped
+                    (self._data + move_idx).move_pointee_into(pop_ptr)
+
+                n_popped += 1
+                previous_popped_idx = pop_idx
+
+            remaining_items_idx = previous_popped_idx + 1
+
+        # Move remaining items between last popped and end of the list
+        for move_idx in range(remaining_items_idx, self._len):
+            (self._data + move_idx).move_pointee_into(
+                self._data + move_idx - slice_len
+            )
+
+        self._len -= slice_len
+        return res^
+
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
