@@ -49,7 +49,7 @@ fn main():
 
   createTestClient()
       .open(doc)
-      .update(doc, llvm::lsp::Range{{0, 24}, {1, 0}}, "")
+      .update(doc, mlir::lsp::Range{{0, 24}, {1, 0}}, "")
       .onDiagnostics(doc, [](auto diags) { EXPECT_TRUE(diags.empty()); })
       .execute();
 }

@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains extensions to llvm/Support/LSP/Protocol.h
+// This file contains extensions to the mlir/Tools/lsp-server-support/Protocol.h
 // file.
 //
 // TODO: upstream all the changes in this file, as they are generic.
@@ -14,9 +14,9 @@
 #ifndef KGEN_TOOLS_COMMON_LSP_PROTOCOL_PROTOCOL_H
 #define KGEN_TOOLS_COMMON_LSP_PROTOCOL_PROTOCOL_H
 
-#include "llvm/Support/LSP/Protocol.h"
+#include "mlir/Tools/lsp-server-support/Protocol.h"
 
-namespace llvm::lsp {
+namespace mlir::lsp {
 using NotebookDocumentIdentifier = TextDocumentIdentifier;
 using VersionedNotebookDocumentIdentifier = VersionedTextDocumentIdentifier;
 
@@ -560,6 +560,6 @@ bool fromJSON(const llvm::json::Value &value, SymbolKind &kind,
 
 bool fromJSON(const llvm::json::Value &value, ParameterInformation &info,
               llvm::json::Path path);
-} // namespace llvm::lsp
+} // namespace mlir::lsp
 
 #endif // KGEN_TOOLS_COMMON_LSP_PROTOCOL_PROTOCOL_H

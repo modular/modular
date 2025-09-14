@@ -49,12 +49,12 @@ struct SemanticToken;
 /// This class is used to represent an inlay hint in the document. This is a bit
 /// more stripped, optimized, and mojo specific compared to lsp::InlayHint.
 struct MojoInlayHint {
-  MojoInlayHint(llvm::lsp::InlayHintKind kind, StringRef label, SMLoc loc)
+  MojoInlayHint(mlir::lsp::InlayHintKind kind, StringRef label, SMLoc loc)
       : label(label), loc(loc), leftIndent(0), kind(kind), paddingLeft(false),
         paddingRight(false) {}
 
   /// Generate an LSP inlay hint from this inlay hint.
-  llvm::lsp::InlayHint toLspInlayHint(SourceMgr &sourceMgr) const;
+  mlir::lsp::InlayHint toLspInlayHint(SourceMgr &sourceMgr) const;
 
   /// Order inlay hints by their location.
   bool operator<(const MojoInlayHint &other) const {
@@ -71,7 +71,7 @@ struct MojoInlayHint {
   unsigned leftIndent : 28;
 
   /// The kind of the inlay hint.
-  llvm::lsp::InlayHintKind kind : 2;
+  mlir::lsp::InlayHintKind kind : 2;
 
   /// If the hint should be padded to the left.
   bool paddingLeft : 1;
@@ -99,7 +99,7 @@ public:
   AsyncRT::Runtime &getRuntime() const { return runtime; }
 
   /// Return the URIs of this document.
-  ArrayRef<llvm::lsp::URIForFile> getURIs() const { return uris; }
+  ArrayRef<mlir::lsp::URIForFile> getURIs() const { return uris; }
 
   /// Return the source manager used for this document.
   llvm::SourceMgr &getSourceMgr() { return sourceMgr; }
@@ -145,19 +145,19 @@ public:
   virtual bool containsLocation(llvm::SMLoc loc) = 0;
 
   /// Returns true if the document contains the given location.
-  virtual llvm::SMLoc getLocFromPos(const llvm::lsp::URIForFile &uri,
-                                    llvm::lsp::Position position) = 0;
+  virtual llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                                    mlir::lsp::Position position) = 0;
 
   /// Return the source range from the given LSP range.
-  llvm::SMRange getLocFromPos(const llvm::lsp::URIForFile &uri,
-                              const llvm::lsp::Range &range) {
+  llvm::SMRange getLocFromPos(const mlir::lsp::URIForFile &uri,
+                              const mlir::lsp::Range &range) {
     return llvm::SMRange(getLocFromPos(uri, range.start),
                          getLocFromPos(uri, range.end));
   }
 
   /// Return a location range for the document of the given uri.
   virtual llvm::SMRange
-  getFullRangeForURI(const llvm::lsp::URIForFile &uri) = 0;
+  getFullRangeForURI(const mlir::lsp::URIForFile &uri) = 0;
 
   /// Translate the given parser location into one usable by the language
   /// server.
@@ -172,22 +172,22 @@ public:
 
   /// Returns a language server uri for the given source location. `mainFileURI`
   /// corresponds to the uri for the main file of the source manager.
-  std::optional<llvm::lsp::URIForFile> getURIFromLoc(llvm::SMLoc loc);
+  std::optional<mlir::lsp::URIForFile> getURIFromLoc(llvm::SMLoc loc);
 
   /// Returns a language server location from the given diagnostic.
-  std::optional<llvm::lsp::Location>
+  std::optional<mlir::lsp::Location>
   getLocationFromDiag(const llvm::SMDiagnostic &diag);
 
   /// Get a document symbol with the given ASTDecl, appending it to the given
   /// vector.
   void getDocumentSymbols(MojoASTDeclRef decl,
-                          std::vector<llvm::lsp::DocumentSymbol> &symbols);
+                          std::vector<mlir::lsp::DocumentSymbol> &symbols);
 
   /// Get a document symbol with the given ASTDecl, appending it to the given
   /// vector. The provided functor defines whether a decl should be included in
   /// the symbol list.
   void getDocumentSymbols(MojoASTDeclRef decl,
-                          std::vector<llvm::lsp::DocumentSymbol> &symbols,
+                          std::vector<mlir::lsp::DocumentSymbol> &symbols,
                           function_ref<bool(MojoASTDeclRef)> shouldIncludeDecl);
 
   /// Recursively process the document strings in decls nested within `decl`.
@@ -223,53 +223,53 @@ public:
   // Code Actions
 
   void
-  getCodeActions(const llvm::lsp::URIForFile &uri, const llvm::lsp::Range &pos,
-                 const llvm::lsp::CodeActionContext &context,
-                 LSPResponder<std::vector<llvm::lsp::CodeAction>> responder);
+  getCodeActions(const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &pos,
+                 const mlir::lsp::CodeActionContext &context,
+                 LSPResponder<std::vector<mlir::lsp::CodeAction>> responder);
 
   //===--------------------------------------------------------------------===//
   // Language Features
 
-  void onCodeCompletion(const llvm::lsp::URIForFile &uri,
-                        const llvm::lsp::Position &completePos,
-                        LSPResponder<llvm::lsp::CompletionList> responder);
+  void onCodeCompletion(const mlir::lsp::URIForFile &uri,
+                        const mlir::lsp::Position &completePos,
+                        LSPResponder<mlir::lsp::CompletionList> responder);
 
-  void onDefinition(const llvm::lsp::URIForFile &uri,
-                    const llvm::lsp::Position &pos,
-                    LSPResponder<std::vector<llvm::lsp::Location>> responder);
+  void onDefinition(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &pos,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   void onDocumentSymbol(
-      const llvm::lsp::URIForFile &uri,
-      LSPResponder<std::vector<llvm::lsp::DocumentSymbol>> responder);
+      const mlir::lsp::URIForFile &uri,
+      LSPResponder<std::vector<mlir::lsp::DocumentSymbol>> responder);
 
   void
-  onFoldingRange(const llvm::lsp::URIForFile &uri,
-                 LSPResponder<std::vector<llvm::lsp::FoldingRange>> responder);
+  onFoldingRange(const mlir::lsp::URIForFile &uri,
+                 LSPResponder<std::vector<mlir::lsp::FoldingRange>> responder);
 
-  void onHover(const llvm::lsp::URIForFile &uri, const llvm::lsp::Position &pos,
-               LSPResponder<std::optional<llvm::lsp::Hover>> responder);
+  void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
+               LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
-  void onInlayHint(const llvm::lsp::URIForFile &uri,
-                   const llvm::lsp::Range &range,
-                   LSPResponder<std::vector<llvm::lsp::InlayHint>> responder);
+  void onInlayHint(const mlir::lsp::URIForFile &uri,
+                   const mlir::lsp::Range &range,
+                   LSPResponder<std::vector<mlir::lsp::InlayHint>> responder);
 
-  void onReferences(const llvm::lsp::URIForFile &uri,
-                    const llvm::lsp::Position &position,
+  void onReferences(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &position,
                     bool includeDeclaration,
-                    LSPResponder<std::vector<llvm::lsp::Location>> responder);
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   void onSemanticTokens(
-      const llvm::lsp::URIForFile &uri,
+      const mlir::lsp::URIForFile &uri,
       OnSemanticTokensResultFn<std::optional<std::vector<SemanticToken>>>
           onSemanticTokens);
 
-  void onSignatureHelp(const llvm::lsp::URIForFile &uri,
-                       const llvm::lsp::Position &pos,
-                       LSPResponder<llvm::lsp::SignatureHelp2> responder);
+  void onSignatureHelp(const mlir::lsp::URIForFile &uri,
+                       const mlir::lsp::Position &pos,
+                       LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
-  void onRename(const llvm::lsp::URIForFile &uri,
-                const llvm::lsp::Position &pos, StringRef newName,
-                LSPResponder<llvm::lsp::WorkspaceEdit> responder);
+  void onRename(const mlir::lsp::URIForFile &uri,
+                const mlir::lsp::Position &pos, StringRef newName,
+                LSPResponder<mlir::lsp::WorkspaceEdit> responder);
 
   //===--------------------------------------------------------------------===//
   // Debugging methods
@@ -277,7 +277,7 @@ public:
   void dumpParsedIR();
 
 protected:
-  MojoDocument(Kind kind, ArrayRef<llvm::lsp::URIForFile> uris, int64_t version,
+  MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn,
                AsyncRT::Runtime &runtime, ArrayRef<std::string> includeDirs);
 
@@ -295,7 +295,7 @@ protected:
   virtual size_t parseDocumentImpl() = 0;
 
   /// Hook that returns the URI for the given contained location.
-  virtual const llvm::lsp::URIForFile &
+  virtual const mlir::lsp::URIForFile &
   getURIFromContainedLoc(llvm::SMLoc loc) = 0;
 
   //===--------------------------------------------------------------------===//
@@ -306,12 +306,12 @@ protected:
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) = 0;
 
   /// Hook that returns the symbols within the document.
-  virtual std::vector<llvm::lsp::DocumentSymbol>
-  onDocumentSymbolSync(const llvm::lsp::URIForFile &uri) = 0;
+  virtual std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) = 0;
 
   /// Hook that returns the folding ranges within the document.
-  virtual std::vector<llvm::lsp::FoldingRange>
-  onFoldingRangeSync(const llvm::lsp::URIForFile &uri) = 0;
+  virtual std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) = 0;
 
   /// Hook that is invoked to perform signature help at the given position.
   virtual std::optional<KGEN::Mojo::SignatureHelpResult>
@@ -368,39 +368,39 @@ private:
   //===--------------------------------------------------------------------===//
   // Diagnostics
 
-  std::optional<llvm::lsp::Diagnostic>
+  std::optional<mlir::lsp::Diagnostic>
   buildLspDiagnosticFromSMDiagnostic(llvm::SourceMgr &sourceMgr,
                                      ArrayRef<llvm::SMDiagnostic> diags,
-                                     const llvm::lsp::URIForFile &uri);
+                                     const mlir::lsp::URIForFile &uri);
 
   //===--------------------------------------------------------------------===//
   // Code Actions
 
-  std::vector<llvm::lsp::CodeAction>
+  std::vector<mlir::lsp::CodeAction>
   getCodeActionsSync(llvm::SMRange range,
-                     const llvm::lsp::CodeActionContext &context);
+                     const mlir::lsp::CodeActionContext &context);
 
   //===--------------------------------------------------------------------===//
   // Language Features
 
-  llvm::lsp::CompletionList onCodeCompletionSync(llvm::SMLoc completeLoc);
+  mlir::lsp::CompletionList onCodeCompletionSync(llvm::SMLoc completeLoc);
 
-  std::vector<llvm::lsp::Location> onDefinitionSync(llvm::SMLoc loc);
+  std::vector<mlir::lsp::Location> onDefinitionSync(llvm::SMLoc loc);
 
-  std::optional<llvm::lsp::Hover> onHoverSync(llvm::SMLoc loc);
+  std::optional<mlir::lsp::Hover> onHoverSync(llvm::SMLoc loc);
 
-  std::vector<llvm::lsp::InlayHint> onInlayHintSync(llvm::SMRange range);
+  std::vector<mlir::lsp::InlayHint> onInlayHintSync(llvm::SMRange range);
 
-  std::vector<llvm::lsp::Location> onReferencesSync(SMLoc smLoc,
+  std::vector<mlir::lsp::Location> onReferencesSync(SMLoc smLoc,
                                                     bool includeDeclaration);
 
-  ErrorOr<std::vector<llvm::lsp::TextEdit>>
+  ErrorOr<std::vector<mlir::lsp::TextEdit>>
   onRenameSync(SMLoc loc, const std::string &newName);
 
   std::optional<std::vector<SemanticToken>>
   onSemanticTokensSync(llvm::SMRange range);
 
-  llvm::lsp::SignatureHelp onSignatureHelpSync(llvm::SMLoc loc);
+  mlir::lsp::SignatureHelp onSignatureHelpSync(llvm::SMLoc loc);
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -416,7 +416,7 @@ private:
   Kind kind;
 
   /// The uri of the file.
-  SmallVector<llvm::lsp::URIForFile> uris;
+  SmallVector<mlir::lsp::URIForFile> uris;
 
   /// The version of this file.
   int64_t version = 0;
@@ -448,7 +448,7 @@ private:
   /// A set of fixits for diagnostics emitted for the current version of the
   /// file.
   llvm::StringMap<
-      std::map<llvm::lsp::Range, std::vector<llvm::lsp::CodeAction>>>
+      std::map<mlir::lsp::Range, std::vector<mlir::lsp::CodeAction>>>
       fixits;
 
   /// An ordered set of inlay hints for the current version of the file.
@@ -528,7 +528,7 @@ public:
 
   /// Get the folding ranges for held doc strings.
   void getFoldingRanges(SourceMgr &sourceMgr,
-                        std::vector<llvm::lsp::FoldingRange> &ranges);
+                        std::vector<mlir::lsp::FoldingRange> &ranges);
 
 private:
   using MapT = llvm::IntervalMap<
@@ -558,7 +558,7 @@ private:
 /// text document, i.e. a .mojo or .🔥 file.
 struct MojoTextDocument : public MojoDocument {
 public:
-  MojoTextDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,
+  MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
                    AsyncRT::Runtime &runtime,
                    ArrayRef<std::string> includeDirs);
@@ -583,7 +583,7 @@ private:
   size_t parseDocumentImpl() override;
 
   /// Hook that returns the URI for the given contained location.
-  const llvm::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
+  const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
 
   /// Returns true if the document contains the given location.
   bool containsLocation(llvm::SMLoc loc) override;
@@ -593,11 +593,11 @@ private:
   llvm::SMLoc translateParserLoc(llvm::SMLoc loc) override;
 
   /// Returns true if the document contains the given location.
-  llvm::SMLoc getLocFromPos(const llvm::lsp::URIForFile &uri,
-                            llvm::lsp::Position position) override;
+  llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                            mlir::lsp::Position position) override;
 
   /// Return a location range for the document of the given uri.
-  llvm::SMRange getFullRangeForURI(const llvm::lsp::URIForFile &uri) override;
+  llvm::SMRange getFullRangeForURI(const mlir::lsp::URIForFile &uri) override;
 
   //===--------------------------------------------------------------------===//
   // Language Features
@@ -605,11 +605,11 @@ private:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
 
-  std::vector<llvm::lsp::DocumentSymbol>
-  onDocumentSymbolSync(const llvm::lsp::URIForFile &uri) override;
+  std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
 
-  std::vector<llvm::lsp::FoldingRange>
-  onFoldingRangeSync(const llvm::lsp::URIForFile &uri) override;
+  std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) override;
 
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;
@@ -640,7 +640,7 @@ struct MojoNotebookDocument : public MojoDocument {
 public:
   /// This class represents a cell within the notebook.
   struct Cell {
-    Cell(llvm::lsp::URIForFile uri, StringRef contents)
+    Cell(mlir::lsp::URIForFile uri, StringRef contents)
         : uri(std::move(uri)), contents(contents.str()) {}
 
     /// Return if this cell is a python cell.
@@ -649,7 +649,7 @@ public:
     }
 
     /// The uri of the cell
-    llvm::lsp::URIForFile uri;
+    mlir::lsp::URIForFile uri;
 
     /// The contents of the cell.
     std::string contents;
@@ -667,10 +667,10 @@ public:
     MojoDocStrings docStrings;
   };
 
-  MojoNotebookDocument(ArrayRef<llvm::lsp::URIForFile> notebookAndCellURIs,
+  MojoNotebookDocument(ArrayRef<mlir::lsp::URIForFile> notebookAndCellURIs,
                        int64_t version,
-                       ArrayRef<llvm::lsp::NotebookCell> cellInfos,
-                       ArrayRef<llvm::lsp::TextDocumentItem> cellDocuments,
+                       ArrayRef<mlir::lsp::NotebookCell> cellInfos,
+                       ArrayRef<mlir::lsp::TextDocumentItem> cellDocuments,
                        SendDiagnosticsFnRef sendDiagnosticsFn,
                        AsyncRT::Runtime &runtime,
                        ArrayRef<std::string> includeDirs);
@@ -702,14 +702,14 @@ private:
   llvm::SMLoc translateParserLoc(llvm::SMLoc loc) override;
 
   /// Returns true if the document contains the given location.
-  llvm::SMLoc getLocFromPos(const llvm::lsp::URIForFile &uri,
-                            llvm::lsp::Position position) override;
+  llvm::SMLoc getLocFromPos(const mlir::lsp::URIForFile &uri,
+                            mlir::lsp::Position position) override;
 
   /// Return a location range for the document of the given uri.
-  llvm::SMRange getFullRangeForURI(const llvm::lsp::URIForFile &uri) override;
+  llvm::SMRange getFullRangeForURI(const mlir::lsp::URIForFile &uri) override;
 
   /// Hook that returns the URI for the given contained location.
-  const llvm::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
+  const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
 
   //===--------------------------------------------------------------------===//
   // Language Features
@@ -717,11 +717,11 @@ private:
   std::vector<KGEN::Mojo::CodeCompletionResult>
   onCodeCompletionSyncImpl(llvm::SMLoc completeLoc) override;
 
-  std::vector<llvm::lsp::DocumentSymbol>
-  onDocumentSymbolSync(const llvm::lsp::URIForFile &uri) override;
+  std::vector<mlir::lsp::DocumentSymbol>
+  onDocumentSymbolSync(const mlir::lsp::URIForFile &uri) override;
 
-  std::vector<llvm::lsp::FoldingRange>
-  onFoldingRangeSync(const llvm::lsp::URIForFile &uri) override;
+  std::vector<mlir::lsp::FoldingRange>
+  onFoldingRangeSync(const mlir::lsp::URIForFile &uri) override;
 
   std::optional<KGEN::Mojo::SignatureHelpResult>
   onSignatureHelpSyncImpl(llvm::SMLoc loc) override;

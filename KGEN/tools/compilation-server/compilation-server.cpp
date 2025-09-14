@@ -6,17 +6,17 @@
 
 #include "CompilationServer.h"
 #include "KGEN/Support/Debugging.h"
+#include "mlir/Tools/lsp-server-support/Logging.h"
+#include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/LSP/Logging.h"
-#include "llvm/Support/LSP/Transport.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/TargetSelect.h"
 
 using namespace M;
 using namespace M::KGEN;
-using namespace llvm::lsp;
+using namespace mlir::lsp;
 
 int main(int argc, char **argv) {
   llvm::InitLLVM il(argc, argv, /*InstallPipeSignalExitHandler=*/false);

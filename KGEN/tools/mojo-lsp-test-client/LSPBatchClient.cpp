@@ -17,7 +17,7 @@
 #include "llvm/Support/Program.h"
 #include <type_traits>
 
-namespace lsp = llvm::lsp;
+namespace lsp = mlir::lsp;
 using namespace M;
 
 /// Helper callback that ignores a response from the server. It helps
@@ -91,7 +91,7 @@ LSPBatchClient &LSPBatchClient::openNotebook(const NotebookDocument &doc) {
 }
 
 LSPBatchClient &LSPBatchClient::notebookDidChange(
-    const llvm::lsp::DidChangeNotebookDocumentParams &params) {
+    const mlir::lsp::DidChangeNotebookDocumentParams &params) {
   notify("notebookDocument/didChange", toJSON(params));
   return *this;
 }
@@ -110,9 +110,9 @@ LSPBatchClient &LSPBatchClient::semanticTokensFull(
     std::function<void(ArrayRef<Mojo::LSP::SemanticToken>)> callback) {
   lsp::SemanticTokensParams params{lsp::TextDocumentIdentifier{doc.getURI()}};
   request("textDocument/semanticTokens/full", toJSON(params),
-          std::function<void(const llvm::lsp::SemanticTokens &)>(
+          std::function<void(const mlir::lsp::SemanticTokens &)>(
               [callback = std::move(callback)](
-                  const llvm::lsp::SemanticTokens &tokens) {
+                  const mlir::lsp::SemanticTokens &tokens) {
                 callback(Mojo::LSP::fromLspSemanticTokens(tokens.tokens));
               }));
   return *this;
@@ -167,7 +167,7 @@ LSPBatchClient &LSPBatchClient::rename(
 
 LSPBatchClient &LSPBatchClient::renameError(
     const Document &doc, const lsp::Position &position, std::string newName,
-    std::function<void(const llvm::lsp::LSPError2 &)> callback) {
+    std::function<void(const mlir::lsp::LSPError2 &)> callback) {
   lsp::RenameParams params{lsp::TextDocumentIdentifier{doc.getURI()}, position,
                            std::move(newName)};
   request("textDocument/rename", toJSON(params), std::move(callback));
@@ -211,7 +211,7 @@ LSPBatchClient &LSPBatchClient::completion(
 }
 
 LSPBatchClient &LSPBatchClient::update(const Document &doc,
-                                       const llvm::lsp::Range &range,
+                                       const mlir::lsp::Range &range,
                                        std::string change) {
   lsp::TextDocumentContentChangeEvent event{range, std::nullopt, change};
   lsp::DidChangeTextDocumentParams params{
