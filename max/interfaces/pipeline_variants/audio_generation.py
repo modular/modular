@@ -140,6 +140,8 @@ class AudioGeneratorOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
     final_status: GenerationStatus
     """The final status of the generation process."""
+    steps_executed: int | None = None
+    """The number of steps previously executed."""
     audio_data: npt.NDArray[np.float32] = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
@@ -197,11 +199,4 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
     @property
     def decoder_sample_rate(self) -> int:
         """The sample rate of the decoder."""
-        ...
-
-    @property
-    def prev_num_steps(self) -> int:
-        """The number of speech tokens that were generated during the processing
-        of the previous batch.
-        """
         ...
