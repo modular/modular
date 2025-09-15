@@ -186,22 +186,20 @@ class FusedSamplingProcessor:
                 np.bool_
             )
 
-            if logits.shape[1] > self.vocab_size:
-                if self.bitmask.shape[1] > logits.shape[1]:
-                    self.bitmask = self.bitmask[:, 0 : logits.shape[1]]
-                else:
-                    self.bitmask = self.bitmask[:, 0 : self.vocab_size]
-                    # Pad up to shape[:, logits.shape[1]] with zeros
-                    pad_width = logits.shape[1] - self.bitmask.shape[1]
-                    if pad_width > 0:
-                        self.bitmask = np.pad(
-                            self.bitmask,
-                            ((0, 0), (0, pad_width)),
-                            mode="constant",
-                            constant_values=False,
-                        )
-            else:
-                self.bitmask = self.bitmask[:, 0 : self.vocab_size]
+            logits_vocab_size = logits.shape[1]
+            if self.bitmask.shape[1] > logits_vocab_size:
+                # Shrink down to logits_vocab_size
+                self.bitmask = self.bitmask[:, 0:logits_vocab_size]
+            elif self.bitmask.shape[1] < logits_vocab_size:
+                # Pad up to shape[:, logits.shape[1]] with zeros
+                pad_width = logits.shape[1] - self.bitmask.shape[1]
+                if pad_width > 0:
+                    self.bitmask = np.pad(
+                        self.bitmask,
+                        ((0, 0), (0, pad_width)),
+                        mode="constant",
+                        constant_values=False,
+                    )
 
             tensor_bitmask = Tensor.from_numpy(self.bitmask).to(self.device)
 
