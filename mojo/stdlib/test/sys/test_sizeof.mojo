@@ -25,6 +25,7 @@ def main():
     assert_equal(size_of[DType.float64](), 8)
     assert_equal(size_of[DType.bool](), 1)
     assert_equal(size_of[DType.index](), 8)
+    assert_equal(size_of[DType.uindex](), 8)
     assert_equal(size_of[DType.float8_e4m3fn](), 1)
     assert_equal(size_of[DType.float8_e5m2fnuz](), 1)
     assert_equal(size_of[DType.float8_e4m3fnuz](), 1)

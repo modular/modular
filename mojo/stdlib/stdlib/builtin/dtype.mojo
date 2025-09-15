@@ -108,6 +108,12 @@ struct DType(
     """Represents an integral type whose bitwidth is the maximum integral value
     on the system."""
 
+    alias uindex = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<uindex> : !kgen.dtype`
+    )
+    """Represents an unsigned integral type whose bitwidth is the maximum
+    unsigned integral value on the system."""
+
     alias _uint1 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui1> : !kgen.dtype`
     )
@@ -295,6 +301,8 @@ struct DType(
             return DType.bool
         elif str == "index":
             return DType.index
+        elif str == "uindex":
+            return DType.uindex
 
         elif str == "uint8":
             return DType.uint8
@@ -369,6 +377,8 @@ struct DType(
             return writer.write("bool")
         elif self is DType.index:
             return writer.write("index")
+        elif self is DType.uindex:
+            return writer.write("uindex")
 
         elif self is DType.uint8:
             return writer.write("uint8")
@@ -525,7 +535,11 @@ struct DType(
         Returns:
             Returns True if the input type parameter is unsigned.
         """
-        return self._is_non_index_integral() and not self._match(_mIsSigned)
+        return (
+            self is DType.uindex
+            or self._is_non_index_integral()
+            and not self._match(_mIsSigned)
+        )
 
     @always_inline("nodebug")
     fn is_signed(self) -> Bool:
@@ -554,7 +568,9 @@ struct DType(
         Returns:
             Returns True if the input type parameter is an integer.
         """
-        return self is DType.index or self._is_non_index_integral()
+        return (
+            self in (DType.index, DType.uindex) or self._is_non_index_integral()
+        )
 
     @always_inline("nodebug")
     fn is_floating_point(self) -> Bool:
@@ -636,6 +652,8 @@ struct DType(
             return size_of[DType.bool]()
         elif self is DType.index:
             return size_of[DType.index]()
+        elif self is DType.uindex:
+            return size_of[DType.uindex]()
 
         elif self is DType.float8_e3m4:
             return size_of[DType.float8_e3m4]()
@@ -780,6 +798,7 @@ struct DType(
         # fmt: off
         alias dtypes = [
             DType.index,
+            DType.uindex,
             DType.uint8, DType.int8,
             DType.uint16, DType.int16,
             DType.uint32, DType.int32,
@@ -981,6 +1000,8 @@ struct DType(
             return DType.bool
         elif _type_is_eq[T, SIMD[DType.index, size]]():
             return DType.index
+        elif _type_is_eq[T, SIMD[DType.uindex, size]]():
+            return DType.uindex
 
         elif _type_is_eq[T, SIMD[DType.uint8, size]]():
             return DType.uint8
@@ -1193,9 +1214,7 @@ fn _index_printf_format() -> StaticString:
 @always_inline
 fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     @parameter
-    if dtype is DType.bool:
-        return _index_printf_format()
-    elif dtype is DType.index:
+    if dtype in (DType.bool, DType.index, DType.uindex):
         return _index_printf_format()
 
     elif dtype is DType.uint8:
