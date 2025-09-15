@@ -219,9 +219,10 @@ class ClosureAttr(max._core.Attribute):
           kgen.return
         }
 
-        kgen.generator @consume<x: type,
-                            CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
-                            >(%arg0: !kgen.param<x>) -> index {
+        kgen.generator @consume<
+          x: type,
+          CAPTURE_INST: !kgen.param<get_witness(x, "closure_trait", "CAPTURE_TYPE")>
+        >(%arg0: !kgen.param<x>) -> index {
             // BODY OMITTED FOR BREVITY
         }
         ```
@@ -1257,17 +1258,9 @@ class TypeParamAttr(max._core.Attribute):
 
     ```mlir
     // Default asm format.
-    #kgen.type<!myTypeValue, !myMlirType, {
-      "method1" : <() -> index> = @method1,
-      "method2" : <() -> index> = @method2
-    }> : !kgen.type
+    #kgen.type<!myTypeValue, !myMlirType> : !kgen.type
 
     // MlirType is omitted if same as typeValue.
-    #kgen.type<!myTypeValue, {
-      "method1" : <() -> index> = @method1
-    }> : !kgen.type
-
-    // VTable is omitted if empty.
     #kgen.type<!myTypeValue> : !kgen.type
     ```
     """
@@ -1286,26 +1279,10 @@ class TypeParamAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
-        mlir_type: max._core.Type,
-        type: max._core.Type,
-        vtable: VTableAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type_value: max._core.Type,
-        mlir_type: max._core.Type,
-        type: max._core.Type,
-        vtable: VTableAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
         ctx: Context,
         type_value: max._core.Type,
         mlir_type: max._core.Type,
         type: max._core.Type,
-        vtable: VTableAttr,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.Type | None: ...
@@ -1313,8 +1290,6 @@ class TypeParamAttr(max._core.Attribute):
     def mlir_type(self) -> max._core.Type | None: ...
     @property
     def type(self) -> max._core.Type | None: ...
-    @property
-    def v_table(self) -> VTableAttr: ...
 
 class UnboundAttr(max._core.Attribute):
     """
@@ -1346,8 +1321,8 @@ class UnknownAttr(max._core.Attribute):
 
 class UpcastAttr(max._core.Attribute):
     """
-    The `#kgen.upcast` attribute is used to convert from a typeValue (which
-    carries a vtable and other metadate) to a typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a typeValue to a
+    typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 
@@ -1357,9 +1332,7 @@ class UpcastAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>,
-        "__del__" : !lit.generator<("self": !lit.ref<:trait<Movable> T> owned_in_mem, |) -> !kgen.none>
-            = get_vtable_entry(:trait<Movable> T, "__del__")> : !lit.trait<AnyType>
+    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>> : !lit.trait<AnyType>
     ```
     """
 
@@ -1368,66 +1341,17 @@ class UpcastAttr(max._core.Attribute):
         self,
         type: max._core.Type,
         input_type_value: max._core.dialects.builtin.TypedAttr,
-        v_table: VTableAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: max._core.Type,
         input_type_value: max._core.dialects.builtin.TypedAttr,
-        v_table: VTableAttr,
     ) -> None: ...
     @property
     def type(self) -> max._core.Type | None: ...
     @property
     def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def v_table(self) -> VTableAttr: ...
-
-class VTableAttr(max._core.Attribute):
-    """
-    Static vtable for structs.  Used to implement traits.
-
-    Example:
-
-    ```mlir
-    #kgen<vtable "entry1" : <() -> index> = @entry1,
-                 "entry2" : <() -> index> = @entry2>
-    ```
-    """
-
-    def __init__(self, entries: Sequence[VTableEntryAttr]) -> None: ...
-    @property
-    def entries(self) -> Sequence[VTableEntryAttr]: ...
-
-class VTableEntryAttr(max._core.Attribute):
-    """
-    Entry for a VTableAttr.  The name and signature are keys in the
-    table, while the method is the lookup value.
-
-    Example:
-
-    ```mlir
-    #kgen<vtable.entry "methodName" : <() -> index> = @methodImpl>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        method: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        method: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def method(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicAttr(max._core.Attribute):
     """
@@ -1656,8 +1580,6 @@ class POC(enum.Enum):
     rebind = 27
 
     variadic_get = 28
-
-    get_vtable_entry = 33
 
     ptr_bitcast = 34
 
@@ -3593,7 +3515,7 @@ class WitnessOp(max._core.Operation):
     type for the trait being conformed to.
 
     TODO: Make this a Symbol by using the mangled name from the trait. At the
-    same time, get_vtable_entry should also be emitted with the mangled name.
+    same time, get_witness should also be emitted with the mangled name.
 
     Example:
 
@@ -3925,8 +3847,9 @@ class ParamClosureType(max._core.Type):
                        >(%arg0: !kgen.param<x>) -> index {
          %0 = kgen.call_param[(!kgen.param<x>) -> index:
                       bind_params(:<!kgen.param<CAPTURE_TYPE>>
-                     (!kgen.none, index) -> index
-                     get_vtable_entry(x, "__call__"), CAPTURE_INST)](%arg0, %arg1)
+                        (!kgen.none, index) -> index
+                        get_witness(x, "closure_trait", "__call__"),
+                      CAPTURE_INST)](%arg0, %arg1)
          kgen.return %0 : index
        }
     ```
