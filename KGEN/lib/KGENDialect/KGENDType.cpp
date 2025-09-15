@@ -15,6 +15,8 @@ FailureOr<KGENDType> KGENDType::getFromString(StringRef str) {
     return KGENDType(ExtraCases::address);
   if (str == "index")
     return KGENDType(ExtraCases::index);
+  if (str == "uindex")
+    return KGENDType(ExtraCases::uindex);
   auto dtype = DType::getFromString(str);
   if (succeeded(dtype))
     return KGENDType(*dtype);
@@ -68,6 +70,8 @@ std::string KGENDType::getAsString(bool libForm) const {
   switch (uint8_t dtype = getValue()) {
   case ExtraCases::index:
     return "index";
+  case ExtraCases::uindex:
+    return "uindex";
   case ExtraCases::address:
     return "address";
   default:

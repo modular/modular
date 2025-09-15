@@ -197,7 +197,8 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
   }
 };
 
-/// Canonicalize `!pop.scalar<index>` computations to `index` operations.
+/// Canonicalize `!pop.scalar<index>` and `!pop.scalar<uindex>` computations to
+/// `index` operations.
 class IndexifyComparison : public OpRewritePattern<POP::CastToBuiltinOp> {
 public:
   using OpRewritePattern::OpRewritePattern;
@@ -213,10 +214,14 @@ public:
                                   "input isn't single-use comparison");
 
     auto cast = cmp.getLhs().getDefiningOp<POP::CastFromBuiltinOp>();
-    if (!cast || !cast->hasOneUse() ||
-        cast.getResult().getType().getResolvedDType() != KGENDType::index)
+    if (!cast || !cast->hasOneUse())
+      return b.notifyMatchFailure(op.getLoc(), "LHS isn't single-use cast");
+    std::optional<KGENDType> dtype =
+        cast.getResult().getType().getResolvedDType();
+    if (!dtype || !(dtype->isIndex() || dtype->isUIndex()))
+      // if (!dtype || !dtype->isIndex())
       return b.notifyMatchFailure(op.getLoc(),
-                                  "LHS isn't single-use cast to index dtype");
+                                  "LHS isn't index or uindex dtype");
 
     POP::SIMDAttr rhs;
     if (!mlir::matchPattern(cmp.getRhs(), mlir::m_Constant(&rhs)))
@@ -225,7 +230,8 @@ public:
     auto cst = b.create<mlir::index::ConstantOp>(
         op.getLoc(), rhs.getValues().front().getIndexVal());
     b.replaceOpWithNewOp<mlir::index::CmpOp>(
-        op, getIndexCmpPredicate(cmp.getPred()), cast.getInput(), cst);
+        op, getIndexCmpPredicate(cmp.getPred(), /*isSigned=*/dtype->isIndex()),
+        cast.getInput(), cst);
     b.eraseOp(cmp);
     b.eraseOp(cast);
     return success();
@@ -235,20 +241,24 @@ private:
   /// Get the equivalent index comparison predicate. POP treats the `index`
   /// dtype as signed.
   static mlir::index::IndexCmpPredicate
-  getIndexCmpPredicate(POP::CmpPredicate pred) {
+  getIndexCmpPredicate(POP::CmpPredicate pred, bool isSigned) {
     switch (pred) {
     case POP::CmpPredicate::EQ:
       return mlir::index::IndexCmpPredicate::EQ;
     case POP::CmpPredicate::NE:
       return mlir::index::IndexCmpPredicate::NE;
     case POP::CmpPredicate::LT:
-      return mlir::index::IndexCmpPredicate::SLT;
+      return isSigned ? mlir::index::IndexCmpPredicate::SLT
+                      : mlir::index::IndexCmpPredicate::ULT;
     case POP::CmpPredicate::GT:
-      return mlir::index::IndexCmpPredicate::SGT;
+      return isSigned ? mlir::index::IndexCmpPredicate::SGT
+                      : mlir::index::IndexCmpPredicate::UGT;
     case POP::CmpPredicate::LE:
-      return mlir::index::IndexCmpPredicate::SLE;
+      return isSigned ? mlir::index::IndexCmpPredicate::SLE
+                      : mlir::index::IndexCmpPredicate::ULE;
     case POP::CmpPredicate::GE:
-      return mlir::index::IndexCmpPredicate::SGE;
+      return isSigned ? mlir::index::IndexCmpPredicate::SGE
+                      : mlir::index::IndexCmpPredicate::UGE;
     }
     llvm_unreachable("invalid cmp predicate");
   }

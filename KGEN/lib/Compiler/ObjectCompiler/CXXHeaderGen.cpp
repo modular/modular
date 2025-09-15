@@ -46,7 +46,7 @@ static LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
     types.push_back("bool");
     return success();
   }
-  if (dt.isIndex()) {
+  if (dt.isIndex() || dt.isUIndex()) {
     types.push_back("ssize_t");
     return success();
   }

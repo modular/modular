@@ -673,7 +673,7 @@ bool DTypeConstantAttr::isConvertibleTo(Type type) {
     return type.isSignlessInteger(1);
 
   // Index DType can only be the mlir `index` type.
-  if (dtype.isIndex())
+  if (dtype.isIndex() || dtype.isUIndex())
     return type.isIndex();
 
   // Integer dtypes can be converted to MLIR integers of the same width and
@@ -703,15 +703,15 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     return llvm::isa<IntegerType>(type);
 
   // Signless integers cannot be converted.
-  if (type.isSignlessInteger() && !dtype.isIndex())
+  if (type.isSignlessInteger() && !dtype.isIndex() && !dtype.isUIndex())
     return false;
 
   // Index dtypes can be converted if the type is an IndexType.
-  if (dtype.isIndex() && llvm::isa<IndexType>(type))
+  if ((dtype.isIndex() || dtype.isUIndex()) && llvm::isa<IndexType>(type))
     return true;
 
   if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
-    if (dtype.isIndex())
+    if (dtype.isIndex() || dtype.isUIndex())
       return true;
     // Integers can be converted to dtypes of the same width and signedness.
     if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&

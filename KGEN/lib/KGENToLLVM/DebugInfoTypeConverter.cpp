@@ -129,6 +129,7 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
 
   case KGENDType::address:
   case KGENDType::index:
+  case KGENDType::uindex:
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype,
                                                 indexWidth, indexWidth);
 

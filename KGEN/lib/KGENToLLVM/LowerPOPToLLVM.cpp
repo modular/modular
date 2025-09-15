@@ -83,7 +83,8 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
     KGENDType dtype = *op.getType().getResolvedDType();
     Type type = this->convertType(op.getType());
 
-    if (dtype.isBool() || dtype.isInt() || dtype.isIndex()) {
+    if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
+        dtype.isUIndex()) {
       if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
         rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
                                             adaptor.getRhs());
@@ -115,7 +116,7 @@ struct ConvertPOPNeg : public ConvertPOPToLLVMPattern<NegOp> {
   matchAndRewrite(NegOp op, NegOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isInt() && !dtype.isIndex()) {
+    if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex()) {
       rewriter.replaceOpWithNewOp<LLVM::FNegOp>(op, adaptor.getOperand(),
                                                 LLVM_FASTMATH_FLAGS);
       return success();
@@ -175,7 +176,7 @@ struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
   matchAndRewrite(FMAOp op, FMAOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getType().getResolvedDType();
-    if (dtype.isInt() || dtype.isIndex()) {
+    if (dtype.isInt() || dtype.isIndex() || dtype.isUIndex()) {
       auto lhs = rewriter.create<LLVM::MulOp>(op.getLoc(), adaptor.getA(),
                                               adaptor.getB());
       rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
@@ -201,7 +202,7 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     KGENDType dtype = *op.getLhs().getType().getResolvedDType();
     if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
-        dtype.isAddress()) {
+        dtype.isUIndex() || dtype.isAddress()) {
       rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(
           op, getICmpPredicate(op.getPred(), dtype.isSInt()), adaptor.getLhs(),
           adaptor.getRhs());
@@ -290,8 +291,10 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
     // but the signedness semantics of the operation's input and output types
     // affect which casts are selected. `bool` is `i1`.
     StringRef opName;
-    if (inDType.isBool() || inDType.isInt() || inDType.isIndex()) {
-      if (outDType.isBool() || outDType.isInt() || outDType.isIndex()) {
+    if (inDType.isBool() || inDType.isInt() || inDType.isIndex() ||
+        inDType.isUIndex()) {
+      if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
+          outDType.isUIndex()) {
         // A bool should still become a cast as the bool is only 1 bit but
         // appears as 1 byte here.
         if (outByteCount > inByteCount || inDType.isBool()) {
@@ -307,7 +310,8 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
         opName = inDType.isSInt() ? LLVM::SIToFPOp::getOperationName()
                                   : LLVM::UIToFPOp::getOperationName();
       }
-    } else if (outDType.isBool() || outDType.isInt() || outDType.isIndex()) {
+    } else if (outDType.isBool() || outDType.isInt() || outDType.isIndex() ||
+               outDType.isUIndex()) {
       // Cast from a float to an integer.
       opName = outDType.isSInt() ? LLVM::FPToSIOp::getOperationName()
                                  : LLVM::FPToUIOp::getOperationName();
@@ -341,7 +345,7 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
 
 private:
   int64_t getDTypeSizeInBytes(KGENDType dtype) const {
-    if (dtype.isIndex())
+    if (dtype.isIndex() || dtype.isUIndex())
       return getTypeConverter()->getIndexTypeBitwidth() / CHAR_BIT;
     return dtype.getSizeInBytes();
   }

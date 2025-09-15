@@ -154,6 +154,7 @@ def BoundDType : DTypeConstraint<"$_self">;
 def UnboundDType : DTypeConstraint<"!$_self">;
 def BoolDType : DTypeConstraint<"$_self->isBool()">;
 def IndexDType : DTypeConstraint<"$_self->isIndex()">;
+def UIndexDType : DTypeConstraint<"$_self->isUIndex()">;
 def IntDType : DTypeConstraint<"$_self->isInt()">;
 def SIntDType : DTypeConstraint<"$_self->isSInt()">;
 def UIntDType : DTypeConstraint<"$_self->isUInt()">;
@@ -177,6 +178,7 @@ class SIMDOfDType<DTypeConstraint constraint, string desc> :
 def BoolSIMD : SIMDOfDType<BoundAnd<BoolDType>, "!pop.simd<N, bool>">;
 def UnboundSIMD : SIMDOfDType<UnboundDType, "!pop.simd<N, invalid>">;
 def IndexSIMD : SIMDOfDType<BoundAnd<IndexDType>, "!pop.simd<N, index>">;
+def UIndexSIMD : SIMDOfDType<BoundAnd<UIndexDType>, "!pop.simd<N, uindex>">;
 def IntegerSIMD : SIMDOfDType<BoundAnd<IntDType>, "!pop.simd<N, integral>">;
 def FloatSIMD : SIMDOfDType<BoundAnd<FloatDType>, "!pop.simd<N, float>">;
 def AddressSIMD : SIMDOfDType<BoundAnd<AddressDType>, "!pop.simd<N, address>">;
@@ -190,13 +192,13 @@ def UnboundOrFloatOrUnsignedSIMD : SIMDOfDType<UnboundOr<OrDType<[UIntDType, Flo
 def UnboundOrFloatSIMD : SIMDOfDType<UnboundOr<FloatDType>,
     "whose element type is either unbound or a floating-point dtype">;
 def UnboundOrIndexOrSignedSIMD : SIMDOfDType<UnboundOr<OrDType<
-                                          [SIntDType, IndexDType, FloatDType]>>,
+                                          [SIntDType, IndexDType, UIndexDType, FloatDType]>>,
     "whose element type is either unbound, index, or of signed dtype">;
 def UnboundOrBoolOrIndexOrIntegerSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, IntDType, BoolDType]>>,
+    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType, BoolDType]>>,
     "whose element type is either unbound, or integer, or bool">;
 def UnboundOrIndexOrIntegerSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, IntDType]>>,
+    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
     "whose element type is either unbound, index, or integral dtype">;
 def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
     UnboundOr<OrDType<[BoolDType, ArithmeticDType]>>,
@@ -204,14 +206,14 @@ def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
 def UnboundOrArithmeticSIMD : SIMDOfDType<UnboundOr<ArithmeticDType>,
     "whose element type is either integer or float dtype">;
 def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, ArithmeticDType]>>,
+    UnboundOr<OrDType<[IndexDType, UIndexDType, ArithmeticDType]>>,
     "whose element type is either unbound, index, or arithmetic dtype">;
 def UnboundOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
-    UnboundOr<OrDType<[IndexDType, IntDType, BoolDType, FloatDType]>>,
+    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType, BoolDType, FloatDType]>>,
     "whose element type is either unbound, integral, bool or float dtype">;
 def UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
     UnboundOr<OrDType<
-      [IndexDType, AddressDType, IntDType, BoolDType, FloatDType]>>,
+      [IndexDType, UIndexDType, AddressDType, IntDType, BoolDType, FloatDType]>>,
     "whose element type is either unbound, address, integral, bool or float "
       "dtype">;
 
@@ -243,7 +245,7 @@ def UnboundOrPointerOrSIMDAddressType : AnyTypeOf<
 
 
 def UnboundOrIndexOrInt : AnyTypeOf<[
-    ScalarOfDType<UnboundOr<OrDType<[IndexDType, IntDType]>>,
+    ScalarOfDType<UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
                   "whose type is unbound, index, or integral dtype">]>;
 
 //===----------------------------------------------------------------------===//

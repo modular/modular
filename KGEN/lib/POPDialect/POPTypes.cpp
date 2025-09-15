@@ -235,6 +235,7 @@ std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
   switch (dtype->getValue()) {
   case KGENDType::address:
   case KGENDType::index:
+  case KGENDType::uindex:
     return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
                             CHAR_BIT);
   default:

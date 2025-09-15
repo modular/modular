@@ -54,7 +54,7 @@ LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 DTypeValue::DTypeValue(APInt data, KGENDType dtype)
     : data(std::move(data)), dtype(dtype) {
-  assert(dtype.isAddress() || dtype.isIndex() ||
+  assert(dtype.isAddress() || dtype.isIndex() || dtype.isUIndex() ||
          this->data.getBitWidth() == dtype.getWidthInBits());
 }
 
@@ -91,8 +91,8 @@ bool DTypeValue::getBoolVal() const {
 }
 
 int64_t DTypeValue::getIndexVal() const {
-  assert(dtype.isIndex() || dtype.isAddress());
-  return data.getSExtValue();
+  assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
+  return dtype.isIndex() ? data.getSExtValue() : data.getZExtValue();
 }
 
 namespace M::KGEN::POP {
@@ -187,7 +187,7 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
   }
 
   // Handle indices.
-  assert(dtype.isIndex() || dtype.isAddress());
+  assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
   int64_t indexVal;
   if constexpr (optionalParse) {
     OptionalParseResult result = p.parseOptionalInteger(indexVal);
@@ -327,7 +327,7 @@ static void printDTypeValue(AsmPrinter &p, const DTypeValue &value,
   } else if (dtype.isBool()) {
     p << (value.getBoolVal() ? "true" : "false");
   } else {
-    assert(dtype.isIndex() || dtype.isAddress());
+    assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
     p << value.getIndexVal();
   }
 }
@@ -351,7 +351,7 @@ parseSplatOrVector(AsmParser &p, SmallVector<DTypeValue> &values,
   std::optional<int64_t> size = type.getResolvedSize();
   auto checkDType = [&]() -> ParseResult {
     if (dtype->isInt() || dtype->getFloatSemantics() || dtype->isBool() ||
-        dtype->isIndex() || dtype->isAddress())
+        dtype->isIndex() || dtype->isUIndex() || dtype->isAddress())
       return success();
     return p.emitError(
         p.getCurrentLocation(),
