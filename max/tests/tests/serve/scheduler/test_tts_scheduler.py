@@ -244,10 +244,6 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
     def release(self, request_id: RequestID) -> None:
         pass
 
-    @property
-    def decoder_sample_rate(self) -> int:
-        return 999
-
 
 @dataclass
 class BatchInfo:
