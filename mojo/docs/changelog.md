@@ -298,6 +298,10 @@ language across multiple phases.
     # `l` is no longer accessible.
     ```
 
+  - Because `List` and `Dict` are so widely used, this release stages this in by
+    making implicit copies of these types a warning instead of an error.  This
+    will become a hard error in the next release of Mojo.
+
   - User types that define a custom `.copy()` method must be updated to move
     that logic to `__copyinit__()`. The `.copy()` method is now provided by a
     default trait implementation on `Copyable` that should not be overridden:
