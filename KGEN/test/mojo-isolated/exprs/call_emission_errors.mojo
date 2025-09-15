@@ -197,10 +197,10 @@ fn test_ref[mut: Bool, origin: Origin[mut]](ref [origin]arg: String):
 
 
 fn call_test_ref(mut s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Origin[$0]](ref [$1._mlir_origin] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, origin: Origin[mut]](ref [origin._mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableOrigin](ref [$0._mlir_origin] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[origin: MutableOrigin](ref [origin._mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[True]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)

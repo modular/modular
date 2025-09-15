@@ -66,9 +66,10 @@ fn test_many_things_of_specified_trait[
 struct DoesNotConform(SimpleTrait):
     pass
 
+
 # expected-error @below {{'ParamDoesNotConform[x]' does not implement all requirements for 'SimpleTrait'}}
 struct ParamDoesNotConform[x: Int](SimpleTrait):
-    # expected-note @below {{candidate declared here with type 'fn(self: ParamDoesNotConform[x], y: Int) -> None' (specialized from 'fn[Int](self: ParamDoesNotConform[$0], y: Int) -> None')}}
+    # expected-note @below {{candidate declared here with type 'fn(self: ParamDoesNotConform[x], y: Int) -> None' (specialized from 'fn[x: Int, /](self: ParamDoesNotConform[x], y: Int) -> None')}}
     fn some_method(self, y: Int):
         pass
 

@@ -543,7 +543,7 @@ fn call_mem_param_with_ref(ref [AddressSpace(2)]b: MemParamType[3]):
 
 # expected-note @below {{declared here}}
 fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
-    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[Int]() -> ParamType[$0]' type, but value has type 'index'}}
+    # expected-error @below {{'substitution_edge_case' parameter 'f' has 'fn[a: Int]() -> ParamType[a]' type, but value has type 'index'}}
     substitution_edge_case[`0`]
 
 
