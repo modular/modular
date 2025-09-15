@@ -14,6 +14,13 @@
     new data types through the stack and developing math approximations
     optimized for the reduced precision format.
 
+- [Element-wise Operations on GPUs](elementwise-ops.md)
+
+    This document analyzes element-wise GPU operations performance across
+    different NVIDIA accelerators (A100, A10, L4), examining memory bandwidth
+    limitations, cache effects, vectorization strategies, and implementation
+    optimizations for operations like memcpy in CUDA and Mojo.
+
 - [GenAI and Paged Attention](genai-paged-attention.md)
 
     This document explains PagedAttention, a memory management
