@@ -118,9 +118,7 @@ fn kernel_3[
     ]()
 
     a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],

@@ -486,30 +486,18 @@ def test_tma_umma_pair_cta[
 
         vendor_blas.matmul(
             ctx,
-            rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](
-                c_ref.device_buffer()
-            ),
-            rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
-                a.device_buffer[update=False]()
-            ),
-            rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
-                b_col_major.device_buffer[update=True]()
-            ),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_col_major.device_tensor[update=True](),
             c_row_major=True,
             transpose_b=True,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            rebind[NDBuffer[c_type, 2, MutableAnyOrigin]](
-                c_ref.device_buffer()
-            ),
-            rebind[NDBuffer[a_type, 2, MutableAnyOrigin]](
-                a.device_buffer[update=False]()
-            ),
-            rebind[NDBuffer[b_type, 2, MutableAnyOrigin]](
-                b.device_buffer[update=False]()
-            ),
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b.device_tensor[update=False](),
             c_row_major=True,
             transpose_b=transpose_b,
         )

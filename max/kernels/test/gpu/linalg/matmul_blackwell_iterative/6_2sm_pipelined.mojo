@@ -162,10 +162,10 @@ fn load_AB[
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -270,10 +270,10 @@ fn consumer_main_loop[
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     tma_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=16
+        SharedMemBarrier, address_space = AddressSpace.SHARED
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -656,9 +656,7 @@ fn kernel_6[
     ]
 
     base_ptr_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space = AddressSpace.SHARED, alignment=128
-        ]
+        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
     ](
         external_memory[
             Scalar[a_type],

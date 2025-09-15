@@ -158,7 +158,7 @@ mojo format ./
 Many benchmarks and tests use environment variables for configuration:
 
 - `env_get_int[]`: Get integer values
-- `env_get_bool[]`: Get boolean flags  
+- `env_get_bool[]`: Get boolean flags
 - `env_get_dtype[]`: Get data type specifications
 
 Example:
