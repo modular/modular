@@ -142,22 +142,114 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 _unsupported_mma_op(d, a, b, c)
                 return ""
-        # RDNA doesn't have native FP8 support, but we can handle it through conversion
-        # For now, mark FP8 as unsupported on RDNA
+        # RDNA doesn't have native FP8 support, but we can emulate through conversion
+        # We'll handle FP8 by converting to FP16 and using WMMA
         elif (
             a.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]
-            or b.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]
+            and b.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]
+            and c.dtype is DType.float32 and d.dtype is DType.float32
         ):
-            # FP8 is not supported on RDNA3 WMMA
-            _unsupported_mma_op(d, a, b, c)
-            return ""
+            # FP8 emulation via FP16 conversion on RDNA3
+            # We support size 16 (split into 4x size 4) and size 4
+            @parameter
+            if _has_shape[4](a.size, b.size, c.size, d.size):
+                # Will be handled by conversion in the main function
+                return "llvm.amdgcn.wmma.f32.16x16x16.f16"  # Use f16 path
+            elif a.size == 16 and b.size == 16 and c.size == 32 and d.size == 32:
+                # Size 16 FP8 - will split into 4x size 4 operations
+                return "llvm.amdgcn.wmma.f32.16x16x16.f16"  # Use f16 path
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
 
+    # Check if we need FP8 to FP16 conversion for RDNA
+    @parameter
+    if a.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]:
+        # FP8 emulation for RDNA - convert to FP16 first
+
+        @parameter
+        if a.size == 16 and b.size == 16:
+            # Size 16 FP8 operations - split into 4x size 4
+            # Convert each FP8 chunk to FP16 and run WMMA
+
+            var result = SIMD[DType.float32, 32]()
+            # Initialize with accumulator
+            for i in range(32):
+                result[i] = c[i].cast[DType.float32]()
+
+            # Process 4 chunks of size 4 - unrolled for compile-time constants
+            # Chunk 0
+            var a_chunk0 = a.slice[4, offset=0]()
+            var b_chunk0 = b.slice[4, offset=0]()
+            var c_chunk0 = result.slice[4, offset=0]()
+            var a_fp16_0 = a_chunk0.cast[DType.float16]()
+            var b_fp16_0 = b_chunk0.cast[DType.float16]()
+            var r_chunk0 = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16.f16",
+                SIMD[DType.float32, 4]
+            ](a_fp16_0, b_fp16_0, c_chunk0)
+            for i in range(4):
+                result[i] = r_chunk0[i]
+
+            # Chunk 1
+            var a_chunk1 = a.slice[4, offset=4]()
+            var b_chunk1 = b.slice[4, offset=4]()
+            var c_chunk1 = result.slice[4, offset=4]()
+            var a_fp16_1 = a_chunk1.cast[DType.float16]()
+            var b_fp16_1 = b_chunk1.cast[DType.float16]()
+            var r_chunk1 = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16.f16",
+                SIMD[DType.float32, 4]
+            ](a_fp16_1, b_fp16_1, c_chunk1)
+            for i in range(4):
+                result[4 + i] = r_chunk1[i]
+
+            # Chunk 2
+            var a_chunk2 = a.slice[4, offset=8]()
+            var b_chunk2 = b.slice[4, offset=8]()
+            var c_chunk2 = result.slice[4, offset=8]()
+            var a_fp16_2 = a_chunk2.cast[DType.float16]()
+            var b_fp16_2 = b_chunk2.cast[DType.float16]()
+            var r_chunk2 = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16.f16",
+                SIMD[DType.float32, 4]
+            ](a_fp16_2, b_fp16_2, c_chunk2)
+            for i in range(4):
+                result[8 + i] = r_chunk2[i]
+
+            # Chunk 3
+            var a_chunk3 = a.slice[4, offset=12]()
+            var b_chunk3 = b.slice[4, offset=12]()
+            var c_chunk3 = result.slice[4, offset=12]()
+            var a_fp16_3 = a_chunk3.cast[DType.float16]()
+            var b_fp16_3 = b_chunk3.cast[DType.float16]()
+            var r_chunk3 = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16.f16",
+                SIMD[DType.float32, 4]
+            ](a_fp16_3, b_fp16_3, c_chunk3)
+            for i in range(4):
+                result[12 + i] = r_chunk3[i]
+
+            d = rebind[__type_of(d)](result)
+            return
+        elif a.size == 4 and b.size == 4:
+            # Size 4 FP8 - direct conversion
+            var a_fp16 = a.cast[DType.float16]()
+            var b_fp16 = b.cast[DType.float16]()
+
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.wmma.f32.16x16x16.f16",
+                SIMD[c.dtype, c.size]
+            ](a_fp16, b_fp16, c)
+            d = rebind[__type_of(d)](r)
+            return
+
     @parameter
     if a.size == 8 and b.size == 8 and c.size == 32 and d.size == 32:
-        # For size 8, we need to split into two WMMA operations
+        # For size 8 BF16/FP16, we need to split into two WMMA operations
         # Each WMMA operates on 4 elements, producing 4 outputs
 
         # Split inputs into two halves
