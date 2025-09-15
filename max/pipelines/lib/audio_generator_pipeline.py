@@ -70,7 +70,3 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
     def release(self, request_id: str) -> None:
         release = getattr(self.pipeline_model, "release")  # type: ignore[has-type]  # noqa: B009
         release(request_id)
-
-    @property
-    def decoder_sample_rate(self) -> int:
-        return getattr(self.pipeline_model, "decoder_sample_rate")  # type: ignore[has-type]  # noqa: B009
