@@ -1169,9 +1169,9 @@ bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
 }
 
 //===----------------------------------------------------------------------===//
-// isAMDGPU_MI350XAndAbove
+// isAMDGPU_gfx942
 //===----------------------------------------------------------------------===//
 
-bool KGEN::isAMDGPU_MI350XAndAbove(TargetInfoAttr target) {
-  return isAMDGPU(target, {"gfx950"});
+bool KGEN::isAMDGPU_gfx942(TargetInfoAttr target) {
+  return isAMDGPU(target, {"gfx942"});
 }
