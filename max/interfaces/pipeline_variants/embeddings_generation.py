@@ -7,21 +7,34 @@
 
 from __future__ import annotations
 
-from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, Generic, TypeVar
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces.pipeline import PipelineOutput
+from max.interfaces.context import InputContext
+from max.interfaces.pipeline import PipelineInputs, PipelineOutput
+from max.interfaces.request import RequestID
+
+EmbeddingsGenerationContextType = TypeVar(
+    "EmbeddingsGenerationContextType", bound=InputContext
+)
 
 
-def _check_embeddings_output_implements_pipeline_output(
-    x: EmbeddingsOutput,
-) -> PipelineOutput:
-    return x
+@dataclass(frozen=True)
+class EmbeddingsGenerationInputs(
+    PipelineInputs, Generic[EmbeddingsGenerationContextType]
+):
+    batches: list[dict[RequestID, EmbeddingsGenerationContextType]]
+
+    @property
+    def batch(self) -> dict[RequestID, EmbeddingsGenerationContextType]:
+        """Returns merged batches."""
+        return {k: v for batch in self.batches for k, v in batch.items()}
 
 
-class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
+class EmbeddingsGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
     """
     Response structure for embedding generation.
 
@@ -43,25 +56,7 @@ class EmbeddingsOutput(msgspec.Struct, tag=True, omit_defaults=True):
         return True
 
 
-EmbeddingsGeneratorContext = TypeVar("EmbeddingsGeneratorContext")
-
-
-@runtime_checkable
-class EmbeddingsGenerator(Generic[EmbeddingsGeneratorContext], Protocol):
-    """Interface for LLM embeddings-generator models."""
-
-    def encode(
-        self, batch: dict[str, EmbeddingsGeneratorContext]
-    ) -> dict[str, Any]:
-        """Computes embeddings for a batch of inputs.
-
-        Args:
-            batch (dict[str, EmbeddingsGeneratorContext]): Batch of contexts to generate
-                embeddings for.
-
-        Returns:
-            dict[str, Any]: Dictionary mapping request IDs to their corresponding
-                embeddings. Each embedding is typically a numpy array or tensor of
-                floating point values.
-        """
-        ...
+def _check_embeddings_output_implements_pipeline_output(
+    x: EmbeddingsGenerationOutput,
+) -> PipelineOutput:
+    return x
