@@ -203,8 +203,8 @@ def return_def_arg_box(abc: MemoryOnly) -> ref [abc] MemoryOnly:
 
 # CHECK-LABEL: lit.fn @"foldable_requires_2
 # CHECK-SAME: requires {
-# CHECK-SAME:   <lt(#lit.struct.extract<:!Int x, "_mlir_value">, 1), #{{[[:alnum:]]+}}, "x must be less than 1">,
-# CHECK-SAME:   <ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11), #{{[[:alnum:]]+}}>
+# CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, {{.*}} "x must be less than 1"
+# CHECK-SAME:   ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
 fn foldable_requires_2[x: Int, y: Int]()
     requires y > 10
     requires x < 1, "x must be less than 1":
@@ -212,7 +212,8 @@ fn foldable_requires_2[x: Int, y: Int]()
 
 
 # CHECK-LABEL: lit.fn @"foldable_requires_1
-# CHECK-SAME: requires {<ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0), #{{[[:alnum:]]+}}, "x must be True">}
+# CHECK-SAME: requires {
+# CHECK-SAME:   ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0), {{.*}}, "x must be True">}
 fn foldable_requires_1[x: Int]()
     requires x, "x must be True":
         pass

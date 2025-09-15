@@ -517,13 +517,13 @@ fn paramAndOr[a: Boolish, b: Boolish]():
   # otherwise.
 
   # CHECK: lit.alias.decl *"c{{.*}}": !Boolish = <cond(
-  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">, b, a)>
+  # CHECK-SAME: apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">{{.*}}, b, a)>
   alias c = a and b
 
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.
 
-  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">, a, b)>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Boolish = <cond({{.*}}apply({{.*}}Boolish::@"__bool__{{.*}}"), store_to_mem(a)), "_mlir_value">{{.*}}, a, b)>
   alias d = a or b
 
 # CHECK-LABEL: lit.fn @"do_math
@@ -576,14 +576,14 @@ fn test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}, {2}, {3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">,
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
   # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3>
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}, {2}, {3})>
   return i
 
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
@@ -624,9 +624,9 @@ fn callInParam[callable: fn[x: Int](Int) -> Int]() -> Int:
 fn parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   alias b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}>
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}
   alias c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{_mlir_value = mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)}>
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)}
   alias d = a*a2
 
 ##===----------------------------------------------------------------------===##

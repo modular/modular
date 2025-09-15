@@ -1212,11 +1212,11 @@ fn handleAnyLifetime5():
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
 fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
-    # CHECK-NEXT: lit.alias.decl {{.*}} = <{_mlir_origin: origin<0> = *"abcdef`1"}>
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}} = <{_mlir_origin: origin<0> = *"abcdef`1"}>
     alias x = Origin(__origin_of(abcdef))
 
     # MOCO-1467: Origin type equality problem.
-    # CHECK-NEXT: lit.alias.decl {{.*}} = <orig1>
+    # CHECK-NEXT: lit.alias.decl *"y{{.*}} = <{{.*}}orig1
     alias y = Origin(orig1._mlir_origin)
 
     # Check that __origin_of works on origins as well as MValues.
