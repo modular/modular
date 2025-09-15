@@ -199,6 +199,8 @@ fn _quicksort[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
+    *,
+    do_smallsort: Bool = False,
 ](span: Span[T, origin]):
     var array = span.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
     var size = len(span)
@@ -218,9 +220,11 @@ fn _quicksort[
         var len = len(imm_interval)
         var interval = Span[T, MutableAnyOrigin](ptr=mut_ptr, length=UInt(len))
 
-        if len <= 5:
-            _delegate_small_sort[cmp_fn](interval)
-            continue
+        @parameter
+        if do_smallsort:
+            if len <= 5:
+                _delegate_small_sort[cmp_fn](interval)
+                continue
 
         if len < insertion_sort_threshold:
             _insertion_sort[cmp_fn](interval)
@@ -448,10 +452,13 @@ fn _sort[
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
+    do_smallsort: Bool = False,
 ](span: Span[T, origin]):
-    if len(span) <= 5:
-        _delegate_small_sort[cmp_fn](span)
-        return
+    @parameter
+    if do_smallsort:
+        if len(span) <= 5:
+            _delegate_small_sort[cmp_fn](span)
+            return
 
     if len(span) < insertion_sort_threshold:
         _insertion_sort[cmp_fn](span)
@@ -461,7 +468,7 @@ fn _sort[
     if stable:
         _stable_sort[cmp_fn](span)
     else:
-        _quicksort[cmp_fn](span)
+        _quicksort[cmp_fn, do_smallsort=do_smallsort](span)
 
 
 # TODO (MSTDL-766): The Int and Scalar[T] overload should be remove
@@ -474,12 +481,38 @@ fn sort[
     cmp_fn: fn (T, T) capturing [_] -> Bool,
     *,
     stable: Bool = False,
+    __disambiguate: NoneType = None,
 ](span: Span[T, origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
+    """Sort a span in-place.
+    The function doesn't return anything, the span is updated in-place.
 
     Parameters:
         T: Copyable & Movable type of the underlying data.
+        origin: Origin of span.
+        cmp_fn: The comparison function.
+        stable: Whether the sort should be stable.
+        __disambiguate: Give the Scalar overload higher priority. Do not pass explicitly.
+
+
+    Args:
+        span: The span to be sorted.
+    """
+
+    _sort[cmp_fn, stable=stable](span)
+
+
+fn sort[
+    dtype: DType,
+    origin: MutableOrigin, //,
+    cmp_fn: fn (Scalar[dtype], Scalar[dtype]) capturing [_] -> Bool,
+    *,
+    stable: Bool = False,
+](span: Span[Scalar[dtype], origin]):
+    """Sort a span of Scalar elements in-place.
+    The function doesn't return anything, the list is updated in-place.
+
+    Parameters:
+        dtype: Type of elements.
         origin: Origin of span.
         cmp_fn: The comparison function.
         stable: Whether the sort should be stable.
@@ -487,8 +520,7 @@ fn sort[
     Args:
         span: The span to be sorted.
     """
-
-    _sort[cmp_fn, stable=stable](span)
+    _sort[cmp_fn, stable=stable, do_smallsort=True](span)
 
 
 fn sort[
@@ -497,8 +529,8 @@ fn sort[
     *,
     stable: Bool = False,
 ](span: Span[Int, origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
+    """Sort a span in-place.
+    The function doesn't return anything, the span is updated in-place.
 
     Parameters:
         origin: Origin of span.
@@ -509,7 +541,7 @@ fn sort[
         span: The span to be sorted.
     """
 
-    _sort[cmp_fn, stable=stable](span)
+    _sort[cmp_fn, stable=stable, do_smallsort=True](span)
 
 
 fn sort[
@@ -517,8 +549,8 @@ fn sort[
     *,
     stable: Bool = False,
 ](span: Span[Int, origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
+    """Sort a span inplace.
+    The function doesn't return anything, the span is updated in-place.
 
     Parameters:
         origin: Origin of span.
@@ -541,7 +573,7 @@ fn sort[
     *,
     stable: Bool = False,
 ](span: Span[T, origin]):
-    """Sort list of the order comparable elements in-place.
+    """Sort a span of comparable elements in-place.
 
     Parameters:
         T: The order comparable collection element type.

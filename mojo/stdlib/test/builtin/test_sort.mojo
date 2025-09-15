@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import _dir_of_current_file
-from random import random_float64, random_si64, random_ui64, seed
+from random import random_float64, random_si64, random_ui64, seed, rand
 
 from builtin.sort import _quicksort, _small_sort
 from collections.string.string_slice import _to_string_list
@@ -630,6 +630,16 @@ def test_stable_sort_stress():
         test[_lt, _lt_check](length)
 
 
+fn test_sort_scalar() raises:
+    var listi32 = random_numbers[DType.int32](50, max=Int(Int32.MAX))
+    sort(listi32)
+    assert_sorted(listi32)
+
+    var listf32 = random_numbers[DType.float32](50, max=Int(Float32.MAX))
+    sort(listf32)
+    assert_sorted(listf32)
+
+
 def main():
     test_sort_small_3()
     test_sort_small_5()
@@ -660,3 +670,5 @@ def main():
     test_sort_strings()
     test_sort_comparamble_elements_list()
     test_sort_empty_comparable_elements_list()
+
+    test_sort_scalar()
