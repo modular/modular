@@ -31,7 +31,9 @@ public:
     // specified.
     address = kFirstExtendedOption,
     // Represents a signless integer that has the same size as a pointer.
-    index
+    index,
+    // TODO: add description
+    uindex,
   };
 
   KGENDType(DType dtype) : DType(dtype) {}
@@ -39,23 +41,28 @@ public:
 
   constexpr bool isAddress() const { return getValue() == ExtraCases::address; }
   constexpr bool isIndex() const { return getValue() == ExtraCases::index; }
+  constexpr bool isUIndex() const { return getValue() == ExtraCases::uindex; }
 
   /// Returns true if the underlying dtype is arithmetic.
   constexpr bool isArithmetic() const {
-    return isIndex() || DType::isArithmetic();
+    return isIndex() || isUIndex() || DType::isArithmetic();
   }
 
   /// Returns true if the underlying dtype is an integer and is signed. The
   /// index dtype is signed.
   constexpr bool isSInt() const { return isIndex() || DType::isSInt(); }
 
+  /// Returns true if the underlying dtype is an integer and is unsigned. The
+  /// uindex dtype is unsigned.
+  constexpr bool isUInt() const { return isUIndex() || DType::isUInt(); }
+
   /// Returns true if the type is any valid integer representation.
   constexpr bool isIntLike() const {
-    return isIndex() || isInt() || isBool() || isAddress();
+    return isIndex() || isUIndex() || isInt() || isBool() || isAddress();
   }
 
   ssize_t getWidthInBits(TargetInfoAttr target) const {
-    if (isAddress() || isIndex())
+    if (isAddress() || isIndex() || isUIndex())
       return target ? target.resolveIndexBitWidth() : 64;
     return DType::getWidthInBits();
   }

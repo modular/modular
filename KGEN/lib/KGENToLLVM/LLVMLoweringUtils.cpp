@@ -138,7 +138,7 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
   if (dtype.isAddress())
     return LLVM::LLVMPointerType::get(ctx);
 
-  if (dtype.isIndex())
+  if (dtype.isIndex() || dtype.isUIndex())
     return IntegerType::get(ctx, indexBitwidth);
 
   // This intentionally discards signed-ness because LLVM is signless.
@@ -824,10 +824,10 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
     if (dtype.isInt())
       return asConst(b.getIntegerAttr(
           b.getIntegerType(dtype.getIntegerWidthInBits()), value.getIntVal()));
-    if (dtype.isIndex() || dtype.isAddress()) {
+    if (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress()) {
       Value addr =
           asConst(b.getIntegerAttr(tc.getIndexType(), value.getIndexVal()));
-      if (dtype.isIndex())
+      if (dtype.isIndex() || dtype.isUIndex())
         return addr;
       return b.create<LLVM::IntToPtrOp>(
           LLVM::LLVMPointerType::get(b.getContext()), addr);
@@ -858,14 +858,14 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
                         b.getIntegerType(dtype.getIntegerWidthInBits())),
         values)));
   }
-  if (dtype.isIndex() || dtype.isAddress()) {
+  if (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress()) {
     SmallVector<APInt> values;
     auto indexType = cast<IntegerType>(tc.getIndexType());
     for (const POP::DTypeValue &value : simd.getValues())
       values.push_back(APInt(indexType.getWidth(), value.getIndexVal()));
     Value addr = asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
         VectorType::get(values.size(), indexType), values)));
-    if (dtype.isIndex())
+    if (dtype.isIndex() || dtype.isUIndex())
       return addr;
     return b.create<LLVM::IntToPtrOp>(
         VectorType::get(values.size(),

@@ -59,7 +59,7 @@ getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype, size_t indexBitwidth) {
   if (dtype.isAddress())
     return LLVM::LLVMPointerType::get(ctx);
 
-  if (dtype.isIndex())
+  if (dtype.isIndex() || dtype.isUIndex())
     return IntegerType::get(ctx, indexBitwidth);
 
   // This checks for `bool` and `int` types.

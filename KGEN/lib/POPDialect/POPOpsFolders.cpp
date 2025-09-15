@@ -208,8 +208,9 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
     return foldSIMDOpImpl(std::make_index_sequence<
                               llvm::function_traits<decltype(op)>::num_args>(),
                           operands, indexOp, dtype, [](DTypeValue val) {
-                            return APSInt(APInt(64, val.getIndexVal()),
-                                          /*isUnsigned=*/false);
+                            return APSInt(
+                                APInt(64, val.getIndexVal()),
+                                /*isUnsigned=*/!val.getDType().isIndex());
                           });
   }
 }
@@ -233,7 +234,7 @@ static SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
     return ::Detail::foldSIMDOpDType<bool>(
         [](const DTypeValue &val) { return val.getBoolVal(); }, operands,
         resultDType, std::forward<OpFns>(ops)...);
-  if (inputDType.isIndex() || inputDType.isAddress())
+  if (inputDType.isIndex() || inputDType.isUIndex() || inputDType.isAddress())
     return ::Detail::foldSIMDOpIndex<indexFoldType>(
         operands, resultDType, std::forward<OpFns>(ops)...);
   llvm_unreachable("unhandled dtype");
@@ -411,7 +412,7 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   }
 
   ssize_t intWidth = dtype->getWidthInBits();
-  if (dtype->isIndex()) {
+  if (dtype->isIndex() || dtype->isUIndex()) {
     TargetInfoAttr target = lookupTargetInfo(op);
     intWidth = target ? target.resolveIndexBitWidth() : 64;
   }
@@ -539,7 +540,7 @@ OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
   if (!dtype)
     return {};
 
-  if (dtype->isIndex())
+  if (dtype->isIndex() || dtype->isUIndex())
     return foldIndexShiftOp(
         operands, *this, [](APSInt lhs, APSInt rhs) { return lhs.shl(rhs); });
   return foldSIMDOp(adaptor.getOperands(),
@@ -561,7 +562,7 @@ OpFoldResult ShrOp::fold(FoldAdaptor adaptor) {
   if (!dtype)
     return {};
 
-  if (dtype->isIndex())
+  if (dtype->isIndex() || dtype->isUIndex())
     return foldIndexShiftOp(
         operands, *this, [](APSInt lhs, APSInt rhs) { return lhs.lshr(rhs); });
 
@@ -947,7 +948,7 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
                                      KGENDType inputDType,
                                      KGENDType outputDType,
                                      TargetInfoAttr target, OpsFns &&...ops) {
-  if (inputDType.isIndex()) {
+  if (inputDType.isIndex() || inputDType.isUIndex()) {
     ssize_t indexWidth = target ? target.resolveIndexBitWidth() : 64;
     if (indexWidth == 64) {
       return foldSIMDOpResult<::Detail::k64BitResult>(
@@ -1057,7 +1058,7 @@ OpFoldResult evaluate(BitcastOp bitcastOp, TargetInfoAttr target,
           return APSInt(in.bitcastToAPInt(), dtype->isUInt());
         });
   }
-  if (dtype->isIndex()) {
+  if (dtype->isIndex() || dtype->isUIndex()) {
     return foldSIMDOpResult<::Detail::kOtherResult>(
         operand, *dtype,
         [&](const APSInt &in) -> APSInt {
@@ -1173,7 +1174,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
         adaptor.getOperands(), *dtype,
         [&](const APSInt &in) -> APSInt { return in.extOrTrunc(width); },
         [&](const APFloat &in) -> std::optional<APSInt> {
-          APSInt iv(width, dtype->isUInt());
+          APSInt iv(width, /*isUnsigned=*/dtype->isUInt());
           bool ignored;
           if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
               APFloat::opInvalidOp)
@@ -1182,7 +1183,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
         },
         [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
   }
-  if (dtype->isIndex() || dtype->isAddress()) {
+  if (dtype->isIndex() || dtype->isUIndex() || dtype->isAddress()) {
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
@@ -1241,7 +1242,7 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
   auto getWidthInBits = [&](KGENDType type) -> ssize_t {
     if (ssize_t width = type.getWidthInBits(); width != -1)
       return width;
-    if (!type.isIndex())
+    if (!type.isIndex() && !type.isUIndex())
       return -1;
     TargetInfoAttr targetInfo = lookupTargetInfo(op);
     if (!targetInfo)
@@ -1286,7 +1287,7 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
     }
 
     // Final cast converts integer to/from integer of a different sign.
-    if (inType->isInt() && !outType->isIndex() &&
+    if (inType->isInt() && !outType->isIndex() && !outType->isUIndex() &&
         inType->isSInt() != outType->isSInt()) {
       return b.notifyMatchFailure(loc, "intermediate extension affects result");
     }
@@ -1311,7 +1312,8 @@ ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
   if (!in || !dtype)
     return ErrorTree(getLoc(), "types must be known at this point");
 
-  if (!in.getType().getResolvedDType()->isIndex() || !dtype->isInt() ||
+  auto inDType = in.getType().getResolvedDType();
+  if (!(inDType->isIndex() || inDType->isUIndex()) || !dtype->isInt() ||
       dtype->getIntegerWidthInBits() != 64)
     return ErrorTree(getLoc(), "not implemented");
 
@@ -2139,7 +2141,7 @@ OpFoldResult CastToBuiltinOp::fold(FoldAdaptor adaptor) {
       return convertSIMDToVectorAttr<IntArrayElementsAttr>(
           simd, vector,
           [](DTypeValue val) { return APInt(1, val.getBoolVal()); });
-    if (dtype->isIndex())
+    if (dtype->isIndex() || dtype->isUIndex())
       return convertSIMDToVectorAttr<IndexArrayElementsAttr>(
           simd, vector, [](DTypeValue val) { return val.getIndexVal(); });
     if (dtype->isInt())
@@ -2157,7 +2159,7 @@ OpFoldResult CastToBuiltinOp::fold(FoldAdaptor adaptor) {
   Builder b(simd.getContext());
   if (dtype->isBool())
     return b.getBoolAttr(value.getBoolVal());
-  if (dtype->isIndex())
+  if (dtype->isIndex() || dtype->isUIndex())
     return b.getIndexAttr(value.getIndexVal());
   if (dtype->isInt())
     return b.getIntegerAttr(cast<IntegerType>(getType()), value.getIntVal());
@@ -2193,7 +2195,7 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
     if (dtype->isBool())
       for (APInt value : cast<IntArrayElementsAttr>(val).getValues())
         values.emplace_back(!value.isZero(), *dtype);
-    else if (dtype->isIndex())
+    else if (dtype->isIndex() || dtype->isUIndex())
       for (int64_t value : cast<IndexArrayElementsAttr>(val))
         values.emplace_back(value, *dtype);
     else if (dtype->isInt())
@@ -2208,7 +2210,7 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
   // Handle scalar constants.
   if (dtype->isBool())
     return SIMDAttr::get({cast<BoolAttr>(val).getValue(), *dtype}, getType());
-  if (dtype->isIndex())
+  if (dtype->isIndex() || dtype->isUIndex())
     return SIMDAttr::get({cast<IntegerAttr>(val).getInt(), *dtype}, getType());
   if (dtype->isInt())
     return SIMDAttr::get({cast<IntegerAttr>(val).getValue(), *dtype},
