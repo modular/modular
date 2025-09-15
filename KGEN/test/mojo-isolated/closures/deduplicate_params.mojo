@@ -13,7 +13,7 @@ struct C[B: Index]:
 
 
 # CHECK-COUNT-1: lit.struct.decl @"`_CI_
-# CHECK-COUNT-1: lit.struct.decl @"fn[index](
+# CHECK-COUNT-1: lit.struct.decl @"fn[c_type: index, /](
 
 
 fn use(a: Index):

@@ -1169,6 +1169,16 @@ bool FnType::isPosVarArg(size_t index) {
   return getMetadata().isPosVarArg(index);
 }
 
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention FnType::getPosVarArgConvention(size_t index) {
+  PogListAttr pogs = getMetadata().getArgListAttrs();
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
+    return pogs.getOrigVariadicConvention();
+  else
+    return ArgConvention::ReadReg;
+}
+
 bool FnType::isKwVarArg(size_t index) {
   return getMetadata().isKwVarArg(index);
 }
@@ -1328,11 +1338,7 @@ bool FnTypeGeneratorType::isPosVarArg(size_t index) {
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
 /// example: fn x(inout *args: Int) is declared 'inout'.
 ArgConvention FnTypeGeneratorType::getPosVarArgConvention(size_t index) {
-  PogListAttr pogs = getFnMetadata().getArgListAttrs();
-  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
-    return pogs.getOrigVariadicConvention();
-  else
-    return ArgConvention::ReadReg;
+  return getBody().getPosVarArgConvention(index);
 }
 
 bool FnTypeGeneratorType::isKwVarArg(size_t index) {

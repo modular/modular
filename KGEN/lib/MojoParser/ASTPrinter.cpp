@@ -186,7 +186,7 @@ static BodyT printGeneratorInterface(raw_ostream &os,
                                      PogListAttr paramInfo,
                                      SharedState *diagShared, BodyT body) {
   os << '[';
-  if (paramInfo) {
+  if (paramInfo && diagShared) {
     ParameterEvaluator evaluator;
     PassingKindPrinter passingKindPrinter(os, paramInfo);
     DefaultValueHandler defaultValueHandler(paramInfo);
@@ -1106,28 +1106,15 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     os << "Variadic[";
     ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";
-  } else if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
-    if (sig.isAsync())
+  } else if (auto sigGen = dyn_cast<FnTypeGeneratorType>(type)) {
+    if (sigGen.isAsync())
       os << "async ";
     os << "fn";
-    if (!sig.getInputParamTypes().empty()) {
-      os << '[';
-      if (!sig.getInputParamTypes().empty()) {
-        auto printFn = [&](auto p) {
-          auto [i, type] = p;
-          if (sig.getParamListAttrs().isPosVarArg(i)) {
-            os << '*';
-            ASTType(type).getVariadicElementType().print(os, diagShared);
-          } else {
-            ASTType(type).print(os, diagShared);
-          }
-        };
-        llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
-                              printFn);
-      } else {
-        os << "()";
-      }
-      os << ']';
+    FnType sig = sigGen.getBody();
+    if (!sigGen.getInputParamTypes().empty()) {
+      sig =
+          printGeneratorInterface(os, sigGen.getInputParamTypes(),
+                                  sigGen.getParamListAttrs(), diagShared, sig);
     }
     os << '(';
     PassingKindPrinter passingKindPrinter(os, sig.getArgListAttrs());

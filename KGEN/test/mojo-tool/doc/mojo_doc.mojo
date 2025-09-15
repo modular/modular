@@ -347,7 +347,7 @@ fn fn_with_fn_param_and_arg[
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"
 # CHECK:         "name": "input_fn_1d"
-# CHECK:         "type": "fn[Int](Int) capturing -> SIMD[dtype, $0]"
+# CHECK:         "type": "fn[_simd_width: Int](Int) capturing -> SIMD[dtype, _simd_width]"
 
 
 fn logsoftmax[
@@ -362,7 +362,7 @@ fn logsoftmax[
     pass
 
 
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: fn[Int, Bool](Int, Int) capturing -> None, tile_size_list: VariadicList[Int]](offset: Int, upperbound: Int)",
+# CHECK: "signature": "tile_and_unswitch[workgroup_function: fn[width: Int, sw: Bool](Int, Int) capturing -> None, tile_size_list: VariadicList[Int]](offset: Int, upperbound: Int)",
 
 
 fn tile_and_unswitch[
