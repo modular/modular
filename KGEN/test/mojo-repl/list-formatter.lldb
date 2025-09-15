@@ -49,11 +49,6 @@ struct Point(Copyable, Movable):
 # CHECK:     (Int) y = 3
 # CHECK:   }
 # CHECK: }
-# CHECK: (List[Int, True]) vec_trivial = (size 3) {
-# CHECK:   (Int) [0] = 1
-# CHECK:   (Int) [1] = 2
-# CHECK:   (Int) [2] = 3
-# CHECK: }
 
 var vec = List[Int](capacity=5)
 vec.append(1)
@@ -71,7 +66,3 @@ var p3 = Point(3, 3)
 vec3.append(p1)
 vec3.append(p2)
 vec3.append(p3)
-var vec_trivial = List[Int, hint_trivial_type=True](capacity=3)
-vec_trivial.append(1)
-vec_trivial.append(2)
-vec_trivial.append(3)

@@ -593,8 +593,8 @@ extractIOSpecSubFields(LIT::StructType structType) {
     static constexpr unsigned kElementType = 0;
     [[maybe_unused]] auto allParameters = structType.getParamValues();
 
-    ASSERT_STREAM(allParameters.size() >= 2,
-                  << "Expected at least two parameters on the list type");
+    ASSERT_STREAM(allParameters.size() >= 1,
+                  << "Expected at least one parameter on the list type");
 
     auto elementTypeAttr =
         cast<KGEN::TypeParamAttr>(structType.getParamValues()[kElementType]);
