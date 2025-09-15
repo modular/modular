@@ -233,29 +233,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     def matcher(self) -> llguidance.LLMatcher | None:
         return self._matcher
 
-    def rollback(self, idx: int) -> None:
-        new_active_idx = self.active_idx - idx
-        new_start_idx = self._start_idx
-
-        if self._start_idx >= new_active_idx:
-            new_start_idx = new_active_idx - 1
-
-        if new_start_idx < 0:
-            raise ValueError("cannot rollback before the start of the array")
-
-        self._start_idx = new_start_idx
-        self._active_idx = new_active_idx
-        self._end_idx = new_active_idx
-
-        # If the new active_idx is less than the completion end idx
-        # and current status suggests we have hit an EOS token
-        # reset the status
-        if self._active_idx < self._completion_end_idx:
-            self._completion_end_idx = new_active_idx
-
-            if self.status == GenerationStatus.END_OF_SEQUENCE:
-                self.status = GenerationStatus.ACTIVE
-
     @property
     def current_length(self) -> int:
         """The current length of the sequence, including completed and active tokens."""
@@ -326,14 +303,6 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             np.ndarray: Array of tokens that have been generated but not yet processed.
         """
         return self.tokens[self._start_idx : self._active_idx]
-
-    def set_draft_offset(self, idx: int) -> None:
-        """Sets the draft offset index used for speculative decoding.
-
-        Args:
-            idx: The index to set as the draft offset.
-        """
-        self._draft_offset = idx
 
     @property
     def prompt_tokens(self) -> npt.NDArray[np.integer[Any]]:
@@ -710,21 +679,6 @@ class TTSContext(TextContext):
         chunk = self._speech_tokens[start_idx:end_idx]
 
         return chunk, buffer or 0
-
-    def has_undecoded_speech_tokens(self, exclude_last_n: int = 0) -> bool:
-        """Checks whether there are undecoded speech tokens.
-
-        Args:
-            exclude_last_n: Number of tokens to exclude from the end when
-                checking for undecoded tokens. For example, if set to 1,
-                the last token will not be considered when checking for
-                undecoded tokens.
-
-        Returns:
-            True if there are undecoded speech tokens (excluding the last n tokens),
-            False otherwise.
-        """
-        return self.decoded_index < self._speech_token_end_idx - exclude_last_n
 
 
 def get_request_payload_from_pipeline_task(

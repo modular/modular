@@ -742,7 +742,6 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
             # Generate position ids for the "long" part (original_max_position to max_seq_len*2)
             long_start = self.scaling_params.original_max_position
             long_end = self.max_seq_len * 2
-            long_length = long_end - long_start
 
             t_long = ops.range(
                 long_start, long_end, device=self.device, dtype=DType.float32

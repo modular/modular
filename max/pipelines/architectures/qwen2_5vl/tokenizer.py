@@ -27,10 +27,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     process_vision_info,
 )
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    TextAndVisionTokenizer,
-    max_tokens_to_generate,
-)
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from PIL import Image
 from transformers import AutoConfig, AutoTokenizer

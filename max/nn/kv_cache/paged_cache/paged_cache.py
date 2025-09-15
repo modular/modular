@@ -85,10 +85,6 @@ class PagedKVCacheCollectionType(_OpaqueType):
         super().__init__("PagedKVCacheCollection")
 
 
-class PagedKVCache(_OpaqueValue):
-    """PagedAttention Mojo KV cache graph value."""
-
-
 class PagedKVCacheCollection(_OpaqueValue):
     """The graph value for a view of the KV cache."""
 

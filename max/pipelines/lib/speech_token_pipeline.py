@@ -14,15 +14,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from max.driver import DeviceStream
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
     BatchLogitsProcessor,
-    GenerationStatus,
-    LogProbabilities,
     PipelineTokenizer,
     TextGenerationOutput,
 )
@@ -161,11 +159,6 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         res: dict[str, TextGenerationOutput] = {}
         tracer.push("prepare_response")
         for batch_index, (request_id, context) in enumerate(batch.items()):
-            status = GenerationStatus.ACTIVE
-            start_log_probs: Optional[list[LogProbabilities]] = None
-            if context.log_probabilities:
-                start_log_probs = []
-
             num_valid_tokens = min(num_steps, tokens_to_generate[request_id])
             for step in range(num_valid_tokens):
                 # Convert to a Python scalar to improve serialization performance.

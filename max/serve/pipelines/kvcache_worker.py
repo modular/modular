@@ -65,6 +65,8 @@ def _kvcache_agent_process_fn(
         )
 
 
+# Warning: This method is currently unused!
+# Keeping it around since it may be reenabled in the future.
 @asynccontextmanager
 async def start_kv_cache_service(
     settings: Settings,

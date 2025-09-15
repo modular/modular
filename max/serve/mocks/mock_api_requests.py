@@ -13,7 +13,6 @@
 
 """Provides some canonical client data"""
 
-import time
 from typing import Any
 
 
@@ -30,37 +29,6 @@ def simple_openai_request(
     }
 
 
-def simple_openai_response(
-    contents: str,
-    model_name: str = "unnamed-model",
-    response_id: str = "response_id_0",
-    timestamp: int = time.time_ns(),
-) -> dict[str, Any]:
-    return {
-        "id": response_id,
-        "object": "chat.completion",
-        "created": timestamp,
-        "model": model_name,
-        # TODO - populate the usage statistics
-        "usage": {
-            "prompt_tokens": 13,
-            "completion_tokens": 7,
-            "total_tokens": 20,
-        },
-        "choices": [
-            {
-                # TODO - contents is a string, but may contain rich data such as roles.
-                # How do we deal with this.
-                # `"role":assistant"`` is required?
-                "message": {"role": "assistant", "content": contents},
-                "logprobs": {"content": []},
-                "finish_reason": "stop",
-                "index": 0,
-            }
-        ],
-    }
-
-
 def simple_openai_stream_request() -> dict[str, Any]:
     """
     A simple streaming request.
@@ -72,51 +40,6 @@ def simple_openai_stream_request() -> dict[str, Any]:
         "messages": [{"role": "user", "content": "Say This is a test!"}],
         "stream": "true",
     }
-
-
-def simple_openai_stream_response(
-    contents: list[str],
-    model_name: str = "unnamed-model",
-    response_id: str = "response_id_0",
-    timestamp: int = time.time_ns(),
-) -> list[dict[str, Any]]:
-    json_response = []
-    # TODO this needs to be individually callable by the token gen
-    # go over the message list and wrap each to the response.
-    for i in range(len(contents) - 1):
-        json_response.append(
-            {
-                "id": response_id,
-                "object": "chat.completion.chunk",
-                "created": timestamp,
-                "model": model_name,
-                "system_fingerprint": "null",
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": contents[i]},
-                    }
-                ],
-            }
-        )
-    # append the final message to indicate we are done with the response
-    json_response.append(
-        {
-            "id": response_id,
-            "object": "chat.completion.chunk",
-            "created": timestamp,
-            "model": model_name,
-            "system_fingerprint": "null",
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-    )
-    return json_response
 
 
 def simple_kserve_request() -> dict[str, Any]:

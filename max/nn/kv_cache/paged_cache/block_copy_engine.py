@@ -15,17 +15,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
-
 from max.driver import DeviceStream, Tensor
-
-
-class BlockCopyType(Enum):
-    """Type of block copy operation."""
-
-    D2D = 1
-    H2D = 2
-    D2H = 3
 
 
 class BlockCopyMetrics:

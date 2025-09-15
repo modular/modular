@@ -211,7 +211,6 @@ def tensor_parallel_sharding_strategy(
         "tensor_parallel_sharding_strategy is a placeholder and should not be called directly. "
         "Modules are expected to implement their own tensor parallel sharding strategy."
     )
-    return weight
 
 
 @dataclass(frozen=True)

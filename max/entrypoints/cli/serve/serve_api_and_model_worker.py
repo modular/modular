@@ -64,9 +64,6 @@ def sigint_handler(sig: int, frame: Any) -> None:
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    profile: bool = False,
-    failure_percentage: Optional[int] = None,
-    port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _server_instance

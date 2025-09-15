@@ -136,8 +136,6 @@ class XferReqData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
     dst_name: str  # Base name of destination engine
     src_name: str  # Base name of source engine
-    dst_agent_names: list[str]  # Agent names for destination (one per tensor)
-    src_agent_names: list[str]  # Agent names for source (one per tensor)
     xfer_name: str  # Transfer name
     xfer_ids: list[int]  # Transfer IDs (one per tensor)
     src_idxs: list[
@@ -523,8 +521,6 @@ class KVTransferEngine:
         xfer_req = XferReqData(
             dst_name=remote_metadata.name,
             src_name=self.name,
-            dst_agent_names=[a.agent_name for a in remote.agents_meta],
-            src_agent_names=[ta.agent_name for ta in self.tensor_agents],
             xfer_name=xfer_name,
             xfer_ids=xfer_ids,
             src_idxs=src_idxs,

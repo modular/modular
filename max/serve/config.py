@@ -360,7 +360,3 @@ class Settings(BaseSettings):
             f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
         )
         logger.info("")
-
-
-def api_prefix(settings: Settings, api_type: APIType):
-    return "/" + str(api_type) if len(settings.api_types) > 1 else ""

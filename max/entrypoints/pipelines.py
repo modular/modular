@@ -288,9 +288,6 @@ def cli_serve(
         serve_api_server_and_model_worker(
             settings=settings,
             pipeline_config=pipeline_config,
-            profile=profile_serve,
-            failure_percentage=failure_percentage,
-            port=port,
             pipeline_task=PipelineTask(task),
         )
 

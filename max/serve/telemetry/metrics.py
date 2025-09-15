@@ -219,8 +219,7 @@ class MetricClient(abc.ABC):
     @abc.abstractmethod
     def send_measurement(
         self, metric: MaxMeasurement, level: MetricLevel
-    ) -> None:
-        pass
+    ) -> None: ...
 
     @abc.abstractmethod
     def cross_process_factory(

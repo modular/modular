@@ -162,19 +162,6 @@ class KVCacheInputSymbols:
         return list(self)[index]
 
 
-@dataclass
-class ClaimedSlot:
-    """A class that represents a claimed sequence.
-
-    It is used to track the sequence ID and the replica index that claimed it.
-    replica refers to the data parallelism replica of the cache that claimed
-    the slot.
-    """
-
-    seq_id: int
-    replica_idx: int
-
-
 T = TypeVar("T", bound=KVCacheAwareContext)
 
 
