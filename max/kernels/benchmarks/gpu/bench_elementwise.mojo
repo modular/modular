@@ -134,11 +134,11 @@ fn run_elementwise[
         // size_of[dtype]()
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc[alignment=align](
-        N_cache
+    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
-    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc[alignment=align](
-        N_cache
+    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+        N_cache, alignment=align
     )
 
     var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)

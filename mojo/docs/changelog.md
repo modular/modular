@@ -479,6 +479,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - Added `alignment` parameter to `UnsafePointer.alloc`.
 
+- `UnsafePointer.alloc` and `_malloc` now take `alignment` as an argument
+  instead of a parameter.
+
 - Add `take_items` draining iterator to `Dict`.
 
 ### Tooling changes

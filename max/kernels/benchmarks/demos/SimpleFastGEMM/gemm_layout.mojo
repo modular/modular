@@ -181,11 +181,11 @@ fn main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = UnsafePointer[Float32].alloc[alignment=alignment](M * K)
-    var b_ptr = UnsafePointer[Float32].alloc[alignment=alignment](K * N)
-    var b_packed_ptr = UnsafePointer[Float32].alloc[alignment=alignment](K * N)
-    var c_ptr = UnsafePointer[Float32].alloc[alignment=alignment](M * N)
-    var c2_ptr = UnsafePointer[Float32].alloc[alignment=alignment](M * N)
+    var a_ptr = UnsafePointer[Float32].alloc(M * K, alignment=alignment)
+    var b_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
+    var b_packed_ptr = UnsafePointer[Float32].alloc(K * N, alignment=alignment)
+    var c_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
+    var c2_ptr = UnsafePointer[Float32].alloc(M * N, alignment=alignment)
 
     var a = NDBuffer[dtype, 2](a_ptr, (M, K))
 

@@ -79,14 +79,14 @@ fn bench_matmul[
     alias c_type = spec.static_info.c_type
     alias b_packed = spec.static_info.b_packed
     alias alignment = 64
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc[alignment=alignment](
-        spec.m * spec.k
+    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(
+        spec.m * spec.k, alignment=alignment
     )
-    var b_ptr = UnsafePointer[Scalar[b_type],].alloc[alignment=alignment](
-        spec.k * spec.n
+    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(
+        spec.k * spec.n, alignment=alignment
     )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc[alignment=alignment](
-        spec.m * spec.n
+    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(
+        spec.m * spec.n, alignment=alignment
     )
     var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
     var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
@@ -110,8 +110,8 @@ fn bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc[alignment=alignment](
-        padded_k * padded_n
+    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+        padded_k * padded_n, alignment=alignment
     )
     var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
 

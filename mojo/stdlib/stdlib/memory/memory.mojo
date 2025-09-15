@@ -483,9 +483,9 @@ fn stack_allocation[
 fn _malloc[
     type: AnyType,
     /,
-    *,
-    alignment: Int = align_of[type]() if is_gpu() else 1,
-](size: Int, /) -> UnsafePointer[type, address_space = AddressSpace.GENERIC]:
+](size: Int, /, *, alignment: Int = align_of[type]()) -> UnsafePointer[
+    type, address_space = AddressSpace.GENERIC
+]:
     @parameter
     if is_gpu():
         return external_call[

@@ -591,9 +591,9 @@ fn _matmul_cpu_impl[
         var mh = align_up(m, 2)
         var a_packed_ptr = UnsafePointer[Scalar[a.type]]()
         if use_i8mm:
-            a_packed_ptr = UnsafePointer[Scalar[a.type]].alloc[
-                alignment=alignment
-            ](mh * kh)
+            a_packed_ptr = UnsafePointer[Scalar[a.type]].alloc(
+                mh * kh, alignment=alignment
+            )
         var a_packed = NDBuffer[a.type, 2, _, a.shape](
             a_packed_ptr, DimList(mh, kh)
         )

@@ -316,7 +316,7 @@ fn alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutableAnyOrigin]:
     return LayoutTensor[elt, layout, MutableAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc[alignment=64](layout.size())
+        UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
     )
 
 
@@ -326,7 +326,7 @@ fn alloc_tensor[
     elt, layout, MutableAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutableAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc[alignment=64](rtlayout.size()),
+        UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
         rtlayout,
     )
 

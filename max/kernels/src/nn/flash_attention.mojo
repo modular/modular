@@ -710,9 +710,9 @@ struct _FlashAttention[
 
             var packed_ptr = UnsafePointer[Scalar[dtype]]()
             if max_seq_len != 1:
-                packed_ptr = packed_ptr.alloc[
-                    alignment = align_of[SIMD[dtype, simd_width]]()
-                ](packed_size)
+                packed_ptr = packed_ptr.alloc(
+                    packed_size, alignment=align_of[SIMD[dtype, simd_width]]()
+                )
 
             var q_seq_stride = num_heads * depth_dim
 

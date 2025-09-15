@@ -243,10 +243,8 @@ struct UnsafePointer[
 
     @staticmethod
     @always_inline
-    fn alloc[
-        *, alignment: Int = align_of[type]()
-    ](
-        count: Int,
+    fn alloc(
+        count: Int, *, alignment: Int = align_of[type]()
     ) -> UnsafePointer[
         type,
         address_space = AddressSpace.GENERIC,
@@ -274,18 +272,16 @@ struct UnsafePointer[
         p.free()
         ```
 
-        Parameters:
-            alignment: The alignment of the allocation.
-
         Args:
             count: Number of elements to allocate.
+            alignment: The alignment of the allocation.
 
         Returns:
             Pointer to the newly allocated uninitialized array.
         """
         alias size_of_t = size_of[type]()
         constrained[size_of_t > 0, "size must be greater than zero"]()
-        return _malloc[type, alignment=alignment](size_of_t * count)
+        return _malloc[type](size_of_t * count, alignment=alignment)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
