@@ -473,11 +473,11 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 
 
 !Impl = !kgen.closure<@make_closure, "foo" trivial>
-#type_value = #kgen.type<!Impl, {"__del__" : !lit.generator<[1]("self":!lit.ref<!Impl, mut *[0,0]> owned_in_mem) -> !kgen.none> = #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<del>>}> : !kgen.type
+#type_value = #kgen.type<!Impl> : !kgen.type
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@String, imm Z> owned_in_mem) -> !kgen.none {
-    // CHECK: lit.closure.init[#type_value]()(%arg0[y2]: index) -> index
+    // CHECK: lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" trivial>> : !kgen.type]()(%arg0[y2]: index) -> index
     // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" trivial>, imm C2>, #subprogram
     %1 = lit.closure.init[#type_value]()(%arg0[y2]: index) -> index {
       lit.end_fn
@@ -489,16 +489,13 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x
 
 // -----
 
-// COM: Ensure Closure Symbols Are Valid VTable Entries
+// COM: Ensure Closure Symbols Are Valid Witness Entries
 
 !Closure = !lit.trait<@Closure>
 !String = !lit.struct<@String>
 !Impl = !kgen.closure<@make_closure, "foo" nonescaping>
 
-// CHECK: #type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>, {"__call__" : !lit.generator<[1]("self": !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm *[0,0]> read_mem, "y": index) -> index> = #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !lit.trait<@Closure>
-#type_value = #kgen.type<!Impl, {"__call__" :
-                            !lit.generator<[1]("self": !lit.ref<!Impl, imm *[0,0]> read_mem, "y": index) -> index> =
-                            #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !Closure
+#type_value = #kgen.type<!Impl> : !Closure
 
 lit.trait.decl @Closure<?, SELF: !Closure> {
   lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
@@ -508,7 +505,7 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
 
 // CHECK: lit.fn @make_closure
 lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
-  // CHECK-NEXT: lit.closure.init[#type_value](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
+  // CHECK-NEXT: lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
   // CHECK-SAME: , @String::@__moveinit__ !lit.generator<[2]("self": !lit.ref<@String, imm *[0,1]> read_mem, "other": !lit.ref<@String, mut *[0,0]> byref_result) -> !kgen.none>
   // CHECK-SAME: , @String::@__del__ !lit.generator<[1]("self": !lit.ref<@String, mut *[0,0]> owned_in_mem) -> !kgen.none>
    %impl = lit.closure.init[#type_value](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("self": !lit.ref<!String, imm *[0,1]> read_mem, "other": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
@@ -524,31 +521,31 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x
 
 lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
    %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
-        get_vtable_entry(:!Closure CT, "__call__")][mut Origin0](%c, %x)
+        #kgen.get_witness<:!Closure CT, "Closure", "__call__">][mut Origin0](%c, %x)
    lit.end_fn
 }
 
-  lit.struct.decl @String {
-    lit.fn @__copyinit__[mut E1, imm E2](%self: !lit.ref<@String, imm E2> read_mem, %other: !lit.ref<@String, mut E1> byref_result) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-    lit.fn @__moveinit__[mut E1, imm E2](%self: !lit.ref<@String, imm E2> read_mem, %other: !lit.ref<@String, mut E1> byref_result) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
-    lit.fn @__del__[mut E](%self: !lit.ref<@String, mut E> owned_in_mem) -> !kgen.none {
-      %none = kgen.param.constant: none = <#kgen.none>
-      kgen.return %none : !kgen.none
-    }
+lit.struct.decl @String {
+  lit.fn @__copyinit__[mut E1, imm E2](%self: !lit.ref<@String, imm E2> read_mem, %other: !lit.ref<@String, mut E1> byref_result) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
   }
+  lit.fn @__moveinit__[mut E1, imm E2](%self: !lit.ref<@String, imm E2> read_mem, %other: !lit.ref<@String, mut E1> byref_result) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+  lit.fn @__del__[mut E](%self: !lit.ref<@String, mut E> owned_in_mem) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+}
 
 // -----
 
 // COM: Ensure parameters are printed correctly
 
 !Impl = !kgen.closure<@"bar", "foo" nonescaping>
-#type_value = #kgen.type<!Impl, {"__del__" : !lit.generator<[1]("self":!lit.ref<!Impl, mut *[0,0]> owned_in_mem) -> !kgen.none> = #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<del>>}> : !kgen.type
+#type_value = #kgen.type<!Impl> : !kgen.type
 
 
 lit.struct.decl @Foo<PARAM: index>
@@ -562,7 +559,7 @@ lit.struct.decl @Foo<PARAM: index>
 
 lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, mut R> byref_result) -> !kgen.none {
   %foo = lit.var.decl "foo" var : !lit.ref<@Foo<:index PARAM>, mut FOO>
-  // CHECK: lit.closure.init[#type_value](%foo[@Foo::@__copyinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<*(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>, @
+  // CHECK: lit.closure.init[#kgen.type<!kgen.closure<@bar, "foo" nonescaping>> : !kgen.type](%foo[@Foo::@__copyinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<*(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>, @
   // CHECK-SAME: Foo::@__moveinit__<PARAM, 2> !lit.generator<[2]("existing": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> read_mem, "self": !lit.ref<@Foo<*(0,0)>, mut *[0,1]> byref_result) -> !kgen.none>, @
   // CHECK-SAME: Foo::@__del__<PARAM, 2> !lit.generator<[1]("self": !lit.ref<@Foo<*(0,0)>, imm *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0[y2]: index) -> index {
   // CHECK-NEXT: lit.end_fn
@@ -586,7 +583,7 @@ lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, 
 #loc1 = loc("test.mlir":3:4)
 
 // CHECK-LABEL: lit.fn @has_requires
-// CHECK-SAME: requires {<ge(x, 2), #[[LOC1]], "x must be greater than 2">, <lt(x, 10), #[[LOC2]]>}
+// CHECK-SAME: requires {<ge(x, 2), #loc, "x must be greater than 2">, <lt(x, 10), #loc1>}
 lit.fn @has_requires<x: index>() -> !kgen.none requires {<ge(x, 2), #loc, "x must be greater than 2">, <lt(x, 10), #loc1>} attributes {sourceName = "has_requires"} {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none

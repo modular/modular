@@ -438,12 +438,6 @@ void KGEN::printTypeValueBody(
     p << ", ";
     typePrinter(p, type.getMlirType());
   }
-  VTableAttr vtable = type.getVTable();
-  if (!vtable.getEntries().empty()) {
-    p << ", {";
-    p.printStrippedAttrOrType(vtable);
-    p << "}";
-  }
 }
 
 OptionalParseResult KGEN::parseTypeValueBody(
@@ -451,7 +445,6 @@ OptionalParseResult KGEN::parseTypeValueBody(
     llvm::function_ref<OptionalParseResult(AsmParser &, Type &)> typeParser,
     bool knownIdenticalRepresentation) {
   Type typeValue, mlirType;
-  auto vtable = VTableAttr::get(p.getContext(), {});
 
   OptionalParseResult result = typeParser(p, typeValue);
   if (!result.has_value())
@@ -462,40 +455,20 @@ OptionalParseResult KGEN::parseTypeValueBody(
 
   if (knownIdenticalRepresentation || failed(p.parseOptionalComma())) {
     // This type-value has identical type/value representation. Stop here.
-    value = TypeParamAttr::get(typeValue, typeValue, type, vtable);
+    value = TypeParamAttr::get(typeValue, typeValue, type);
     return mlir::success();
   }
 
-  // Parse the mlirType if a vtable is not seen immediately.
-  bool seenVTable = succeeded(p.parseOptionalLBrace());
-  if (seenVTable) {
-    // mlirType is identical to typeValue.
-    mlirType = typeValue;
-  } else {
+  // Parse the mlirType.
+  {
     OptionalParseResult result = typeParser(p, mlirType);
     if (!result.has_value())
       return p.emitError(p.getCurrentLocation(), "expected a type");
     if (failed(*result))
       return failure();
-
-    if (failed(p.parseOptionalComma())) {
-      // No vtable.
-      value = TypeParamAttr::get(typeValue, mlirType, type, vtable);
-      return mlir::success();
-    }
-
-    seenVTable = succeeded(p.parseOptionalLBrace());
   }
 
-  // Parse the vtable if a '{' was seen.
-  if (seenVTable) {
-    if (p.parseOptionalRBrace() &&
-        (!(vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}))) ||
-         p.parseRBrace()))
-      return failure();
-  }
-
-  value = TypeParamAttr::get(typeValue, mlirType, type, vtable);
+  value = TypeParamAttr::get(typeValue, mlirType, type);
   return mlir::success();
 }
 
@@ -576,8 +549,8 @@ void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
   printParamValue(p, value);
 }
 
-ParseResult KGEN::parseVTableEntry(AsmParser &p, StringAttr &name,
-                                   TypedAttr &method) {
+ParseResult KGEN::parseWitnessEntry(AsmParser &p, StringAttr &name,
+                                    TypedAttr &method) {
   std::string nameStr;
   if (p.parseString(&nameStr))
     return failure();
@@ -589,7 +562,7 @@ ParseResult KGEN::parseVTableEntry(AsmParser &p, StringAttr &name,
   return success();
 }
 
-void KGEN::printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
+void KGEN::printWitnessEntry(AsmPrinter &p, StringAttr name, TypedAttr method) {
   p.printString(name.getValue());
   p << " : ";
   printKGENType(p, method.getType());
@@ -941,15 +914,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetEnv:
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
-
-  case (uint32_t)POC::GetVTableEntry:
-    if (!type)
-      type = TypeType::get(p.getContext());
-    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
-        parseParamValue(p, operands.emplace_back(),
-                        StringType::get(p.getContext())))
-      return failure();
-    return success();
   case (uint32_t)POC::VariadicPtrMap:
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseParamValue(p, operands.emplace_back(),
@@ -1074,19 +1038,11 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (opcode == (uint32_t)POCAliases::kInvalid) {
       if (keyword == "upcast" && operandType) {
         TypedAttr operand;
-        VTableAttr vtable;
         if (parseParamValue(p, operand, operandType))
           return failure();
-        if (succeeded(p.parseOptionalComma())) {
-          vtable = cast_or_null<VTableAttr>(VTableAttr::parse(p, {}));
-          if (!vtable)
-            return failure();
-        } else {
-          vtable = VTableAttr::get(type.getContext(), {});
-        }
         if (p.parseRParen())
           return failure();
-        value = UpcastAttr::get(type, operand, vtable);
+        value = UpcastAttr::get(type, operand);
         return success();
       }
 
@@ -1123,9 +1079,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // Comparisons default to index type for their operand, since their
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
-        break;
-      case (uint32_t)POC::GetVTableEntry:
-        operandType = TypeType::get(p.getContext());
         break;
       default:
         // Other operators default to the same operand type as the result type.
@@ -1267,16 +1220,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     printParamValue(p, operands[2]);
     break;
 
-  case POC::GetVTableEntry:
-    if (!isa<TypeType>(operands[0].getType())) {
-      p << ':';
-      printKGENType(p, operands[0].getType());
-      p << ' ';
-    }
-    printParamValue(p, operands[0]);
-    p << ", ";
-    printParamValue(p, operands[1]);
-    break;
   case POC::PtrBitcast:
   case POC::LoadFromMem:
     printColonTypeParamValue(p, operands.front());
@@ -1428,10 +1371,6 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     printKGENType(p, upcast.getInputTypeValue().getType());
     p << ' ';
     printParamValue(p, upcast.getInputTypeValue());
-    if (!upcast.getVTable().getEntries().empty()) {
-      p << ", ";
-      p.printStrippedAttrOrType(upcast.getVTable());
-    }
     p << ')';
     return;
   }

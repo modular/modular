@@ -548,7 +548,7 @@ ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl, StringRef baseName,
                     *shared.declResolver);
   StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
 
-  // Populate the wrapper methods with a call to the result of a vtable lookup.
+  // Populate the wrapper methods with a call to the result of a witness lookup.
   auto populateTraitFn = [&](FnOp traitFnOp) -> FnOp {
     b.setInsertionPointToEnd(&declOp.getFields().front());
     FnTypeGeneratorType wrappedSignature =

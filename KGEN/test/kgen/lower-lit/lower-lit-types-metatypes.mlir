@@ -20,9 +20,9 @@ kgen.generator @f() {
 }
 
 // CHECK: kgen.generator @top
-kgen.generator @top(%arg0: !lit.struct<@Container<:trait<@Trait> [@Element, {"f": () -> () = @f}]>>) {
-  // CHECK-NEXT: call @func<:type [typevalue<#kgen.genref<@[[STRUCT_ELEMENT]]>>, struct<() memoryOnly>, {{{.*}}}]>(%arg0) : (!kgen.struct<(struct<() memoryOnly>) memoryOnly>) -> ()
-  kgen.call @func<:trait<@Trait> [@Element, {"f": () -> () = @f}]>(%arg0) : (!lit.struct<@Container<:trait<@Trait> [@Element, {"f": () -> () = @f}]>>) -> ()
+kgen.generator @top(%arg0: !lit.struct<@Container<:trait<@Trait> [@Element]>>) {
+  // CHECK-NEXT: call @func<:type [typevalue<#kgen.genref<@[[STRUCT_ELEMENT]]>>, struct<() memoryOnly>]>(%arg0) : (!kgen.struct<(struct<() memoryOnly>) memoryOnly>) -> ()
+  kgen.call @func<:trait<@Trait> [@Element]>(%arg0) : (!lit.struct<@Container<:trait<@Trait> [@Element]>>) -> ()
   kgen.return
 }
 

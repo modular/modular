@@ -107,7 +107,7 @@ using WrappedTypeValueType = WrappedAttrType<TypeValueType>;
 using WrappedVariantType = WrappedAttrType<VariantType>;
 
 using WrappedParamOperatorAttr = WrappedAttrType<ParamOperatorAttr>;
-using WrappedTypeConstantAttr = WrappedAttrType<TypeParamAttr>;
+using WrappedTypeParamAttr = WrappedAttrType<TypeParamAttr>;
 using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
 
 //===----------------------------------------------------------------------===//

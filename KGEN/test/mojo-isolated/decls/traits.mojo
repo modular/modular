@@ -181,8 +181,8 @@ fn infer_trait[T: SimpleTrait](value: T):
     pass
 
 
-# CHECK-LABEL: lit.fn @"test_metatype_to_trait_vtable
-fn test_metatype_to_trait_vtable():
+# CHECK-LABEL: lit.fn @"test_metatype_to_trait
+fn test_metatype_to_trait():
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait !TraitStruct
     take_simple_trait[TraitStruct]()
     # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait {{.*}}@ParametricTraitStruct<2>

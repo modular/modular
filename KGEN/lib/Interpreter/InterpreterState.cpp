@@ -647,7 +647,6 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         }
         return {ptr.takeValue(), WalkResult::skip()};
       });
-  addCustomReplacementsToLiftStore(liftStore);
 
   mlir::AttrTypeWalker walker;
   std::function<ErrorOrSuccess(MemorySpaceAttr memSpace,

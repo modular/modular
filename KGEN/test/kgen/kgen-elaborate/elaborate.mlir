@@ -1551,57 +1551,6 @@ kgen.generator @top() {
 
 // -----
 
-// test get_vtable_entry
-
-kgen.generator @indexTraitMethod(%arg0: index) -> index {
-  kgen.return %arg0 : index
-}
-
-// COM: Check that this gets elaborated to use the concrete function from the vtable below.
-// CHECK-LABEL: kgen.func @"generic_call,T=[index{{.*}}]"
-kgen.generator @generic_call<T: type>(%arg0: !kgen.param<T>) -> index{
-  kgen.param.declare traitMethod: (index) -> index  = <get_vtable_entry(T, "traitMethod")>
-  %anInt = kgen.param.constant = <1>
-  // CHECK: kgen.call @indexTraitMethod
-  %result = kgen.call_param[(index) -> index : traitMethod](%anInt)
-
-  kgen.param.declare parametric: <index>() -> ()  = <get_vtable_entry(T, "parametric")>
-  // CHECK: kgen.call @"parametricTraitMethod,param=2"
-  kgen.call_param[() -> (): bind_params(:<index>() -> () parametric, 2)]()
-
-  kgen.param.declare bound: () -> () = <get_vtable_entry(T, "bound")>
-  // CHECK: kgen.call @"parametricTraitMethod,param=1"
-  kgen.call_param[() -> (): bound]()
-
-  kgen.param.declare partial: <index>() -> () = <get_vtable_entry(T, "partial")>
-  // CHECK: kgen.call @"twoParameters,parent=11,func=42"
-  kgen.call_param[() -> (): bind_params(:<index>() -> () partial, 11)]()
-
-  kgen.return %result : index
-}
-
-kgen.generator @parametricTraitMethod<param>() {
-  kgen.return
-}
-
-kgen.generator @twoParameters<parent, func>() {
-  kgen.return
-}
-
-kgen.generator @make_generic_call() -> index {
-  %anInt = kgen.param.constant = <1>
-  // CHECK: kgen.call @"generic_call,T=[index{{.*}}]"
-  %result = kgen.call @generic_call<:type [index, {
-    "traitMethod" : (index) -> index = @indexTraitMethod,
-    "parametric": <index>() -> () = @parametricTraitMethod,
-    "bound": () -> () = @parametricTraitMethod<1>,
-    "partial": <index>() -> () = @twoParameters<?, 42>
-  }]>(%anInt) : (index) -> index
-  kgen.return %result : index
-}
-
-// -----
-
 kgen.generator @sizeof<T: type>() -> index {
   %0 = kgen.param.constant: index = <get_sizeof(T, current_target())>
   kgen.return %0 : index
@@ -1628,27 +1577,34 @@ kgen.generator @f() {
   kgen.return
 }
 
+kgen.struct.generator @ParamType<p> = !pop.array<p, i8> {}
+#paramtype = #kgen.type<typevalue<:!kgen.type #kgen.genref<@ParamType<p>>>, !pop.array<p, i8>> : !kgen.type
+#paramtype1 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@ParamType<1>>>, !pop.array<1, i8>> : !kgen.type
+
+kgen.struct.generator @IntType = index {}
+#indextype = #kgen.type<typevalue<:!kgen.type #kgen.genref<@IntType>>, index> : !kgen.type
+
 // CHECK-LABEL: kgen.func @"rebind_type,p=1"
 kgen.generator @rebind_type<p>(%arg0: !kgen.pointer<array<p, i8>>)
-    -> !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]> {
+    -> !kgen.pointer<#paramtype> {
   // CHECK-NOT: kgen.rebind %arg0
-  %0 = kgen.rebind %arg0 : !kgen.pointer<array<p, i8>> to !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
+  %0 = kgen.rebind %arg0 : !kgen.pointer<array<p, i8>> to !kgen.pointer<#paramtype>
   // CHECK-NEXT: constant: pointer<index> = <store_to_mem(1)>
-  kgen.param.constant: pointer<[index, {"f": () -> () = @f}]> = <rebind(:pointer<index> store_to_mem(p))>
+  kgen.param.constant: pointer<#indextype> = <rebind(:pointer<index> store_to_mem(p))>
   // CHECK-NEXT: constant: pointer<array<1, i8>> = <0>
-  kgen.param.constant: pointer<[array<p, i8>, {"f": () -> () = @f}]> = <rebind(:pointer<array<p, i8>> 0)>
-  kgen.return %0 : !kgen.pointer<[array<p, i8>, {"f": () -> () = @f}]>
+  kgen.param.constant: pointer<#paramtype> = <rebind(:pointer<array<p, i8>> 0)>
+  kgen.return %0 : !kgen.pointer<#paramtype>
 }
 
 kgen.generator @nonparametric_rebind(%arg0: !kgen.pointer<index>) -> index {
-  %0 = kgen.rebind %arg0 : !kgen.pointer<index> to !kgen.pointer<[index, {"f": () -> () = @f}]>
-  %1 = pop.load %0 : !kgen.pointer<[index, {"f": () -> () = @f}]>
+  %0 = kgen.rebind %arg0 : !kgen.pointer<index> to !kgen.pointer<#indextype>
+  %1 = pop.load %0 : !kgen.pointer<#indextype>
   kgen.return %1 : index
 }
 
 // CHECK-LABEL: kgen.func @try_rebind
 kgen.generator @try_rebind(%arg0: !kgen.pointer<array<1, i8>>) {
-  kgen.call @rebind_type<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> !kgen.pointer<[array<1, i8>, {"f": () -> () = @f}]>
+  kgen.call @rebind_type<1>(%arg0) : (!kgen.pointer<array<1, i8>>) -> !kgen.pointer<#paramtype1>
   kgen.param.apply a = [(!kgen.pointer<index>) -> index: @nonparametric_rebind](store_to_mem(1))
   // CHECK: constant = <1>
   kgen.param.constant = <a>

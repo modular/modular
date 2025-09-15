@@ -1926,7 +1926,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // See
     // https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
     // for why and where else we do this.
-    auto vtableEntryName = StringAttr::get(emitter.getContext(), spelling);
+    auto witnessEntryName = StringAttr::get(emitter.getContext(), spelling);
     // The trait reference is the "inheritedFrom" symbol (if it was inherited),
     // or the parent trait of the alias decl if it was self-declared.
     SymbolRefAttr traitSymRef = aliasDeclOpParam.getInheritedFrom().value_or(
@@ -1941,10 +1941,10 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           cast<TraitDeclOp>(memberDecl.getParentDecl()->getIfOperation())
               .bindReference());
     }
-    auto vtableEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
-        basePValue, traitName, vtableEntryName, aliasDeclOpParam.getType());
+    auto witnessEntryResult = shared.getEvaluationContext().getGetWitnessAttr(
+        basePValue, traitName, witnessEntryName, aliasDeclOpParam.getType());
 
-    return emitter.emitResult(vtableEntryResult, this, dest);
+    return emitter.emitResult(witnessEntryResult, this, dest);
   }
 
   // If the field is a variable, emit a reference to it.

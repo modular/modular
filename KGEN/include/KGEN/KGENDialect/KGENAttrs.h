@@ -36,7 +36,6 @@ class ParameterEvaluator;
 class TargetType;
 class VariadicType;
 class VariadicAttr;
-class VTableAttr;
 } // namespace KGEN
 } // namespace M
 

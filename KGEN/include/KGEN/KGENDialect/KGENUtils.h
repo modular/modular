@@ -228,13 +228,14 @@ inline void printColonTypeParamValue(AsmPrinter &p, Operation *,
   printColonTypeParamValue(p, value);
 }
 
-/// Parse and print a vtable entry which has syntactic form `name : type =
+/// Parse and print a witness entry which has syntactic form `name : type =
 /// value`.
-ParseResult parseVTableEntry(AsmParser &p, StringAttr &name, TypedAttr &method);
-void printVTableEntry(AsmPrinter &p, StringAttr name, TypedAttr method);
-inline void printVTableEntry(AsmPrinter &p, Operation *, StringAttr name,
-                             TypedAttr method) {
-  printVTableEntry(p, name, method);
+ParseResult parseWitnessEntry(AsmParser &p, StringAttr &name,
+                              TypedAttr &method);
+void printWitnessEntry(AsmPrinter &p, StringAttr name, TypedAttr method);
+inline void printWitnessEntry(AsmPrinter &p, Operation *, StringAttr name,
+                              TypedAttr method) {
+  printWitnessEntry(p, name, method);
 }
 
 /// Parse and print a ParamDeclAttr which has syntactic form `name (: type)?`.

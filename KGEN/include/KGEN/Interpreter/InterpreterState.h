@@ -413,8 +413,6 @@ protected:
     auto &vec = getTable(MemoryKind::Stack).blobs;
     vec.erase(vec.end() - numStackAllocs, vec.end());
   }
-  virtual void
-  addCustomReplacementsToLiftStore(mlir::AttrTypeReplacer &liftStore) {}
 
   // TODO: mark const once all dependencies have const versions.
   void dump();

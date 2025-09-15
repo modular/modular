@@ -786,8 +786,9 @@ def KGEN_ParamClosureType : KGENType<"ParamClosure", "param_closure"> {
                         >(%arg0: !kgen.param<x>) -> index {
           %0 = kgen.call_param[(!kgen.param<x>) -> index:
                        bind_params(:<!kgen.param<CAPTURE_TYPE>>
-                      (!kgen.none, index) -> index
-                      get_vtable_entry(x, "__call__"), CAPTURE_INST)](%arg0, %arg1)
+                         (!kgen.none, index) -> index
+                         get_witness(x, "closure_trait", "__call__"),
+                       CAPTURE_INST)](%arg0, %arg1)
           kgen.return %0 : index
         }
      ```

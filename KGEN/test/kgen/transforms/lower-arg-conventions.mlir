@@ -295,8 +295,8 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
   kgen.return
 }
 
-#type_value = #kgen.type<typevalue<#kgen.instref<@"IntPackable">>, index, {"doIt" : (index) -> !kgen.none = @"delete-me::IntPackable::doIt(delete-me::IntPackable)"}> : !kgen.type
-#type_value1 = #kgen.type<typevalue<#kgen.instref<@"BoolPackable">>, i1, {"doIt" : (i1) -> !kgen.none = @"delete-me::BoolPackable::doIt(delete-me::BoolPackable)"}> : !kgen.type
+#type_value = #kgen.type<typevalue<#kgen.instref<@"IntPackable">>, index> : !kgen.type
+#type_value1 = #kgen.type<typevalue<#kgen.instref<@"BoolPackable">>, i1> : !kgen.type
 
 #type_value2 = #kgen.type<pointer<typevalue<#type_value>>, pointer<index>> : !kgen.type
 #type_value3 = #kgen.type<pointer<typevalue<#type_value1>>, pointer<i1>> : !kgen.type

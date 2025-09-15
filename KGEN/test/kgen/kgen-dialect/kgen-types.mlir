@@ -42,15 +42,15 @@ kgen.func @memory_only_struct(
 // CHECK-LABEL: @type_printing
 kgen.generator @type_printing() {
   // CHECK: type = <struct<()>>
-  kgen.param.declare atype: type = <[struct<()>, {}]>
+  kgen.param.declare atype: type = <struct<()>>
   // CHECK: type = <struct<()>>
-  kgen.param.declare btype: type = <[struct<()>, {}]>
-  // CHECK: type = <[struct<()>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[struct<()>, {"method" : () -> () = @method}]>
-  // CHECK: type = <[struct_inst<"Foo"(data: struct<()>)>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[struct_inst<"Foo"(data: struct<()>)>, {"method" : () -> () = @method}]>
-  // CHECK: type = <[struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>, {"method" : () -> () = @method}]>
-  kgen.param.declare btype: type = <[struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>, {"method" : () -> () = @method}]>
+  kgen.param.declare btype: type = <struct<()>>
+  // CHECK: type = <struct<()>>
+  kgen.param.declare btype: type = <struct<()>>
+  // CHECK: type = <struct_inst<"Foo"(data: struct<()>)>>
+  kgen.param.declare btype: type = <struct_inst<"Foo"(data: struct<()>)>>
+  // CHECK: type = <struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>>
+  kgen.param.declare btype: type = <struct_inst<"Bar"[elemT, size]<:dtype f32, 16>(data: struct<()>) memoryOnly>>
   kgen.return
 }
 
@@ -64,9 +64,9 @@ kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[v
 // CHECK-LABEL: kgen.func @type_value
 kgen.func @type_value() {
   // CHECK: type = <struct<()>>
-  kgen.param.declare atype: type = <[typevalue<[struct<()>]>]>
-  // CHECK: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
-  kgen.param.declare atype: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
+  kgen.param.declare atype: type = <typevalue<struct<()>>>
+  // CHECK: type = <struct<(struct<()>)>>
+  kgen.param.declare atype: type = <struct<(typevalue<struct<()>>)>>
   kgen.return
 }
 

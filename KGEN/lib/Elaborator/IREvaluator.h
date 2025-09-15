@@ -68,10 +68,6 @@ public:
   /// Set the location to associate errors with.
   void setErrorLoc(Location loc) { errorLoc = loc; }
 
-protected:
-  void
-  addCustomReplacementsToLiftStore(mlir::AttrTypeReplacer &liftStore) override;
-
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
