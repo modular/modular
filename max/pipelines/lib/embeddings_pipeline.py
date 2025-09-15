@@ -151,3 +151,7 @@ class EmbeddingsPipeline(
                 ]
             res[request_id] = EmbeddingsGenerationOutput(request_embeddings)
         return res
+
+    def release(self, request_id: RequestID) -> None:
+        # Nothing to release.
+        pass
