@@ -814,31 +814,6 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                                                     ValueRange()));
   }
 
-  // If user refers to parameter of a value:
-  // ```mojo
-  // @fieldwise_init
-  // struct Foo[n: Int]:
-  //   pass
-  //
-  // fn main();
-  //   x = S[0]()
-  //   print(x.n)
-  // ```
-  // generated IR will not contain any accesses to that value. That will result
-  // to "was never used" warning.
-  // Since from the user there's a use, we emit noop access to that value to
-  // disable that warning.
-  if (auto attrRef = dyn_cast<AttributeRefNode>(value.expr)) {
-    if (auto declRef = dyn_cast<DeclRefNode>(attrRef->base)) {
-      ArrayRef<ASTDecl *> decls =
-          getDeclScope().lookupInCurrentScope(declRef->spelling);
-      Operation *op = decls.empty() ? nullptr : decls.back()->getIfOperation();
-      // No need to do that for alias declaration
-      if (isa_and_nonnull<LIT::VarDeclOp>(op))
-        builder->create<LIT::OwnershipUseOp>(location, op->getResult(0));
-    }
-  }
-
   ASTType valueType = value.ir.getRValueType();
 
   // If the type is trivial, materialize using param.constant.

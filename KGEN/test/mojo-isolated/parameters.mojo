@@ -1177,7 +1177,6 @@ fn reference_params_through_struct():
     var x = MultiStruct[52, 9, 33]()
 
     # CHECK: %[[Y:.*]] = lit.var.decl "y"
-    # CHECK-NEXT: lit.ownership.use %x : !lit.ref<@parameters::@MultiStruct<:!Int {52}, :!Int {9}, :!Int {33}>, mut *"x`">
     # CHECK-NEXT: %[[P:.*]] = kgen.param.constant: {{.*}} <{52}
     # CHECK-NEXT: lit.ref.store %[[P]], %[[Y]]
     var y = x.p1
