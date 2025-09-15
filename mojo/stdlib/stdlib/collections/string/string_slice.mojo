@@ -967,6 +967,81 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
+    @always_inline
+    fn __gt__(self, rhs: StringSlice) -> Bool:
+        """Define whether this String slice is strictly greater than the RHS.
+
+        Args:
+            rhs: The other `StringSlice` to compare against.
+
+        Returns:
+            True if this String slice is strictly greater than the RHS
+            StringSlice.
+        """
+        return not (self <= rhs)
+
+    @always_inline
+    fn __le__(self, rhs: StringSlice) -> Bool:
+        """Define whether this String slice is less than or equal to the RHS.
+
+        Args:
+            rhs: The other `StringSlice` to compare against.
+
+        Returns:
+            True if this String slice is less than or equal to the RHS
+            StringSlice.
+        """
+        return not (rhs < self)
+
+    @always_inline
+    fn __lt__(self, rhs: String) -> Bool:
+        """Define whether this String slice is strictly less than the RHS.
+
+        Args:
+            rhs: The other `String` to compare against.
+
+        Returns:
+            If the `StringSlice` bytes are strictly less than the input in
+            overlapping content.
+        """
+        return self < rhs.as_string_slice()
+
+    @always_inline
+    fn __le__(self, rhs: String) -> Bool:
+        """Define whether this String slice is less than or equal to the RHS.
+
+        Args:
+            rhs: The other String to compare against.
+
+        Returns:
+            True if this String slice is less than or equal to the RHS String.
+        """
+        return self <= rhs.as_string_slice()
+
+    @always_inline
+    fn __gt__(self, rhs: String) -> Bool:
+        """Define whether this String slice is strictly greater than the RHS.
+
+        Args:
+            rhs: The other String to compare against.
+
+        Returns:
+            True if this String slice is strictly greater than the RHS String.
+        """
+        return self > rhs.as_string_slice()
+
+    @always_inline
+    fn __ge__(self, rhs: String) -> Bool:
+        """Define whether this String slice is greater than or equal to the RHS.
+
+        Args:
+            rhs: The other String to compare against.
+
+        Returns:
+            True if this String slice is greater than or equal to the RHS String.
+        """
+        return rhs.as_string_slice() <= self
+
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[origin]:
         """Iterate over the string, returning immutable references.
