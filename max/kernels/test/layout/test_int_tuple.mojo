@@ -426,8 +426,20 @@ def test_compact_order():
 def test_iter():
     var a = IntTuple(2, 3)
     var it = iter(a)
+
+    assert_equal(it.bounds()[0], 2)
+    assert_equal(it.bounds()[1].value(), 2)
+
     assert_equal(Int(next(it)), 2)
+
+    assert_equal(it.bounds()[0], 1)
+    assert_equal(it.bounds()[1].value(), 1)
+
     assert_equal(Int(next(it)), 3)
+
+    assert_equal(it.bounds()[0], 0)
+    assert_equal(it.bounds()[1].value(), 0)
+
     assert_equal(it.__has_next__(), False)
     var b = IntTuple(4, 5, 6)
     var it2 = zip(a, b)

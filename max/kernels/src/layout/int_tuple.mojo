@@ -327,6 +327,11 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin](
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
+    @always_inline("nodebug")
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self.src[]) - self.idx
+        return (len, {len})
+
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Defaultable,

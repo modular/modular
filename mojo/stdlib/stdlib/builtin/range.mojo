@@ -20,6 +20,8 @@ from math import ceildiv
 
 from python import PythonObject
 
+from sys.info import size_of
+from sys.intrinsics import unlikely
 from utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #
@@ -82,6 +84,11 @@ struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
     fn __reversed__(self) -> _StridedRange:
         return range(self.end - 1, -1, -1)
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -120,6 +127,11 @@ struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
     fn __reversed__(self) -> _StridedRange:
         return range(self.end - 1, self.start - 1, -1)
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -154,6 +166,11 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
 
 
 @fieldwise_init
@@ -216,6 +233,11 @@ struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
         var end = self.start - self.step
         var step = -self.step
         return range(start, end, step)
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self)
+        return (len, {len})
 
 
 @always_inline
@@ -400,6 +422,14 @@ fn range(
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
+fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
+    if unlikely(len > UInt(Int.MAX)):
+        return (Int.MAX, None)
+    else:
+        return (Int(len), {Int(len)})
+
+
 @register_passable("trivial")
 struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
     alias IteratorType[
@@ -437,6 +467,10 @@ struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
         debug_assert(idx < self.__len__(), "index out of range")
         return idx
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -466,6 +500,10 @@ struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
 
 
 @register_passable("trivial")
@@ -521,6 +559,10 @@ struct _UIntStridedRange(Iterable, Iterator, UIntSized):
         debug_assert(idx < self.__len__(), "index out of range")
         return self.start + idx * self.step
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _uint_range_bounds(self.__len__())
+
 
 @always_inline
 fn range(end: UInt) -> _UIntZeroStartingRange:
@@ -553,6 +595,17 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 # ===----------------------------------------------------------------------=== #
 # Range Scalar
 # ===----------------------------------------------------------------------=== #
+
+
+fn _scalar_range_bounds[
+    dtype: DType
+](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
+    @parameter
+    if size_of[Scalar[dtype]]() >= size_of[Int]():
+        if unlikely(UInt(len) > UInt(Int.MAX)):
+            return (Int.MAX, None)
+
+    return (Int(len), {Int(len)})
 
 
 @register_passable("trivial")
@@ -601,6 +654,10 @@ struct _ZeroStartingScalarRange[dtype: DType](
         ]()
         return range(self.end - 1, Scalar[dtype](-1), Scalar[dtype](-1))
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
+
 
 @fieldwise_init
 @register_passable("trivial")
@@ -644,10 +701,14 @@ struct _SequentialScalarRange[dtype: DType](
         ]()
         return range(self.end - 1, self.start - 1, Scalar[dtype](-1))
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
+
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[dtype: DType](
+struct _StridedScalarRange[dtype: DType](
     Iterable, Iterator & ImplicitlyCopyable
 ):
     alias IteratorType[
@@ -679,18 +740,25 @@ struct _StridedScalarRangeIterator[dtype: DType](
         self.start += self.step
         return result
 
+    @always_inline
+    fn __len__(self) -> Scalar[dtype]:
+        constrained[dtype.is_integral(), "dtype must be integral"]()
 
-@fieldwise_init
-@register_passable("trivial")
-struct _StridedScalarRange[dtype: DType]:
-    alias Element = Scalar[dtype]
-    var start: Scalar[dtype]
-    var end: Scalar[dtype]
-    var step: Scalar[dtype]
+        @parameter
+        if dtype.is_unsigned():
+            return Scalar[dtype](
+                range(
+                    UInt(self.start), UInt(self.end), UInt(self.step)
+                ).__len__()
+            )
+        else:  # is_signed
+            return Scalar[dtype](
+                range(Int(self.start), Int(self.end), Int(self.step)).__len__()
+            )
 
     @always_inline
-    fn __iter__(self) -> _StridedScalarRangeIterator[dtype]:
-        return _StridedScalarRangeIterator(self.start, self.end, self.step)
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _scalar_range_bounds(self.__len__())
 
 
 @always_inline
