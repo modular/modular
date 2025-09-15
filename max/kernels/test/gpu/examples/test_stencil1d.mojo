@@ -104,7 +104,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     alias func_select = stencil1d_smem if smem == True else stencil1d
 
     for _ in range(iterations):
-        ctx.enqueue_function[func_select](
+        ctx.enqueue_function_checked[func_select, func_select](
             a_device,
             b_device,
             m,

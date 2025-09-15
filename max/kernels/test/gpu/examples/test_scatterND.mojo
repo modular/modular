@@ -229,10 +229,9 @@ fn scatter_nd[
         num_indices *= indices.get_shape()[i]
 
     var num_updates_elements = count_copy
+    alias kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
-    ctx.enqueue_function[
-        scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
-    ](
+    ctx.enqueue_function_checked[kernel, kernel](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,
@@ -258,7 +257,10 @@ fn scatter_nd[
 
 fn linear_fill[
     dtype: DType
-](buf: NDBuffer[dtype, *_], elems: VariadicList[Scalar[dtype]]):
+](
+    buf: NDBuffer[dtype, _, MutableAnyOrigin, *_],
+    elems: VariadicList[Scalar[dtype]],
+):
     debug_assert(
         buf.num_elements() == len(elems), "must fill all elements of tensor"
     )

@@ -605,7 +605,7 @@ fn multistage_b2b_gemm[
             UInt(size(Layout(A.layout.shape[1])))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function[b2b_fn](
+        ctx.enqueue_function_checked[b2b_fn, b2b_fn](
             D,
             A,
             B,
