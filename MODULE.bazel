@@ -121,6 +121,9 @@ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependenc
 npm.npm_translate_lock(
     name = "npm",
     data = ["//bazel/lint:package.json"],
+    lifecycle_hooks_exclude = [
+        "cpu-features",
+    ],
     npm_package_lock = "//bazel/lint:package-lock.json",
     pnpm_lock = "//bazel/lint:pnpm-lock.yaml",
     verify_node_modules_ignored = "//:.bazelignore",
