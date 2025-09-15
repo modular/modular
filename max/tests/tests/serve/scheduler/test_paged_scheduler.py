@@ -179,7 +179,6 @@ class FakeTokenGeneratorPipeline(
 ):
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.kv_manager = kv_manager
-        self.prev_num_steps: int = 0
 
     def execute(
         self, inputs: TextGenerationInputs[TextContext]
@@ -192,7 +191,6 @@ class FakeTokenGeneratorPipeline(
             )
             assert num_available_steps > 0
             num_steps = min(inputs.num_steps, num_available_steps)
-        self.prev_num_steps = num_steps
 
         # Claim cache rows for context.
         for _, context in inputs.batch.items():
@@ -285,10 +283,6 @@ def create_batch_and_execute(
     terminated_reqs = batch_to_execute.num_terminated
 
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
-
-    # Pipelines should use whatever num_steps that the scheduler computed.
-    # It should not need to truncate it.
-    assert scheduler.pipeline.prev_num_steps == num_steps
 
     return BatchInfo(
         batch_type=batch_type,

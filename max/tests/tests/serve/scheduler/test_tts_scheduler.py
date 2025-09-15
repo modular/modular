@@ -213,12 +213,17 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
         # Generate the responses
         responses = {}
         for req_id, context in batch.items():
-            resp = AudioGeneratorOutput(GenerationStatus.ACTIVE)
+            resp = AudioGeneratorOutput(
+                GenerationStatus.ACTIVE, steps_executed=num_tokens
+            )
             for _ in range(num_tokens):
                 context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
-                    resp = AudioGeneratorOutput(GenerationStatus.MAXIMUM_LENGTH)
+                    resp = AudioGeneratorOutput(
+                        GenerationStatus.MAXIMUM_LENGTH,
+                        steps_executed=num_tokens,
+                    )
 
                     # Pretend that the audio generation is done immediately when
                     # text generation is done.
@@ -242,11 +247,6 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
     @property
     def decoder_sample_rate(self) -> int:
         return 999
-
-    @property
-    def prev_num_steps(self) -> int:
-        assert self._prev_num_steps is not None
-        return self._prev_num_steps
 
 
 @dataclass
@@ -309,7 +309,7 @@ def create_batch_and_execute(
 
     assert isinstance(scheduler.pipeline, FakeAudioGeneratorPipeline)
 
-    num_steps = scheduler.pipeline.prev_num_steps
+    num_steps = scheduler._prev_num_steps
     return BatchInfo(
         batch_type=batch_type,
         batch_size=batch_size,
