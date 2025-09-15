@@ -356,6 +356,22 @@ fn issue15404():
     consume(c^)  # expected-error {{use of uninitialized value 'c'}}
 
 
+alias int = __mlir_type.index
+alias two = __mlir_attr.`2 : index`
+
+
+@fieldwise_init
+struct SP[n: int]:
+    pass
+
+
+fn test_no_unused_warning() -> int:
+    # expected-warning @+1 {{assignment to 's' was never used; assign to '_' instead?}}
+    s = SP[two]()
+    # This is syntactically a use, but n is a parameter, so the warning does show up.
+    return s.n
+
+
 ##===----------------------------------------------------------------------===##
 # incorrect warnings
 ##===----------------------------------------------------------------------===##
@@ -559,17 +575,6 @@ fn test_unused_var(mut mut_arg: Int):
 
     # expected-warning @+1 {{ref 'z' was never used, remove it?}}
     ref z = mut_arg
-
-
-@fieldwise_init
-struct SP[n: Int]:
-    pass
-
-
-fn test_no_unused_warning() -> Int:
-    s = SP[2]()
-    # COM: no warning expected as there's a use of the variable.
-    return s.n
 
 
 @explicit_destroy("Use `consume() method` to finalize")
