@@ -212,11 +212,12 @@ def lit_tests(
             outs = [name + ".cfg.py"],
             cmd = """
 cat > $(OUTS) <<EOF
-config.name = "//{package}"
+import os
+
+config.name = os.environ["TEST_TARGET"]
 config.suffixes = [{extensions_string}]
 EOF
             """.format(
-                package = native.package_name(),
                 extensions_string = extensions_string,
             ),
             testonly = True,
