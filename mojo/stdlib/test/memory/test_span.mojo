@@ -217,15 +217,6 @@ def test_span_coerce():
     takes_span(a)
 
 
-# We don't actually need to call this test
-# but we want to make sure it compiles
-def test_conditional_conformance():
-    var l = [1, 2, 3]
-    var s = Span[Int, alignment=2](l)
-    s.fill(0)
-    _ = s == s
-
-
 def test_swap_elements():
     var l = [1, 2, 3, 4, 5]
     var s = Span(l)

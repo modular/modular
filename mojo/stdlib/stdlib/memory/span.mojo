@@ -35,7 +35,6 @@ struct _SpanIter[
     origin: Origin[mut],
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[T](),
 ](ImplicitlyCopyable, Movable):
     """Iterator for Span.
 
@@ -45,12 +44,11 @@ struct _SpanIter[
         origin: The origin of the `Span`.
         forward: The iteration direction. False is backwards.
         address_space: The address space associated with the underlying allocated memory.
-        alignment: The minimum alignment of the underlying pointer known statically.
 
     """
 
     var index: Int
-    var src: Span[T, origin, address_space=address_space, alignment=alignment]
+    var src: Span[T, origin, address_space=address_space]
 
     @always_inline
     fn __iter__(self) -> Self:
@@ -84,14 +82,7 @@ struct Span[
     origin: Origin[mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = align_of[T](),
-](
-    ImplicitlyCopyable,
-    Movable,
-    Sized,
-    Boolable,
-    Defaultable,
-):
+](Boolable, Defaultable, ImplicitlyCopyable, Movable, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -99,7 +90,6 @@ struct Span[
         T: The type of the elements in the span.
         origin: The origin of the Span.
         address_space: The address space associated with the allocated memory.
-        alignment: The minimum alignment of the underlying pointer known statically.
     """
 
     # Aliases
@@ -240,40 +230,26 @@ struct Span[
     @always_inline
     fn __iter__(
         self,
-    ) -> _SpanIter[
-        T,
-        origin,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
+    ) -> _SpanIter[T, origin, address_space=address_space,]:
         """Get an iterator over the elements of the `Span`.
 
         Returns:
             An iterator over the elements of the `Span`.
         """
-        return _SpanIter[
-            address_space=address_space,
-            alignment=alignment,
-        ](0, self)
+        return _SpanIter[address_space=address_space](0, self)
 
     @always_inline
     fn __reversed__(
         self,
-    ) -> _SpanIter[
-        T,
-        origin,
-        forward=False,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
+    ) -> _SpanIter[T, origin, forward=False, address_space=address_space,]:
         """Iterate backwards over the `Span`.
 
         Returns:
             A reversed iterator of the `Span` elements.
         """
-        return _SpanIter[
-            forward=False, address_space=address_space, alignment=alignment
-        ](len(self), self)
+        return _SpanIter[forward=False, address_space=address_space](
+            len(self), self
+        )
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -295,7 +271,6 @@ struct Span[
             Scalar[dtype],
             origin,
             address_space=address_space,
-            alignment=alignment,
         ],
         value: Scalar[dtype],
     ) -> Bool:
@@ -450,17 +425,13 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        origin: MutableOrigin, other_alignment: Int, //
-    ](
-        self: Span[T, origin, alignment=alignment],
-        other: Span[T, _, alignment=other_alignment],
-    ):
+        origin: MutableOrigin, //
+    ](self: Span[T, origin], other: Span[T, _],):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
             origin: The inferred mutable origin of the data within the Span.
-            other_alignment: The inferred alignment of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
@@ -483,18 +454,13 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparable & Copyable & Movable,
-        rhs_alignment: Int, //,
-    ](
-        self: Span[T, origin, alignment=alignment],
-        rhs: Span[T, _, alignment=rhs_alignment],
-    ) -> Bool:
+        T: EqualityComparable & Copyable & Movable, //,
+    ](self: Span[T, origin], rhs: Span[T, _],) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
             T: The type of the elements must implement the
               traits `EqualityComparable`, `Copyable` and `Movable`.
-            rhs_alignment: The inferred alignment of the rhs span.
 
         Args:
             rhs: The span to compare against.
@@ -518,7 +484,7 @@ struct Span[
     @always_inline
     fn __ne__[
         T: EqualityComparable & Copyable & Movable, //
-    ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
+    ](self: Span[T, origin], rhs: Span[T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
@@ -533,9 +499,7 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[
-        origin: MutableOrigin, //
-    ](self: Span[T, origin, alignment=alignment], value: T):
+    fn fill[origin: MutableOrigin, //](self: Span[T, origin], value: T):
         """
         Fill the memory that a span references with a given value.
 
@@ -548,9 +512,7 @@ struct Span[
         for ref element in self:
             element = value.copy()
 
-    fn swap_elements(
-        self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt
-    ) raises:
+    fn swap_elements(self: Span[mut=True, T], a: UInt, b: UInt) raises:
         """
         Swap the values at indices `a` and `b`.
 
@@ -581,9 +543,7 @@ struct Span[
 
     @always_inline("nodebug")
     fn __merge_with__[
-        other_type: __type_of(
-            Span[T, _, address_space=address_space, alignment=alignment]
-        ),
+        other_type: __type_of(Span[T, _, address_space=address_space]),
     ](
         self,
         out result: Span[
@@ -591,7 +551,6 @@ struct Span[
             T,
             __origin_of(origin, other_type.origin),
             address_space=address_space,
-            alignment=alignment,
         ],
     ):
         """Returns a pointer merged with the specified `other_type`.
