@@ -1491,6 +1491,16 @@ def set_build_opts(
     return build_opts
 
 
+def _validate_partition(partition: str) -> list[int]:
+    assert ":" in partition
+    partition_idx, num_partitions = [int(x) for x in partition.split(":")]
+    assert num_partitions > 0
+    assert 0 <= partition_idx < num_partitions, (
+        "Condition: 0 <= partition_idx < num_partitions"
+    )
+    return [partition_idx, num_partitions]
+
+
 help_str = "Benchmarking toolkit for Mojo kernels"
 
 
@@ -1641,6 +1651,16 @@ help_str = "Benchmarking toolkit for Mojo kernels"
     multiple=False,
     type=click.INT,
 )
+@click.option(
+    "--partition",
+    default="0:1",
+    help="Formatted as fraction 'm:n', divide the shapes "
+    "into n partitions and limit the space to m'th partition "
+    "(default='0:1' running everything). Note that it has no "
+    "effect on parameter set and is only applied to shapes.",
+    multiple=False,
+    type=click.STRING,
+)
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     files,  # noqa: ANN001
@@ -1666,7 +1686,8 @@ def cli(
     profile,  # noqa: ANN001
     exec_prefix,  # noqa: ANN001
     exec_suffix,  # noqa: ANN001
-    timeout_secs,  # noqa: ANN001
+    timeout_secs: int,
+    partition: str,
 ) -> bool:
     configure_logging(verbose=verbose)
 
@@ -1676,6 +1697,9 @@ def cli(
     mode = KBENCH_MODE.RUN
 
     assert (build == False) or (tune == False)
+
+    partition_idx, num_partitions = _validate_partition(partition)
+
     if build:
         mode = KBENCH_MODE.BUILD
     elif tune:
@@ -1698,7 +1722,7 @@ def cli(
         check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
-    shape_list = list(Spec.load_yaml_list(shapes)) if shapes else Spec()
+    shape_list = list(Spec.load_yaml_list(shapes) if shapes else Spec())
     shape_path_list = (
         [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
@@ -1724,11 +1748,16 @@ def cli(
     exec_prefix = exec_prefix.split(" ") if exec_prefix else []
 
     files = FileGlobArg(files) if files else []
-    for i, shape in enumerate(shape_list):
+
+    shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
+    shape_idx_lb = partition_idx * shapes_per_partition
+    shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
+
+    for i in range(shape_idx_lb, shape_idx_ub):
         run(
             yaml_path_list=files,
             obj_cache=obj_cache,
-            shape=shape,
+            shape=shape_list[i],
             output_path=shape_path_list[i],
             mode=mode,
             param_list=param,
