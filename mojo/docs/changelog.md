@@ -471,6 +471,10 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
   [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
 
+- `Iterator` now has a defauldted `.bounds()` trait method. This returns the
+  lower and upper bounds of the remaining length of the iterator. This can be
+  used for preallocation when building or extending collections from iterators.
+
 - Removed `alignment` and `static_alignment_cast` from `UnsafePointer`.
 
 - Added `alignment` parameter to `UnsafePointer.alloc`.

@@ -38,6 +38,32 @@ trait Iterator(Copyable, Movable):
     fn __next__(mut self) -> Self.Element:
         ...
 
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds `[lower, upper]` for the remaining iterator length.
+
+        Returns a tuple where the first element is the lower bound and the second
+        is an optional upper bound (`None` means unknown or `upper > Int.MAX`).
+        This helps collections pre-allocate memory when constructed from iterators.
+
+        The default implementation returns `(0, None)`.
+
+        ### Safety
+        If the upper bound is not None, implementations must ensure that `lower <= upper`.
+        The bounds are hints only - iterators may not comply with them. Never omit safety
+        checks when using `bounds` to build collections.
+
+        Example:
+        ```mojo
+        fn build_list[I: Iterator & Iterable](iter: I) -> List[I.Element]:
+            var lower, _upper = iter.bounds()
+            var list = List[I.Element](capacity=lower)
+            for element in iter:
+                list.append(element^)
+            return list
+        ```
+        """
+        return (0, None)
+
 
 @always_inline
 fn iter[
@@ -84,6 +110,9 @@ struct _Enumerate[InnerIteratorType: Iterator](
         self._count += 1
         return count, next(self._inner)
 
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._inner.bounds()
+
 
 @always_inline
 fn enumerate[
@@ -109,6 +138,20 @@ fn enumerate[
     return _Enumerate(iter(iterable), start=start)
 
 
+fn _zip_bounds(*bounds: Tuple[Int, Optional[Int]]) -> Tuple[Int, Optional[Int]]:
+    var zip_lower = Int.MAX
+    var zip_upper = Optional[Int](None)
+
+    # TODO: This can probably be optimized with some SIMD reduce_min/max algorithm.
+    for bound in bounds:
+        var lower, upper = bound
+        zip_lower = min(zip_lower, lower)
+        if upper:
+            zip_upper = min(zip_upper.or_else(Int.MAX), upper.value())
+
+    return (zip_lower, zip_upper)
+
+
 @fieldwise_init
 struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
     Copyable, Iterable, Iterator, Movable
@@ -132,6 +175,9 @@ struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
 
     fn __next__(mut self) -> Self.Element:
         return next(self._inner_a), next(self._inner_b)
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _zip_bounds(self._inner_a.bounds(), self._inner_b.bounds())
 
 
 @fieldwise_init
@@ -166,6 +212,13 @@ struct _Zip3[
 
     fn __next__(mut self) -> Self.Element:
         return next(self._inner_a), next(self._inner_b), next(self._inner_c)
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _zip_bounds(
+            self._inner_a.bounds(),
+            self._inner_b.bounds(),
+            self._inner_c.bounds(),
+        )
 
 
 @fieldwise_init
@@ -215,6 +268,14 @@ struct _Zip4[
             next(self._inner_b),
             next(self._inner_c),
             next(self._inner_d),
+        )
+
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return _zip_bounds(
+            self._inner_a.bounds(),
+            self._inner_b.bounds(),
+            self._inner_c.bounds(),
+            self._inner_d.bounds(),
         )
 
 

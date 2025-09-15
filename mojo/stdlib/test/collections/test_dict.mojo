@@ -185,6 +185,21 @@ def test_key_error():
         _ = dict.pop("a")
 
 
+def _test_iter_bounds[
+    I: Iterator, //
+](var dict_iter: I, dict_len: Int,):
+    var iter = dict_iter^
+    for i in range(dict_len):
+        var lower, upper = iter.bounds()
+        assert_equal(dict_len - i, lower)
+        assert_equal(dict_len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
 def test_iter():
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
@@ -195,6 +210,7 @@ def test_iter():
         keys += key
 
     assert_equal(keys, "ab")
+    _test_iter_bounds(dict.__iter__(), len(dict))
 
 
 def test_iter_keys():
@@ -207,6 +223,7 @@ def test_iter_keys():
         keys += key
 
     assert_equal(keys, "ab")
+    _test_iter_bounds(dict.keys(), len(dict))
 
 
 def test_iter_values():
@@ -219,6 +236,7 @@ def test_iter_values():
         sum += value
 
     assert_equal(sum, 3)
+    _test_iter_bounds(dict.values(), len(dict))
 
 
 def test_iter_values_mut():
@@ -232,6 +250,7 @@ def test_iter_values_mut():
     assert_equal(2, dict["a"])
     assert_equal(3, dict["b"])
     assert_equal(2, len(dict))
+    _test_iter_bounds(dict.values(), len(dict))
 
 
 def test_iter_items():
@@ -247,6 +266,9 @@ def test_iter_items():
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
+
+    # TODO: _DictItemIter does not conform to `Iterator` yet
+    # _test_iter_bounds(dict.values(), len(dict))
 
 
 def test_dict_contains():

@@ -1028,6 +1028,26 @@ fn test_reversed_iter() raises:
     assert_equal(-i, len(q))
 
 
+def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
+    var iter = deque_iter^
+
+    for i in range(deque_len):
+        var lower, upper = iter.bounds()
+        assert_equal(deque_len - i, lower)
+        assert_equal(deque_len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+def test_deque_iter_bounds():
+    var deque = Deque(1, 2, 3)
+    _test_deque_iter_bounds(iter(deque), len(deque))
+    _test_deque_iter_bounds(reversed(deque), len(deque))
+
+
 fn test_str_and_repr() raises:
     q = Deque(1, 2, 3)
 

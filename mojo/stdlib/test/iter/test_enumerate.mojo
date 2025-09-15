@@ -61,6 +61,16 @@ fn test_enumerate_destructure() raises:
         count += 1
 
 
+def test_enumerate_bounds():
+    var list = [1, 2, 3]
+    var e = enumerate(list)
+
+    assert_equal(iter(list).bounds()[0], e.bounds()[0])
+    assert_equal(iter(list).bounds()[1].value(), e.bounds()[1].value())
+
+
 fn main() raises:
     test_enumerate()
+    test_enumerate_with_start()
     test_enumerate_destructure()
+    test_enumerate_bounds()

@@ -78,6 +78,11 @@ struct _VariadicListIter[type: AnyTrivialRegType](
         self.index += 1
         return self.src[self.index - 1]
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self.src) - self.index
+        return (len, {len})
+
 
 @register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType](Sized):

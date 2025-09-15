@@ -106,6 +106,11 @@ struct _DictEntryIter[
                 self.seen += 1
                 return opt_entry_ref.value()
 
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var len = len(self.src[]) - self.seen
+        return (len, {len})
+
 
 @fieldwise_init
 struct _DictKeyIter[
@@ -146,6 +151,10 @@ struct _DictKeyIter[
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self.iter.bounds()
 
 
 @fieldwise_init
@@ -198,6 +207,10 @@ struct _DictValueIter[
     @always_inline
     fn __next__(mut self) -> Self.Element:
         return self.__next_ref__().copy()
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self.iter.bounds()
 
 
 @fieldwise_init

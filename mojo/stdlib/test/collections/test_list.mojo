@@ -640,6 +640,26 @@ def test_list_iter_mutable():
     assert_equal(9, sum)
 
 
+def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int):
+    var iter = list_iter^
+
+    for i in range(list_len):
+        var lower, upper = iter.bounds()
+        assert_equal(list_len - i, lower)
+        assert_equal(list_len - i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+def test_list_iter_bounds():
+    var list = [1, 2, 3]
+    _test_list_iter_bounds(iter(list), len(list))
+    _test_list_iter_bounds(reversed(list), len(list))
+
+
 def test_list_span():
     var vs = [1, 2, 3]
 
@@ -1018,6 +1038,7 @@ def main():
     test_2d_dynamic_list()
     test_list_iter()
     test_list_iter_mutable()
+    test_list_iter_bounds()
     test_list_span()
     test_list_realloc_trivial_types()
     test_list_boolable()
