@@ -1320,7 +1320,6 @@ def main(args: argparse.Namespace) -> None:
     benchmark_dataset = BenchmarkDataset.from_flags(
         dataset_name=args.dataset_name,
         dataset_path=args.dataset_path,
-        dataset_mode=args.dataset_mode,
     )
 
     if (

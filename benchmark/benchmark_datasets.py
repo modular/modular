@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import msgspec
 import numpy as np
@@ -39,6 +40,8 @@ from sample_workload_utils import (
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 logger = logging.getLogger("benchmark_datasets")
+
+LOCALLY_PACKAGED_DATASETS_DIR = Path(__file__).parent.resolve() / "datasets"
 
 
 class DatasetMode(str, Enum):
@@ -86,7 +89,7 @@ Adding New Datasets:
     To register a new dataset:
 
     1. Implement a new BenchmarkDataset subclass with required methods:
-       - _fetch_dataset_from_hf() for HuggingFace Hub integration
+       - fetch() for both local and HuggingFace Hub integration
        - sample_requests() for generating benchmark requests
 
     2. Add an entry to this registry:
@@ -158,7 +161,7 @@ class BenchmarkDataset(ABC):
             chat scenarios.
 
     Usage:
-        Subclasses must implement _fetch_dataset_from_hf() to specify how to download
+        Subclasses must implement fetch() to specify how to download
         and sample their specific datasets. Subclasses must also implement sample_requests()
         to specify how to sample requests from the dataset.
 
@@ -179,10 +182,10 @@ class BenchmarkDataset(ABC):
         )
 
     Subclass Requirements:
-        - Must implement _fetch_dataset_from_hf(dataset_name: str) -> None
+        - Must implement fetch() -> None to handle both local and HuggingFace dataset loading
         - Must implement sample_requests(**kwargs) -> list[SampledRequest]
-        - Should raise ValueError for unsupported dataset names
-        - May raise NotImplementedError if HuggingFace fetching is not supported
+        - Should raise ValueError for unsupported dataset names or invalid configurations
+        - May raise NotImplementedError if the requested mode is not supported
         - Should handle only dataset types relevant to their domain
 
     Raises:
@@ -191,7 +194,6 @@ class BenchmarkDataset(ABC):
 
     dataset_name: str | None = None
     dataset_path: str | None = None
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
     has_multiturn_chat_support: bool = False
 
     @classmethod
@@ -199,7 +201,6 @@ class BenchmarkDataset(ABC):
         cls,
         dataset_name: str | None = None,
         dataset_path: str | None = None,
-        dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE,
     ) -> BenchmarkDataset:
         """Factory method to create the appropriate dataset subclass based on dataset name.
 
@@ -212,9 +213,6 @@ class BenchmarkDataset(ABC):
                 which subclass to instantiate. If None, dataset_path must be provided.
             dataset_path (str | None): Local path to the dataset file. If provided,
                 takes precedence over automatic fetching.
-            dataset_mode (DatasetMode): Mode for loading the dataset. LOCAL mode will
-                use dataset_path or environment variable, HUGGINGFACE mode will fetch from
-                HuggingFace Hub, LOCAL mode uses local file paths.
 
         Returns:
             BenchmarkDataset: An instance of the appropriate subclass
@@ -231,50 +229,25 @@ class BenchmarkDataset(ABC):
             dataset = BenchmarkDataset.from_flags(
                 dataset_name="sharegpt",
                 dataset_path="/local/file.json",
-                dataset_mode=DatasetMode.LOCAL
             )
 
             # Creates dataset using environment variable for local path
             dataset = BenchmarkDataset.from_flags(
                 dataset_name="sharegpt",
-                dataset_mode=DatasetMode.LOCAL
             )
         """
-        if dataset_mode == DatasetMode.LOCAL:
-            # For local mode, prioritize dataset_path, then check environment variable
-            if dataset_path is None:
-                dataset_path = os.getenv("MODULAR_BENCHMARK_LOCAL_DATASET_PATH")
-                if dataset_path is None:
-                    raise ValueError(
-                        "For LOCAL mode, either dataset_path must be provided or "
-                        "MODULAR_BENCHMARK_LOCAL_DATASET_PATH environment variable must be set"
-                    )
-
-            if not os.path.exists(dataset_path):
-                raise ValueError(f"Dataset path {dataset_path} does not exist")
-
-            # For local mode, we still need dataset_name to determine the subclass
-            if not dataset_name:
-                raise ValueError(
-                    "dataset_name is required to determine the appropriate dataset subclass. "
-                    "Cannot infer subclass from dataset_path alone."
-                )
-
-        else:
-            if not dataset_name and not dataset_path:
-                raise ValueError(
-                    "Either dataset_name or dataset_path must be provided"
-                )
-
-            if dataset_path is not None and not os.path.exists(dataset_path):
-                raise ValueError(f"Dataset path {dataset_path} does not exist")
-
-            # If we have a dataset_path but no dataset_name, we can't determine the subclass
-            if not dataset_name:
-                raise ValueError(
-                    "dataset_name is required to determine the appropriate dataset subclass. "
-                    "Cannot infer subclass from dataset_path alone."
-                )
+        if not dataset_name and not dataset_path:
+            raise ValueError(
+                "Either dataset_name or dataset_path must be provided"
+            )
+        elif dataset_path is not None and not os.path.exists(dataset_path):
+            raise ValueError(f"Dataset path {dataset_path} does not exist")
+        # If we have a dataset_path but no dataset_name, we can't determine the subclass
+        if not dataset_name:
+            raise ValueError(
+                "dataset_name is required to determine the appropriate dataset subclass. "
+                "Cannot infer subclass from dataset_path alone."
+            )
 
         # Get the dataset class based on dataset_name
         dataset_class = cls._get_dataset_class(dataset_name)
@@ -282,19 +255,11 @@ class BenchmarkDataset(ABC):
         instance = dataset_class()
         instance.dataset_name = dataset_name
         instance.dataset_path = dataset_path
-        instance.dataset_mode = dataset_mode
         instance.has_multiturn_chat_support = DATASET_REGISTRY[
             dataset_name
         ].has_multiturn_chat_support
 
-        # Load dataset based on mode
-        if (
-            dataset_mode == DatasetMode.HUGGINGFACE
-            and instance.dataset_name
-            and instance.dataset_path is None
-        ):
-            instance._fetch_dataset_from_hf(instance.dataset_name)
-        # For LOCAL mode, dataset_path is already set and validated
+        instance.fetch()
 
         return instance
 
@@ -353,19 +318,20 @@ class BenchmarkDataset(ABC):
             f"{self.__class__.__name__}("
             f"dataset_name='{self.dataset_name}', "
             f"dataset_path='{self.dataset_path}', "
-            f"dataset_mode={self.dataset_mode}, "
             f"has_multiturn_chat_support={self.has_multiturn_chat_support})"
         )
 
     @abstractmethod
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        """Fetch dataset from HuggingFace Hub and set dataset_path.
+    def fetch(self) -> None:
+        """Fetch dataset based on the current dataset_mode and set dataset_path.
 
-        Args:
-            dataset_name: Name of the dataset to fetch
+        This method handles both local and HuggingFace dataset loading:
+        - For LOCAL mode: Uses dataset_path (from constructor or environment variable)
+        - For HUGGINGFACE mode: Downloads dataset from HuggingFace Hub
 
         Raises:
-            ValueError: If the dataset is unknown or not supported
+            ValueError: If the dataset is unknown, not supported, or if both modes are specified
+            NotImplementedError: If the dataset doesn't support the requested mode
         """
         pass
 
@@ -402,18 +368,45 @@ class BenchmarkDataset(ABC):
         pass
 
 
-class CodeDebugBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "code_debug":
-            self.dataset_path = hf_hub_download(
-                repo_id="xinrongzhang2022/InfiniteBench",
-                filename="code_debug.jsonl",
-                repo_type="dataset",
-            )
-        else:
+class LocalBenchmarkDataset(BenchmarkDataset):
+    """Abstract base class for local benchmark datasets.
+
+    This class provides a common interface for working with local benchmark datasets.
+    It handles automatic dataset fetching and provides a standardized interface for sampling requests.
+    """
+
+    dataset_mode: DatasetMode = DatasetMode.LOCAL
+
+    def fetch(self) -> None:
+        # For local mode, dataset_path should already be set and validated
+        if self.dataset_path is None:
+            raise ValueError("For LOCAL mode, dataset_path must be provided")
+        if not os.path.exists(self.dataset_path):
             raise ValueError(
-                f"Unknown dataset for CodeDebugBenchmarkDataset: {dataset_name}"
+                f"Local dataset path {self.dataset_path} does not exist"
             )
+
+
+class HuggingFaceBenchmarkDataset(BenchmarkDataset):
+    """Abstract base class for HuggingFace benchmark datasets.
+
+    This class provides a common interface for working with HuggingFace benchmark datasets.
+    It handles automatic dataset fetching and provides a standardized interface for sampling requests.
+    """
+
+    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+
+    def fetch(self) -> None:
+        pass
+
+
+class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    def fetch(self) -> None:
+        self.dataset_path = hf_hub_download(
+            repo_id="xinrongzhang2022/InfiniteBench",
+            filename="code_debug.jsonl",
+            repo_type="dataset",
+        )
 
     def gen_twoturn_longcontext_requests(
         self,
@@ -555,18 +548,13 @@ class CodeDebugBenchmarkDataset(BenchmarkDataset):
         ]
 
 
-class ShareGPTBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "sharegpt":
-            self.dataset_path = hf_hub_download(
-                repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-                filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-                repo_type="dataset",
-            )
-        else:
-            raise ValueError(
-                f"Unknown dataset for ShareGPTBenchmarkDataset: {dataset_name}"
-            )
+class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    def fetch(self) -> None:
+        self.dataset_path = hf_hub_download(
+            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
+            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
+            repo_type="dataset",
+        )
 
     def sample_requests(
         self,
@@ -642,16 +630,13 @@ class ShareGPTBenchmarkDataset(BenchmarkDataset):
         return filtered_dataset
 
 
-class RandomBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Random datasets are typically generated synthetically, not fetched from HF
-        if dataset_name == "random":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for RandomBenchmarkDataset: {dataset_name}"
-            )
+class RandomBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Random dataset.
+
+        Random datasets are generated synthetically and don't require file fetching.
+        """
+        pass
 
     def gen_multiturn_random_requests(
         self,
@@ -899,13 +884,17 @@ class RandomBenchmarkDataset(BenchmarkDataset):
         return Image.fromarray(array)
 
 
-class SonnetBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Sonnet dataset typically uses local files, not HuggingFace
-        raise NotImplementedError(
-            "SonnetBenchmarkDataset does not support fetching from HuggingFace Hub. "
-            "Sonnet datasets are typically provided as local files."
-        )
+class SonnetBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Sonnet dataset from local file."""
+        # Set default dataset path if not provided
+        if self.dataset_path is None:
+            self.dataset_path = str(
+                LOCALLY_PACKAGED_DATASETS_DIR / "sonnet_4x.txt"
+            )
+
+        # Call parent fetch method to validate path exists
+        super().fetch()
 
     def sample_requests(
         self,
@@ -939,6 +928,7 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
         assert self.dataset_path is not None, (
             "dataset_path must be provided for SonnetBenchmarkDataset"
         )
+
         # Load the dataset.
         with open(self.dataset_path) as f:
             poem_lines = f.readlines()
@@ -1015,13 +1005,17 @@ class SonnetBenchmarkDataset(BenchmarkDataset):
         return sampled_requests
 
 
-class AxolotlBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Axolotl dataset typically uses local files, not HuggingFace
-        raise NotImplementedError(
-            "AxolotlBenchmarkDataset does not support fetching from HuggingFace Hub. "
-            "Axolotl datasets are typically provided as local files."
-        )
+class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch Axolotl dataset from local file."""
+        # Set default dataset path if not provided
+        if self.dataset_path is None:
+            self.dataset_path = str(
+                LOCALLY_PACKAGED_DATASETS_DIR / "axolotl_dummy.json"
+            )
+
+        # Call parent fetch method to validate path exists
+        super().fetch()
 
     def sample_requests(
         self,
@@ -1102,16 +1096,13 @@ class AxolotlBenchmarkDataset(BenchmarkDataset):
         return sampled_requests
 
 
-class VisionArenaBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Vision arena loads dataset directly in sample_requests, not as a separate fetch step
-        if dataset_name == "vision-arena":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for VisionArenaBenchmarkDataset: {dataset_name}"
-            )
+class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch VisionArena dataset based on the current dataset_mode.
+
+        VisionArena datasets are loaded directly in sample_requests, not as a separate fetch step.
+        """
+        pass
 
     def sample_requests(
         self,
@@ -1146,16 +1137,13 @@ class VisionArenaBenchmarkDataset(BenchmarkDataset):
         return sampled_requests
 
 
-class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        # Arxiv summarization loads dataset directly in sample_requests, not as a separate fetch step
-        if dataset_name == "arxiv-summarization":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for ArxivSummarizationBenchmarkDataset: {dataset_name}"
-            )
+class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
+    def fetch(self) -> None:
+        """Fetch ArxivSummarization dataset based on the current dataset_mode.
+
+        ArxivSummarization datasets are loaded directly in sample_requests, not as a separate fetch step.
+        """
+        pass
 
     def sample_requests(
         self,
@@ -1272,16 +1260,7 @@ class ArxivSummarizationBenchmarkDataset(BenchmarkDataset):
         return sampled_requests
 
 
-class ObfuscatedConversationsBenchmarkDataset(BenchmarkDataset):
-    def _fetch_dataset_from_hf(self, dataset_name: str) -> None:
-        if dataset_name == "obfuscated-conversations":
-            # No pre-fetching needed - dataset is loaded directly in sample_requests
-            pass
-        else:
-            raise ValueError(
-                f"Unknown dataset for ObfuscatedConversationsBenchmarkDataset: {dataset_name}"
-            )
-
+class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
     def sample_requests(
         self,
         num_requests: int,

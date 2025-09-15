@@ -60,6 +60,9 @@ modular_py_library(
 modular_py_library(
     name = "benchmark_datasets",
     srcs = ["benchmark_datasets.py"],
+    data = [
+        ":dataset_files",
+    ],
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
@@ -73,6 +76,7 @@ modular_py_library(
     ],
 )
 
+# TODO: This is maybe redundant since we already have yaml_files?
 pkg_files(
     name = "benchmark_config_yaml_files",
     srcs = glob(["*.yaml"]),
@@ -101,6 +105,13 @@ pkg_files(
             "serving-benchmarking/**",
         ],
     ),
+    prefix = "benchmark",
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "dataset_files",
+    srcs = glob(["datasets/**/*"]),
     prefix = "benchmark",
     visibility = ["//visibility:public"],
 )
