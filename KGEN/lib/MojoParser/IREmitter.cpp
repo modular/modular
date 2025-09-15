@@ -1300,9 +1300,37 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(result, value.expr, dest);
   }
 
+  bool implicitCopyOk = valueType.isImplicitlyCopyable(exprLoc, shared);
+
+  // FIXME: Remove in 25.7: This is migration support for List and Dict.
+  if (!implicitCopyOk) {
+    if (ASTDecl *decl = valueType.getDecl(shared))
+      if (auto structOp =
+              dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
+        if (structOp.getDeclName().strref() == "List" ||
+            structOp.getDeclName().strref() == "Dict") {
+          implicitCopyOk = true;
+
+          auto diag = emitWarning(exprLoc, "'")
+                      << structOp.getDeclName().strref()
+                      << "' is no longer implicitly copyable, because it is "
+                         "O(n) expensive; this warning will be an error in "
+                         "the next release of Mojo"
+                      << value.expr->getRange();
+          diag.attachNote(exprLoc)
+              << "consider transferring the value with '^'"
+              << FixIt::insertAfterToken(value.expr->getRangeEnd(), "^",
+                                         shared.diags);
+          diag.attachNote(exprLoc)
+              << "you can copy it explicitly with '.copy()'"
+              << FixIt::insertAfterToken(value.expr->getRangeEnd(), ".copy()",
+                                         shared.diags);
+        }
+  }
+
   // Verify that the type is copyable in this way so we can generate tailored
   // error messages, rather than just allowing IREmitter to do it.
-  if (!valueType.isImplicitlyCopyable(exprLoc, shared)) {
+  if (!implicitCopyOk) {
     // If the value is an RValue, it might be that the type isn't copyable or
     // movable at all. If so, give a specific error about this.
     if (value.ir.getIfRValue() && !valueType.isMovable(exprLoc, shared) &&

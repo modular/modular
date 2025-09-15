@@ -28,17 +28,21 @@ fn literal_promotion[cond: Bool]():
 # Assignment operator
 ##===----------------------------------------------------------------------===##
 
+struct ListInitializable[T: AnyType](ImplicitlyCopyable, Movable):
+    fn __init__(out self, *elements: T, __list_literal__: () = ()):
+        pass
+
 
 struct RHSInferenceStruct:
-    var field: List[Int]
+    var field: ListInitializable[Int]
 
-    fn __setitem__(self, value: List[Int]):
+    fn __setitem__(self, value: ListInitializable[Int]):
         pass
 
 
 # None of these should be ambiguous.
 fn test_rhs_inference():
-    var a: List[Int]
+    var a: ListInitializable[Int]
     a = []  # DeclRefNode
     (a) = []  # ParenNode
 
