@@ -266,17 +266,6 @@ class InputContext(BaseContext, Protocol):
         """
         ...
 
-    def set_draft_offset(self, idx: int) -> None:
-        """Set the draft token offset for speculative decoding optimization.
-
-        This method configures the offset used in speculative decoding, where draft
-        tokens are generated speculatively to improve generation throughput.
-
-        Args:
-            idx: The offset index for draft tokens in the speculative decoding process.
-        """
-        ...
-
     @property
     def status(self) -> GenerationStatus:
         """The current generation status of this context.
@@ -579,18 +568,6 @@ class InputContext(BaseContext, Protocol):
             start_idx: New absolute value for ``start_idx``, if provided.
             active_idx: New absolute value for ``active_idx``, if provided.
             end_idx: New absolute value for ``end_idx``, if provided.
-        """
-        ...
-
-    def rollback(self, idx: int) -> None:
-        """Rollback generation by removing the specified number of tokens.
-
-        This method is used to undo recent generation steps, typically when
-        implementing techniques like beam search or when handling generation
-        errors that require backtracking.
-
-        Args:
-            idx: The number of tokens to remove from the end of the sequence.
         """
         ...
 
