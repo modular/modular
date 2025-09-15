@@ -23,7 +23,7 @@ import os
 import sys
 from collections.abc import Sequence
 from functools import cached_property
-from typing import Optional
+from typing import Optional, cast
 
 import click
 import mteb
@@ -32,12 +32,15 @@ import numpy as np
 # Pipelines
 from max.entrypoints.cli import pipeline_config_options
 from max.interfaces import (
-    EmbeddingsGenerator,
+    EmbeddingsGenerationInputs,
+    EmbeddingsGenerationOutput,
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.core import TextContext
 from transformers import AutoConfig
 
 
@@ -48,7 +51,10 @@ class EmbeddingModel:
         self,
         pipeline_config: PipelineConfig,
         tokenizer: PipelineTokenizer,
-        pipeline: EmbeddingsGenerator,
+        pipeline: Pipeline[
+            EmbeddingsGenerationInputs[TextContext],
+            EmbeddingsGenerationOutput,
+        ],
         huggingface_config: AutoConfig,
     ) -> None:
         self.pipeline_config = pipeline_config
@@ -121,7 +127,9 @@ class EmbeddingModel:
                     model_name=self.pipeline_config.model_config.model_path,
                 )
             )
-        response = self.pipeline.encode(pipeline_request)
+        response = self.pipeline.execute(
+            EmbeddingsGenerationInputs([pipeline_request])
+        )
         results = []
         for n in range(len(sentences)):
             embeddings = response[str(n)].embeddings
@@ -202,13 +210,22 @@ def main(
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
         )
-        assert isinstance(pipeline, EmbeddingsGenerator)
+
+        # Cast pipeline to the expected type for embeddings generation
+        embeddings_pipeline = cast(
+            Pipeline[
+                EmbeddingsGenerationInputs[TextContext],
+                EmbeddingsGenerationOutput,
+            ],
+            pipeline,
+        )
+
         huggingface_config = AutoConfig.from_pretrained(
             pipeline_config.model_config.model_path,
             trust_remote_code=pipeline_config.model_config.trust_remote_code,
         )
         model = EmbeddingModel(
-            pipeline_config, tokenizer, pipeline, huggingface_config
+            pipeline_config, tokenizer, embeddings_pipeline, huggingface_config
         )
 
     tasks: mteb.Benchmark | mteb.overview.MTEBTasks

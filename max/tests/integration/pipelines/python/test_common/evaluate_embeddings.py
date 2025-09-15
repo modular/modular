@@ -10,7 +10,11 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
-from max.interfaces import PipelineTokenizer, TextGenerationRequest
+from max.interfaces import (
+    EmbeddingsGenerationInputs,
+    PipelineTokenizer,
+    TextGenerationRequest,
+)
 from max.pipelines import EmbeddingsPipeline
 
 
@@ -41,7 +45,9 @@ async def encode_async(
     def _encode_batch(
         batch_prompts: dict[str, str], batch_contexts: dict[str, Any]
     ) -> None:
-        model_outputs = pipeline.encode(batch_contexts)
+        model_outputs = pipeline.execute(
+            EmbeddingsGenerationInputs([batch_contexts])
+        )
         for req_id, prompt in batch_prompts.items():
             results.append(
                 {
