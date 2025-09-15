@@ -73,3 +73,10 @@
     greedy sampling, top-k, top-p, and min-p sampling that control the
     randomness and diversity of text generation by determining how the
     next token is selected from probability distributions.
+
+- [WGMMA Programming](wgmma-programming.md)
+
+    This document explains the WGMMA (Warp Group MMA) tensor core instruction
+    introduced in Hopper H100 GPUs, covering its advantages over regular MMA
+    instructions, memory layout requirements for matrices in shared memory, and
+    providing a complete CUDA implementation example.
