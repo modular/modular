@@ -74,7 +74,3 @@ class AudioGeneratorPipeline(AudioGenerator[TTSContext]):
     @property
     def decoder_sample_rate(self) -> int:
         return getattr(self.pipeline_model, "decoder_sample_rate")  # type: ignore[has-type]  # noqa: B009
-
-    @property
-    def prev_num_steps(self) -> int:
-        return getattr(self.pipeline_model, "prev_num_steps")  # type: ignore[has-type]  # noqa: B009
