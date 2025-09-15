@@ -248,7 +248,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
                 *kv_inputs,
             ],
         ) as graph:
-            tokens, kv_inputs_value = graph.inputs
+            tokens, _kv_inputs_value = graph.inputs
             graph.output(tokens)
             return session.load(graph)
 

@@ -34,7 +34,7 @@ def mock_hf_config():
 
 
 @pytest.fixture
-def mock_llama3_config(mock_hf_config: LlamaConfig) -> Llama3Config:
+def mock_llama3_config() -> Llama3Config:
     """Create a mock Llama3Config for testing."""
     devices = [DeviceRef("gpu", 0), DeviceRef("gpu", 1)]
 

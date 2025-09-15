@@ -29,8 +29,6 @@ from max.graph import (
 )
 from max.mlir.dialects import mo
 
-DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
-
 # This path is used in skipif clauses rather than tests, so we can neither mark
 
 # it as a fixture nor can we call other fixtures
@@ -38,11 +36,6 @@ DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
 def modular_lib_path() -> Path:
     return Path(os.environ["MODULAR_PATH"]) / ".derived" / "build" / "lib"
-
-
-@pytest.fixture
-def sdk_test_inputs_path(modular_path: Path) -> Path:
-    return modular_path / "SDK" / "integration-test" / "API" / "Inputs"
 
 
 @pytest.fixture

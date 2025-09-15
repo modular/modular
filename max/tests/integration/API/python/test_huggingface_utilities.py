@@ -45,7 +45,6 @@ def test_huggingface_repo__file_exists(
 def test_huggingface_repo__formats_available(
     llama_3_1_8b_instruct_local_path: str,
     tiny_llama_1_1b_chat_v1_0_local_path: str,
-    tiny_random_llama_for_causal_lm_local_path: str,
 ) -> None:
     # Test a GGUF repo
     hf_repo = HuggingFaceRepo(

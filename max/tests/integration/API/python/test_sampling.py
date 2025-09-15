@@ -544,10 +544,6 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
         in_dtype=DType.float32,
         out_dtype=DType.float32,
     )
-    sampling_params_42 = SamplingParams(
-        top_k=top_k,
-        seed=seed_1,
-    )
 
     graph_42 = token_sampler(sampling_config_42, device=device_ref)
     sampler_42 = session.load(graph_42)

@@ -186,6 +186,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         else:
             # During later fetches, we get a cache hit so we use 1 block.
             available_blocks -= 1
+        assert available_blocks >= 0
 
         context.update(42)
         kv_manager.step(batch)

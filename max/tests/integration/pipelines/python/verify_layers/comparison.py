@@ -42,32 +42,6 @@ class LayerVerificationResult:
     rms: Optional[float] = None
 
 
-@dataclass
-class LayerVerificationReport:
-    """Complete report of layer-by-layer verification."""
-
-    pipeline_name: str
-    encoding: str
-    device_type: str
-    layer_results: list[LayerVerificationResult]
-
-    @property
-    def total_layers(self) -> int:
-        return len(self.layer_results)
-
-    @property
-    def passed_layers(self) -> int:
-        return sum(1 for result in self.layer_results if result.passed)
-
-    @property
-    def failed_layers(self) -> int:
-        return self.total_layers - self.passed_layers
-
-    @property
-    def overall_passed(self) -> bool:
-        return self.failed_layers == 0
-
-
 def get_component_name(layer_name: str) -> str:
     """Extract component name from layer name for grouping."""
     parts = layer_name.split(".")

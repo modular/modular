@@ -262,7 +262,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
     #     kv_input_symbols=kv_input_symbols,
     # )
     with pytest.raises(NotImplementedError) as e:
-        no_opaque_output = build_and_execute_graph(
+        _no_opaque_output = build_and_execute_graph(
             session,
             hidden_state,
             input_row_offsets,

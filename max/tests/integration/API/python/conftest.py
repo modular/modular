@@ -170,15 +170,6 @@ def named_inputs_path(modular_path: Path) -> Path:
     )
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--custom-ops-path",
-        type=str,
-        default="",
-        help="Path to custom Ops package",
-    )
-
-
 @pytest.fixture(scope="module")
 def session() -> InferenceSession:
     devices: list[md.Device] = []

@@ -204,7 +204,6 @@ def test_flash_attention_ragged_with_sinks(
 
     # Calculate dimensions
     total_seq_len = sum(seq_lens)
-    num_kv_groups = num_heads // num_kv_heads
 
     # Create input row offsets
     input_row_offsets = np.cumsum([0] + seq_lens, dtype=np.int32)

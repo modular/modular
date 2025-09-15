@@ -29,7 +29,7 @@ from test_common.registry import prepare_registry
 def test_config__raises_with_unsupported_GPTQ_format() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_GPTQ_ARCH)
     # this should work
-    config = PipelineConfig(
+    _ = PipelineConfig(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         quantization_encoding=SupportedEncoding.gptq,
         device_specs=[DeviceSpec.accelerator()],
@@ -37,7 +37,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
 
     # We expect this to fail.
     with pytest.raises(ValueError):
-        unsupported_config = PipelineConfig(
+        _ = PipelineConfig(
             model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
             quantization_encoding=SupportedEncoding.gptq,
             device_specs=[DeviceSpec.accelerator()],

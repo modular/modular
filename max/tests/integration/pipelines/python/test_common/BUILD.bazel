@@ -25,7 +25,6 @@ modular_py_library(
         ":ndarray_from_tensor_type",
         ":numerics",
         ":numpy_encoder",
-        ":path",
         ":pipeline_cli_utils",
         ":pipeline_model_dummy",
         ":process_isolation",
@@ -120,17 +119,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
         requirement("nvitop"),
-    ],
-)
-
-modular_py_library(
-    name = "path",
-    testonly = True,
-    srcs = ["path.py"],
-    imports = [".."],
-    deps = [
-        "//SDK/lib/API/python/max/pipelines/lib",
-        "@rules_python//python/runfiles",
     ],
 )
 

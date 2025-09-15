@@ -135,9 +135,6 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
 
     # Execute batches until they are complete
     for _ in range(context.current_length, max_tokens):
-        batch_ids_with_lengths = {
-            batch_id: c.current_length for batch_id, c in context_batch.items()
-        }
         inputs = TextGenerationInputs(batches=[context_batch], num_steps=1)
         response = pipeline.execute(inputs)[0]  # type: ignore
         completed_batch_ids = context_batch.keys() - response.keys()  # type: ignore
