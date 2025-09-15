@@ -1320,6 +1320,7 @@ def main(args: argparse.Namespace) -> None:
     benchmark_dataset = BenchmarkDataset.from_flags(
         dataset_name=args.dataset_name,
         dataset_path=args.dataset_path,
+        dataset_mode=args.dataset_mode,
     )
 
     if (
@@ -1391,18 +1392,18 @@ def main(args: argparse.Namespace) -> None:
         # Sample sonnet requests with common parameters
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
-            input_len=args.sonnet_input_len,
+            tokenizer=tokenizer,
             output_lengths=output_lengths,
+            input_len=args.sonnet_input_len,
             prefix_len=args.sonnet_prefix_len,
             apply_chat_template=apply_chat_template,
-            tokenizer=tokenizer,
         )
 
     elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
-            output_lengths=output_lengths,
             tokenizer=tokenizer,
+            output_lengths=output_lengths,
         )
     elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
         if output_lengths:
@@ -1411,10 +1412,10 @@ def main(args: argparse.Namespace) -> None:
             )
         input_requests = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            shuffle=not args.record_output_lengths,
             input_len=args.arxiv_summarization_input_len,
             max_output_len=args.max_output_len,
-            shuffle=not args.record_output_lengths,
-            tokenizer=tokenizer,
         )
     elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
         if args.num_chat_sessions:
@@ -1432,11 +1433,11 @@ def main(args: argparse.Namespace) -> None:
             )
         else:
             input_requests = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
                 input_len=args.random_input_len,
                 output_len=args.random_output_len,
-                num_prompts=args.num_prompts,
                 coefficient_of_variation=args.random_coefficient_of_variation,
-                tokenizer=tokenizer,
                 sys_prompt_ratio=args.random_sys_prompt_ratio,
                 max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
                 distribution_type=args.random_distribution_type,
@@ -1470,8 +1471,8 @@ def main(args: argparse.Namespace) -> None:
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             output_lengths=output_lengths,
-            seed=args.seed,
             shuffle=args.obfuscated_conversations_shuffle,
+            seed=args.seed,
         )
     else:
         raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")

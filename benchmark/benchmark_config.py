@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from benchmark_datasets import DATASET_REGISTRY
+from benchmark_datasets import DATASET_REGISTRY, DatasetMode
 
 logger = logging.getLogger("max.benchmark")
 
@@ -137,6 +137,9 @@ class BaseBenchmarkConfig(MAXConfig):
     dataset_path: Optional[str] = None
     """Path to the dataset."""
 
+    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
+
     # Basic workload parameters
     num_prompts: int = 1000
     """Number of prompts to process."""
@@ -169,6 +172,7 @@ class BaseBenchmarkConfig(MAXConfig):
             "trust_remote_code": "Trust remote code from huggingface.",
             "dataset_name": "Name of the dataset to benchmark on.",
             "dataset_path": "Path to the dataset.",
+            "dataset_mode": "Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub).",
             "num_prompts": "Number of prompts to process.",
             "seed": "Random seed for reproducibility.",
             "disable_tqdm": "Specify to disable tqdm progress bar.",
@@ -187,6 +191,7 @@ class BaseBenchmarkConfig(MAXConfig):
             "backend": [backend.value for backend in Backend],
             "endpoint": [endpoint.value for endpoint in Endpoint],
             "dataset_name": list(DATASET_REGISTRY.keys()),
+            "dataset_mode": [mode.value for mode in DatasetMode],
             "random_distribution_type": ["uniform", "normal"],
         }
 
