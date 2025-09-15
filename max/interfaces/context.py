@@ -36,7 +36,7 @@ class SamplingParamsInput:
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     repetition_penalty: Optional[float] = None
-    max_new_tokens: Optional[Union[int, None]] = None
+    max_new_tokens: Optional[int] = None
     min_new_tokens: Optional[int] = None
     ignore_eos: Optional[bool] = None
     stop: Optional[Optional[list[str]]] = None
