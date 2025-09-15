@@ -1,5 +1,3 @@
-load("//bazel:api.bzl", "lit_tests")
-
 filegroup(
     name = "pytest_inputs",
     testonly = True,
@@ -18,30 +16,4 @@ filegroup(
     testonly = True,
     srcs = glob(["**/*.mlir"]),
     visibility = [":__subpackages__"],
-)
-
-lit_tests(
-    name = "test",
-    size = "large",
-    srcs = glob(
-        [
-            "**/*.api",
-        ],
-    ),
-    data = [
-        ":inputs",
-        "//SDK/integration-test:inputs",
-    ],
-    env = {
-        "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
-    },
-    mojo_deps = [
-        "@mojo//:register",
-        "@mojo//:stdlib",
-    ],
-    tags = ["gpu"],
-    tools = [
-        "//GenericML/tools/mt",
-        "//SDK/tools/modular-api-executor",
-    ],
 )
