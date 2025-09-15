@@ -19,9 +19,16 @@ import functools
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import EmbeddingsGenerator, PipelineTask, PipelineTokenizer
+from max.interfaces import (
+    EmbeddingsGenerator,
+    PipelineTask,
+    PipelineTokenizer,
+    TextGenerationRequest,
+)
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import (
     AutoConfig,
@@ -441,6 +448,13 @@ class PipelineRegistry:
                 pipeline_config=pipeline_config,
                 chat_template=pipeline_config.retrieve_chat_template(),
             )
+        # Cast tokenizer to the proper type for text generation pipeline compatibility
+        typed_tokenizer = cast(
+            PipelineTokenizer[
+                Any, npt.NDArray[np.integer[Any]], TextGenerationRequest
+            ],
+            tokenizer,
+        )
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
             functools.partial(
@@ -449,7 +463,7 @@ class PipelineRegistry:
                 pipeline_model=arch.pipeline_model,
                 eos_token_id=tokenizer.eos,
                 weight_adapters=arch.weight_adapters,
-                tokenizer=tokenizer,
+                tokenizer=typed_tokenizer,
             ),
         )
 

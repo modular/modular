@@ -58,8 +58,9 @@ from max.interfaces import (
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
-    Request,
     RequestID,
+    RequestType,
+    TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
@@ -176,7 +177,6 @@ class ModelOutputs:
 
 
 T = TypeVar("T", bound=InputContext)
-RequestType = TypeVar("RequestType", bound=Request, contravariant=True)
 
 
 class PipelineModel(ABC, Generic[T]):
@@ -660,20 +660,25 @@ class GenerateMixin(
 
 
 class TextGenerationPipeline(
-    Pipeline[TextGenerationInputs[T], TextGenerationOutput],
-    GenerateMixin[T, TextGenerationRequest],
+    Pipeline[
+        TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
+    ],
+    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
+    Generic[TextGenerationContextType],
 ):
     """Generalized token generator pipeline."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[T]],
+        pipeline_model: type[PipelineModel[TextGenerationContextType]],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
-            T, npt.NDArray[np.integer[Any]], TextGenerationRequest
+            TextGenerationContextType,
+            npt.NDArray[np.integer[Any]],
+            TextGenerationRequest,
         ],
     ) -> None:
         self._pipeline_config = pipeline_config
@@ -808,18 +813,20 @@ class TextGenerationPipeline(
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
-        T, npt.NDArray[np.integer[Any]], TextGenerationRequest
+        TextGenerationContextType,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
     ]:
         return self._tokenizer
 
     @property
-    def kv_managers(self) -> list[KVCacheManager[T]]:
+    def kv_managers(self) -> list[KVCacheManager[TextGenerationContextType]]:
         return [self._pipeline_model.kv_manager]
 
     def calculate_num_steps(
         self,
         num_steps: int,
-        context: T,
+        context: TextGenerationContextType,
     ) -> int:
         max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
@@ -834,7 +841,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[list[T]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[ModelInputs, int, npt.NDArray[np.int32] | None]:
         tracer: Tracer = Tracer("prepare_batch")
@@ -932,7 +939,7 @@ class TextGenerationPipeline(
         )
 
     @traced
-    def _maybe_sort_loras(self, batch: dict[str, T]):
+    def _maybe_sort_loras(self, batch: dict[str, TextGenerationContextType]):
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.
@@ -947,7 +954,7 @@ class TextGenerationPipeline(
         Records batch information for the current inference step.
 
         Args:
-            contexts (Iterable[T]): An iterable of context objects, each containing
+            contexts (Iterable[TextGenerationContextType]): An iterable of context objects, each containing
                 'start_idx' (past sequence length) and 'active_length' (current sequence length).
             num_steps (int): The number of steps processed in this batch.
 
@@ -975,7 +982,7 @@ class TextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[T],
+        inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
@@ -1095,7 +1102,7 @@ class TextGenerationPipeline(
 
         # Update the context object.
         tracer.push("update_context")
-        res: dict[str, TextGenerationOutput] = {}
+        res: dict[RequestID, TextGenerationOutput] = {}
         for batch_index, context in enumerate(context_batch):
             for step in range(num_steps):
                 # Convert to a Python scalar to improve serialization performance.
