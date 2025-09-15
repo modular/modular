@@ -1508,6 +1508,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     block_swizzle_size: Int = 0,
     rasterize_order: RasterOrder = RasterOrder.AlongM,
+    num_pipeline_stages: Optional[UInt] = None,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1530,6 +1531,18 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     alias BM = MMA_M // cta_group
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
+
+    # constraint for bfloat16 matmul
+    constrained[
+        (a_type != DType.bfloat16) or (MMA_M != 128) or (MMA_N % 32 == 0),
+        "if MMA_M is 128, then MMA_N must be a multiple of 32",
+    ]()
+
+    # constraint for fp8 matmul
+    constrained[
+        (a_type != DType.float8_e4m3fn) or (MMA_N % 64 == 0),
+        "MMA_N must be a multiple of 64 for fp8 matmul",
+    ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1627,9 +1640,21 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         AB_smem_per_stage + tma_mbar_bytes_per_stage + mma_mbar_bytes_per_stage
     )
 
-    alias max_pipeline_stages = smem_leftover // producer_consumer_smem_per_stage
+    alias max_pipeline_stages: UInt = smem_leftover // producer_consumer_smem_per_stage
 
-    alias producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
+    constrained[
+        max_pipeline_stages >= 1, "Max pipeline stages must be at least 1"
+    ]()
+
+    @parameter
+    if num_pipeline_stages:
+        constrained[
+            num_pipeline_stages.value() <= max_pipeline_stages,
+            "Pipeline stage must be less than or equal to max pipeline stages",
+        ]()
+
+    alias pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
+    alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     alias smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
@@ -1654,7 +1679,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         cta_group=cta_group,
-        num_pipeline_stages = UInt(max_pipeline_stages),
+        num_pipeline_stages = UInt(pipeline_stage),
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         num_accum_pipeline_stages = UInt(max_accum_pipeline_stages),
         n = c.shape[1](),

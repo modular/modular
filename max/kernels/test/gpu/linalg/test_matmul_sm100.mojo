@@ -336,8 +336,10 @@ def main():
                         @parameter
                         if mma_m_scale == 1 and mma_n_scale % 2 != 0:
                             continue
+
                         # TODO: support the increments of 8 for float 8 dtype at a later point
                         # currently it works with increments of BN = 32
+                        @parameter
                         if (
                             dtype == DType.float8_e4m3fn
                             and mma_n_scale % 4 != 0

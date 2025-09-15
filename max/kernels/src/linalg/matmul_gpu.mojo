@@ -58,7 +58,10 @@ from .dispatch_table_a100_gpu import create_matmul_configs_ampere
 from .gemv import gemv_gpu
 from .matmul_vendor import matmul as matmul_vendor
 from .matmul_dispatch_sm90 import matmul_dispatch_sm90
-from .matmul_dispatch_sm100 import matmul_dispatch_sm100
+from .matmul_dispatch_sm100 import (
+    matmul_dispatch_sm100,
+    matmul_sm100_entrypoint,
+)
 from .matmul_sm100 import matmul_sm100_fallback
 from .utils import (
     GemmShape,
@@ -542,19 +545,12 @@ fn _matmul_gpu[
     @parameter
     if (
         ctx.default_device_info is B200
-        and use_experimental_kernels
         and transpose_b
-        and (
-            a_type in bf16_or_fp16
-            and b_type in bf16_or_fp16
-            and c_type in bf16_or_fp16_fp32
-        )
+        and (a_type == b_type == DType.bfloat16)
+        and c_type == DType.bfloat16
     ):
-        var status = matmul_dispatch_sm100[
-            c_type,
-            a_type,
-            b_type,
-            transpose_b,
+        var status = matmul_sm100_entrypoint[
+            transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
