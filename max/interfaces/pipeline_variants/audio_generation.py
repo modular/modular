@@ -195,8 +195,3 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
                 release resources for.
         """
         ...
-
-    @property
-    def decoder_sample_rate(self) -> int:
-        """The sample rate of the decoder."""
-        ...
