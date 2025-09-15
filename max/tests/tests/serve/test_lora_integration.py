@@ -260,14 +260,13 @@ def test_lru_cache_automatic_activation(
         "req3": mock_contexts[2],
     }
 
-    sorted_batch = lora_manager.sort_lora_batch(batch)
+    _sorted_batch = lora_manager.sort_lora_batch(batch)
 
     assert len(lora_manager._active_loras) == 2
     assert lora_manager._active_loras.get_slot("adapter_0") is not None
     assert lora_manager._active_loras.get_slot("adapter_1") is not None
     assert lora_manager._active_loras.get_slot("adapter_2") is None
 
-    sorted_keys = list(sorted_batch.keys())
     slot_0 = lora_manager._model_name_to_id("adapter_0")
     slot_1 = lora_manager._model_name_to_id("adapter_1")
     base_slot = lora_manager._model_name_to_id("/mock/path")

@@ -68,27 +68,6 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
         return ""
 
 
-@dataclass(frozen=True)
-class MockTokenGenerator(
-    Pipeline[TextGenerationInputs[MockContext], TextGenerationOutput]
-):
-    def execute(
-        self,
-        inputs: TextGenerationInputs[MockContext],
-    ) -> dict[RequestID, TextGenerationOutput]:
-        return {
-            key: TextGenerationOutput(
-                request_id=ctx.request_id,
-                tokens=[],
-                final_status=GenerationStatus.ACTIVE,
-            )
-            for key, ctx in inputs.batch.items()
-        }
-
-    def release(self, request_id: RequestID) -> None:
-        pass
-
-
 @pytest.fixture
 def token_generator(request):  # noqa: ANN001
     """Fixture for a pipeline's generator

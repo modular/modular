@@ -7,10 +7,8 @@
 from __future__ import annotations
 
 import queue
-import tempfile
 from dataclasses import dataclass
 from typing import Union
-from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -120,10 +118,6 @@ def create_paged_manager(
 
     assert kv_manager.total_num_pages == num_blocks
     return kv_manager
-
-
-def generate_zmq_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
 def create_paged_scheduler(

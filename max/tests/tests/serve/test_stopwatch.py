@@ -14,7 +14,7 @@ def test_record() -> None:
         spy.assert_not_called()
 
     spy.assert_called_once()
-    args, kw = spy.call_args
+    args, _kw = spy.call_args
     assert len(args) == 1
     assert isinstance(args[0], float)
 
@@ -38,7 +38,7 @@ def test_no_record_exception_handling() -> None:
 
     # verify that we invoked the callback even with an error
     spy.assert_called_once()
-    args, kw = spy.call_args
+    args, _kw = spy.call_args
     assert len(args) == 1
     assert isinstance(args[0], float)
 
