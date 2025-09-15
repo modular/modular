@@ -170,6 +170,7 @@ build:ci-no-config --spawn_strategy=remote,worker,sandboxed,standalone
 build:ci --config=ci-no-config
 # Set CI builds to lower priority than local builds, some CI builds override this
 build:ci --remote_execution_priority=20
+test:ci --remote_download_outputs=minimal
 
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test
@@ -209,11 +210,6 @@ build:ci-remote-mi300 --config=ci-gpu-common
 build:ci-remote-mi300 --config=remote-mi300
 build:ci-remote-mi300 --build_metadata=TAGS=mi300
 build:ci-remote-mi300 --test_keep_going=false
-
-test:ci-test --config=ci-no-config
-test:ci-test --remote_download_outputs=minimal
-
-test:ci-gpu-common --config=ci-test
 
 # TODO: Remove once transitives are fixed
 common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo
