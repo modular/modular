@@ -566,6 +566,11 @@ def _load_user_provided_config(
         raise ValueError(
             f"User configuration file {user_config_path} must contain a dictionary at the top level"
         )
+    elif config_class._config_file_section_name not in user_config_dict:
+        logger.warning(
+            f"Cannot find {config_class._config_file_section_name} section in user configuration file {user_config_path}"
+            f"Will not override benchmark config values from default config"
+        )
 
     # Load the default config file
     with open(default_config_path, encoding="utf-8") as f:
