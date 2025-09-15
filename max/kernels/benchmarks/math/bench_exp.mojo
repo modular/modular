@@ -250,7 +250,7 @@ fn exp_mojo_opt[
     var expr = ldexp(taylor_result, k.cast[DType.int32]())
     return expr
     # var val1 = (expr > min_val).select(expr, SIMD[dtype,simd_width](0))
-    # return (val1 < max_val).select(val1, SIMD[dtype,simd_width](inf[dtype]()))
+    # return (val1 < max_val).select(val1, SIMD[dtype,simd_width](DType.inf[dtype]()))
 
 
 @always_inline

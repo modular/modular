@@ -287,13 +287,11 @@ a variable with the type `SIMD[DType.float64, 1]` (or  `Float64`, which is the
 same thing).
 
 ```mojo
-from utils.numerics import max_finite, min_finite
-
 def describeDType[dtype: DType]():
     print(dtype, "is floating point:", dtype.is_floating_point())
     print(dtype, "is integral:", dtype.is_integral())
     print("Min/max finite values for", dtype)
-    print(min_finite[dtype](), max_finite[dtype]())
+    print(DType.min_finite[dtype](), DType.max_finite[dtype]())
 
 describeDType[DType.float32]()
 ```

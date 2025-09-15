@@ -64,8 +64,6 @@ from memory import memcpy
 from memory.pointer import _GPUAddressSpace
 from iter import _Zip2
 
-from utils.numerics import max_finite
-
 alias INT_TUPLE_VALIDATION = False
 
 
@@ -82,7 +80,7 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 fn _get_index_type(layout: Layout) -> DType:
     """Returns int32 if layout size fits in uint32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.uint32]()):
+    if layout.cosize() < Int(DType.max_finite[DType.uint32]()):
         return DType.int32
 
     return DType.int64
@@ -100,7 +98,7 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns int32 if layout fits in int32 range or index type is int32, otherwise index.
     """
     if layout.all_dims_known() and layout.cosize() < Int(
-        max_finite[DType.int32]()
+        DType.max_finite[DType.int32]()
     ):
         return DType.int32
     else:
@@ -116,7 +114,7 @@ fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         var shape = layout.shape.flatten()
 
         for i in range(len(shape)):
-            if shape[i].value() > Int(max_finite[DType.int32]()):
+            if shape[i].value() > Int(DType.max_finite[DType.int32]()):
                 return DType.int64
 
         return DType.int32

@@ -27,7 +27,6 @@ from testing import (
     assert_true,
 )
 
-from utils.numerics import nan
 
 alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
 alias int8_pop = __mlir_type.`!pop.scalar<si8>`
@@ -209,8 +208,8 @@ def test_memcmp_extensive[
             ptr2[i] = i + 1
             dptr2[i] = i + 1
         elif extermes == "nan":
-            ptr2[i] = nan[dtype]()
-            dptr2[i] = nan[dtype]()
+            ptr2[i] = DType.nan[dtype]()
+            dptr2[i] = DType.nan[dtype]()
         elif extermes == "inf":
             ptr2[i] = Scalar[dtype].MAX
             dptr2[i] = Scalar[dtype].MAX

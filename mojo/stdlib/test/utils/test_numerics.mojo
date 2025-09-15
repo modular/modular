@@ -18,16 +18,11 @@ from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 from utils.numerics import (
     FPUtils,
     get_accum_type,
-    inf,
     isfinite,
     isinf,
     isnan,
-    max_finite,
     max_or_inf,
-    min_finite,
     min_or_neg_inf,
-    nan,
-    neg_inf,
     nextafter,
 )
 
@@ -80,19 +75,19 @@ def test_isfinite():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
     if not CompilationTarget.has_neon():
-        assert_false(isfinite(inf[DType.bfloat16]()))
-        assert_false(isfinite(neg_inf[DType.bfloat16]()))
-        assert_false(isfinite(nan[DType.bfloat16]()))
+        assert_false(isfinite(DType.inf[DType.bfloat16]()))
+        assert_false(isfinite(DType.neg_inf[DType.bfloat16]()))
+        assert_false(isfinite(DType.nan[DType.bfloat16]()))
 
-    assert_false(isfinite(inf[DType.float16]()))
-    assert_false(isfinite(inf[DType.float32]()))
-    assert_false(isfinite(inf[DType.float64]()))
-    assert_false(isfinite(neg_inf[DType.float16]()))
-    assert_false(isfinite(neg_inf[DType.float32]()))
-    assert_false(isfinite(neg_inf[DType.float64]()))
-    assert_false(isfinite(nan[DType.float16]()))
-    assert_false(isfinite(nan[DType.float32]()))
-    assert_false(isfinite(nan[DType.float64]()))
+    assert_false(isfinite(DType.inf[DType.float16]()))
+    assert_false(isfinite(DType.inf[DType.float32]()))
+    assert_false(isfinite(DType.inf[DType.float64]()))
+    assert_false(isfinite(DType.neg_inf[DType.float16]()))
+    assert_false(isfinite(DType.neg_inf[DType.float32]()))
+    assert_false(isfinite(DType.neg_inf[DType.float64]()))
+    assert_false(isfinite(DType.nan[DType.float16]()))
+    assert_false(isfinite(DType.nan[DType.float32]()))
+    assert_false(isfinite(DType.nan[DType.float64]()))
 
 
 def test_isinf():
@@ -101,19 +96,19 @@ def test_isinf():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
     if not CompilationTarget.has_neon():
-        assert_true(isinf(inf[DType.bfloat16]()))
-        assert_true(isinf(neg_inf[DType.bfloat16]()))
-        assert_false(isinf(nan[DType.bfloat16]()))
+        assert_true(isinf(DType.inf[DType.bfloat16]()))
+        assert_true(isinf(DType.neg_inf[DType.bfloat16]()))
+        assert_false(isinf(DType.nan[DType.bfloat16]()))
 
-    assert_true(isinf(inf[DType.float16]()))
-    assert_true(isinf(inf[DType.float32]()))
-    assert_true(isinf(inf[DType.float64]()))
-    assert_true(isinf(neg_inf[DType.float16]()))
-    assert_true(isinf(neg_inf[DType.float32]()))
-    assert_true(isinf(neg_inf[DType.float64]()))
-    assert_false(isinf(nan[DType.float16]()))
-    assert_false(isinf(nan[DType.float32]()))
-    assert_false(isinf(nan[DType.float64]()))
+    assert_true(isinf(DType.inf[DType.float16]()))
+    assert_true(isinf(DType.inf[DType.float32]()))
+    assert_true(isinf(DType.inf[DType.float64]()))
+    assert_true(isinf(DType.neg_inf[DType.float16]()))
+    assert_true(isinf(DType.neg_inf[DType.float32]()))
+    assert_true(isinf(DType.neg_inf[DType.float64]()))
+    assert_false(isinf(DType.nan[DType.float16]()))
+    assert_false(isinf(DType.nan[DType.float32]()))
+    assert_false(isinf(DType.nan[DType.float64]()))
 
 
 def test_isnan():
@@ -122,26 +117,26 @@ def test_isnan():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
     if not CompilationTarget.has_neon():
-        assert_false(isnan(inf[DType.bfloat16]()))
-        assert_false(isnan(neg_inf[DType.bfloat16]()))
-        assert_true(isnan(nan[DType.bfloat16]()))
+        assert_false(isnan(DType.inf[DType.bfloat16]()))
+        assert_false(isnan(DType.neg_inf[DType.bfloat16]()))
+        assert_true(isnan(DType.nan[DType.bfloat16]()))
 
-    assert_false(isnan(inf[DType.float16]()))
-    assert_false(isnan(inf[DType.float32]()))
-    assert_false(isnan(inf[DType.float64]()))
-    assert_false(isnan(neg_inf[DType.float16]()))
-    assert_false(isnan(neg_inf[DType.float32]()))
-    assert_false(isnan(neg_inf[DType.float64]()))
-    assert_true(isnan(nan[DType.float16]()))
-    assert_true(isnan(nan[DType.float32]()))
-    assert_true(isnan(nan[DType.float64]()))
+    assert_false(isnan(DType.inf[DType.float16]()))
+    assert_false(isnan(DType.inf[DType.float32]()))
+    assert_false(isnan(DType.inf[DType.float64]()))
+    assert_false(isnan(DType.neg_inf[DType.float16]()))
+    assert_false(isnan(DType.neg_inf[DType.float32]()))
+    assert_false(isnan(DType.neg_inf[DType.float64]()))
+    assert_true(isnan(DType.nan[DType.float16]()))
+    assert_true(isnan(DType.nan[DType.float32]()))
+    assert_true(isnan(DType.nan[DType.float64]()))
 
 
 fn overflow_int[dtype: DType]() -> Bool:
     constrained[
         dtype.is_integral(), "comparison only valid on integral types"
     ]()
-    return max_finite[dtype]() + 1 < max_finite[dtype]()
+    return DType.max_finite[dtype]() + 1 < DType.max_finite[dtype]()
 
 
 fn overflow_fp[dtype: DType]() -> Bool:
@@ -149,14 +144,16 @@ fn overflow_fp[dtype: DType]() -> Bool:
         dtype.is_floating_point(),
         "comparison only valid on floating point types",
     ]()
-    return max_finite[dtype]() + 1 == max_finite[dtype]()
+    return DType.max_finite[dtype]() + 1 == DType.max_finite[dtype]()
 
 
 def test_max_finite():
-    assert_almost_equal(max_finite[DType.float32](), 3.4028235e38)
-    assert_almost_equal(max_finite[DType.float64](), 1.7976931348623157e308)
+    assert_almost_equal(DType.max_finite[DType.float32](), 3.4028235e38)
+    assert_almost_equal(
+        DType.max_finite[DType.float64](), 1.7976931348623157e308
+    )
 
-    assert_true(max_finite[DType.bool]())
+    assert_true(DType.max_finite[DType.bool]())
 
     assert_true(overflow_int[DType.int8]())
     assert_true(overflow_int[DType.uint8]())
@@ -171,42 +168,42 @@ def test_max_finite():
     assert_true(overflow_fp[DType.float32]())
     assert_true(overflow_fp[DType.float64]())
 
-    assert_equal(max_finite[DType.int8](), 127)
-    assert_equal(max_finite[DType.uint8](), 255)
-    assert_equal(max_finite[DType.int16](), 32767)
-    assert_equal(max_finite[DType.uint16](), 65535)
-    assert_equal(max_finite[DType.int32](), 2147483647)
-    assert_equal(max_finite[DType.uint32](), 4294967295)
-    assert_equal(max_finite[DType.int64](), 9223372036854775807)
-    assert_equal(max_finite[DType.uint64](), 18446744073709551615)
+    assert_equal(DType.max_finite[DType.int8](), 127)
+    assert_equal(DType.max_finite[DType.uint8](), 255)
+    assert_equal(DType.max_finite[DType.int16](), 32767)
+    assert_equal(DType.max_finite[DType.uint16](), 65535)
+    assert_equal(DType.max_finite[DType.int32](), 2147483647)
+    assert_equal(DType.max_finite[DType.uint32](), 4294967295)
+    assert_equal(DType.max_finite[DType.int64](), 9223372036854775807)
+    assert_equal(DType.max_finite[DType.uint64](), 18446744073709551615)
     # FIXME(#5214): uncomment once it is closed
     # assert_equal(
-    #     max_finite[DType.int128](), 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    #     DType.max_finite[DType.int128](), 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
     # )
     # assert_equal(
-    #     max_finite[DType.uint128](), 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    #     DType.max_finite[DType.uint128](), 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
     # )
     # assert_equal(
-    #     max_finite[DType.int256](),
+    #     DType.max_finite[DType.int256](),
     #     0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
     # )
     # assert_equal(
-    #     max_finite[DType.uint256](),
+    #     DType.max_finite[DType.uint256](),
     #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
     # )
 
     @parameter
     if is_64bit():
-        assert_equal(max_finite[DType.index](), 9223372036854775807)
+        assert_equal(DType.max_finite[DType.index](), 9223372036854775807)
     else:
-        assert_equal(max_finite[DType.index](), 2147483647)
+        assert_equal(DType.max_finite[DType.index](), 2147483647)
 
 
 fn underflow_int[dtype: DType]() -> Bool:
     constrained[
         dtype.is_integral(), "comparison only valid on integral types"
     ]()
-    return min_finite[dtype]() - 1 > min_finite[dtype]()
+    return DType.min_finite[dtype]() - 1 > DType.min_finite[dtype]()
 
 
 fn underflow_fp[dtype: DType]() -> Bool:
@@ -214,14 +211,16 @@ fn underflow_fp[dtype: DType]() -> Bool:
         dtype.is_floating_point(),
         "comparison only valid on floating point types",
     ]()
-    return min_finite[dtype]() - 1 == min_finite[dtype]()
+    return DType.min_finite[dtype]() - 1 == DType.min_finite[dtype]()
 
 
 def test_min_finite():
-    assert_almost_equal(min_finite[DType.float32](), -3.4028235e38)
-    assert_almost_equal(min_finite[DType.float64](), -1.7976931348623157e308)
+    assert_almost_equal(DType.min_finite[DType.float32](), -3.4028235e38)
+    assert_almost_equal(
+        DType.min_finite[DType.float64](), -1.7976931348623157e308
+    )
 
-    assert_false(min_finite[DType.bool]())
+    assert_false(DType.min_finite[DType.bool]())
 
     assert_true(underflow_int[DType.int8]())
     assert_true(underflow_int[DType.uint8]())
@@ -236,57 +235,66 @@ def test_min_finite():
     assert_true(underflow_fp[DType.float32]())
     assert_true(underflow_fp[DType.float64]())
 
-    assert_equal(min_finite[DType.int8](), -128)
-    assert_equal(min_finite[DType.int16](), -32768)
-    assert_equal(min_finite[DType.int32](), -2147483648)
-    assert_equal(min_finite[DType.int64](), -9223372036854775808)
+    assert_equal(DType.min_finite[DType.int8](), -128)
+    assert_equal(DType.min_finite[DType.int16](), -32768)
+    assert_equal(DType.min_finite[DType.int32](), -2147483648)
+    assert_equal(DType.min_finite[DType.int64](), -9223372036854775808)
     # FIXME(#5214): uncomment once it is closed
     # assert_equal(
-    #     min_finite[DType.int128](), -0x8000_0000_0000_0000_0000_0000_0000_0000
+    #     DType.min_finite[DType.int128](),
+    #     -0x8000_0000_0000_0000_0000_0000_0000_0000,
     # )
     # assert_equal(
-    #     min_finite[DType.int256](),
+    #     DType.min_finite[DType.int256](),
     #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
     # )
 
     @parameter
     if is_64bit():
-        assert_equal(min_finite[DType.index](), -9223372036854775808)
+        assert_equal(DType.min_finite[DType.index](), -9223372036854775808)
     else:
-        assert_equal(min_finite[DType.index](), -2147483648)
+        assert_equal(DType.min_finite[DType.index](), -2147483648)
 
 
 def test_max_or_inf():
-    assert_almost_equal(max_or_inf[DType.float32](), inf[DType.float32]())
-    assert_almost_equal(max_or_inf[DType.float64](), inf[DType.float64]())
+    assert_almost_equal(max_or_inf[DType.float32](), DType.inf[DType.float32]())
+    assert_almost_equal(max_or_inf[DType.float64](), DType.inf[DType.float64]())
     assert_true(max_or_inf[DType.bool]())
 
 
 def test_min_or_neg_inf():
     assert_almost_equal(
-        min_or_neg_inf[DType.float32](), neg_inf[DType.float32]()
+        min_or_neg_inf[DType.float32](), DType.neg_inf[DType.float32]()
     )
     assert_almost_equal(
-        min_or_neg_inf[DType.float64](), neg_inf[DType.float64]()
+        min_or_neg_inf[DType.float64](), DType.neg_inf[DType.float64]()
     )
     assert_false(min_or_neg_inf[DType.bool]())
 
 
 def test_neg_inf():
-    assert_false(isfinite(neg_inf[DType.float32]()))
-    assert_false(isfinite(neg_inf[DType.float64]()))
-    assert_true(isinf(neg_inf[DType.float32]()))
-    assert_true(isinf(neg_inf[DType.float64]()))
-    assert_false(isnan(neg_inf[DType.float32]()))
-    assert_false(isnan(neg_inf[DType.float64]()))
-    assert_equal(-inf[DType.float32](), neg_inf[DType.float32]())
-    assert_equal(-inf[DType.float64](), neg_inf[DType.float64]())
+    assert_false(isfinite(DType.neg_inf[DType.float32]()))
+    assert_false(isfinite(DType.neg_inf[DType.float64]()))
+    assert_true(isinf(DType.neg_inf[DType.float32]()))
+    assert_true(isinf(DType.neg_inf[DType.float64]()))
+    assert_false(isnan(DType.neg_inf[DType.float32]()))
+    assert_false(isnan(DType.neg_inf[DType.float64]()))
+    assert_equal(-DType.inf[DType.float32](), DType.neg_inf[DType.float32]())
+    assert_equal(-DType.inf[DType.float64](), DType.neg_inf[DType.float64]())
 
 
 def test_nextafter():
-    assert_true(isnan(nextafter(nan[DType.float32](), nan[DType.float32]())))
-    assert_true(isinf(nextafter(inf[DType.float32](), inf[DType.float32]())))
-    assert_true(isinf(nextafter(-inf[DType.float32](), -inf[DType.float32]())))
+    assert_true(
+        isnan(nextafter(DType.nan[DType.float32](), DType.nan[DType.float32]()))
+    )
+    assert_true(
+        isinf(nextafter(DType.inf[DType.float32](), DType.inf[DType.float32]()))
+    )
+    assert_true(
+        isinf(
+            nextafter(-DType.inf[DType.float32](), -DType.inf[DType.float32]())
+        )
+    )
     assert_almost_equal(nextafter(Float64(0), Float64(0)), 0)
     assert_almost_equal(nextafter(Float64(0), Float64(1)), 5e-324)
     assert_almost_equal(nextafter(Float64(0), Float64(-1)), -5e-324)

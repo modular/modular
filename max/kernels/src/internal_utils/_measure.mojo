@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import inf, isnan, log, nan, sqrt
+from math import isnan, log, sqrt
 from sys import simd_width_of
 
 from algorithm import elementwise, mean, sum, vectorize
@@ -39,10 +39,10 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
     $$
     """
     return (isnan(x) | isnan(y)).select(
-        nan[x.dtype](),
+        DType.nan[x.dtype](),
         (x.gt(0) & y.gt(0)).select(
             x * log(x / y) - x + y,
-            (x.eq(0) & y.ge(0)).select(y, inf[x.dtype]()),
+            (x.eq(0) & y.ge(0)).select(y, DType.inf[x.dtype]()),
         ),
     )
 

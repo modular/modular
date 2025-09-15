@@ -24,7 +24,7 @@ from testing import (
 )
 
 from utils import StaticTuple
-from utils.numerics import isfinite, isinf, isnan, nan
+from utils.numerics import isfinite, isinf, isnan
 
 
 def test_cast():
@@ -315,7 +315,7 @@ def test_simd_repr():
     assert_equal(Float16(324).__repr__(), "SIMD[DType.float16, 1](324.0)")
     assert_equal(
         SIMD[DType.float32, 4](
-            Float32.MAX, Float32.MIN, -0.0, nan[DType.float32]()
+            Float32.MAX, Float32.MIN, -0.0, DType.nan[DType.float32]()
         ).__repr__(),
         "SIMD[DType.float32, 4](inf, -inf, -0.0, nan)",
     )

@@ -22,8 +22,6 @@ from testing import (
     assert_true,
 )
 
-from utils.numerics import inf, nan
-
 
 def test_assert_messages():
     assertion = "test_assertion.mojo:"
@@ -107,8 +105,8 @@ def test_assert_not_equal_with_list():
 
 def test_assert_almost_equal():
     alias float_type = DType.float32
-    alias _inf = inf[float_type]()
-    alias _nan = nan[float_type]()
+    alias _inf = DType.inf[float_type]()
+    alias _nan = DType.nan[float_type]()
 
     @parameter
     def _should_succeed[

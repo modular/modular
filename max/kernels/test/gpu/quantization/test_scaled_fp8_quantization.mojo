@@ -21,8 +21,6 @@ from linalg.fp8_quantization import (
 )
 from testing import assert_equal
 
-from utils.numerics import max_finite, min_finite
-
 
 fn test_scaled_fp8_quant[
     out_dtype: DType,
@@ -65,8 +63,8 @@ fn test_scaled_fp8_quant[
             )
 
             in_val_scaled_f32 = max(
-                Float32(min_finite[out_dtype]()),
-                min(Float32(max_finite[out_dtype]()), in_val_scaled_f32),
+                Float32(DType.min_finite[out_dtype]()),
+                min(Float32(DType.max_finite[out_dtype]()), in_val_scaled_f32),
             )
 
             assert_equal(
