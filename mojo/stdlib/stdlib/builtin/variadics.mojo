@@ -225,7 +225,7 @@ struct _VariadicListMemIter[
     fn __has_next__(self) -> Bool:
         return self.index < len(self.src[])
 
-    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [elt_origin._mlir_origin] elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -363,10 +363,9 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-        out result: _VariadicListMemIter[
-            element_type, origin, __origin_of(self), is_owned
-        ],
-    ):
+    ) -> _VariadicListMemIter[
+        element_type, origin, __origin_of(self), is_owned
+    ]:
         """Iterate over the list.
 
         Returns:
@@ -549,7 +548,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index = index._mlir_value
+            index = index.__index__()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 

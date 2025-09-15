@@ -793,7 +793,7 @@ struct _RegisterPackType[*a: AnyTrivialRegType]:
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i._mlir_value](
+        return __mlir_op.`kgen.pack.extract`[index = i.__index__()](
             self.storage
         )
 
