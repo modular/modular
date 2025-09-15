@@ -963,7 +963,14 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     if (auto triple = dyn_cast<MemSymbolTripleAttr>(ptr->second)) {
       SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
           triple.getCopy() ? triple.getCopy() : triple.getMove());
-      moveSymbols.push_back(cast<SymbolConstantAttr>(triple.getMove()));
+      if (auto moveSymbol = triple.getMove())
+        moveSymbols.push_back(cast<SymbolConstantAttr>(moveSymbol));
+      else if (auto copySymbol = triple.getCopy())
+        moveSymbols.push_back(cast<SymbolConstantAttr>(copySymbol));
+      else
+        llvm_unreachable("cannot capture by move or copy and not include a "
+                         "move or copy symbol");
+
       SymbolConstantAttr del = cast<SymbolConstantAttr>(triple.getDel());
       Type capturingType =
           cast<PointerType>(capture.getType()).getElementType();

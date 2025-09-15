@@ -11,7 +11,7 @@
 from sys import argv
 
 
-struct Mem(Copyable, ImplicitlyCopyable, Movable):
+struct Mem(Copyable, ImplicitlyCopyable):
     var str1: String
     var str2: String
 
@@ -62,7 +62,7 @@ def main():
     # CHECK: CC.v2
     takeIt(immRef)
 
-    # COM: the copy emitted by the compiler is emitted with the correct debug info and the destructor of that copy is emitted with the correct debug info
+    # COM: nonmovable types can be captured by copy.
     var x: String = argv()[4]
     var mem = Mem(x, x)
 
