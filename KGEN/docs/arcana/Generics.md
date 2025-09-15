@@ -145,8 +145,7 @@ should then be looking for `*(1,0)`s.
 One might call this "depth-aware searching".
 
 This is particularly important when looking inside anything that might contain
-a signature, even indirectly. For example, if your parameter-value contains a
-vtable of some sort, that will contain lots of signatures.
+a signature, even indirectly.
 
 For this reason, think twice when using `AttrTypeReplacer` or `AttrTypeWalker`,
 and consider using something like `IndexParameterReplacer`, `ParameterReplacer`,

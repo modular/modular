@@ -300,56 +300,8 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
 }
 
 //===----------------------------------------------------------------------===//
-// VTableAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_VTableAttr : KGENAttr<"VTable", "vtable"> {
-  let summary = "Static vtable for structs";
-  let description = [{
-    Static vtable for structs.  Used to implement traits.
-
-    Example:
-
-    ```mlir
-    #kgen<vtable "entry1" : <() -> index> = @entry1,
-                 "entry2" : <() -> index> = @entry2>
-    ```
-  }];
-
-  let parameters = (ins ArrayRefParameter<"VTableEntryAttr">:$entries);
-  let assemblyFormat = "`` $entries";
-}
-
-def KGEN_VTableEntryAttr : KGENAttr<"VTableEntry", "vtable.entry"> {
-  let summary = "Entry for VTable attr";
-  let description = [{
-    Entry for a VTableAttr.  The name and signature are keys in the
-    table, while the method is the lookup value.
-
-    Example:
-
-    ```mlir
-    #kgen<vtable.entry "methodName" : <() -> index> = @methodImpl>
-    ```
-  }];
-
-  let parameters = (ins "StringAttr":$name, "TypedAttr":$method);
-  let assemblyFormat = "`` custom<VTableEntry>($name, $method)";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "TypedAttr":$method), [{
-      return $_get(name.getContext(), name, method);
-    }]>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // TypeParamAttr
 //===----------------------------------------------------------------------===//
-
-def VTableParam
-  : DefaultValuedParameter<"VTableAttr", "VTableAttr::get($_ctxt, {})">;
 
 def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
   let summary = "Convert an MLIR type to a parameter expression";
@@ -366,17 +318,9 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 
     ```mlir
     // Default asm format.
-    #kgen.type<!myTypeValue, !myMlirType, {
-      "method1" : <() -> index> = @method1,
-      "method2" : <() -> index> = @method2
-    }> : !kgen.type
+    #kgen.type<!myTypeValue, !myMlirType> : !kgen.type
 
     // MlirType is omitted if same as typeValue.
-    #kgen.type<!myTypeValue, {
-      "method1" : <() -> index> = @method1
-    }> : !kgen.type
-
-    // VTable is omitted if empty.
     #kgen.type<!myTypeValue> : !kgen.type
     ```
   }];
@@ -384,27 +328,19 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
   let parameters = (ins
     "Type":$typeValue,
     "Type":$mlirType,
-    AttributeSelfTypeParameter<"", "Type">:$type,
-    VTableParam:$vTable
+    AttributeSelfTypeParameter<"", "Type">:$type
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "MLIRContext *":$ctx, "Type":$typeValue,
-                                        "Type":$mlirType, "Type":$type,
-                                        "VTableAttr":$vtable),
+                                        "Type":$mlirType, "Type":$type),
                                    "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins "Type":$typeValue, "Type":$mlirType,
                                         "Type":$type),
                                    "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$typeValue, "Type":$mlirType,
-                                        "Type":$type, "VTableAttr":$vtable),
-                                   "", "TypedAttr">,
     // Builders for identical typeValue & mlirType cases.
     // Only available temporarily until proper the type/value-domain split.
     AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type),
-                                   "", "TypedAttr">,
-    AttrBuilderWithInferredContext<(ins "Type":$mlirType, "Type":$type,
-                                        "VTableAttr":$vtable),
                                    "", "TypedAttr">,
   ];
 
@@ -412,7 +348,7 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static TypeParamAttr getFromBytecode(
-        Type typeValue, Type mlirType, Type type, VTableAttr vtable);
+        Type typeValue, Type mlirType, Type type);
 
     /// Whether the type constant has identical value & type representation.
     bool hasIdenticalRepresentation();
@@ -429,8 +365,8 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
   let summary = "Rebind a type with metatype information to base trait.";
   let description = [{
-    The `#kgen.upcast` attribute is used to convert from a typeValue (which
-    carries a vtable and other metadate) to a typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a typeValue to a
+    typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 
@@ -440,31 +376,26 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
     Example:
 
     ```mlir
-    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>,
-        "__del__" : !lit.generator<("self": !lit.ref<:trait<Movable> T> owned_in_mem, |) -> !kgen.none>
-            = get_vtable_entry(:trait<Movable> T, "__del__")> : !lit.trait<AnyType>
+    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>> : !lit.trait<AnyType>
     ```
   }];
 
   let parameters = (ins
     AttributeSelfTypeParameter<"", "Type">:$type,
-    "TypedAttr":$inputTypeValue,
-    VTableParam:$vTable
+    "TypedAttr":$inputTypeValue
   );
-  let assemblyFormat = "`<` $inputTypeValue (`,` $vTable^)? `>`";
+  let assemblyFormat = "`<` $inputTypeValue `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser because this
     // may not return an UpcastAttr.
     AttrBuilderWithInferredContext<(ins
-       "Type":$type, "TypedAttr":$inputTypeValue,
-       "VTableAttr":$vTable), "", "TypedAttr">,
+       "Type":$type, "TypedAttr":$inputTypeValue), "", "TypedAttr">,
 
     // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "Type":$type, "TypedAttr":$inputTypeValue,
-                     "VTableAttr":$vTable), [{
-      return get(type, inputTypeValue, vTable);
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$inputTypeValue), [{
+      return get(type, inputTypeValue);
     }], "TypedAttr">,
   ];
 
@@ -1598,9 +1529,10 @@ def KGEN_ClosureAttr : KGENAttr<"Closure", "closure", [
       kgen.return
     }
 
-    kgen.generator @consume<x: type,
-                        CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
-                        >(%arg0: !kgen.param<x>) -> index {
+    kgen.generator @consume<
+      x: type,
+      CAPTURE_INST: !kgen.param<get_witness(x, "closure_trait", "CAPTURE_TYPE")>
+    >(%arg0: !kgen.param<x>) -> index {
         // BODY OMITTED FOR BREVITY
     }
     ```

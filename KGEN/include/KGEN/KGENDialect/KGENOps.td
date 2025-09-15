@@ -416,7 +416,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
     type for the trait being conformed to.
 
     TODO: Make this a Symbol by using the mangled name from the trait. At the
-    same time, get_vtable_entry should also be emitted with the mangled name.
+    same time, get_witness should also be emitted with the mangled name.
 
     Example:
 
@@ -435,7 +435,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
                        TypedAttrInterface:$value);
 
   let assemblyFormat = [{
-    custom<VTableEntry>($name, $value) attr-dict-with-keyword
+    custom<WitnessEntry>($name, $value) attr-dict-with-keyword
   }];
 }
 

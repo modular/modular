@@ -621,9 +621,6 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
 
         return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
       });
-  replacer.addReplacement([](VTableAttr vtable) {
-    return std::make_pair(vtable, WalkResult::skip());
-  });
   if (Attribute result = replacer.replace(value))
     return result;
   if (error)

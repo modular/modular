@@ -1275,7 +1275,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
                                   IREmitter &emitter) {
   SharedState &shared = emitter.shared;
 
-  // Only static vtables are supported right now.
+  // Only parameter-domain type-values are supported right now.
   PValue typeValue = value.ir.getIfPValue();
   if (!typeValue) {
     shared.emitError(value.expr->getLoc(),
@@ -1314,8 +1314,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 
   // If the type is a param type, then we just need to upcast it to the trait.
   if (auto paramType = dyn_cast<ParamType>(mlirType)) {
-    return UpcastAttr::get(trait, PValue(paramType.getParam()),
-                           VTableAttr::get(trait.getContext(), {}));
+    return UpcastAttr::get(trait, PValue(paramType.getParam()));
   }
 
   // Otherwise, create a new type value whose witness table is provided by the
@@ -1502,8 +1501,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     if (auto rvAnyTrait = dyn_cast<AnyTraitType>(rvType)) {
       auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
       if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
-        // This is just the trait itself, not a conformance, so we can use an
-        // empty vtable, just upcast.
+        // This is just the trait itself, not a conformance, just upcast.
         return TypeParamAttr::get(ASTType(typePValue), anyTrait);
       }
     }

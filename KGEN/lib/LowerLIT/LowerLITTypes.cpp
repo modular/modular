@@ -212,15 +212,11 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         auto mlirTypeOr =
             replacer.replace(typeValue.getMlirType(), TypeDomain::AsType);
         auto typeOr = replacer.replace(typeValue.getType(), TypeDomain::AsType);
-        auto vtableOr =
-            replacer.replace(typeValue.getVTable(), TypeDomain::AsType);
 
-        if (failed(typeValueOr) || failed(mlirTypeOr) || failed(typeOr) ||
-            failed(vtableOr))
+        if (failed(typeValueOr) || failed(mlirTypeOr) || failed(typeOr))
           return failure();
 
-        return TypeParamAttr::get(*typeValueOr, *mlirTypeOr, *typeOr,
-                                  cast<VTableAttr>(*vtableOr));
+        return TypeParamAttr::get(*typeValueOr, *mlirTypeOr, *typeOr);
       });
 
   // ParamRefTypes should be TypeValueType if in the value domain.

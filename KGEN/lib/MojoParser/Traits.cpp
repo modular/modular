@@ -54,9 +54,9 @@ using namespace LIT;
 ///
 /// This last step is accomplished by this function here.
 static FnTypeGeneratorType
-simplifyGetVTableEntryOnSelf(PValue selfType,
-                             const DenseMap<StringRef, TypedAttr> *aliasValues,
-                             FnTypeGeneratorType signature) {
+simplifyGetWitnessOnSelf(PValue selfType,
+                         const DenseMap<StringRef, TypedAttr> *aliasValues,
+                         FnTypeGeneratorType signature) {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](KGEN::GetWitnessAttr attr) -> Attribute {
     if (attr.getTypeValue() == selfType.get()) {
@@ -99,8 +99,8 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
 
   auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
-  newSignature = simplifyGetVTableEntryOnSelf(selfStructAsTrait, &aliasValues,
-                                              newSignature);
+  newSignature =
+      simplifyGetWitnessOnSelf(selfStructAsTrait, &aliasValues, newSignature);
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, bindings};
 }
@@ -798,9 +798,7 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
     // Upcast from a parametric type of trait metatype value (e.g. "some
     // type that conforms to Movable) to the simple trait type (Movable)
     // so we can substitute the value into the signature.
-    newSelfValue =
-        UpcastAttr::get(simpleTraitType, PValue(newSelfType),
-                        VTableAttr::get(simpleTraitType.getContext(), {}));
+    newSelfValue = UpcastAttr::get(simpleTraitType, PValue(newSelfType));
   }
 
   // The requirement will have a Self parameter whose type will be of the
@@ -833,13 +831,13 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   if (traitAliasReplacer)
     signature = traitAliasReplacer->replace(signature);
 
-  // However, zork's `Self.T` is different, like: get_vtable_entry(Self, "T").
-  // And after the first step, that Self is actually the struct, so the
-  // requirementFn is really more like: get_vtable_entry(MyStruct, "T").
-  // We'll manually replace those entire get_vtable_entry calls.
+  // However, zork's `Self.T` is different, like: `get_witness(Self, "MyTrait",
+  // "T")`. And after the first step, that Self is actually the struct, so the
+  // requirementFn is really more like: `get_witness(MyStruct, "MyTrait", "T")`.
+  // We'll manually replace those entire `get_witness` calls.
   if (aliasValues) {
-    signature = simplifyGetVTableEntryOnSelf(PValue(newSelfType), aliasValues,
-                                             signature);
+    signature =
+        simplifyGetWitnessOnSelf(PValue(newSelfType), aliasValues, signature);
   }
 
   // At this point, signature's `self` argument's type is the struct or
@@ -947,26 +945,21 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
 /// Emit a metatype conversion to a trait type by materializing the meta type
 /// of the specified CValue into a witness table for the trait.  For example,
 /// if 'value' has struct type, and the trait is Movable, then this forms a
-/// TypeParamAttr PValue with a vtable containing the __del__ and
-/// __moveinit__ methods from the struct.
+/// TypeParamAttr PValue with a reference to the witness tables for this
+/// struct's conformance to the trait.
 ///
 /// If the input value has a derived trait type and the required type is a
-/// base trait, then this remaps each of the requirements into the expected
-/// format of the result vtable, e.g.:
+/// base trait, then this simply upcasts the type value, e.g.:
 ///   fn take_any_type[ATT: AnyType](x: ATT): pass
 ///   fn pass_movable[MTT: Movable](x: MTT): take_any_type(x)
 ///
 /// Yields something like:
-///     #kgen.type<!kgen.param<:trait<@Movable> MTT>, {
-///        "__del__" : !lit.generator<[1](
-///                    "self": !lit.ref<:trait<@Movable> MTT, ...)>
-///          = get_vtable_entry(:trait<@Movable> MTT, "__del__")
-///     }> : !lit.trait<@AnyType>
+///     #kgen.type<!kgen.param<:trait<@Movable> MTT>> : !lit.trait<@AnyType>
 ///
 /// This maps from the Movable trait metatype into the AnyType trait metatype.
 PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                                 TraitType trait) {
-  // Only static vtables are supported right now.
+  // Only parameter-domain type-values are supported right now.
   PValue typePValue = value.ir.getIfPValue();
   if (!typePValue) {
     emitError(value.expr->getLoc(), "existentials are not supported yet!");
@@ -999,6 +992,6 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  // Create the new type value with the vtable and the trait metatype.
+  // Create the new type value with the trait metatype.
   return TypeParamAttr::get(type, trait);
 }

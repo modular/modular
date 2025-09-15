@@ -140,20 +140,10 @@ def ParamIndexRefAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def VTableAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"VTableEntryAttr">:$entries
-)>;
-
-def VTableEntryAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  ConcreteAttribute<"TypedAttr">:$method
-)>;
-
-def WrappedTypeConstantAttr : DialectAttribute<(attr
+def WrappedTypeParamAttr : DialectAttribute<(attr
   Type:$typeValue,
   Type:$mlirType,
-  Type:$type,
-  ConcreteAttribute<"VTableAttr">:$vTable
+  Type:$type
 )>;
 
 def BindParamsAttr : DialectAttribute<(attr
@@ -239,8 +229,7 @@ def PackAttr : DialectAttribute<(attr
 
 def UpcastAttr : DialectAttribute<(attr
   Type:$type,
-  TypedAttr:$inputTypeValue,
-  ConcreteAttribute<"VTableAttr">:$vTable
+  TypedAttr:$inputTypeValue
 )>;
 
 def GetWitnessAttr : DialectAttribute<(attr
@@ -285,9 +274,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     NoneAttr,
     ParamDeclRefAttr,
     ParamIndexRefAttr,
-    VTableAttr,
-    VTableEntryAttr,
-    WrappedTypeConstantAttr,
+    WrappedTypeParamAttr,
     BindParamsAttr,
     TypeGeneratorRefAttr,
     TypeInstanceRefAttr,

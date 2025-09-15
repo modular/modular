@@ -224,11 +224,11 @@ void TypeParamAttr::print(AsmPrinter &p) const {
 }
 
 TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
-                             Type metaType, VTableAttr vtable) {
+                             Type metaType) {
   // If this is a trivial mlir Type (i.e. has identical type & value
   // representation), and the trivial type is a ParamType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
-  if (mlirType == typeValue && vtable.getEntries().empty()) {
+  if (mlirType == typeValue) {
     if (auto refType = ::dyn_cast<ParamType>(mlirType))
       if (refType.getParam().getType() == metaType)
         return refType.getParam();
@@ -244,29 +244,20 @@ TypedAttr TypeParamAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
             ::dyn_cast<TypeParamAttr>(typeValueType.getTypeValue()))
       typeValue = innerTypeConstant.getTypeValue();
 
-  return Base::get(ctx, typeValue, mlirType, metaType, vtable);
-}
-
-TypedAttr TypeParamAttr::get(Type typeValue, Type mlirType, Type type,
-                             VTableAttr vtable) {
-  return get(mlirType.getContext(), typeValue, mlirType, type, vtable);
+  return Base::get(ctx, typeValue, mlirType, metaType);
 }
 
 TypedAttr TypeParamAttr::get(Type typeValue, Type mlirType, Type type) {
-  return get(typeValue, mlirType, type, VTableAttr::get(type.getContext(), {}));
-}
-
-TypedAttr TypeParamAttr::get(Type mlirType, Type type, VTableAttr vtable) {
-  return get(mlirType, mlirType, type, vtable);
+  return get(typeValue.getContext(), typeValue, mlirType, type);
 }
 
 TypedAttr TypeParamAttr::get(Type mlirType, Type type) {
-  return get(mlirType, mlirType, type);
+  return get(mlirType.getContext(), mlirType, mlirType, type);
 }
 
 TypeParamAttr TypeParamAttr::getFromBytecode(Type typeValue, Type mlirType,
-                                             Type type, VTableAttr vtable) {
-  return Base::get(mlirType.getContext(), typeValue, mlirType, type, vtable);
+                                             Type type) {
+  return Base::get(mlirType.getContext(), typeValue, mlirType, type);
 }
 
 bool TypeParamAttr::isConstant() const {
@@ -274,35 +265,26 @@ bool TypeParamAttr::isConstant() const {
 }
 
 bool TypeParamAttr::hasIdenticalRepresentation() {
-  return getMlirType() == getTypeValue() && getVTable().getEntries().empty();
+  return getMlirType() == getTypeValue();
 }
 
 //===----------------------------------------------------------------------===//
 // UpcastAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue,
-                          VTableAttr vtable) {
+TypedAttr UpcastAttr::get(Type type, TypedAttr inputTypeValue) {
   // If this is a constant type coming in, we can fold this.  If not, stage it
   // until elaboration or something else simplifies things.
   if (auto typeAttr = ::dyn_cast<TypeParamAttr>(inputTypeValue)) {
-    // If we have a type constant, then we are requesting an upcast from
-    // something like Movable to AnyType, and we have a concrete type like Int.
-    // We need to return a new TypeParamAttr with the correct vtable for the
-    // expected type (a !lit.trait, but we can't reason about that down here in
-    // KGEN).
-    if (vtable.getEntries().empty())
-      vtable = typeAttr.getVTable();
-
     return TypeParamAttr::get(typeAttr.getTypeValue(), typeAttr.getMlirType(),
-                              type, vtable);
+                              type);
   }
 
   // upcast(upcast(x)) = upcast(x)
   if (auto upcast = ::dyn_cast<UpcastAttr>(inputTypeValue))
-    return get(type, upcast.getInputTypeValue(), vtable);
+    return get(type, upcast.getInputTypeValue());
 
-  return Base::get(type.getContext(), type, inputTypeValue, vtable);
+  return Base::get(type.getContext(), type, inputTypeValue);
 }
 
 bool UpcastAttr::isConstant() const { return false; }
@@ -1386,17 +1368,6 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 }
 
 static LogicalResult
-verifyGetVTableEntry(ArrayRef<TypedAttr> operands, Type type,
-                     function_ref<InFlightDiagnostic()> emitError) {
-  if (operands.size() != 2)
-    return emitError() << "'get_vtable_entry' requires 2 operands";
-  if (!isa<StringType>(operands[1].getType()))
-    return emitError()
-           << "'get_vtable_entry' second operand should be a string";
-  return success();
-}
-
-static LogicalResult
 verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
                      function_ref<InFlightDiagnostic()> emitError) {
   if (operands.size() != 2)
@@ -1450,7 +1421,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::ApplyResultSlot:
   case POC::Rebind:
   case POC::VariadicGet:
-  case POC::GetVTableEntry:
   case POC::PtrBitcast:
   case POC::AttrToStr:
   case POC::DataToStr:
@@ -1622,8 +1592,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_env' must return index, i1, or string";
     }
     break;
-  case POC::GetVTableEntry:
-    return verifyGetVTableEntry(operands, type, emitError);
   case POC::PtrBitcast:
     if (operands.size() != 1)
       return emitError() << "'ptr_bitcast' expects one operand";
@@ -2831,52 +2799,6 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   return {};
 }
 
-static TypedAttr simplifyGetVTableEntry(ArrayRef<TypedAttr> operands,
-                                        Type resultType) {
-  auto typeValue = operands[0];
-  StringAttr targetName = cast<StringAttr>(operands[1]);
-
-  // If the input is a TypeParamAttr or upcast from a more derived type, then we
-  // can fold the lookup against their vtables when we have a match.
-  VTableAttr vtable;
-  if (auto typeAttr = dyn_cast<TypeParamAttr>(typeValue))
-    vtable = typeAttr.getVTable();
-  else if (auto upcast = dyn_cast<UpcastAttr>(typeValue))
-    vtable = upcast.getVTable();
-
-  // typeValue may be a parameter before elaboration.  But after elaboration it
-  // should always be a TypeParamAttr.
-  if (!vtable)
-    return {};
-
-  // Scan the vtable for a name + signature match, then the method is the
-  // payload.  Traits may have overloaded requirements, and it is important to
-  // pick the right one.
-  VTableEntryAttr mismatchedEntry;
-  for (VTableEntryAttr entry : vtable.getEntries()) {
-    if (entry.getName() == targetName.getValue()) {
-      if (entry.getMethod().getType() == resultType)
-        return entry.getMethod();
-
-      // Keep this for hapless compiler engineers debugging vtable type
-      // mismatches.
-      mismatchedEntry = entry;
-    }
-  }
-
-#if 0
-  if (mismatchedEntry) {
-    llvm::errs() << "Found vtable lookup miss of " << targetName
-                 << " based on on type mismatch:\n"
-                 << "  expected: " << resultType << "\n"
-                 << "  actual: " << mismatchedEntry.getMethod().getType()
-                 << "\n\n";
-  }
-#endif
-
-  return {};
-}
-
 static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
                                     Type resultType) {
   if (operands.front().getType() == resultType)
@@ -3123,9 +3045,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::AttrToStr:
     result = {};
     break;
-  case POC::GetVTableEntry:
-    result = simplifyGetVTableEntry(operands, resultType);
-    break;
   case POC::PtrBitcast:
     result = simplifyPtrBitcast(operands, resultType);
     break;
@@ -3176,8 +3095,8 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
   if (!llvm::is_contained(
           {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
            POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
-           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::GetVTableEntry,
-           POC::VariadicPtrMap, POC::VariadicPtrRemoveMap, POC::StringAddress},
+           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::VariadicPtrMap,
+           POC::VariadicPtrRemoveMap, POC::StringAddress},
           opcode) &&
       !llvm::all_of(operandsIn.drop_front(),
                     [&](auto op) { return op.getType() == resultType; }))

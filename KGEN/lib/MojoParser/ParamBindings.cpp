@@ -40,7 +40,7 @@ using namespace M::KGEN::LIT;
 /// Then we'll need to adjust our desired signature from:
 ///     fn lork(self, thing: MyStruct[T])
 /// to:
-///     fn lork(self, thing: MyStruct[get_vtable_entry(X, T)])
+///     fn lork(self, thing: MyStruct[get_witness(X, MyTrait, T)])
 ///
 /// This function will do that conversion. If we aren't calling a trait method
 /// with an alias, it'll return the given desiredSignature unmodified.
@@ -142,17 +142,13 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
       // Upcast from a parametric type of trait metatype value (e.g. "some
       // type that conforms to Movable) to the simple trait type (Movable)
       // so we can substitute the value into the signature.
-      typeAttr =
-          UpcastAttr::get(simpleTraitType, PValue(type),
-                          VTableAttr::get(simpleTraitType.getContext(), {}));
+      typeAttr = UpcastAttr::get(simpleTraitType, PValue(type));
     }
     paramBindings.addPrechecked(expr, typeAttr);
   } else if (isa<TraitType>(decl->getIfTypeValue())) {
     if (optionalParentTraitType) {
       // If caller provided a parent trait type, we need to upcast the self.
-      auto typeAttr = UpcastAttr::get(
-          optionalParentTraitType, PValue(type),
-          VTableAttr::get(optionalParentTraitType.getContext(), {}));
+      auto typeAttr = UpcastAttr::get(optionalParentTraitType, PValue(type));
       paramBindings.addPrechecked(expr, typeAttr);
     } else {
       // If this is a trait composition, the method signature's self type won't

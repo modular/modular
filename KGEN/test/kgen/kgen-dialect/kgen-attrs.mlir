@@ -82,22 +82,17 @@ kgen.generator @entry2() -> index {
   kgen.return %0 : index
 }
 
-// CHECK: vtableEntry = #kgen<vtable.entry"entry1" : () -> index = @entry1>
-"some.op"() {vtableEntry = #kgen<vtable.entry "entry1" : () -> index = @entry1>} : () -> ()
-// CHECK: vtable = #kgen<vtable"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2
-"some.op"() {vtable = #kgen<vtable "entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2>} : () -> ()
-
-// CHECK: #kgen.type<index, {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.type
-"some.op"() {type = #kgen.type<index, {"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.type} : () -> ()
-// CHECK: a = #kgen.type<array<1, i1>, {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.type
-// CHECK: b = #kgen.type<array<apply(:() -> index @return_one), i1>, {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.type
-// CHECK: c = #kgen.type<array<1, i1>, array<2, i1>, {"entry1" : () -> index = @entry1,  "entry2" : () -> index = @entry2}> : !kgen.type
+// CHECK: #kgen.type<index> : !kgen.type
+"some.op"() {type = #kgen.type<index> : !kgen.type} : () -> ()
+// CHECK: a = #kgen.type<array<1, i1>> : !kgen.type
+// CHECK: b = #kgen.type<array<apply(:() -> index @return_one), i1>> : !kgen.type
+// CHECK: c = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type
 // CHECK: d = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type
 // CHECK: e = #kgen.type<array<1, i1>> : !kgen.type
 "some.op"() {
-  a = #kgen.type<array<1, i1>, {"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.type,
-  b = #kgen.type<array<apply(:() -> index @return_one), i1>, {"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.type,
-  c = #kgen.type<array<1, i1>, array<2, i1>, {"entry1" : () -> index = @entry1, "entry2" : () -> index = @entry2}> : !kgen.type,
+  a = #kgen.type<array<1, i1>> : !kgen.type,
+  b = #kgen.type<array<apply(:() -> index @return_one), i1>> : !kgen.type,
+  c = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type,
   d = #kgen.type<array<1, i1>, array<2, i1>> : !kgen.type,
   e = #kgen.type<array<1, i1>, array<1, i1>> : !kgen.type
 } : () -> ()
@@ -164,9 +159,7 @@ kgen.generator export @bindIt(){
 
 "some.op"() {
   // CHECK: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
-  identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type,
-  // CHECK-SAME: vtableUpcast = #kgen.type<array<1, i1>, {"entry1" : () -> index = @entry1}> : !kgen.type
-  vtableUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type, #kgen<vtable "entry1" : () -> index = @entry1>> : !kgen.type
+  identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type
 } : () -> ()
 
 // CHECK-LABEL: kgen.generator @closureSymbol()

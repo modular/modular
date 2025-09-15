@@ -602,9 +602,7 @@ lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: <index,
 !String = !lit.struct<@String>
 !Impl = !kgen.closure<@make_closure, "foo" nonescaping>
 
-#Impl1 = #kgen.type<!Impl, {"__call__" :
-                            !lit.generator<[1]("self": !lit.ref<!Impl, imm *[0,0]> read_mem, "y": index) -> index> =
-                            #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !Closure
+#Impl1 = #kgen.type<!Impl> : !Closure
 
 lit.trait.decl @Closure<?, SELF: !Closure> {
   lit.fn @"__call__"[imm O](%self: !lit.ref<:!Closure SELF, imm O> read_mem, %y: index) -> index {
@@ -631,7 +629,7 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x
 
 lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0> read_mem, %x: index) -> !kgen.none {
    %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
-        get_vtable_entry(:!Closure CT, "__call__")][mut Origin0](%c, %x)
+        #kgen.get_witness<:!Closure CT, "Closure", "__call__">][mut Origin0](%c, %x)
    lit.end_fn
 }
 

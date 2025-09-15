@@ -302,8 +302,7 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
             // For trait compositions, upcast the self parameter to the dtor
             // expected type.
             auto expectedSelfType = TraitType::get(symbol);
-            selfParam = UpcastAttr::get(expectedSelfType, selfParam,
-                                        VTableAttr::get(type.getContext(), {}));
+            selfParam = UpcastAttr::get(expectedSelfType, selfParam);
           }
           auto specSig = dtorSig.getSpecializedGenerator(
               {selfParam}, &evaluationContext, loc);

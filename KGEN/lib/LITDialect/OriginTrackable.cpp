@@ -678,14 +678,6 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
           handled = true;
         }
       }
-
-    } else {
-      // Don't recurse into vtable attributes: they are effectively function
-      // references, not accesses to the origins within the function.
-      // FIXME: TypeParamAttr shouldn't carry vtables directly, they should be
-      // indirect via a symbol.
-      if (isa<VTableEntryAttr>(typeOrAttr))
-        return false;
     }
   }
 

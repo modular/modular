@@ -483,6 +483,6 @@ lit.fn @x() {
 }
 
 // CHECK: -> !kgen.struct<() memoryOnly>
-lit.fn @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.param<:trait<@Bar> T>, {"f": !lit.generator<() -> ()> = @x}]>> {
+lit.fn @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.param<:trait<@Bar> T>]>> {
   kgen.unreachable
 }

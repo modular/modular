@@ -68,7 +68,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"VariadicGet", 28, "variadic_get">,
 
   // Generics.
-  I32EnumAttrCase<"GetVTableEntry", 33, "get_vtable_entry">,
   I32EnumAttrCase<"PtrBitcast", 34, "ptr_bitcast">,
   I32EnumAttrCase<"LoadFromMem", 35, "load_from_mem">,
 

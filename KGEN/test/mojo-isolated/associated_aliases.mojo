@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
 
 
-# Tests that we correctly call get_vtable_entry when looking up a trait's alias.
+# Tests that we correctly call get_witness when looking up a trait's alias.
 
 
 @fieldwise_init
@@ -31,7 +31,7 @@ struct StructWithMatchingAlias(TraitWithAlias):
         pass
 
 
-# This tests that we correctly call get_vtable_entry when looking up a trait's
+# This tests that we correctly call get_witness when looking up a trait's
 # alias.
 # CHECK-LABEL: lit.fn @"getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
@@ -864,7 +864,7 @@ fn bar[foo: FooTrait]():
 
 
 # This is the important check, it makes sure that we:
-#  * Pull it out of the vtable as a BB
+#  * Pull it out of the witness table as a BB
 #  * Upcast it to an AA
 
 
@@ -984,7 +984,7 @@ trait C(B):
 #     fn foo(x: StructWithParam[5]):
 #         pass
 # fn sporkify[T: TraitWithStaticMethodUsingAlias]() -> ZInt:
-#    return T.N # emits a get_vtable_value
+#    return T.N # emits a get_witness
 # @export
 # fn testSomething():
 #     # And maybe add a test for sporkify[TraitWithStaticMethodUsingAlias]()
