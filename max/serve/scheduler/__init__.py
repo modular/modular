@@ -12,17 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar, Union, cast
 
 from max.interfaces import (
     AudioGenerator,
-    EmbeddingsGenerator,
+    InputContext,
     MAXPullQueue,
     MAXPushQueue,
     Pipeline,
+    PipelineInputsType,
+    PipelineOutputType,
     RequestID,
     Scheduler,
     SchedulerResult,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
@@ -49,10 +53,11 @@ __all__ = [
     "load_scheduler",
 ]
 
+T = TypeVar("T", bound=InputContext)
+
 
 def load_scheduler(
-    pipeline: Pipeline[Any, Any]
-    | EmbeddingsGenerator[TextContext]
+    pipeline: Pipeline[PipelineInputsType, PipelineOutputType]
     | AudioGenerator[TTSContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
@@ -60,15 +65,15 @@ def load_scheduler(
     response_queue: MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
     cancel_queue: MAXPullQueue[list[RequestID]],
 ) -> Scheduler:
-    if isinstance(pipeline, EmbeddingsGenerator):
+    if pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size
             if pipeline_config.max_batch_size is not None
             else 1
         )
-        return EmbeddingsScheduler(
+        return EmbeddingsScheduler[TextContext](
             scheduler_config=embeddings_scheduler_config,
-            pipeline=pipeline,
+            pipeline=pipeline,  # type: ignore
             request_queue=request_queue,
             response_queue=response_queue,
             cancel_queue=cancel_queue,
@@ -107,8 +112,16 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, Pipeline)
-        return load_text_generation_scheduler(
+        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
+        text_gen_pipeline = cast(
+            Pipeline[
+                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationOutput,
+            ],
             pipeline,
+        )
+        return load_text_generation_scheduler(
+            text_gen_pipeline,
             pipeline_config,
             request_queue=request_queue,
             response_queue=response_queue,
@@ -116,8 +129,16 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
         assert isinstance(pipeline, Pipeline)
-        return load_decode_scheduler(
+        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
+        text_gen_pipeline = cast(
+            Pipeline[
+                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationOutput,
+            ],
             pipeline,
+        )
+        return load_decode_scheduler(
+            text_gen_pipeline,
             pipeline_config,
             request_queue=request_queue,
             response_queue=response_queue,
@@ -126,7 +147,17 @@ def load_scheduler(
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, Pipeline)
-        return load_prefill_scheduler(pipeline, pipeline_config, settings)
+        # At runtime, this should be a TextGenerationPipeline with the expected type parameters
+        text_gen_pipeline = cast(
+            Pipeline[
+                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationOutput,
+            ],
+            pipeline,
+        )
+        return load_prefill_scheduler(
+            text_gen_pipeline, pipeline_config, settings
+        )
     else:
         raise ValueError(
             f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."

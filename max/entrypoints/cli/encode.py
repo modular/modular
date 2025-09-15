@@ -18,10 +18,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from typing import cast
 
 from max.interfaces import (
-    EmbeddingsGenerator,
-    EmbeddingsOutput,
+    EmbeddingsGenerationInputs,
+    EmbeddingsGenerationOutput,
+    Pipeline,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
@@ -36,24 +38,27 @@ MODEL_NAME = "model"
 
 
 async def _run_pipeline_encode(
-    pipeline: EmbeddingsGenerator[TextContext],
+    pipeline: Pipeline[
+        EmbeddingsGenerationInputs[TextContext],
+        EmbeddingsGenerationOutput,
+    ],
     tokenizer: PipelineTokenizer[TextContext, int, TextGenerationRequest],
     prompt: str,
     metrics: EmbeddingsMetrics | None = None,
-) -> EmbeddingsOutput:
+) -> EmbeddingsGenerationOutput:
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
         TextGenerationRequest(
             request_id=req_id, prompt=prompt, model_name=MODEL_NAME
         )
     )
-    pipeline_request = {req_id: context}
+    pipeline_request = EmbeddingsGenerationInputs([{req_id: context}])
 
     if metrics:
         metrics.prompt_size = context.current_length
         metrics.signpost("begin_encoding")
 
-    response = pipeline.encode(pipeline_request)
+    response = pipeline.execute(pipeline_request)
 
     if metrics:
         metrics.signpost("end_encoding")
@@ -70,14 +75,22 @@ def pipeline_encode(
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
         )
-        assert isinstance(pipeline, EmbeddingsGenerator)
+
+        # Cast pipeline to the expected type for embeddings generation
+        embeddings_pipeline = cast(
+            Pipeline[
+                EmbeddingsGenerationInputs[TextContext],
+                EmbeddingsGenerationOutput,
+            ],
+            pipeline,
+        )
 
         if num_warmups > 0:
             logger.info("Running warmup")
             for _ in range(num_warmups):
                 asyncio.run(
                     _run_pipeline_encode(
-                        pipeline, tokenizer, prompt, metrics=None
+                        embeddings_pipeline, tokenizer, prompt, metrics=None
                     )
                 )
 
@@ -86,6 +99,8 @@ def pipeline_encode(
         print("Encoding:", prompt)
 
         pipeline_output = asyncio.run(
-            _run_pipeline_encode(pipeline, tokenizer, prompt, metrics=metrics)
+            _run_pipeline_encode(
+                embeddings_pipeline, tokenizer, prompt, metrics=metrics
+            )
         )
         print("Embeddings:", pipeline_output.embeddings)

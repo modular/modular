@@ -28,7 +28,7 @@ from max.interfaces import (
     AudioGenerationRequest,
     AudioGeneratorContext,
     AudioGeneratorOutput,
-    EmbeddingsOutput,
+    EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
     MAXPullQueue,
@@ -76,7 +76,9 @@ class TokenGeneratorPipeline:
         response_queue: MAXPullQueue[
             dict[
                 RequestID,
-                SchedulerResult[EmbeddingsOutput | TextGenerationOutput],
+                SchedulerResult[
+                    EmbeddingsGenerationOutput | TextGenerationOutput
+                ],
             ]
         ],
         cancel_queue: MAXPushQueue[list[RequestID]],
@@ -226,7 +228,9 @@ class TokenGeneratorPipeline:
         """Generates all tokens for the provided request."""
         return [token async for token in self.next_token(request)]
 
-    async def encode(self, request: TextGenerationRequest) -> EmbeddingsOutput:
+    async def encode(
+        self, request: TextGenerationRequest
+    ) -> EmbeddingsGenerationOutput:
         """Generates embedded outputs for the provided request."""
         total_sw = StopWatch()
         self.logger.debug(
@@ -243,8 +247,9 @@ class TokenGeneratorPipeline:
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):
-                    assert isinstance(response, EmbeddingsOutput)
+                    assert isinstance(response, EmbeddingsGenerationOutput)
                     return response
+
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"
                 )

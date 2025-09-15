@@ -17,19 +17,26 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Optional,
+    Union,
+    cast,
+)
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import load_devices
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    EmbeddingsGenerator,
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -53,8 +60,8 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes = Union[
-    TextGenerationPipeline[Any],
-    EmbeddingsGenerator[Any],
+    TextGenerationPipeline[Union[TextContext, TextAndVisionContext]],
+    EmbeddingsPipeline[TextContext],
     AudioGeneratorPipeline,
     SpeculativeDecodingTextGenerationPipeline,
     SpeechTokenGenerationPipeline,
@@ -64,8 +71,8 @@ PipelineTypes = Union[
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> (
-    type[TextGenerationPipeline[Any]]
-    | type[EmbeddingsPipeline[Any]]
+    type[TextGenerationPipeline[TextContext | TextAndVisionContext]]
+    | type[EmbeddingsPipeline[TextContext]]
     | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]
     | type[SpeechTokenGenerationPipeline]
@@ -202,7 +209,7 @@ class SupportedArchitecture:
         if isinstance(self.tokenizer, type):
             return self.tokenizer
         # Otherwise fall back to PipelineTokenizer.
-        return PipelineTokenizer
+        return TextTokenizer
 
 
 class PipelineRegistry:
