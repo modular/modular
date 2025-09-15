@@ -21,16 +21,16 @@ alias emptyParams[]: Int = 89
 # CHECK: lit.alias.decl *"idInt{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<*(0,0)>>
 alias idInt[x: Int]: Int = x
 
-# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}>>
+# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}
 alias myIntAdd[x: Int, y: Int] = x + y
 
-# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}>>
+# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}
 alias myDefaultAdd[x: Int, y: Int = 1] = x + y
 
-# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}>>
+# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}
 alias myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 
-# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">)}>>
+# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">)}
 alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 
@@ -45,7 +45,7 @@ alias PS_xy3[x: Int, y: Int] = PS[x, y, 3]
 # CHECK: lit.alias.decl *"PS_21x{{.*}}": !lit.generator<<"x": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int *(0,0)>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int *(0,0)>>>
 alias PS_21x[x: Int] = PS[2, 1, x]
 
-# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}>>>
+# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}{{.*}} = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)}
 alias PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 
 
@@ -72,7 +72,7 @@ alias __SomeImpl[Trait: AnyTrivialRegType, T: Trait] = T
 # CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": type>!lit.generator<<"T": !kgen.param<*(1,0)>>!kgen.param<*(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
 alias Some[Trait: AnyTrivialRegType] = __SomeImpl[Trait]
 
-# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)}>>
+# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)}
 alias myDouble[x: Int] = myDependentDefaultAdd[x]
 
 
@@ -128,9 +128,9 @@ fn test_type_inference():
 
 # CHECK-LABEL: fn @"partial_binding()"
 fn partial_binding():
-    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), 3)}>>
+    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), 3)}
     alias myIntMulPlus3 = myIntFMA[z=3]
-    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2), 3)}>>
+    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2), 3)}
     alias myIntMul2Plus3 = myIntMulPlus3[y=2]
     # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
     alias myEleven = myIntMul2Plus3[x=4]
@@ -138,13 +138,13 @@ fn partial_binding():
 
 # CHECK-LABEL: fn @"nested_generators()"
 fn nested_generators():
-    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}>>>
+    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}
     alias myCurriedIntAdd[x: Int] = myIntAdd[x]
 
-    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}>>>
+    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}
     alias myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]
 
-    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)}>>
+    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)}
     alias myAdd2 = myRenamedCurriedIntAdd[2]
 
     # CHECK-NEXT: lit.alias.decl *"myFive{{.*}}": !Int = <{5}>
