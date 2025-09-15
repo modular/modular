@@ -6,7 +6,9 @@
 import socket
 
 import pytest
-from max.serve.config import Settings
+from max.serve.api_server import (
+    validate_port_is_free,
+)
 
 
 def test_setting_throws_occupied_port() -> None:
@@ -18,4 +20,4 @@ def test_setting_throws_occupied_port() -> None:
             # It's okay if it's occupied already for some reason.
             pass
         with pytest.raises(ValueError):
-            _ = Settings(host="0.0.0.0", port=8000)
+            validate_port_is_free(8000)
