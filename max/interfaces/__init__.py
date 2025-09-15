@@ -46,7 +46,7 @@ from .pipeline_variants import (
     TextGenerationResponseFormat,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
-from .request import Request, RequestID
+from .request import Request, RequestID, RequestType
 from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
@@ -97,6 +97,7 @@ __all__ = [
     "ProcessorInputs",
     "Request",
     "RequestID",
+    "RequestType",
     "SamplingParams",
     "SamplingParamsInput",
     "Scheduler",

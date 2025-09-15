@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Optional, TypedDict, TypeVar, Union
 
 import msgspec
-from max.interfaces.context import BaseContext, SamplingParams
+from max.interfaces.context import InputContext, SamplingParams
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
@@ -221,7 +221,7 @@ class TextGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
 TextGenerationContextType = TypeVar(
     "TextGenerationContextType",
-    bound=BaseContext,
+    bound=InputContext,
 )
 """Type variable for text generation context types, constrained to BaseContext.
 
