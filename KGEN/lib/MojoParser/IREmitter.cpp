@@ -823,13 +823,13 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // If the type is implicitly copyable, it should be cheap to be implicitly
   // materialized as well.
   //
-  // FIXME: we also leave a backdoor to allow implicit materialization for
-  // default argument. This is incorrect, but we parse default argument value
+  // NOTE: we need to leave a backdoor to allow implicit materialization for
+  // default argument. This is because we parse default argument value
   // into PValue at the moment, meaning that to emit the value for default
-  // argument, we will have to implicitly materialize it first. We should also
-  // probably not rely on `context` to tell whether we are generating default
-  // arg value, but it is much cleaner/simpler than passing a flag all the way
-  // down from `emitPreemittedArgumentAsDynamicValue`.
+  // argument, we will have to materialize it first. Using `EC_context` to tell
+  // whether we are generating default arg value is not a typical usage of
+  // `EC_context`, but it is much cleaner/simpler than passing a flag all the
+  // way down from `emitPreemittedArgumentAsDynamicValue`.
   bool isDefaultArg = (context == EC_CallArgDefaultValue);
   if (isDefaultArg ||
       valueType.isImplicitlyCopyable(value.expr->getLoc(), shared))
