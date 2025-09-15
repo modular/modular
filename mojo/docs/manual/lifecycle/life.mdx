@@ -677,24 +677,6 @@ In some (rare) cases, you may not want a type to be copyable *or* movable. The
 [`Atomic`](/mojo/stdlib/os/atomic/Atomic/) type is an example of a type that's
 neither copyable or movable.
 
-## Simple value types {#simple-value-types}
-
-Up to version 25.5, Mojo provided a `@value` decorator that generated a
-field-wise constructor, copy constructor, and move constructor for a struct.
-Because users frequently want to take advantage of just one or two of these
-generated methods, the `@value` decorator was deprecated in v25.5 in favor of
-separate mechanisms:
-
-- For a field-wise constructor, use the `@fieldwise_init` decorator as described
-  in the section on [constructors](#constructor).
-
-- For a default copy constructor, use the `Copyable` trait, as described in the
-  section on [copy constructors](#copy-constructor).
-
-- For a default move constructor, use the `Movable` trait, as described in the
-  section on [move constructors](#move-constructor).
-
-
 ## Trivial types
 
 So far, we've talked about values that live in memory, which means they have an

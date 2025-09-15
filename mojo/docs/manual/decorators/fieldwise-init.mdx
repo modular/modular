@@ -17,7 +17,7 @@ struct MyPet:
     var age: Int
 ```
 
-Mojo sees the `@fieldwise_init` decorator and synthesizes a fieldwise
+Mojo sees the `@fieldwise_init` decorator and synthesizes a field-wise
 constructor, the result being as if you had actually written this:
 
 ```mojo
@@ -30,9 +30,6 @@ struct MyPet:
         self.age = age
 ```
 
-This decorator replaces one function of the `@value` decorator. To synthesize
-the copy constructor and move constructor, add the `Copyable` and `Movable`
-traits to your struct.
-
-For more information about these lifecycle methods, read
-[Life of a value](/mojo/manual/lifecycle/life).
+You can also synthesize the copy constructor and move constructor by adding the
+`Copyable` and `Movable` traits to your struct. For more information about these
+lifecycle methods, read [Life of a value](/mojo/manual/lifecycle/life).
