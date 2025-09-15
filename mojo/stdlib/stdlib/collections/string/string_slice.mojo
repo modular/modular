@@ -85,7 +85,7 @@ struct CodepointSliceIter[
     mut: Bool, //,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable, Sized):
+](ImplicitlyCopyable, Iterable, Iterator, Movable, Sized):
     """Iterator for `StringSlice` over substring slices containing a single
     Unicode codepoint.
 
@@ -100,6 +100,9 @@ struct CodepointSliceIter[
     always take an element from the end.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
     alias Element = StringSlice[origin]
 
     var _slice: StringSlice[origin]
@@ -115,8 +118,7 @@ struct CodepointSliceIter[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @doc_private
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     @always_inline
