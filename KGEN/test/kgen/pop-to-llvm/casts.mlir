@@ -196,7 +196,7 @@ kgen.func @simd_cast(
 
 // -----
 
-module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch="", data_layout="">} {
+module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch="gfx942", data_layout="">} {
   // CHECK-LABEL: scalar_cast_f32_bf16
   kgen.func @scalar_cast_f32_bf16(%f32: !pop.scalar<f32>) -> (!pop.scalar<bf16>, !pop.scalar<bf16>) {
     // CHECK: %[[MANTISSA_DIFF:.*]] = llvm.mlir.constant(16 : i32) : i32
@@ -661,6 +661,40 @@ module attributes {M.target_info = #M.target<triple = "nvptx-nvidia-cuda", arch=
     // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.trunc %[[I16_RES1]] : i16 to i8
     %1 = pop.cast %bf16 : !pop.simd<1, bf16> to !pop.simd<1, f8e5m2>
     kgen.return %0, %1: !pop.simd<1, f8e4m3fn>, !pop.simd<1, f8e5m2>
+  }
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch="gfx1100", data_layout="">} {
+  // CHECK-LABEL: scalar_cast_f32_bf16
+  kgen.func @scalar_cast_f32_bf16(%f32: !pop.scalar<f32>) -> (!pop.scalar<bf16>, !pop.scalar<bf16>) {
+    // CHECK-DAG: %[[UNDEF:.+]] = llvm.mlir.undef : !llvm.struct<(bf16, bf16)>
+    // CHECK-DAG: %[[VAL0:.+]] = llvm.fptrunc %arg0 : f32 to bf16
+    // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : f32 to bf16
+    // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(bf16, bf16)>
+    // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(bf16, bf16)>
+    %0 = pop.cast fast %f32 : !pop.scalar<f32> to !pop.scalar<bf16>
+    %1 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<bf16>
+    // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(bf16, bf16)>
+    kgen.return %0, %1 :
+      !pop.scalar<bf16>,
+      !pop.scalar<bf16>
+  }
+
+  // CHECK-LABEL: simd_cast_f32_bf16
+  kgen.func @simd_cast_f32_bf16(%f32: !pop.simd<2, f32>) -> (!pop.simd<2, bf16>, !pop.simd<2, bf16>) {
+    // CHECK-DAG: %[[UNDEF:.+]] = llvm.mlir.undef : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
+    // CHECK-DAG: %[[VAL0:.+]] = llvm.fptrunc %arg0 : vector<2xf32> to vector<2xbf16>
+    // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : vector<2xf32> to vector<2xbf16>
+    // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
+    // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
+    %0 = pop.cast fast %f32 : !pop.simd<2, f32> to !pop.simd<2, bf16>
+    %1 = pop.cast %f32 : !pop.simd<2, f32> to !pop.simd<2, bf16>
+    // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
+    kgen.return %0, %1 :
+      !pop.simd<2, bf16>,
+      !pop.simd<2, bf16>
   }
 }
 

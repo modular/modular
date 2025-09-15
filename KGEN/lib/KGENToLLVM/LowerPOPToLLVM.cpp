@@ -979,7 +979,7 @@ private:
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
       // post gfx950 targets have native support for f32->bf16
-      if (target.getTriple().isAMDGPU() && !isAMDGPU_MI350XAndAbove(target) &&
+      if (target.getTriple().isAMDGPU() && isAMDGPU_gfx942(target) &&
           cast.getFastAttr()) {
         return convertF32ToBF16OnAMDGPU(rewriter, cast, value,
                                         fromFloatSemantics, toFloatSemantics);
