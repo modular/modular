@@ -34,7 +34,6 @@ from .optional import Optional
 struct _ListIter[
     mut: Bool, //,
     T: Copyable & Movable,
-    hint_trivial_type: Bool,
     origin: Origin[mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator, Movable):
@@ -43,8 +42,6 @@ struct _ListIter[
     Parameters:
         mut: Whether the reference to the list is mutable.
         T: The type of the elements in the list.
-        hint_trivial_type: Set to `True` if the type `T` is trivial, this is not
-            mandatory, but it helps performance. Will go away in the future.
         origin: The origin of the List
         forward: The iteration direction. `False` is backwards.
     """
@@ -56,7 +53,7 @@ struct _ListIter[
     ]: Iterator = Self
 
     var index: Int
-    var src: Pointer[List[Self.Element, hint_trivial_type], origin]
+    var src: Pointer[List[Self.Element], origin]
 
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
@@ -96,7 +93,7 @@ struct _ListIter[
         return (iter_len, {iter_len})
 
 
-struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
+struct List[T: Copyable & Movable](
     Boolable, Copyable, Defaultable, Iterable, Movable, Sized
 ):
     """A dynamically-allocated and resizable list.
@@ -245,9 +242,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     Parameters:
         T: The type of elements stored in the list.
-        hint_trivial_type: A hint to the compiler that type `T` is
-           trivial (it can be copied with simple memory operations).
-           Defaults to `False`.
     """
 
     # Fields
@@ -260,7 +254,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
-    ]: Iterator = _ListIter[T, hint_trivial_type, iterable_origin, True]
+    ]: Iterator = _ListIter[T, iterable_origin, True]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -361,7 +355,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """Destroy all elements in the list and free its memory."""
 
         @parameter
-        if not hint_trivial_type:
+        if not T.__del__is_trivial:
             for i in range(len(self)):
                 (self._data + i).destroy_pointee()
         self._data.free()
@@ -524,7 +518,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn __reversed__(
         ref self,
-    ) -> _ListIter[T, hint_trivial_type, __origin_of(self), False]:
+    ) -> _ListIter[T, __origin_of(self), False]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -650,7 +644,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         var new_data = UnsafePointer[T].alloc(new_capacity)
 
         @parameter
-        if hint_trivial_type:
+        if T.__moveinit__is_trivial:
             memcpy(new_data, self._data, len(self))
         else:
             for i in range(len(self)):
@@ -721,7 +715,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         var src_ptr = other.unsafe_ptr()
 
         @parameter
-        if hint_trivial_type:
+        if T.__copyinit__is_trivial:
             memcpy(dest_ptr, src_ptr, other_len)
         else:
             for _ in range(other_len):
@@ -757,7 +751,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._len = new_num_elts
 
         @parameter
-        if hint_trivial_type:
+        if T.__copyinit__is_trivial:
             memcpy(self.unsafe_ptr() + i, elements.unsafe_ptr(), elements_len)
         else:
             for elt in elements:
@@ -919,7 +913,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             )
 
         @parameter
-        if not hint_trivial_type:
+        if not T.__del__is_trivial:
             for i in range(new_size, len(self)):
                 (self._data + i).destroy_pointee()
         self._len = new_size
@@ -1247,15 +1241,6 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         # takes a ref that might mutate self
         var length = self._len
         return self.unsafe_ptr() + length
-
-    fn _cast_hint_trivial_type[
-        hint_trivial_type: Bool
-    ](deinit self) -> List[T, hint_trivial_type]:
-        var result = List[T, hint_trivial_type]()
-        result._data = self._data
-        result._len = self._len
-        result.capacity = self.capacity
-        return result^
 
 
 fn _clip(value: Int, start: Int, end: Int) -> Int:

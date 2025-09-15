@@ -241,9 +241,11 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 
 
 @fieldwise_init
-struct DelCounter[counter_origin: ImmutableOrigin](
-    ImplicitlyCopyable, Movable, Writable
-):
+struct DelCounter[
+    counter_origin: ImmutableOrigin, *, trivial_del: Bool = False
+](ImplicitlyCopyable, Movable, Writable):
+    alias __del__is_trivial = trivial_del
+
     var counter: UnsafePointer[Int, mut=False, origin=counter_origin]
 
     fn __del__(deinit self):

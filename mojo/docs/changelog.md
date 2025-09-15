@@ -447,6 +447,11 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
   function.  This improves performance for trivially destructible types
   (such as `Int` and friends).
 
+- Similar to above, `List` now automatically does optimizations based on
+  whether the element types are trivial (copyable, destructible, etc). There
+  is no longer a `hint_trivial_type` parameter as this is done automatically
+  now.
+
 - The `SIMD.from_bits` factory method is now a constructor, use
   `SIMD(from_bits=...)` instead.
 

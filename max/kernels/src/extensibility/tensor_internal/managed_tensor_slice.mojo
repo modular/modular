@@ -1185,7 +1185,7 @@ struct ManagedTensorSlice[
         fn serialize[T: Writable](val: T):
             writer.write(val)
 
-        var shape = List[Int, hint_trivial_type=True]()
+        var shape = List[Int]()
         for i in range(rank):
             shape.append(self.shape()[i])
 

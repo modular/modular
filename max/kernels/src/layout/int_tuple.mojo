@@ -2739,7 +2739,7 @@ fn depth(src: IntTuple) -> Int:
     return res
 
 
-alias IntList = List[Int, True]
+alias IntList = List[Int]
 """
 A type alias for a List of integers with ownership.
 

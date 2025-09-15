@@ -332,7 +332,7 @@ fn _resize[
     ):
         return memcpy(output.ptr, input.ptr, input.size())
     var scales = StaticTuple[Float32, input.rank]()
-    var resize_dims = List[Int, hint_trivial_type=True](capacity=input.rank)
+    var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
