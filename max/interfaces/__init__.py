@@ -24,6 +24,7 @@ from .logit_processors_type import (
 from .lora import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus, LoRAType
 from .pipeline import (
     Pipeline,
+    PipelineInputsType,
     PipelineOutput,
     PipelineOutputsDict,
     PipelineOutputType,
@@ -34,8 +35,9 @@ from .pipeline_variants import (
     AudioGenerator,
     AudioGeneratorContext,
     AudioGeneratorOutput,
-    EmbeddingsGenerator,
-    EmbeddingsOutput,
+    EmbeddingsGenerationContextType,
+    EmbeddingsGenerationInputs,
+    EmbeddingsGenerationOutput,
     TextGenerationContextType,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -60,7 +62,7 @@ from .utils import (
 
 PipelinesFactory = Callable[
     # TODO(GENAI-245): Use of Any here is not safe.
-    [], Union[EmbeddingsGenerator[Any], AudioGenerator[Any], Pipeline[Any, Any]]
+    [], Union[AudioGenerator[Any], Pipeline[Any, Any]]
 ]
 
 __all__ = [
@@ -73,8 +75,9 @@ __all__ = [
     "BaseContextType",
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
-    "EmbeddingsGenerator",
-    "EmbeddingsOutput",
+    "EmbeddingsGenerationContextType",
+    "EmbeddingsGenerationInputs",
+    "EmbeddingsGenerationOutput",
     "GenerationStatus",
     "InputContext",
     "LoRAOperation",
@@ -87,6 +90,7 @@ __all__ = [
     "MAXPullQueue",
     "MAXPushQueue",
     "Pipeline",
+    "PipelineInputsType",
     "PipelineOutput",
     "PipelineOutputType",
     "PipelineOutputsDict",

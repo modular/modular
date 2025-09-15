@@ -58,7 +58,7 @@ class PipelineTask(str, Enum):
         """
         from .pipeline_variants import (
             AudioGeneratorOutput,
-            EmbeddingsOutput,
+            EmbeddingsGenerationOutput,
             TextGenerationOutput,
         )
         from .scheduler import SchedulerResult
@@ -69,7 +69,7 @@ class PipelineTask(str, Enum):
         ]:
             return dict[str, SchedulerResult[TextGenerationOutput]]
         elif self == PipelineTask.EMBEDDINGS_GENERATION:
-            return dict[str, SchedulerResult[EmbeddingsOutput]]
+            return dict[str, SchedulerResult[EmbeddingsGenerationOutput]]
         elif self == PipelineTask.AUDIO_GENERATION:
             return dict[str, SchedulerResult[AudioGeneratorOutput]]
         else:
