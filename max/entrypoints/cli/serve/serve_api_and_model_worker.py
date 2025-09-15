@@ -31,6 +31,7 @@ from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
     fastapi_config,
+    validate_port_is_free,
 )
 from max.serve.config import Settings
 from uvicorn import Server
@@ -102,6 +103,7 @@ def serve_api_server_and_model_worker(
     # Initialize and serve webserver.
     app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
+    validate_port_is_free(settings.port)
 
     # Set up signal handler for Ctrl+C graceful shutdown
     signal.signal(signal.SIGTERM, sigterm_handler)

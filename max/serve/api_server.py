@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -59,6 +60,18 @@ ROUTES = {
 }
 
 logger = logging.getLogger("max.serve")
+
+
+def validate_port_is_free(port: int):
+    # check if port is already in use
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("", port))
+            return port
+        except OSError as e:
+            raise ValueError(
+                f"The network port {port} is already in use"
+            ) from e
 
 
 @dataclass(frozen=True)

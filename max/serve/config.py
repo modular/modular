@@ -18,14 +18,13 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 from __future__ import annotations
 
 import logging
-import socket
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("max.serve")
@@ -106,25 +105,6 @@ class Settings(BaseSettings):
     port: int = Field(
         description="Port to use", default=8000, alias="MAX_SERVE_PORT"
     )
-
-    @field_validator("port", mode="after")
-    @classmethod
-    def validate_port(cls, port: int, info: ValidationInfo):
-        # In offline inference mode, port is not used and always valid.
-        # Safely get the values with defaults since these fields might not be validated yet
-        offline_inference = info.data.get("offline_inference", False)
-        headless = info.data.get("headless", False)
-
-        if offline_inference or headless:
-            return port
-
-        # check if port is already in use
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("", port))
-                return port
-            except OSError as e:
-                raise ValueError(f"port {port} is already in use") from e
 
     metrics_port: int = Field(
         description="Port to use for the metrics endpoint",
