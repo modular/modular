@@ -18,7 +18,6 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import click
@@ -467,18 +466,9 @@ def cli_benchmark(args: Sequence[str]) -> None:
         parse_args as benchmark_parse_args,
     )
 
-    # Default to serving_config.yaml in the benchmark directory for now.
-    # Based on how we're packaging our benchmark/ in max, this should be the correct path.
-    config_file_path = (
-        Path(__file__).parent.parent / "benchmark" / "serving_config.yaml"
-    )
-
-    logger.debug("Using config file path: %s", config_file_path)
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        argparse_namespace = benchmark_parse_args(
-            config_file_path=config_file_path, args=args
-        )
+        argparse_namespace = benchmark_parse_args(args=args)
 
         # Run the benchmark
         click.echo("Starting benchmark...")

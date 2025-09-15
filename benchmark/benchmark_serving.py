@@ -38,7 +38,7 @@ from typing import Any, Callable, Optional, Union
 import aiohttp
 import numpy as np
 import yaml
-from benchmark_config import ServingBenchmarkConfig
+from benchmark_config import ServingBenchmarkConfig, parse_benchmark_args
 from benchmark_datasets import (
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
@@ -1642,41 +1642,21 @@ def main(args: argparse.Namespace) -> None:
     logger.info("finished benchmark run: Success.")
 
 
-def parse_args(
-    config_file_path: Path | None = None, args: Sequence[str] | None = None
-) -> argparse.Namespace:
+def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments using ServingBenchmarkConfig with enhanced cli_parse_args().
 
-    This function leverages the enhanced ServingBenchmarkConfig.cli_parse_args() method
-    to eliminate code duplication while providing proper CLI argument parsing
-    with choices and help text.
+    This function uses the generalized parse_benchmark_args function to handle
+    config file inheritance and CLI argument parsing.
 
     Args:
-        config_file_path: Path to the configuration file.
         args: Command line arguments to parse. If None, parse from sys.argv.
     """
-
-    # Load configuration from YAML file to get defaults
-
-    if config_file_path is None:
-        logger.info(
-            "No benchmark serving configuration file path provided, using default serving_config.yaml file"
-        )
-        # Use __file__ to get the directory of this module and construct the path
-        config_file_path = Path(__file__).parent / "serving_config.yaml"
-
-    logger.info(
-        f"Using benchmark serving configuration file: {config_file_path}"
-    )
-
-    benchmark_config = ServingBenchmarkConfig.from_config_file(config_file_path)
-
-    # Create parser using the enhanced MAXConfig functionality with required model field
-    parser = benchmark_config.cli_arg_parsers(
+    return parse_benchmark_args(
+        config_class=ServingBenchmarkConfig,
+        default_config_path=Path(__file__).parent / "serving_config.yaml",
         description=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+        args=args,
     )
-
-    return parser.parse_args(args=args)
 
 
 if __name__ == "__main__":

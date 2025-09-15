@@ -13,11 +13,16 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
+import argparse
 import enum
 import logging
+import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
+import yaml
 from benchmark_datasets import DATASET_REGISTRY
 
 logger = logging.getLogger("max.benchmark")
@@ -25,14 +30,14 @@ logger = logging.getLogger("max.benchmark")
 # Workaround for when we don't have max.pipelines installed. This assumes that
 # we copied the max_config.py file to the current directory.
 try:
-    from max.pipelines.lib import MAXConfig
+    from max.pipelines.lib import MAXConfig, deep_merge_max_configs
 except (ImportError, ModuleNotFoundError):
     logger.warning(
         "max.pipelines.lib not found, using max_config.py from current directory"
     )
     # Also type: ignore because we don't want mypy to trigger on this since
     # it's intentional anyway.
-    from max_config import MAXConfig  # type: ignore
+    from max_config import MAXConfig, deep_merge_max_configs  # type: ignore
 
 
 class Backend(str, enum.Enum):
@@ -49,6 +54,50 @@ class Endpoint(str, enum.Enum):
     completions = "/v1/completions"
     chat_completions = "/v1/chat/completions"
     ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
+
+
+def _add_config_file_arg_to_parser(
+    parser: argparse.ArgumentParser,
+) -> argparse.ArgumentParser:
+    """Add the --config-file argument to a parser.
+
+    Args:
+        parser: The parser to add the argument to.
+    """
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        help="Path to configuration file. If provided, this config will inherit from the default config and override its values.",
+    )
+    return parser
+
+
+def _resolve_user_provided_config_file_cli_arg(
+    args: Optional[Sequence[str]] = None,
+) -> tuple[Optional[Path], list[str]]:
+    """Resolve the user-provided --config-file argument from command line arguments.
+
+    This utility function extracts the config file path from command line arguments
+    before the main argument parsing, allowing the config file to be loaded and used
+    as defaults for the main parser.
+
+    Args:
+        args: Command line arguments to parse. If None, parse from sys.argv.
+
+    Returns:
+        Tuple of (config_file_path, remaining_args) where:
+        - config_file_path: Path to the config file if provided, None otherwise
+        - remaining_args: List of remaining arguments after removing --config-file
+    """
+    # Create a preliminary parser to get the config file path
+    preliminary_parser = argparse.ArgumentParser(add_help=False)
+    preliminary_parser = _add_config_file_arg_to_parser(preliminary_parser)
+
+    # Parse preliminary args to get config file path
+    preliminary_args, remaining_args = preliminary_parser.parse_known_args(
+        args=args
+    )
+    return preliminary_args.config_file, remaining_args
 
 
 @dataclass
@@ -483,3 +532,130 @@ def load_serving_benchmark_config(
         for key, value in overrides.items():
             setattr(config, key, value)
     return config
+
+
+def _load_user_provided_config(
+    user_config_path: Path,
+    default_config_path: Path,
+    config_class: type[BaseBenchmarkConfig],
+) -> BaseBenchmarkConfig:
+    """Load user-provided config file with inheritance from default config file.
+
+    This function ensures that a user-provided config file inherits from a default
+    config file, allowing users to override only the parameters they need
+    while keeping all the default values from the base configuration.
+
+    Args:
+        user_config_path: Path to the user-provided configuration file
+        default_config_path: Path to the default configuration file
+        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
+
+    Returns:
+        Config instance with inherited and overridden values
+    """
+    # Load the user config file
+    with open(user_config_path, encoding="utf-8") as f:
+        user_config_dict = yaml.safe_load(f)
+
+    if not isinstance(user_config_dict, dict):
+        raise ValueError(
+            f"User configuration file {user_config_path} must contain a dictionary at the top level"
+        )
+
+    # Load the default config file
+    with open(default_config_path, encoding="utf-8") as f:
+        default_config_dict = yaml.safe_load(f)
+
+    if not isinstance(default_config_dict, dict):
+        raise ValueError(
+            f"Default configuration file {default_config_path} must contain a dictionary at the top level"
+        )
+
+    # Merge the configs: user config overrides default config
+    merged_config_dict = deep_merge_max_configs(
+        default_config_dict, user_config_dict
+    )
+
+    # Resolve any depends_on paths relative to the default config file location
+    # This is necessary because user provided configs may not have context on where
+    # the "base" configs are located. This reference is only held in the default config file.
+    if "depends_on" in merged_config_dict:
+        depends_on_path = Path(merged_config_dict["depends_on"])
+        if not depends_on_path.is_absolute():
+            # Resolve relative to the default config file location
+            merged_config_dict["depends_on"] = str(
+                default_config_path.parent / depends_on_path
+            )
+
+    # Create a temporary config file with the merged content
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False
+    ) as temp_file:
+        yaml.dump(merged_config_dict, temp_file)
+        temp_config_path = temp_file.name
+
+    try:
+        # Load the merged config using the standard MAXConfig mechanism
+        config = config_class.from_config_file(temp_config_path)
+        return config
+    finally:
+        # Clean up the temporary file
+        Path(temp_config_path).unlink(missing_ok=True)
+
+
+def parse_benchmark_args(
+    config_class: type[BaseBenchmarkConfig],
+    default_config_path: Path,
+    description: str,
+    args: Optional[Sequence[str]] = None,
+) -> argparse.Namespace:
+    """Parse command line arguments for benchmark entrypoints with config file inheritance.
+
+    This function first parses a preliminary argument to get the config file path,
+    then loads the appropriate configuration and re-parses with the loaded config as defaults.
+
+    Its main purpose is to handle user provided config files which override params
+    of a particular benchmark entrypoint.
+
+    Args:
+        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
+        default_config_path: Path to the default configuration file. For benchmark_serving.py,
+        this should be the path to the serving_config.yaml file.
+        description: Description for the argument parser
+        args: Command line arguments to parse. If None, parse from sys.argv.
+
+    Returns:
+        Parsed arguments namespace with config file values as defaults
+    """
+
+    # Parse the config file argument first
+    config_file_path, remaining_args = (
+        _resolve_user_provided_config_file_cli_arg(args=args)
+    )
+
+    if config_file_path is None:
+        logger.info(
+            f"No configuration file path provided, using default {default_config_path} file"
+        )
+        benchmark_config = config_class.from_config_file(default_config_path)
+    else:
+        # Check if user provided the same file as default
+        if config_file_path.resolve() == default_config_path.resolve():
+            logger.info(f"Using default configuration file: {config_file_path}")
+            benchmark_config = config_class.from_config_file(config_file_path)
+        else:
+            logger.info(
+                f"Using user-provided configuration file: {config_file_path} (will inherit from {default_config_path})"
+            )
+            # Load the user config file and ensure it inherits from default config
+            benchmark_config = _load_user_provided_config(
+                config_file_path, default_config_path, config_class
+            )
+
+    # Create parser using the enhanced MAXConfig functionality
+    parser = benchmark_config.cli_arg_parsers(description=description)
+    # This is added only for its help message. It's a no-op and not actually used for parsing
+    # since it's done in the section above.
+    parser = _add_config_file_arg_to_parser(parser)
+    # Parse the remaining arguments with the loaded config as defaults
+    return parser.parse_args(args=remaining_args)

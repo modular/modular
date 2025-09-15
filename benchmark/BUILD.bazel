@@ -53,6 +53,7 @@ modular_py_library(
     deps = [
         ":benchmark_datasets",
         "//SDK/lib/API/python/max/pipelines/lib",
+        requirement("pyyaml"),
     ],
 )
 
