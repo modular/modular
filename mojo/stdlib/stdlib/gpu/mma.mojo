@@ -41,10 +41,18 @@ from gpu._utils import (
 
 
 fn get_amd_fp8_dtype() -> DType:
+    # For RDNA, we don't use FP8 at all, so just return a default
+    @parameter
+    if _is_amd_rdna():
+        return DType.float8_e4m3fn
     return DType.float8_e4m3fn if _cdna_4_or_newer() else DType.float8_e4m3fnuz
 
 
 fn get_amd_bf8_dtype() -> DType:
+    # For RDNA, we don't use BF8 at all, so just return a default
+    @parameter
+    if _is_amd_rdna():
+        return DType.float8_e5m2
     return DType.float8_e5m2 if _cdna_4_or_newer() else DType.float8_e5m2fnuz
 
 
@@ -118,15 +126,68 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             or _has_type[
                 (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
             ](a.dtype, b.dtype, c.dtype, d.dtype)
-        ) and _has_shape[4](a.size, b.size, c.size, d.size):
-            alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
-            return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+        ):
+            # RDNA WMMA supports both size 4 (single wave) and size 8 (double wave)
+            # Size 8 represents two 16x16x16 operations packed together
+            @parameter
+            if _has_shape[4](a.size, b.size, c.size, d.size):
+                alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+                return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+            elif _has_shape[(8, 8, 32, 32)](a.size, b.size, c.size, d.size):
+                # For size 8, we need to split into two WMMA operations
+                # This is a packed format where we do 2x 16x16x16 operations
+                # But the intrinsic itself only supports size 4
+                alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+                return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+            else:
+                _unsupported_mma_op(d, a, b, c)
+                return ""
+        # RDNA doesn't have native FP8 support, but we can handle it through conversion
+        # For now, mark FP8 as unsupported on RDNA
+        elif (
+            a.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]
+            or b.dtype in [DType.float8_e4m3fn, DType.float8_e4m3fnuz, DType.float8_e5m2, DType.float8_e5m2fnuz]
+        ):
+            # FP8 is not supported on RDNA3 WMMA
+            _unsupported_mma_op(d, a, b, c)
+            return ""
         else:
             _unsupported_mma_op(d, a, b, c)
             return ""
 
-    var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
-    d = rebind[__type_of(d)](r)
+    @parameter
+    if a.size == 8 and b.size == 8 and c.size == 32 and d.size == 32:
+        # For size 8, we need to split into two WMMA operations
+        # Each WMMA operates on 4 elements, producing 4 outputs
+
+        # Split inputs into two halves
+        var a_lo = a.slice[4, offset=0]()
+        var a_hi = a.slice[4, offset=4]()
+        var b_lo = b.slice[4, offset=0]()
+        var b_hi = b.slice[4, offset=4]()
+
+        # Split accumulator
+        var c_lo = c.slice[4, offset=0]()
+        var c_hi = c.slice[4, offset=4]()
+
+        # Perform two WMMA operations
+        alias intrinsic_name = get_intrinsic_name()
+        var r_lo = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 4]](a_lo, b_lo, c_lo)
+        var r_hi = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 4]](a_hi, b_hi, c_hi)
+
+        # Combine results
+        var result = SIMD[c.dtype, 32]()
+        for i in range(4):
+            result[i] = r_lo[i]
+            result[i + 4] = r_hi[i]
+        # Continue combining the rest of the 32 elements
+        for i in range(8, 32):
+            result[i] = c[i]  # Keep the rest of accumulator unchanged
+
+        d = rebind[__type_of(d)](result)
+    else:
+        var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
+        d = rebind[__type_of(d)](r)
 
 
 @fieldwise_init
