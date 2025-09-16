@@ -482,22 +482,6 @@ class LoRAManager:
         """
         return self._loras[name].rank if name in self._loras else 0
 
-    def _model_names_to_ids(self, model_names: list[str | None]) -> list[int]:
-        """
-        Maps the list of model names to their assigned slots.
-        If a model isn't a valid loaded LoRA, we assume the base model is
-        selected and set id to max_num_loras.
-        """
-        return [self._model_name_to_id(name) for name in model_names]
-
-    def _model_names_to_ranks(self, model_names: list[str | None]) -> list[int]:
-        """
-        Maps the list of model names to their assigned ranks.
-        If a model isn't a valid loaded LoRA, we assume the base model is
-        selected and set rank to 0.
-        """
-        return [self._model_name_to_rank(name) for name in model_names]
-
     def get_lora_graph_inputs(
         self,
         context_batch: Sequence[T],
