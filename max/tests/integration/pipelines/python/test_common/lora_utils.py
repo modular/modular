@@ -239,18 +239,6 @@ def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:
     return pipeline
 
 
-def create_pipeline_base() -> TextGenerationPipeline:
-    """Create a base text generation pipeline without LoRA.
-
-    Returns:
-        TextGenerationPipeline: Base pipeline without LoRA
-    """
-    config = create_pipeline_config_base()
-    _, pipeline = PIPELINE_REGISTRY.retrieve(config)
-    assert isinstance(pipeline, TextGenerationPipeline)
-    return pipeline
-
-
 def create_tokenizer(
     model_path: str = REPO_ID, max_length: int = 512
 ) -> TextTokenizer:

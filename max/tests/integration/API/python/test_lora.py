@@ -40,11 +40,6 @@ def configured_mock_lora(mock_lora_model: MagicMock) -> MagicMock:
     return mock_lora_model
 
 
-@pytest.fixture
-def mock_weights() -> MagicMock:
-    return MagicMock(name="Weights")
-
-
 class MockLoRARequestProcessor:
     """Mock LoRARequestProcessor that doesn't create ZMQ sockets or threads."""
 
