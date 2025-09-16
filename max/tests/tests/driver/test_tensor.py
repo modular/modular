@@ -673,7 +673,11 @@ def test_aligned() -> None:
 
 
 def test_unaligned_tensor_copy() -> None:
-    """Tests that copying a tensor aligns it to the dtype alignment."""
+    """Tests tensor copying and viewing with unaligned memory.
+
+    The tensor copying part of GENAI-110 has been fixed by GEX-2576 improvements,
+    but tensor viewing with unaligned data still has issues (view operation).
+    """
     expected = np.array([1005, 2510, 1325], np.int32)
 
     # Construct a uint8 tensor so that when converted to int32, it becomes the
@@ -685,16 +689,12 @@ def test_unaligned_tensor_copy() -> None:
     )
     tensor8 = Tensor.from_numpy(unaligned_array)
 
-    # TODO(GENAI-110): These should not raise AssertionErrors. There is a bug
-    # causing unaligned arrays to not be viewed/copied correctly.
-
-    # Bug with copy.
+    # Copy operation now works correctly (fixed by GEX-2576).
     tensor8_copy = tensor8[1:].copy()
-    with pytest.raises(AssertionError):
-        # Output: tensor8_copy[0] is expected to be 237, but is 15.
-        assert tensor8_copy[0].item() == tensor8[1].item()
+    # Should correctly preserve element values after copy
+    assert tensor8_copy[0].item() == tensor8[1].item()
 
-    # Bug with view.
+    # View operation still has alignment issues (part of GENAI-110 still exists).
     tensor32 = tensor8[1:].view(DType.int32)
     assert not tensor8[1:]._aligned(DType.int32.align)
 
@@ -702,14 +702,17 @@ def test_unaligned_tensor_copy() -> None:
     # same data as `tensor8[1:]`.
     assert tensor32._aligned()
 
+    # TODO(GENAI-110): View operation still doesn't handle unaligned data correctly
+    # Tensor[0]'s value should be 1005, but view gives incorrect value due to alignment
     with pytest.raises(AssertionError):
-        # Tensor[0]'s value should be 1005, but is 642560.
         assert tensor32[0].item() == 1005
 
+    # However, copying the viewed tensor does work correctly now
     tensor32_copy = tensor32.copy()
     assert tensor32_copy._aligned()
+    # But this still fails because the source view has wrong data
     with pytest.raises(AssertionError):
-        np.testing.assert_array_equal(tensor32.copy().to_numpy(), expected)
+        np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
 
 
 def test_inplace_copy_from_raises() -> None:
@@ -767,3 +770,217 @@ def test_inplace_copy_from_tensor_view() -> None:
 def test_GEX_2088() -> None:
     t = Tensor.zeros([2], DType.uint32)
     assert t[1].to_numpy().item() == 0
+
+
+@pytest.mark.parametrize(
+    "device_factory",
+    [
+        CPU,
+        pytest.param(
+            Accelerator,
+            marks=pytest.mark.skipif(
+                not accelerator_count(), reason="GPU not available"
+            ),
+        ),
+    ],
+)
+def test_tensor_slicing_to_numpy_basic(device_factory: type) -> None:
+    """Test basic tensor slicing with .to_numpy() on CPU and GPU - reproduces GEX-2576."""
+    # Create original test case from reproduction
+    tensor = Tensor.from_numpy(np.arange(10).reshape(2, 5)).to(device_factory())
+    original_data = tensor.to_numpy()
+
+    # Expected: [[0 1 2 3 4], [5 6 7 8 9]]
+    expected_original = np.array(
+        [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=np.int32
+    )
+    np.testing.assert_array_equal(original_data, expected_original)
+
+    # Test first row slice - should return [[0 1 2 3 4]]
+    first_row_slice = tensor[0:1, :]
+    first_row_result = first_row_slice.to_numpy()
+    expected_first_row = np.array([[0, 1, 2, 3, 4]], dtype=np.int32)
+    np.testing.assert_array_equal(
+        first_row_result,
+        expected_first_row,
+        f"First row slice failed on {device_factory.__name__}",
+    )
+
+    # Test second row slice - should return [[5 6 7 8 9]]
+    # This is the failing case from the bug report (used to fail on GPU, worked on CPU)
+    second_row_slice = tensor[1:2, :]
+    second_row_result = second_row_slice.to_numpy()
+    expected_second_row = np.array([[5, 6, 7, 8, 9]], dtype=np.int32)
+    np.testing.assert_array_equal(
+        second_row_result,
+        expected_second_row,
+        f"Second row slice failed on {device_factory.__name__}",
+    )
+
+
+@pytest.mark.parametrize(
+    "device_factory",
+    [
+        CPU,
+        pytest.param(
+            Accelerator,
+            marks=pytest.mark.skipif(
+                not accelerator_count(), reason="GPU not available"
+            ),
+        ),
+    ],
+)
+def test_tensor_slicing_to_numpy_comprehensive(device_factory: type) -> None:
+    """Comprehensive tensor slicing tests for various slice patterns on CPU and GPU."""
+    # Create a 3x4 tensor for more comprehensive testing
+    data = np.arange(12).reshape(3, 4).astype(np.int32)
+    tensor = Tensor.from_numpy(data).to(device_factory())
+
+    # Test various single row slices
+    for i in range(3):
+        row_slice = tensor[i : i + 1, :]
+        result = row_slice.to_numpy()
+        expected = data[i : i + 1, :]
+        np.testing.assert_array_equal(
+            result,
+            expected,
+            f"Row slice [%d:%d, :] failed on {device_factory.__name__}"
+            % (i, i + 1),
+        )
+
+    # Test multi-row slices
+    for start in range(2):
+        for end in range(start + 1, 3):
+            row_slice = tensor[start:end, :]
+            result = row_slice.to_numpy()
+            expected = data[start:end, :]
+            np.testing.assert_array_equal(
+                result,
+                expected,
+                f"Row slice [%d:%d, :] failed on {device_factory.__name__}"
+                % (start, end),
+            )
+
+
+@pytest.mark.parametrize(
+    "device_factory",
+    [
+        CPU,
+        pytest.param(
+            Accelerator,
+            marks=pytest.mark.skipif(
+                not accelerator_count(), reason="GPU not available"
+            ),
+        ),
+    ],
+)
+def test_tensor_slicing_to_numpy_edge_cases(device_factory: type) -> None:
+    """Test edge cases for tensor slicing on CPU and GPU."""
+    data = np.arange(20).reshape(4, 5).astype(np.int32)
+    tensor = Tensor.from_numpy(data).to(device_factory())
+
+    # Test single element slices
+    for i in range(4):
+        for j in range(5):
+            element_slice = tensor[i : i + 1, j : j + 1]
+            result = element_slice.to_numpy()
+            expected = data[i : i + 1, j : j + 1]
+            np.testing.assert_array_equal(
+                result,
+                expected,
+                f"Single element slice [%d:%d, %d:%d] failed on {device_factory.__name__}"
+                % (i, i + 1, j, j + 1),
+            )
+
+    # Test last row and column
+    last_row = tensor[-1:, :]
+    result = last_row.to_numpy()
+    expected = data[-1:, :]
+    np.testing.assert_array_equal(
+        result, expected, f"Last row slice failed on {device_factory.__name__}"
+    )
+
+    # Test negative indexing
+    second_last_row = tensor[-2:-1, :]
+    result = second_last_row.to_numpy()
+    expected = data[-2:-1, :]
+    np.testing.assert_array_equal(
+        result,
+        expected,
+        f"Second last row slice failed on {device_factory.__name__}",
+    )
+
+
+@pytest.mark.parametrize(
+    "device_factory",
+    [
+        CPU,
+        pytest.param(
+            Accelerator,
+            marks=pytest.mark.skipif(
+                not accelerator_count(), reason="GPU not available"
+            ),
+        ),
+    ],
+)
+def test_tensor_slicing_to_numpy_different_dtypes(device_factory: type) -> None:
+    """Test tensor slicing with different data types on CPU and GPU."""
+    shapes_and_dtypes = [
+        ((3, 4), DType.float32),
+        ((2, 6), DType.float64),
+        ((4, 3), DType.int64),
+        ((3, 3), DType.int16),
+    ]
+
+    for shape, dtype in shapes_and_dtypes:
+        np_dtype = dtype.to_numpy()
+        data = np.arange(shape[0] * shape[1]).reshape(shape).astype(np_dtype)
+        tensor = Tensor.from_numpy(data).to(device_factory())
+
+        # Test middle row slice
+        mid_row = shape[0] // 2
+        row_slice = tensor[mid_row : mid_row + 1, :]
+        result = row_slice.to_numpy()
+        expected = data[mid_row : mid_row + 1, :]
+        np.testing.assert_array_equal(
+            result,
+            expected,
+            f"Row slice failed for dtype {dtype} and shape {shape} on {device_factory.__name__}",
+        )
+
+
+@pytest.mark.parametrize(
+    "device_factory",
+    [
+        CPU,
+        pytest.param(
+            Accelerator,
+            marks=pytest.mark.skipif(
+                not accelerator_count(), reason="GPU not available"
+            ),
+        ),
+    ],
+)
+def test_tensor_slicing_to_numpy_3d(device_factory: type) -> None:
+    """Test tensor slicing with 3D tensors on CPU and GPU."""
+    data = np.arange(24).reshape(2, 3, 4).astype(np.int32)
+    tensor = Tensor.from_numpy(data).to(device_factory())
+
+    # Test slicing along first dimension
+    first_3d_slice = tensor[0:1, :, :]
+    result = first_3d_slice.to_numpy()
+    expected = data[0:1, :, :]
+    np.testing.assert_array_equal(
+        result,
+        expected,
+        f"3D first dimension slice failed on {device_factory.__name__}",
+    )
+
+    second_3d_slice = tensor[1:2, :, :]
+    result = second_3d_slice.to_numpy()
+    expected = data[1:2, :, :]
+    np.testing.assert_array_equal(
+        result,
+        expected,
+        f"3D second dimension slice failed on {device_factory.__name__}",
+    )
