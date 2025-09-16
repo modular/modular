@@ -662,7 +662,7 @@ fn is_gpu() -> Bool:
     Returns:
         True if the triple target is GPU and False otherwise.
     """
-    return is_nvidia_gpu() or is_amd_gpu()
+    return is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu()
 
 
 @always_inline("nodebug")
