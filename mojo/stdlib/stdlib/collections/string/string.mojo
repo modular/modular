@@ -642,10 +642,8 @@ struct String(
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            # TODO: use `load[MONOTONIC]` once load supports memory orderings.
             return (
-                self._refcount().fetch_sub[ordering = Consistency.MONOTONIC](0)
-                == 1
+                self._refcount().load[ordering = Consistency.MONOTONIC]() == 1
             )
         else:
             return False
