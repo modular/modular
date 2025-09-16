@@ -230,6 +230,10 @@ class PipelineModel(ABC, Generic[T]):
         )
 
     @property
+    def lora_manager(self) -> LoRAManager | None:
+        return self._lora_manager
+
+    @property
     def dtype(self) -> DType:
         # AudioGeneratorPipeline passes Nones for all args except pipeline config
         return (

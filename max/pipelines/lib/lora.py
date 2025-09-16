@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import re
-import threading
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
@@ -446,13 +445,10 @@ class LoRAManager:
             max_size=self.max_num_loras
         )
 
-        self._lora_lock = threading.RLock()
-        self._request_processor: LoRARequestProcessor[Any] = (
-            LoRARequestProcessor(
-                self,
-                config.lora_request_endpoint,
-                config.lora_response_endpoint,
-            )
+        self._request_processor = LoRARequestProcessor(
+            self,
+            config.lora_request_endpoint,
+            config.lora_response_endpoint,
         )
 
         if config.lora_paths:
@@ -460,10 +456,13 @@ class LoRAManager:
 
         self._alias_buffers: dict[str, DLPackArray] = {}
 
+    def process_lora_requests(self) -> None:
+        """Check for new LoRA requests and processes them."""
+        self._request_processor.process_lora_requests()
+
     @property
     def loras(self) -> list[str]:
-        with self._lora_lock:
-            return list(self._loras.keys())
+        return list(self._loras.keys())
 
     def _model_name_to_id(self, name: str | None) -> int:
         """
@@ -618,42 +617,39 @@ class LoRAManager:
         Returns:
             LoRAStatus indicating the result of the load operation.
         """
-        with self._lora_lock:
-            try:
-                if "=" in path:
-                    name, path = path.split("=", 1)
+        try:
+            if "=" in path:
+                name, path = path.split("=", 1)
+            else:
+                name = path
+                path = path
+
+            # Check if name already exists first
+            if name in self._loras:
+                existing_lora = self._loras[name]
+                if existing_lora.path == path:
+                    return LoRAStatus.SUCCESS
                 else:
-                    name = path
-                    path = path
+                    return LoRAStatus.LOAD_NAME_EXISTS
 
-                # Check if name already exists first
-                if name in self._loras:
-                    existing_lora = self._loras[name]
-                    if existing_lora.path == path:
-                        return LoRAStatus.SUCCESS
-                    else:
-                        return LoRAStatus.LOAD_NAME_EXISTS
+            if (status := self._validate_lora_path(path)) != LoRAStatus.SUCCESS:
+                return status
 
-                if (
-                    status := self._validate_lora_path(path)
-                ) != LoRAStatus.SUCCESS:
-                    return status
-
-                try:
-                    lora = LoRAModel(
-                        name, path, self.base_dtype, self.max_lora_rank
-                    )
-                except ValueError as e:
-                    return LoRAStatus.LOAD_INVALID_ADAPTER
-
-                self._loras[lora.name] = lora
-                return LoRAStatus.SUCCESS
-
-            except Exception as e:
-                logger.exception(
-                    f"Unexpected error loading LoRA adapter from '{path}': {e}"
+            try:
+                lora = LoRAModel(
+                    name, path, self.base_dtype, self.max_lora_rank
                 )
-                return LoRAStatus.LOAD_ERROR
+            except ValueError as e:
+                return LoRAStatus.LOAD_INVALID_ADAPTER
+
+            self._loras[lora.name] = lora
+            return LoRAStatus.SUCCESS
+
+        except Exception as e:
+            logger.exception(
+                f"Unexpected error loading LoRA adapter from '{path}': {e}"
+            )
+            return LoRAStatus.LOAD_ERROR
 
     def unload_adapter(self, name: str) -> LoRAStatus:
         """
@@ -672,20 +668,19 @@ class LoRAManager:
         Returns:
             LoRAStatus indicating the result of the unload operation.
         """
-        with self._lora_lock:
-            try:
-                if name not in self._loras:
-                    return LoRAStatus.UNLOAD_NAME_NONEXISTENT
+        try:
+            if name not in self._loras:
+                return LoRAStatus.UNLOAD_NAME_NONEXISTENT
 
-                # Remove from registries
-                del self._loras[name]
-                # Remove from active cache (if present)
-                self._active_loras.remove(name)
+            # Remove from registries
+            del self._loras[name]
+            # Remove from active cache (if present)
+            self._active_loras.remove(name)
 
-                return LoRAStatus.SUCCESS
-            except Exception as e:
-                logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
-                return LoRAStatus.UNLOAD_ERROR
+            return LoRAStatus.SUCCESS
+        except Exception as e:
+            logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
+            return LoRAStatus.UNLOAD_ERROR
 
     def activate_adapter(self, name: str) -> None:
         """
@@ -707,28 +702,27 @@ class LoRAManager:
         Raises:
             KeyError: If the specified adapter does not exist in the registry.
         """
-        with self._lora_lock:
-            if name not in self._loras:
-                raise KeyError(f"LoRA adapter '{name}' not found in registry")
+        if name not in self._loras:
+            raise KeyError(f"LoRA adapter '{name}' not found in registry")
 
-            # Check if already active before putting
-            is_active = name in self._active_loras
-            # if it is active already, we still need to update the lru cache
-            self._active_loras.put(name, self._loras[name])
+        # Check if already active before putting
+        is_active = name in self._active_loras
+        # if it is active already, we still need to update the lru cache
+        self._active_loras.put(name, self._loras[name])
 
-            # Only update buffers if the LoRA wasn't already active
-            if not is_active:
-                # Get the current LoRA and its slot
-                (lora, slot) = self._active_loras.get(name)
+        # Only update buffers if the LoRA wasn't already active
+        if not is_active:
+            # Get the current LoRA and its slot
+            (lora, slot) = self._active_loras.get(name)
 
-                if lora is None or slot is None:
-                    raise RuntimeError(
-                        "LoRA or slot is None even after it has been added to cache..."
-                        " This shouldn't happen."
-                    )
+            if lora is None or slot is None:
+                raise RuntimeError(
+                    "LoRA or slot is None even after it has been added to cache..."
+                    " This shouldn't happen."
+                )
 
-                # Update alias buffers with the newly activated LoRA
-                self._update_alias_buffers_for_lora(lora, slot)
+            # Update alias buffers with the newly activated LoRA
+            self._update_alias_buffers_for_lora(lora, slot)
 
     def _update_alias_buffers_for_lora(
         self, lora: LoRAModel, slot: int
@@ -938,25 +932,24 @@ class LoRAManager:
             batch: The context batch to sort
         """
         # First, activate any LoRAs referenced in the batch that aren't already active
-        with self._lora_lock:
-            for context in context_batch.values():
-                model_name = getattr(context, "model_name", None)
-                if (
-                    model_name
-                    and model_name != self.base_model_path
-                    and model_name in self._loras
-                ):
-                    self.activate_adapter(model_name)
+        for context in context_batch.values():
+            model_name = getattr(context, "model_name", None)
+            if (
+                model_name
+                and model_name != self.base_model_path
+                and model_name in self._loras
+            ):
+                self.activate_adapter(model_name)
 
-            batch_by_model_ids = {
-                req_id: ctx
-                for req_id, ctx in sorted(
-                    context_batch.items(),
-                    key=lambda item: self._model_name_to_id(
-                        getattr(item[1], "model_name", None)
-                    ),
-                    reverse=True,
-                )
-            }
+        batch_by_model_ids = {
+            req_id: ctx
+            for req_id, ctx in sorted(
+                context_batch.items(),
+                key=lambda item: self._model_name_to_id(
+                    getattr(item[1], "model_name", None)
+                ),
+                reverse=True,
+            )
+        }
 
-            return batch_by_model_ids
+        return batch_by_model_ids

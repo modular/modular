@@ -26,13 +26,15 @@ from typing import Any, Callable
 
 import uvloop
 from max.interfaces import (
+    AudioGenerator,
     MAXPullQueue,
     MAXPushQueue,
+    Pipeline,
     PipelinesFactory,
     RequestID,
     SchedulerResult,
 )
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.pipelines.telemetry_worker import MetricClient
@@ -44,6 +46,15 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger("max.serve")
+
+
+def get_pipeline_model(
+    pipeline: Pipeline[Any, Any] | AudioGenerator[Any],
+) -> PipelineModel[Any] | None:
+    if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
+        return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
+    else:
+        return getattr(pipeline, "_pipeline_model", None)
 
 
 def _set_pdeathsig(pdeathsig: int) -> None:
@@ -137,6 +148,14 @@ class ModelWorker:
                 cancel_queue=cancel_queue,
             )
 
+            # Maybe retrieve LoRA manager.
+            lora_manager = None
+            pipeline_model = get_pipeline_model(pipeline)
+            if pipeline_config.lora_config:
+                assert pipeline_model is not None
+                lora_manager = pipeline_model.lora_manager
+                assert lora_manager is not None
+
             # Mark the start of the process, and run the scheduler.
             pc.set_started()
             logger.debug("Started model worker!")
@@ -145,6 +164,9 @@ class ModelWorker:
             while not pc.is_canceled():
                 pc.beat()
                 try:
+                    # Checks for new LoRA requests and processes them.
+                    if lora_manager is not None:
+                        lora_manager.process_lora_requests()
                     # This method must terminate in a reasonable amount of time
                     # so that the ProcessMonitor heartbeat is periodically run.
                     progress = scheduler.run_iteration()
