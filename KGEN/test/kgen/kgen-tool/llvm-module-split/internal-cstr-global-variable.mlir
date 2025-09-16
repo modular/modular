@@ -1,5 +1,6 @@
 // RUN: kgen-translate %s --mlir-to-llvmir -o %t
 // RUN: llvm-module-split %t --per-func | FileCheck %s
+// RUN: llvm-module-split %t --per-func --debug-only=llvm-module-split 2>&1 | FileCheck --check-prefix=CHECK-DEBUG %s
 
 llvm.mlir.global internal constant @str0("str0\00") {addr_space = 0 : i32, alignment = 16 : i64}
 llvm.mlir.global internal constant @str1("str1\00") {addr_space = 0 : i32, alignment = 16 : i64}
@@ -22,6 +23,8 @@ llvm.func @h() {
 }
 
 // COM: check private global variable is handled
+// CHECK-DEBUG: split function base id: 0 set size: 3
+// CHECK-DEBUG: split function base id: 1 set size: 3
 // CHECK: [LLVM Module Split: submodule 0]
 // CHECK: @str0 = weak dso_local constant [5 x i8] c"str0\00", align 16
 // CHECK: @str1 = weak dso_local constant [5 x i8] c"str1\00", align 16
