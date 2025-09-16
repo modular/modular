@@ -28,7 +28,7 @@ from gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from gpu.intrinsics import buffer_store, _buffer_resource
+from gpu.intrinsics import AMDBufferResource
 from layout.element import Element
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
@@ -43,9 +43,8 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle
 from layout._utils import (
     TensorCoreKGroup,
-    get_amd_buffer_descriptor,
-    get_amd_base_ptr,
     _get_bounds,
+    make_amd_buffer_resource,
 )
 from memory import stack_allocation
 
@@ -64,14 +63,18 @@ struct ScatterGatherAmd[
     block_dim_count: Int = 1,
 ]:
     var bounds: Int
-    var descriptor: _buffer_resource
-    var has_descriptor: Bool
+    var buffer: AMDBufferResource
+    var has_buffer: Bool
 
     @always_inline
     fn __init__(out self, tensor: LayoutTensor, iterator: Bool = False):
         self.bounds = _get_bounds(tensor)
-        self.descriptor = 0 if iterator else get_amd_buffer_descriptor(tensor)
-        self.has_descriptor = False
+        self.buffer = (
+            AMDBufferResource() if iterator else make_amd_buffer_resource(
+                tensor
+            )
+        )
+        self.has_buffer = False
 
     # copy_dram_to_local
     @always_inline
@@ -84,7 +87,7 @@ struct ScatterGatherAmd[
     ):
         _copy_dram_to_local[
             thread_layout, num_threads, thread_scope, block_dim_count
-        ](dst_reg_tile, src_gmem_tile, self.descriptor)
+        ](dst_reg_tile, src_gmem_tile, self.buffer)
 
     # copy_dram_to_local - LayoutTensorIter
     @always_inline
@@ -93,15 +96,15 @@ struct ScatterGatherAmd[
         dst_reg_tile: LayoutTensor,
         src_gmem_tile_iter: LayoutTensorIter,
     ):
-        if not self.has_descriptor:
-            self.descriptor = get_amd_buffer_descriptor(
+        if not self.has_buffer:
+            self.buffer = make_amd_buffer_resource(
                 src_gmem_tile_iter, self.bounds
             )
-            self.has_descriptor = True
+            self.has_buffer = True
 
         _copy_dram_to_local[
             thread_layout, num_threads, thread_scope, block_dim_count
-        ](dst_reg_tile, src_gmem_tile_iter, self.descriptor)
+        ](dst_reg_tile, src_gmem_tile_iter, self.buffer)
 
     # copy_local_to_dram
     @always_inline("nodebug")
@@ -109,11 +112,10 @@ struct ScatterGatherAmd[
         self,
         dst_gmem_tile: LayoutTensor,
         src_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
-        dst_tensor: LayoutTensor,
     ):
         _copy_local_to_dram[
             thread_layout, num_threads, thread_scope, block_dim_count
-        ](dst_gmem_tile, src_reg_tile, self.descriptor)
+        ](dst_gmem_tile, src_reg_tile, self.buffer)
 
 
 # SMEM and REG tiles type declarations, shared by MmaOpAMD and MMATileBuffers
@@ -303,7 +305,7 @@ struct MMATileBuffers[
     var gmem_iter: Self.iter_type
 
     var scatter_gather: ScatterGatherAmd[
-        thread_layout=thread_layout,
+        thread_layout,
         thread_scope = ThreadScope.BLOCK,
     ]
 
@@ -332,7 +334,7 @@ struct MMATileBuffers[
             block_idx, 0
         ).tiled_iterator[block_rows, block_cols, axis=1](0, 0)
         self.scatter_gather = ScatterGatherAmd[
-            thread_layout=thread_layout,
+            thread_layout,
             thread_scope = ThreadScope.BLOCK,
         ](tensor, True)
 
@@ -817,5 +819,4 @@ fn gemm_kernel_amd[
         c_scatter_gather.copy(
             c_warp_tile.vectorize[1, 4](),
             mma_op.out_reg_tile.vectorize[1, 4](),
-            c,
         )

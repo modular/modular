@@ -17,7 +17,7 @@ from sys.intrinsics import readfirstlane
 
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from gpu.intrinsics import _buffer_resource, make_buffer_resource
+from gpu.intrinsics import AMDBufferResource
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.tensor_core import TensorCore
@@ -259,27 +259,20 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
 
 @always_inline
-fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
+fn make_amd_buffer_resource(
+    tensor: LayoutTensor,
+) -> AMDBufferResource:
     var ptr = tensor.ptr
     var size = _get_bounds(tensor)
-    return make_buffer_resource(readfirstlane(ptr), readfirstlane(size))
+    return AMDBufferResource(readfirstlane(ptr), readfirstlane(size))
 
 
 @always_inline
-fn get_amd_buffer_descriptor(
+fn make_amd_buffer_resource(
     tensor_iter: LayoutTensorIter, bound: Int
-) -> _buffer_resource:
-    return make_buffer_resource(
+) -> AMDBufferResource:
+    return AMDBufferResource(
         readfirstlane(tensor_iter.ptr), readfirstlane(bound)
-    )
-
-
-@always_inline
-fn get_amd_base_ptr(descriptor: _buffer_resource) -> Int:
-    return Int(
-        bitcast[DType.int64, 1](
-            SIMD[DType.uint32, 2](descriptor[0], descriptor[1])
-        )
     )
 
 

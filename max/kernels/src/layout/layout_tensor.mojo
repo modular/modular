@@ -31,18 +31,20 @@ from bit import log2_floor
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_dim, block_idx, lane_id, thread_idx
-from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
+from layout._utils import make_amd_buffer_resource
+
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
+from sys.intrinsics import readfirstlane
+from gpu.intrinsics import AMDBufferResource
 
-from ._utils import get_amd_buffer_descriptor, get_amd_base_ptr
 from .int_tuple import (
     _get_index_type,
     _get_layout_type,
@@ -63,7 +65,6 @@ from .swizzle import Swizzle, make_ldmatrix_swizzle
 
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
-from gpu.intrinsics import _buffer_resource
 
 
 fn _compute_distribute_layout[
@@ -5750,7 +5751,7 @@ fn copy_dram_to_sram[
     alias dst_align = align_of[SIMD[dst.dtype, simd_width]]()
 
     alias num_stores_per_thread = dst_fragments.layout.size()
-    var descriptor = get_amd_buffer_descriptor(src_iter, bound)
+    var buffer = make_amd_buffer_resource(src_iter, bound)
     var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
         src_iter.offset
     )
@@ -5769,8 +5770,7 @@ fn copy_dram_to_sram[
         alias dst_frag_idx = dst_fragments.layout(i)
         dst_fragments.ptr.store[alignment=dst_align](
             dst_frag_idx,
-            buffer_load[src_tensor.dtype, simd_width](
-                descriptor,
+            buffer.load[src_tensor.dtype, simd_width](
                 Int32(src_frag_offset),
                 scalar_offset=Int32(src_frag_idx),
             ).cast[dst.dtype](),
@@ -6766,7 +6766,7 @@ fn _copy_local_to_dram_static_row_major[
     src: LayoutTensor,
     dst_fragments: LayoutTensor,
     dst_frag_offset: Int32,
-    descriptor: _buffer_resource,
+    buffer: AMDBufferResource,
 ):
     alias M = dst_fragments.shape[0]()
     alias N = dst_fragments.shape[1]()
@@ -6785,8 +6785,7 @@ fn _copy_local_to_dram_static_row_major[
                 src.runtime_element_layout,
             )
 
-            buffer_store(
-                descriptor,
+            buffer.store(
                 dst_frag_offset + dst_frag_idx,
                 src_element.element_data.cast[dst_type](),
             )
@@ -6798,7 +6797,7 @@ fn _copy_local_to_dram[
     num_threads: Int = dst_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src: LayoutTensor, descriptor: _buffer_resource):
+](dst: LayoutTensor, src: LayoutTensor, buffer: AMDBufferResource):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
 
     _copy_local_to_dram_validate_args(dst, src)
@@ -6813,7 +6812,7 @@ fn _copy_local_to_dram[
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
-    var base_ptr = get_amd_base_ptr(descriptor)
+    var base_ptr = buffer.get_base_ptr()
     var offset = (Int(dst.ptr) - base_ptr) // size_of[dst.dtype]()
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
 
@@ -6825,7 +6824,7 @@ fn _copy_local_to_dram[
             src,
             dst_fragments,
             Int32(dst_frag_offset),
-            descriptor,
+            buffer,
         )
     else:
         alias num_stores_per_thread = dst_fragments.layout.size()
@@ -6849,8 +6848,7 @@ fn _copy_local_to_dram[
 
             @parameter
             if dst_element_stride == 1:
-                buffer_store(
-                    descriptor,
+                buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
@@ -6860,8 +6858,7 @@ fn _copy_local_to_dram[
                 for i in range(dst_fragments.element_layout.size()):
                     alias element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer_store(
-                        descriptor,
+                    buffer.store(
                         Int32(dst_idx + element_offset),
                         src,
                     )
@@ -6917,11 +6914,11 @@ fn copy_local_to_dram[
         flexibility.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var buffer = make_amd_buffer_resource(dst_base)
 
     _copy_local_to_dram[
         dst_thread_layout, num_threads, thread_scope, block_dim_count
-    ](dst, src, descriptor)
+    ](dst, src, buffer)
 
 
 @always_inline("nodebug")
@@ -6933,7 +6930,7 @@ fn _copy_dram_to_local[
 ](
     dst: LayoutTensor,
     src: LayoutTensor,
-    descriptor: _buffer_resource,
+    buffer: AMDBufferResource,
     offset: OptionalReg[UInt] = None,
 ):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
@@ -6979,8 +6976,7 @@ fn _copy_dram_to_local[
                 alias dst_frag_idx = Layout.col_major(M, N)([i, j])
                 alias src_frag_idx = Int32(src_fragments.layout([i, j]))
                 dst[dst_frag_idx, 0] = rebind[dst.element_type](
-                    buffer_load[src.dtype, simd_width](
-                        descriptor,
+                    buffer.load[src.dtype, simd_width](
                         src_frag_offset,
                         scalar_offset=src_frag_idx,
                     )
@@ -6989,7 +6985,7 @@ fn _copy_dram_to_local[
     if offset:
         offset_helper(offset.value())
     else:
-        var base_ptr = get_amd_base_ptr(descriptor)
+        var base_ptr = buffer.get_base_ptr()
         offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
 
 
@@ -7034,7 +7030,7 @@ fn copy_dram_to_local[
         dst: The destination tensor in register memory (LOCAL address space).
         src: The source tensor in global memory (DRAM) to be copied.
         src_base: The original global memory tensor from which src is derived.
-            This is used to construct the buffer descriptor required by AMD's
+            This is used to construct the buffer struct required by AMD's
             `buffer_load` intrinsic.
         offset: The offset in the global memory.
 
@@ -7046,11 +7042,11 @@ fn copy_dram_to_local[
         before performing computations, reducing memory access latency.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    var descriptor = get_amd_buffer_descriptor(src_base)
+    var buffer = make_amd_buffer_resource(src_base)
 
     _copy_dram_to_local[
         src_thread_layout, num_threads, thread_scope, block_dim_count
-    ](dst, src, descriptor, offset)
+    ](dst, src, buffer, offset)
 
 
 @always_inline("nodebug")
@@ -7059,7 +7055,7 @@ fn _copy_dram_to_local[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
-](dst: LayoutTensor, src_iter: LayoutTensorIter, descriptor: _buffer_resource):
+](dst: LayoutTensor, src_iter: LayoutTensorIter, buffer: AMDBufferResource):
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     var src_tensor = src_iter[].vectorize[
         dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
@@ -7067,7 +7063,7 @@ fn _copy_dram_to_local[
 
     _copy_dram_to_local[
         src_thread_layout, num_threads, thread_scope, block_dim_count
-    ](dst, src_tensor, descriptor, UInt(src_iter.offset))
+    ](dst, src_tensor, buffer, UInt(src_iter.offset))
 
 
 @always_inline("nodebug")
@@ -7114,11 +7110,11 @@ fn copy_dram_to_local[
     - This function is particularly useful for prefetching data into registers
         before performing computations, reducing memory access latency.
     """
-    var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
+    var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
 
     _copy_dram_to_local[
         src_thread_layout, num_threads, thread_scope, block_dim_count
-    ](dst, src_iter, descriptor)
+    ](dst, src_iter, buffer)
 
 
 @always_inline("nodebug")

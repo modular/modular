@@ -28,7 +28,6 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.intrinsics import buffer_store
 from gpu.memory import AddressSpace
 from gpu.sync import (
     AMDScheduleBarrierMask,
@@ -37,7 +36,7 @@ from gpu.sync import (
 from memory import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
-from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
+from layout._utils import idx2crd, TensorCoreKGroup, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -81,7 +80,7 @@ fn copy_local_to_dram2[
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
+    var buffer = make_amd_buffer_resource(dst_base)
     var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
     alias num_stores_per_thread = dst_fragments.layout.size()
 
@@ -116,8 +115,7 @@ fn copy_local_to_dram2[
 
             @parameter
             if element_stride == 1:
-                buffer_store(
-                    descriptor,
+                buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
@@ -127,8 +125,7 @@ fn copy_local_to_dram2[
                 for i in range(dst_fragments.element_layout.size()):
                     alias element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer_store(
-                        descriptor,
+                    buffer.store(
                         Int32(dst_idx + element_offset),
                         src,
                     )
