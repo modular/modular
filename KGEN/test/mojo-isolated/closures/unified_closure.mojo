@@ -340,3 +340,25 @@ fn nonemptyOriginSet(mut byRefMut: String):
     # CHECK: lit.call @{{.*}}::@"fn() -> None_wrapper"::@"__init__({{.*}})"[{{.*}}]<:!None {{.*}}, :origin.set {mut *"byRefMut`"}>
     fn myclosure() unified {mut byRefMut}:
         pass
+
+
+# // -----
+
+# COM: Verify that closures can be rebound to compatible traits
+
+# CHECK: [[TRAIT:!Int_Int.*]] = !lit.trait<@"fn(x: Int) -> Int", @"fn(Int) -> Int">
+
+# CHECK: lit.struct.decl @"fn(x: Int) -> Int_wrapper"<impl: !Int, origin_set: origin.set, |>([[TRAIT]])
+# CHECK: kgen.witness "__call__" : !lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper"<:!Int impl, :origin.set origin_set>, mut *[0,0]> read_mem, !Int1, |) -> !Int1> =
+# CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<@{{.*}}::@"fn(x: Int) -> Int_wrapper"<:!Int impl, :origin.set origin_set>, mut *[0,0]> read_mem, |, "x": !Int1) -> !Int1> @{{.*}}::@"fn(x: Int) -> Int_wrapper"::@"__call__{{.*}}"<:!Int impl, :origin.set origin_set>)
+
+
+fn takeIt[C: fn (Int) unified -> Int](closure: C):
+    _ = closure(3)
+
+
+fn bindIt(z: Int):
+    fn myclosure(x: Int) unified {var} -> Int:
+        return z
+
+    takeIt[__type_of(myclosure)](myclosure)

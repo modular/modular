@@ -2062,3 +2062,78 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
                            Capture(captureValue, convention, name));
   return &captureValueDecl;
 }
+
+LogicalResult
+ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
+                                                ASTDecl *traitDecl) {
+  // Ensure that we have a valid closure trait and a struct metatype.
+  TraitDeclOp traitDeclOp =
+      llvm::dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
+  if (!traitDeclOp)
+    return failure();
+  if (!traitDeclOp.getDefinesClosure())
+    return failure();
+  StructMetaType anyStruct = dyn_cast<StructMetaType>(structType);
+  if (!anyStruct)
+    return failure();
+  ASTDecl &structDecl =
+      shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
+  StructDeclOp structDeclOp =
+      dyn_cast<StructDeclOp>(structDecl.getIfOperation());
+  if (!structDeclOp)
+    return failure();
+
+  // does the struct already conform to the trait?
+  SymbolRefAttr target = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
+  for (SymbolRefAttr currentTrait :
+       structDeclOp.getCanonicalTrait().getSymbols()) {
+    if (target == currentTrait)
+      return success();
+  }
+
+  // This trait defines a closure which means it has a single call function.
+  StringRef name = "__call__";
+  auto callDecls = structDecl.lookupInCurrentScope(name);
+  FnOp callFunction = getFnOpNamed(traitDeclOp, name);
+  // get the call function in terms of the struct wrapper
+  SyntheticNode syntheticNode(structDecl.getLoc());
+  ASTType structSelfType = structDecl.getTypeDeclSelf();
+  IREmitter emitter(structDecl, EC_Trait);
+  FnTypeGeneratorType traitSignature = specializeSignature(
+      callFunction, structSelfType.mlirType, *shared.declResolver);
+  auto bindings = ParamBindings::getForDeclaredType(
+      emitter.getDeclScope(), structSelfType, syntheticNode);
+  OverloadSet ov(name, callDecls, std::move(bindings), syntheticNode,
+                 CallSyntax::kMethodCallSynthetic);
+  /// Perform rebind on method that implements the trait function but with
+  /// different argument names.
+  PValue newWitness = ov.filterOverloadSetForValueType(
+      traitSignature, emitter.getDeclScope(), nullptr);
+  if (newWitness) {
+    // Insert the new witness into the conformance table.
+    ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
+    b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
+    SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
+    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
+        cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
+    StringAttr parentName =
+        b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+    ConformanceOp witnessTable =
+        b.create<ConformanceOp>(parentName, parentSymbol, immediateParents);
+    Block &block = witnessTable.getBody().emplaceBlock();
+    b.setInsertionPointToStart(&block);
+    b.create<WitnessOp>(StringAttr::get(ctx, name), newWitness.get());
+
+    // Update the types of the struct wrapper.
+    SymbolRefAttr symbol = traitDecl->getSymbolRef();
+    TraitType oldTraitType = structDeclOp.getCanonicalTrait();
+    SmallVector<SymbolRefAttr> symbols;
+    llvm::append_range(symbols, oldTraitType.getSymbols());
+    symbols.push_back(symbol);
+    TraitType traitType = TraitType::get(ctx, symbols);
+    structDeclOp.setCanonicalTrait(traitType);
+    return success();
+  }
+  return failure();
+}
