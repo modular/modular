@@ -198,11 +198,6 @@ class Qwen2_5VLModel(
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        if pipeline_config.max_num_steps > 1:
-            raise ValueError(
-                "Qwen2.5VL currently only supports max_num_steps=1"
-            )
-
         super().__init__(
             pipeline_config,
             session,
