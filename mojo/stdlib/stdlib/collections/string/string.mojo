@@ -305,19 +305,6 @@ struct String(
         ```
         """
         alias length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
 
         @parameter
         fn _write[W: Writer](mut writer: W):
@@ -330,11 +317,12 @@ struct String(
                     sep.write_to(writer)
             end.write_to(writer)
 
+        var total_bytes = _TotalWritableBytes()
+        _write(total_bytes)
+        self = String(capacity=total_bytes.size)
         if total_bytes.size <= Self.INLINE_CAPACITY:
-            self = String()
             _write(self)
         else:
-            self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -375,19 +363,6 @@ struct String(
         ```
         """
         alias length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
 
         @parameter
         fn _write[W: Writer](mut writer: W):
@@ -400,11 +375,12 @@ struct String(
                     sep.write_to(writer)
             end.write_to(writer)
 
+        var total_bytes = _TotalWritableBytes()
+        _write(total_bytes)
+        self = String(capacity=total_bytes.size)
         if total_bytes.size <= Self.INLINE_CAPACITY:
-            self = String()
             _write(self)
         else:
-            self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -427,37 +403,27 @@ struct String(
             A string formed by formatting the argument sequence.
         """
         alias length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
 
         @parameter
         fn _write[W: Writer](mut writer: W):
             @parameter
-            for i in range(length):
-                args[i].write_to(writer)
+            if length > 0:
+                args[0].write_to(writer)
 
                 @parameter
-                if i < length - 1:
+                for i in range(1, length):
                     sep.write_to(writer)
+                    args[i].write_to(writer)
+
             end.write_to(writer)
 
+        var total_bytes = _TotalWritableBytes()
+        _write(total_bytes)
+        var result = String(capacity=total_bytes.size)
         if total_bytes.size <= Self.INLINE_CAPACITY:
-            var result = String()
             _write(result)
             return result^
         else:
-            var result = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
             _write(buffer)
             buffer.flush()
@@ -473,18 +439,16 @@ struct String(
             args: Sequence of arguments to write to this Writer.
         """
         alias length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        total_bytes.size += self.byte_length()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
 
         @parameter
         fn _write[W: Writer](mut writer: W):
             @parameter
             for i in range(length):
                 args[i].write_to(writer)
+
+        var total_bytes = _TotalWritableBytes()
+        total_bytes.size += self.byte_length()
+        _write(total_bytes)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             _write(self)
