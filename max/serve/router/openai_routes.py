@@ -38,6 +38,7 @@ from httpx import AsyncClient
 from max.interfaces import (
     AudioGenerationRequest,
     AudioGeneratorContext,
+    GenerationStatus,
     InputContext,
     LoRAOperation,
     LoRARequest,
@@ -132,6 +133,22 @@ def record_request_end(
     METRICS.output_tokens(n_tokens)
 
 
+def get_finish_reason_from_status(
+    status: GenerationStatus, allow_none: bool = True
+) -> Optional[Literal["stop", "length"]]:
+    if status == GenerationStatus.END_OF_SEQUENCE:
+        return "stop"
+    elif status == GenerationStatus.MAXIMUM_LENGTH:
+        return "length"
+    else:
+        if not allow_none:
+            raise ValueError(
+                f"status: {status} has no associated finish_reason"
+            )
+
+        return None
+
+
 class OpenAIResponseGenerator(ABC, Generic[_T]):
     def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
@@ -213,19 +230,35 @@ class OpenAIChatResponseGenerator(
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                choices = [
-                    Choice3(
-                        index=0,
-                        delta=ChatCompletionStreamResponseDelta(
-                            content=token.decoded_token,
-                            function_call=None,
-                            role="assistant",
-                            refusal=None,
-                        ),
-                        logprobs=None,
-                        finish_reason=None,
-                    )
-                ]
+                if token.decoded_token is not None:
+                    choices = [
+                        Choice3(
+                            index=0,
+                            delta=ChatCompletionStreamResponseDelta(
+                                content=token.decoded_token,
+                                function_call=None,
+                                role="assistant",
+                                refusal=None,
+                            ),
+                            logprobs=None,
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=True
+                            ),
+                        )
+                    ]
+                else:
+                    # If we do not have a decoded_token, we should guarantee we have a finish_reason.
+                    choices = [
+                        Choice3(
+                            index=0,
+                            delta=ChatCompletionStreamResponseDelta(
+                                content="",
+                            ),
+                            finish_reason=get_finish_reason_from_status(
+                                token.status, allow_none=False
+                            ),
+                        )
+                    ]
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -307,7 +340,8 @@ class OpenAIChatResponseGenerator(
             n_tokens = len(completed_outputs)
 
             response_message = "".join(
-                output.decoded_token for output in completed_outputs
+                output.decoded_token if output.decoded_token is not None else ""
+                for output in completed_outputs
             )
 
             stop_sequence = [
@@ -315,9 +349,15 @@ class OpenAIChatResponseGenerator(
                 for token in completed_outputs
                 if token.stop_sequence is not None
             ]
+            finish_reason: Optional[str]
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 response_message = response_message[:idx]
+                finish_reason = "stop"
+            else:
+                finish_reason = get_finish_reason_from_status(
+                    completed_outputs[-1].status, allow_none=False
+                )
 
             response_choices: list[Choice1] = []
             if tool_use and request.response_format is None:
@@ -329,12 +369,18 @@ class OpenAIChatResponseGenerator(
                         f"Parsing for tool use failed, handling as general text response. Original error: {e}"
                     )
                     self._handle_text_response(
-                        response_message, response_choices
+                        response_message,
+                        response_choices,
+                        finish_reason=finish_reason,
                     )
 
             else:
                 # Handle as regular text response if JSON cannot be parsed
-                self._handle_text_response(response_message, response_choices)
+                self._handle_text_response(
+                    response_message,
+                    response_choices,
+                    finish_reason=finish_reason,
+                )
 
             usage = None
             if n_tokens > 0:
@@ -375,7 +421,10 @@ class OpenAIChatResponseGenerator(
         return json_objects
 
     def _handle_text_response(
-        self, response_message: str, response_choices: list[Choice1]
+        self,
+        response_message: str,
+        response_choices: list[Choice1],
+        finish_reason: Optional[str],
     ) -> None:
         """Handle regular text response by appending to response_choices."""
         response_choices.append(
@@ -388,7 +437,7 @@ class OpenAIChatResponseGenerator(
                     function_call=None,
                     refusal="",
                 ),
-                finish_reason="stop",
+                finish_reason=finish_reason,
                 logprobs=Logprobs2(content=[], refusal=[]),
             )
         )
@@ -951,11 +1000,22 @@ class OpenAICompletionResponseGenerator(
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
-                choices = [
-                    CompletionResponseStreamChoice(
-                        index=0, text=token.decoded_token, logprobs=log_probs
-                    )
-                ]
+                if token.decoded_token is not None:
+                    choices = [
+                        CompletionResponseStreamChoice(
+                            index=0,
+                            text=token.decoded_token,
+                            logprobs=log_probs,
+                            finish_reason=None,
+                        )
+                    ]
+                else:
+                    choices = [
+                        CompletionResponseStreamChoice(
+                            index=0, text="", finish_reason=None
+                        )
+                    ]
+
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
                 response = CompletionStreamResponse(
@@ -1020,13 +1080,18 @@ class OpenAICompletionResponseGenerator(
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
-                    output.decoded_token for output in req_outputs
+                    output.decoded_token
+                    if output.decoded_token is not None
+                    else ""
+                    for output in req_outputs
                 )
                 response_choices.append(
                     Choice(
                         index=i,
                         text=response_message,
-                        finish_reason="stop",
+                        finish_reason=get_finish_reason_from_status(
+                            req_outputs[-1].status
+                        ),
                         logprobs=log_probs,
                     )
                 )

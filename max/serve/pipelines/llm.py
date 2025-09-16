@@ -53,7 +53,8 @@ logger = logging.getLogger("max.serve")
 
 @dataclass(frozen=True)
 class TokenGeneratorOutput:
-    decoded_token: str
+    status: GenerationStatus
+    decoded_token: str | None = None
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
@@ -156,6 +157,13 @@ class TokenGeneratorPipeline:
                     context.request_id, context
                 ):
                     assert isinstance(response, TextGenerationOutput)
+
+                    if len(response.tokens) == 0:
+                        output = TokenGeneratorOutput(
+                            status=response.final_status
+                        )
+                        yield output
+
                     for i, token in enumerate(response.tokens):
                         # We intentionally do not use `with Trace(...)` to minimize
                         # nesting in code.
@@ -203,6 +211,7 @@ class TokenGeneratorPipeline:
                             top_log_probabilities=top_log_probabilities,
                             prompt_token_count=context.current_length,
                             stop_sequence=stop_sequence_match,
+                            status=response.final_status,
                         )
 
                         tracer = Tracer("metrics_report_ttft_or_itl")

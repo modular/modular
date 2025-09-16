@@ -258,7 +258,10 @@ async def _async_worker(
 
                 # Generate this request until complete
                 tokens = await pipeline.all_tokens(gen_request)
-                return "".join(t.decoded_token for t in tokens)
+                return "".join(
+                    t.decoded_token if t.decoded_token is not None else ""
+                    for t in tokens
+                )
 
             responses = await _async_map(
                 all_tokens, request.prompts, use_tqdm=request.use_tqdm
