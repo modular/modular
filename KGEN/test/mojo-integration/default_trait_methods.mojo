@@ -35,6 +35,9 @@ trait Foo:
     fn ref_return_raises(self) raises -> String:
         pass
 
+    fn parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
+        pass
+
 
 trait FooActual(Absable, Foo, Intable):
     alias P: Int
@@ -90,6 +93,9 @@ trait FooActual(Absable, Foo, Intable):
             )
         else:
             return "ref_return_raises: Positive value: " + String(val)
+
+    fn parametric_ref_args(self, ref x: Int, ref y: Int) -> Int:
+        return x + y
 
 
 @fieldwise_init
@@ -207,6 +213,13 @@ def main():
     # CHECK-NEXT: In Bar.rp_return_multi_params
     # CHECK-NEXT: x.rp_return_multi_params[20, 10](10) = 30
     generic_trait_caller(b)
+
+    # CHECK: b.parametric_ref_args(10, 20) = 30
+    print(
+        "b.parametric_ref_args(10, 20) =",
+        b.parametric_ref_args(10, 20),
+        end="\n\n",
+    )
 
     # Test string-returning functions
     # CHECK: FooActual ref_return value: 20

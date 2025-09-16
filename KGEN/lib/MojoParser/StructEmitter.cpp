@@ -247,7 +247,16 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
 
   SmallVector<ParamDeclAttr> mangledParams;
   for (ParamDeclAttr param : params) {
-    StringAttr mangledName = structDecl.mangleParamName(param.getName().str());
+    // Mangle the param name if a conflict exists -- this is needed for cases
+    // where the struct we're creating the wrapper function in has a param with
+    // the same name as one defined by the default trait method, for example:
+    //
+    // trait Foo:
+    //   fn foo[x: Int](): ...
+    //
+    // struct Bar[x: Int](Foo): ...
+    StringAttr mangledName =
+        structDecl.mangleUserDefinedParamName(param.getName());
     ParamDeclAttr newParamDecl =
         ParamDeclAttr::get(mangledName, param.getType());
     mangledParams.push_back(newParamDecl);
