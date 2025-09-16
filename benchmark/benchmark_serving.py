@@ -996,6 +996,7 @@ async def benchmark(
     #                 if max_concurrency else contextlib.nullcontext())
     semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
 
+    gpu_collector = None
     if collect_gpu_stats:
         if is_nvml_available():
             from nvitop import ResourceMetricCollector
@@ -1004,14 +1005,17 @@ async def benchmark(
             gpu_collector.start("benchmark")
         else:
             logger.warning("NVML not available, skipping GPU stats collection")
-            gpu_collector = None
 
+    cpu_collector = None
     if collect_cpu_stats:
-        pids = collect_pids_for_port(int(urlparse(api_url).port or 8000))
-        cpu_collector = CpuMetricsCollector(pids)
-        cpu_collector.start()
-    else:
-        cpu_collector = None
+        try:
+            pids = collect_pids_for_port(int(urlparse(api_url).port or 8000))
+            cpu_collector = CpuMetricsCollector(pids)
+            cpu_collector.start()
+        except:
+            logger.warning(
+                "Cannot access max-serve PIDs, skipping CPU stats collection"
+            )
 
     benchmark_start_time = time.perf_counter_ns()
     if max_benchmark_duration_s is None:
@@ -1282,7 +1286,7 @@ async def benchmark(
                 )
             )
 
-    if collect_cpu_stats:
+    if collect_cpu_stats and metrics.cpu_utilization_user is not None:
         print_section(title="CPU Stats")
         print(
             "{:<40} {:<10.2f}".format(
