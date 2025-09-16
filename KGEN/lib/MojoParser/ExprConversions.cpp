@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CallEmission.h"
+#include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
@@ -1482,6 +1483,14 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       return emitCResult(result, expr, dest);
     } else if (isa<StructMetaType>(rvType) ||
                isa_and_nonnull<AnyTraitType>(rvType.getMetaType())) {
+      // augment the witness table of closure wrapper with rebind if necessary.
+      ASTDecl *traitDecl = shared.declResolver->getTraitDecl(trait);
+      if (auto traitDeclOp =
+              dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation())) {
+        if (traitDeclOp.getDefinesClosure())
+          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+              rvType, traitDecl);
+      }
       // Conversions from structs or traits.
       PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
       return emitCResult(result, expr, dest);

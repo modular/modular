@@ -121,6 +121,16 @@ private:
   TypedAttr addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
                                       FnOp parent, ClosureType closureType,
                                       TraitDeclOp trait);
+
+public:
+  /// If the wrapper conforms to a trait that is compatible with the desired
+  /// trait, emit a rebind. For example, suppose we have a parameter P with a
+  /// closure metatype defined by `fn(x:Int) -> Int`. We should be able to bind
+  /// a struct wrapper type W to P if W conforms to the trait `fn(z:Int) ->
+  /// Int`. This will require a rebind though because of the differences in
+  /// argument names.
+  LogicalResult augmentWitnessTablesToConformTo(ASTType structType,
+                                                ASTDecl *closureTrait);
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName)
         : traitName(name), traitFnName(fnName) {}
