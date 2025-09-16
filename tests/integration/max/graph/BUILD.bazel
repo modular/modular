@@ -53,6 +53,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:amd_gpu",
+    ],  # FIXME: Enable Apple GPU MOCO-2411
     mojo_deps = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
@@ -93,7 +97,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max",

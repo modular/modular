@@ -6,6 +6,10 @@ modular_py_test(
     data = ["//SDK/lib/API/python/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
     imports = ["."],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
