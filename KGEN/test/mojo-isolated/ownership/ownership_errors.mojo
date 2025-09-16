@@ -495,6 +495,23 @@ fn test38421():
     _ = reference[].__len__()
 
 
+@fieldwise_init
+struct MovableStuff(Movable):
+    pass
+
+
+fn test_cannot_consume_indirect_references():
+    # expected-warning @+1 {{assignment to 'a' was never used}}
+    var a = MovableStuff()
+    # expected-warning @+1 {{assignment to 'b' was never used}}
+    var b = MovableStuff()
+
+    @parameter
+    fn callback():
+        # expected-error @+1 {{cannot consume indirect references to values}}
+        b = a^
+
+
 # ===----------------------------------------------------------------------=== #
 # Computed LValues
 # ===----------------------------------------------------------------------=== #

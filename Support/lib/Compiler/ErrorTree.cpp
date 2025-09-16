@@ -173,7 +173,7 @@ void ErrorTree::emit(
   // Add a DiagnosticsArgument to indicate that this one is from an
   // InFlightDiagnostic so that it can be filtered later by DiagnosticHandler.
   if (diagHandlerID) {
-    if (mlir::Diagnostic *underlyingDiag = (*diag).getUnderlyingDiagnostic()) {
+    if (mlir::Diagnostic *underlyingDiag = diag->getUnderlyingDiagnostic()) {
       underlyingDiag->getMetadata().push_back(
           mlir::DiagnosticArgument(*diagHandlerID));
     }
