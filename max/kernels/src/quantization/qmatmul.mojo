@@ -1210,7 +1210,6 @@ fn _matmul_qint4[
     alias alignment = align_of[SIMD[DType.float32, simd_width]]()
 
     var M = a.dim[0]()
-    var N = b.dim[0]()
     var K = a.dim[1]()
     var k_groups = K // group_size
 
