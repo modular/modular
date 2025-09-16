@@ -130,22 +130,27 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(ImplicitlyCopyable, Movable, Writable):
+struct CopyCounter[
+    T: ImplicitlyCopyable & Movable & Writable & Defaultable = NoneType
+](ImplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
+    var value: T
     var copy_count: Int
 
     fn __init__(out self):
+        self = Self(T())
+
+    fn __init__(out self, s: T):
+        self.value = s
         self.copy_count = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.copy_count = existing.copy_count
-
     fn __copyinit__(out self, existing: Self):
+        self.value = existing.value
         self.copy_count = existing.copy_count + 1
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("CopyCounter(", self.copy_count, ")")
+        writer.write("CopyCounter(", self.value, " ", self.copy_count, ")")
 
 
 # ===----------------------------------------------------------------------=== #

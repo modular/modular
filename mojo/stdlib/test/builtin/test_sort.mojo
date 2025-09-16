@@ -23,6 +23,7 @@ from builtin.sort import (
 )
 from collections.string.string_slice import _to_string_list
 from testing import assert_equal, assert_false, assert_true
+from test_utils import CopyCounter
 
 
 fn random_numbers[
@@ -646,35 +647,20 @@ fn test_sort_scalar() raises:
     assert_sorted(listf32)
 
 
-struct CopyCounter(Copyable, Movable):
-    var value: UInt64
-    var copies: Int
-
-    @implicit
-    fn __init__(out self, var s: UInt64):
-        self.value = s
-        self.copies = 0
-
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value.copy()
-        self.copies = existing.copies + 1
-        constrained[False]()
-
-
 def test_ensure_no_copies():
-    fn get_list() -> List[CopyCounter]:
+    fn get_list() -> List[CopyCounter[UInt64]]:
         seed(0)
-        var list = List[CopyCounter](capacity=50)
+        var list = List[CopyCounter[UInt64]](capacity=50)
         for _ in range(50):
-            list.append(CopyCounter(random_ui64(min=0, max=UInt64.MAX)))
+            list.append(CopyCounter[UInt64](random_ui64(min=0, max=UInt64.MAX)))
         return list^
 
-    def verify_list(list: List[CopyCounter]):
+    def verify_list(list: List[CopyCounter[UInt64]]):
         for e in list:
-            assert_true(e.copies == 0)
+            assert_true(e.copy_count == 0)
 
     @parameter
-    fn cmp_fn(lhs: CopyCounter, rhs: CopyCounter) -> Bool:
+    fn cmp_fn(lhs: CopyCounter[UInt64], rhs: CopyCounter[UInt64]) -> Bool:
         return lhs.value < rhs.value
 
     var list = get_list()
