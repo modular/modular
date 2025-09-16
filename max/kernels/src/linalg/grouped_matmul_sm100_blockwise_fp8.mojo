@@ -510,8 +510,8 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     ]()
 
     constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn",
+        a_type == b_type and a_type is DType.float8_e4m3fn,
+        "Only support float8_e4m3fn for A and B",
     ]()
 
     alias num_experts = b_layout.shape[0].value()

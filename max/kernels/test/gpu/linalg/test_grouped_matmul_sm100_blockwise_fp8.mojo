@@ -26,7 +26,6 @@ from linalg import vendor_blas
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from utils.index import Index, IndexList
 from linalg.fp8_quantization import (
-    naive_blockwise_scaled_fp8_matmul,
     naive_blockwise_scaled_fp8_grouped_matmul,
 )
 from internal_utils._measure import relative_difference

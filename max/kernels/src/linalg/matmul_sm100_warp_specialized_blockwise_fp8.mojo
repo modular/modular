@@ -1252,7 +1252,7 @@ fn sm100_warp_specialized_blockwise_fp8[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     cta_group: Int = 1,
     num_clc_pipeline_stages: UInt = 2,
-    num_pipeline_stages: UInt = 4,
+    num_pipeline_stages: Optional[UInt] = None,
 ](
     c: LayoutTensor[c_type, c_layout, *_, **_],
     a: LayoutTensor[a_type, a_layout, *_, **_],
@@ -1288,6 +1288,10 @@ fn sm100_warp_specialized_blockwise_fp8[
     alias BM = MMA_M // cta_group
     alias BN = MMA_N // cta_group
     alias BK = config.block_tile_shape[2]
+
+    constrained[
+        MMA_N % 64 == 0, "BN must be multiple of 32. BN=" + String(BN)
+    ]()
 
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1398,8 +1402,16 @@ fn sm100_warp_specialized_blockwise_fp8[
         "not enough smem even for one pipeline stage!",
     ]()
 
-    alias pipeline_stages = min(num_pipeline_stages, UInt(max_pipeline_stages))
+    @parameter
+    if num_pipeline_stages:
+        constrained[
+            num_pipeline_stages.value() <= max_pipeline_stages,
+            "num_pipeline_stages <= max_pipeline_stages",
+        ]()
 
+    alias pipeline_stages = num_pipeline_stages.value() if num_pipeline_stages else UInt(
+        max_pipeline_stages
+    )
     alias producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stages
 
     alias smem_size = (
