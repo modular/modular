@@ -555,12 +555,12 @@ def test_list_dtor():
 
 def test_iter():
     var l = LinkedList[Int](1, 2, 3)
-    var iter = l.__iter__()
-    assert_true(iter.__has_next__(), "Expected iter to have next")
-    assert_equal(iter.__next_ref__(), 1)
-    assert_equal(iter.__next_ref__(), 2)
-    assert_equal(iter.__next_ref__(), 3)
-    assert_false(iter.__has_next__(), "Expected iter to not have next")
+    var it = l.__iter__()
+    assert_true(it.__has_next__(), "Expected iter to have next")
+    assert_equal(it.__next_ref__(), 1)
+    assert_equal(it.__next_ref__(), 2)
+    assert_equal(it.__next_ref__(), 3)
+    assert_false(it.__has_next__(), "Expected iter to not have next")
 
     var riter = l.__reversed__()
     assert_true(riter.__has_next__(), "Expected iter to have next")
@@ -578,6 +578,9 @@ def test_iter():
     for el in l.__reversed__():
         assert_equal(el, l[i])
         i -= 1
+
+    var ll = LinkedList[Int]()
+    assert_equal(iter(ll).__has_next__(), False)
 
 
 def test_repr_wrap():

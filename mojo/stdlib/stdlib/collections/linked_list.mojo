@@ -88,9 +88,13 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterator, Movable):
+](ImplicitlyCopyable, Iterable, Iterator, Movable):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
 
     alias Element = ElementType  # FIXME(MOCO-2068): shouldn't be needed.
 
@@ -103,7 +107,7 @@ struct _LinkedListIter[
         else:
             self.curr = self.src[]._tail
 
-    fn __iter__(self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self.copy()
 
     fn __has_next__(self) -> Bool:
@@ -127,7 +131,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & Movable,
-](Boolable, Copyable, Defaultable, Movable, Sized):
+](Boolable, Copyable, Defaultable, Iterable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:
@@ -140,6 +144,10 @@ struct LinkedList[
     """
 
     alias _NodePointer = UnsafePointer[Node[ElementType]]
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _LinkedListIter[ElementType, iterable_origin]
 
     var _head: Self._NodePointer
     """The first node in the list."""
@@ -702,7 +710,7 @@ struct LinkedList[
         """
         return self._size
 
-    fn __iter__(self) -> _LinkedListIter[ElementType, __origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
         Returns:
