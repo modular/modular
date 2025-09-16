@@ -38,17 +38,17 @@ fn _insertion_sort[
     var size = len(span)
 
     for i in range(1, size):
-        var value = array[i].copy()
+        var value = (array + i).take_pointee()
         var j = i
 
         # Find the placement of the value in the array, shifting as we try to
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
-        while j > 0 and cmp_fn(value.copy(), array[j - 1].copy()):
-            array[j] = array[j - 1].copy()
+        while j > 0 and cmp_fn(value, array[j - 1]):
+            (array + j - 1).move_pointee_into(array + j)
             j -= 1
 
-        array[j] = value^
+        (array + j).init_pointee_move(value^)
 
 
 # put everything thats "<" to the left of pivot
@@ -63,15 +63,13 @@ fn _quicksort_partition_right[
 
     var left = 1
     var right = size - 1
-    var pivot_value = array[0].copy()
+    var ref pivot_value = array[0]
 
     while True:
         # no need for left < right since quick sort pick median of 3 as pivot
-        while cmp_fn(array[left].copy(), pivot_value.copy()):
+        while cmp_fn(array[left], pivot_value):
             left += 1
-        while left < right and not cmp_fn(
-            array[right].copy(), pivot_value.copy()
-        ):
+        while left < right and not cmp_fn(array[right], pivot_value):
             right -= 1
         if left >= right:
             var pivot_pos = left - 1
@@ -94,14 +92,12 @@ fn _quicksort_partition_left[
 
     var left = 1
     var right = size - 1
-    var pivot_value = array[0].copy()
+    var ref pivot_value = array[0]
 
     while True:
-        while left < right and not cmp_fn(
-            pivot_value.copy(), array[left].copy()
-        ):
+        while left < right and not cmp_fn(pivot_value, array[left]):
             left += 1
-        while cmp_fn(pivot_value.copy(), array[right].copy()):
+        while cmp_fn(pivot_value, array[right]):
             right -= 1
         if left >= right:
             var pivot_pos = left - 1
@@ -123,11 +119,9 @@ fn _heap_sort_fix_down[
     var j = i * 2 + 1
     while j < size:  # has left child
         # if right child exist and has higher value, swap with right
-        if i * 2 + 2 < size and cmp_fn(
-            array[j].copy(), array[i * 2 + 2].copy()
-        ):
+        if i * 2 + 2 < size and cmp_fn(array[j], array[i * 2 + 2]):
             j = i * 2 + 2
-        if not cmp_fn(array[i].copy(), array[j].copy()):
+        if not cmp_fn(array[i], array[j]):
             return
         swap(array[j], array[i])
         i = j
@@ -236,9 +230,7 @@ fn _quicksort[
         # if ptr[-1] == pivot_value, then everything in between will
         # be the same, so no need to recurse that interval
         # already have array[-1] <= array[0]
-        if mut_ptr > array and not cmp_fn(
-            imm_ptr[-1].copy(), imm_ptr[0].copy()
-        ):
+        if mut_ptr > array and not cmp_fn(imm_ptr[-1], imm_ptr[0]):
             var pivot = _quicksort_partition_left[cmp_fn](interval)
             if len > pivot + 2:
                 stack.append(
@@ -266,7 +258,7 @@ fn _quicksort[
 
 fn _merge[
     T: Copyable & Movable,
-    span_origin: ImmutableOrigin,
+    span_origin: MutableOrigin,
     result_origin: MutableOrigin, //,
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
@@ -292,6 +284,8 @@ fn _merge[
     """
     var span1_size = len(span1)
     var span2_size = len(span2)
+    var span1_ptr = span1.unsafe_ptr()
+    var span2_ptr = span2.unsafe_ptr()
     var res_ptr = result.unsafe_ptr()
 
     debug_assert(
@@ -304,20 +298,20 @@ fn _merge[
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
-                (res_ptr + k).init_pointee_copy(span1[i])
+                (span1_ptr + i).move_pointee_into(res_ptr + k)
                 k += 1
                 i += 1
             return
-        if cmp_fn(span2[j].copy(), span1[i].copy()):
-            (res_ptr + k).init_pointee_copy(span2[j])
+        if cmp_fn(span2[j], span1[i]):
+            (span2_ptr + j).move_pointee_into(res_ptr + k)
             j += 1
         else:
-            (res_ptr + k).init_pointee_copy(span1[i])
+            (span1_ptr + i).move_pointee_into(res_ptr + k)
             i += 1
         k += 1
 
     while j < span2_size:
-        (res_ptr + k).init_pointee_copy(span2[j])
+        (span2_ptr + j).move_pointee_into(res_ptr + k)
         k += 1
         j += 1
 
@@ -345,7 +339,9 @@ fn _stable_sort_impl[
             var span2 = span[j + merge_size : min(size, j + 2 * merge_size)]
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
-                span[j + i] = temp_buff[i].copy()
+                UnsafePointer(to=temp_buff[i]).move_pointee_into(
+                    UnsafePointer(to=span[j + i])
+                )
             j += 2 * merge_size
         merge_size *= 2
 
@@ -602,16 +598,16 @@ fn _sort2[
     cmp_fn: fn (T, T) capturing [_] -> Bool,
 ](
     array: UnsafePointer[
-        T, address_space = AddressSpace.GENERIC, mut=True, **_
+        T,
+        address_space = AddressSpace.GENERIC,
+        mut=True,
+        origin=MutableAnyOrigin,
     ],
     offset0: Int,
     offset1: Int,
 ):
-    var a = array[offset0].copy()
-    var b = array[offset1].copy()
-    if not cmp_fn(a.copy(), b.copy()):
-        array[offset0] = b^
-        array[offset1] = a^
+    if not cmp_fn(array[offset0], array[offset1]):
+        swap(array[offset0], array[offset1])
 
 
 @always_inline

@@ -14,7 +14,13 @@
 from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed, rand
 
-from builtin.sort import _quicksort, _small_sort
+from builtin.sort import (
+    _quicksort,
+    _small_sort,
+    _insertion_sort,
+    _stable_sort,
+    _heap_sort,
+)
 from collections.string.string_slice import _to_string_list
 from testing import assert_equal, assert_false, assert_true
 
@@ -640,6 +646,58 @@ fn test_sort_scalar() raises:
     assert_sorted(listf32)
 
 
+struct CopyCounter(Copyable, Movable):
+    var value: UInt64
+    var copies: Int
+
+    @implicit
+    fn __init__(out self, var s: UInt64):
+        self.value = s
+        self.copies = 0
+
+    fn __copyinit__(out self, existing: Self):
+        self.value = existing.value.copy()
+        self.copies = existing.copies + 1
+        constrained[False]()
+
+
+def test_ensure_no_copies():
+    fn get_list() -> List[CopyCounter]:
+        seed(0)
+        var list = List[CopyCounter](capacity=50)
+        for _ in range(50):
+            list.append(CopyCounter(random_ui64(min=0, max=UInt64.MAX)))
+        return list^
+
+    def verify_list(list: List[CopyCounter]):
+        for e in list:
+            assert_true(e.copies == 0)
+
+    @parameter
+    fn cmp_fn(lhs: CopyCounter, rhs: CopyCounter) -> Bool:
+        return lhs.value < rhs.value
+
+    var list = get_list()
+    _insertion_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _stable_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _quicksort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _heap_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    sort[cmp_fn](list)
+    verify_list(list)
+
+
 def main():
     test_sort_small_3()
     test_sort_small_5()
@@ -672,3 +730,4 @@ def main():
     test_sort_empty_comparable_elements_list()
 
     test_sort_scalar()
+    test_ensure_no_copies()
