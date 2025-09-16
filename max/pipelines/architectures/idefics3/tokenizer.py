@@ -264,6 +264,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
         )
         return context
 
