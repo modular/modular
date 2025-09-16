@@ -1067,18 +1067,19 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             KeyError.
         """
 
-        var key = Optional[K](None)
-        var val = Optional[V](None)
-
-        for item in reversed(self.items()):
-            # TODO: Is there a way to do via move instead of copy?
-            key = Optional(item.key.copy())
-            val = Optional(item.value.copy())
-            break
-
-        if key:
-            _ = self.pop(key.value())
-            return DictEntry[K, V, H](key.take(), val.take())
+        for ref entry in reversed(self._entries):
+            if entry:
+                # note: we must call self._find_index before
+                # moving the entry out of _entries with entry.unsafe_take()
+                # because _find_index needs to look at the entry hash and
+                # key in order to verify it found the correct location
+                var (_, slot, _) = self._find_index(
+                    entry.unsafe_value().hash, entry.unsafe_value().key
+                )
+                self._set_index(slot, Self.REMOVED)
+                var entry_value = entry.unsafe_take()
+                self._len -= 1
+                return entry_value^
 
         raise "KeyError: popitem(): dictionary is empty"
 

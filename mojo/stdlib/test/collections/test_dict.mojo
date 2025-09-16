@@ -594,12 +594,15 @@ def test_dict_popitem():
     dict["a"] = 1
     dict["b"] = 2
 
+    assert_equal(len(dict), 2)
     var item = dict.popitem()
     assert_equal(item.key, "b")
     assert_equal(item.value, 2)
+    assert_equal(len(dict), 1)
     item = dict.popitem()
     assert_equal(item.key, "a")
     assert_equal(item.value, 1)
+    assert_equal(len(dict), 0)
     with assert_raises(contains="KeyError"):
         _ = dict.popitem()
 
@@ -720,6 +723,24 @@ def test_dict_repr_wrap():
     )
 
 
+def test_popitem_no_copies():
+    var dict: Dict[String, CopyCounter] = {}
+    dict["a"] = CopyCounter()
+    dict["b"] = CopyCounter()
+
+    assert_equal(len(dict), 2)
+    var item = dict.popitem()
+    assert_equal(item.key, "b")
+    assert_equal(item.value.copy_count, 0)
+    assert_equal(len(dict), 1)
+    item = dict.popitem()
+    assert_equal(item.key, "a")
+    assert_equal(item.value.copy_count, 0)
+    assert_equal(len(dict), 0)
+    with assert_raises(contains="KeyError"):
+        _ = dict.popitem()
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -737,3 +758,4 @@ def main():
     test_compile_time_dict()
     test_dict_comprehension()
     test_dict_repr_wrap()
+    test_popitem_no_copies()

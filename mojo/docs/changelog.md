@@ -498,8 +498,8 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - Add `take_items` draining iterator to `Dict`.
 
-- `sort`, `LinkedList.pop()` and `LinkedList.maybe_pop()` no longer copy elements,
-  improving performance.
+- `sort`, `LinkedList.pop()`, `LinkedList.maybe_pop()` and `Dict.popitem()`
+  no longer copy elements, improving performance.
 
 ### Tooling changes
 
