@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
@@ -15,7 +19,10 @@ modular_py_test(
 modular_py_test(
     name = "gpu_tests",
     srcs = glob(["accelerator_tests/*.py"]),
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/engine",
