@@ -621,6 +621,17 @@ class PipelineConfig(MAXConfig):
             prefix_caching_supported=arch.prefix_caching_supported
         )
 
+        # Validate LoRA support - currently only Llama3 models support LoRA
+        if self._lora_config and self._lora_config.enable_lora:
+            # Check if the architecture is Llama3 (LlamaForCausalLM)
+            if arch.name != "LlamaForCausalLM":
+                msg = (
+                    f"LoRA is not currently supported for architecture '{arch.name}'. "
+                    f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
+                    f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
+                )
+                raise ValueError(msg)
+
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
