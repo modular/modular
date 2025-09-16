@@ -131,11 +131,11 @@ struct ParamTestStruct[T: Int, x: Bool](ParamInputTrait):
     # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Barable *"T`">
 
     # CHECK: lit.fn @"return_parameterized
-    # CHECK-SAME: <*"x`1": !Int, *"y`2": !Int>
+    # CHECK-SAME: <*"x`1": !Int, y: !Int>
     # CHECK-SAME: %self: !lit.ref<@default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>,
-    # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int *"x`1", :!Int *"y`2">>
+    # CHECK-SAME: -> !lit.struct<#ParamRPType <:!Int *"x`1", :!Int y>>
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
-    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Int *"x`1", :!Int *"y`2">
+    # CHECK-SAME: <:!ParamInputTrait @default_trait_methods::@ParamTestStruct<:!Int T, :!Bool x>, :!Int *"x`1", :!Int y>
 
     # CHECK: kgen.conformance{{.*}}:ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized"
