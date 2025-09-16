@@ -1646,10 +1646,8 @@ static void setupMetalModule(llvm::Module &module, llvm::TargetMachine &tm,
   module.setTargetTriple(llvm::Triple(originalTriple));
 }
 
-static LogicalResult
-compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
-                   AsyncRT::AsyncValueRef<BufferRef> output,
-                   CompilationOptions options) {
+static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
+                                             CompilationOptions options) {
   // Helper function to remove created temporary files if compilation failed.
   auto cleanupFiles = [](ArrayRef<llvm::SmallString<256>> filesToRemove) {
     for (const auto &file : filesToRemove)
@@ -1660,18 +1658,14 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   llvm::SmallString<256> airTempFile;
   if (auto err =
           llvm::sys::fs::createTemporaryFile("kernel", ".air", airTempFile)) {
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error("Failed to create temporary AIR file: " + err.message()), loc));
-    return failure();
+    return Error("Failed to create temporary AIR file: " + err.message());
   }
 
   std::error_code airEc;
   llvm::raw_fd_ostream airOS(airTempFile, airEc, llvm::sys::fs::OF_None);
   if (airEc) {
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error("Failed to open AIR file for writing: " + airEc.message()), loc));
     cleanupFiles({airTempFile});
-    return failure();
+    return Error("Failed to open AIR file for writing: " + airEc.message());
   }
 
   // Use Metal bitcode writer to write AIR bitcode
@@ -1689,10 +1683,8 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
         llvm::MemoryBuffer::getFile(airTempFile);
     if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".air",
                                         *airBuffer.get()))) {
-      std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-          "failed to save air to saveTempsPrefix", loc));
       cleanupFiles({airTempFile});
-      return failure();
+      return Error("failed to save air to saveTempsPrefix");
     }
   }
 
@@ -1700,11 +1692,8 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   llvm::SmallString<256> metallibTempFile;
   if (auto err = llvm::sys::fs::createTemporaryFile("kernel", ".metallib",
                                                     metallibTempFile)) {
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error("Failed to create temporary metallib file: " + err.message()),
-        loc));
     cleanupFiles({airTempFile});
-    return failure();
+    return Error("Failed to create temporary metallib file: " + err.message());
   }
 
   // xcrun path must always be the same on MacOS.
@@ -1722,43 +1711,25 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
       /*secondsToWait=*/60, /*memoryLimit=*/0, &errorMsg);
 
   if (result != 0) {
-    // Try to continue execution despite metallib failure - use the AIR
-    // file directly. This is a temporary workaround for LLVM version
-    // compatibility issues
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> airBuffer =
-        llvm::MemoryBuffer::getFile(airTempFile);
-    if (airBuffer) {
-      (*buf) << (*airBuffer)->getBuffer();
-      cleanupFiles({airTempFile, metallibTempFile});
-      return success();
-    }
-
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        Error("xcrun metallib compilation failed with code " +
-              llvm::Twine(result).str() + ": " + errorMsg +
-              " and AIR fallback also failed"),
-        loc));
     cleanupFiles({airTempFile, metallibTempFile});
-    return failure();
+    return Error("xcrun metallib compilation failed with code " +
+                 llvm::Twine(result).str() + ": " + errorMsg);
   }
 
   // Read the compiled metallib back
   auto metallibBuffer = llvm::MemoryBuffer::getFile(metallibTempFile);
   if (!metallibBuffer) {
-    std::move(output).setToError(
-        AsyncRT::getMLIRDiagnostic(Error("Failed to read metallib file: " +
-                                         metallibBuffer.getError().message()),
-                                   loc));
     cleanupFiles({airTempFile, metallibTempFile});
-    return failure();
+    return Error("Failed to read metallib file: " +
+                 metallibBuffer.getError().message());
   }
   if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".metallib",
                                       *metallibBuffer.get()))) {
-    std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-        "failed to save metallib to saveTempsPrefix", loc));
     cleanupFiles({airTempFile, metallibTempFile});
-    return failure();
+    return Error("failed to save metallib to saveTempsPrefix");
   }
+
+  WriteableBufferRef buf = WriteableBuffer::get();
 
   // Write metallib data to output buffer
   (*buf) << (*metallibBuffer)->getBuffer();
@@ -1766,7 +1737,7 @@ compileMetalTarget(llvm::Module &module, WriteableBufferRef buf, Location loc,
   // Clean up temporary files
   cleanupFiles({airTempFile, metallibTempFile});
 
-  return success();
+  return buf;
 }
 
 static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
@@ -1979,10 +1950,12 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
           }
           (*buf) << (*cubinOr)->getBuffer();
         } else if (isMetalBackend(options)) {
-          if (failed(
-                  compileMetalTarget(module, buf, loc, output.copy(), options)))
-            return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                "failed to generate .air and .metallib", loc));
+          ErrorOr<BufferRef> bufOr = compileMetalTarget(module, loc, options);
+          if (bufOr.isError()) {
+            return std::move(output).setToError(
+                AsyncRT::getMLIRDiagnostic(bufOr.takeError(), loc));
+          }
+          (*buf) << (*bufOr)->getBuffer();
         } else {
           if (failed(runLlcPasses(
                   module, options, tm, *codeBuf, machineModuleInfo, mcContext,
