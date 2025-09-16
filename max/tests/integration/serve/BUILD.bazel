@@ -15,6 +15,10 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
@@ -76,7 +80,10 @@ modular_py_test(
     },
     gpu_constraints = [
         "//:has_gpu",
-    ],
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "AITLIB-293",
         "gpu",
@@ -117,7 +124,10 @@ modular_py_test(
     gpu_constraints = [
         "//:has_gpu",
         "//:nvidia_gpu",
-    ],
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",

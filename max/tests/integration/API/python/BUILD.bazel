@@ -40,7 +40,10 @@ modular_py_test(
     },
     gpu_constraints = [
         "//:has_gpu",
-    ],
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",
@@ -77,7 +80,10 @@ modular_py_test(
     },
     gpu_constraints = [
         "//:has_gpu",
-    ],
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",
@@ -110,7 +116,10 @@ modular_py_test(
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",
@@ -138,7 +147,10 @@ modular_py_test(
     ],
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "AITLIB-293",
         "gpu",

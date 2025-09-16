@@ -22,6 +22,7 @@ modular_py_test(
             # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
             "//:asan": ["@platforms//:incompatible"],
             "//:tsan": ["@platforms//:incompatible"],
+            "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
             "//conditions:default": [],
         },
     ),

@@ -39,6 +39,10 @@ load(
             "no-sandbox",
             "requires-network",
         ] if src == "test_pipeline_batching.py" else [],
+        target_compatible_with = select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),  # FIXME: MOCO-2411
         deps = [
             "//SDK/integration-test/API/python/graph:modular_graph_test",
             "//SDK/integration-test/pipelines/python:hf_repo_lock",
@@ -94,7 +98,10 @@ modular_py_test(
         "test.resources:gpu-memory": "20",
         "test.resources:gpu-1": "1",  # Exclusive access
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",

@@ -15,6 +15,10 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -105,6 +109,10 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":hf_repo_lock",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -127,7 +135,10 @@ modular_py_test(
         "test.resources:gpu-memory": "21.25",
         "test.resources:gpu-1": "1",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:amd_gpu",
+    ],  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",
@@ -317,6 +328,10 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":pipelines-lm-eval",
         "//SDK/integration-test/pipelines/python:hf_repo_lock",

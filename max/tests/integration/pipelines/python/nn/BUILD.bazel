@@ -39,6 +39,10 @@ modular_py_test(
         ],
     ),
     imports = ["."],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":shared_conv_impl",
         ":shared_mlp_impl",
@@ -71,7 +75,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     imports = ["."],
     tags = ["gpu"],
     deps = [

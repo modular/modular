@@ -6,6 +6,10 @@ modular_py_test(
         ["*.py"],
         exclude = ["*_gpu.py"],
     ),
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -26,7 +30,10 @@ modular_py_test(
     srcs = glob(
         ["*_gpu.py"],
     ) + ["conftest.py"],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     imports = ["."],
     tags = ["gpu"],
     deps = [

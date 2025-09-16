@@ -9,6 +9,10 @@ modular_py_test(
             "test_attention_no_opaque.py",
         ],
     ),
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
@@ -37,7 +41,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "18",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -58,6 +65,10 @@ modular_py_test(
     name = "attention_no_opaque_tests",
     timeout = "long",
     srcs = ["test_attention_no_opaque.py"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",

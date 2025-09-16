@@ -11,7 +11,10 @@ modular_py_test(
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -37,7 +40,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -63,7 +69,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -89,7 +98,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",

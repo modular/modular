@@ -23,7 +23,10 @@ modular_py_test(
         "test.resources:gpu-memory": "23",
         "test.resources:gpu-1": "1",  # Exclusive access
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
         "no-sandbox",
