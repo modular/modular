@@ -404,6 +404,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable GPU stats collection for serving benchmarks."""
 
+    collect_cpu_stats: bool = field(
+        default=True, metadata={"group": "Control Flags"}
+    )
+    """Enable CPU stats collection for serving benchmarks."""
+
     # Result saving (serving-specific extensions)
     server_args: str = field(
         default="",
@@ -485,6 +490,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "random_sys_prompt_ratio": "Ratio to determine the system prompt length, used only for random sampling.",
             "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
+            "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
             "server_args": "Server arguments string.",
             "save_result": "Specify to save benchmark results to a json file.",
             "result_dir": "Directory to save results.",

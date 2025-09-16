@@ -34,11 +34,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
+from urllib.parse import urlparse
 
 import aiohttp
 import numpy as np
 import yaml
 from benchmark_config import ServingBenchmarkConfig, parse_benchmark_args
+from benchmark_cpu_metrics import CpuMetricsCollector, collect_pids_for_port
 from benchmark_datasets import (
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
@@ -592,6 +594,7 @@ def calculate_metrics(
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
     gpu_metrics: dict[str, Any],
+    cpu_metrics: dict[str, Any],
     skip_first_n_requests: int,
     max_concurrency: Optional[int],
     collect_gpu_stats: bool,
@@ -743,6 +746,8 @@ def calculate_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
+        cpu_utilization_user=cpu_metrics.get("user_percent"),
+        cpu_utilization_system=cpu_metrics.get("system_percent"),
     )
 
     return metrics, actual_output_lens
@@ -855,6 +860,7 @@ async def benchmark(
     disable_tqdm: bool,
     do_test_prompt: bool,
     collect_gpu_stats: bool,
+    collect_cpu_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
     num_chat_sessions: Optional[int],
@@ -953,11 +959,18 @@ async def benchmark(
         if is_nvml_available():
             from nvitop import ResourceMetricCollector
 
-            collector = ResourceMetricCollector()
-            collector.start("benchmark")
+            gpu_collector = ResourceMetricCollector()
+            gpu_collector.start("benchmark")
         else:
             logger.warning("NVML not available, skipping GPU stats collection")
-            collector = None
+            gpu_collector = None
+
+    if collect_cpu_stats:
+        pids = collect_pids_for_port(int(urlparse(api_url).port or 8000))
+        cpu_collector = CpuMetricsCollector(pids)
+        cpu_collector.start()
+    else:
+        cpu_collector = None
 
     benchmark_start_time = time.perf_counter_ns()
     if max_benchmark_duration_s is None:
@@ -1112,20 +1125,27 @@ async def benchmark(
                 }
             )
 
-    if collect_gpu_stats and collector is not None:
-        gpu_metrics = collector.collect()
-        collector.stop()
-        # Delete the collector.
+    if collect_gpu_stats and gpu_collector is not None:
+        gpu_metrics = gpu_collector.collect()
+        gpu_collector.stop()
+        # Delete the gpu_collector.
         # Leaving it to be cleaned up later can lead to segfaults.
-        del collector
+        del gpu_collector
     else:
         gpu_metrics = {}
+
+    if collect_cpu_stats and cpu_collector is not None:
+        cpu_collector.stop()
+        cpu_metrics = cpu_collector.dump_stats()
+    else:
+        cpu_metrics = {}
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
         gpu_metrics=gpu_metrics,
+        cpu_metrics=cpu_metrics,
         skip_first_n_requests=skip_first_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
@@ -1218,6 +1238,21 @@ async def benchmark(
                     metrics.available_gpu_memory_mib[i],
                 )
             )
+
+    if collect_cpu_stats:
+        print_section(title="CPU Stats")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "CPU User Utilization (%):",
+                metrics.cpu_utilization_user or 0.0,
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "CPU System Utilization (%):",
+                metrics.cpu_utilization_system or 0.0,
+            )
+        )
 
     print("=" * 50)
 
@@ -1511,6 +1546,7 @@ def main(args: argparse.Namespace) -> None:
             disable_tqdm=args.disable_tqdm,
             do_test_prompt=not args.skip_test_prompt,
             collect_gpu_stats=args.collect_gpu_stats,
+            collect_cpu_stats=args.collect_cpu_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
             num_chat_sessions=args.num_chat_sessions,

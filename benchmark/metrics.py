@@ -221,3 +221,7 @@ class BenchmarkMetrics:
     available_gpu_memory_mib: list[float]
     # 'benchmark/gpu:i/gpu_utilization (%)/mean'
     gpu_utilization: list[float]
+
+    # measured in percent (0-100), combined over server pids
+    cpu_utilization_user: float | None
+    cpu_utilization_system: float | None

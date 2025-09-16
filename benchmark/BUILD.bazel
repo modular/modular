@@ -7,6 +7,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":benchmark_config",
+        ":benchmark_cpu_metrics",
         ":benchmark_datasets",
         ":metrics",
         ":sample_workload_utils",
@@ -54,6 +55,16 @@ modular_py_library(
         ":benchmark_datasets",
         "//SDK/lib/API/python/max/pipelines/lib",
         requirement("pyyaml"),
+    ],
+)
+
+modular_py_library(
+    name = "benchmark_cpu_metrics",
+    srcs = ["benchmark_cpu_metrics.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
     ],
 )
 
