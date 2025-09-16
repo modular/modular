@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import mo
+from max._core.dialects import mo
+from max.mlir.dialects import mo as _mo
 
 from ..graph import Graph
 from ..type import _ChainType
@@ -90,7 +91,7 @@ def sum(
         in_chain = Graph.current.device_chains[device]
         # Each op takes all inputs but only produces output for its device.
         (result, out_chain), _ = Graph.current._add_op_get_op_with_results(
-            mo.distributed_allreduce_sum,
+            _mo.distributed_allreduce_sum,
             # Single output tensor type.
             input_tensor.type.to_mlir(),
             # Output chain type.
@@ -126,11 +127,11 @@ def matmul_allreduce(
         )
 
     in_chain = Graph.current._current_chain
-    *results, out_chain = Graph.current._add_op(
-        mo.distributed_matmul_allreduce,
+    *results, out_chain = Graph.current._add_op_generated(
+        mo.DistributedMatmulAllreduceOp,
         # Types for 2 outputs: chain, list of tensors
         [infer_out_type(a, b) for a, b in zip(inputs, weights)],
-        _ChainType().to_mlir(),
+        _ChainType(),
         list(inputs),
         list(weights),
         signal_buffers,
