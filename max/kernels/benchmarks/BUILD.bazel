@@ -19,7 +19,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "gpu/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): reenable and remove this tag
+    "nn/bench_gather_reduce.mojo": ["@platforms//:incompatible"],  # TODO(KERN-464): re-enable and remove this tag
 }
 
 _CPU_TESTS = glob(

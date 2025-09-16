@@ -379,8 +379,8 @@ fn _softmax_3_pass_base[
         return max(v1, v2)
 
     # Input function
-    # Translate given input lambda from 1d to Nd because _reduce_generator
-    # needs Nd.
+    # Translate the given input lambda from 1D to n-D because _reduce_generator
+    # needs n-D.
     @parameter
     @always_inline
     fn input_fn[
@@ -603,7 +603,7 @@ fn _softmax_cpu[
             @always_inline
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
-            # given input lambda with some 1d-to-Nd translation logic.
+            # given input lambda with some 1D-to-n-D translation logic.
             fn input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)

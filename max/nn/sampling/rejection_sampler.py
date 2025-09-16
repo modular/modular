@@ -288,7 +288,7 @@ class RejectionSamplerWithResiduals(nn.Module):
         )
 
         rejected_with_sentinel = rejected_with_sentinel.cast(DType.int32)
-        # argmax is not reliable for getting the first max occurence when dealing with int tensors with [0,1] values so we weight them here to get the first occurence.
+        # argmax is not reliable for getting the first max occurrence when dealing with int tensors with [0,1] values, so we weight them here to get the first occurrence.
         # TODO: remove this when/if KERN-1862 is resolved
         argmax_weights = ops.range(
             rejected_with_sentinel.shape[1],

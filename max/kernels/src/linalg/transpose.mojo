@@ -1685,7 +1685,7 @@ fn transpose[
     if simplified_rank == 1:
         # memcpy
         return transpose_trivial_memcpy(output, input)
-    # TODO: Reenable once #15947 is fixed.
+    # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose
     #     return transpose_2d[rank, output_shape, input_shape, dtype](

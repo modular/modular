@@ -89,7 +89,7 @@ fn memcpy_or_fuse[
                 width=simd_width
             ](index)
 
-            # Convert the linearized address back to the nd indices.
+            # Convert the linearized address back to the n-D indices.
             constrained[_rank == 1]()
             var out_index = _get_start_indices_of_nth_subvolume[0](
                 index[0] + typed_offset,

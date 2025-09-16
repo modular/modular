@@ -642,7 +642,7 @@ fn matmulb2b[
     var AB: UnsafePointer[Scalar[elt]] = stack_allocation[
         Mc * Nc, elt, alignment=64
     ]()
-    # TODO: prefetches, as descried in nest
+    # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the
     #       loop tree.
@@ -664,12 +664,12 @@ fn matmulb2b[
                 #
                 # The use of `prefetchnta` on `A` helps more at this level, as
                 # `Mc x Kc` could be a very large chunk. Because `A[Mc, Kc]` is
-                # replaced, it is not actually held/re-used at the L3 cache level.
+                # replaced, it is not actually held/reused at the L3 cache level.
                 # Instead, we must stream through it.
                 # Because it is also held in the L1 cache, this is a prime candidate
                 # for `prefetchnta`, to load slices to the L1 where they may be
                 # held and reused, without polluting any of the other caches, where
-                # the memory is not re-used.
+                # the memory is not reused.
                 var pabk: UnsafePointer[Scalar[elt]] = AB
                 var pbk: UnsafePointer[Scalar[elt]] = pb
                 for _ in range(Mc // Mr):  # mr               - hold in l2 cache
@@ -732,7 +732,7 @@ fn matmulb2b[
                 # However, because of the different loop order for this
                 # nest, we hold `AB` in the L3 cache, while we streamed `A`.
                 # `AB` was also held in the `L3` cache in th previous subloop,
-                # allowing for re-use of the block across these subloops.
+                # allowing for reuse of the block across these subloops.
                 #
                 # Instead, we stream through `D` and `C`.
                 # `C` is held in the l2 cache, thus we may want to prefetch it

@@ -89,11 +89,11 @@ fn sgemm_warp_tiling_kernel[
     var warp_col = warp_idx % (BN // WN)
     var warp_row = warp_idx // (BN // WN)
 
-    # Size of the warp subtile.
+    # Size of the warp sub-tile.
     alias w_sub_m = WM // WMITER  # 64/2=32
     alias w_sub_n = WN // WNITER  # 32/2=16
 
-    # Placement of the thread in the warp subtile.
+    # Placement of the thread in the warp sub-tile.
     var thread_Idx_In_warp = thread_idx.x % WARP_SIZE  # [0, 31]
     var thread_col_in_warp = thread_Idx_In_warp % (w_sub_n // TN)  # i%(16/4)
     var thread_row_in_warp = thread_Idx_In_warp // (w_sub_n // TN)  # i/4
@@ -250,7 +250,7 @@ fn sgemm_warp_tiling_kernel[
 
         @parameter
         for w_sub_col_idx in range(WNITER):
-            # Move C pointer to current warp subtile.
+            # Move C pointer to current warp sub-tile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
             var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr.offset(
@@ -355,12 +355,12 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     constrained[(K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)]()
     constrained[(K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS]()
 
-    # Threads in warpsubtile.
+    # Threads in the warp sub-tile.
     constrained[
         (K10_WM * K10_WN) % (WARP_SIZE * K10_TM * K10_TN * K10_WNITER) == 0
     ]()
 
-    # Warpsubtile in warptile.
+    # Warp sub-tile in warp tile.
     constrained[(K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)]()
 
     constrained[

@@ -816,7 +816,7 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
 
 fn shmem_module_init(device_function: DeviceFunction) raises:
     """
-    Intializes the device state in the compiled function module so that it’s
+    Initializes the device state in the compiled function module so that it’s
     able to perform NVSHMEM operations. Must have completed device
     initialization prior to calling this function.
 

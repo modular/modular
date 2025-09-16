@@ -149,7 +149,7 @@ class Module:
             model.apply_to_parameters(lambda _, t: t.to(Accelerator())
 
         Args:
-            f: The transfomation to apply to each local parameter.
+            f: The transformation to apply to each local parameter.
                 The transformation takes two arguments, a name and a tensor.
                 - The name is the attribute name of the parameter on the module
                 - The tensor is the current value of that parameter
@@ -175,7 +175,7 @@ class Module:
             model.apply_to_parameters(lambda _, t: t.to(Accelerator())
 
         Args:
-            f: The transfomation to apply to each parameter.
+            f: The transformation to apply to each parameter.
                 The transformation takes two arguments, a name and a tensor.
                 - The name is the qualified name of the parameter
                     with respect to the module on which `apply_to_parameters`
@@ -296,7 +296,7 @@ class Module:
             model_on_gpu = model.map_parameters(lambda _, t: t.to(Accelerator())
 
         Args:
-            f: The transfomation to apply to each parameter.
+            f: The transformation to apply to each parameter.
                 The transformation takes two arguments, a name and a tensor.
                 - The name is the qualified name of the parameter
                     with respect to the module on which `map_parameters`

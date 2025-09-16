@@ -994,7 +994,7 @@ fn _mha_sm90[
     ]()
     alias k_smem_layout = k_tma_op.layout
     alias v_smem_layout = v_tma_op.layout
-    # for wgmma_0, we mutliply BM x depth @ depth x BN -> BM x BN
+    # for wgmma_0, we multiply BM x depth @ depth x BN -> BM x BN
     # for wgmma_1, we multiply BM x BN @ BN x depth -> BM x depth
     # For wgmma_0, we iterate over (depth//BK) tiles of size BKxBN
     # For wgmma_1, we iterate over (BN//BK) tiles of size BKxdepth

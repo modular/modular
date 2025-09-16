@@ -44,7 +44,7 @@ date: January 30, 2025
 ---
 ```
 
-Images can optinally include captions:
+Images can optionally include captions:
 
 ```md
 [KV Cache](docs/img/genai-paged-attention/img01-kvcache.png)

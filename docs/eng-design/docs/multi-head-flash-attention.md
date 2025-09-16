@@ -7,7 +7,7 @@ date: May 7, 2025
 - **Author:** Chris Elrod
 - **Date:** May 7, 2025
 
-This document descibes the implementation of Multi-Head Attention (MHA) using
+This document describes the implementation of Multi-Head Attention (MHA) using
 Flash Attention 3.
 
 ## Background

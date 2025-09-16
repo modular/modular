@@ -519,7 +519,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
-    # NOTE: This wrapper is nessecary because batched blockwise scaling has a wrapper kernel
+    # NOTE: This wrapper is necessary because batched blockwise scaling has a wrapper kernel
     # for allocating matrices across the z index that kernel calls the function
     # `matmul_sm100_blockwise_scaled_fp8_1d2d_kernel` as well. That function requires the decroators
     # to not be present on the function so we moved it to this wrapper.

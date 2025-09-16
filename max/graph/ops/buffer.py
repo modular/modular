@@ -52,7 +52,7 @@ def buffer_load(
 
 
 def buffer_store(destination: BufferValue, source: TensorValue) -> None:
-    """Stores the input tensor into the inout buffer.
+    """Stores the input tensor into the in-out buffer.
 
     It stores the immutable input tensor `x` in the mutable tensor `y`.
     This is semantically equivalent to a copy from `x` tensor to the `y` buffer.

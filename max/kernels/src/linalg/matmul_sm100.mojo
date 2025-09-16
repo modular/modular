@@ -389,7 +389,7 @@ fn elementwise_helper[
     ],
 ):
     # Here we start keeping track of the index / indices this thread is
-    # responsbile for in shared memory. This is represented with shared_memory_row
+    # responsible for in shared memory. This is represented with shared_memory_row
     # and shared_memory_column and the children of these values shared_memory_row_upper_half
     # shared_memory_row_lower_half. We also need to update the global memory column c_col by
     # stageN since we are sliding through the overall compute block.
@@ -501,7 +501,7 @@ fn elementwise_helper[
             )
 
         else:
-            # cant cast to uint64 as it's not supported yet
+            # can't cast to uint64 as it's not supported yet
             # this will cost us slightly in performance
             alias fast_div = FastDiv[DType.uint32](shared_n)
 

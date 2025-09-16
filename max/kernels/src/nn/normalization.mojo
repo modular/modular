@@ -470,7 +470,7 @@ fn layer_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -698,7 +698,7 @@ fn layer_norm_cpu[
         fn input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-            # Translate given 2d index back to original Nd tensor
+            # Translate a given 2D index back to the original n-D tensor
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -711,7 +711,7 @@ fn layer_norm_cpu[
         fn output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
-            # Translate given 2d index back to original Nd tensor
+            # Translate a given 2D index back to the original n-D tensor
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -1118,7 +1118,7 @@ fn rms_norm_gpu[
     fn output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1128,7 +1128,7 @@ fn rms_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -1342,7 +1342,7 @@ fn rms_norm_cpu[
         fn output_fn_2d[
             simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-            # Translate given 2d index back to the original Nd tensor.
+            # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -1355,7 +1355,7 @@ fn rms_norm_cpu[
         fn input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-            # Translate given 2d index back to the original Nd tensor.
+            # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
@@ -1644,7 +1644,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn output_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1654,7 +1654,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn output_residual_fn_2d[
         simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         output_residual_fn[simd_width, alignment](indices.canonicalize(), val)
@@ -1664,7 +1664,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
@@ -1674,7 +1674,7 @@ fn rms_norm_fused_residual_add_gpu[
     fn residual_input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
-        # Translate given 2d index back to original Nd tensor
+        # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return residual_input_fn[simd_width](indices.canonicalize())

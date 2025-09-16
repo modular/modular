@@ -315,7 +315,7 @@ fn test_dispatch[
 
             # Check the results
 
-            # Fisrt, reproduce the input tokens and topk ids
+            # First, reproduce the input tokens and topk ids
             var all_ranks_input_tokens = UnsafePointer[
                 Scalar[input_type]
             ].alloc(n_tokens_per_rank * n_ranks * hidden_size)

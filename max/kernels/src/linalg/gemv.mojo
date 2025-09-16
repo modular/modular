@@ -267,7 +267,7 @@ fn gemv_split_k[
     """GEMV with tiling in K dimension.
     Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
     implements a vector (1 x K) times a matrix (N x K).
-    The impl can actually handle M > 1 but it's only optimal fro tiny M. We use
+    The impl can actually handle M > 1 but it's only optimal for tiny M. We use
     it for M = 1 only.
     """
     # tile_m represents how many rows each thread will process of the output activation matrix

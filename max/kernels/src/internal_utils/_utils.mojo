@@ -736,7 +736,7 @@ struct Timer:
         )
 
 
-# TODO: limited support for 1D, generalize to nD
+# TODO: limited support for 1D, generalize to n-D
 fn init_vector_gpu[
     dtype: DType
 ](

@@ -19,7 +19,7 @@ from internal_utils import TuningTableNvidia, TuningConfigNvidia
 from internal_utils import TuningTableAMD, TuningConfigAMD
 from testing import assert_equal
 
-# Highly recommneded to use "vendor_arch_dtype" format for table names.
+# Highly recommended to use "vendor_arch_dtype" format for table names.
 # For example:
 # nvidia_sm90_fp8 = Table[...]
 # import nvidia_sm90_fp8_configs

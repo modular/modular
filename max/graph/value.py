@@ -395,9 +395,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             dim: The dimension value.
         """
-        ans = ops.shape_to_tensor([dim])
-        ans.type.device = DeviceRef.CPU()
-        return ans.reshape(())
+        result = ops.shape_to_tensor([dim])
+        result.type.device = DeviceRef.CPU()
+        return result.reshape(())
 
     @staticmethod
     def _from_shape(shape: ShapeLike) -> TensorValue:
@@ -406,9 +406,9 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             shape: An iterable of integers or symbolic dimensions.
         """
-        ans = ops.shape_to_tensor(shape)
-        ans.type.device = DeviceRef.CPU()
-        return ans
+        result = ops.shape_to_tensor(shape)
+        result.type.device = DeviceRef.CPU()
+        return result
 
     def __repr__(self) -> str:
         """Returns a string representation of the :obj:`TensorValue`."""
