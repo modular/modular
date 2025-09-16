@@ -39,14 +39,11 @@ static void crashHandler(void *context) {
   llvm::errs() << *programName << " crashed!\n";
   llvm::errs() << "Please file a bug report.\n";
 
-  // As a useful helper, always print a full name when there is an environment
-  // variable named "CI". Perhaps this is also useful to end users and should
-  // be documented?
-  if (std::getenv("CI")) {
-    llvm::sys::PrintStackTrace(llvm::errs());
-    llvm::errs() << '\n';
-    logHostMachineInfo(llvm::errs());
-  }
+#ifndef MODULAR_PRODUCTION
+  llvm::sys::PrintStackTrace(llvm::errs());
+  llvm::errs() << '\n';
+  logHostMachineInfo(llvm::errs());
+#endif // MODULAR_PRODUCTION
 }
 
 static void registerSignalHandler(StringRef programName) {
