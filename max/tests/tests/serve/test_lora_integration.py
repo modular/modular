@@ -31,9 +31,8 @@ class MockLoRARequestProcessor:
         zmq_response_endpoint: str,
     ) -> None:
         self.manager = manager
-        self._zmq_running = False
 
-    def _handle_zmq_request(self, request: LoRARequest) -> LoRAResponse:
+    def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
         """Mock request handler for testing."""
 
         if request.operation == LoRAOperation.LOAD:
@@ -64,10 +63,6 @@ class MockLoRARequestProcessor:
                 status=LoRAStatus.LOAD_ERROR, message="Unknown operation"
             )
 
-    def stop(self) -> None:
-        """Mock stop method."""
-        self._zmq_running = False
-
 
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
@@ -91,14 +86,6 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         base_dtype=DType.float32,
     )
 
-    class NoOpLock:
-        def __enter__(self) -> NoOpLock:
-            return self
-
-        def __exit__(self, *args) -> None:
-            pass
-
-    manager._lora_lock = NoOpLock()  # type: ignore
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
 
     yield manager
@@ -181,7 +168,7 @@ def test_zmq_handler_direct(
         lora_path=temp_adapter,
     )
 
-    response = handler._handle_zmq_request(load_request)
+    response = handler._handle_lora_request(load_request)
     assert response.status == LoRAStatus.SUCCESS
     assert "loaded successfully" in response.message
 
@@ -190,12 +177,12 @@ def test_zmq_handler_direct(
         lora_name="test_adapter",
     )
 
-    response = handler._handle_zmq_request(unload_request)
+    response = handler._handle_lora_request(unload_request)
     assert response.status == LoRAStatus.SUCCESS
     assert "unloaded successfully" in response.message
 
     list_request = LoRARequest(operation=LoRAOperation.LIST)
-    response = handler._handle_zmq_request(list_request)
+    response = handler._handle_lora_request(list_request)
     assert response.status == LoRAStatus.SUCCESS
 
 
