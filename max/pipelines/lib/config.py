@@ -283,9 +283,9 @@ class PipelineConfig(MAXConfig):
 
                 # Remove matched kwargs
                 for key in matched_kwargs:
-                    del unmatched_kwargs[key]
+                    _ = unmatched_kwargs.pop(key, None)
                 for key in kv_cache_kwargs:
-                    del unmatched_kwargs[key]
+                    _ = unmatched_kwargs.pop(key, None)
 
     def _create_and_set_config(
         self,
@@ -306,10 +306,21 @@ class PipelineConfig(MAXConfig):
         if config_name == "_model_config" and kv_cache_kwargs:
             # Create new model config with updated KVCache config
             model_config = config_class(**matched_kwargs)
+
+            if self._draft_model_config:
+                memory_util = kv_cache_kwargs.get(
+                    "device_memory_utilization", 0.9
+                )
+                main_model_util = memory_util * 0.7
+                draft_model_util = memory_util - main_model_util
+
+                kv_cache_kwargs["device_memory_utilization"] = main_model_util
+
             model_config._kv_cache_config = KVCacheConfig(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self._draft_model_config:
+                kv_cache_kwargs["device_memory_utilization"] = draft_model_util
                 self._draft_model_config._kv_cache_config = KVCacheConfig(
                     **kv_cache_kwargs
                 )
