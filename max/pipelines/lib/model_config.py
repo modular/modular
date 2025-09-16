@@ -125,12 +125,6 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = True
     """Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true."""
 
-    tensor_parallel_degree: int = 1
-    """Number of tensor-parallel replicas."""
-
-    pipeline_parallel_degree: int = 1
-    """Number of pipeline stages."""
-
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
@@ -197,18 +191,6 @@ class MAXModelConfig(MAXModelConfigBase):
         ):
             raise ValueError(
                 "--quantization-encoding must be provided when --allow-safetensors-weights-fp32-bf6-bidirectional-cast is enabled"
-            )
-
-        # validate that the pipeline and tensor parallel degrees are set.
-        if self.pipeline_parallel_degree < 1:
-            raise ValueError("pipeline_parallel_degree must be greater than 0")
-        if self.tensor_parallel_degree < 1:
-            raise ValueError("tensor_parallel_degree must be greater than 0")
-        if self.pipeline_parallel_degree * self.tensor_parallel_degree > len(
-            self.device_specs
-        ):
-            raise ValueError(
-                "pipeline_parallel_degree * tensor_parallel_degree must be less than or equal to the number of devices"
             )
 
         # Validate that the device_specs provided are available
@@ -891,8 +873,6 @@ class MAXModelConfig(MAXModelConfigBase):
             "vision_config_overrides": "Model-specific vision configuration overrides. For example, for InternVL: {'max_dynamic_patch': 24}.",
             "rope_type": "Force using a specific rope type: 'none' | 'normal' | 'neox'. Only matters for GGUF weights.",
             "use_subgraphs": "Whether to use subgraphs for the model. This could significantly reduce compile time especially for a large model with several identical blocks. Default is true.",
-            "tensor_parallel_degree": "Number of tensor-parallel replicas (default: 1).",
-            "pipeline_parallel_degree": "Number of pipeline stages (default: 1).",
         }
 
         config_help = KVCacheConfig.help()

@@ -40,7 +40,6 @@ class Olmo2Config(Llama3Config):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
         data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         """Override the default Llama3Config.get_kv_params to use head_dim from config.
@@ -118,8 +117,6 @@ class Olmo2Config(Llama3Config):
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        pipeline_parallel_degree: int = 1,
-        tensor_parallel_degree: int = 1,
         data_parallel_degree: int = 1,
     ) -> Olmo2Config:
         """Generate an Olmo2Config from the provided parameters.

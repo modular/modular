@@ -126,8 +126,6 @@ class Llama3ConfigBase(MAXModelConfigBase):
     clip_qkv: float | None
     float8_config: Float8Config | None
     lora_config: LoRAConfig | None = None
-    pipeline_parallel_degree: int = 1
-    tensor_parallel_degree: int = 1
     data_parallel_degree: int = 1
     dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
@@ -183,7 +181,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         n_devices: int,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        pipeline_parallel_degree: int = 1,
         data_parallel_degree: int = 1,
     ) -> KVCacheParams:
         return KVCacheParams(
@@ -199,11 +196,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
-            # Pipeline parallel fields
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            total_num_layers=huggingface_config.num_hidden_layers
-            if pipeline_parallel_degree > 1
-            else None,
             data_parallel_degree=data_parallel_degree,
         )
 
@@ -246,8 +238,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
-        pipeline_parallel_degree: int = 1,
-        tensor_parallel_degree: int = 1,
         data_parallel_degree: int = 1,
     ) -> Llama3Config:
         _weights_format = weights_format(
@@ -383,7 +373,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 n_devices=n_devices,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
-                pipeline_parallel_degree=pipeline_parallel_degree,
                 data_parallel_degree=data_parallel_degree,
             ),
             norm_method=norm_method,
@@ -401,8 +390,6 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
             # Force-disable matmul-allreduce overlap for llama FP8.
             # TODO: GEX-2388: Figure out the issue and re-enable this.
-            pipeline_parallel_degree=pipeline_parallel_degree,
-            tensor_parallel_degree=tensor_parallel_degree,
             data_parallel_degree=data_parallel_degree,
             dist_gemm_config=DistributedGemmConfig(
                 enable_matmul_allreduce=False
