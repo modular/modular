@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -24,9 +23,9 @@ from max._core.engine import PrintStyle
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, TensorValue, ops
-from max.interfaces import InputContext, TextGenerationRequest
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.interfaces import SamplingParams, TextGenerationRequest
 from max.nn.layer import Module
+from max.pipelines import TextGenerationPipeline
 from test_common.evaluate import ModelOutput
 
 from verify_layers.collect_subclasses import all_subclasses
@@ -636,52 +635,23 @@ def capture_max_layer_outputs(
 
         pipeline_oracle = PIPELINE_ORACLES[pipeline]
 
-        max_pipeline_data = pipeline_oracle.create_max_pipeline(
+        max_pipeline = pipeline_oracle.create_max_pipeline(
             encoding=encoding, device_specs=device_specs
         )
-
-        # Create input context for MAX
-        async def create_max_context() -> InputContext:
-            return await max_pipeline_data.tokenizer.new_context(
-                TextGenerationRequest(
-                    request_id="test",
-                    prompt=prompt,
-                    model_name=pipeline,
-                )
-            )
-
-        context = asyncio.run(create_max_context())
-
-        # For models with KV cache, we need to claim cache rows
-        if hasattr(max_pipeline_data.model, "kv_manager"):
-            if not max_pipeline_data.model.kv_manager.contains(
-                context.request_id
-            ):
-                max_pipeline_data.model.kv_manager.external_claim(
-                    context.request_id
-                )
-
-            # Fetch kv inputs
-
-            kv_cache_inputs = max_pipeline_data.model.kv_manager.fetch(
-                [context]
-            )
-            kv_cache_inputs_sequence = KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            )
-        else:
-            kv_cache_inputs_sequence = None
-
-        # Prepare model inputs
-        print("Preparing MAX model inputs...")
-        model_inputs = max_pipeline_data.model.prepare_initial_token_inputs(
-            context_batch=[context],
-            kv_cache_inputs=kv_cache_inputs_sequence,
+        # Run a single step of the pipeline
+        sampling_params = SamplingParams(max_new_tokens=1, top_k=1)
+        request = TextGenerationRequest(
+            request_id="test",
+            prompt=prompt,
+            model_name=pipeline,
+            sampling_params=sampling_params,
         )
-
-        # Run a single inference step to capture layers
-        print("Running MAX model with single inference step...")
-        model_outputs = max_pipeline_data.model.execute(model_inputs)
+        if isinstance(max_pipeline.pipeline, TextGenerationPipeline):
+            _ = max_pipeline.pipeline.generate(request)
+        else:
+            raise ValueError(
+                f"type {type(max_pipeline.pipeline)} is not supported"
+            )
 
         # We no longer need to extract and return the first layer's input tensor
         # from MAX because the PyTorch path now tokenizes the prompt itself.

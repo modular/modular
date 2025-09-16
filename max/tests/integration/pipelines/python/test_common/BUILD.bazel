@@ -63,6 +63,10 @@ modular_py_library(
     testonly = True,
     srcs = ["test_data.py"],
     imports = [".."],
+    deps = [
+        ":storage",
+        "//SDK/lib/API/python/max/interfaces",
+    ],
 )
 
 modular_py_library(
@@ -82,10 +86,11 @@ modular_py_library(
     srcs = ["evaluate.py"],
     imports = [".."],
     deps = [
-        ":storage",
         ":test_data",
         requirement("numpy"),
+        requirement("transformers"),
         "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
     ],

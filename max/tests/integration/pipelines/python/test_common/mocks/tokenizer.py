@@ -114,6 +114,7 @@ class MockTextTokenizer(
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
         )
         return ctx
 

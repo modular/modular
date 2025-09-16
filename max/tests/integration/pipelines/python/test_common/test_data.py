@@ -13,6 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from max.interfaces import SamplingParams, TextGenerationRequest
+
+from .storage import load_bytes
+
 
 @dataclass(frozen=True)
 class MockTextGenerationRequest:
@@ -59,6 +63,24 @@ class MockTextGenerationRequest:
             images=[],
             messages=messages,
             is_multimodal=is_multimodal,
+        )
+
+    def to_text_generation_request(
+        self, uuid: str, sampling_params: SamplingParams
+    ) -> TextGenerationRequest:
+        payload: dict[str, Any] = {}
+        if self.messages:
+            payload["messages"] = self.messages
+        else:
+            payload["prompt"] = self.prompt
+            payload["images"] = [
+                load_bytes(image_url) for image_url in self.images
+            ]
+        return TextGenerationRequest(
+            request_id=uuid,
+            model_name="",
+            sampling_params=sampling_params,
+            **payload,
         )
 
 

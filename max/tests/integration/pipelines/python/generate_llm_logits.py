@@ -100,11 +100,10 @@ def maybe_log_hf_downloads(enable_logging: bool):
 class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
-    model: pipelines.PipelineModel
-    generator: Union[
+    pipeline: Union[
         pipelines.TextGenerationPipeline,
         pipelines.EmbeddingsPipeline,
-    ]  # TODO(kcaverly): Move to only TextGenerationPipeline
+    ]
     tokenizer: PipelineTokenizer
 
 
@@ -265,17 +264,14 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             model_path=self.hf_repo_id,
             huggingface_model_revision=revision,
             max_length=max_length,
+            max_num_steps=1,
             trust_remote_code=True,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -366,17 +362,14 @@ class Idefics3PipelineOracle(MultiModalPipelineOracle):
             model_path=self.hf_repo_id,
             huggingface_model_revision=revision,
             max_length=max_length,
+            max_num_steps=1,
             trust_remote_code=True,
             # TODO(GEX-2365): Handle this in model memory estimation.
             device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -480,6 +473,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
             model_path=self.hf_repo_id,
             huggingface_model_revision=revision,
             max_length=max_length,
+            max_num_steps=1,
             trust_remote_code=True,
             # Chunked prefill is not supported for image prompts.
             # (technically, this script doesn't go through the scheduler so
@@ -490,11 +484,7 @@ class Qwen2_5VLPipelineOracle(MultiModalPipelineOracle):
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -571,6 +561,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             model_path=hf_repo_id,
             huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
+            max_num_steps=1,
             trust_remote_code=True,
             # TODO(MODELS-725): Fix LlamaVision memory estimation, instead of
             # lowering batch size to 1 to avoid OOM.
@@ -578,11 +569,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -629,16 +616,13 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=hf_repo_id,
             max_length=8192,
+            max_num_steps=1,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -705,6 +689,7 @@ class GenericOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
             weight_path=[] if weight_path is None else [weight_path],
+            max_num_steps=1,
             **self.config_params,
         )
         hf_repo_lock.apply_to_config(config)
@@ -715,11 +700,7 @@ class GenericOracle(PipelineOracle):
             pipeline,
             (pipelines.TextGenerationPipeline, pipelines.EmbeddingsPipeline),
         )
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
@@ -1353,8 +1334,12 @@ def generate_llm_logits(
                 )
             print(f"Running {pipeline_name} model on MAX")
             if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
+                assert isinstance(
+                    max_pipeline_and_tokenizer.pipeline,
+                    pipelines.TextGenerationPipeline,
+                )
                 results = evaluate.run_model(
-                    max_pipeline_and_tokenizer.model,
+                    max_pipeline_and_tokenizer.pipeline,
                     max_pipeline_and_tokenizer.tokenizer,
                     requests=pipeline_oracle.inputs,
                     num_steps=NUM_STEPS,
@@ -1364,11 +1349,11 @@ def generate_llm_logits(
                 )
             elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
                 assert isinstance(
-                    max_pipeline_and_tokenizer.generator,
+                    max_pipeline_and_tokenizer.pipeline,
                     pipelines.EmbeddingsPipeline,
                 )
                 results = evaluate_embeddings.encode(
-                    max_pipeline_and_tokenizer.generator,
+                    max_pipeline_and_tokenizer.pipeline,
                     max_pipeline_and_tokenizer.tokenizer,
                     prompts=(inp.prompt for inp in pipeline_oracle.inputs),
                     batch_size=max_batch_size,

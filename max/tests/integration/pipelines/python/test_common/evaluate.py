@@ -7,23 +7,33 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Callable, Optional, TypedDict, cast
+from collections.abc import Mapping, Sequence
+from typing import Any, Callable, TypedDict
 
 import numpy as np
-from max.interfaces import (
-    PipelineTokenizer,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
+from max import pipelines
+from max.driver import Device
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
 )
-from max.interfaces.tokenizer import TokenizerEncoded, UnboundContextType
-from max.nn.kv_cache import KVCacheInputsSequence
-from max.pipelines import PipelineModel
+from max.interfaces import (
+    LogitsProcessor,
+    PipelineTokenizer,
+    ProcessorInputs,
+    SamplingParams,
+)
+from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
 
-from .storage import load_bytes
 from .test_data import MockTextGenerationRequest
 
 
@@ -53,82 +63,53 @@ NUM_STEPS = 10
 
 
 def run_model(
-    model: PipelineModel,
+    pipeline: pipelines.TextGenerationPipeline,
     tokenizer: PipelineTokenizer,
-    requests: Iterable[MockTextGenerationRequest],
+    requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
     reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
-    """Runs the model for N steps on each request provided."""
-    return asyncio.run(
-        run_model_async(
-            model,
-            tokenizer,
-            requests=requests,
-            num_steps=num_steps,
-            print_outputs=print_outputs,
-            batch_size=batch_size,
-            reference=reference,
+    """Runs the pipeline for N steps on each request provided."""
+    assert batch_size >= 1
+    assert hasattr(tokenizer, "delegate")
+    hf_tokenizer = tokenizer.delegate
+    assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
+
+    ids = [str(uuid.uuid4()) for _ in requests]
+    prompts_by_id = {id: request.prompt for id, request in zip(ids, requests)}
+    stored_logits = StoreLogits(ids, tokenizer)
+
+    logits_processors: list[LogitsProcessor]
+    if reference:
+        reference_by_id = {
+            id: reference for id, reference in zip(ids, reference)
+        }
+        replace_logits = ReplaceLogitsWithReference(
+            pipeline._devices, reference_by_id
         )
+        logits_processors = [stored_logits, replace_logits]
+    else:
+        logits_processors = [stored_logits]
+
+    sampling_params = SamplingParams(
+        top_k=1, max_new_tokens=num_steps, logits_processors=logits_processors
     )
 
-
-async def _create_context(
-    request: MockTextGenerationRequest,
-    tokenizer: PipelineTokenizer[
-        UnboundContextType, TokenizerEncoded, TextGenerationRequest
-    ],
-) -> UnboundContextType:
-    if request.messages:
-        messages = cast(list[TextGenerationRequestMessage], request.messages)
-        return await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id=str(uuid.uuid4()), model_name="", messages=messages
-            )
-        )
-    else:
-        return await tokenizer.new_context(
-            TextGenerationRequest(
-                request_id=str(uuid.uuid4()),
-                model_name="",
-                prompt=request.prompt,
-                images=[load_bytes(image_url) for image_url in request.images],
-            )
+    text_gen_requests = []
+    for i, request in enumerate(requests):
+        text_gen_requests.append(
+            request.to_text_generation_request(ids[i], sampling_params)
         )
 
-
-async def run_model_async(
-    model: PipelineModel,
-    tokenizer: PipelineTokenizer,
-    requests: Iterable[MockTextGenerationRequest],
-    num_steps: int = NUM_STEPS,
-    print_outputs: bool = False,
-    batch_size: int = 1,
-    reference: list[ModelOutput] | None = None,
-) -> list[dict[str, Any]]:
-    """Runs the model for N steps on each request provided."""
-    assert batch_size >= 1
-
-    results = []
-
-    async def _evaluate_batch(
-        batch_prompts: dict[str, str],
-        batch_contexts: dict[str, Any],
-        batch_reference: dict[str, ModelOutput],
-    ) -> None:
-        values: dict[str, list[Any]] = {req_id: [] for req_id in batch_contexts}
-        for _ in range(num_steps):
-            is_eos = next_token_with_logits(
-                model, batch_contexts, values, tokenizer.eos, batch_reference
-            )
-            if is_eos:
-                break
-        for req_id, prompt in batch_prompts.items():
-            context = batch_contexts[req_id]
-            results.append({"prompt": prompt, "values": values[req_id]})
-            if print_outputs:
+    for i in range(0, len(requests), batch_size):
+        batch = text_gen_requests[i : i + batch_size]
+        outputs = pipeline.generate(batch)
+        if print_outputs:
+            for j in range(len(batch)):
+                request = requests[i + j]
+                prompt = request.prompt
                 print(
                     "Prompt:",
                     f"{prompt[:100]}...{prompt[-100:]}"
@@ -137,122 +118,80 @@ async def run_model_async(
                 )
                 print(
                     "Output:",
-                    await tokenizer.decode(
-                        np.array(
-                            [v["next_token"] for v in values[req_id]],
-                            dtype=np.int64,
-                        ),
-                    ),
+                    tokenizer.delegate.decode(outputs[j].tokens),
                 )
-            model.kv_manager.release(context.request_id)
 
-    # Evaluate requests.
-    batch_contexts: dict[str, Any] = {}
-    batch_prompts: dict[str, str] = {}
-    batch_reference: dict[str, ModelOutput] = {}
-
-    for i, request in enumerate(requests):
-        curr_req_id = str(uuid.uuid4())
-
-        context = await _create_context(request, tokenizer)
-        batch_prompts[curr_req_id] = request.prompt
-        batch_contexts[curr_req_id] = context
-        if reference:
-            batch_reference[curr_req_id] = reference[i]
-        if len(batch_contexts) == batch_size:
-            await _evaluate_batch(
-                batch_prompts, batch_contexts, batch_reference
-            )
-            batch_prompts.clear()
-            batch_contexts.clear()
-            batch_reference.clear()
-    if batch_contexts:
-        await _evaluate_batch(batch_prompts, batch_contexts, batch_reference)
-
+    results: list[dict[str, Any]] = []
+    for req_id, values in stored_logits.values.items():
+        results.append({"prompt": prompts_by_id[req_id], "values": values})
     return results
 
 
-def next_token_with_logits(
-    model: PipelineModel,
-    req_to_context_dict: dict[str, Any],
-    update_values: dict[str, list[Any]],
-    eos_token: Optional[int] = None,
-    req_to_reference_dict: dict[str, ModelOutput] = {},  # noqa: B006
-) -> bool:
-    """Generates the next token and stores the logits.
+class StoreLogits:
+    def __init__(
+        self, ids: Sequence[str], tokenizer: PipelineTokenizer
+    ) -> None:
+        self.values: dict[str, list[TokenInfo]] = {id: [] for id in ids}
+        self.reached_eos = {id: False for id in ids}
+        self.tokenizer = tokenizer
 
-    This method runs llama3.execute, stores the logits, and updates the context
-    with the next token.
-
-    Args:
-        model: Model to execute.
-        req_to_context_dict: Dictionary of request ids to Llama3Context.
-        update_values: Dictionary of request ids to lists of next_token &
-            logits. These lists are updated in this method.
-        eos_token: Encoded end-of-sequence token used to signal the early
-            stopping of token generation. If not provided, generation may
-            continue past EOS token.
-        req_to_reference_dict: Dictionary of request ids to ModelOutput.
-            If there is a reference for a request, next token will select the
-            same tokens as the reference.
-
-    Returns:
-        bool: True if the token is an end-of-sentence token, otherwise False.
-    """
-    # Flatten our batch for consistent indexing.
-    context_batch = list(req_to_context_dict.values())
-
-    # Claim cache rows for our batch.
-    for context in context_batch:
-        if not model.kv_manager.contains(context.request_id):
-            model.kv_manager.external_claim(context.request_id)
-
-    # Fetch kv inputs.
-    kv_cache_inputs = model.kv_manager.fetch(context_batch)
-
-    # Get Model inputs
-    model_inputs = model.prepare_initial_token_inputs(
-        context_batch=context_batch,
-        # Flatten the KV cache inputs as expected by PipelineModel.execute.
-        kv_cache_inputs=KVCacheInputsSequence(kv_cache_inputs=kv_cache_inputs),
-    )
-
-    model_outputs = model.execute(model_inputs)
-
-    assert model_outputs.next_token_logits
-    logits = model_outputs.next_token_logits.to_numpy()
-    next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
-
-    has_eos = False
-    for req_id, req_logits, next_token in zip(
-        req_to_context_dict, logits, next_tokens
-    ):
-        update_values[req_id].append(
+    def __call__(self, inputs: ProcessorInputs) -> None:
+        logits = inputs.logits
+        context = inputs.context
+        if self.reached_eos[context.request_id]:
+            return
+        next_token_logits = logits[-1, :].to_numpy().copy()
+        next_token = next_token_logits.argmax(axis=-1)
+        self.values[context.request_id].append(
             {
                 # We record the base next_token here.
                 # If it deviates from the reference, we want to see that.
                 "next_token": next_token,
-                "next_token_logits": req_logits[next_token],
-                "logits": req_logits,
+                "next_token_logits": next_token_logits[next_token],
+                "logits": next_token_logits,
             }
         )
-        # Update the context for the next input.
-        # If we have a reference, always select the reference's next token.
-        if req_id in req_to_reference_dict:
-            ref = req_to_reference_dict[req_id]["values"]
-            ref_next_token = ref[0]["next_token"]
-            next_token = ref_next_token
+        if next_token == self.tokenizer.eos:
+            self.reached_eos[context.request_id] = True
 
-            # Drop token now that it is generated.
-            req_to_reference_dict[req_id]["values"] = ref[1:]
 
-        req_to_context_dict[req_id].update(int(next_token))
-        if next_token == eos_token:
-            has_eos = True
-            break
+class ReplaceLogitsWithReference:
+    def __init__(
+        self, devices: Sequence[Device], reference_by_id: dict[str, ModelOutput]
+    ) -> None:
+        self.reference_by_id = reference_by_id
+        self.step_by_id = {id: 0 for id in reference_by_id}
+        device_ref = DeviceRef.from_device(devices[0])
 
-    model.kv_manager.step(context_batch)
-    return has_eos
+        def _replace_logits(
+            logits: BufferValue, next_token: TensorValue
+        ) -> None:
+            logits[-1, next_token] = ops.constant(
+                1e5, dtype=DType.float32, device=device_ref
+            )
+
+        replace_logits_graph = Graph(
+            "replace_logits",
+            _replace_logits,
+            input_types=[
+                BufferType(
+                    DType.float32, ("seq_len", "vocab_size"), device_ref
+                ),
+                TensorType(DType.int64, (), DeviceRef.CPU()),
+            ],
+        )
+        session = InferenceSession(devices=devices)
+        self.replace_logits = session.load(replace_logits_graph)
+
+    def __call__(self, inputs: ProcessorInputs) -> None:
+        logits = inputs.logits
+        context = inputs.context
+        # Assign the argmax of the reference to the logits.
+        reference = self.reference_by_id[context.request_id]
+        step = self.step_by_id[context.request_id]
+        next_token = reference["values"][step]["next_token"]
+        self.replace_logits(logits, next_token)
+        self.step_by_id[context.request_id] += 1
 
 
 def compare_values(
@@ -276,7 +215,7 @@ def compare_values(
     else:
         raise ValueError(
             f"Unable to compare dictionaries with keys {keys}, does not match "
-            "the expected keys of a text generation or embedding model."
+            "the expected keys of a text generation or embedding pipeline."
         )
 
 

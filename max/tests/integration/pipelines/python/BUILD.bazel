@@ -98,9 +98,6 @@ modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
-    data = [
-        "//SDK/integration-test/pipelines/python/test_common",
-    ],
     env = {
         "PIPELINES_CUSTOM_ARCHITECTURE": "SDK/integration-test/pipelines/python/test_common:pipeline_model_dummy",
     },
@@ -110,6 +107,7 @@ modular_py_test(
     ],
     deps = [
         ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "//SDK/lib/API/python/max/pipelines/lib",
         requirement("transformers"),
