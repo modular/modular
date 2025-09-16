@@ -46,6 +46,8 @@ fn _run_name(ctx: DeviceContext) raises:
         return
     if api == "hip" and "AMD" in ctx_name:
         return
+    if api == "metal" and "Apple" in ctx_name:
+        return
 
     raise "ctx_name malformed"
 

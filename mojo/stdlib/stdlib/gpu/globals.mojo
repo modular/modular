@@ -28,6 +28,7 @@ from sys.info import (
     _is_amd_rdna,
     is_amd_gpu,
     is_nvidia_gpu,
+    is_apple_gpu,
     _accelerator_arch,
 )
 
@@ -64,6 +65,8 @@ fn _resolve_warp_size() -> Int:
         return 32
     elif is_amd_gpu():
         return 64
+    elif is_apple_gpu():
+        return 32
     elif _accelerator_arch() == "":
         return 0
     else:

@@ -17,4 +17,8 @@ modular_run_binary_test(
     binary = "basic",
     external_noop = True,
     tags = ["requires-network"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME long running on MacOS. MOCO-2412
 )

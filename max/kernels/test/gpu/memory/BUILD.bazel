@@ -20,6 +20,13 @@ _OTHER_TESTS = [
     "test_tma_block_reduce.mojo",
 ]
 
+_EXTRA_CONSTRAINTS = {
+    "test_external_and_static_shared_mem.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2397
+}
+
 mojo_filecheck_test(
     name = "test_shared_mem_barrier.mojo.test",
     srcs = ["test_shared_mem_barrier.mojo"],
@@ -140,7 +147,7 @@ mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:layout",
             "@mojo//:linalg",
