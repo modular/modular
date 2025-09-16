@@ -24,7 +24,7 @@ from layout.int_tuple import (
     _get_index_type,
     _get_layout_type,
 )
-from math import ceildiv
+from math import align_up, ceildiv
 from memory import stack_allocation
 from memory.unsafe import bitcast
 from os.atomic import Atomic
@@ -49,6 +49,35 @@ alias RtTuple_4 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
     element_type = DType.int32,
 ]
+
+alias EP_DATA_READY_FLAG = 1 << 10
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct EPMsgConfig:
+    var dtype: DType
+    var hid_dim: Int
+    var top_k: Int
+    var alignment: Int
+
+    fn token_size(self) -> Int:
+        return align_up(self.hid_dim * self.dtype.size_of(), self.alignment)
+
+    fn src_info_size(self) -> Int:
+        return align_up(size_of[Int32](), self.alignment)
+
+    fn topk_info_size(self) -> Int:
+        return align_up(size_of[UInt16]() * self.top_k, self.alignment)
+
+    fn msg_size(self) -> Int:
+        return self.token_size() + self.src_info_size() + self.topk_info_size()
+
+    fn src_info_offset(self) -> Int:
+        return self.token_size()
+
+    fn topk_info_offset(self) -> Int:
+        return self.token_size() + self.src_info_size()
 
 
 @__llvm_metadata(
@@ -125,15 +154,15 @@ fn dispatch_kernel[
 
     alias top_k = topk_ids.shape[1]()
     alias hid_dim = input_tokens.shape[1]()
+    alias msg_config = EPMsgConfig(
+        input_type,
+        hid_dim,
+        top_k,
+        align_of[SIMD[DType.uint8, byte_simd_width]](),
+    )
     constrained[
-        msg_bytes
-        == hid_dim * size_of[Scalar[input_type]]() + 4 * size_of[Int32](),
+        msg_bytes == msg_config.msg_size(),
         "EP dispatch: input shape doesn't match message size.",
-    ]()
-    constrained[
-        msg_bytes % byte_simd_width == 0,
-        "EP dispatch: message size must be divisible by "
-        + String(byte_simd_width),
     ]()
 
     var send_buf_layout = RuntimeLayout[
@@ -237,14 +266,31 @@ fn dispatch_kernel[
                     ),
                 )
 
-            if tid == 0:
+            if tid < UInt(top_k):
+                # Store all the top-k expert IDs in current token's message.
+                # The remote device will use the expert ID to determine a token's
+                # top-k id.
+                # Cast the expert ID to a 16-bit integer to save space.
+                var top_k_idx = topk_ids.load[width=1](token_idx, tid)
                 curr_send_buf_ptr.store[
-                    width = size_of[Int32](),
-                    alignment = align_of[DType.int32](),
+                    width = size_of[UInt16](),
+                    alignment = align_of[DType.uint16](),
                 ](
-                    hid_dim * size_of[Scalar[input_type]](),
-                    bitcast[DType.uint8, size_of[Int32]()](Int32(token_idx)),
+                    msg_config.topk_info_offset() + tid * size_of[UInt16](),
+                    bitcast[DType.uint8, size_of[UInt16]()](UInt16(top_k_idx)),
                 )
+
+                # Store the source token index in current token's message.
+                if tid == 0:
+                    curr_send_buf_ptr.store[
+                        width = size_of[Int32](),
+                        alignment = align_of[DType.int32](),
+                    ](
+                        msg_config.src_info_offset(),
+                        bitcast[DType.uint8, size_of[Int32]()](
+                            Int32(token_idx)
+                        ),
+                    )
 
             barrier()
 
@@ -316,6 +362,7 @@ fn dispatch_cb_kernel[
     src_token_info_layout: Layout,
     n_sms: Int,
     n_aux_sms: Int,
+    top_k: Int,
     n_experts: Int,
     n_ranks: Int,
     msg_bytes: Int,
@@ -353,6 +400,7 @@ fn dispatch_cb_kernel[
         src_token_info_layout: The layout of the source token info.
         n_sms: The total number of SMs in the device.
         n_aux_sms: The number of auxiliary SMs in the device.
+        top_k: The number of selected experts per token.
         n_experts: The number of experts in the device.
         n_ranks: The number of ranks.
         msg_bytes: The number of bytes in the message for each token.
@@ -376,7 +424,6 @@ fn dispatch_cb_kernel[
         atomic_counter: The pointer to the atomic counter.
         my_rank: The rank of the current device.
     """
-    alias DATA_READY_FLAG = 1024
     alias n_local_experts = n_experts // n_ranks
     alias n_warps = num_threads // WARP_SIZE
     alias n_comm_sms = n_sms - n_aux_sms
@@ -384,10 +431,15 @@ fn dispatch_cb_kernel[
     alias hid_dim = output_tokens.shape[1]()
     alias dst_simd_width = simd_width_of[output_type]()
     alias byte_simd_width = simd_width_of[DType.uint8]()
+    alias msg_config = EPMsgConfig(
+        output_type,
+        hid_dim,
+        top_k,
+        align_of[SIMD[DType.uint8, byte_simd_width]](),
+    )
     constrained[
-        msg_bytes
-        == hid_dim * size_of[Scalar[output_type]]() + 4 * size_of[Int32](),
-        "EP dispatch: output shape doesn't match message size.",
+        msg_bytes == msg_config.msg_size(),
+        "EP dispatch: input shape doesn't match message size.",
     ]()
     constrained[
         n_local_experts <= n_warps,
@@ -491,9 +543,9 @@ fn dispatch_cb_kernel[
 
             if target_rank < n_ranks:
                 atomic_counter.store(
-                    expert_rank_offset,
+                    expert_rank_offset * 2,
                     Int32(
-                        DATA_READY_FLAG
+                        EP_DATA_READY_FLAG
                         + prev_expert_offset
                         + prefix_sum_arr[round_i]
                     ),
@@ -532,11 +584,11 @@ fn dispatch_cb_kernel[
 
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
-        var offset_ptr = atomic_counter.offset(expert_rank_offset)
+        var offset_ptr = atomic_counter.offset(expert_rank_offset * 2)
         var output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
-        while output_offset < DATA_READY_FLAG:
+        while output_offset < EP_DATA_READY_FLAG:
             output_offset = load_acquire[scope = Scope.GPU](offset_ptr)
-        output_offset -= DATA_READY_FLAG
+        output_offset -= EP_DATA_READY_FLAG
 
         var token_count = Int32(recv_count_p.load(expert_rank_offset))
         output_offset -= token_count
@@ -570,18 +622,29 @@ fn dispatch_cb_kernel[
                     ),
                 )
 
-            if lane_id() == 0:
-                # Store the source token index and the rank of the source device.
-                var src_idx = bitcast[DType.int32, 1](
-                    recv_buf_ptr.load[width = size_of[Int32]()](
-                        hid_dim * size_of[output_type]()
+            if lane_id() < UInt(top_k):
+                # Load top-k expert IDs from the token's message.
+                var src_topk_idx = bitcast[DType.uint16, 1](
+                    recv_buf_ptr.load[width = size_of[UInt16]()](
+                        msg_config.topk_info_offset()
+                        + lane_id() * size_of[UInt16](),
                     )
                 )
+                var global_expert_idx = (
+                    my_rank * n_local_experts + local_expert_id
+                )
+                if global_expert_idx == Int32(src_topk_idx):
+                    # Store the source token index and the top-k id.
+                    var src_idx = bitcast[DType.int32, 1](
+                        recv_buf_ptr.load[width = size_of[Int32]()](
+                            msg_config.src_info_offset()
+                        )
+                    )
 
-                src_token_info[0, token_pos] = src_idx
-                src_token_info[1, token_pos] = target_rank
+                    src_token_info[token_pos, 0] = src_idx
+                    src_token_info[token_pos, 1] = lane_id()
 
         barrier()
         if lane_id() == 0 and warp_id_in_wg == 0:
             recv_count_p.store(expert_rank_offset, UInt64.MAX_FINITE)
-            offset_ptr.store(0)
+            offset_ptr.store(1, token_count)
