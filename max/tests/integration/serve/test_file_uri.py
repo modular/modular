@@ -82,7 +82,7 @@ async def test_chat_completion_with_file_uri(
                 ],
                 "stream": False,
                 "top_k": 1,
-                "max_new_tokens": 3,
+                "max_tokens": 3,
             },
         )
 
@@ -141,7 +141,7 @@ async def test_file_uri_security_check(app: FastAPI, tmp_path: Path) -> None:
                     ],
                     "stream": False,
                     "top_k": 1,
-                    "max_new_tokens": 3,
+                    "max_tokens": 3,
                 },
             )
 

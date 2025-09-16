@@ -85,7 +85,7 @@ async def test_served_model_name(app: FastAPI) -> None:
                 "model": MODEL_ALIAS,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
-                "max_new_tokens": 3,
+                "max_tokens": 3,
             },
         )
         # Validate response
@@ -98,7 +98,7 @@ async def test_served_model_name(app: FastAPI) -> None:
                 "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
-                "max_new_tokens": 3,
+                "max_tokens": 3,
             },
         )
         # Validate request failed

@@ -69,7 +69,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                     "model": MODEL_NAME,
                     "messages": [{"role": "user", "content": "tell me a joke"}],
                     "stream": False,
-                    "max_new_tokens": 3,
+                    "max_tokens": 3,
                 },
             )
             # This is not a streamed completion - There is no [DONE] at the end.
@@ -143,7 +143,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                     "model": MODEL_NAME,
                     "messages": [{"role": "user", "content": "tell me a joke"}],
                     "stream": False,
-                    "max_new_tokens": 3,
+                    "max_tokens": 3,
                 },
             )
 

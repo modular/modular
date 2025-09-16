@@ -51,7 +51,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
                 "model": MODEL_NAME,
                 "messages": [{"role": "user", "content": "tell me a joke"}],
                 "stream": False,
-                "max_new_tokens": 3,
+                "max_tokens": 3,
             },
         )
         # This is not a streamed completion - There is no [DONE] at the end.
@@ -97,7 +97,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app: FastAPI) -> None:
             "model": MODEL_NAME,
             "prompt": content,
             "temperature": 0.7,
-            "max_new_tokens": 3,
+            "max_tokens": 3,
         }
 
     async def main_stream(client: TestClient, msg: str) -> str:
