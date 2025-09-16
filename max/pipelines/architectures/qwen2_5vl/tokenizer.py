@@ -372,10 +372,10 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )  # We ignore video_inputs for image-only use case
         else:
             # Fall back to using the loaded images
-            logger.info(
-                "Loading images from request.images rather than messages, not using process_vision_info"
-            )
             if request.images:
+                logger.info(
+                    "Loading images from request.images rather than messages, not using process_vision_info"
+                )
                 image_inputs = [
                     fetch_image({"image": image_data})
                     for image_data in request.images
