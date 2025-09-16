@@ -212,6 +212,9 @@ def test_iter():
     assert_equal(keys, "ab")
     _test_iter_bounds(dict.__iter__(), len(dict))
 
+    var empty_dict: Dict[String, Int] = {}
+    assert_equal(iter(empty_dict).__has_next__(), False)
+
 
 def test_iter_keys():
     var dict: Dict[String, Int] = {}
