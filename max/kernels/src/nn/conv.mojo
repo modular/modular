@@ -392,7 +392,7 @@ struct ConvDirectNHWC[
     var conv_shape: ConvShape[input_rank - 2]
 
     # Support partition in 4 dims: (n, c, f, ho_or_howo). If the input is
-    # padded, the output spacial dims are merged into one as howo. If not
+    # padded, the output spatial dims are merged into one as howo. If not
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 

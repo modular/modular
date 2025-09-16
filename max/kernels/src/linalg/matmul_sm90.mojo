@@ -2268,7 +2268,7 @@ fn warp_specialize_gemm_with_multicasting[
     # we need to use cp.async.ca for 4B and 8B access, and ld for
     # 2B or smaller access.
     # Note that K * size_of[a_type]() decides the 2nd row's alignment
-    # and Nvidia requries access alignmend by access size.
+    # and Nvidia requires access alignment by access size.
     # Dispatch kernel using TMA load when the stride is multiple of 16B.
     @parameter
     if k_align == 16:

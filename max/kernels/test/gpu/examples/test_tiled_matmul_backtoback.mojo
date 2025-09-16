@@ -250,7 +250,7 @@ fn b2b_gemm[
     )
 
     # Each pipeline stage has its own buffer.
-    # We re-use `b_smem` for both `B` and `C`
+    # We reuse `b_smem` for both `B` and `C`
     var b_smem = (a_smem + a_smem_size).bitcast[Scalar[in_type]]()
     alias b_smem_size = num_pipeline_stages * BK * BN
     alias BD_0 = BN if transpose_b else BK

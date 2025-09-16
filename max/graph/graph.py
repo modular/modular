@@ -524,7 +524,7 @@ class Graph:
         """Create a region of the graph with tasks guaranteed to execute
         independently.
 
-        Overrides the implicit chaining of the graph to allow for asyncronous
+        Overrides the implicit chaining of the graph to allow for asynchronous
         execution of operations which might mutate state.
 
         Returns:

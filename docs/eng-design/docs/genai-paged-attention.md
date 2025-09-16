@@ -407,7 +407,7 @@ comparatively cheaper than re-computation.
 ### Implementing Prefix Caching
 
 Prefix caching is implemented in both vLLM and SGLang using entirely different
-strategies. vLLM uses a hasing based implementation while SGLang uses a Trie based
+strategies. vLLM uses a hashing based implementation while SGLang uses a Trie based
 implementation.
 
 **SGLang utilizes a Radix Trie data structure:**
@@ -453,7 +453,7 @@ million tokens).
 
 Unlike the basic PagedAttention algorithm which removes a request’s pages from
 the cache once it is terminated, with prefix caching they remain there to
-potentially be re-used in future.
+potentially be reused in future.
 
 This means that over time the paged cache slowly fills up more and more. As
 such, the prefix cache need to **evict blocks** that are not in use by an

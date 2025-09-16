@@ -228,7 +228,7 @@ struct TiledMatmul[
         last_k_tile: Bool,
     ):
         """
-        Helper function: Pack a subtile of B and iterate through all the rows
+        Helper function: Pack a sub-tile of B and iterate through all the rows
             of C.
 
         Parameters:

@@ -147,7 +147,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
 fn _reshape_to_3d[layout: Layout]() -> Layout:
     alias rank = len(layout.shape)
 
-    # NOTE: need to cast becasue int tuple returns comptime int
+    # NOTE: need to cast because int tuple returns comptime int
     alias last = Int(layout.shape[rank - 1])
     alias second_last = Int(layout.shape[rank - 2])
 

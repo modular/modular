@@ -182,7 +182,7 @@ def execute_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    # Create sink weights (weird lifetime behavior if inside of parameter if, so we always creted it)
+    # Create sink weights (weird lifetime behavior if inside of parameter if, so we always create it)
     # TODO: fix this
     var sink_weights_shape = IndexList[1](num_q_heads)
     var sink_weights_host = HostNDBuffer[dtype, 1](sink_weights_shape)
