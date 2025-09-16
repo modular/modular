@@ -21,6 +21,7 @@ import ctypes
 import itertools
 import json
 import logging
+import math
 import os
 import platform
 import random
@@ -945,7 +946,7 @@ async def benchmark(
     else:
         distribution = "Gamma distribution"
 
-    logger.info(f"Traffic request rate: {request_rate}")
+    logger.info(f"Input request rate: {request_rate}")
     logger.info(f"Burstiness factor: {burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
@@ -1180,9 +1181,11 @@ async def benchmark(
             metrics.nonempty_response_chunks,
         )
     )
+    offline_benchmark = math.isinf(request_rate) and max_concurrency is None
     print(
         "{:<40} {:<10.5f}".format(
-            "Request rate (req/s):", achieved_request_rate
+            "Input request rate (req/s):",
+            float("inf") if offline_benchmark else achieved_request_rate,
         )
     )
     print(
