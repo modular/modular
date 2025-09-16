@@ -66,6 +66,9 @@ struct Node[
         """
         return String.write(self.value)
 
+    fn _into_value(deinit self) -> ElementType:
+        return self.value^
+
     @no_inline
     fn write_to[
         ElementType: Copyable & Movable & Writable
@@ -312,16 +315,15 @@ struct LinkedList[
         if not elem:
             raise "Pop on empty list."
 
-        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
-        var value = elem[].value.copy()
-        self._tail = elem[].prev
+        var node = elem.take_pointee()
+        self._tail = node.prev
         self._size -= 1
         if self._size == 0:
             self._head = Self._NodePointer()
         else:
             self._tail[].next = Self._NodePointer()
         elem.free()
-        return value^
+        return node^._into_value()
 
     fn pop[I: Indexer, //](mut self, var i: I) raises -> ElementType:
         """Remove the ith element of the list, counting from the tail if
@@ -343,7 +345,7 @@ struct LinkedList[
         var current = self._get_node_ptr(idx)
 
         if current:
-            var node = current[].copy()
+            var node = current.take_pointee()
             if node.prev:
                 node.prev[].next = node.next
             else:
@@ -353,15 +355,9 @@ struct LinkedList[
             else:
                 self._tail = node.prev
 
-            var data = node.value^
-
-            # Aside from T, destructor is trivial
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(node)
-            )
             current.free()
             self._size -= 1
-            return data^
+            return node^._into_value()
 
         raise Error("Invalid index for pop: ", idx)
 
@@ -377,16 +373,15 @@ struct LinkedList[
         var elem = self._tail
         if not elem:
             return Optional[ElementType]()
-        # FIXME(MSTDL-1755): Should this copy be a move; are we leaking `value`?
-        var value = elem[].value.copy()
-        self._tail = elem[].prev
+        var node = elem.take_pointee()
+        self._tail = node.prev
         self._size -= 1
         if self._size == 0:
             self._head = Self._NodePointer()
         else:
             self._tail[].next = Self._NodePointer()
         elem.free()
-        return value^
+        return node^._into_value()
 
     fn maybe_pop[I: Indexer, //](mut self, var i: I) -> Optional[ElementType]:
         """Remove the ith element of the list, counting from the tail if
@@ -409,7 +404,7 @@ struct LinkedList[
         if not current:
             return Optional[ElementType]()
         else:
-            var node = current[].copy()
+            var node = current.take_pointee()
             if node.prev:
                 node.prev[].next = node.next
             else:
@@ -419,15 +414,9 @@ struct LinkedList[
             else:
                 self._tail = node.prev
 
-            var data = node.value^
-
-            # Aside from T, destructor is trivial
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(node)
-            )
             current.free()
             self._size -= 1
-            return Optional[ElementType](data^)
+            return Optional[ElementType](node^._into_value())
 
     fn clear(mut self):
         """Removes all elements from the list.

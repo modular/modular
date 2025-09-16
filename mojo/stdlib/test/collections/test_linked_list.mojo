@@ -97,6 +97,26 @@ def test_pop():
     assert_equal(l1[1], 2)
 
 
+def test_pop_copies():
+    var l1 = LinkedList[CopyCounter](
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+        CopyCounter(),
+    )
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 4)
+    assert_equal(l1.pop().copy_count, 0)
+    assert_equal(len(l1), 3)
+    assert_equal(l1.pop(1).copy_count, 0)
+    assert_equal(len(l1), 2)
+    assert_equal(l1.maybe_pop(1).value().copy_count, 0)
+    assert_equal(len(l1), 1)
+    assert_equal(l1.maybe_pop().value().copy_count, 0)
+    assert_equal(len(l1), 0)
+
+
 def test_getitem():
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1[0], 1)
@@ -596,6 +616,7 @@ def main():
     test_copy()
     test_reverse()
     test_pop()
+    test_pop_copies()
     test_getitem()
     test_setitem()
     test_str()
