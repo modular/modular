@@ -63,7 +63,6 @@ load(
         ["**/test_*.py"],
         exclude = [
             "**/*_gpu.py",
-            "**/test_pipeline_parallel_*.py",  # Exclude PP tests from general glob
         ],
     )
 ]
@@ -73,9 +72,6 @@ modular_py_test(
     size = "enormous",
     srcs = glob(
         ["test_*_gpu.py"],
-        exclude = [
-            "test_pipeline_parallel_*.py",  # Exclude PP tests from general GPU tests
-        ],
     ) + [
         "conftest.py",
     ],
@@ -116,69 +112,5 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("setuptools"),
-    ],
-)
-
-# Pipeline Parallel Core Tests (Single GPU, Fast)
-modular_py_test(
-    name = "test_pipeline_parallel_core_gpu",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_pipeline_parallel_core_gpu.py",
-    ],
-    data = [
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    exec_properties = {
-        "resources:gpu-memory": "8",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "no-sandbox",
-    ],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        requirement("transformers"),
-        requirement("hypothesis"),
-    ],
-)
-
-# Pipeline Parallel Execution Tests (Multi-GPU, Critical)
-modular_py_test(
-    name = "test_pipeline_parallel_execution_gpu",
-    size = "enormous",
-    srcs = [
-        "conftest.py",
-        "test_pipeline_parallel_execution_gpu.py",
-    ],
-    data = [
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    exec_properties = {
-        "resources:gpu-memory": "22",
-    },
-    gpu_constraints = ["//:has_multi_gpu"],
-    tags = [
-        "gpu",
-        "no-sandbox",
-    ],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        requirement("transformers"),
-        requirement("hypothesis"),
     ],
 )
