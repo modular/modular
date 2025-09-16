@@ -60,9 +60,7 @@ modular_py_library(
 modular_py_library(
     name = "benchmark_datasets",
     srcs = ["benchmark_datasets.py"],
-    data = [
-        ":dataset_files",
-    ],
+    data = glob(["datasets/**/*"]),
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
@@ -105,13 +103,6 @@ pkg_files(
             "serving-benchmarking/**",
         ],
     ),
-    prefix = "benchmark",
-    visibility = ["//visibility:public"],
-)
-
-pkg_files(
-    name = "dataset_files",
-    srcs = glob(["datasets/**/*"]),
     prefix = "benchmark",
     visibility = ["//visibility:public"],
 )
