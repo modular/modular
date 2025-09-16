@@ -65,7 +65,7 @@ struct OwnedPointer[T: AnyType]:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
         self._inner = UnsafePointer[T].alloc(1)
-        self._inner.init_pointee_explicit_copy(copy_value)
+        self._inner.init_pointee_copy(copy_value)
 
     fn __init__[
         T: Copyable, U: NoneType = None

@@ -64,14 +64,14 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_explicit_copy():
+def test_unsafepointer_init_pointee_copy():
     var ptr = UnsafePointer[ExplicitCopyOnly].alloc(1)
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
 
     # Test initialize pointee from `Copyable` type
-    ptr.init_pointee_explicit_copy(orig)
+    ptr.init_pointee_copy(orig)
 
     assert_equal(ptr[].value, 5)
     assert_equal(ptr[].copy_count, 1)
@@ -380,7 +380,7 @@ def main():
 
     test_unsafepointer_of_move_only_type()
     test_unsafepointer_move_pointee_move_count()
-    test_unsafepointer_init_pointee_explicit_copy()
+    test_unsafepointer_init_pointee_copy()
 
     test_explicit_copy_of_pointer_address()
     test_bitcast()

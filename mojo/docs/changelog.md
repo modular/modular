@@ -315,6 +315,9 @@ language across multiple phases.
             return Self.__copyinit__(self)
     ```
 
+  - The `UnsafePointer.init_pointee_explicit_copy()` method has been removed.
+    Please use `UnsafePointer.init_pointee_copy()` instead.
+
 - A new `Some` utility is introduced to reduce the syntactic load of declaring
   function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing
