@@ -835,6 +835,18 @@ fn test_transpose() raises:
     assert_equal(col_major.cosize(), trans_col.cosize())
 
 
+def test_iter():
+    var layout = Layout.row_major(1, 2, 3, 4)
+    var it = iter(layout)
+    assert_equal(next(it), Layout(1, 24))
+    assert_equal(next(it), Layout(2, 12))
+    assert_equal(next(it), Layout(3, 4))
+    assert_equal(next(it), Layout(4, 1))
+    assert_equal(it.__has_next__(), False)
+    var layout2 = Layout()
+    assert_equal(iter(layout2).__has_next__(), False)
+
+
 def main():
     test_layout_basic()
     test_unknowns()
@@ -855,3 +867,4 @@ def main():
     test_upcast()
     test_right_inverse()
     test_transpose()
+    test_iter()

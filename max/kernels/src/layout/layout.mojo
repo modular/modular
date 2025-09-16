@@ -246,7 +246,9 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
 
 @fieldwise_init
-struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
+struct _LayoutIter[origin: ImmutableOrigin](
+    ImplicitlyCopyable, Iterable, Iterator, Movable
+):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,
@@ -261,10 +263,14 @@ struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
         layout: Pointer to the `Layout` being iterated.
     """
 
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    alias Element = Layout
     var index: Int
     var layout: Pointer[Layout, origin]
 
-    fn __next__(mut self) -> Layout:
+    fn __next__(mut self) -> Self.Element:
         """Returns the next sub-layout in the iteration.
 
         Advances the iterator and returns a Layout containing the shape and stride
@@ -298,11 +304,21 @@ struct _LayoutIter[origin: ImmutableOrigin](ImplicitlyCopyable, Movable):
         """
         return len(self.layout[].shape) - self.index
 
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var size = len(self.layout[].shape) - self.index
+        return (size, {size})
+
 
 struct Layout(
     Defaultable,
     EqualityComparable,
     ImplicitlyCopyable,
+    Iterable,
     LayoutTrait,
     Movable,
     Sized,
@@ -349,6 +365,10 @@ struct Layout(
     4 elements in memory, while moving one unit in the second dimension requires
     skipping 1 element.
     """
+
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = _LayoutIter[ImmutableOrigin.cast_from[iterable_origin]]
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -843,7 +863,7 @@ struct Layout(
         return len(self.shape)
 
     @always_inline("nodebug")
-    fn __iter__(self) -> _LayoutIter[__origin_of(self)]:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Returns an iterator over the layout's dimensions.
 
         Each iteration yields a Layout containing the shape and stride for one dimension.
