@@ -768,227 +768,33 @@ fn _matmul_gpu[
 
                     return config_list^
 
+                alias sm_count = Int(ctx.default_device_info.sm_count)
+                alias config_list = build_config_list()
+
+                var best_idx = 0
+                var best_score = Int.MAX
+
                 @parameter
-                if ctx.default_device_info is MI355X:
-                    alias sm_count = Int(ctx.default_device_info.sm_count)
-                    alias config_list = build_config_list()
+                for i in range(len(config_list)):
+                    alias config = config_list[i]
+                    alias block_m = config.block_tile_shape[0]
+                    alias block_n = config.block_tile_shape[1]
+                    alias n_blocks = ceildiv(static_N, block_n)
 
-                    var best_idx = 0
-                    var best_score = Int.MAX
+                    var m_blocks = ceildiv(m, block_m)
+                    var total_blocks = m_blocks * n_blocks
+                    var batch, extra = divmod(total_blocks - 1, sm_count)
+                    var score = batch * sm_count + (sm_count - extra - 1)
 
-                    @parameter
-                    for i in range(len(config_list)):
-                        alias config = config_list[i]
-                        alias block_m = config.block_tile_shape[0]
-                        alias block_n = config.block_tile_shape[1]
-                        alias n_blocks = ceildiv(static_N, block_n)
+                    if score < best_score:
+                        best_idx = i
+                        best_score = score
 
-                        var m_blocks = ceildiv(m, block_m)
-                        var total_blocks = m_blocks * n_blocks
-                        var batch, extra = divmod(total_blocks - 1, sm_count)
-                        var score = batch * sm_count + (sm_count - extra - 1)
-
-                        if score < best_score:
-                            best_idx = i
-                            best_score = score
-
-                    @parameter
-                    for i in range(len(config_list)):
-                        if best_idx == i:
-                            return _multistage_gemm[config_list[i]]()
-
-                # mistral-small-24b auto-tuned shapes
                 @parameter
-                if static_N == 5120 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[192, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[96, 64]()
-                    elif m >= 500:
-                        return kernel_helper[128, 160, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[128, 160, num_k_partitions=4]()
-                elif static_N == 6144 and static_K == 5120:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 192]()
-                    elif m >= 512:
-                        return kernel_helper[192, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 128]()
-                    elif m >= 256:
-                        return kernel_helper[128, 192, num_k_partitions=4]()
-                elif static_N == 65536 and static_K == 5120:
-                    if m > 384:
-                        return kernel_helper[256, 256]()
-                    elif m > 256:
-                        return kernel_helper[192, 256]()
-                    elif m > 192:
-                        return kernel_helper[256, 256]()
-                    elif m > 128:
-                        return kernel_helper[192, 256]()
-                    elif m > 64:
-                        return kernel_helper[128, 256]()
-                elif static_N == 5120 and static_K == 32768:
-                    if m >= 8192:
-                        return kernel_helper[192, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 160, num_k_partitions=4]()
-                    elif m >= 500:
-                        return kernel_helper[192, 224, num_k_partitions=4]()
-                    elif m >= 256:
-                        return kernel_helper[128, 96, num_k_partitions=8]()
+                for i in range(len(config_list)):
+                    if best_idx == i:
+                        return _multistage_gemm[config_list[i]]()
 
-                # gemma-3-12b auto-tuned shapes
-                @parameter
-                if static_N == 3840 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 192]()
-                    elif m >= 512:
-                        return kernel_helper[96, 160, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 160, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[128, 128, num_k_partitions=4]()
-                elif static_N == 3840 and static_K == 15360:
-                    if m >= 8192:
-                        return kernel_helper[256, 224]()
-                    elif m >= 7000:
-                        return kernel_helper[224, 224]()
-                    elif m >= 3500:
-                        return kernel_helper[224, 224]()
-                    elif m >= 512:
-                        return kernel_helper[96, 160, num_k_partitions=4]()
-                    elif m >= 500:
-                        return kernel_helper[96, 160, num_k_partitions=4]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224, num_k_partitions=8]()
-                elif static_N == 8192 and static_K == 3840:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif m >= 256:
-                        return kernel_helper[64, 64]()
-                elif static_N == 30720 and static_K == 3840:
-                    if m >= 8192:
-                        return kernel_helper[256, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 256]()
-                    elif m >= 500:
-                        return kernel_helper[256, 224]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224]()
-                elif static_N == 262208 and static_K == 3840:
-                    return kernel_helper[256, 256]()
-
-                # llama3 auto-tuned shapes
-                @parameter
-                if static_N == 4096 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 224]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[64, 64]()
-                    elif m >= 500:
-                        return kernel_helper[64, 64]()
-                    elif m >= 256:
-                        return kernel_helper[128, 128, num_k_partitions=4]()
-                elif static_N == 4096 and static_K == 14336:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 224, num_k_partitions=8]()
-                    elif m >= 500:
-                        return kernel_helper[256, 224, num_k_partitions=8]()
-                    elif m >= 256:
-                        return kernel_helper[128, 224, num_k_partitions=8]()
-                elif static_N == 6144 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[224, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[192, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[192, 192]()
-                    elif m >= 512:
-                        return kernel_helper[192, 128, num_k_partitions=2]()
-                    elif m >= 500:
-                        return kernel_helper[96, 128]()
-                    elif m >= 256:
-                        return kernel_helper[128, 192, num_k_partitions=4]()
-                elif static_N == 28672 and static_K == 4096:
-                    if m >= 8192:
-                        return kernel_helper[256, 256]()
-                    elif m >= 7000:
-                        return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[224, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 192]()
-                    elif m >= 500:
-                        return kernel_helper[256, 192]()
-                    elif m >= 256:
-                        return kernel_helper[128, 96]()
-
-                # Default tune based on llama3
-                @parameter
-                if static_N >= 28672 and static_K >= 2048:
-                    if m >= 1024:
-                        return kernel_helper[224, 256]()
-                    elif m >= 128:
-                        return kernel_helper[128, 128]()
-                    else:
-                        return kernel_helper[64, 64]()
-                elif static_N >= 2048 and static_K >= 2048:
-                    if m >= 4096:
-                        return kernel_helper[224, 256]()
-                    elif m >= 1024:
-                        return kernel_helper[128, 128]()
-                    elif m >= 512:
-                        return kernel_helper[128, 128, num_k_partitions=2]()
-                    elif static_K == 14336:
-                        if m >= 128:
-                            return kernel_helper[64, 64, num_k_partitions=4]()
-                        elif m >= 64:
-                            return kernel_helper[64, 64, num_k_partitions=8]()
-                        else:
-                            return kernel_helper[32, 64, num_k_partitions=4]()
-                    elif m >= 64:
-                        return kernel_helper[64, 64]()
-                    else:
-                        return kernel_helper[32, 64, num_k_partitions=4]()
                 return kernel_helper[128, 128]()
 
             else:
