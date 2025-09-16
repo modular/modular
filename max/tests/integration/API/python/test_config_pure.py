@@ -723,6 +723,56 @@ def test_config__validates_lora_configuration(
     assert config.lora_config.max_num_loras == 100
 
 
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__validates_lora_only_supported_for_llama(
+    gemma_3_1b_it_local_path: str,
+) -> None:
+    """Test that LoRA validation fails for non-Llama models."""
+    # Import and register Gemma architecture for testing
+    from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH
+
+    PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH, allow_override=True)
+
+    # Test that enabling LoRA on a non-Llama model raises ValueError
+    with pytest.raises(
+        ValueError,
+        match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
+    ):
+        _ = PipelineConfig(
+            model_path=gemma_3_1b_it_local_path,
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1,
+            enable_lora=True,
+            lora_paths=["/some/lora/path"],
+            quantization_encoding=SupportedEncoding.bfloat16,
+        )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__validates_lora_works_for_llama(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Test that LoRA validation passes for Llama models."""
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
+
+    # Test that enabling LoRA on a Llama model works without error
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.accelerator()],
+        max_length=1,
+        enable_lora=True,
+        lora_paths=["/some/lora/path"],
+        quantization_encoding=SupportedEncoding.bfloat16,
+    )
+
+    # Verify LoRA config was created successfully
+    assert config.lora_config is not None
+    assert config.lora_config.enable_lora is True
+    assert config.lora_config.lora_paths == ["/some/lora/path"]
+
+
 @mock_pipeline_config_hf_dependencies
 def test_integration_full_config_initialization_do_penalties_speculative_decoding() -> (
     None
