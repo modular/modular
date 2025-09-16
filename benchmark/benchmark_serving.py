@@ -40,25 +40,6 @@ from urllib.parse import urlparse
 import aiohttp
 import numpy as np
 import yaml
-from benchmark_config import ServingBenchmarkConfig, parse_benchmark_args
-from benchmark_cpu_metrics import CpuMetricsCollector, collect_pids_for_port
-from benchmark_datasets import (
-    ArxivSummarizationBenchmarkDataset,
-    AxolotlBenchmarkDataset,
-    BenchmarkDataset,
-    CodeDebugBenchmarkDataset,
-    ObfuscatedConversationsBenchmarkDataset,
-    RandomBenchmarkDataset,
-    ShareGPTBenchmarkDataset,
-    SonnetBenchmarkDataset,
-    VisionArenaBenchmarkDataset,
-)
-from metrics import (
-    BenchmarkMetrics,
-    StandardPercentileMetrics,
-    ThroughputMetrics,
-)
-from sample_workload_utils import ChatSession, OpenAIImage, SampledRequest
 from tqdm.asyncio import tqdm
 from transformers import (
     AutoTokenizer,
@@ -66,6 +47,67 @@ from transformers import (
     PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
 )
+
+try:
+    from .benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ServingBenchmarkConfig,
+        parse_benchmark_args,
+    )
+    from .benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        CpuMetricsCollector,
+        collect_pids_for_port,
+    )
+    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ArxivSummarizationBenchmarkDataset,
+        AxolotlBenchmarkDataset,
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+        ObfuscatedConversationsBenchmarkDataset,
+        RandomBenchmarkDataset,
+        ShareGPTBenchmarkDataset,
+        SonnetBenchmarkDataset,
+        VisionArenaBenchmarkDataset,
+    )
+    from .metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BenchmarkMetrics,
+        StandardPercentileMetrics,
+        ThroughputMetrics,
+    )
+    from .sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ChatSession,
+        OpenAIImage,
+        SampledRequest,
+    )
+except ImportError:
+    from benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ServingBenchmarkConfig,
+        parse_benchmark_args,
+    )
+    from benchmark_cpu_metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        CpuMetricsCollector,
+        collect_pids_for_port,
+    )
+    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ArxivSummarizationBenchmarkDataset,
+        AxolotlBenchmarkDataset,
+        BenchmarkDataset,
+        CodeDebugBenchmarkDataset,
+        ObfuscatedConversationsBenchmarkDataset,
+        RandomBenchmarkDataset,
+        ShareGPTBenchmarkDataset,
+        SonnetBenchmarkDataset,
+        VisionArenaBenchmarkDataset,
+    )
+    from metrics import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        BenchmarkMetrics,
+        StandardPercentileMetrics,
+        ThroughputMetrics,
+    )
+    from sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        ChatSession,
+        OpenAIImage,
+        SampledRequest,
+    )
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -114,7 +156,7 @@ def is_nvml_available() -> bool:
 
 @dataclass
 class RequestFuncInput:
-    prompt: Union[str, list[dict]]
+    prompt: Union[str, list[dict[str, Any]]]
     img: Optional[OpenAIImage]
     api_url: str
     prompt_len: int
@@ -781,7 +823,7 @@ async def chat_session_driver(
     content_idx = 0  # Assume user initiates the conversation
 
     session_outputs = []
-    message_history: list[dict] = []
+    message_history: list[dict[str, Any]] = []
     chat_len = 0
 
     messages = chat_session.messages
@@ -888,7 +930,7 @@ async def benchmark(
 
     if do_test_prompt:
         logger.info("Starting initial single prompt test run...")
-        test_prompt: Union[str, list[dict]]
+        test_prompt: Union[str, list[dict[str, Any]]]
         if num_chat_sessions:
             test_question = chat_sessions[0].messages[0]
             test_answer = chat_sessions[0].messages[1]
@@ -978,7 +1020,7 @@ async def benchmark(
         benchmark_should_end_time = (
             benchmark_start_time + max_benchmark_duration_s * 1e9
         )
-    tasks: list[asyncio.Task] = []
+    tasks: list[asyncio.Task] = []  # type: ignore[type-arg, unused-ignore]
     outputs: list[RequestFuncOutput] = []
     if not num_chat_sessions:
         # single-turn chat scenario

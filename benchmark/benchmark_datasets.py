@@ -28,16 +28,28 @@ import numpy as np
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 from PIL import Image
-from sample_workload_utils import (
-    CODE_DEBUG_TEMPLATE,
-    ChatSession,
-    CodeDebugLine,
-    ObfuscatedConversationsLine,
-    SampledRequest,
-    build_chat_message,
-    encode_image,
-)
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+try:
+    from .sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        CODE_DEBUG_TEMPLATE,
+        ChatSession,
+        CodeDebugLine,
+        ObfuscatedConversationsLine,
+        SampledRequest,
+        build_chat_message,
+        encode_image,
+    )
+except ImportError:
+    from sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        CODE_DEBUG_TEMPLATE,
+        ChatSession,
+        CodeDebugLine,
+        ObfuscatedConversationsLine,
+        SampledRequest,
+        build_chat_message,
+        encode_image,
+    )
 
 logger = logging.getLogger("benchmark_datasets")
 

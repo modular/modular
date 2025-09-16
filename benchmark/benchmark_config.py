@@ -23,14 +23,27 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from benchmark_datasets import DATASET_REGISTRY, DatasetMode
+
+try:
+    from .benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore]
+        DATASET_REGISTRY,
+        DatasetMode,
+    )
+except ImportError:
+    from benchmark_datasets import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        DATASET_REGISTRY,
+        DatasetMode,
+    )
 
 logger = logging.getLogger("max.benchmark")
 
 # Workaround for when we don't have max.pipelines installed. This assumes that
 # we copied the max_config.py file to the current directory.
 try:
-    from max.pipelines.lib import MAXConfig, deep_merge_max_configs
+    from max.pipelines.lib import (  # type: ignore[import-not-found, unused-ignore, no-redef]
+        MAXConfig,
+        deep_merge_max_configs,
+    )
 except (ImportError, ModuleNotFoundError):
     logger.warning(
         "max.pipelines.lib not found, using max_config.py from current directory"
@@ -508,7 +521,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
 # Convenience functions for loading specific configuration types
 def load_base_benchmark_config(
-    config_file: str = "base_config.yaml", overrides: Optional[dict] = None
+    config_file: str = "base_config.yaml",
+    overrides: Optional[dict[str, Any]] = None,
 ) -> BaseBenchmarkConfig:
     """Load base benchmark configuration with optional overrides.
 
@@ -527,7 +541,8 @@ def load_base_benchmark_config(
 
 
 def load_serving_benchmark_config(
-    config_file: str = "serving_config.yaml", overrides: Optional[dict] = None
+    config_file: str = "serving_config.yaml",
+    overrides: Optional[dict[str, Any]] = None,
 ) -> ServingBenchmarkConfig:
     """Load serving benchmark configuration with optional overrides.
 
