@@ -275,7 +275,6 @@ async def async_request_openai_completions(
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
-            "skip_special_tokens": False,
         }
 
         if request_func_input.lora is not None:
@@ -383,7 +382,6 @@ async def async_request_openai_chat_completions(
             "top_p": request_func_input.top_p,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
-            "skip_special_tokens": False,
         }
 
         if request_func_input.lora is not None:
