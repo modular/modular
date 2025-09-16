@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # mypy: disable-error-code="import-not-found"
-"""Hugging Face Token Generation Pipeline."""
+"""MAX pipeline for model inference and generation."""
 
 from __future__ import annotations
 
