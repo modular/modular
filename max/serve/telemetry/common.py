@@ -157,7 +157,7 @@ class PrefixFormatter(logging.Formatter):
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
 def configure_logging(
-    settings: Settings, color: str | None = None, silent: bool = False
+    settings: Settings, color: str | None = None, silent: bool = True
 ) -> None:
     otlp_level = get_log_level(settings)
     egress_enabled = not settings.disable_telemetry

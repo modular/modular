@@ -293,7 +293,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 )
             )
 
-        logger.info(
+        logger.debug(
             f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
         )
 
@@ -340,7 +340,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
             logger.warning(
                 "Paged KVCache Manager will offload GPU blocks to host memory. This is an experimental feature and may not work correctly."
             )
-            logger.info(
+            logger.debug(
                 f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_on_host_str} per page."
             )
             self.host_tensors = []

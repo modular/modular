@@ -83,9 +83,6 @@ def serve_api_server_and_model_worker(
         assert isinstance(pipeline_config, AudioGenerationConfig)
         override_architecture = pipeline_config.audio_decoder
 
-    logger.info(
-        f"Starting server using {pipeline_config.model_config.model_path}"
-    )
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,

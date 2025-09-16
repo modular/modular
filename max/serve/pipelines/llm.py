@@ -271,7 +271,7 @@ class TokenGeneratorPipeline:
                 )
 
     async def __aenter__(self) -> TokenGeneratorPipeline:
-        self.logger.info("%s: Starting workers:", self.model_name)
+        self.logger.debug("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError("Worker process not healthy not starting worker")
@@ -287,7 +287,7 @@ class TokenGeneratorPipeline:
                 "Worker process not healthy after running background task"
             )
 
-        self.logger.info(
+        self.logger.debug(
             "%s: Started workers: %d tasks",
             self.model_name,
             len(self._background_tasks),
@@ -310,7 +310,7 @@ class TokenGeneratorPipeline:
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
         self._background_tasks.add(task)
-        self.logger.info(
+        self.logger.debug(
             "%s: Task Added: %s, %s, %d total",
             self.model_name,
             task_name,
@@ -442,7 +442,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         )
 
     async def __aenter__(self):
-        self.logger.info("%s: Starting workers:", self.model_name)
+        self.logger.debug("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
             raise RuntimeError("Worker process not healthy not starting worker")
@@ -458,7 +458,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                 "Worker process not healthy after running background task"
             )
 
-        self.logger.info(
+        self.logger.debug(
             "%s: Started workers: %d tasks",
             self.model_name,
             len(self._background_tasks),
@@ -481,7 +481,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
         self._background_tasks.add(task)
-        self.logger.info(
+        self.logger.debug(
             "%s: Task Added: %s, %s, %d total",
             self.model_name,
             task_name,
