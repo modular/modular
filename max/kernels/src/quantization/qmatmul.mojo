@@ -1106,9 +1106,7 @@ fn _matmul_qint4_m_any[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,
-                ]() if needs_correction else UnsafePointer[
-                    Int32,
-                ]()
+                ]() if needs_correction else {}
 
                 _unpack_weights[
                     group_size,

@@ -261,9 +261,21 @@ struct NDBuffer[
     """
 
     alias type = dtype
-    var data: UnsafePointer[
+    alias _UnsafePtr = UnsafePointer[
         Scalar[dtype], address_space=address_space, mut=mut, origin=origin
     ]
+    alias Immutable = NDBuffer[
+        Self.dtype,
+        rank = Self.rank,
+        origin = ImmutableOrigin.cast_from[Self.origin],
+        shape = Self.shape,
+        strides = Self.strides,
+        address_space = Self.address_space,
+        exclusive = Self.exclusive,
+    ]
+    """The Immutable version of this NDBuffer."""
+
+    var data: Self._UnsafePtr
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
     var dynamic_shape: IndexList[rank, element_type = DType.uint64]
@@ -284,16 +296,31 @@ struct NDBuffer[
         self.dynamic_shape = {}
         self.dynamic_stride = {}
 
-    @always_inline
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
     fn __init__(
-        out self,
-        ptr: UnsafePointer[
-            Scalar[dtype],
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
+        other: NDBuffer,
+        out self: NDBuffer[
+            other.type,
+            rank = other.rank,
+            origin = ImmutableOrigin.cast_from[other.origin],
+            shape = other.shape,
+            strides = other.strides,
+            address_space = other.address_space,
+            exclusive = other.exclusive,
         ],
     ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The NDBuffer to cast.
+        """
+        self = rebind[__type_of(self)](other)
+
+    @always_inline
+    @implicit
+    fn __init__(out self, ptr: Self._UnsafePtr):
         """Constructs an NDBuffer with statically known rank, shapes and
         dtype.
 
@@ -754,11 +781,7 @@ struct NDBuffer[
         return self.__str__()
 
     @always_inline
-    fn _offset(
-        self, idx: VariadicList[Int]
-    ) -> UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=mut, origin=origin, **_
-    ]:
+    fn _offset(self, idx: VariadicList[Int]) -> Self._UnsafePtr:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -771,20 +794,12 @@ struct NDBuffer[
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
-    fn _offset(
-        self, idx: IndexList[rank, **_]
-    ) -> UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=mut, origin=origin, **_
-    ]:
+    fn _offset(self, idx: IndexList[rank, **_]) -> Self._UnsafePtr:
         constrained[rank <= _MAX_RANK]()
         return self.data.offset(_compute_ndbuffer_offset(self, idx))
 
     @always_inline
-    fn _offset(
-        self, idx: StaticTuple[Int, rank]
-    ) -> UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=mut, origin=origin, **_
-    ]:
+    fn _offset(self, idx: StaticTuple[Int, rank]) -> Self._UnsafePtr:
         """Computes the NDBuffer's offset using the index positions provided.
 
         Args:
@@ -1421,6 +1436,14 @@ struct NDBuffer[
         """
         return Self.get_type_name()
 
+    fn get_immutable(self) -> Self.Immutable:
+        """Get the immutable version of this NDBuffer.
+
+        Returns:
+            The immutable version of this NDBuffer.
+        """
+        return rebind[Self.Immutable](self)
+
 
 @always_inline
 fn partial_simd_load[
@@ -1467,7 +1490,7 @@ fn partial_simd_load[
 fn partial_simd_store[
     dtype: DType, //, width: Int
 ](
-    storage: UnsafePointer[Scalar[dtype], **_],
+    storage: UnsafePointer[Scalar[dtype], mut=True, **_],
     lbound: Int,
     rbound: Int,
     data: SIMD[dtype, width],

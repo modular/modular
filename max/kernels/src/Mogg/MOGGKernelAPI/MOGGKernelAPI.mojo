@@ -5710,8 +5710,8 @@ struct VroomQ4KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(a).get_immutable(),
+                managed_tensor_slice_to_ndbuffer(b).get_immutable(),
                 managed_tensor_slice_to_ndbuffer(c),
             )
 
@@ -5803,8 +5803,8 @@ struct VroomQ6KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(a).get_immutable(),
+                managed_tensor_slice_to_ndbuffer(b).get_immutable(),
                 managed_tensor_slice_to_ndbuffer(c),
             )
 

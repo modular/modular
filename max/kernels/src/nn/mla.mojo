@@ -1434,21 +1434,9 @@ fn flare_mla_prefill_dispatch[
 
     alias smem_use = (q_smem + k_smem + v_smem) * config.dtype.size_of()
 
-    var softmax_info_ptr = (
-        softmax_info.value().data if softmax_info else UnsafePointer[
-            Scalar[softmax_type]
-        ]()
-    )
-    var prev_output_ptr = (
-        prev_output.value().data if prev_output else UnsafePointer[
-            Scalar[output_type]
-        ]()
-    )
-    var prev_softmax_info_ptr = (
-        prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
-            Scalar[softmax_type]
-        ]()
-    )
+    var softmax_info_ptr = softmax_info.or_else({}).data
+    var prev_output_ptr = prev_output.or_else({}).data
+    var prev_softmax_info_ptr = prev_softmax_info.or_else({}).data
 
     alias kernel = mla_prefill[
         config.dtype,
