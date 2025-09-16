@@ -207,6 +207,7 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
 
         lora_ids = qkv_loras[0].lora_ids
         lora_ranks = qkv_loras[0].lora_ranks
+        max_rank = qkv_loras[0].max_lora_rank
         lora_grouped_offsets = qkv_loras[0].lora_grouped_offsets
 
         if lora_ids is None or lora_ranks is None:
@@ -235,6 +236,8 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
             kv_params=self.kv_params,
             layer_idx=layer_idx,
             max_lora_seq_len=self.rope.max_seq_len,
+            max_rank=max_rank,
             q_dim=self.q_weight_dim,
+            kv_dim=self.kv_weight_dim,
             bias=lora_bias,
         )
