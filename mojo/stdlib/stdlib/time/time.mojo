@@ -122,6 +122,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
 
 @always_inline
 fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
+    @parameter
     if CompilationTarget.is_linux():
         var ts = _clock_gettime(clockid)
         return ts.as_nanoseconds()

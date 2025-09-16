@@ -555,3 +555,5 @@ as the version for these packages.
   incorrect "T != T" error messages common in kernel code.
 - Parameter inference failures now refer to parameters by their user-provided
   name, rather than complaining about a mysterious "parameter #4".
+- Fixed <https://github.com/modular/modular/issues/5260> - undefined reference
+  to `clock_gettime_nsec_np' when building with -O0
