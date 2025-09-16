@@ -61,6 +61,27 @@ fn welford_update(
     m2 += delta * delta2
 
 
+fn legalize_topk_ids[
+    n_experts: Int, top_k: Int
+](topk_ids: UnsafePointer[Int32], n_tokens: Int):
+    for tok_id in range(n_tokens):
+        var topk_ids_for_token = topk_ids + tok_id * top_k
+
+        # The top-k ids for a token should be unique. If not, we will assign a
+        # random id to the duplicate id.
+        fn is_duplicate() -> Int:
+            for i in range(top_k):
+                for j in range(i + 1, top_k):
+                    if topk_ids_for_token[i] == topk_ids_for_token[j]:
+                        return i
+            return -1
+
+        var duplicate_idx = is_duplicate()
+        while duplicate_idx != -1:
+            randint(topk_ids_for_token + duplicate_idx, 1, 0, n_experts - 1)
+            duplicate_idx = is_duplicate()
+
+
 fn test_dispatch[
     input_type: DType,
     hidden_size: Int,
@@ -265,11 +286,21 @@ fn test_dispatch[
         seed(Int(my_rank) + i * n_ranks)
         randint(host_topk_ids, n_tokens_per_rank * top_k, 0, n_experts - 1)
 
+        # The topk ids for a token is the expert id it needs to be sent to.
+        # Since a token won't be sent to the same expert multiple times, we
+        # need to legalize the topk ids to make sure they are unique for
+        # each token.
+        legalize_topk_ids[n_experts, top_k](host_topk_ids, n_tokens_per_rank)
+
         seed(Int(my_rank) + i * n_ranks)
         randn(host_input_tokens, n_tokens_per_rank * hidden_size)
 
         ctx.enqueue_copy(device_topk_buf, host_topk_ids)
         ctx.enqueue_copy(device_input_buf, host_input_tokens)
+
+        # warm-up
+        shmem_barrier_all_on_stream(ctx.stream())
+        run_e2e(ctx)
 
         shmem_barrier_all_on_stream(ctx.stream())
 
@@ -336,6 +367,10 @@ fn test_dispatch[
                     n_tokens_per_rank * top_k,
                     0,
                     n_experts - 1,
+                )
+                legalize_topk_ids[n_experts, top_k](
+                    all_ranks_topk_ids + rank * n_tokens_per_rank * top_k,
+                    n_tokens_per_rank,
                 )
 
             # Check if we have received the correct number of tokens
@@ -420,7 +455,7 @@ fn test_dispatch[
 
 
 fn main() raises:
-    alias test_gpu_counts = (2,)
+    alias test_gpu_counts = (2, 4, 8)
 
     @parameter
     for gpu_idx in range(len(test_gpu_counts)):
