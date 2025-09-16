@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Union, final
 
 import numpy as np
 import numpy.typing as npt
@@ -140,6 +140,7 @@ class SpeculativeDecodingMetrics:
         )
 
 
+@final
 class SpeculativeDecodingTextGenerationPipeline(
     Pipeline[
         TextGenerationInputs[Union[TextContext, TextAndVisionContext]],

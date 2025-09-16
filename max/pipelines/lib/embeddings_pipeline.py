@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
@@ -49,6 +49,7 @@ from .pipeline import PipelineModel
 logger = logging.getLogger("max.pipelines")
 
 
+@final
 class EmbeddingsPipeline(
     Pipeline[
         EmbeddingsGenerationInputs[EmbeddingsGenerationContextType],

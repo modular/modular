@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 from max.driver import DeviceStream
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 
+@final
 class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
     def __init__(
         self,
