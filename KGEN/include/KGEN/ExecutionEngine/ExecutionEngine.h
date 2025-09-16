@@ -152,7 +152,7 @@ public:
     if (executionSession->getJITDylibByName(libName))
       return success();
 
-    return found->add(libName, std::forward<Args &&>(args)...);
+    return found->add(libName, std::forward<Args>(args)...);
   }
 
   //===--------------------------------------------------------------------===//
@@ -167,7 +167,7 @@ public:
       return Error("could not find layer of type " +
                    llvm::getTypeName<LayerT>());
 
-    return found->add(libName, std::forward<Args &&>(args)...);
+    return found->add(libName, std::forward<Args>(args)...);
   }
 
   llvm::orc::ExecutionSession &getExecutionSession() {

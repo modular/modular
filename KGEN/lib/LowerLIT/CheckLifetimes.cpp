@@ -491,6 +491,15 @@ struct ValueInfo {
 
   /// Return true if this value should emit a warning on unused assignment.
   bool shouldWarnOnUnusedAssignment() const;
+
+  /// Emit a new diagnostic error if this value has not yet been diagnosed.
+  template <typename... Args>
+  std::optional<InFlightDiagnostic> emitErrorIfNotDiagnosed(Args &&...args) {
+    if (hasErrorDiagnosed)
+      return std::nullopt;
+    hasErrorDiagnosed = true;
+    return mlir::emitError(std::forward<Args>(args)...);
+  }
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -1256,7 +1265,7 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
 void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
                                                 Operation &op, bool isDef) {
   // Ok, it isn't, gear up to see how to best report the error.
-  ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+  ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
 
   // As a very unprincipled hack, allow uninitialized values at the end of REPL
   // cells. The reason we need this is that the REPL "persists" values onto the
@@ -1265,32 +1274,32 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
   // needs to be fixed, but allow simple things like integers to "work" for now.
   // This will not work at all for non-trivial values though because
   // reassignments over them will assume they are initialized.
-  if (valueEntry.value.getDefiningOp<LIT::RefFromPointerREPLOp>())
+  if (valueInfo.value.getDefiningOp<LIT::RefFromPointerREPLOp>())
     return;
 
-  if (valueEntry.hasErrorDiagnosed)
-    return; // Only report one error per symbolic value.
-  valueEntry.hasErrorDiagnosed = true;
+  auto diagOr = valueInfo.emitErrorIfNotDiagnosed(op.getLoc());
+  if (!diagOr)
+    return;
+  auto &diag = *diagOr;
 
   // If the fields are all valid except for the whole-object bit, then the user
   // tried to initialize a value by initializing all its fields.  Reject this
   // with a customized error.
-  if (valueRef.isIndirect && valueRef.endBit == valueEntry.endValueBit &&
+  std::string valueName = valueInfo.getName().str();
+  if (valueRef.isIndirect && valueRef.endBit == valueInfo.endValueBit &&
       valueRef.getSubfield(0, valueRef.getNumBits() - 1)
           .isAllPresent(liveValues) &&
       valueRef.getNumBits() != 1) {
-    auto diag = mlir::emitError(op.getLoc(), "'")
-                << valueEntry.getName().str()
-                << "' used with all fields manually initialized "
-                   "but without calling an '__init__' method";
-    diag.attachNote(valueEntry.value.getLoc())
-        << "'" << valueEntry.getName().str() << "' declared here";
+    diag << "'" << valueName
+         << "' used with all fields manually initialized "
+            "but without calling an '__init__' method";
+    diag.attachNote(valueInfo.value.getLoc())
+        << "'" << valueName << "' declared here";
     return;
   }
 
   // Specialize diagnostics for returns because it can be confusing why they are
   // "using" argument values otherwise.
-  auto diag = mlir::emitError(op.getLoc());
   if (isa<KGEN::ReturnOp>(op)) {
     addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
     diag << " is uninitialized at ";
@@ -1312,8 +1321,8 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
     // first whole field that is missing.
     addBadValueNameToDiag(valueRef, liveValues, valueSet, diag);
   }
-  diag.attachNote(valueEntry.value.getLoc())
-      << "'" << valueEntry.getName().str() << "' declared here";
+  diag.attachNote(valueInfo.value.getLoc())
+      << "'" << valueName << "' declared here";
 }
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
@@ -1347,8 +1356,9 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
     if (!valueSet.isTrivial(value, isDeref) &&
         // FIXME(#29005): AnyRefType binds to non-trivial types
         isDeref) {
-      mlir::emitError(op.getLoc(),
-                      "cannot consume indirect references to values");
+      ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
+      valueInfo.emitErrorIfNotDiagnosed(
+          op.getLoc(), "cannot consume indirect references to values");
     }
     return;
   }
@@ -1367,18 +1377,16 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 /// uninitialized.
 void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
   ValueRef access = valueSet.getDirectValueRef(value, /*isDeref=*/true);
+  ValueInfo &valueInfo = valueSet.getValueInfo(access.valueId);
   if (!access) {
-    mlir::emitError(op.getLoc(),
-                    "can only mark directly tracked values as destroyed");
+    valueInfo.emitErrorIfNotDiagnosed(
+        op.getLoc(), "can only mark directly tracked values as destroyed");
     return;
   }
 
-  ValueInfo &info = valueSet.getValueInfo(access.valueId);
-  if (access != info.getFullValueRef(access.valueId)) {
-    if (!info.hasErrorDiagnosed)
-      mlir::emitError(op.getLoc(),
-                      "can only mark full values as destroyed, not subfields");
-    info.hasErrorDiagnosed = true;
+  if (access != valueInfo.getFullValueRef(access.valueId)) {
+    valueInfo.emitErrorIfNotDiagnosed(
+        op.getLoc(), "can only mark full values as destroyed, not subfields");
     return;
   }
 
@@ -1930,6 +1938,23 @@ public:
   /// This is the builder used to insert any destructor calls.
   ImplicitLocOpBuilder builder;
 
+  /// Emit a new diagnostic error if this value has not yet been diagnosed.
+  template <typename... Args>
+  InFlightDiagnostic *emitErrorIfNotDiagnosed(ValueInfo &valueInfo,
+                                              Args &&...args) {
+    auto diagOr =
+        valueInfo.emitErrorIfNotDiagnosed(std::forward<Args>(args)...);
+    if (!diagOr)
+      return nullptr;
+    return &diagsToEmit.emplace_back(std::move(*diagOr));
+  }
+
+  template <typename... Args>
+  InFlightDiagnostic &emitWarning(Args &&...args) {
+    return diagsToEmit.emplace_back(
+        mlir::emitWarning(std::forward<Args>(args)...));
+  }
+
 private:
   ValueSet &valueSet;
 
@@ -2019,20 +2044,19 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
     // destroyed.  We cannot run the destructor on the whole object if one of
     // the fields is missing.
     if (!consumedValues.empty() && !valueRef.isAllMissing(consumedValues)) {
-      auto &valueEntry = valueSet.getValueInfo(valueRef.valueId);
-      if (valueEntry.hasErrorDiagnosed)
-        return; // Only report one error per symbolic value.
-      valueEntry.hasErrorDiagnosed = true;
+      auto *diagOr = emitErrorIfNotDiagnosed(
+          valueSet.getValueInfo(valueRef.valueId), builder.getLoc(), "field ");
+      if (!diagOr)
+        return;
+      auto &diag = *diagOr;
 
-      auto diag = mlir::emitError(builder.getLoc(), "field ");
       auto aliveValues = consumedValues;
       aliveValues.flip();
       // If some fields are present and others are missing, complain about the
       // first whole field that is missing.
       addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
-      diag << " destroyed out of the middle of a value, preventing the "
-              "overall value from being destroyed";
-      diagsToEmit.push_back(std::move(diag));
+      diag << " destroyed out of the middle of a value, preventing the overall "
+              "value from being destroyed";
       return;
     }
 
@@ -2117,10 +2141,14 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     // linear type.  If linear, emit the error message.
     if (std::optional<StringRef> errorMsg =
             valueSet.typeDeclInfo.getErrorMsgIfLinearType(destroyedType)) {
-      auto diag =
-          ::mlir::emitError(builder.getLoc(), "'")
-          << valueSet.getValueInfo(valueRef.valueId).getName().str()
-          << "' abandoned without being explicitly destroyed: " << *errorMsg;
+      ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
+      auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc(), "'");
+      if (!diagOr)
+        return;
+      auto &diag = *diagOr;
+
+      diag << valueInfo.getName().str()
+           << "' abandoned without being explicitly destroyed: " << *errorMsg;
 
       // If the insertion point is on a mark_consumed op inserted as part of an
       // exception throw, then add a note explaining this is due to a thrown
@@ -2132,9 +2160,6 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
         diag.attachNote(builder.getLoc())
             << "value was not consumed when an error is thrown";
       }
-
-      diagsToEmit.push_back(std::move(diag));
-      valueSet.getValueInfo(valueRef.valueId).hasErrorDiagnosed = true;
     }
 
     // Emit the marker to denote the end of lifetime.
@@ -2167,9 +2192,9 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   SmallVector<TypedAttr> implicitOrigins;
   auto delSelfTy = dyn_cast<RefType>(signature.getArgument(0));
   if (!delSelfTy) {
-    auto diag = mlir::emitError(builder.getLoc())
-                << "invalid __del__ that doesn't take register by-ref";
-    diagsToEmit.push_back(std::move(diag));
+    emitErrorIfNotDiagnosed(
+        valueSet.getValueInfo(valueRef.valueId), builder.getLoc(),
+        "invalid __del__ that doesn't take register by-ref");
     return;
   }
 
@@ -2182,9 +2207,9 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   // method will have address space zero.  Attempts to delete other things
   // should not explode the compiler.
   if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
-    auto diag = mlir::emitError(builder.getLoc())
-                << "cannot destroy value in non-default address space";
-    diagsToEmit.push_back(std::move(diag));
+    emitErrorIfNotDiagnosed(
+        valueSet.getValueInfo(valueRef.valueId), builder.getLoc(),
+        "cannot destroy value in non-default address space");
     return;
   }
 
@@ -3335,12 +3360,15 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
   //   _ = a.x^
   //   use(a.x)
   if (!valueRef.isAllMissing(consumedValues)) {
-    ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-    if (info.hasErrorDiagnosed)
+    ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
+    auto diagOr =
+        dtorInserter.emitErrorIfNotDiagnosed(valueInfo, op.getLoc(), "value ");
+    if (!diagOr)
       return;
-    ValueRef fullValueRef = info.getFullValueRef(valueRef.valueId);
+    auto &diag = *diagOr;
 
-    auto diag = mlir::emitError(op.getLoc(), "value ");
+    ValueRef fullValueRef = valueInfo.getFullValueRef(valueRef.valueId);
+
     // Use a clear bitvector of the right size so we print the entire value
     // being referenced even if only part of it is missing.
     BitVector allMissing(consumedValues.size(), true);
@@ -3360,8 +3388,6 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
       addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
     }
     diag << " is used later";
-    diagsToEmit.push_back(std::move(diag));
-    info.hasErrorDiagnosed = true;
   }
 
   valueRef.markBits(consumedValues, true);
@@ -3440,16 +3466,14 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
         if (varDecl && varDecl.getKind() == VarDeclKind::Ref) {
           // Ref's can only have a single store - their initializer. If unused,
           // then the ref is never used.
-          mlir::emitWarning(varDecl.getLoc())
-              << "ref '" << varDecl.getName().str()
-              << "' was never used, remove it?";
+          dtorInserter.emitWarning(varDecl.getLoc(), "ref '")
+              << varDecl.getName().str() << "' was never used, remove it?";
         } else {
-          auto diag = mlir::emitWarning(op.getLoc()) << "assignment to ";
+          auto &diag = dtorInserter.emitWarning(op.getLoc(), "assignment to ");
           BitVector allMissing(consumedValues.size(), true);
           direct.markBits(allMissing, false);
           addBadValueNameToDiag(direct, allMissing, valueSet, diag);
           diag << " was never used; assign to '_' instead?";
-          diagsToEmit.push_back(std::move(diag));
         }
       }
     }
