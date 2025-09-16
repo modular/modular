@@ -42,7 +42,7 @@ from memory.pointer import _GPUAddressSpace
 from utils import IndexList, StaticTuple
 from utils.index import Index
 
-from ._utils import get_amd_buffer_descriptor
+from ._utils import get_amd_buffer_descriptor, get_amd_base_ptr
 from .int_tuple import (
     _get_index_type,
     _get_layout_type,
@@ -63,6 +63,7 @@ from .swizzle import Swizzle, make_ldmatrix_swizzle
 
 from builtin.device_passable import DevicePassable
 from builtin.dtype import _unsigned_integral_type_of
+from gpu.intrinsics import _buffer_resource
 
 
 fn _compute_distribute_layout[
@@ -5756,21 +5757,23 @@ fn copy_dram_to_sram[
 
     @parameter
     for i in range(num_stores_per_thread):
-        alias src_static_idx = src_fragments.layout(i)
-        alias dst_idx = dst_fragments.layout(i)
-        var src_idx: Scalar[src_fragments.linear_idx_type]
+        var src_frag_idx: Scalar[src_fragments.linear_idx_type]
 
         @parameter
         if src_tensor.layout.all_dims_known():
-            src_idx = src_static_idx
+            alias frag_layout = src_fragments.layout(i)
+            src_frag_idx = frag_layout
         else:
-            src_idx = src_fragments.runtime_layout(i)
-        var src_vec = buffer_load[src_tensor.dtype, simd_width](
-            descriptor,
-            Int32(src_idx + Int(src_frag_offset)),
-        )
+            src_frag_idx = src_fragments.runtime_layout(i)
+
+        alias dst_frag_idx = dst_fragments.layout(i)
         dst_fragments.ptr.store[alignment=dst_align](
-            dst_idx, src_vec.cast[dst.dtype]()
+            dst_frag_idx,
+            buffer_load[src_tensor.dtype, simd_width](
+                descriptor,
+                Int32(src_frag_offset),
+                scalar_offset=Int32(src_frag_idx),
+            ).cast[dst.dtype](),
         )
 
 
@@ -6757,6 +6760,114 @@ fn copy_local_to_dram[
 
 
 @always_inline("nodebug")
+fn _copy_local_to_dram_static_row_major[
+    dst_type: DType
+](
+    src: LayoutTensor,
+    dst_fragments: LayoutTensor,
+    dst_frag_offset: Int32,
+    descriptor: _buffer_resource,
+):
+    alias M = dst_fragments.shape[0]()
+    alias N = dst_fragments.shape[1]()
+
+    @parameter
+    for i in range(M):
+
+        @parameter
+        for j in range(N):
+            alias idx = Layout.col_major(M, N)([i, j])
+            alias src_frag_idx = src.layout(idx)
+            alias dst_frag_idx = Int32(dst_fragments.layout(idx))
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_frag_idx),
+                src.runtime_element_layout,
+            )
+
+            buffer_store(
+                descriptor,
+                dst_frag_offset + dst_frag_idx,
+                src_element.element_data.cast[dst_type](),
+            )
+
+
+@always_inline("nodebug")
+fn _copy_local_to_dram[
+    dst_thread_layout: Layout,
+    num_threads: Int = dst_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](dst: LayoutTensor, src: LayoutTensor, descriptor: _buffer_resource):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+
+    _copy_local_to_dram_validate_args(dst, src)
+
+    alias num_busy_threads = dst_thread_layout.size()
+    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if worker_idx >= UInt(num_busy_threads):
+            return
+
+    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+
+    var base_ptr = get_amd_base_ptr(descriptor)
+    var offset = (Int(dst.ptr) - base_ptr) // size_of[dst.dtype]()
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+
+    alias dst_element_stride = dst_fragments.element_layout.stride[1].value()
+
+    @parameter
+    if dst_element_stride == 1 and dst_fragments.layout.all_dims_known():
+        _copy_local_to_dram_static_row_major[dst.dtype](
+            src,
+            dst_fragments,
+            Int32(dst_frag_offset),
+            descriptor,
+        )
+    else:
+        alias num_stores_per_thread = dst_fragments.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias src_idx = src.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
+            var dst_idx = dst_frag_offset
+
+            @parameter
+            if dst_fragments.layout.all_dims_known():
+                dst_idx += dst_static_idx
+            else:
+                dst_idx += dst_fragments.runtime_layout(i)
+
+            var src_element = Element[index_type = src.linear_idx_type].load(
+                src.ptr.offset(src_idx),
+                src.runtime_element_layout,
+            )
+
+            @parameter
+            if dst_element_stride == 1:
+                buffer_store(
+                    descriptor,
+                    Int32(dst_idx),
+                    src_element.element_data.cast[dst.dtype](),
+                )
+            else:
+
+                @parameter
+                for i in range(dst_fragments.element_layout.size()):
+                    alias element_offset = dst_fragments.element_layout(i)
+                    var src = src_element.element_data[i].cast[dst.dtype]()
+                    buffer_store(
+                        descriptor,
+                        Int32(dst_idx + element_offset),
+                        src,
+                    )
+
+
+@always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
     num_threads: Int = dst_thread_layout.size(),
@@ -6806,10 +6917,30 @@ fn copy_local_to_dram[
         flexibility.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    var descriptor = get_amd_buffer_descriptor(dst_base)
 
-    _copy_local_to_dram_validate_args(dst, src)
+    _copy_local_to_dram[
+        dst_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src, descriptor)
 
-    alias num_busy_threads = dst_thread_layout.size()
+
+@always_inline("nodebug")
+fn _copy_dram_to_local[
+    src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](
+    dst: LayoutTensor,
+    src: LayoutTensor,
+    descriptor: _buffer_resource,
+    offset: OptionalReg[UInt] = None,
+):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    alias simd_width = src.element_layout.size()
+    _copy_local_to_dram_validate_args(src, dst)
+
+    alias num_busy_threads = src_thread_layout.size()
     var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
 
     @parameter
@@ -6817,50 +6948,49 @@ fn copy_local_to_dram[
         if worker_idx >= UInt(num_busy_threads):
             return
 
-    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
+    var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
-    alias num_stores_per_thread = dst_fragments.layout.size()
+    alias M = src_fragments.shape[0]()
+    alias N = src_fragments.shape[1]()
 
+    constrained[
+        src_fragments.layout.rank() == 2,
+        "src_fragments must be rank 2.",
+    ]()
+
+    constrained[
+        src_fragments.layout.all_dims_known(),
+        "src_fragments must have known layout.",
+    ]()
+
+    @always_inline
     @parameter
-    for i in range(num_stores_per_thread):
-        alias src_idx = src.layout(i)
-        alias dst_static_idx = dst_fragments.layout(i)
-        var dst_idx = dst_frag_offset
-
-        @parameter
-        if dst_fragments.layout.all_dims_known():
-            dst_idx += dst_static_idx
-        else:
-            dst_idx += dst_fragments.runtime_layout(i)
-
-        var src_element = Element[index_type = src.linear_idx_type].load(
-            src.ptr.offset(src_idx),
-            src.runtime_element_layout,
+    fn offset_helper(offset_val: UInt):
+        var src_frag_offset = Int32(
+            src_fragments.distance(src.ptr) + offset_val
         )
 
-        alias element_stride = dst_fragments.element_layout.stride[1].value()
-
+        # These loads need to be row-major for L1 cache performance
         @parameter
-        if element_stride == 1:
-            buffer_store(
-                descriptor,
-                Int32(dst_idx),
-                src_element.element_data.cast[dst.dtype](),
-            )
-        else:
+        for i in range(M):
 
             @parameter
-            for i in range(dst_fragments.element_layout.size()):
-                alias element_offset = dst_fragments.element_layout(i)
-                var src = src_element.element_data[i].cast[dst.dtype]()
-                buffer_store(
-                    descriptor,
-                    Int32(dst_idx + element_offset),
-                    src,
+            for j in range(N):
+                alias dst_frag_idx = Layout.col_major(M, N)([i, j])
+                alias src_frag_idx = Int32(src_fragments.layout([i, j]))
+                dst[dst_frag_idx, 0] = rebind[dst.element_type](
+                    buffer_load[src.dtype, simd_width](
+                        descriptor,
+                        src_frag_offset,
+                        scalar_offset=src_frag_idx,
+                    )
                 )
+
+    if offset:
+        offset_helper(offset.value())
+    else:
+        var base_ptr = get_amd_base_ptr(descriptor)
+        offset_helper(UInt((Int(src.ptr) - base_ptr)) // size_of[src.dtype]())
 
 
 @always_inline("nodebug")
@@ -6916,60 +7046,28 @@ fn copy_dram_to_local[
         before performing computations, reducing memory access latency.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    alias simd_width = src.element_layout.size()
-    _copy_local_to_dram_validate_args(src, dst)
-
-    alias num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
-
-    @parameter
-    if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
-            return
-
-    var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var descriptor = get_amd_buffer_descriptor(src_base)
 
-    alias M = src_fragments.shape[0]()
-    alias N = src_fragments.shape[1]()
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src, descriptor, offset)
 
-    constrained[
-        src_fragments.layout.rank() == 2,
-        "src_fragments must be rank 2.",
+
+@always_inline("nodebug")
+fn _copy_dram_to_local[
+    src_thread_layout: Layout,
+    num_threads: Int = src_thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    block_dim_count: Int = 1,
+](dst: LayoutTensor, src_iter: LayoutTensorIter, descriptor: _buffer_resource):
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    var src_tensor = src_iter[].vectorize[
+        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
     ]()
 
-    constrained[
-        src_fragments.layout.all_dims_known(),
-        "src_fragments must have known layout.",
-    ]()
-
-    @always_inline
-    @parameter
-    fn offset_helper(offset_val: UInt):
-        var src_frag_offset = src_fragments.distance(src.ptr) + offset_val
-
-        # These loads need to be row-major for L1 cache performance
-        @parameter
-        for i in range(M):
-
-            @parameter
-            for j in range(N):
-                alias dst_idx = Layout.col_major(M, N)([i, j])
-                alias src_static_idx = src_fragments.layout([i, j])
-                var src_idx = Int32(src_frag_offset) + src_static_idx
-                dst[dst_idx, 0] = rebind[dst.element_type](
-                    buffer_load[src.dtype, simd_width](
-                        descriptor,
-                        src_idx,
-                    )
-                )
-
-    if offset:
-        offset_helper(offset.value())
-    else:
-        offset_helper(
-            UInt((Int(src.ptr) - Int(src_base.ptr)) // size_of[src.dtype]())
-        )
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src_tensor, descriptor, UInt(src_iter.offset))
 
 
 @always_inline("nodebug")
@@ -7016,52 +7114,11 @@ fn copy_dram_to_local[
     - This function is particularly useful for prefetching data into registers
         before performing computations, reducing memory access latency.
     """
-    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    var src_tensor = src_iter[].vectorize[
-        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
-    ]()
-    alias simd_width = src_tensor.element_layout.size()
-    _copy_local_to_dram_validate_args(src_tensor, dst)
-
-    alias num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
-
-    @parameter
-    if num_threads > num_busy_threads:
-        if worker_idx >= UInt(num_busy_threads):
-            return
-
-    var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
-
     var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
-    var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
-        src_iter.offset
-    )
-    alias num_stores_per_thread = src_fragments.layout.size()
 
-    alias M = src_fragments.shape[0]()
-    alias N = src_fragments.shape[1]()
-
-    constrained[
-        src_fragments.layout.rank() == 2,
-        "src_fragments must be rank 2.",
-    ]()
-
-    constrained[
-        src_fragments.layout.all_dims_known(),
-        "src_fragments must have known layout.",
-    ]()
-
-    @parameter
-    for i in range(src_fragments.layout.size()):
-        alias src_static_idx = src_fragments.layout(i)
-        var src_idx = Int32(src_frag_offset) + src_static_idx
-        dst[i, 0] = rebind[dst.element_type](
-            buffer_load[src_tensor.dtype, simd_width](
-                descriptor,
-                src_idx,
-            )
-        )
+    _copy_dram_to_local[
+        src_thread_layout, num_threads, thread_scope, block_dim_count
+    ](dst, src_iter, descriptor)
 
 
 @always_inline("nodebug")

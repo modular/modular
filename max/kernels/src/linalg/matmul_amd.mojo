@@ -28,7 +28,7 @@ from gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from gpu.intrinsics import buffer_store
+from gpu.intrinsics import buffer_store, _buffer_resource
 from layout.element import Element
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import blocked_product
@@ -36,11 +36,17 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     ThreadScope,
     copy_local_to_shared,
-    copy_dram_to_local,
-    copy_local_to_dram,
+    _copy_dram_to_local,
+    _copy_local_to_dram,
+    LayoutTensorIter,
 )
 from layout.swizzle import Swizzle
-from layout._utils import TensorCoreKGroup, get_amd_buffer_descriptor
+from layout._utils import (
+    TensorCoreKGroup,
+    get_amd_buffer_descriptor,
+    get_amd_base_ptr,
+    _get_bounds,
+)
 from memory import stack_allocation
 
 from utils import IndexList, StaticTuple
@@ -51,66 +57,21 @@ from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 
 
-@always_inline("nodebug")
-fn copy_local_to_dram_row_major[
-    dst_thread_layout: Layout,
-](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
-    # TODO: This is a temporary hack, we need to support this in copy_local_to_dram instead.
-    # write c in row major order
-    var worker_idx = lane_id()
-
-    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
-
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var descriptor = get_amd_buffer_descriptor(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
-    alias num_stores_per_thread = dst_fragments.layout.size()
-    alias m = dst_fragments.shape[0]()
-    alias n = dst_fragments.shape[1]()
-
-    @parameter
-    for i in range(m):
-
-        @parameter
-        for j in range(n):
-            alias idx = Layout.col_major(m, n)([i, j])
-            alias src_idx = src.layout(idx)
-            alias dst_static_idx = dst_fragments.layout(idx)
-            var dst_idx = dst_frag_offset
-
-            constrained[
-                dst_fragments.layout.all_dims_known(),
-                "dst_fragments.layout must have known dimensions",
-            ]()
-            dst_idx += dst_static_idx
-
-            var src_element = Element[index_type = src.linear_idx_type].load(
-                src.ptr.offset(src_idx),
-                src.runtime_element_layout,
-            )
-
-            alias element_stride = dst_fragments.element_layout.stride[
-                1
-            ].value()
-            constrained[element_stride == 1, "element_stride must be 1"]()
-            buffer_store(
-                descriptor,
-                Int32(dst_idx),
-                src_element.element_data.cast[dst.dtype](),
-            )
-
-
-# Dummy ScatterGather implementation that just calls the original copy_dram_to_local and copy_local_to_dram_row_major
-# The "real" ScatterGather with _buffer_resource descriptor caching will be added in a subsequent PR
 struct ScatterGatherAmd[
     thread_layout: Layout,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
 ]:
+    var bounds: Int
+    var descriptor: _buffer_resource
+    var has_descriptor: Bool
+
     @always_inline
-    fn __init__(out self, tensor: LayoutTensor):
-        pass
+    fn __init__(out self, tensor: LayoutTensor, iterator: Bool = False):
+        self.bounds = _get_bounds(tensor)
+        self.descriptor = 0 if iterator else get_amd_buffer_descriptor(tensor)
+        self.has_descriptor = False
 
     # copy_dram_to_local
     @always_inline
@@ -121,12 +82,26 @@ struct ScatterGatherAmd[
         src_tensor: LayoutTensor,
         offset: OptionalReg[UInt] = None,
     ):
-        copy_dram_to_local[
-            src_thread_layout=thread_layout,
-            num_threads=num_threads,
-            thread_scope=thread_scope,
-            block_dim_count=block_dim_count,
-        ](dst_reg_tile, src_gmem_tile, src_tensor, offset)
+        _copy_dram_to_local[
+            thread_layout, num_threads, thread_scope, block_dim_count
+        ](dst_reg_tile, src_gmem_tile, self.descriptor)
+
+    # copy_dram_to_local - LayoutTensorIter
+    @always_inline
+    fn copy(
+        mut self,
+        dst_reg_tile: LayoutTensor,
+        src_gmem_tile_iter: LayoutTensorIter,
+    ):
+        if not self.has_descriptor:
+            self.descriptor = get_amd_buffer_descriptor(
+                src_gmem_tile_iter, self.bounds
+            )
+            self.has_descriptor = True
+
+        _copy_dram_to_local[
+            thread_layout, num_threads, thread_scope, block_dim_count
+        ](dst_reg_tile, src_gmem_tile_iter, self.descriptor)
 
     # copy_local_to_dram
     @always_inline("nodebug")
@@ -136,9 +111,9 @@ struct ScatterGatherAmd[
         src_reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
         dst_tensor: LayoutTensor,
     ):
-        copy_local_to_dram_row_major[dst_thread_layout=thread_layout](
-            dst_gmem_tile, src_reg_tile, dst_tensor
-        )
+        _copy_local_to_dram[
+            thread_layout, num_threads, thread_scope, block_dim_count
+        ](dst_gmem_tile, src_reg_tile, self.descriptor)
 
 
 # SMEM and REG tiles type declarations, shared by MmaOpAMD and MMATileBuffers
@@ -285,7 +260,6 @@ struct MmaOpAMD[
 
 
 struct MMATileBuffers[
-    tensor_origin: ImmutableOrigin, //,
     _dtype: DType,
     /,
     smem_layout: Layout,
@@ -333,14 +307,10 @@ struct MMATileBuffers[
         thread_scope = ThreadScope.BLOCK,
     ]
 
-    var global_offset: UInt
-
-    var tensor: Pointer[tensor_type, tensor_origin]
-
     @always_inline
     fn __init__(
         out self,
-        ref [tensor_origin]tensor: tensor_type,
+        tensor: tensor_type,
         warp_idx: Int,
         warp_k_idx: Int,
         block_idx: Int,
@@ -364,11 +334,7 @@ struct MMATileBuffers[
         self.scatter_gather = ScatterGatherAmd[
             thread_layout=thread_layout,
             thread_scope = ThreadScope.BLOCK,
-        ](tensor)
-        self.global_offset = UInt(stride * (block_rows * block_idx))
-        self.tensor = rebind[Pointer[tensor_type, tensor_origin]](
-            Pointer(to=tensor)
-        )
+        ](tensor, True)
 
     @always_inline
     fn copy_to_smem(self):
@@ -392,12 +358,8 @@ struct MMATileBuffers[
         """Load data from global memory (DRAM) to thread-local memory."""
         alias simd_width = simd_width_of[_dtype]()
         self.scatter_gather.copy(
-            self.load_reg_tile.vectorize[1, simd_width](),
-            self.gmem_iter[].vectorize[1, simd_width](),
-            self.tensor[],
-            self.global_offset,
+            self.load_reg_tile.vectorize[1, simd_width](), self.gmem_iter
         )
-        self.global_offset += UInt(block_cols)
         self.gmem_iter._incr()
 
 

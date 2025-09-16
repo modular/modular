@@ -24,6 +24,7 @@ from layout.tensor_core import TensorCore
 from utils import IndexList
 from gpu.mma import mma
 from .int_tuple import _get_index_type, _get_layout_type, product
+from memory.unsafe import bitcast
 
 
 struct ManagedLayoutTensor[
@@ -270,6 +271,15 @@ fn get_amd_buffer_descriptor(
 ) -> _buffer_resource:
     return make_buffer_resource(
         readfirstlane(tensor_iter.ptr), readfirstlane(bound)
+    )
+
+
+@always_inline
+fn get_amd_base_ptr(descriptor: _buffer_resource) -> Int:
+    return Int(
+        bitcast[DType.int64, 1](
+            SIMD[DType.uint32, 2](descriptor[0], descriptor[1])
+        )
     )
 
 
