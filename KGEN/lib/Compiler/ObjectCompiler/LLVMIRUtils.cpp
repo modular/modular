@@ -569,6 +569,19 @@ removeDuplicates(llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
   });
 }
 
+static uint64_t getNumFunctionsInSet(
+    llvm::MapVector<const llvm::GlobalValue *, unsigned> &set) {
+  uint64_t result = 0;
+  for (auto [global, _] : set) {
+    if (auto f = dyn_cast<llvm::Function>(global)) {
+      if (f->isDeclaration())
+        continue;
+      result++;
+    }
+  }
+  return result;
+}
+
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void KGEN::splitPerFunction(
@@ -747,6 +760,7 @@ void LLVMModulePerFunctionSplitterImpl::split(
 
   unsigned numFunctions = numFunctionBase;
   llvm::StringSet<> seenFns;
+
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
     // Giving each function a unique ID across all splits for proper MC level
     // linking and codegen into one object file where duplicated functions
@@ -755,7 +769,11 @@ void LLVMModulePerFunctionSplitterImpl::split(
     if (set.empty())
       continue;
 
-    unsigned next = numFunctions + set.size();
+    unsigned next = numFunctions + getNumFunctionsInSet(set);
+
+    LLVM_DEBUG(llvm::dbgs() << "split function base id: " << numFunctions
+                            << " set size: " << set.size() << "\n";);
+
     auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
       return readAndMaterializeDependencies(std::move(buf), set, *strtab);
