@@ -35,7 +35,7 @@ info:
         - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
         - [Completions](#operation/createCompletion) (`/v1/completions`)
         - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
-        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available to users in the [Mammoth](/mammoth/) public preview.
+        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available as part of [Batch Inference](https://www.modular.com/batch-inference) in Modular's Dedicated Endpoint and Enterprise editions.
         - [List models](#operation/listModels) (`/v1/models`)
         - [Health check](#operation/health) (`/health`)
 
@@ -454,9 +454,9 @@ paths:
       description: |
         Creates and executes a batch from an uploaded file of requests.
 
-        **Note:** The `v1/batches` API is only available to users in the [Mammoth](/mammoth/) public preview.
+        **Note:** The `v1/batches` API is only available as part of [Batch Inference](https://www.modular.com/batch-inference) in Modular's Dedicated Endpoint and Enterprise editions.
         If you create a batch and get the response `{"detail":"Not Found"}`, then you don't have access.
-        [Get in touch](https://www.modular.com/company/talk-to-us) to learn about early access for enterprise teams.
+        [Get in touch](https://www.modular.com/company/talk-to-us) to learn about access for enterprise teams.
       x-codeSamples:
         - lang: Python
           source: |
