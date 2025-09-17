@@ -94,7 +94,7 @@ class PipelineSitter:
         self, probe_port: int, *, timeout: Optional[float]
     ) -> None:
         assert self._proc is not None
-        probe_url = f"http://127.0.0.1:{probe_port}/metrics"
+        probe_url = f"http://127.0.0.1:{probe_port}/health"
         start_time = time.time()
         deadline: Optional[float]
         if timeout is None:
@@ -115,14 +115,17 @@ class PipelineSitter:
                 raise Exception(
                     "Pipelines server died while waiting for readiness"
                 )
-            attempt_timeout = 5.0
-            if deadline is not None:
-                remaining_time = deadline - now
-                attempt_timeout = min(attempt_timeout, remaining_time)
+
+            probe_start_time = time.time()
             try:
-                requests.get(probe_url, timeout=attempt_timeout)
+                requests.get(probe_url, timeout=5)
             except Exception:
-                pass
+                elapsed_time = time.time() - probe_start_time
+                sleep_duration = max(0, 5.0 - elapsed_time)
+                if deadline is not None:
+                    remaining_time = max(0, deadline - now)
+                    sleep_duration = min(sleep_duration, remaining_time)
+                time.sleep(sleep_duration)
             else:
                 logger.info(
                     "Pipelines server seems to now be accepting requests"
