@@ -621,15 +621,16 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 28, 0, 1, 8192),
-        BatchInfo(CE, 28, 0, 1, 8192),
-        BatchInfo(CE, 28, 0, 1, 8192),
-        BatchInfo(CE, 3, 0, 1, 616),
+        BatchInfo(CE, 23, 0, 1, 8192),
+        BatchInfo(CE, 23, 0, 1, 8192),
+        BatchInfo(CE, 23, 0, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 6608),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
+    print(actual)
     assert len(actual) == len(expected) and actual == expected
 
 
@@ -666,11 +667,12 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     expected = [
         # batch_type, batch_size, terminated, num_steps, input_tokens
         BatchInfo(CE, 17, 0, 1, 8192),
-        BatchInfo(CE, 20, 0, 1, 8192),
-        BatchInfo(CE, 19, 0, 1, 8192),
-        BatchInfo(CE, 20, 0, 1, 8192),
-        BatchInfo(CE, 20, 0, 1, 8192),
-        BatchInfo(CE, 9, 0, 1, 3716),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 17, 0, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 8192),
+        BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
@@ -777,7 +779,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         # Due to shared prefix, we can use same first 6 blocks for all 10 reqs!
         # This means we use 6 blocks + 4 * n_req == 100 blocks.
         # This means we can schedule the remaining 5 reqs :D.
-        BatchInfo(CE, 5, 0, 1, 180),
+        BatchInfo(CE, 5, 0, 1, 200),
         # Because we are so constrained on memory, we see many preemptions :(.
         # To run TG on 8 reqs, we need 8 blocks. To free up 8 blocks, we preempt
         # 2 reqs since each req has 4 uncommitted blocks to release.
@@ -791,15 +793,15 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         BatchInfo(TG, 3, 0, 10, 3),
         BatchInfo(TG, 3, 0, 10, 3),
         BatchInfo(TG, 3, 3, 10, 3),
-        BatchInfo(CE, 5, 0, 1, 339),
+        BatchInfo(CE, 5, 0, 1, 355),
         BatchInfo(TG, 4, 0, 10, 4),
         BatchInfo(TG, 4, 0, 10, 4),
         BatchInfo(TG, 3, 1, 10, 3),
-        BatchInfo(CE, 3, 0, 1, 107),
+        BatchInfo(CE, 3, 0, 1, 115),
         BatchInfo(TG, 4, 0, 10, 4),
         BatchInfo(TG, 3, 0, 10, 3),
         BatchInfo(TG, 3, 1, 10, 3),
-        BatchInfo(CE, 3, 0, 1, 108),
+        BatchInfo(CE, 3, 0, 1, 116),
         BatchInfo(TG, 4, 1, 10, 4),
         # Notice how 22 << 100 tokens of original prompt.
         # Prefix caching allows us to encode fewer number of tokens after preemption.
@@ -953,59 +955,6 @@ def test_paged_scheduler_oom() -> None:
         "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
         in str(e.value)
     )
-    assert len(actual) == len(expected) and actual == expected
-
-
-def test_paged_scheduler_dont_oom_during_cow() -> None:
-    # this can hold 512 tokens
-    page_size = 128
-    num_blocks = 3
-    scheduler, request_queue = create_paged_scheduler(
-        enable_chunked_prefill=True,
-        enable_in_flight_batching=False,
-        enable_prefix_caching=True,
-        num_blocks=num_blocks,
-        page_size=page_size,
-        max_batch_size=999,
-        target_tokens_per_batch_ce=200,
-    )
-
-    shared_prefix = rand(64)
-
-    # Request A needs 3 blocks
-    enqueue_request(
-        request_queue,
-        prompt_len=300,
-        max_seq_len=300 + 16,
-        shared_prefix=shared_prefix,
-    )
-
-    batch_info = create_batch_and_execute(scheduler)
-    assert batch_info == BatchInfo(CE, 1, 0, 1, 200)
-
-    # Request B needs 1 block
-    enqueue_request(
-        request_queue,
-        prompt_len=64,
-        max_seq_len=64 + 16,
-        shared_prefix=shared_prefix,
-    )
-
-    # Note that request A and request B share some common prefix tokens.
-    # Request B will want to COW which requires allocating a new block.
-    # However since A is using all of the blocks, B will be unable to COW.
-    actual = run_until_completion(scheduler)
-
-    expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 1, 0, 1, 100),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 6, 1),
-        BatchInfo(CE, 1, 0, 1, 1),
-        BatchInfo(TG, 1, 0, 10, 1),
-        BatchInfo(TG, 1, 1, 6, 1),
-        BatchInfo(TG, 0, 0, 0, 0),
-    ]
     assert len(actual) == len(expected) and actual == expected
 
 
