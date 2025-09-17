@@ -60,7 +60,7 @@ alias AFloatOrBoolOrSimd = __mlir_type[
     `, `,
     Bool,
     `, `,
-    SIMD[DType.index, 2],
+    SIMD[DType.int, 2],
     `>`,
 ]
 
@@ -103,7 +103,7 @@ fn main():
     )
     # fmt: on
 
-    var c_simd = SIMD[DType.index, 2](5, 6)
+    var c_simd = SIMD[DType.int, 2](5, 6)
 
     var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
         _type=AFloatOrBoolOrSimd,
