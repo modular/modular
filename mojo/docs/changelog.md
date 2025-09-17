@@ -159,10 +159,12 @@ language across multiple phases.
 
 ### Standard library changes
 
+- There is now a `map` iterator.
+
 - `Iterable`'s `origin` parameter is now named `iterable_origin`
   and its `mut` param is now named `iterator_mut` to avoid naming collisions.
 
-- `zip` and `enumerate` are now builtins.
+- `zip`, `map`, and `enumerate` are now builtins.
 
 - Added `Path(...).parts()` method to the `Path` type, for example instead of
   writing:

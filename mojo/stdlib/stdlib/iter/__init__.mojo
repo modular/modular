@@ -360,3 +360,58 @@ fn zip[
     return _Zip4(
         iter(iterable_a), iter(iterable_b), iter(iterable_c), iter(iterable_d)
     )
+
+
+@fieldwise_init
+struct _MapIterator[
+    OutputType: Copyable & Movable,
+    InnerIteratorType: Iterator, //,
+    function: fn (InnerIteratorType.Element) -> OutputType,
+](Copyable, Iterable, Iterator, Movable):
+    alias Element = OutputType
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+    var _inner: InnerIteratorType
+
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
+        return self.copy()
+
+    fn __has_next__(self) -> Bool:
+        return self._inner.__has_next__()
+
+    fn __next__(mut self) -> Self.Element:
+        return function(next(self._inner))
+
+    fn copy(self) -> Self:
+        return Self(self._inner.copy())
+
+
+@always_inline
+fn map[
+    origin: ImmutableOrigin,
+    IterableType: Iterable,
+    ResultType: Copyable & Movable, //,
+    function: fn (IterableType.IteratorType[origin].Element) -> ResultType,
+](ref [origin]iterable: IterableType) -> _MapIterator[
+    OutputType=ResultType, function=function
+]:
+    """Returns an iterator applies `func` to each
+    element of the input iterable.
+
+    # Examples
+    ```mojo
+    var l = [1, 2, 3]
+    fn add_one(x: Int) -> Int:
+        return x + 1
+    var m = map[add_one](l)
+
+    # outputs:
+    # 2
+    # 3
+    # 4
+    for elem in m:
+        print(elem)
+    ```
+    """
+    return {iter(iterable)}
