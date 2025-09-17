@@ -2662,12 +2662,7 @@ Elaborator::run(ModuleOp theModule,
     }
   });
 
-  if (failed)
-    return failure();
-
-  // Recompute the new symbol table.
-  oldSymTab = SymbolTable(theModule);
-  return success();
+  return success(!failed);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2763,6 +2758,13 @@ public:
                     compileOffloadFn, config);
     if (failed(impl.run(theModule, roots.takeVector())))
       return signalPassFailure();
+
+    // Invalidate nested symbol tables and recompute a new top level symbol
+    // table.
+    for (Operation &op : theModule.getOps())
+      if (op.hasTrait<OpTrait::SymbolTable>())
+        analysis.getSymbolTables().invalidateSymbolTable(&op);
+    symtab = SymbolTable(theModule);
   }
 
 private:

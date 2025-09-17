@@ -30,20 +30,17 @@ namespace M::KGEN {
 namespace {
 class ParameterSimplifier : public ParameterEvaluator {
 public:
-  ParameterSimplifier(ModuleOp module, SymbolTableCollection &symtabs,
-                      ParameterEvaluationContext &evalContext)
-      : module(module), symtabs(symtabs) {
+  ParameterSimplifier(ModuleOp module, ParameterEvaluationContext &evalContext)
+      : module(module) {
     setEvaluationContext(&evalContext);
   }
   ParameterSimplifier(const ParameterSimplifier &other)
-      : ParameterEvaluator(other.getDeclBindings()), module(other.module),
-        symtabs(other.symtabs) {
+      : ParameterEvaluator(other.getDeclBindings()), module(other.module) {
     setEvaluationContext(other.getEvaluationContext());
   }
 
 private:
   ModuleOp module;
-  SymbolTableCollection &symtabs;
 };
 } // namespace
 
@@ -253,10 +250,9 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
-      propagateTrivialParameters(declRegion, graph, graph,
-                                 ParameterSimplifier(module,
-                                                     analysis.getSymbolTables(),
-                                                     evaluationContext));
+      propagateTrivialParameters(
+          declRegion, graph, graph,
+          ParameterSimplifier(module, evaluationContext));
     }
   }
 };

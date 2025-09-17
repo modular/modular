@@ -250,12 +250,13 @@ removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
 
 namespace {
 struct LITLowerer {
-  LITLowerer(SymbolTable &symbolTable,
+  LITLowerer(mlir::SymbolTableAnalysis &symbolTables,
              DenseMap<StringAttr, StringAttr> &renamedSymbols,
              SingletonTypeHelper &singletonTypeHelper, StructDecls &structDecls)
-      : symbolTable(symbolTable), renamedSymbols(renamedSymbols),
+      : symbolTables(symbolTables), renamedSymbols(renamedSymbols),
         singletonTypeHelper(singletonTypeHelper), structDecls(structDecls),
-        typeType(TypeType::get(symbolTable.getOp()->getContext())) {}
+        typeType(TypeType::get(
+            symbolTables.getTopLevelSymbolTable().getOp()->getContext())) {}
 
   /// Given a function, check to see if it is a top-level function.  If not,
   /// lower it to a ParamDeclareRegionOp.
@@ -280,7 +281,15 @@ struct LITLowerer {
                                 Block::iterator symTableIt = {},
                                 const Twine &parentPrefix = {});
 
-  SymbolTable &symbolTable;
+  SymbolTable &getTopLevelSymbolTable() {
+    return symbolTables.getTopLevelSymbolTable();
+  }
+
+  mlir::SymbolTableCollection &getSymbolTableCollection() {
+    return symbolTables.getSymbolTables();
+  }
+
+  mlir::SymbolTableAnalysis &symbolTables;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
   SingletonTypeHelper &singletonTypeHelper;
   StructDecls &structDecls;
@@ -408,7 +417,8 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
                          ArrayRef<VariadicKind> parentVariadics) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
-    StringAttr newName = flattenAndRenameSymbol(func, symbolTable, symTableIt);
+    StringAttr newName =
+        flattenAndRenameSymbol(func, getTopLevelSymbolTable(), symTableIt);
 
     // If this function has a subprogram attached, update its information to
     // account for the new name.
@@ -468,8 +478,9 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
 
   // Move over the symbol, and we're done.
   Block::iterator genIter = func->getIterator();
-  symbolTable.remove(func);
-  symbolTable.insert(newFunc, genIter);
+  getTopLevelSymbolTable().remove(func);
+  getTopLevelSymbolTable().insert(newFunc, genIter);
+  getSymbolTableCollection().invalidateSymbolTable(func);
   func.erase();
   return success();
 }
@@ -500,7 +511,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                                           Block::iterator symTableIt) {
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
-      flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
+      flattenAndRenameSymbol(structDecl, getTopLevelSymbolTable(), symTableIt);
 
   // Build a StructGeneratorOp as its replacement.
   StructDecl info{};
@@ -567,8 +578,10 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return failure();
   }
 
-  symbolTable.remove(structDecl);
-  info.symRef = SymbolRefAttr::get(symbolTable.insert(structGen, symTableIt));
+  getTopLevelSymbolTable().remove(structDecl);
+  info.symRef = SymbolRefAttr::get(
+      getTopLevelSymbolTable().insert(structGen, symTableIt));
+  getSymbolTableCollection().invalidateSymbolTable(structDecl);
   structDecl.erase();
   structDecls.structDecls.try_emplace(structName, std::move(info));
   return success();
@@ -578,7 +591,7 @@ LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                                          Block::iterator symTableIt) {
   // Update the name of this trait, incorporating any parents.
   StringAttr traitName =
-      flattenAndRenameSymbol(traitDecl, symbolTable, symTableIt);
+      flattenAndRenameSymbol(traitDecl, getTopLevelSymbolTable(), symTableIt);
 
   // Process operations within the trait body.
   for (Operation &member : llvm::make_early_inc_range(
@@ -604,7 +617,8 @@ LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
     // We don't care about other operations in the trait body for now.
   }
 
-  symbolTable.erase(traitDecl);
+  getTopLevelSymbolTable().erase(traitDecl);
+  getSymbolTableCollection().invalidateSymbolTable(traitDecl);
   return success();
 }
 
@@ -657,8 +671,8 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
             })
             .Case<LIT::FileModuleOp, LIT::PackageOp>([&](auto op) {
               // Make sure to remove the op from the symbol table if needed.
-              if (op->getParentOp() == symbolTable.getOp())
-                symbolTable.remove(op);
+              if (op->getParentOp() == getTopLevelSymbolTable().getOp())
+                getTopLevelSymbolTable().remove(op);
 
               // Lower the constructs within the body.
               Block *fileBody = op.getBody();
@@ -669,13 +683,16 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
               // If the package has already been compiled, insert a link
               // directive.
               if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
-                if (failed(addPackageLinkDirective(op, symbolTable)))
+                if (failed(
+                        addPackageLinkDirective(op, getTopLevelSymbolTable())))
                   return failure();
 
               // Inline the remaining body of the file into the parent.
               op->getBlock()->getOperations().splice(
                   op->getIterator(), fileBody->getOperations(),
                   fileBody->begin(), fileBody->end());
+
+              getSymbolTableCollection().invalidateSymbolTable(op);
               op->erase();
               return mlir::success();
             })
@@ -685,7 +702,8 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
                   return mlir::success();
                 })
             .Case([&](mlir::SymbolOpInterface symbol) {
-              flattenAndRenameSymbol(symbol, symbolTable, opSymTableIt);
+              flattenAndRenameSymbol(symbol, getTopLevelSymbolTable(),
+                                     opSymTableIt);
               return mlir::success();
             })
             .Default(mlir::success());
@@ -898,8 +916,8 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
       DenseMap<StringAttr, StringAttr> renamedSymbols;
       SingletonTypeHelper singletonTypeHelper(
           module, symtab.getTopLevelSymbolTable(), structDecls);
-      LITLowerer lowerer(symtab.getTopLevelSymbolTable(), renamedSymbols,
-                         singletonTypeHelper, structDecls);
+      LITLowerer lowerer(symtab, renamedSymbols, singletonTypeHelper,
+                         structDecls);
       if (failed(lowerer.lowerModuleDecl(module.getBody())))
         return signalPassFailure();
       lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper,
