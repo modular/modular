@@ -250,7 +250,7 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=...)
+        session = engine.InferenceSession(devices=[CPU()])
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
     """
