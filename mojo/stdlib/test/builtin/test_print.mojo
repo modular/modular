@@ -37,7 +37,7 @@ fn _assert_equal_error(
     return _assert_error(err, loc)
 
 
-struct PrintChecker:
+struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
     var cursor: UInt64
     var call_location: _SourceLocation
@@ -50,11 +50,6 @@ struct PrintChecker:
 
     fn __enter__(var self) -> Self:
         return self^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.tmp = existing.tmp^
-        self.cursor = existing.cursor
-        self.call_location = existing.call_location
 
     fn stream(self) -> FileDescriptor:
         return FileDescriptor(self.tmp._file_handle._get_raw_fd())

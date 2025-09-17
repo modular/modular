@@ -128,16 +128,6 @@ struct Interval[T: IntervalElement](
         self.start = existing.start.copy()
         self.end = existing.end.copy()
 
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval to move values from.
-        """
-        self.start = existing.start^
-        self.end = existing.end^
-
     fn overlaps(self, other: Self) -> Bool:
         """Returns whether this interval overlaps with another interval.
 
@@ -425,21 +415,6 @@ struct _IntervalNode[
         self.interval = existing.interval
         self.data = existing.data.copy()
         self.max_end = existing.max_end.copy()
-        self.left = existing.left
-        self.right = existing.right
-        self.parent = existing.parent
-        self._is_red = existing._is_red
-
-    fn __moveinit__(out self, deinit existing: Self, /):
-        """Create a new instance of the interval node by moving the values
-        from an existing one.
-
-        Args:
-            existing: The interval node to move values from.
-        """
-        self.interval = existing.interval^
-        self.data = existing.data^
-        self.max_end = existing.max_end^
         self.left = existing.left
         self.right = existing.right
         self.parent = existing.parent

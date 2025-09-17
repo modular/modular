@@ -109,13 +109,6 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.keys_end = UnsafePointer[Scalar[KeyEndType]].alloc(self.capacity)
         memcpy(self.keys_end, existing.keys_end, self.capacity)
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.allocated_bytes = existing.allocated_bytes
-        self.count = existing.count
-        self.capacity = existing.capacity
-        self.keys = existing.keys
-        self.keys_end = existing.keys_end
-
     fn __del__(deinit self):
         self.keys.free()
         self.keys_end.free()
@@ -272,15 +265,6 @@ struct StringDict[
             memcpy(self.deleted_mask, existing.deleted_mask, self.capacity >> 3)
         else:
             self.deleted_mask = UnsafePointer[UInt8].alloc(0)
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.count = existing.count
-        self.capacity = existing.capacity
-        self.keys = existing.keys^
-        self.key_hashes = existing.key_hashes
-        self.values = existing.values^
-        self.slot_to_index = existing.slot_to_index
-        self.deleted_mask = existing.deleted_mask
 
     fn __del__(deinit self):
         self.slot_to_index.free()

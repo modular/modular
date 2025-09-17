@@ -76,14 +76,6 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         for e in elements:
             self.add(e)
 
-    fn __copyinit__(out self, other: Self):
-        """Copy constructor.
-
-        Args:
-            other: The existing Set instance to copy from.
-        """
-        self._data = other._data.copy()
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#

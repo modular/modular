@@ -362,10 +362,6 @@ struct Device(Writable):
         self.idx = idx
         self.device = device
 
-    fn __copyinit__(out self, existing: Self):
-        self.idx = existing.idx
-        self.device = existing.device
-
     fn get_driver_version(self) raises -> DriverVersion:
         """Returns NVIDIA driver version."""
         alias max_length = 16

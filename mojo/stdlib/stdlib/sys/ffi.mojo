@@ -182,9 +182,6 @@ struct _OwnedDLHandle(Movable):
     fn __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = DLHandle(OpaquePointer())
 
-    fn __moveinit__(out self, deinit other: Self):
-        self._handle = other._handle
-
     fn __del__(deinit self):
         """Delete the DLHandle object unloading the associated dynamic library.
         """

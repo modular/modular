@@ -216,19 +216,6 @@ struct LinkedList[
             self.append(curr[].value.copy())
             curr = curr[].next
 
-    fn __moveinit__(out self, deinit other: Self):
-        """Initialize this list by moving elements from another list.
-
-        Args:
-            other: The list to move elements from.
-
-        Notes:
-            Time Complexity: O(1).
-        """
-        self._head = other._head
-        self._tail = other._tail
-        self._size = other._size
-
     fn __del__(deinit self):
         """Clean up the list by freeing all nodes.
 

@@ -73,14 +73,6 @@ struct StackTrace(ImplicitlyCopyable, Stringable):
         # Explicitly free the buffer using free() instead of the Mojo allocator.
         _libc.free(buffer.bitcast[NoneType]())
 
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of an existing stack trace.
-
-        Args:
-            existing: The stack trace to copy from.
-        """
-        self.value = existing.value
-
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
 

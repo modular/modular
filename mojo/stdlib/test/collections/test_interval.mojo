@@ -128,12 +128,6 @@ struct MyType(
     fn __init__(out self, value: Float64, /):
         self.value = value
 
-    fn __copyinit__(out self, existing: Self, /):
-        self.value = existing.value
-
-    fn __moveinit__(out self, deinit existing: Self, /):
-        self.value = existing.value
-
     fn __gt__(self, other: Self) -> Bool:
         return self.value > other.value
 

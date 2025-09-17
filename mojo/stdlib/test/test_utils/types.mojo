@@ -54,14 +54,6 @@ struct MoveOnly[T: Movable](Movable):
         """
         self.data = i^
 
-    fn __moveinit__(out self, deinit other: Self):
-        """Move construct a MoveOnly from an existing variable.
-
-        Args:
-            other: The other instance that we copying the payload from.
-        """
-        self.data = other.data^
-
 
 # ===----------------------------------------------------------------------=== #
 # ObservableMoveOnly
@@ -158,7 +150,9 @@ struct CopyCounter[
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveCounter[T: Copyable & Movable](ImplicitlyCopyable, Movable):
+# TODO: This type should not be Copyable, but has to be to satisfy
+#       Copyable & Movable at the moment.
+struct MoveCounter[T: Copyable & Movable](Copyable, Movable):
     """Counts the number of moves performed on a value."""
 
     var value: T
@@ -174,12 +168,6 @@ struct MoveCounter[T: Copyable & Movable](ImplicitlyCopyable, Movable):
     fn __moveinit__(out self, deinit existing: Self):
         self.value = existing.value^
         self.move_count = existing.move_count + 1
-
-    # TODO: This type should not be Copyable, but has to be to satisfy
-    #       Copyable & Movable at the moment.
-    fn __copyinit__(out self, existing: Self):
-        self.value = existing.value.copy()
-        self.move_count = existing.move_count
 
 
 # ===----------------------------------------------------------------------=== #

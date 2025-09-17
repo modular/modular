@@ -87,11 +87,6 @@ struct Progress(ImplicitlyCopyable):
         self._term_dims = _get_terminal_size()
         print("")
 
-    fn __copyinit__(out self, other: Self):
-        self._range = other._range
-        self._percentage = other._percentage
-        self._term_dims = (other._term_dims[0], other._term_dims[1])
-
     fn advance(mut self, steps: Int = 1):
         alias BLOCK = "▇"
         alias PLACE_HOLDER = " "

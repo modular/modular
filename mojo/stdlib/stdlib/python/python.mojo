@@ -47,9 +47,6 @@ struct _PythonGlobal(Defaultable, Movable):
     fn __init__(out self):
         self.cpython = CPython()
 
-    fn __moveinit__(out self, deinit other: Self):
-        self.cpython = other.cpython^
-
     fn __del__(deinit self):
         self.cpython.destroy()
 

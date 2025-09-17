@@ -102,9 +102,6 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in items:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __copyinit__(out self, other: Self):
-        self._data = other._data.copy()
-
     @staticmethod
     fn fromkeys(keys: List[V, *_], value: Int) -> Self:
         """Create a new Counter from a list of keys and a default value.
@@ -640,15 +637,6 @@ struct CountTuple[V: KeyElement](Copyable, Movable):
         """
         self._value = value.copy()
         self._count = Int(count)
-
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the tuple.
-
-        Args:
-            existing: The tuple to copy.
-        """
-        self._value = existing._value.copy()
-        self._count = existing._count
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders

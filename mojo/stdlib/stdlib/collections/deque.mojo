@@ -186,20 +186,6 @@ struct Deque[ElementType: Copyable & Movable](
 
         self._tail = len(other)
 
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves data of an existing deque into a new one.
-
-        Args:
-            existing: The existing deque.
-        """
-        self._data = existing._data
-        self._capacity = existing._capacity
-        self._head = existing._head
-        self._tail = existing._tail
-        self._min_capacity = existing._min_capacity
-        self._maxlen = existing._maxlen
-        self._shrink = existing._shrink
-
     fn __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
         for i in range(len(self)):

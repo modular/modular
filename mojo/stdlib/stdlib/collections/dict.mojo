@@ -312,16 +312,6 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         self.key = key^
         self.value = value^
 
-    fn __copyinit__(out self, existing: Self):
-        """Creates a copy of the given entry.
-
-        Args:
-            existing: The entry to copy.
-        """
-        self.hash = existing.hash
-        self.key = existing.key.copy()
-        self.value = existing.value.copy()
-
     fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
 
@@ -391,9 +381,6 @@ struct _DictIndex(Movable):
             var new_data = index.data.bitcast[Int64]()
             memcpy(new_data, data, reserved)
         return index^
-
-    fn __moveinit__(out self, deinit existing: Self):
-        self.data = existing.data
 
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
         if reserved <= 128:
@@ -1340,22 +1327,6 @@ struct OwnedKwargsDict[V: Copyable & Movable](
     fn __init__(out self):
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, V, default_comp_time_hasher]()
-
-    fn __copyinit__(out self, existing: Self):
-        """Copy an existing keyword dictionary.
-
-        Args:
-            existing: The existing keyword dictionary.
-        """
-        self._dict = existing._dict.copy()
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Move data of an existing keyword dictionary into a new one.
-
-        Args:
-            existing: The existing keyword dictionary.
-        """
-        self._dict = existing._dict^
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

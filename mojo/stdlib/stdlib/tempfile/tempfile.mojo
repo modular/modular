@@ -262,7 +262,7 @@ struct TemporaryDirectory:
             return False
 
 
-struct NamedTemporaryFile:
+struct NamedTemporaryFile(Movable):
     """A handle to a temporary file.
 
     Example:
@@ -353,16 +353,6 @@ struct NamedTemporaryFile:
         self._file_handle.close()
         if self._delete:
             os.remove(self.name)
-
-    fn __moveinit__(out self, deinit existing: Self):
-        """Moves constructor for the file handle.
-
-        Args:
-            existing: The existing file handle.
-        """
-        self._file_handle = existing._file_handle^
-        self._delete = existing._delete
-        self.name = existing.name^
 
     fn read(self, size: Int = -1) raises -> String:
         """Reads the data from the file.
