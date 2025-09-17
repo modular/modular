@@ -503,7 +503,9 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - Add a memory ordering parameter to `Atomic.load`.
 
-- `DType.index` is deprecated in favor of the new `DType.int`.
+- `DType.index` is deprecated in favor of the new `DType.int`. Moreover, a new
+  `DType.uint` is added, modeling unsigned integers with widths that match the
+  machine word length.
 
 ### Tooling changes
 
