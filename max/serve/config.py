@@ -185,7 +185,7 @@ class Settings(BaseSettings):
     )
 
     metric_recording: MetricRecordingMethod = Field(
-        default=MetricRecordingMethod.ASYNCIO,
+        default=MetricRecordingMethod.PROCESS,
         description="How metrics should be recorded?",
         alias="MAX_SERVE_METRIC_RECORDING_METHOD",
     )
