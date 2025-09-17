@@ -108,8 +108,11 @@ def test_move():
     var v1 = TestVariant(MoveCopyCounter())
     var v2 = v1
     # didn't call moveinit
+    # Fix: test changed here because we fixed something in Variant.__copyinit__
+    # (it was previously moving an copy, now it is doing init_pointee_copy)
     assert_equal(v1[MoveCopyCounter].moved, 1)
-    assert_equal(v2[MoveCopyCounter].moved, 2)
+    assert_equal(v2[MoveCopyCounter].moved, 1)
+    assert_equal(v2[MoveCopyCounter].copied, 1)
     # test that we didn't call the other moveinit too!
     assert_no_poison()
 

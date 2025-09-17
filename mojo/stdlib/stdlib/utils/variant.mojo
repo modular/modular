@@ -128,6 +128,11 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
     ]
     var _impl: Self._mlir_type
 
+    # Trivialities from Ts
+    alias __copyinit__is_trivial = Self._all_t_trivial["__copyinit__"]()
+    alias __moveinit__is_trivial = Self._all_t_trivial["__moveinit__"]()
+    alias __del__is_trivial = Self._all_t_trivial["__del__"]()
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -163,17 +168,20 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             other: The variant to copy from.
         """
 
-        self = Self(unsafe_uninitialized=())
-        self._get_discr() = other._get_discr()
-
+        # Delegate to explicit copy initializer.
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
-            if self._get_discr() == i:
-                self._get_ptr[T]().init_pointee_move(
-                    other._get_ptr[T]()[].copy()
-                )
-                return
+        if Self.__copyinit__is_trivial:
+            self._impl = other._impl
+        else:
+            self = Self(unsafe_uninitialized=())
+            self._get_discr() = other._get_discr()
+
+            @parameter
+            for i in range(len(VariadicList(Ts))):
+                alias T = Ts[i]
+                if self._get_discr() == i:
+                    self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
+                    return
 
     fn __moveinit__(out self, deinit other: Self):
         """Move initializer for the variant.
@@ -181,25 +189,35 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
         Args:
             other: The variant to move.
         """
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-        self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            alias T = Ts[i]
-            if self._get_discr() == i:
-                # Calls the correct __moveinit__
-                other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
-                return
+        if Self.__moveinit__is_trivial:
+            self._impl = other._impl
+        else:
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self)
+            )
+            self._get_discr() = other._get_discr()
+
+            @parameter
+            for i in range(len(VariadicList(Ts))):
+                alias T = Ts[i]
+                if self._get_discr() == i:
+                    # Calls the correct __moveinit__
+                    other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
+                    return
 
     fn __del__(deinit self):
         """Destroy the variant."""
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
-            if self._get_discr() == i:
-                self._get_ptr[Ts[i]]().destroy_pointee()
-                return
+        if not Self.__del__is_trivial:
+
+            @parameter
+            for i in range(len(VariadicList(Ts))):
+                if self._get_discr() == i:
+                    self._get_ptr[Ts[i]]().destroy_pointee()
+                    return
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -398,6 +416,28 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             if _type_is_eq[Ts[i], T]():
                 return i
         return Self._sentinel
+
+    @staticmethod
+    fn _all_t_trivial[_dunder: String]() -> Bool:
+
+        @parameter
+        for i in range(len(VariadicList(Ts))):
+
+            @parameter
+            if _dunder == "__del__":
+                if not Bool(Ts[i].__del__is_trivial):
+                    return False
+
+            @parameter
+            if _dunder == "__copyinit__":
+                if not Bool(Ts[i].__copyinit__is_trivial):
+                    return False
+
+            @parameter
+            if _dunder == "__moveinit__":
+                if not Bool(Ts[i].__moveinit__is_trivial):
+                    return False
+        return True
 
     @staticmethod
     fn is_type_supported[T: AnyType]() -> Bool:
