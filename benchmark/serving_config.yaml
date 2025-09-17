@@ -77,7 +77,7 @@ benchmark_config:
 
   # Control flags (serving-specific)
   skip_test_prompt: false
-  collect_gpu_stats: true  # Enable GPU stats collection for serving benchmarks
+  collect_gpu_stats: false  # Enable GPU stats collection for serving benchmarks
   collect_cpu_stats: true  # Enable CPU stats collection for serving benchmarks
 
   # Result saving (serving-specific extensions)
