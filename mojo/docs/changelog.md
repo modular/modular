@@ -567,3 +567,5 @@ as the version for these packages.
   name, rather than complaining about a mysterious "parameter #4".
 - Fixed <https://github.com/modular/modular/issues/5260> - undefined reference
   to `clock_gettime_nsec_np' when building with -O0
+- Fixed <https://github.com/modular/modular/issues/5307> - Bad error message
+  when getting GPU info for unsupported GPU.

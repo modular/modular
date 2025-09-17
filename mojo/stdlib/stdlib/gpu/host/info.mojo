@@ -1619,8 +1619,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("apple-m4"),
         ),
         "the target architecture '",
-        target_arch,
-        "' is not valid",
+        # Note: Print the full architecture name, not the trimmed string name.
+        target_arch0,
+        "' is invalid or not currently supported",
     ]()
 
     @parameter
