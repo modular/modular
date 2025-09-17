@@ -322,6 +322,23 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         self.key = existing.key.copy()
         self.value = existing.value.copy()
 
+    fn reap(deinit self) -> Tuple[Optional[K], Optional[V]]:
+        """Take the key and value from an owned entry.
+
+        Wrapped in `Optional`s to allow for moving each field individually.
+
+        Example:
+            ```mojo
+            var entry = DictEntry(key="a", value=1)
+            var k, v = entry^.reap()
+            print(k.take(), v.take())
+            ```
+
+        Returns:
+            The key and value of the entries as a tuple of `Optional`s.
+        """
+        return Optional(self.key^), Optional(self.value^)
+
     fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
 
@@ -1139,6 +1156,20 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
 
         for entry in my_dict.take_items():
             print(entry.key, entry.value)
+
+        print(len(my_dict))
+        # prints 0
+        ```
+
+        Example of moving out the key and value individually:
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+
+        for entry in my_dict.take_items():
+            var k, v = entry^.reap()
+            print(k.take(), v.take())
 
         print(len(my_dict))
         # prints 0

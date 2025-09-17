@@ -291,6 +291,18 @@ def test_iter_take_items():
     assert_false(dict.take_items().__has_next__())
 
 
+def test_iter_take_items_reap():
+    var my_dict = Dict[String, Int]()
+    my_dict["a"] = 1
+    my_dict["b"] = 2
+
+    for entry in my_dict.take_items():
+        var k, v = entry^.reap()
+        print(k.take(), v.take())
+
+    print(len(my_dict))
+
+
 def test_dict_contains():
     var dict: Dict[String, Int] = {}
     dict["abc"] = 1
@@ -759,3 +771,5 @@ def main():
     test_dict_comprehension()
     test_dict_repr_wrap()
     test_popitem_no_copies()
+    test_iter_take_items()
+    test_iter_take_items_reap()
