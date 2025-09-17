@@ -1006,6 +1006,15 @@ def test_list_repr_wrap():
     )
 
 
+def test_list_take_items():
+    var l = List[String]("a", "b", "c")
+    var l2 = l.copy()
+    for item in l.take_items():
+        var v = item^
+        assert_true(v in l2)
+    assert_equal(len(l), 0)
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -1051,3 +1060,4 @@ def main():
     test_copyinit_trivial_types_dtypes()
     test_list_comprehension()
     test_list_repr_wrap()
+    test_list_take_items()
