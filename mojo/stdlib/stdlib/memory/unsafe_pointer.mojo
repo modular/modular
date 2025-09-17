@@ -38,9 +38,6 @@ fn _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
-alias _must_be_mut_err = "UnsafePointer must be mutable for this operation"
-
-
 @register_passable("trivial")
 struct UnsafePointer[
     type: AnyType,
@@ -731,7 +728,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -752,7 +749,6 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         self.offset(offset).store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
@@ -764,7 +760,7 @@ struct UnsafePointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -784,7 +780,6 @@ struct UnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         constrained[offset_type.is_integral(), "offset must be integer"]()
         self.offset(Int(offset))._store[alignment=alignment, volatile=volatile](
             val
@@ -797,7 +792,10 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
+    ](
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
+        val: SIMD[dtype, width],
+    ):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -827,7 +825,6 @@ struct UnsafePointer[
         Args:
             val: The SIMD value to store.
         """
-        constrained[mut, _must_be_mut_err]()
         self._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
@@ -837,8 +834,10 @@ struct UnsafePointer[
         *,
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[dtype], **_], val: SIMD[dtype, width]):
-        constrained[mut, _must_be_mut_err]()
+    ](
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
+        val: SIMD[dtype, width],
+    ):
         constrained[width > 0, "width must be a positive integer value"]()
         constrained[
             alignment > 0, "alignment must be a positive integer value"
@@ -876,7 +875,7 @@ struct UnsafePointer[
         T: Intable, //,
         width: Int = 1,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         val: SIMD[dtype, width],
         stride: T,
     ):
@@ -891,7 +890,6 @@ struct UnsafePointer[
             val: The SIMD value to store.
             stride: The stride between stores.
         """
-        constrained[mut, _must_be_mut_err]()
         strided_store(
             val, self, Int(stride), SIMD[DType.bool, width](fill=True)
         )
@@ -958,7 +956,7 @@ struct UnsafePointer[
         width: Int = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -993,7 +991,6 @@ struct UnsafePointer[
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
         """
-        constrained[mut, _must_be_mut_err]()
         constrained[
             offset.dtype.is_integral(),
             "offset type must be an integral type",
@@ -1092,7 +1089,9 @@ struct UnsafePointer[
 
     @always_inline
     fn destroy_pointee(
-        self: UnsafePointer[type, address_space = AddressSpace.GENERIC, **_]
+        self: UnsafePointer[
+            type, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
     ):
         """Destroy the pointed-to value.
 
@@ -1102,13 +1101,16 @@ struct UnsafePointer[
         more efficient because it doesn't invoke `__moveinit__`.
 
         """
-        constrained[mut, _must_be_mut_err]()
         _ = __get_address_as_owned_value(self.address)
 
     @always_inline
     fn take_pointee[
         T: Movable, //,
-    ](self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_]) -> T:
+    ](
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ]
+    ) -> T:
         """Move the value at the pointer out, leaving it uninitialized.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1125,7 +1127,6 @@ struct UnsafePointer[
         Returns:
             The value at the pointer.
         """
-        constrained[mut, _must_be_mut_err]()
         return __get_address_as_owned_value(self.address)
 
     # TODO: Allow overloading on more specific traits
@@ -1133,7 +1134,9 @@ struct UnsafePointer[
     fn init_pointee_move[
         T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
         var value: T,
     ):
         """Emplace a new value into the pointer location, moving from `value`.
@@ -1152,14 +1155,15 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(self.address) = value^
 
     @always_inline
     fn init_pointee_copy[
         T: Copyable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
         value: T,
     ):
         """Emplace a copy of `value` into the pointer location.
@@ -1178,15 +1182,18 @@ struct UnsafePointer[
         Args:
             value: The value to emplace.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(self.address) = value.copy()
 
     @always_inline
     fn init_pointee_move_from[
         T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        src: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
+        src: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
     ):
         """Moves the value `src` points to into the memory location pointed to
         by `self`.
@@ -1240,7 +1247,6 @@ struct UnsafePointer[
         Args:
             src: Source pointer that the value will be moved from.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
@@ -1253,8 +1259,12 @@ struct UnsafePointer[
     fn move_pointee_into[
         T: Movable, //,
     ](
-        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
-        dst: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        self: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
+        dst: UnsafePointer[
+            T, mut=True, address_space = AddressSpace.GENERIC, **_
+        ],
     ):
         """Moves the value `self` points to into the memory location pointed to by
         `dst`.
@@ -1282,7 +1292,6 @@ struct UnsafePointer[
         Args:
             dst: Destination pointer that the value will be moved into.
         """
-        constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)
