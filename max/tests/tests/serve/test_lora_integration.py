@@ -14,11 +14,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from max.dtype import DType
 from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.lib.lora_config import LoRAConfig
+from safetensors.numpy import save_file
 
 
 class MockLoRARequestProcessor:
@@ -196,6 +198,43 @@ def test_lora_error_handling(lora_manager: LoRAManager) -> None:
     assert status == LoRAStatus.UNLOAD_NAME_NONEXISTENT
 
 
+def test_lora_unsupported_target_modules(lora_manager: LoRAManager) -> None:
+    """Test that loading LoRA adapters with unsupported target modules fails."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create adapter config with unsupported target modules
+        config_data = {
+            "base_model_name_or_path": "test_model",
+            "lora_alpha": 16,
+            "r": 8,
+            "target_modules": [
+                "embed_tokens",
+                "lm_head",
+            ],  # Unsupported modules
+            "peft_type": "LORA",
+            "task_type": "CAUSAL_LM",
+        }
+
+        config_path = Path(tmpdir) / "adapter_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        # Create minimal weights
+        weights = {
+            "base_model.model.embed_tokens.lora_A.weight": np.random.randn(
+                8, 100
+            ).astype(np.float32),
+            "base_model.model.embed_tokens.lora_B.weight": np.random.randn(
+                100, 8
+            ).astype(np.float32),
+        }
+        weights_path = Path(tmpdir) / "adapter_model.safetensors"
+        save_file(weights, weights_path)
+
+        # Attempt to load the adapter should fail
+        status = lora_manager.load_adapter(f"unsupported={tmpdir}")
+        assert status == LoRAStatus.LOAD_INVALID_ADAPTER
+
+
 def test_lora_lru_eviction(
     lora_manager: LoRAManager, temp_adapters: list[str]
 ) -> None:
@@ -269,3 +308,120 @@ def test_lru_cache_manual_activation(
 
     # Check that slots are sorted
     assert slot_0 < slot_1
+
+
+def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that LoRA adapters with bias configuration are rejected."""
+
+    monkeypatch.setattr(
+        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
+    )
+
+    bias_configs_to_test = ["all", "lora_only"]
+
+    for bias_config in bias_configs_to_test:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_data = {
+                "base_model_name_or_path": "test_model",
+                "lora_alpha": 16,
+                "r": 8,
+                "target_modules": ["q_proj", "v_proj"],
+                "peft_type": "LORA",
+                "task_type": "CAUSAL_LM",
+                "bias": bias_config,
+            }
+
+            config_path = Path(tmpdir) / "adapter_config.json"
+            with open(config_path, "w") as f:
+                json.dump(config_data, f)
+
+            weights = {
+                "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": np.random.randn(
+                    8, 100
+                ).astype(np.float32),
+                "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": np.random.randn(
+                    100, 8
+                ).astype(np.float32),
+            }
+
+            weights_path = Path(tmpdir) / "adapter_model.safetensors"
+            save_file(weights, weights_path)
+
+            config = LoRAConfig(
+                enable_lora=True,
+                max_num_loras=5,
+                max_lora_rank=16,
+                lora_paths=[],
+            )
+
+            manager = LoRAManager(
+                config=config,
+                base_model_path="/mock/path",
+                base_dtype=DType.float32,
+            )
+
+            manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
+
+            status = manager.load_adapter(
+                f"bias_adapter_{bias_config}={tmpdir}"
+            )
+            assert status == LoRAStatus.LOAD_INVALID_ADAPTER
+
+
+def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that LoRA adapters with bias='none' are accepted."""
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    # Mock the LoRARequestProcessor to avoid ZMQ setup
+    monkeypatch.setattr(
+        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
+    )
+
+    mock_lora_model = MagicMock()
+    monkeypatch.setattr("max.pipelines.lib.lora.LoRAModel", mock_lora_model)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_data = {
+            "base_model_name_or_path": "test_model",
+            "lora_alpha": 16,
+            "r": 8,
+            "target_modules": ["q_proj", "v_proj"],
+            "peft_type": "LORA",
+            "task_type": "CAUSAL_LM",
+            "bias": "none",
+        }
+
+        config_path = Path(tmpdir) / "adapter_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
+        weights = {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": np.random.randn(
+                8, 100
+            ).astype(np.float32),
+            "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": np.random.randn(
+                100, 8
+            ).astype(np.float32),
+        }
+
+        weights_path = Path(tmpdir) / "adapter_model.safetensors"
+        save_file(weights, weights_path)
+
+        # Create LoRA manager
+        config = LoRAConfig(
+            enable_lora=True, max_num_loras=5, max_lora_rank=16, lora_paths=[]
+        )
+
+        manager = LoRAManager(
+            config=config,
+            base_model_path="/mock/path",
+            base_dtype=DType.float32,
+        )
+
+        # Mock path validation to pass initial checks
+        manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
+
+        # Attempt to load the adapter should succeed with bias='none'
+        status = manager.load_adapter(f"good_adapter={tmpdir}")
+        assert status == LoRAStatus.SUCCESS
