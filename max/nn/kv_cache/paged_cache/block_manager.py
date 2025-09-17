@@ -103,7 +103,6 @@ class BlockManager(Generic[T]):
 
         # A pool of host blocks.
         self.host_block_pool: BlockPool | None = None
-        self.swapping_strategy: SwappingStrategy | None = None
         if total_num_host_blocks > 0:
             self.host_block_pool = BlockPool(
                 MemoryTier.MEMORY_TIER_CPU,
@@ -117,16 +116,6 @@ class BlockManager(Generic[T]):
                 raise ValueError(
                     "Block copy engine must be provided if host block pool is enabled"
                 )
-
-            # Determine the swapping strategy based on whether the block copy engine
-            # supports multistream.
-            if self.block_copy_engine.supports_multistream():
-                self.swapping_strategy = SwappingStrategy.EAGER
-            else:
-                self.swapping_strategy = SwappingStrategy.LAZY
-            logger.info(
-                f"Host KVCache swapping strategy: {self.swapping_strategy.value}"
-            )
 
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
@@ -152,9 +141,7 @@ class BlockManager(Generic[T]):
         self.cached_prompt_tokens = 0
 
         # Tracks recently committed device blocks to offload to host.
-        self.recently_committed_device_blocks: list[KVCacheBlock] | None = None
-        if self.swapping_strategy == SwappingStrategy.EAGER:
-            self.recently_committed_device_blocks = []
+        self.recently_committed_device_blocks: list[KVCacheBlock] = []
 
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
@@ -557,8 +544,6 @@ class BlockManager(Generic[T]):
     @traced
     def eagerly_offload_recently_committed_blocks(self) -> None:
         """Offload recently committed blocks to host memory."""
-        assert self.recently_committed_device_blocks is not None
-        assert self.swapping_strategy == SwappingStrategy.EAGER
 
         for block in self.recently_committed_device_blocks:
             self.maybe_offload_gpu_block_to_host(block, block.block_hash)
@@ -597,9 +582,7 @@ class BlockManager(Generic[T]):
 
     @traced
     def allocate_device_block(self) -> KVCacheBlock:
-        new_block, block_hash = self.device_block_pool.alloc_block()
-        if self.swapping_strategy == SwappingStrategy.LAZY:
-            self.maybe_offload_gpu_block_to_host(new_block, block_hash)
+        new_block, _ = self.device_block_pool.alloc_block()
         return new_block
 
     @property

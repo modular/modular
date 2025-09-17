@@ -48,7 +48,7 @@ from ..context import KVCacheAwareContext
 from ..manager import KVCacheInputSymbols, KVCacheManager, RaggedKVCacheInputs
 from ..utils import build_max_lengths_tensor
 from .block_copy_engine import BlockCopyEngine, BlockCopyMetrics
-from .block_manager import BlockManager, SwappingStrategy
+from .block_manager import BlockManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -206,7 +206,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
         self.page_size = page_size
 
         # The number of bytes that a single page will occupy.
-        single_page_size_bytes = (
+        single_page_size_per_device_bytes = (
             2
             * num_layers
             * params.n_kv_heads_per_device
@@ -214,26 +214,31 @@ class PagedKVCacheManager(KVCacheManager[T]):
             * page_size
             * params.dtype.size_in_bytes
         )
+        single_page_size_bytes = single_page_size_per_device_bytes * len(
+            devices
+        )
 
         # Normalize cache_memory across all devices.
         cache_memory_per_device = cache_memory // len(devices)
 
         # The total number of blocks we'll have per-device.
         self.total_num_pages = int(
-            cache_memory_per_device // single_page_size_bytes
+            cache_memory_per_device // single_page_size_per_device_bytes
         )
 
         # Validate that we are allocating enough blocks.
         single_page_size_bytes_str = to_human_readable_bytes(
             single_page_size_bytes
         )
-        cache_memory_per_device_str = to_human_readable_bytes(
-            cache_memory_per_device
+        cache_memory_str = to_human_readable_bytes(cache_memory)
+        across_x_devices_str = (
+            f" across {len(devices)} devices" if len(devices) > 1 else ""
         )
         if self.total_num_pages == 0:
             raise RuntimeError(
                 f"Insufficient cache memory to allocate even a single page.\n"
-                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
+                f"One page requires {single_page_size_bytes_str} but only "
+                f"{cache_memory_str} are available{across_x_devices_str}."
             )
 
         if max_batch_size > self.total_num_pages:
@@ -241,8 +246,10 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 max_batch_size * single_page_size_bytes
             )
             logger.warning(
-                f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
+                f"Insufficient cache memory to support a batch containing {max_batch_size} "
+                f"requests with one token per request. Need to allocate at least {max_batch_size} "
+                f"pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} "
+                f"pages ({cache_memory_str}{across_x_devices_str})."
             )
 
         blocks_needed_for_max_seq_len = ceildiv(max_seq_len, page_size)
@@ -251,8 +258,11 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 blocks_needed_for_max_seq_len * single_page_size_bytes
             )
             logger.warning(
-                f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
+                f"Insufficient cache memory to support a batch containing one request "
+                f"at the max sequence length of {max_seq_len} tokens. "
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} "
+                f"pages ({memory_needed_str}), but only have enough memory for "
+                f"{self.total_num_pages} pages ({cache_memory_str}{across_x_devices_str})."
             )
 
         # call our base class constructor
@@ -294,7 +304,8 @@ class PagedKVCacheManager(KVCacheManager[T]):
             )
 
         logger.debug(
-            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
+            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using "
+            f"{single_page_size_bytes_str} per page{across_x_devices_str}."
         )
 
         self.host_tensors = None
@@ -309,23 +320,8 @@ class PagedKVCacheManager(KVCacheManager[T]):
 
             # The number of bytes that a single page will occupy on the host.
             # Note that this considers n_kv_heads, not n_kv_heads_per_device.
-            single_page_size_bytes_on_host = (
-                2
-                * num_layers
-                * params.n_kv_heads
-                * params.head_dim
-                * page_size
-                * params.dtype.size_in_bytes
-            )
-            single_page_size_bytes_on_host_str = to_human_readable_bytes(
-                single_page_size_bytes_on_host
-            )
-            host_kvcache_swap_space_bytes_per_device = (
-                host_kvcache_swap_space_bytes // len(devices)
-            )
             self.total_num_host_pages = (
-                host_kvcache_swap_space_bytes_per_device
-                // single_page_size_bytes
+                host_kvcache_swap_space_bytes // single_page_size_bytes
             )
 
             if self.total_num_host_pages == 0:
@@ -334,14 +330,13 @@ class PagedKVCacheManager(KVCacheManager[T]):
                 )
                 raise RuntimeError(
                     f"Insufficient host swap space to allocate even a single page. "
-                    f"One page requires {single_page_size_bytes_on_host_str} but only {human_readable_host_swap_space_gb} are available."
+                    f"One page requires {single_page_size_bytes_str} but only "
+                    f"{human_readable_host_swap_space_gb} are available on host."
                 )
 
-            logger.warning(
-                "Paged KVCache Manager will offload GPU blocks to host memory. This is an experimental feature and may not work correctly."
-            )
             logger.debug(
-                f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_on_host_str} per page."
+                f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using "
+                f"{single_page_size_bytes_str} per page."
             )
             self.host_tensors = []
             # Construct host tensors for each device.
@@ -585,8 +580,7 @@ class PagedKVCacheManager(KVCacheManager[T]):
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
-        if self.block_manager.swapping_strategy == SwappingStrategy.EAGER:
-            self.block_manager.eagerly_offload_recently_committed_blocks()
+        self.block_manager.eagerly_offload_recently_committed_blocks()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
