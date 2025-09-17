@@ -136,38 +136,38 @@ class SamplingParams:
         Displays all sampling parameters in a consistent visual format similar to
         pipeline configuration logging.
         """
-        logger.info("Sampling Default Runtime Parameters")
+        logger.info("Sampling Config")
         logger.info("=" * 60)
 
         # Core sampling parameters
-        logger.info(f"    top_k:                  {self.top_k}")
-        logger.info(f"    top_p:                  {self.top_p}")
-        logger.info(f"    min_p:                  {self.min_p}")
-        logger.info(f"    temperature:            {self.temperature}")
+        logger.info(f"    top_k                  : {self.top_k}")
+        logger.info(f"    top_p                  : {self.top_p}")
+        logger.info(f"    min_p                  : {self.min_p}")
+        logger.info(f"    temperature            : {self.temperature}")
 
         # Penalty parameters
-        logger.info(f"    frequency_penalty:      {self.frequency_penalty}")
-        logger.info(f"    presence_penalty:       {self.presence_penalty}")
-        logger.info(f"    repetition_penalty:     {self.repetition_penalty}")
+        logger.info(f"    frequency_penalty      : {self.frequency_penalty}")
+        logger.info(f"    presence_penalty       : {self.presence_penalty}")
+        logger.info(f"    repetition_penalty     : {self.repetition_penalty}")
 
         # Generation control parameters
-        logger.info(f"    max_new_tokens:         {self.max_new_tokens}")
-        logger.info(f"    min_new_tokens:         {self.min_new_tokens}")
-        logger.info(f"    ignore_eos:             {self.ignore_eos}")
-        logger.info(f"    detokenize:             {self.detokenize}")
+        logger.info(f"    max_new_tokens         : {self.max_new_tokens}")
+        logger.info(f"    min_new_tokens         : {self.min_new_tokens}")
+        logger.info(f"    ignore_eos             : {self.ignore_eos}")
+        logger.info(f"    detokenize             : {self.detokenize}")
 
         # Stopping criteria
         if self.stop:
             stop_str = ", ".join(f'"{s}"' for s in self.stop)
-            logger.info(f"    stop_strings:           [{stop_str}]")
+            logger.info(f"    stop_strings           : [{stop_str}]")
         else:
-            logger.info("    stop_strings:           None")
+            logger.info("    stop_strings           : None")
 
         if self.stop_token_ids:
             stop_ids_str = ", ".join(str(id) for id in self.stop_token_ids)
-            logger.info(f"    stop_token_ids:         [{stop_ids_str}]")
+            logger.info(f"    stop_token_ids         : [{stop_ids_str}]")
         else:
-            logger.info("    stop_token_ids:         None")
+            logger.info("    stop_token_ids         : None")
         logger.info("")
 
     def __post_init__(self):
