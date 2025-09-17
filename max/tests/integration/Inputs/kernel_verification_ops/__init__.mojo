@@ -89,9 +89,6 @@ struct MyIntMemory(Movable):
     fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(out self, deinit other: Self):
-        self.val = other.val
-
     fn __del__(deinit self):
         print("MyInt del")
 
