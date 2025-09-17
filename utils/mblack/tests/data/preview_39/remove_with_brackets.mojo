@@ -54,7 +54,7 @@ with (
     ...
 
 # Don't touch assignment expressions
-with (y := open("./test.py")) as f:
+with (y := open("./test.mojo")) as f:
     pass
 
 # Deeply nested examples
@@ -119,7 +119,7 @@ with (
     ...
 
 # Don't touch assignment expressions
-with (y := open("./test.py")) as f:
+with (y := open("./test.mojo")) as f:
     pass
 
 # Deeply nested examples

@@ -37,11 +37,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Set
 
 import pytest
 
-try:
-    from pytest import StashKey
-except ImportError:
-    # pytest < 7
-    from _pytest.store import StoreKey as StashKey  # type: ignore[no-redef]
+from pytest import StashKey
 
 log = logging.getLogger(__name__)
 
