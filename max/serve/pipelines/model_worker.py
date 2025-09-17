@@ -37,6 +37,7 @@ from max.interfaces import (
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.exceptions import detect_and_wrap_cuda_oom
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
@@ -176,8 +177,14 @@ class ModelWorker:
                     else:
                         count_no_progress = 0
                 except Exception as e:
-                    logger.exception("An error occurred during scheduling")
-                    raise e
+                    wrapped_error = detect_and_wrap_cuda_oom(e)
+                    if wrapped_error is not e:
+                        # It was a CUDA OOM error, raise the wrapped version with helpful message
+                        raise wrapped_error from e
+                    else:
+                        # Not OOM, handle normally
+                        logger.exception("An error occurred during scheduling")
+                        raise e
 
         logger.debug("Stopped model worker!")
 

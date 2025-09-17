@@ -17,6 +17,11 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+)
+
+modular_py_library(
     name = "serve",
     srcs = glob(
         ["*.py"],
@@ -24,12 +29,14 @@ modular_py_library(
             "process_control.py",
             "config.py",
             "debug.py",
+            "exceptions.py",
         ],
     ),
     imports = ["../.."],
     deps = [
         ":config",
         ":debug",
+        ":exceptions",
         ":process_control",
         "//SDK/lib/API/python/max/serve/mocks",
         "//SDK/lib/API/python/max/serve/parser",
