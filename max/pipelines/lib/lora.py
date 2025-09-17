@@ -34,6 +34,11 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.graph.weights.weights import _cast_to_dtype
 from max.interfaces import InputContext, LoRAStatus, LoRAType
+from max.interfaces.pipeline import (
+    Pipeline,
+    PipelineInputsType,
+    PipelineOutputType,
+)
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
 from max.pipelines.lib.config import LoRAConfig
@@ -912,26 +917,11 @@ class LoRAManager:
 
     def sort_lora_batch(self, context_batch: dict[str, T]) -> dict[str, T]:
         """
-        Sorts the LoRA batch by name and activates any new LoRAs in the batch.
-
-
-        This method ensures that all LoRAs referenced in the batch are moved to
-        the active cache, implementing the LRU policy by evicting least recently
-        used LoRAs if necessary.
+        Sorts the LoRA batch by LRU cache id.
 
         Args:
             batch: The context batch to sort
         """
-        # First, activate any LoRAs referenced in the batch that aren't already active
-        for context in context_batch.values():
-            model_name = getattr(context, "model_name", None)
-            if (
-                model_name
-                and model_name != self.base_model_path
-                and model_name in self._loras
-            ):
-                self.activate_adapter(model_name)
-
         batch_by_model_ids = {
             req_id: ctx
             for req_id, ctx in sorted(
@@ -944,3 +934,24 @@ class LoRAManager:
         }
 
         return batch_by_model_ids
+
+    def is_lora(self, name: str) -> bool:
+        """Checks to see if name is a lora"""
+        return name in self._loras
+
+    def is_active_lora(self, name: str) -> bool:
+        """Checks to see if name is an active lora"""
+        return name in self._active_loras
+
+    @staticmethod
+    def get_lora_manager(
+        pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
+    ) -> LoRAManager | None:
+        manager: LoRAManager | None = None
+
+        if hasattr(pipeline, "_pipeline_model"):
+            manager = pipeline._pipeline_model._lora_manager
+        elif hasattr(pipeline, "pipeline_model"):
+            manager = pipeline.pipeline_model._lora_manager
+
+        return manager
