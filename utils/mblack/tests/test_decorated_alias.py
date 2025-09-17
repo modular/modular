@@ -16,7 +16,8 @@ EXPECTED_OUTPUT = """struct Foo:
 
 import pytest
 
-@pytest.mark.skip("Broken")
+
+@pytest.mark.skip("TODO(MOTO-1320): Re-enable")
 def test_decorated_alias():
     import mblack
 
