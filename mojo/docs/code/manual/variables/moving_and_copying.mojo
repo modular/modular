@@ -12,28 +12,30 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
-struct MyPet(ImplicitlyCopyable, Movable):
-    var name: String
-    var age: Int
-
-
-@fieldwise_init
-struct Pair(ImplicitlyCopyable, Movable):
-    var first: Int
-    var second: Int
-
-
 def main():
-    pet = MyPet("Fido", 3)
-    pet2 = pet
-    print(pet2.name)
-    print(pet2.age)
-    pet3 = pet.copy()
-    print(pet3.name)
-    pet4 = pet^
-    print(pet4.name)
+    # start-owning-variable
+    owning_variable = "Owned value"
+    # end-owning-variable
 
-    pair = Pair(3, 4)
-    pair_copy = pair
-    print(pair.first, pair_copy.second)
+    _ = owning_variable
+
+    # start-move-value
+    first = [1, 2, 3]
+    second = first^
+    # end-move-value
+
+    _ = second
+
+    # start-explicit-copy
+    first = [1, 2, 3]
+    second = first.copy()
+    # end-explicit-copy
+
+    _ = second
+
+    # start-implicit-copy
+    one_value = 15
+    another_value = one_value  # implicit copy
+    # end-implicit-copy
+
+    _ = another_value
