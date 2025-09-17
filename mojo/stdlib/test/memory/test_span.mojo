@@ -160,6 +160,10 @@ def test_contains():
     for item in items:
         assert_true(item in span)
 
+    non_trivial = ["hello", "world"]
+    assert_true("hello" in non_trivial)
+    assert_true("hi" not in non_trivial)
+
 
 def test_equality():
     var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
