@@ -153,7 +153,7 @@ struct Error(
             value: The error message.
 
         """
-        self.data = value.unsafe_ptr()
+        self.data = value.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
         self.loaded_length = value.byte_length()
         self.stack_trace = StackTrace(depth=0)
 

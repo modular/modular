@@ -95,12 +95,7 @@ fn hash[
 
 fn hash[
     HasherType: Hasher = default_hasher
-](
-    bytes: UnsafePointer[
-        UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-    ],
-    n: Int,
-) -> UInt64:
+](bytes: UnsafePointer[UInt8, mut=False, origin=_], n: Int,) -> UInt64:
     var hasher = HasherType()
     hasher._update_with_bytes(bytes, n)
     var value = hasher^.finish()

@@ -41,7 +41,9 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
+fn _read_small(
+    data: UnsafePointer[UInt8, mut=False, origin=_], length: Int
+) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -127,9 +129,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
 
     fn _update_with_bytes(
         mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
+        data: UnsafePointer[UInt8, mut=False, origin=_],
         length: Int,
     ):
         """Consume provided data to update the internal buffer.

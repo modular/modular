@@ -77,7 +77,9 @@ fn _get_w_and_q_from_float_string(
     exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
     significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
-    prt_to_array = UnsafePointer(to=exponent)
+    var prt_to_array = UnsafePointer(to=exponent).origin_cast[
+        True, MutableAnyOrigin
+    ]()
     array_index = CONTAINER_SIZE
     buffer = input_string.unsafe_ptr()
 

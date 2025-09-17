@@ -55,7 +55,9 @@ fn _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(
+        value, name.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
+    )
 
 
 fn _setup_categories(
@@ -251,7 +253,7 @@ struct EventAttributes:
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            message=message.unsafe_ptr(),
+            message=message.unsafe_ptr().origin_cast[True, MutableAnyOrigin](),
         )
 
 
@@ -447,7 +449,9 @@ fn _start_range(
         )
         return _RangeStart()(UnsafePointer(to=info._value))
     else:
-        return _RangeStart()(message.unsafe_ptr())
+        return _RangeStart()(
+            message.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
+        )
 
 
 @always_inline
@@ -476,7 +480,7 @@ fn _mark(
         )
         _Mark()(UnsafePointer(to=info._value))
     else:
-        _Mark()(message.unsafe_ptr())
+        _Mark()(message.unsafe_ptr().origin_cast[True, MutableAnyOrigin]())
 
 
 struct Range:

@@ -210,16 +210,79 @@ struct UnsafePointer[
     @always_inline("builtin")
     @implicit
     fn __init__(
-        out self, other: UnsafePointer[type, address_space=address_space, **_]
+        other: UnsafePointer[*_, **_],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            mut=False,
+            origin = ImmutableOrigin.cast_from[other.origin],
+        ],
     ):
-        """Exclusivity parameter cast a pointer.
+        """Implicitly cast a pointer to an immutable one.
 
         Args:
             other: Pointer to cast.
         """
-        self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
-            other.address
-        )
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: UnsafePointer[type, mut=_, origin=_],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            mut=False,
+            origin=ImmutableAnyOrigin,
+        ],
+    ):
+        """Implicitly cast a pointer to an immutable one.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        out self,
+        other: UnsafePointer[
+            type, address_space=address_space, mut=mut, origin=origin, **_
+        ],
+    ):
+        """Implicitly cast a pointer with partially bound parameters to Self.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
+
+    @always_inline("builtin")
+    @implicit
+    fn __init__(
+        other: UnsafePointer[type, mut=True, **_],
+        out self: UnsafePointer[
+            type = other.type,
+            address_space = other.address_space,
+            mut=True,
+            origin=MutableAnyOrigin,
+        ],
+    ):
+        """Cast a mutable origin pointer to a `MutableAnyOrigin` pointer.
+
+        Args:
+            other: Pointer to cast.
+        """
+        self.address = __mlir_op.`pop.pointer.bitcast`[
+            _type = __type_of(self)._mlir_type
+        ](other.address)
 
     fn __init__(
         out self: UnsafePointer[type, mut=mut, origin=origin],
@@ -235,7 +298,9 @@ struct UnsafePointer[
             unchecked_downcast_value: The Python object to downcast from.
         """
 
-        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[
+            type
+        ]().origin_cast[mut, origin]()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -396,6 +461,19 @@ struct UnsafePointer[
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
     fn __eq__(self, rhs: Self) -> Bool:
+        """Returns True if the two pointers are equal.
+
+        Args:
+            rhs: The value of the other pointer.
+
+        Returns:
+            True if the two pointers are equal and False otherwise.
+        """
+        return Int(self) == Int(rhs)
+
+    @__unsafe_disable_nested_origin_exclusivity
+    @always_inline("nodebug")
+    fn __eq__(self, rhs: UnsafePointer) -> Bool:
         """Returns True if the two pointers are equal.
 
         Args:
@@ -873,7 +951,7 @@ struct UnsafePointer[
         T: Intable, //,
         width: Int = 1,
     ](
-        self: UnsafePointer[Scalar[dtype], **_],
+        self: UnsafePointer[Scalar[dtype], mut=True, **_],
         val: SIMD[dtype, width],
         stride: T,
     ):
@@ -1004,7 +1082,11 @@ struct UnsafePointer[
         scatter(val, base, mask, alignment)
 
     @always_inline
-    fn free(self: UnsafePointer[_, address_space = AddressSpace.GENERIC, **_]):
+    fn free(
+        self: UnsafePointer[
+            _, address_space = AddressSpace.GENERIC, mut=True, **_
+        ]
+    ):
         """Free the memory referenced by the pointer."""
         _free(self)
 

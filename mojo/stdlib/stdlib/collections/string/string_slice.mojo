@@ -524,12 +524,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
         var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
-            Byte
-        ]()
-        self._slice = Span[Byte, StaticConstantOrigin](
-            ptr=ptr, length=UInt(length)
+        var ptr = (
+            UnsafePointer(__mlir_op.`pop.string.address`(_kgen))
+            .bitcast[Byte]()
+            .origin_cast[False, StaticConstantOrigin]()
         )
+        self._slice = {ptr = ptr, length = UInt(length)}
 
     @always_inline
     @implicit
@@ -2323,10 +2323,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if len(elems) == 0:
             return String()
 
-        var sep = StaticString(
-            ptr=self.unsafe_ptr(), length=UInt(self.byte_length())
-        )
-        var total_bytes = _TotalWritableBytes(elems, sep=sep).size
+        var total_bytes = _TotalWritableBytes(elems, sep=self).size
         var result = String(capacity=total_bytes)
 
         if result._is_inline():
@@ -2653,7 +2650,7 @@ fn _memmem_impl[
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    source: UnsafePointer[Scalar[dtype], mut=False, origin=_],
     char: Scalar[dtype],
     len: Int,
 ) -> __type_of(source):
@@ -2667,15 +2664,11 @@ fn _memrchr[
 
 @always_inline
 fn _memrmem[
-    dtype: DType, address_space: AddressSpace
+    dtype: DType
 ](
-    haystack: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
+    haystack: UnsafePointer[Scalar[dtype], mut=False, origin=_],
     haystack_len: Int,
-    needle: UnsafePointer[
-        Scalar[dtype], address_space=address_space, mut=False, **_
-    ],
+    needle: UnsafePointer[Scalar[dtype], mut=False, origin=_],
     needle_len: Int,
 ) -> __type_of(haystack):
     if not needle_len:

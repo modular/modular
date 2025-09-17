@@ -370,7 +370,7 @@ fn strided_load[
 @always_inline
 fn strided_store[
     elt: DType, W: Int, //, X: Int
-](p: UnsafePointer[Scalar[elt]], i: Int, x: SIMD[elt, W]):
+](p: UnsafePointer[Scalar[elt], mut=True, **_], i: Int, x: SIMD[elt, W]):
     @parameter
     if X == 1:
         p.store(i, x)

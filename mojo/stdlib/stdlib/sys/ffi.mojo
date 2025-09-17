@@ -243,19 +243,17 @@ struct DLHandle(Boolable, Copyable, Movable):
         self = Self._dlopen(fspath.unsafe_cstr_ptr(), flags)
 
     @staticmethod
-    fn _dlopen(file: UnsafePointer[c_char], flags: Int) raises -> DLHandle:
+    fn _dlopen(
+        file: UnsafePointer[c_char, mut=False, origin=_], flags: Int
+    ) raises -> DLHandle:
         @parameter
         if not CompilationTarget.is_windows():
             var handle = dlopen(file, flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 raise Error(
-                    String(
-                        "dlopen failed: ",
-                        StringSlice[error_message.origin](
-                            unsafe_from_utf8_ptr=error_message
-                        ),
-                    )
+                    "dlopen failed: ",
+                    StringSlice(unsafe_from_utf8_ptr=error_message),
                 )
             return DLHandle(handle)
         else:
@@ -383,9 +381,9 @@ struct DLHandle(Boolable, Copyable, Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[Int8, **_]) -> UnsafePointer[
-        result_type
-    ]:
+    ](
+        self, *, cstr_name: UnsafePointer[Int8, mut=False, origin=_]
+    ) -> UnsafePointer[result_type]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 

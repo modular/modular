@@ -127,14 +127,7 @@ struct _fdopen[mode: StaticString = "a"]:
         var buffer = UnsafePointer[UInt8]()
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call[
-            "getdelim",
-            Int,
-            UnsafePointer[UnsafePointer[UInt8]],
-            UnsafePointer[UInt64],
-            Int,
-            OpaquePointer,
-        ](
+        var bytes_read = external_call["getdelim", Int](
             UnsafePointer(to=buffer),
             UnsafePointer(to=UInt64(0)),
             ord(delimiter),

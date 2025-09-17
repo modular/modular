@@ -289,7 +289,7 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
 fn _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
-    p: UnsafePointer[Byte, mut=False, **_],
+    p: UnsafePointer[Byte, mut=False, origin=_],
     eol_start: UInt,
     b0: Byte,
     char_len: UInt,

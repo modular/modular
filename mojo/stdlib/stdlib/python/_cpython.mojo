@@ -308,10 +308,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable, Movable):
 
         This is suitable for use terminating an array of PyMethodDef values.
         """
-        self.method_name = UnsafePointer[c_char]()
-        self.method_impl = OpaquePointer()
+        self.method_name = {}
+        self.method_impl = {}
         self.method_flags = 0
-        self.method_docstring = UnsafePointer[c_char]()
+        self.method_docstring = {}
 
     @staticmethod
     fn function[
@@ -661,7 +661,11 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
     fn __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.name = (
+            name.unsafe_ptr()
+            .bitcast[c_char]()
+            .origin_cast[True, MutableAnyOrigin]()
+        )
         self.docstring = {}
         # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
@@ -1016,8 +1020,7 @@ alias PyUnicode_AsUTF8AndSize = ExternalFunction[
     "PyUnicode_AsUTF8AndSize",
     # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
     fn (
-        PyObjectPtr,
-        UnsafePointer[Py_ssize_t],
+        PyObjectPtr, UnsafePointer[Py_ssize_t]
     ) -> UnsafePointer[c_char, mut=False],
 ]
 
@@ -1833,7 +1836,7 @@ struct CPython(Defaultable, Movable):
     fn PyErr_SetString(
         self,
         type: PyObjectPtr,
-        message: UnsafePointer[c_char],
+        message: UnsafePointer[c_char, mut=False, origin=_],
     ):
         """This is the most common way to set the error indicator. The first
         argument specifies the exception type; it is normally one of the
@@ -1844,7 +1847,9 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
         """
-        self._PyErr_SetString(type, message)
+        self._PyErr_SetString(
+            type, message.origin_cast[False, ImmutableAnyOrigin]()
+        )
 
     fn PyErr_SetNone(self, type: PyObjectPtr):
         """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
@@ -2364,8 +2369,9 @@ struct CPython(Defaultable, Movable):
         """
         var length = Py_ssize_t(0)
         var ptr = self._PyUnicode_AsUTF8AndSize(obj, UnsafePointer(to=length))
-        return StringSlice[MutableAnyOrigin](
-            ptr=ptr.bitcast[Byte](), length=UInt(length)
+        return StringSlice(
+            ptr=ptr.bitcast[Byte]().origin_cast[True, MutableAnyOrigin](),
+            length=UInt(length),
         )
 
     # ===-------------------------------------------------------------------===#
@@ -2608,7 +2614,7 @@ struct CPython(Defaultable, Movable):
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char],
+        name: UnsafePointer[c_char, mut=False, origin=_],
         value: PyObjectPtr,
     ) -> c_int:
         """Add an object to `module` as `name`.
@@ -2616,7 +2622,11 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
-        return self._PyModule_AddObjectRef(module, name, value)
+        return self._PyModule_AddObjectRef(
+            module,
+            name.origin_cast[False, ImmutableAnyOrigin](),
+            value,
+        )
 
     # ===-------------------------------------------------------------------===#
     # Slice Objects
