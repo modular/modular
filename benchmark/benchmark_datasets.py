@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -21,7 +22,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
+from typing import Literal, TypedDict
 
 import msgspec
 import numpy as np
@@ -30,26 +33,117 @@ from huggingface_hub import hf_hub_download
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-try:
-    from .sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        CODE_DEBUG_TEMPLATE,
-        ChatSession,
-        CodeDebugLine,
-        ObfuscatedConversationsLine,
-        SampledRequest,
-        build_chat_message,
-        encode_image,
+
+class OpenAIImageURL(TypedDict):
+    url: str
+
+
+class OpenAIImage(TypedDict):
+    type: Literal["image_url"]
+    image_url: OpenAIImageURL
+
+
+@dataclass
+class SampledRequest:
+    prompt_formatted: str
+    prompt_len: int
+    output_len: int | None
+    encoded_img: OpenAIImage | None
+
+
+MessageSource = Literal["user", "assistant"]
+
+
+@dataclass
+class ChatMessage:
+    source: MessageSource
+    content: str
+    num_tokens: int
+
+
+@dataclass
+class ChatSession:
+    id: int | None
+    messages: Sequence[ChatMessage]
+
+
+# -----------------------------------------------------------------------------
+# Longcontext Dataset (code_debug)
+# -----------------------------------------------------------------------------
+
+CODE_DEBUG_TEMPLATE = """\
+There is ONLY ONE function in the large project that is deliberately made to \
+include an obvious error. Please find the function that contains the most \
+obvious errors. I will give you four options to narrow your scope. You can \
+inspect the options and think. Eventually, tell me the answer using one \
+single letter (A, B, C, or D).
+
+{context}
+
+Which function has deliberate error?
+A. {OPTION_A}
+B. {OPTION_B}
+C. {OPTION_C}
+D. {OPTION_D}
+
+You should first find the functions in the options. Repeat their content, \
+inspect through code, and at last give me your answer for the function that \
+has the deliberate and obvious error in A, B, C, or D.\
+"""
+
+
+class CodeDebugLine(msgspec.Struct):
+    id: int
+    context: str
+    input: str
+    answer: Sequence[str]
+    options: Sequence[str]
+
+
+class ObfuscatedConversationsLine(msgspec.Struct):
+    timestamp: str
+    conversation_id: str
+    messages: str
+
+
+def encode_image(img: Image.Image) -> OpenAIImage:
+    """
+    Convert the given PIL.Image.Image to JPEG and encode in base64.
+    Returns an openai API image_url content entry with the encoded string.
+    """
+    img_buffer = BytesIO()
+    # Drop alpha channel and convert to jpeg
+    img.convert("RGB").save(img_buffer, format="JPEG")
+    # Encode in base64 and convert to str
+    img_base64 = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+    # return openai-api dict
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
+    }
+
+
+# -----------------------------------------------------------------------------
+# Multi-turn chat
+# -----------------------------------------------------------------------------
+
+
+def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
+    return len(tokenizer(text, add_special_tokens=False).input_ids)
+
+
+def build_chat_message(
+    source: MessageSource,
+    prompt: str,
+    tokenizer: PreTrainedTokenizerBase,
+    num_tokens: int | None = None,
+) -> ChatMessage:
+    return ChatMessage(
+        source,
+        prompt,
+        num_tokens or estimate_num_tokens(tokenizer, prompt),
     )
-except ImportError:
-    from sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        CODE_DEBUG_TEMPLATE,
-        ChatSession,
-        CodeDebugLine,
-        ObfuscatedConversationsLine,
-        SampledRequest,
-        build_chat_message,
-        encode_image,
-    )
+
 
 logger = logging.getLogger("benchmark_datasets")
 

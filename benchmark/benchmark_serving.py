@@ -41,12 +41,10 @@ import aiohttp
 import numpy as np
 import yaml
 from tqdm.asyncio import tqdm
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import AutoTokenizer
+from transformers.tokenization_utils import PreTrainedTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 try:
     from .benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
@@ -61,9 +59,12 @@ try:
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BenchmarkDataset,
+        ChatSession,
         CodeDebugBenchmarkDataset,
         ObfuscatedConversationsBenchmarkDataset,
+        OpenAIImage,
         RandomBenchmarkDataset,
+        SampledRequest,
         ShareGPTBenchmarkDataset,
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
@@ -72,11 +73,6 @@ try:
         BenchmarkMetrics,
         StandardPercentileMetrics,
         ThroughputMetrics,
-    )
-    from .sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        ChatSession,
-        OpenAIImage,
-        SampledRequest,
     )
 except ImportError:
     from benchmark_config import (  # type: ignore[import-not-found, unused-ignore, no-redef]
@@ -91,9 +87,12 @@ except ImportError:
         ArxivSummarizationBenchmarkDataset,
         AxolotlBenchmarkDataset,
         BenchmarkDataset,
+        ChatSession,
         CodeDebugBenchmarkDataset,
         ObfuscatedConversationsBenchmarkDataset,
+        OpenAIImage,
         RandomBenchmarkDataset,
+        SampledRequest,
         ShareGPTBenchmarkDataset,
         SonnetBenchmarkDataset,
         VisionArenaBenchmarkDataset,
@@ -103,11 +102,7 @@ except ImportError:
         StandardPercentileMetrics,
         ThroughputMetrics,
     )
-    from sample_workload_utils import (  # type: ignore[import-not-found, unused-ignore, no-redef]
-        ChatSession,
-        OpenAIImage,
-        SampledRequest,
-    )
+
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
