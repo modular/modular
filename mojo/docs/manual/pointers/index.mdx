@@ -176,8 +176,8 @@ moves or copies the value into the reserved memory.
 o_ptr = OwnedPointer(some_big_struct)
 ```
 
-An owned pointer can hold almost any type of item, but the stored item must be
-either `Movable`, `Copyable`, or `ExplicitlyCopyable`.
+An owned pointer can hold almost any type of item, but when constructing an
+`OwnedPointer`, the stored item must be either `Movable` or `Copyable`.
 
 Since an `OwnedPointer` is designed to enforce single ownership, the pointer
 itself can be moved, but not copied.
@@ -185,9 +185,9 @@ itself can be moved, but not copied.
 Note: Currently, you can't create an `Optional[OwnedPointer[T]]` because the
 `Optional` type only works with types that are both movable and copyable. This
 restricts some use cases that would otherwise be a natural fit
-for`OwnedPointer`, including self-referential data structures like linked lists
+for `OwnedPointer`, including self-referential data structures like linked lists
 and trees. (Until this use case is supported for `OwnedPointer`, it's possible
-to use`ArcPointer` where you need a smart pointer that can be `Optional`.)
+to use `ArcPointer` where you need a smart pointer that can be `Optional`.)
 
 ## `ArcPointer`
 
