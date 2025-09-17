@@ -43,6 +43,7 @@ archive_override(
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:rules_mojo_version.patch",
+        "//open-source/max/bazel/internal:apple_gpu_detection.patch",
     ],
     strip_prefix = "rules_mojo-dd5b6a241f68a05f7c04e719d03c3e63d178821b",
     urls = [

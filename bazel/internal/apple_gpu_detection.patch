@@ -1,0 +1,22 @@
+diff --git a/mojo/mojo_host_platform.bzl b/mojo/mojo_host_platform.bzl
+index 4790640..3f14fdf 100644
+--- a/mojo/mojo_host_platform.bzl
++++ b/mojo/mojo_host_platform.bzl
+@@ -195,8 +195,7 @@ def _impl(rctx):
+                 apple_constraint,
+                 "@mojo_gpu_toolchains//:apple_gpu",
+             ])
+-            if rctx.getenv("MOJO_ENABLE_HAS_GPU_FOR_APPLE"):
+-                constraints.append("@mojo_gpu_toolchains//:has_gpu")
++            constraints.append("@mojo_gpu_toolchains//:has_gpu")
+ 
+     rctx.file("WORKSPACE.bazel", "workspace(name = {})".format(rctx.attr.name))
+     rctx.file("BUILD.bazel", """
+@@ -215,7 +214,6 @@ mojo_host_platform = repository_rule(
+     implementation = _impl,
+     configure = True,
+     environ = [
+-        "MOJO_ENABLE_HAS_GPU_FOR_APPLE",  # NOTE: Will likely be removed in the future
+         "MOJO_IGNORE_UNKNOWN_GPUS",
+         "MOJO_VERBOSE_GPU_DETECT",
+     ],
