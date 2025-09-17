@@ -762,7 +762,11 @@ struct HostBuffer[dtype: DType](
         Returns:
             A `Span` pointing to the underlying memory of the `HostBuffer`.
         """
-        return {ptr = self._host_ptr, length = UInt(len(self))}
+        alias O = Origin(__origin_of(self))
+        return {
+            ptr = self._host_ptr.origin_cast[O.mut, O](),
+            length = UInt(len(self)),
+        }
 
 
 struct DeviceBuffer[dtype: DType](
@@ -2054,12 +2058,20 @@ struct DeviceFunction[
             ](
                 UnsafePointer(to=result),
                 ctx._handle,
-                self._func_impl.module_name.unsafe_ptr(),
-                self._func_impl.function_name.unsafe_ptr(),
-                self._func_impl.asm.unsafe_ptr(),
+                self._func_impl.module_name.unsafe_ptr().origin_cast[
+                    True, MutableAnyOrigin
+                ](),
+                self._func_impl.function_name.unsafe_ptr().origin_cast[
+                    True, MutableAnyOrigin
+                ](),
+                self._func_impl.asm.unsafe_ptr().origin_cast[
+                    True, MutableAnyOrigin
+                ](),
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.unsafe_cstr_ptr()
+                .bitcast[UInt8]()
+                .origin_cast[True, MutableAnyOrigin](),
                 Int(OptimizationLevel),
             )
         )
@@ -2081,7 +2093,7 @@ struct DeviceFunction[
                 _SizeT,
             ](
                 self._handle,
-                mapping.name.unsafe_ptr(),
+                mapping.name.unsafe_ptr().origin_cast[True, MutableAnyOrigin](),
                 UInt(len(mapping.name)),
                 mapping.ptr,
                 UInt(mapping.byte_count),
@@ -2325,7 +2337,11 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True, MutableAnyOrigin]()
+            )
 
         @parameter
         fn _populate_arg_sizes[i: Int]():
@@ -2473,7 +2489,11 @@ struct DeviceFunction[
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True, MutableAnyOrigin]()
+            )
 
         if cluster_dim:
             attributes.append(
@@ -2994,12 +3014,16 @@ struct DeviceExternalFunction:
             ](
                 UnsafePointer(to=result),
                 ctx._handle,
-                module_name.unsafe_ptr(),
-                function_name.unsafe_ptr(),
-                asm.unsafe_ptr(),
+                module_name.unsafe_ptr().origin_cast[True, MutableAnyOrigin](),
+                function_name.unsafe_ptr().origin_cast[
+                    True, MutableAnyOrigin
+                ](),
+                asm.unsafe_ptr().origin_cast[True, MutableAnyOrigin](),
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
-                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
+                debug_level.unsafe_cstr_ptr()
+                .bitcast[UInt8]()
+                .origin_cast[True, MutableAnyOrigin](),
                 Int(OptimizationLevel),
             )
         )
@@ -3030,7 +3054,7 @@ struct DeviceExternalFunction:
                 _SizeT,
             ](
                 self._handle,
-                mapping.name.unsafe_ptr(),
+                mapping.name.unsafe_ptr().origin_cast[True, MutableAnyOrigin](),
                 UInt(len(mapping.name)),
                 mapping.ptr,
                 UInt(mapping.byte_count),
@@ -3080,7 +3104,11 @@ struct DeviceExternalFunction:
 
         @parameter
         for i in range(num_args):
-            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
+            dense_args_addrs[i] = (
+                UnsafePointer(to=args[i])
+                .bitcast[NoneType]()
+                .origin_cast[True, MutableAnyOrigin]()
+            )
 
         if cluster_dim:
             attributes.append(
@@ -3251,7 +3279,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
                 Int32,
             ](
                 UnsafePointer(to=result),
-                api.unsafe_cstr_ptr(),
+                api.unsafe_cstr_ptr().origin_cast[True, MutableAnyOrigin](),
                 device_id,
             )
         )
@@ -3396,7 +3424,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
         ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
-        var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        var api_ptr = StaticString()
         external_call[
             "AsyncRT_DeviceContext_deviceApi",
             NoneType,
@@ -6208,7 +6236,7 @@ struct DeviceContext(ImplicitlyCopyable, Movable):
 
         This is a private method intended for internal use only.
         """
-        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        var arch_name = StaticString()
         external_call[
             "AsyncRT_DeviceContext_archName",
             NoneType,

@@ -146,9 +146,7 @@ fn msg_set_end_flag(pd: UInt64) -> UInt64:
 
 
 fn append_bytes(
-    service_id: UInt32,
-    msg_desc: UInt64,
-    mut data: Span[UInt8],
+    service_id: UInt32, msg_desc: UInt64, mut data: Span[mut=False, UInt8, **_]
 ) -> (UInt64, UInt64):
     var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
 
@@ -189,7 +187,7 @@ fn append_bytes(
 
 @no_inline
 fn message_append_bytes(
-    service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
+    service_id: UInt32, msg_desc: UInt64, data: Span[mut=False, UInt8, **_]
 ) -> (UInt64, UInt64):
     """
     Append an array of bytes to a message.
@@ -411,7 +409,7 @@ fn fprintf_append_args(
 
 @always_inline
 fn fprintf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+    msg_desc: UInt64, data: Span[mut=False, UInt8, **_], is_last: Bool
 ) -> UInt64:
     """
     Append a null-terminated string to the fprintf message.
@@ -504,7 +502,7 @@ fn printf_append_args(
 
 @always_inline
 fn printf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+    msg_desc: UInt64, data: Span[mut=False, UInt8, **_], is_last: Bool
 ) -> UInt64:
     return fprintf_append_string_n(msg_desc, data, is_last)
 
@@ -650,7 +648,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             self._handle[].payloads.offset(ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[UInt64, **_]) -> UInt64:
+    fn pop(mut self, top: UnsafePointer[UInt64, mut=True, **_]) -> UInt64:
         var f = Atomic.fetch_add(top, 0)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -689,7 +687,7 @@ struct Buffer(ImplicitlyCopyable, Movable):
             | ptr_lo_32.cast[DType.uint64]()
         )
 
-    fn push(mut self, top: UnsafePointer[UInt64, **_], ptr: UInt64):
+    fn push(mut self, top: UnsafePointer[UInt64, mut=True, **_], ptr: UInt64):
         var f = Atomic.fetch_add(top, 0)
         var p = self.get_header(ptr)
         while True:

@@ -665,7 +665,9 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
+            self.type_name.unsafe_ptr()
+            .bitcast[sys.ffi.c_char]()
+            .origin_cast[True, MutableAnyOrigin](),
             self.basicsize,
             0,
             Py_TPFLAGS_DEFAULT,

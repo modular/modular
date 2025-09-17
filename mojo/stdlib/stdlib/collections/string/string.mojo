@@ -218,7 +218,9 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = data._slice._len
-        self._ptr_or_data = data._slice._data
+        self._ptr_or_data = data._slice._data.origin_cast[
+            True, MutableAnyOrigin
+        ]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = 0

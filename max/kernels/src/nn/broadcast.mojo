@@ -185,12 +185,11 @@ fn _tile_1d[
 ](
     init_dst_ptr: UnsafePointer[
         Scalar[dtype],
-        address_space = AddressSpace.GENERIC,
-        mut=True, **_,
+        mut=True, origin=_
     ],
     src_ptr: UnsafePointer[
         Scalar[dtype],
-        address_space = AddressSpace.GENERIC, **_,
+        mut=False,origin=_
     ],
     tile_num_elems: Int,
     n: Int,

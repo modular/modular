@@ -1172,7 +1172,11 @@ fn iota[
 
 fn iota[
     dtype: DType, //
-](buff: UnsafePointer[Scalar[dtype], mut=True, **_], len: Int, offset: Int = 0):
+](
+    buff: UnsafePointer[Scalar[dtype], mut=True, origin=_],
+    len: Int,
+    offset: Int = 0,
+):
     """Fill the buffer with numbers ranging from offset to offset + len - 1,
     spaced by 1.
 

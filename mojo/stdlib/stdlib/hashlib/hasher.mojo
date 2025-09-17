@@ -23,9 +23,7 @@ trait Hasher:
 
     fn _update_with_bytes(
         mut self,
-        data: UnsafePointer[
-            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
-        ],
+        data: UnsafePointer[UInt8, mut=False, origin=_],
         length: Int,
     ):
         ...

@@ -161,7 +161,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         MovableType: Movable
     ](
         mut self: UnsafeMaybeUninitialized[MovableType],
-        other: UnsafePointer[MovableType],
+        other: UnsafePointer[MovableType, mut=True, origin=_],
     ):
         """Move another object.
 
@@ -176,7 +176,9 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The pointer to the object to move.
         """
-        other.move_pointee_into(self.unsafe_ptr())
+        other.origin_cast[True, MutableAnyOrigin]().move_pointee_into(
+            self.unsafe_ptr().origin_cast[True, MutableAnyOrigin]()
+        )
 
     @always_inline
     fn write[
@@ -195,7 +197,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn assume_initialized(ref self) -> ref [self] Self.ElementType:
+    fn assume_initialized(ref self) -> ref [self._array] Self.ElementType:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
@@ -206,10 +208,16 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         return self.unsafe_ptr()[]
 
     @always_inline
-    fn unsafe_ptr(self) -> UnsafePointer[Self.ElementType]:
+    fn unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[
+        Self.ElementType,
+        mut = Origin(__origin_of(self)).mut,
+        origin = __origin_of(self._array),
+    ]:
         """Get a pointer to the underlying element.
 
-        Note that this method does not assumes that the memory is initialized
+        Note that this method does not assume that the memory is initialized
         or not. It can always be called.
 
         Returns:

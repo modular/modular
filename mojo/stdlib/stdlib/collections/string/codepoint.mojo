@@ -481,7 +481,7 @@ struct Codepoint(
     @always_inline
     fn unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
+    ](self, ptr: UnsafePointer[Byte, mut=True, origin=_]) -> UInt:
         """Shift unicode to utf8 representation.
 
         Parameters:
