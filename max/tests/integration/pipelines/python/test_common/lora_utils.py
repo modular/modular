@@ -200,6 +200,7 @@ def create_pipeline_config_with_lora(
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         max_length=512,
         cache_strategy=KVCacheStrategy.PAGED,
+        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
         device_specs=[DeviceSpec(device_type="gpu", id=0)],
     )
 

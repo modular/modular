@@ -716,6 +716,8 @@ def test_config__validates_lora_configuration(
         max_length=1,
         enable_lora=True,
         lora_paths=[llama_3_1_8b_lora_local_path],
+        quantization_encoding=SupportedEncoding.bfloat16,
+        enable_prefix_caching=False,  # Must be disabled for LoRA
     )
     assert config.lora_config is not None
     assert config.lora_config.lora_paths[0] == llama_3_1_8b_lora_local_path
@@ -745,6 +747,7 @@ def test_config__validates_lora_only_supported_for_llama(
             max_length=1,
             enable_lora=True,
             lora_paths=["/some/lora/path"],
+            enable_prefix_caching=False,
             quantization_encoding=SupportedEncoding.bfloat16,
         )
 
@@ -757,7 +760,6 @@ def test_config__validates_lora_works_for_llama(
     """Test that LoRA validation passes for Llama models."""
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
-    # Test that enabling LoRA on a Llama model works without error
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
         device_specs=[DeviceSpec.accelerator()],
@@ -765,12 +767,38 @@ def test_config__validates_lora_works_for_llama(
         enable_lora=True,
         lora_paths=["/some/lora/path"],
         quantization_encoding=SupportedEncoding.bfloat16,
+        enable_prefix_caching=False,
+        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
     )
 
     # Verify LoRA config was created successfully
     assert config.lora_config is not None
     assert config.lora_config.enable_lora is True
     assert config.lora_config.lora_paths == ["/some/lora/path"]
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__validates_lora_incompatible_with_prefix_caching(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Test that LoRA and prefix caching cannot be enabled together."""
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
+
+    # Test that enabling both LoRA and prefix caching raises ValueError
+    with pytest.raises(
+        ValueError,
+        match=r"LoRA is not compatible with prefix caching\. Please disable prefix caching by using the --no-enable-prefix-caching flag\.",
+    ):
+        _ = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1,
+            enable_lora=True,
+            lora_paths=["/some/lora/path"],
+            quantization_encoding=SupportedEncoding.bfloat16,
+            enable_prefix_caching=True,  # This should conflict with LoRA
+        )
 
 
 @mock_pipeline_config_hf_dependencies
