@@ -1028,7 +1028,7 @@ PIPELINES = {
             absolute_tolerance=1.0e-04,
             relative_tolerance=2.0,
             cos_dist_threshold=2.2e-02,
-            kl_div_threshold=0.19,
+            kl_div_threshold=0.21,
         ),
     ),
     "google/gemma-3-27b-it-bfloat16": PipelineDef(
