@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -93,33 +94,20 @@ def get_pipeline_for_task(
         raise ValueError(msg)
 
 
+@dataclass(frozen=False)
 class SupportedArchitecture:
-    def __init__(
-        self,
-        name: str,
-        example_repo_ids: list[str],
-        default_encoding: SupportedEncoding,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-        pipeline_model: type[PipelineModel[Any]],
-        task: PipelineTask,
-        tokenizer: Callable[..., PipelineTokenizer[Any, Any, Any]],
-        default_weights_format: WeightsFormat,
-        rope_type: RopeType = RopeType.none,
-        weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
-        # TODO: Create a new enum called PipelineMode that can hold all these flags.
-        multi_gpu_supported: bool = False,
-        prefix_caching_supported: bool = True,
-    ) -> None:
-        """Represents a model architecture configuration for MAX pipelines.
+    """
+    Represents a model architecture configuration for MAX pipelines.
 
-        This class defines all the necessary components and settings required to
-        support a specific model architecture within the MAX pipeline system.
-        Each `SupportedArchitecture` instance encapsulates the model implementation,
-        tokenizer, supported encodings, and other architecture-specific configuration.
+    This class defines all the necessary components and settings required to
+    support a specific model architecture within the MAX pipeline system.
+    Each `SupportedArchitecture` instance encapsulates the model implementation,
+    tokenizer, supported encodings, and other architecture-specific configuration.
 
-        New architectures should be registered into the :obj:`PipelineRegistry`
-        using the :obj:`~PipelineRegistry.register()` method.
+    New architectures should be registered into the :obj:`PipelineRegistry`
+    using the :obj:`~PipelineRegistry.register()` method.
 
+    Example:
         .. code-block:: python
 
             my_architecture = SupportedArchitecture(
@@ -136,73 +124,56 @@ class SupportedArchitecture:
                 pipeline_model=MyModel,
                 tokenizer=TextTokenizer,
                 default_weights_format=WeightsFormat.safetensors,
-                multi_gpu_supported=True,  # Set based on your implementation capabilities
+                rope_type=RopeType.none,
                 weight_adapters={
                     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
                     # Add other weight formats if needed
                 },
+                multi_gpu_supported=True,  # Set based on your implementation capabilities
+                required_arguments={"some_arg": True},
                 task=PipelineTask.TEXT_GENERATION,
             )
+    """
 
-        Args:
-            name: The name of the model architecture that must match the Hugging Face
-                model class name.
-            example_repo_ids: A list of Hugging Face repository IDs that use this
-                architecture for testing and validation purposes.
-            default_encoding: The default quantization encoding to use when no
-                specific encoding is requested.
-            supported_encodings: A dictionary mapping supported quantization encodings
-                to their compatible KV cache strategies.
-            pipeline_model: The `PipelineModel` class that defines the model graph
-                structure and execution logic.
-            task: The pipeline task type that this architecture supports.
-            tokenizer: A callable that returns a `PipelineTokenizer` instance for
-                preprocessing model inputs.
-            default_weights_format: The weights format expected by the `pipeline_model`.
-            rope_type: The type of RoPE (Rotary Position Embedding) used by the model.
-            weight_adapters: A dictionary of weight format adapters for converting
-                checkpoints from different formats to the default format.
-            multi_gpu_supported: Whether the architecture supports multi-GPU execution.
-            prefix_caching_supported: Whether the architecture supports prefix caching.
-        """
-        self.name = name
-        self.example_repo_ids = example_repo_ids
-        self.default_encoding = default_encoding
-        self.supported_encodings = supported_encodings
-        self.pipeline_model = pipeline_model
-        self.tokenizer = tokenizer
-        self.default_weights_format = default_weights_format
-        self.multi_gpu_supported = multi_gpu_supported
-        self.prefix_caching_supported = prefix_caching_supported
-        self.rope_type = rope_type
-        self.weight_adapters = weight_adapters or {}
-        self.task = task
+    name: str
+    """The name of the model architecture that must match the Hugging Face model class name."""
 
-    def __eq__(self, other: Any) -> bool:
-        if other.__class__ == self.__class__:
-            for field in [
-                "default_encoding",
-                "default_weights_format",
-                "example_repo_ids",
-                "multi_gpu_supported",
-                "name",
-                "pipeline_model",
-                "prefix_caching_supported",
-                "rope_type",
-                "supported_encodings",
-                "task",
-                "tokenizer",
-                "weight_adapters",
-            ]:
-                if not (hasattr(other, field) and hasattr(self, field)):
-                    return False
+    example_repo_ids: list[str]
+    """A list of Hugging Face repository IDs that use this architecture for testing and validation purposes."""
 
-                if getattr(other, field) != getattr(self, field):
-                    return False
+    default_encoding: SupportedEncoding
+    """The default quantization encoding to use when no specific encoding is requested."""
 
-            return True
+    supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]]
+    """A dictionary mapping supported quantization encodings to their compatible KV cache strategies."""
 
-        return False
+    pipeline_model: type[PipelineModel[Any]]
+    """The `PipelineModel` class that defines the model graph structure and execution logic."""
+
+    task: PipelineTask
+    """The pipeline task type that this architecture supports."""
+
+    tokenizer: Callable[..., PipelineTokenizer[Any, Any, Any]]
+    """A callable that returns a `PipelineTokenizer` instance for preprocessing model inputs."""
+
+    default_weights_format: WeightsFormat
+    """The weights format expected by the `pipeline_model`."""
+
+    rope_type: RopeType = RopeType.none
+    """The type of RoPE (Rotary Position Embedding) used by the model."""
+
+    weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
+        default_factory=dict
+    )
+    """A dictionary of weight format adapters for converting checkpoints from different formats to the default format."""
+
+    multi_gpu_supported: bool = False
+    """Whether the architecture supports multi-GPU execution."""
+
+    required_arguments: dict[str, bool | int | float] = field(
+        default_factory=dict
+    )
+    """A dictionary specifying required values for PipelineConfig options."""
 
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:

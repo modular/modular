@@ -35,7 +35,11 @@ from .max_config import MAXConfig
 from .memory_estimation import MEMORY_ESTIMATOR
 from .model_config import MAXModelConfig
 from .profiling_config import ProfilingConfig
-from .registry import PIPELINE_REGISTRY, get_pipeline_for_task
+from .registry import (
+    PIPELINE_REGISTRY,
+    SupportedArchitecture,
+    get_pipeline_for_task,
+)
 from .sampling import SamplingConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -150,6 +154,9 @@ class PipelineConfig(MAXConfig):
 
     Each module must expose an `ARCHITECTURES` list of architectures to register.
     """
+
+    force: bool = field(default=False)
+    """Skip validation of user provided flags against the architecture's required arguments."""
 
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
@@ -477,6 +484,54 @@ class PipelineConfig(MAXConfig):
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
 
+    def _validate_required_arguments_against_architecture(
+        self, architecture: SupportedArchitecture
+    ) -> None:
+        """
+        Validates and overrides config settings based on required_arguments from SupportedArchitecture.
+
+        This method checks the required_arguments dictionary from the architecture
+        and automatically overrides any config values that don't match, logging warnings
+        when changes are made.
+
+        Args:
+            architecture: The SupportedArchitecture containing required_arguments dictionary
+        """
+        if not architecture.required_arguments:
+            return
+
+        config_objects = [
+            ("PipelineConfig", self),
+            ("MAXModelConfig", self._model_config),
+            ("SamplingConfig", self._sampling_config),
+            ("KVCacheConfig", self._model_config._kv_cache_config),
+        ]
+
+        # Add draft model configurations if present
+        if self._draft_model_config is not None:
+            config_objects.extend(
+                [
+                    ("Draft_MAXModelConfig", self._draft_model_config),
+                    (
+                        "Draft_KVCacheConfig",
+                        self._draft_model_config._kv_cache_config,
+                    ),
+                ]
+            )
+
+        for arg_name, required_value in architecture.required_arguments.items():
+            # Check each config object for the required argument
+            for config_name, config_obj in config_objects:
+                current_value = getattr(config_obj, arg_name, required_value)
+                if current_value != required_value:
+                    logger.warning(
+                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
+                        f"overriding current value {current_value}"
+                    )
+                    setattr(config_obj, arg_name, required_value)
+                # We should be able to override this value for all config objects.
+                continue
+
     def resolve(self) -> None:
         """
         Validates and resolves the config.
@@ -633,9 +688,9 @@ class PipelineConfig(MAXConfig):
             )
             raise ValueError(msg)
 
-        model_config.validate_prefix_caching_supported(
-            prefix_caching_supported=arch.prefix_caching_supported
-        )
+        # Validate required arguments
+        if not self.force:
+            self._validate_required_arguments_against_architecture(arch)
 
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self._lora_config and self._lora_config.enable_lora:

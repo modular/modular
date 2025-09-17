@@ -354,20 +354,6 @@ class MAXModelConfig(MAXModelConfigBase):
             )
         return self._huggingface_config
 
-    def validate_prefix_caching_supported(
-        self, prefix_caching_supported: bool
-    ) -> None:
-        """Validates that the model architecture supports prefix caching.
-        Falls back to false by disabling it if the model architecture does not support it."""
-        if (
-            not prefix_caching_supported
-            and self._kv_cache_config.enable_prefix_caching
-        ):
-            logger.warning(
-                "Architecture does not support prefix caching, overriding enable_prefix_caching=False"
-            )
-            self._kv_cache_config.enable_prefix_caching = False
-
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
 
