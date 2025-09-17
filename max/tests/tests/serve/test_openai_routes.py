@@ -101,6 +101,30 @@ def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
         assert received_response == expected_response
 
 
+@pytest.mark.asyncio
+async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: ANN001
+    async with AsyncTestClient(app) as client:
+        request_content = "test with empty model"
+
+        # Create request with empty model name
+        request_data = simple_openai_request(
+            model_name="", content=request_content
+        )
+
+        response_json = await client.post(
+            "/v1/chat/completions",
+            json=request_data,
+        )
+
+        response = CreateChatCompletionResponse.model_validate(
+            response_json.json()
+        )
+        assert len(response.choices) == 1
+        choice = response.choices[0]
+        assert choice.message.content == request_content
+        assert choice.finish_reason == "stop"
+
+
 def test_vllm_response_deserialization() -> None:
     vllm_response = """{"id":"chat-f33946bf8faf42849b11a4f948fc23f9","object":"chat.completion","created":1730306055,"model":"meta-llama/Meta-Llama-3.1-8B-Instruct","choices":[{"index":0,"message":{"role":"assistant","content":"Arrrr, listen close me hearty! Here be another one:\\n\\nWhy did the parrot go to the doctor?\\n\\nBecause it had a fowl temper! (get it? fowl, like a bird, but also a play on \\"foul\\" temper! ahh, shiver me timbers, I be laughin' me hook off!)","tool_calls":[]},"logprobs":null,"finish_reason":"stop","stop_reason":null}],"usage":{"prompt_tokens":20,"total_tokens":92,"completion_tokens":72},"prompt_logprobs":null}"""
 
