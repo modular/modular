@@ -2142,11 +2142,21 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       } else if (isa<ParamType>(type)) {
         p.emitError(loc)
             << "inheriting from a parameter expression is not allowed";
+      } else if (auto fnType = dyn_cast<FnTypeGeneratorType>(type)) {
+        auto wrapperAndTrait = shared.getOrCreateParametricClosureWrapper(
+            p.getTokenLocOrEndOfPreviousLineIfOnNewLine(), fnType,
+            decl.getNearestDeclOfType<FileModuleOp>(), InlineLevel::Automatic);
+        SymbolRefAttr symbol =
+            getFullyResolvedSymbolRef(cast<mlir::SymbolOpInterface>(
+                wrapperAndTrait.second.getOperation()));
+        traitType = TraitType::get(shared.getContext(), symbol);
       } else {
         p.emitError(loc) << "don't know how to inherit from this type";
       }
-      declScope.setErroneous();
-      return success();
+      if (!traitType) {
+        declScope.setErroneous();
+        return success();
+      }
     }
 
     // Successively flatten the parent list so we always have all the parents
