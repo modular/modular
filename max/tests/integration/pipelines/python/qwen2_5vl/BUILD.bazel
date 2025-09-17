@@ -46,6 +46,7 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
+        "manual",
         "requires-network",
     ],
     deps = [
