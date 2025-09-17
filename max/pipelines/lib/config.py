@@ -491,6 +491,7 @@ class PipelineConfig(MAXConfig):
         self._resolve_chat_template()
 
         self.model_config.resolve()
+
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
@@ -509,6 +510,10 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
             )
+
+        # Validate LoRA compatibility with model configuration
+        if self._lora_config and self._lora_config.enable_lora:
+            self.model_config.validate_lora_compatibility()
 
         # By this point, we should have a valid model_path.
 
