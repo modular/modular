@@ -469,8 +469,13 @@ class LoRAManager:
         Maps the model name to its assigned slot id.
 
         Base model requests are ID == _NO_ACTIVE_LORA (-1)
+        Empty string or base model path maps to base model.
         """
-        if name and name in self._loras:
+        # Empty string, None, or base model path all map to base model
+        if not name or name == self.base_model_path:
+            return self._NO_ACTIVE_LORA
+
+        if name in self._loras:
             slot = self._active_loras.get_slot(name)
             if slot is not None:
                 return slot
@@ -501,6 +506,8 @@ class LoRAManager:
 
         for ctx in context_batch:
             name = getattr(ctx, "model_name", None)
+            # Empty string, None, or base model path are all valid (use base model)
+            # Only raise error if a non-empty name that's not the base model and not a loaded LoRA
             if (
                 name
                 and name != self.base_model_path

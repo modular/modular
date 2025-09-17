@@ -183,6 +183,9 @@ async def get_pipeline(
         )
         models += lora_response.message
 
+    if not model_name:
+        model_name = pipeline.model_name
+
     if model_name not in models:
         raise ValueError(
             f"Unknown model '{model_name}', currently serving '{models}'."
