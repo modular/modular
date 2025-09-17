@@ -223,10 +223,10 @@ def test_lora_lru_eviction(
     )
 
 
-def test_lru_cache_automatic_activation(
+def test_lru_cache_manual_activation(
     lora_manager: LoRAManager, temp_adapters: list[str]
 ) -> None:
-    """Test that LoRAs are automatically activated when referenced in batches."""
+    """Test that LoRAs can be manually activated and sorted correctly."""
 
     for i in range(3):
         status = lora_manager.load_adapter(f"adapter_{i}={temp_adapters[i]}")
@@ -234,6 +234,10 @@ def test_lru_cache_automatic_activation(
 
     lora_manager._active_loras.clear()
     assert len(lora_manager._active_loras) == 0
+
+    # Manually activate the adapters (as would be done by the scheduler)
+    lora_manager.activate_adapter("adapter_0")
+    lora_manager.activate_adapter("adapter_1")
 
     mock_contexts = []
     for name in ["adapter_0", "adapter_1", "/mock/path"]:
