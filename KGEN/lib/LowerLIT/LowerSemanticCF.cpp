@@ -546,7 +546,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     // Add error branches to calls to throwing functions.
     if (isa<LIT::CallOp, LIT::CallIndirectOp>(op)) {
       if (auto sig = LIT::getCalleeType(&op).getBody(); sig.isThrows()) {
-        doesRaise = doesFallThrough = true;
+        doesRaise = true;
         addErrorRegions(op, sig, LIT::getCalleeArguments(&op));
       }
       continue;

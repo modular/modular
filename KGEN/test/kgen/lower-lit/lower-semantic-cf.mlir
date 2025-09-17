@@ -468,7 +468,7 @@ lit.fn @nested_try_inner_catch() {
     lit.try.yield
   // CHECK-NEXT: else
   } else {
-    // CHECK-NEXT: lit.try.yield
+    // CHECK-NEXT: kgen.unreachable
     lit.try.yield
   } finally {
     lit.try.yield
@@ -1098,6 +1098,44 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   }
   // CHECK-NEXT: kgen.unreachable
   // CHECK-NEXT: }
+  lit.end_fn
+}
+
+// CHECK-LABEL: lit.fn @param_if_call_throws
+lit.fn @param_if_call_throws<paramb: i1>() throws -> i1 {
+  // CHECK: kgen.param.if <paramb> {
+  kgen.param.if <paramb> {
+    %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
+    %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
+    // CHECK: lit.call @throwing_func
+    // CHECK: hlcf.if
+    // CHECK:   lit.error_return
+    // CHECK: else
+    // CHECK:   hlcf.yield
+    lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.generator<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+    kgen.param.if <paramb> {
+      // CHECK: %[[THEN_RETURN:.*]] = kgen.param.constant: i1 = <0>
+      // CHECK: kgen.return %[[THEN_RETURN]]
+      %then_return = kgen.param.constant: i1 = <0>
+      lit.return %then_return : i1
+      kgen.param.yield
+    } else {
+      // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: i1 = <1>
+      // CHECK: kgen.return %[[ELSE_RETURN]]
+      %else_return = kgen.param.constant: i1 = <1>
+      lit.return %else_return : i1
+      kgen.param.yield
+    }
+    // CHECK: kgen.unreachable
+    kgen.param.yield
+  } else {
+    %else_return = kgen.param.constant: i1 = <1>
+    lit.return %else_return : i1
+    // CHECK: %[[ELSE_RETURN:.*]] = kgen.param.constant: i1 = <1>
+    // CHECK: kgen.return %[[ELSE_RETURN]]
+    kgen.param.yield
+  }
+  // CHECK: kgen.unreachable
   lit.end_fn
 }
 
