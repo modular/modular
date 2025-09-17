@@ -258,3 +258,59 @@ def test_model_name_base_model_mapping(
     assert len(lora_ids_np) == 2
     assert lora_ids_np[0] == -1  # Base model group (contexts 0,1,2)
     assert lora_ids_np[1] >= 0  # LoRA adapter group (context 3)
+
+
+def test_served_model_name_base_model_mapping(
+    lora_manager: LoRAManager, configured_mock_lora: MagicMock
+) -> None:
+    """Test that served_model_name is recognized as the base model."""
+    # Set up a served model name scenario
+    served_name = "my-custom-model"
+    original_base_path = lora_manager.base_model_path
+
+    # Simulate what happens when served_model_name is used
+    lora_manager.base_model_path = served_name
+
+    # Load a LoRA adapter
+    lora_manager.load_adapter("test_lora=/path/to/lora")
+    lora_manager.activate_adapter("test_lora")
+
+    # Test that served_model_name maps to base model
+    assert (
+        lora_manager._model_name_to_id(served_name)
+        == lora_manager._NO_ACTIVE_LORA
+    )
+    assert lora_manager._model_name_to_id("") == lora_manager._NO_ACTIVE_LORA
+    assert lora_manager._model_name_to_id(None) == lora_manager._NO_ACTIVE_LORA
+
+    # Test that LoRA adapter still works
+    lora_id = lora_manager._model_name_to_id("test_lora")
+    assert lora_id >= 0
+
+    # Test batch handling with served model name
+    device = CPU()
+    input_row_offsets = np.array([0, 8, 16, 24])
+
+    context_served = MagicMock()
+    context_served.model_name = served_name
+
+    context_lora = MagicMock()
+    context_lora.model_name = "test_lora"
+
+    contexts = [context_served, context_lora]
+
+    # Get LoRA graph inputs
+    lora_ids, _, _ = lora_manager.get_lora_graph_inputs(
+        contexts,
+        input_row_offsets,
+        device,
+    )
+
+    lora_ids_np = lora_ids.to_numpy()
+
+    assert len(lora_ids_np) == 2
+    assert lora_ids_np[0] == -1  # Served model name -> base model
+    assert lora_ids_np[1] >= 0  # LoRA adapter
+
+    # Restore original base path
+    lora_manager.base_model_path = original_base_path
