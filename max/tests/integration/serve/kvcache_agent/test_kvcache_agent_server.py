@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pickle
 import time
 from collections.abc import Generator
 
@@ -23,15 +22,12 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
     KVCacheAgentServiceStub,
 )
-from max.serve.queue.zmq_queue import (
-    ZmqPushSocket,
-    generate_zmq_inproc_endpoint,
-)
+from max.serve.queue.zmq_queue import ZmqPushSocket, generate_zmq_ipc_path
 
 
 @pytest.fixture
 def zmq_endpoint() -> str:
-    return generate_zmq_inproc_endpoint()
+    return generate_zmq_ipc_path()
 
 
 @pytest.fixture
@@ -40,11 +36,10 @@ def zmq_push_socket(
 ) -> Generator[ZmqPushSocket[KVCacheChangeMessage], None, None]:
     push_socket = ZmqPushSocket[KVCacheChangeMessage](
         endpoint=zmq_endpoint,
-        serialize=pickle.dumps,
-        lazy=False,
+        payload_type=KVCacheChangeMessage,
     )
     yield push_socket
-    push_socket._cleanup()
+    push_socket.close()
 
 
 @pytest.fixture(scope="module")

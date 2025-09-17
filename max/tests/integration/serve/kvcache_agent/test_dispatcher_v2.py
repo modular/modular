@@ -12,8 +12,7 @@ from typing import Callable, TypeVar
 
 import pytest
 from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2
-from max.serve.kvcache_agent.dispatcher_v2 import ClientIdentity
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.serve.queue.zmq_queue import ClientIdentity, generate_zmq_ipc_path
 
 T = TypeVar("T")
 
@@ -32,7 +31,8 @@ def blocking_recv(fn: Callable[[], T], timeout: float = TIMEOUT) -> T:
 
 class BasicDispatcherServer(DispatcherServerV2[int, int]):
     def __init__(self, bind_addr: str):
-        super().__init__(bind_addr, int, int)
+        self.bind_addr = bind_addr
+        super().__init__(endpoint=bind_addr, request_type=int, reply_type=int)
 
     def recv_request_blocking(self) -> tuple[int, ClientIdentity]:
         return blocking_recv(self.recv_request_nowait)
@@ -40,7 +40,13 @@ class BasicDispatcherServer(DispatcherServerV2[int, int]):
 
 class BasicDispatcherClient(DispatcherClientV2[int, int]):
     def __init__(self, bind_addr: str, default_dest_addr: str | None):
-        super().__init__(bind_addr, default_dest_addr, int, int)
+        self.bind_addr = bind_addr
+        super().__init__(
+            bind_addr=bind_addr,
+            default_dest_addr=default_dest_addr,
+            request_type=int,
+            reply_type=int,
+        )
 
     def recv_reply_blocking(self) -> int:
         return blocking_recv(self.recv_reply_nowait)
