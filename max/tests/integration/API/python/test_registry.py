@@ -109,7 +109,7 @@ def test_supported_architecture__eq__method() -> None:
             WeightsFormat.gguf: simple_adapter,
         },
         multi_gpu_supported=True,
-        prefix_caching_supported=False,
+        required_arguments={"enable_prefix_caching": False},
     )
 
     arch2 = SupportedArchitecture(
@@ -130,7 +130,7 @@ def test_supported_architecture__eq__method() -> None:
             WeightsFormat.gguf: simple_adapter,
         },
         multi_gpu_supported=True,
-        prefix_caching_supported=False,
+        required_arguments={"enable_prefix_caching": False},
     )
 
     # Test equality with identical objects
@@ -319,7 +319,6 @@ def test_supported_architecture__eq__method() -> None:
     )
     assert arch1 != arch13
 
-    # Test inequality with different prefix_caching_supported
     arch14 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
@@ -331,7 +330,7 @@ def test_supported_architecture__eq__method() -> None:
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
         default_weights_format=WeightsFormat.safetensors,
-        prefix_caching_supported=True,  # Different prefix_caching_supported
+        required_arguments={"enable_prefix_caching": False},
     )
     assert arch1 != arch14
 
@@ -347,7 +346,6 @@ def test_supported_architecture__eq__method() -> None:
         task=PipelineTask.TEXT_GENERATION,
         tokenizer=TextTokenizer,
         default_weights_format=WeightsFormat.safetensors,
-        weight_adapters=None,  # None should become {}
     )
 
     arch16 = SupportedArchitecture(
