@@ -25,9 +25,7 @@ from utils.index import Index, IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, n
-    ].stack_allocation()
+    var vector = NDBuffer[DType.int, 1, MutableAnyOrigin, n].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = -1
@@ -43,7 +41,7 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
             vector[idx[0]] = 42
 
         elementwise[func, 1](Index(n))
-        elementwise[func=func, simd_width = simd_width_of[DType.index]()](
+        elementwise[func=func, simd_width = simd_width_of[DType.int]()](
             Index(n)
         )
 

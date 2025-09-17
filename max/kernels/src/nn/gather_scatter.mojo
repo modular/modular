@@ -41,7 +41,7 @@ fn _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 fn _unsafe_normalize_neg_index[
-    dtype: DType, width: Int, out_type: DType = DType.index
+    dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
         idx.cast[out_type]() + dim_size, idx.cast[out_type]()
@@ -63,7 +63,7 @@ fn normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 fn normalize_neg_index[
-    dtype: DType, width: Int, out_type: DType = DType.index
+    dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.

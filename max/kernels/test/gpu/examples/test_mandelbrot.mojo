@@ -24,7 +24,7 @@ from testing import assert_equal
 from utils.index import Index
 
 alias float_type = DType.float64
-alias int_type = DType.index
+alias int_type = DType.int
 
 
 alias width = 4096

@@ -503,6 +503,8 @@ added for AMD Radeon 860M, 880M, and 8060S GPUs.
 
 - Add a memory ordering parameter to `Atomic.load`.
 
+- `DType.index` is deprecated in favor of the new `DType.int`.
+
 ### Tooling changes
 
 - `mojo test` now ignores folders with a leading `.` in the name. This will

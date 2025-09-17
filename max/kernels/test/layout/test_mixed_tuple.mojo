@@ -46,7 +46,7 @@ fn test_int_tuple_conversion() raises:
 
 fn test_list_literal_construction() raises:
     print("== test_list_literal_construction")
-    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.index]] = [
+    var t: MixedTuple[ComptimeInt[2], RuntimeInt[DType.int]] = [
         Idx[2](),
         Idx(3),
     ]

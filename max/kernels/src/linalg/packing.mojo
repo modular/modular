@@ -780,7 +780,7 @@ fn _pack_b_ndbuffer_impl[
             @parameter
             if not transposed:
                 var perm = NDBuffer[
-                    DType.index, 1, MutableAnyOrigin, 2
+                    DType.int, 1, MutableAnyOrigin, 2
                 ].stack_allocation()
                 perm[0] = 1
                 perm[1] = 0

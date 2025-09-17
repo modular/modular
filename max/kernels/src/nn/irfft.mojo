@@ -125,7 +125,7 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        _unsafe_aliasing_address_to_pointer[DType.index](Int(plan)).bitcast[
+        _unsafe_aliasing_address_to_pointer[DType.int](Int(plan)).bitcast[
             NoneType
         ](),
     )

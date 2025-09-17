@@ -16,8 +16,8 @@ from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_properties():
-    assert_equal(Int.MAX, (1 << DType.index.bit_width() - 1) - 1)
-    assert_equal(Int.MIN, -(1 << DType.index.bit_width() - 1))
+    assert_equal(Int.MAX, (1 << DType.int.bit_width() - 1) - 1)
+    assert_equal(Int.MIN, -(1 << DType.int.bit_width() - 1))
 
 
 def test_add():

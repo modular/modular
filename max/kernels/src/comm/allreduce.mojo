@@ -236,16 +236,16 @@ fn _p2p_cache_init_wrapper() -> OpaquePointer:
       1 => p2p_not_available
       2 => p2p_available
     """
-    alias p2p_not_available = Scalar[DType.index](1)
-    alias p2p_available = Scalar[DType.index](2)
+    alias p2p_not_available = Scalar[DType.int](1)
+    alias p2p_available = Scalar[DType.int](2)
 
     try:
         DeviceContext.enable_all_peer_access()
-        return _unsafe_aliasing_address_to_pointer[DType.index](
+        return _unsafe_aliasing_address_to_pointer[DType.int](
             p2p_available
         ).bitcast[NoneType]()
     except:
-        return _unsafe_aliasing_address_to_pointer[DType.index](
+        return _unsafe_aliasing_address_to_pointer[DType.int](
             p2p_not_available
         ).bitcast[NoneType]()
 
@@ -262,8 +262,8 @@ fn can_enable_p2p() raises -> Bool:
     Returns:
         True if P2P access is possible between all GPU pairs, False otherwise.
     """
-    alias p2p_not_available = Scalar[DType.index](1)
-    alias p2p_available = Scalar[DType.index](2)
+    alias p2p_not_available = Scalar[DType.int](1)
+    alias p2p_available = Scalar[DType.int](2)
 
     # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
@@ -274,7 +274,7 @@ fn can_enable_p2p() raises -> Bool:
         _p2p_cache_destroy_wrapper,
     )
 
-    var tag = Scalar[DType.index](Int(cached))
+    var tag = Scalar[DType.int](Int(cached))
     return tag == p2p_available
 
 

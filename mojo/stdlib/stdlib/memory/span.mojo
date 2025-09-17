@@ -688,15 +688,15 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        alias simdwidth = simd_width_of[DType.index]()
+        alias simdwidth = simd_width_of[DType.int]()
         var ptr = self.unsafe_ptr()
         var length = len(self)
-        var countv = SIMD[DType.index, simdwidth](0)
-        var count = Scalar[DType.index](0)
+        var countv = SIMD[DType.int, simdwidth](0)
+        var count = Scalar[DType.int](0)
 
         @parameter
         fn do_count[width: Int](idx: Int):
-            var vec = func(ptr.load[width=width](idx)).cast[DType.index]()
+            var vec = func(ptr.load[width=width](idx)).cast[DType.int]()
 
             @parameter
             if width == 1:

@@ -100,7 +100,7 @@ fn llvm_intrinsic[
 # this function!
 fn _unsafe_aliasing_address_to_pointer[
     dtype: DType
-](var addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
+](var addr: Scalar[DType.int]) -> UnsafePointer[Scalar[dtype]]:
     return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
 
 
@@ -108,7 +108,7 @@ fn _unsafe_aliasing_address_to_pointer[
 fn gather[
     dtype: DType, size: Int, //, *, invariant: Bool = False
 ](
-    var base: SIMD[DType.index, size],
+    var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
     alignment: Int = 0,
@@ -197,7 +197,7 @@ fn scatter[
     dtype: DType, size: Int, //
 ](
     value: SIMD[dtype, size],
-    var base: SIMD[DType.index, size],
+    var base: SIMD[DType.int, size],
     mask: SIMD[DType.bool, size],
     alignment: Int = 0,
 ):
@@ -674,7 +674,7 @@ fn strided_load[
 
     var offset = (
         Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -718,7 +718,7 @@ fn strided_store[
 
     var offset = (
         Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.index, simd_width]()
+        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 

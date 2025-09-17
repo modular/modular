@@ -243,13 +243,13 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias BITWIDTH = Int(DType.index.bit_width())
+    alias BITWIDTH = Int(DType.int.bit_width())
     """The bit width of the integer type."""
 
-    alias MAX = Int(Scalar[DType.index].MAX)
+    alias MAX = Int(Scalar[DType.int].MAX)
     """Returns the maximum integer value."""
 
-    alias MIN = Int(Scalar[DType.index].MIN)
+    alias MIN = Int(Scalar[DType.int].MIN)
     """Returns the minimum value of type."""
 
     alias device_type: AnyTrivialRegType = Self

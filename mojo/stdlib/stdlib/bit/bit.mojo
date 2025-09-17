@@ -66,7 +66,7 @@ fn count_leading_zeros[
     constrained[dtype.is_integral(), "must be integral"]()
 
     # HACK(#5003): remove this workaround
-    alias d = dtype if dtype is not DType.index else (
+    alias d = dtype if dtype is not DType.int else (
         DType.int32 if dtype.size_of() == 4 else DType.int64
     )
     return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
@@ -362,7 +362,7 @@ fn log2_floor(val: Int) -> Int:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
-    return Int(log2_floor(Scalar[DType.index](val)))
+    return Int(log2_floor(Scalar[DType.int](val)))
 
 
 @always_inline

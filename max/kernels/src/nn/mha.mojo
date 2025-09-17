@@ -4844,27 +4844,21 @@ fn _naive_attention_with_transpose[
     )
 
     # BSHD -> BHSD
-    var q_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var q_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
     q_perm[3] = 3
 
     # BSHD -> BHDS
-    var k_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var k_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
     k_perm[3] = 1
 
     # BHSD -> BSHD
-    var o_perm = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, 4
-    ].stack_allocation()
+    var o_perm = NDBuffer[DType.int, 1, MutableAnyOrigin, 4].stack_allocation()
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1

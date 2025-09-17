@@ -257,11 +257,11 @@ def test_memcmp_extensive():
     test_memcmp_extensive[DType.int8](1)
     test_memcmp_extensive[DType.int8](3)
 
-    test_memcmp_extensive[DType.index](3)
-    test_memcmp_extensive[DType.index](simd_width_of[Int]())
-    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]())
-    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]() + 1)
-    test_memcmp_extensive[DType.index](4 * simd_width_of[DType.index]() - 1)
+    test_memcmp_extensive[DType.int](3)
+    test_memcmp_extensive[DType.int](simd_width_of[Int]())
+    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]())
+    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() + 1)
+    test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() - 1)
 
     test_memcmp_extensive[DType.float32](3)
     test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
@@ -755,7 +755,7 @@ def test_dtypepointer_scatter():
         SIMD[ptr.type.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
-        SIMD[DType.index, 4](3, 2, 1, 0),
+        SIMD[DType.int, 4](3, 2, 1, 0),
         SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[DType.bool, 4](True, False, True, True),
         SIMD[ptr.type.dtype, 4](3.0, 2.0, 2.0, 0.0),

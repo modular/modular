@@ -478,7 +478,7 @@ fn _log2_floor(n: Int) -> Int:
 fn _log2_ceil(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
-    return Int(_log2_ceil(Scalar[DType.index](n)))
+    return Int(_log2_ceil(Scalar[DType.int](n)))
 
 
 @always_inline

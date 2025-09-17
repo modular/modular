@@ -506,13 +506,13 @@ fn elementwise_helper[
             alias fast_div = FastDiv[DType.uint32](shared_n)
 
             shared_upper_row = (
-                Scalar[DType.index](offset_upper).cast[fast_div.uint_type]()
+                Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
             shared_upper_col = offset_upper % shared_n
 
             shared_lower_row = (
-                Scalar[DType.index](offset_lower).cast[fast_div.uint_type]()
+                Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
             shared_lower_col = offset_lower % shared_n

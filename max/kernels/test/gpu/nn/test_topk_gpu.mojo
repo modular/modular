@@ -55,7 +55,7 @@ fn test_case_batched[
     fill_fn: fn[rank: Int, dtype: DType] (
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     # Fetch arguments
@@ -295,7 +295,7 @@ fn test_case_multi_rank[
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     rank: Int,
-    out_idx_type: DType = DType.index,
+    out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
     # Fetch arguments
     var input_shape = test_case.input_shape

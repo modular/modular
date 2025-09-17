@@ -202,7 +202,7 @@ def test_to_bits():
 def test_from_to_bits_roundtrip():
     alias dtypes = [
         DType.bool,
-        DType.index,
+        DType.int,
         DType.uindex,
         DType.uint8,
         DType.int8,
@@ -245,9 +245,7 @@ def test_from_to_bits_roundtrip():
 
 
 def test_simd_variadic():
-    assert_equal(
-        String(SIMD[DType.index, 4](52, 12, -43, 5)), "[52, 12, -43, 5]"
-    )
+    assert_equal(String(SIMD[DType.int, 4](52, 12, -43, 5)), "[52, 12, -43, 5]")
     assert_equal(
         String(SIMD[DType.uindex, 4](52, 12, 43, 5)), "[52, 12, 43, 5]"
     )
@@ -260,7 +258,7 @@ def test_convert_simd_to_string():
     var b: SIMD[DType.float64, 4] = 6
     assert_equal(String(b), "[6.0, 6.0, 6.0, 6.0]")
 
-    var c: SIMD[DType.index, 8] = -7
+    var c: SIMD[DType.int, 8] = -7
     assert_equal(String(c), "[-7, -7, -7, -7, -7, -7, -7, -7]")
 
     var d: SIMD[DType.uindex, 8] = 8
@@ -441,7 +439,7 @@ def test_truthy():
         DType.float16,
         DType.float32,
         DType.float64,
-        DType.index,
+        DType.int,
         DType.uindex,
     )
 
@@ -1151,15 +1149,15 @@ def test_insert():
     assert_equal(Int32(3).insert(Int32(4)), 4)
 
     assert_equal(
-        SIMD[DType.index, 4](0, 1, 2, 3).insert(SIMD[DType.index, 2](9, 6)),
-        SIMD[DType.index, 4](9, 6, 2, 3),
+        SIMD[DType.int, 4](0, 1, 2, 3).insert(SIMD[DType.int, 2](9, 6)),
+        SIMD[DType.int, 4](9, 6, 2, 3),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](0, 1, 2, 3).insert[offset=1](
-            SIMD[DType.index, 2](9, 6)
+        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=1](
+            SIMD[DType.int, 2](9, 6)
         ),
-        SIMD[DType.index, 4](0, 9, 6, 3),
+        SIMD[DType.int, 4](0, 9, 6, 3),
     )
 
     assert_equal(
@@ -1198,8 +1196,8 @@ def test_interleave():
     )
 
     assert_equal(
-        SIMD[DType.index, 2](0, -2).interleave(SIMD[DType.index, 2](1, -3)),
-        SIMD[DType.index, 4](0, 1, -2, -3),
+        SIMD[DType.int, 2](0, -2).interleave(SIMD[DType.int, 2](1, -3)),
+        SIMD[DType.int, 4](0, 1, -2, -3),
     )
 
     assert_equal(
@@ -1213,7 +1211,7 @@ def test_deinterleave():
     assert_equal(tup2[0], Float32(1))
     assert_equal(tup2[1], Float32(2))
 
-    var tup4 = SIMD[DType.index, 4](0, 1, -2, -3).deinterleave()
+    var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
     assert_equal(tup4[0], __type_of(tup4[0])(0, -2))
     assert_equal(tup4[1], __type_of(tup4[0])(1, -3))
 
@@ -1229,13 +1227,13 @@ def test_extract():
     assert_equal(s2, 99)
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[4](),
-        SIMD[DType.index, 4](99, 1, 2, 4),
+        SIMD[DType.int, 4](99, 1, 2, 4).slice[4](),
+        SIMD[DType.int, 4](99, 1, 2, 4),
     )
 
     assert_equal(
-        SIMD[DType.index, 4](99, 1, 2, 4).slice[2, offset=0](),
-        SIMD[DType.index, 2](99, 1),
+        SIMD[DType.int, 4](99, 1, 2, 4).slice[2, offset=0](),
+        SIMD[DType.int, 2](99, 1),
     )
 
     assert_equal(
@@ -1256,7 +1254,7 @@ def test_limits():
         var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
 
-    test_integral_overflow[DType.index]()
+    test_integral_overflow[DType.int]()
     test_integral_overflow[DType.uindex]()
     test_integral_overflow[DType.int8]()
     test_integral_overflow[DType.uint8]()
@@ -1581,7 +1579,7 @@ def test_reduce():
     test_dtype[DType.float16]()
     test_dtype[DType.float32]()
     test_dtype[DType.float64]()
-    test_dtype[DType.index]()
+    test_dtype[DType.int]()
     test_dtype[DType.uindex]()
 
     # TODO(KERN-228): support BF16 on neon systems.
@@ -1824,7 +1822,7 @@ def test_modf():
 
 
 def test_split():
-    var tup4 = SIMD[DType.index, 4](1, 2, -3, -4).split()
+    var tup4 = SIMD[DType.int, 4](1, 2, -3, -4).split()
     assert_equal(tup4[0], __type_of(tup4[0])(1, 2))
     assert_equal(tup4[1], __type_of(tup4[1])(-3, -4))
 
@@ -1856,7 +1854,7 @@ def test_comparison():
         DType.float16,
         DType.float32,
         DType.float64,
-        DType.index,
+        DType.int,
         DType.uindex,
     )
 
@@ -2488,7 +2486,7 @@ def test_int_literal_init():
     assert_equal(Int64(-9223372036854775808), Int64(9223372036854775808))
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
-    alias Index = Scalar[DType.index]
+    alias Index = Scalar[DType.int]
     alias UIndex = Scalar[DType.uindex]
 
     @parameter

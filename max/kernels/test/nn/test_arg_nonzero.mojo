@@ -101,15 +101,15 @@ def test_where():
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](golden_stack)
 
@@ -134,7 +134,7 @@ def test_where():
                 IndexList[3](3, 2, 1),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](3, 3),
@@ -171,19 +171,19 @@ def test_where_1d():
     values[10] = 0.0
     values[11] = 1.0
 
-    var computed_stack = InlineArray[Scalar[DType.index], num_indices](
+    var computed_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(num_indices, 1),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], num_indices](
+    var golden_stack = InlineArray[Scalar[DType.int], num_indices](
         uninitialized=True
     )
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(num_indices),
     ](golden_stack)
 
@@ -204,7 +204,7 @@ def test_where_1d():
                 IndexList[1](num_elements),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](num_indices, 1),
@@ -233,15 +233,15 @@ def test_where_bool():
     values[2, 0, 0] = False
     values[2, 1, 0] = True
 
-    var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var computed_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var computed_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](computed_stack)
 
-    var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var golden_stack = InlineArray[Scalar[DType.int], 9](uninitialized=True)
     var golden_outputs = LayoutTensor[
-        DType.index,
+        DType.int,
         Layout.row_major(3, 3),
     ](golden_stack)
 
@@ -267,7 +267,7 @@ def test_where_bool():
                 IndexList[3](3, 2, 1),
             ),
         ),
-        LayoutTensor[DType.index, layout_unknown_2d](
+        LayoutTensor[DType.int, layout_unknown_2d](
             computed_stack,
             RuntimeLayout[layout_unknown_2d].row_major(
                 IndexList[2](3, 3),

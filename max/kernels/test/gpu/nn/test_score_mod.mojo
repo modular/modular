@@ -25,9 +25,9 @@ fn generate_alibi_bias[
     width: Int,
     num_heads: Int,
 ](
-    head_idx: SIMD[DType.index, width],
-    q_idx: SIMD[DType.index, width],
-    k_idx: SIMD[DType.index, width],
+    head_idx: SIMD[DType.int, width],
+    q_idx: SIMD[DType.int, width],
+    k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
     var scale: SIMD[dtype, width]
@@ -51,7 +51,7 @@ fn generate_alibi_bias[
             )
     # print(scale)
     var bias = (
-        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[dtype]()
+        -(max_prompt_len - 1 - k_idx - iota[DType.int, width]()).cast[dtype]()
         * scale
     )
     # print(bias)
@@ -67,13 +67,13 @@ def test_alibi_score_mod():
 
     var alibi_mod = AlibiScoreMod[num_heads]()
 
-    var head_idx = SIMD[DType.index, width](0)
-    var q_idx = SIMD[DType.index, width](2)
-    var k_idx = SIMD[DType.index, width](1)
+    var head_idx = SIMD[DType.int, width](0)
+    var q_idx = SIMD[DType.int, width](2)
+    var k_idx = SIMD[DType.int, width](1)
 
     var score_vec = SIMD[dtype, width](0, 1, 2, 3)
 
-    var reference = q_idx.ge(k_idx + iota[DType.index, width]()).select(
+    var reference = q_idx.ge(k_idx + iota[DType.int, width]()).select(
         score_vec
         + generate_alibi_bias[dtype, width, num_heads](
             head_idx,

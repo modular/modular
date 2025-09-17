@@ -945,7 +945,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         return gather(base, mask, default, alignment)
 
     @always_inline("nodebug")
@@ -1000,7 +1000,7 @@ struct UnsafePointer[
             "alignment must be a power of two integer value",
         ]()
 
-        var base = offset.cast[DType.index]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
         scatter(val, base, mask, alignment)
 
     @always_inline

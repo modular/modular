@@ -21,7 +21,7 @@ Since Mojo considers types as first-class values, aliases naturally extend to
 types. For example, creating a transparent type shorthand:
 
 ```mojo
-alias IndexPair = SIMD[DType.index, 2]
+alias IndexPair = SIMD[DType.int, 2]
 ```
 
 ### Generator

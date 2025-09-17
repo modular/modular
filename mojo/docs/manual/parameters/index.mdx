@@ -803,7 +803,7 @@ fn reduce_add(x: SIMD) -> Int:
 
 
 def main():
-    var x = SIMD[DType.index, 4](1, 2, 3, 4)
+    var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
 ```

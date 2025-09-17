@@ -174,8 +174,8 @@ fn pad_constant[
         ],
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[output_layout.rank()],
-        output_strides: UnsafePointer[Scalar[DType.index]],
-        input_strides: UnsafePointer[Scalar[DType.index]],
+        output_strides: UnsafePointer[Scalar[DType.int]],
+        input_strides: UnsafePointer[Scalar[DType.int]],
     ):
         return _pad_constant_impl[output_layout.rank(), dtype, paddings_type](
             output,
@@ -246,8 +246,8 @@ fn pad_reflect[
         ],
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[output_layout.rank()],
-        output_strides: UnsafePointer[Scalar[DType.index]],
-        input_strides: UnsafePointer[Scalar[DType.index]],
+        output_strides: UnsafePointer[Scalar[DType.int]],
+        input_strides: UnsafePointer[Scalar[DType.int]],
     ):
         return _pad_reflect_impl[output_layout.rank(), dtype, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
@@ -317,8 +317,8 @@ fn _do_pad[
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, **_],
         UnsafePointer[Scalar[paddings_type]],
         IndexList[output_layout.rank()],
-        UnsafePointer[Scalar[DType.index]],
-        UnsafePointer[Scalar[DType.index]],
+        UnsafePointer[Scalar[DType.int]],
+        UnsafePointer[Scalar[DType.int]],
     ) capturing [_] -> None,
 ](
     output: LayoutTensor[
@@ -332,17 +332,17 @@ fn _do_pad[
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
-    var input_strides_stack = InlineArray[Scalar[DType.index], output.rank](
+    var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var input_strides_buf = LayoutTensor[
-        DType.index, Layout.row_major(input.rank)
+        DType.int, Layout.row_major(input.rank)
     ](input_strides_stack)
-    var output_strides_stack = InlineArray[Scalar[DType.index], output.rank](
+    var output_strides_stack = InlineArray[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var output_strides_buf = LayoutTensor[
-        DType.index, Layout.row_major(output.rank)
+        DType.int, Layout.row_major(output.rank)
     ](output_strides_stack)
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
@@ -460,8 +460,8 @@ fn _pad_constant_axis[
     input: UnsafePointer[Scalar[dtype]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
     @parameter
@@ -499,8 +499,8 @@ fn _pad_constant_impl[
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: Scalar[dtype],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges
@@ -698,8 +698,8 @@ fn _pad_reflect_axis[
     input: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.GENERIC, **_
     ],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
     var axis_params: StaticTuple[
         _AxisParamsReflect[rank, dtype, paddings_type], rank
     ],
@@ -760,8 +760,8 @@ fn _pad_reflect_impl[
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
-    output_strides: UnsafePointer[Scalar[DType.index]],
-    input_strides: UnsafePointer[Scalar[DType.index]],
+    output_strides: UnsafePointer[Scalar[DType.int]],
+    input_strides: UnsafePointer[Scalar[DType.int]],
 ):
     """
     Fill axis ∈ [axis, rank) in `output` with values from `input`, and edges

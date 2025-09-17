@@ -124,7 +124,7 @@ fn topk_wrapper[
             # Store the local top-K values and indices in global memory
             var vector_idx: UInt = UInt(total.p)
             local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.index](vector_idx).cast[
+            local_topk_idxs[bid * K + k] = Scalar[DType.int](vector_idx).cast[
                 out_idx_type
             ]()
 

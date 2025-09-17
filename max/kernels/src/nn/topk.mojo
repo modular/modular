@@ -753,13 +753,13 @@ fn _block_reduce_topk[
     ]()
 
     # Calculate sizes for shared memory allocation
-    alias p_width = simd_width_of[DType.index]()
+    alias p_width = simd_width_of[DType.int]()
     alias u_width = simd_width_of[Scalar[T]]()
 
     # Allocate shared memory for indices and values
     var p_sram = stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
-        Scalar[DType.index],
+        Scalar[DType.int],
         address_space = AddressSpace.SHARED,
     ]()
     var u_sram = stack_allocation[
@@ -778,7 +778,7 @@ fn _block_reduce_topk[
     # Store warp-level results in shared memory
     if lane_id() == 0 and warp < UInt(num_warps_needed):
         # Note: Potential bank conflict for sub 4 byte data elements
-        p_sram[Int(warp) * p_width] = Scalar[DType.index](warp_accum.p)
+        p_sram[Int(warp) * p_width] = Scalar[DType.int](warp_accum.p)
         u_sram[Int(warp) * u_width] = warp_accum.u
     barrier()
 
@@ -880,7 +880,7 @@ fn _topk_stage1[
                 # Store the local top-K values and indices in global memory
                 var vector_idx = total.p
                 local_topk_vals[bid * max_k + k] = total.u
-                local_topk_idxs[bid * max_k + k] = Scalar[DType.index](
+                local_topk_idxs[bid * max_k + k] = Scalar[DType.int](
                     vector_idx
                 ).cast[out_idx_type]()
 
@@ -1159,7 +1159,7 @@ fn _topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default is DType.index).
+        out_idx_type: DType - The data dtype of the output indices (default is DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
 
@@ -1172,11 +1172,11 @@ fn _topk_gpu[
             Input tensor as a device NDBuffer.
         device_local_topk_vals: NDBuffer[dtype, 2, DimList(batch_size, num_blocks_per_input * max(K))]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[DType.index, 2, DimList(batch_size, num_blocks_per_input * max(K))]
+        device_local_topk_idxs: NDBuffer[DType.int, 2, DimList(batch_size, num_blocks_per_input * max(K))]
             Temporary buffer for locally reduced top-K indices from stage 1.
         out_vals: NDBuffer[dtype, 2, DimList(batch_size, max(K))]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[DType.index, 2, DimList(batch_size, 1 if sampling else max(K))]
+        out_idxs: NDBuffer[DType.int, 2, DimList(batch_size, 1 if sampling else max(K))]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
         k: Optional NDBuffer[DType.int64, 1]]
             Device buffer of top elements to keep for each batch element.
@@ -1256,10 +1256,10 @@ fn _topk_gpu[
         ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
     )
     var num_bytes_sample_cache = max_k * (
-        size_of[Scalar[dtype]]() + 2 * size_of[DType.index]()
+        size_of[Scalar[dtype]]() + 2 * size_of[DType.int]()
     )
     var shared_mem_bytes_2 = (
-        num_elem_reduced * (size_of[Scalar[dtype]]() + size_of[DType.index]())
+        num_elem_reduced * (size_of[Scalar[dtype]]() + size_of[DType.int]())
         + num_bytes_sample_cache
     )
     shared_mem_bytes_2 = Int(
@@ -1358,7 +1358,7 @@ fn topk_gpu[
 
     Parameters:
         dtype: DType - The data dtype of the input tensor.
-        out_idx_type: DType - The data dtype of the output indices (default is DType.index).
+        out_idx_type: DType - The data dtype of the output indices (default is DType.int).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
 
@@ -1371,7 +1371,7 @@ fn topk_gpu[
             Input tensor as a device NDBuffer.
         out_vals: NDBuffer[dtype, rank]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[DType.index, rank]
+        out_idxs: NDBuffer[DType.int, rank]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
             Last dimension is 1 if sampling is True, otherwise K.
         block_size: Int

@@ -657,7 +657,7 @@ fn _get_register_constraint[dtype: DType]() -> StaticString:
 
 
 fn _get_pointer_constraint() -> StaticString:
-    return _get_register_constraint[DType.index]()
+    return _get_register_constraint[DType.int]()
 
 
 @always_inline

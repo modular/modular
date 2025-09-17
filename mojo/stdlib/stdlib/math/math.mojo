@@ -1155,7 +1155,7 @@ fn iota[
     if width == 1:
         return offset
 
-    alias step_dtype = dtype if dtype.is_integral() else DType.index
+    alias step_dtype = dtype if dtype.is_integral() else DType.int
     var step: SIMD[step_dtype, width]
     if is_compile_time():
         step = 0
@@ -1216,7 +1216,7 @@ fn iota(mut v: List[Int, *_], offset: Int = 0):
         v: The list to fill with numbers.
         offset: The starting value to fill at index 0.
     """
-    var buff = v.unsafe_ptr().bitcast[Scalar[DType.index]]()
+    var buff = v.unsafe_ptr().bitcast[Scalar[DType.int]]()
     iota(buff, len(v), offset=offset)
 
 

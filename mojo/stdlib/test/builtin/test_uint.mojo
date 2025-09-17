@@ -88,7 +88,7 @@ def test_inequality():
 
 def test_properties():
     assert_equal(UInt.MIN, UInt(0))
-    if DType.index.bit_width() == 32:
+    if DType.int.bit_width() == 32:
         assert_equal(UInt.MAX, (1 << 32) - 1)
     else:
         assert_equal(UInt.MAX, (1 << 64) - 1)

@@ -30,7 +30,7 @@ def matrix_band_part[
     num_upper: Int,
     exclude: Bool,
 ):
-    alias int_type = DType.index
+    alias int_type = DType.int
     alias cond_type = DType.bool
 
     var num_lower_buf = NDBuffer[
