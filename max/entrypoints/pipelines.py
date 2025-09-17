@@ -22,12 +22,11 @@ from typing import Any, Callable, TypeVar
 
 import click
 from click import shell_completion
-from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.entrypoints.workers import start_workers
-from max.interfaces import SamplingParams
-from max.serve.config import Settings
-from max.serve.telemetry.common import configure_logging
 from typing_extensions import ParamSpec
+
+# Please keep all max imports inside their respective functions.
+# This is best practive to keep the CLI invocation fast
+
 
 logger = logging.getLogger("max.entrypoints")
 
@@ -141,6 +140,8 @@ class ModelGroup(click.Group):
     help="Set logging level explicitly (ignored if --verbose or --quiet is used).",
 )
 def main(log_level: str = "INFO") -> None:
+    from max.entrypoints.cli.entrypoint import configure_cli_logging
+
     # Configure logging first, before any other initialization
     configure_cli_logging(level=log_level)
     configure_telemetry()
@@ -231,8 +232,11 @@ def cli_serve(
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
-    from max.interfaces import PipelineTask
+    from max.entrypoints.workers import start_workers
+    from max.interfaces import PipelineTask, SamplingParams
     from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.serve.config import Settings
+    from max.serve.telemetry.common import configure_logging
 
     # Initialize Settings for API Server
     setting_kwargs: dict[str, Any] = {}
