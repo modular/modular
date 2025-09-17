@@ -8,7 +8,8 @@
 
 import pytest
 
-@pytest.mark.skip("Broken")
+
+@pytest.mark.skip("TODO(MOTO-1320): Re-enable")
 def test_var_keyword_spacing():
     """Test that var keyword is properly formatted with spacing."""
     import mblack

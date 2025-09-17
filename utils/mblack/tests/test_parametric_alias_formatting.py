@@ -14,7 +14,7 @@ import mblack
 from mblack.mode import Mode, TargetVersion
 
 
-@unittest.skip("Broken mblack test")
+@unittest.skip("TODO(MOTO-1320): Re-enable")
 class TestParametricAliasFormatting(unittest.TestCase):
     """Test that parametric aliases are formatted correctly."""
 

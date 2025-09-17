@@ -155,7 +155,7 @@ def invokeBlack(
     assert result.exit_code == exit_code, msg
 
 
-@pytest.mark.skip("Broken")
+@pytest.mark.skip("TODO(MOTO-1320): Re-enable")
 class BlackTestCase(BlackBaseTestCase):
     invokeBlack = staticmethod(invokeBlack)
 
@@ -418,7 +418,7 @@ class BlackTestCase(BlackBaseTestCase):
             ff(test_file, mode=mode, write_back=mblack.WriteBack.YES)
             self.assertEqual(test_file.read_bytes(), expected)
 
-    @pytest.mark.skip("Broken")
+    @pytest.mark.skip("TODO(MOTO-1320): Re-enable")
     def test_skip_magic_trailing_comma(self) -> None:
         source, _ = read_data("simple_cases", "expression")
         expected, _ = read_data(
@@ -2069,7 +2069,7 @@ def assert_collected_sources(
     )
     assert sorted(collected) == sorted(gs_expected)
 
-@pytest.mark.skip("Broken")
+@pytest.mark.skip("TODO(MOTO-1320): Re-enable")
 class TestFileCollection:
     def test_include_exclude(self) -> None:
         path = THIS_DIR / "data" / "include_exclude_tests"
