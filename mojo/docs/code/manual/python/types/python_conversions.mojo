@@ -11,19 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# start-mojo-to-python-conversions
+# start-python-to-mojo-conversions
 from python import Python
+from python import PythonObject
 
 
 def main():
-    py_module = """
-def type_printer(value):
-    print(type(value))
-"""
-    py_utils = Python.evaluate(py_module, file=True, name="py_utils")
+    var py_string = PythonObject("Hello, Mojo!")
+    var py_bool = PythonObject(True)
+    var py_int = PythonObject(123)
+    var py_float = PythonObject(3.14)
 
-    py_utils.type_printer(4)
-    py_utils.type_printer(3.14)
-    py_utils.type_printer(True)
-    py_utils.type_printer("Mojo")
-    # end-mojo-to-python-conversions
+    var mojo_string = String(py_string)
+    var mojo_bool = Bool(py_bool)
+    var mojo_int = Int(py_int)
+    var mojo_float = Float64(py_float)
+    # end-python-to-mojo-conversions
+    _ = mojo_string^
+    _ = mojo_bool
+    _ = mojo_int
+    _ = mojo_float

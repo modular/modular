@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# start-python-dict-example
 from python import Python
 
 
@@ -20,3 +21,4 @@ def main():
     py_dict["price"] = 11.75
     py_dict["inventory"] = 100
     print(py_dict)
+    # end-python-dict-example

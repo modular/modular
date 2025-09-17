@@ -121,7 +121,6 @@ n = 3.1415
 Number of cats: 2
 ```
 
-
 If you want to construct a Python type that doesn't have a literal Mojo
 equivalent, you can also use the
 [`Python.evaluate()`](/mojo/stdlib/python/python/Python#evaluate) method. For
@@ -143,28 +142,30 @@ def main():
 Is 7 in the set: True
 ```
 
-Some Mojo APIs handle `PythonObject` just fine, but sometimes you'll need to
-explicitly convert a Python value into a native Mojo value.
-Currently `PythonObject` conforms to the
-[`Stringable`](/mojo/stdlib/builtin/str/Stringable),
-[`Boolable`](/mojo/stdlib/builtin/bool/Boolable),
-[`Intable`](/mojo/stdlib/builtin/int/Intable), and
-[`Floatable`](/mojo/stdlib/builtin/floatable/Floatable/) traits. This allows you
-to convert a `PythonObject` to the corresponding Mojo types.
+`PythonObject` implements the [`Writable`](/mojo/stdlib/utils/write/Writable)
+trait. This allows you to print Python values using the built-in
+[`print()`](/mojo/stdlib/builtin/io/print) function, as shown in several of the
+previous examples.
+
+However, most other Mojo APIs don't accept `PythonObject` values directly. In
+these cases you'll need to explicitly convert a Python value into a native Mojo
+value. For example:
 
 ```mojo
-var s = String(py_string)
-var b = Bool(py_bool)
-var i = Int(py_int)
-var f = Float64(py_float)
-```
+from python import Python
+from python import PythonObject
 
-PythonObject also implements the [`Writable`](/mojo/stdlib/utils/write/Writable)
-trait, so that you can print Python values using the built-in
-[`print()`](/mojo/stdlib/builtin/io/print) function.
 
-```mojo
-print(python_object)
+def main():
+    var py_string = PythonObject("Hello, Mojo!")
+    var py_bool = PythonObject(True)
+    var py_int = PythonObject(123)
+    var py_float = PythonObject(3.14)
+
+    var mojo_string = String(py_string)
+    var mojo_bool = Bool(py_bool)
+    var mojo_int = Int(py_int)
+    var mojo_float = Float64(py_float)
 ```
 
 ### Comparing Python types in Mojo
