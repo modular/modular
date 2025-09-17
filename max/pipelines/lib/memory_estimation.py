@@ -98,7 +98,13 @@ class MemoryEstimator:
             free_memory * model_config.kv_cache_config.device_memory_utilization
             - static_memory_size
         )
-        available_kv_cache_memory = max(0, available_kv_cache_memory)
+
+        if available_kv_cache_memory <= 0:
+            raise RuntimeError(
+                f"The model {to_human_readable_bytes(model_weights_size)} and activations "
+                f"{to_human_readable_bytes(activation_memory_size)} don't leave room for KV cache. "
+                f"Try running a smaller model, using a smaller precision, or using a device with more memory."
+            )
 
         user_provided_max_length = pipeline_config.max_length is not None
         user_provided_max_batch_size = (
