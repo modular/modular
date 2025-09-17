@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import subprocess
 import time
 
+import python.runfiles
 from click.testing import CliRunner
 from max.entrypoints import pipelines
 
@@ -20,14 +22,36 @@ def test_main_help() -> None:
 
 
 def test_help_performance() -> None:
-    """Test that the --help command executes quickly"""
-    THRESHOLD_MILLISECONDS = 500
-    runner = CliRunner()
+    """This test is here to make sure that `max --help` executes quickly.
+
+    This test has the potential to be flaky, since the time it takes to execute
+    the command is dependent on the system.
+
+    If you're here debugging this test, it's up to you to figure out if someone
+    recently introduced a regression or if we simply bump the threshold.
+
+    Regression has been because we added an import in
+    pipelines.py. Importing _anything_ from MAX will cause a significant slowdown,
+    so make sure to check that all imports are function local first.
+
+    """
+    THRESHOLD_MILLISECONDS = 1000
+
+    runfiles = python.runfiles.Create()
+    assert runfiles is not None, "Unable to find runfiles tree"
+    loc = runfiles.Rlocation(
+        "_main/SDK/lib/API/python/max/entrypoints/pipelines"
+    )
+    assert loc is not None, "Unable to find pipelines entrypoint"
 
     start_time = time.time()
-    _ = runner.invoke(pipelines.main, ["--help"])
+    result = subprocess.run([loc, "--help"])
+    assert result.returncode == 0, f"Failed to execute `{loc} --help`"
+
     seconds_to_milliseconds = 1000
     execution_time = (time.time() - start_time) * seconds_to_milliseconds
+
+    print(f"`{loc} --help` executed in {execution_time:.1f} milliseconds")
 
     assert execution_time < THRESHOLD_MILLISECONDS, (
         f"pipelines --help command took {execution_time:.1f} milliseconds, "
