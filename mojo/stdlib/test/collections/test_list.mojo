@@ -18,6 +18,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    TriviallyCopyableMoveCounter,
 )
 from testing import (
     assert_equal,
@@ -536,6 +537,18 @@ def test_list_extend_non_trivial():
     assert_equal(v1[4].move_count, 2)
 
 
+def test_list_extend_trivial_copy_nontrivial_move():
+    var v1 = List[TriviallyCopyableMoveCounter](capacity=1)
+    var v2 = List(TriviallyCopyableMoveCounter(0))
+
+    assert_equal(v2[0].move_count, 1)
+
+    v1.extend(v2^)
+
+    # `extend()` should call __moveinit__, not perform even a trivially copy.
+    assert_equal(v1[0].move_count, 2)
+
+
 def test_2d_dynamic_list():
     var list = List[List[Int]]()
 
@@ -745,6 +758,18 @@ def test_list_realloc_trivial_types():
     assert_equal(len(b), 100)
     for i in range(100):
         assert_equal(b[i], Int8(i))
+
+
+def test_list_realloc_trivial_copy_nontrivial_move():
+    var lst = List[TriviallyCopyableMoveCounter](capacity=1)
+
+    lst.append(TriviallyCopyableMoveCounter(0))
+    assert_equal(lst[0].move_count, 1)
+
+    lst.reserve(10)
+
+    # Reallocating the list should call __moveinit__(), not perform a copy.
+    assert_equal(lst[0].move_count, 2)
 
 
 def test_list_boolable():
@@ -1027,6 +1052,7 @@ def main():
     test_list_append()
     test_list_extend()
     test_list_extend_non_trivial()
+    test_list_extend_trivial_copy_nontrivial_move()
     test_list_explicit_copy()
     test_no_extra_copies_with_sugared_set_by_field()
     test_list_copy_constructor()
@@ -1036,6 +1062,7 @@ def main():
     test_list_iter_bounds()
     test_list_span()
     test_list_realloc_trivial_types()
+    test_list_realloc_trivial_copy_nontrivial_move()
     test_list_boolable()
     test_converting_list_to_string()
     test_list_count()

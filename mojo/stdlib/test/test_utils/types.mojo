@@ -15,6 +15,7 @@
 * `MoveCounter`
 * `CopyCounter`
 * `MoveCopyCounter`
+* `TriviallyCopyableMoveCounter`
 * `DelCounter`
 * `CopyCountedStruct`
 * `MoveOnly`
@@ -190,6 +191,29 @@ struct MoveCopyCounter(ImplicitlyCopyable, Movable):
     fn __moveinit__(out self, deinit other: Self):
         self.copied = other.copied
         self.moved = other.moved + 1
+
+
+# ===----------------------------------------------------------------------=== #
+# TriviallyCopyableMoveCounter
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct TriviallyCopyableMoveCounter(Copyable, Movable):
+    """Type used for testing that collections still perform moves and not copies
+    when a type has a custom __moveinit__() but is also trivially copyable.
+
+    Types with this property are rare in practice, but its still important to
+    get the modeling right. If a type author wants their type to be moved
+    with a memcpy, they should mark it as such."""
+
+    var move_count: Int
+
+    # Copying this type is trivial, it doesn't care to track copies.
+    alias __copyinit__is_trivial = True
+
+    fn __moveinit__(out self, deinit existing: Self):
+        self.move_count = existing.move_count + 1
 
 
 # ===----------------------------------------------------------------------=== #

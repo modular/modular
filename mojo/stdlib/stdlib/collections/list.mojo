@@ -715,7 +715,7 @@ struct List[T: Copyable & Movable](
         var src_ptr = other.unsafe_ptr()
 
         @parameter
-        if T.__copyinit__is_trivial:
+        if T.__moveinit__is_trivial:
             memcpy(dest_ptr, src_ptr, other_len)
         else:
             for _ in range(other_len):
