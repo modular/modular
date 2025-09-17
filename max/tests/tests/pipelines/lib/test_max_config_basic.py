@@ -777,7 +777,7 @@ class TestMAXConfigCLIArgParsers:
         with pytest.raises(
             SystemExit
         ):  # argparse raises SystemExit on missing required args
-            parser_with_required.parse_args([])
+            parser_with_required.parse_args()
 
     def test_cli_arg_parsers_required_params_multiple(self) -> None:
         """Test cli_arg_parsers with multiple required parameters."""
