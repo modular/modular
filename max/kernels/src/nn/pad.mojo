@@ -43,7 +43,7 @@ fn _fill[
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
-struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable):
+struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
     """
     Helper iterable for padding functions meant to represent an n-level loop nest of
     the form:
@@ -54,7 +54,12 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable):
              .....
     """
 
-    var cur: IndexList[n_loops]
+    alias Element = IndexList[n_loops]
+    alias IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
+    ]: Iterator = Self
+
+    var cur: Self.Element
 
     alias LoopBoundSpec = InlineArray[IndexList[2], n_loops]
     var loop_bounds: Self.LoopBoundSpec
@@ -96,10 +101,10 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable):
         self.loop_bounds = other.loop_bounds.copy()
         self.early_stop = other.early_stop
 
-    fn __iter__(mut self) -> Self:
+    fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         return self
 
-    fn __next__(mut self) -> IndexList[n_loops]:
+    fn __next__(mut self) -> Self.Element:
         var cur = self.cur
 
         self.cur[len(self.cur) - 1] += 1
