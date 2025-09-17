@@ -519,8 +519,8 @@ class Graph:
         """
         return self._always_ready_chain
 
-    @contextlib.contextmanager
     @staticmethod
+    @contextlib.contextmanager
     def _async_region():
         """Create a region of the graph with tasks guaranteed to execute
         independently.
