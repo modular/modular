@@ -32,6 +32,10 @@ See the `PipelineTask` enum for further details on each task type.
 """
 
 from enum import Enum
+from typing import Any
+
+from .request import RequestID
+from .scheduler import SchedulerResult
 
 
 class PipelineTask(str, Enum):
@@ -49,7 +53,9 @@ class PipelineTask(str, Enum):
     """Task for generating speech tokens."""
 
     @property
-    def output_type(self) -> type:
+    def output_type(
+        self,
+    ) -> type[dict[RequestID, SchedulerResult[Any]]]:
         """
         Get the output type for the pipeline task.
 
