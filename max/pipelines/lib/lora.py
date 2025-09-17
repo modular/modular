@@ -260,6 +260,9 @@ class LoRAModel:
         self.rank: int = self._adapter_config["r"]
         self.target_modules: list[str] = self._adapter_config["target_modules"]
 
+        # Validate that target modules are supported
+        self._validate_target_modules()
+
     def get(self, key: str) -> WeightData | None:
         """
         Gets the WeightData from the key. If key doesn't exist in model, then None is returned.
@@ -298,6 +301,41 @@ class LoRAModel:
     def adapter_config(self) -> dict[str, Any]:
         """A dictionary containing metadata/configuration for the LoRA adapter."""
         return self._adapter_config
+
+    def _validate_target_modules(self) -> None:
+        """
+        Validates that all target modules in the LoRA adapter are supported.
+
+        Currently supported target modules:
+        - Attention modules: q_proj, k_proj, v_proj, o_proj
+
+        Raises:
+            ValueError: If any target module is not supported.
+        """
+        supported_modules = {
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",  # Attention modules
+            # TODO E2EOPT-526
+            # "gate_proj",
+            # "up_proj",
+            # "down_proj",  # MLP modules
+        }
+
+        unsupported_modules = []
+        for module in self.target_modules:
+            if module not in supported_modules:
+                unsupported_modules.append(module)
+
+        if unsupported_modules:
+            supported_list = ", ".join(sorted(supported_modules))
+            unsupported_list = ", ".join(unsupported_modules)
+            msg = (
+                f"LoRA adapter contains unsupported target modules: {unsupported_list}. "
+                f"Currently supported modules are: {supported_list}."
+            )
+            raise ValueError(msg)
 
     def _normalize_lora_key(self, key: str) -> str:
         """
@@ -350,6 +388,15 @@ class LoRAModel:
 
         with open(config_path) as f:
             adapter_config = json.load(f)
+
+        # Check for bias configuration which is not currently supported
+        bias_config = adapter_config.get("bias", "none")
+        if bias_config != "none":
+            raise ValueError(
+                f"LoRA bias training is not currently supported. "
+                f"Found bias='{bias_config}' in LoRA adapter '{self.name}'. "
+                f"Please use a LoRA adapter with bias='none' or without bias configuration."
+            )
 
         if WeightsFormat.safetensors in weight_files:
             weights = load_weights(
