@@ -868,6 +868,7 @@ class MAXConfig:
                 arg_kwargs["help"] = help_dict[field_obj.name]
 
         # Mark as required if specified in required_params
+        # The required_params set is already calculated by the caller (e.g., smart required fields logic)
         if field_obj.name in required_params:
             arg_kwargs["required"] = True
 
@@ -958,7 +959,12 @@ class MAXConfig:
             description=description, **additional_argument_parser_args
         )
         choices_provider = choices_provider or self.get_default_field_choices()
-        required_params = required_params or self.get_default_required_fields()
+        # Use provided required_params if it's not None, otherwise use default required fields
+        required_params = (
+            required_params
+            if required_params is not None
+            else self.get_default_required_fields()
+        )
 
         # Resolve type hints in case of string annotations (from __future__ import annotations)
         try:

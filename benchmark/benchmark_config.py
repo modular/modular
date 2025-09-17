@@ -684,7 +684,23 @@ def parse_benchmark_args(
             )
 
     # Create parser using the enhanced MAXConfig functionality
-    parser = benchmark_config.cli_arg_parsers(description=description)
+    # When a config file is loaded, only require parameters that are not provided in the config
+    required_fields = config_class.get_default_required_fields()
+    provided_required_fields = set()
+
+    for field_name in required_fields:
+        if hasattr(benchmark_config, field_name):
+            field_value = getattr(benchmark_config, field_name)
+            # Consider a field as "provided" if it has a non-None, non-empty value
+            if field_value is not None and field_value != "":
+                provided_required_fields.add(field_name)
+
+    # Only require fields that are not provided in the config
+    still_required_fields = required_fields - provided_required_fields
+
+    parser = benchmark_config.cli_arg_parsers(
+        description=description, required_params=still_required_fields
+    )
     # This is added only for its help message. It's a no-op and not actually used for parsing
     # since it's done in the section above.
     parser = _add_config_file_arg_to_parser(parser)
