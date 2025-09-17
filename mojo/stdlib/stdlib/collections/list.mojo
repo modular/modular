@@ -244,13 +244,17 @@ struct List[T: Copyable & Movable](
         T: The type of elements stored in the list.
     """
 
+    # Aliases
+    alias _Span = Span[T, MutableAnyOrigin]
+    alias _AnyOriginUnsafePointerType = Self._Span.UnsafePointerType
+
     # Fields
-    var _data: UnsafePointer[T]
-    """The underlying storage for the list."""
+    var _data: Self._AnyOriginUnsafePointerType
+    """The underlying storage for the `List`."""
     var _len: Int
-    """The number of elements in the list."""
+    """The number of elements in the `List`."""
     var capacity: Int
-    """The amount of elements that can fit in the list without resizing it."""
+    """The amount of elements that can fit in the `List` without resizing it."""
 
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
@@ -262,7 +266,7 @@ struct List[T: Copyable & Movable](
 
     fn __init__(out self):
         """Constructs an empty list."""
-        self._data = UnsafePointer[T]()
+        self._data = {}
         self._len = 0
         self.capacity = 0
 
@@ -273,9 +277,9 @@ struct List[T: Copyable & Movable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = UnsafePointer[T].alloc(capacity)
+            self._data = Self._AnyOriginUnsafePointerType.alloc(capacity)
         else:
-            self._data = UnsafePointer[T]()
+            self._data = {}
         self._len = 0
         self.capacity = capacity
 
@@ -430,7 +434,7 @@ struct List[T: Copyable & Movable](
 
         Parameters:
             U: The type of the elements in the list. Must implement the
-              trait `EqualityComparable`.
+                trait `EqualityComparable`.
 
         Args:
             value: The value to find.
@@ -445,10 +449,7 @@ struct List[T: Copyable & Movable](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        for i in self:
-            if i == value:
-                return True
-        return False
+        return value in Span(self)
 
     fn __mul__(self, x: Int) -> Self:
         """Multiplies the list by x and returns a new list.
@@ -481,7 +482,7 @@ struct List[T: Copyable & Movable](
         if x <= 0 or len(self) == 0:
             self.clear()
             return
-        var orig = self.copy()
+        var orig = Span(self.copy())
         self.reserve(len(self) * x)
         for _ in range(x - 1):
             self.extend(Span(orig))
@@ -641,7 +642,7 @@ struct List[T: Copyable & Movable](
 
     @no_inline
     fn _realloc(mut self, new_capacity: Int):
-        var new_data = UnsafePointer[T].alloc(new_capacity)
+        var new_data = Self._AnyOriginUnsafePointerType.alloc(new_capacity)
 
         @parameter
         if T.__moveinit__is_trivial:
@@ -715,7 +716,7 @@ struct List[T: Copyable & Movable](
         var src_ptr = other.unsafe_ptr()
 
         @parameter
-        if T.__copyinit__is_trivial:
+        if T.__moveinit__is_trivial:
             memcpy(dest_ptr, src_ptr, other_len)
         else:
             for _ in range(other_len):
@@ -727,11 +728,13 @@ struct List[T: Copyable & Movable](
                 src_ptr += 1
                 dest_ptr += 1
 
-        # Update the size now since all elements have been moved into this list.
         self._len = final_size
-        # The elements of `other` are now consumed, so we mark it as empty so
-        # they don't get destroyed when it goes out of scope.
-        other._len = 0
+
+        @parameter
+        if not T.__del__is_trivial:
+            # The elements of `other` are now consumed. We mark it as empty so
+            # they don't get destroyed when it goes out of scope.
+            other._len = 0
 
     fn extend(mut self, elements: Span[T, _]):
         """Extend this list by copying elements from a `Span`.
@@ -821,7 +824,7 @@ struct List[T: Copyable & Movable](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop(mut self, i: Int = -1) -> T:
+    fn pop(mut self, i: Int = -1, out res: T):
         """Pops a value from the list at the given index.
 
         Args:
@@ -836,12 +839,16 @@ struct List[T: Copyable & Movable](
         if i < 0:
             normalized_idx += self._len
 
-        var ret_val = (self._data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j).move_pointee_into(self._data + j - 1)
-        self._len -= 1
+        res = (self._data + normalized_idx).take_pointee()
 
-        return ret_val^
+        @parameter
+        if T.__moveinit__is_trivial:
+            var ptr = self._data + normalized_idx
+            memcpy(ptr, ptr + 1, self._len - normalized_idx)
+        else:
+            for j in range(normalized_idx + 1, self._len):
+                (self._data + j).move_pointee_into(self._data + j - 1)
+        self._len -= 1
 
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
@@ -851,11 +858,10 @@ struct List[T: Copyable & Movable](
 
         Notes:
             If the current capacity is greater or equal, this is a no-op.
-            Otherwise, the storage is reallocated and the date is moved.
+            Otherwise, the storage is reallocated and the data is moved.
         """
-        if self.capacity >= new_capacity:
-            return
-        self._realloc(new_capacity)
+        if self.capacity < new_capacity:
+            self._realloc(new_capacity)
 
     fn resize(mut self, new_size: Int, value: T):
         """Resizes the list to the given new size.
@@ -1029,14 +1035,14 @@ struct List[T: Copyable & Movable](
             (self._data + i).destroy_pointee()
         self._len = 0
 
-    fn steal_data(mut self) -> UnsafePointer[T]:
+    fn steal_data(mut self) -> Self._AnyOriginUnsafePointerType:
         """Take ownership of the underlying pointer from the list.
 
         Returns:
             The underlying data.
         """
         var ptr = self._data
-        self._data = UnsafePointer[T]()
+        self._data = {}
         self._len = 0
         self.capacity = 0
         return ptr

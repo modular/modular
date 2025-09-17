@@ -21,7 +21,7 @@ from memory import Span
 """
 
 from algorithm import vectorize
-from sys import align_of
+from sys import align_of, bit_width_of
 from sys.info import simd_width_of
 
 from collections._index_normalization import normalize_index
@@ -74,6 +74,25 @@ struct _SpanIter[
             return self.src[self.index]
 
 
+@always_inline
+fn _get_bitwidth_uint_dtype[bitwidth: Int]() -> DType:
+    @parameter
+    if bitwidth == 8:
+        return DType.uint8
+    elif bitwidth == 16:
+        return DType.uint16
+    elif bitwidth == 32:
+        return DType.uint32
+    elif bitwidth == 64:
+        return DType.uint64
+    elif bitwidth == 128:
+        return DType.uint128
+    elif bitwidth == 256:
+        return DType.uint256
+    else:
+        return DType.invalid
+
+
 @fieldwise_init
 @register_passable("trivial")
 struct Span[
@@ -93,6 +112,29 @@ struct Span[
     """
 
     # Aliases
+    alias _has_trivial_copy = False  # Bool(T.__copy_is_trivial)
+    alias _has_trivial_move = Bool(T.__moveinit__is_trivial)
+
+    alias _bitwidth = bit_width_of[T]()
+    # 256 is the current biggest uint DType bitwidth
+    alias _simd_size = (Self._bitwidth // 257) + 1
+    alias _simd_dtype = DType.get_dtype[T, Self._simd_size]()
+    alias _is_simd = Self._simd_dtype is not DType.invalid
+
+    alias _bitwidth_dtype = _get_bitwidth_uint_dtype[Self._bitwidth]() if (
+        Self._has_trivial_copy or Self._has_trivial_move
+    ) else DType.invalid
+    alias _processed_dtype = Self._simd_dtype if (
+        Self._is_simd
+    ) else Self._bitwidth_dtype
+    # let's limit optimizations to Span[Scalar[dtype]] to simplify for now
+    alias _span_dtype = Self._simd_dtype if (
+        Self._simd_size == 1
+    ) else DType.invalid
+    alias _can_use_span = Self._span_dtype is not DType.invalid
+    alias _SIMD = SIMD[Self._span_dtype, 1]
+    alias _dtype_Span = Span[Self._SIMD, origin, address_space=address_space]
+
     alias Mutable = Span[T, MutableOrigin.cast_from[origin]]
     """The mutable version of the `Span`."""
     alias Immutable = Span[T, ImmutableOrigin.cast_from[origin]]
@@ -265,47 +307,53 @@ struct Span[
         return self._len
 
     fn __contains__[
-        dtype: DType, //
+        U: EqualityComparable & Copyable & Movable, //
     ](
-        self: Span[
-            Scalar[dtype],
-            origin,
-            address_space=address_space,
-        ],
-        value: Scalar[dtype],
+        self: Span[mut=False, U, address_space = AddressSpace.GENERIC, **_],
+        value: U,
     ) -> Bool:
-        """Verify if a given value is present in the Span.
+        """Verify if a given value is present in the `Span`.
 
         Parameters:
-            dtype: The DType of the scalars stored in the Span.
+            U: The type of the values stored in the `Span`.
 
         Args:
             value: The value to find.
 
         Returns:
-            True if the value is contained in the list, False otherwise.
+            True if the value is contained in the `Span`, False otherwise.
         """
 
-        alias widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
-        var ptr = self.unsafe_ptr()
-        var length = len(self)
-        var processed = 0
-
         @parameter
-        for i in range(len(widths)):
-            alias width = widths[i]
+        if not Self._is_simd:
+            for i in self:
+                if i == value:
+                    return True
+            return False
+        else:
+            alias widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
+            var dtype_self = self._as_dtype_span()
+            alias dtype = dtype_self.T.dtype
+            var ptr = dtype_self.unsafe_ptr()
+            var length = len(dtype_self)
+            var v = rebind[Scalar[dtype]](value)
+            var processed = 0
 
             @parameter
-            if simd_width_of[dtype]() >= width:
-                for _ in range((length - processed) // width):
-                    if value in (ptr + processed).load[width=width]():
-                        return True
-                    processed += width
+            for i in range(len(widths)):
+                alias width = widths[i]
 
-        for i in range(length - processed):
-            if ptr[processed + i] == value:
-                return True
-        return False
+                @parameter
+                if simd_width_of[dtype]() >= width:
+                    for _ in range((length - processed) // width):
+                        if v in (ptr + processed).load[width=width]():
+                            return True
+                        processed += width
+
+            for i in range(length - processed):
+                if ptr[processed + i] == v:
+                    return True
+            return False
 
     @no_inline
     fn __str__[
@@ -315,7 +363,7 @@ struct Span[
 
         Parameters:
             U: The type of the elements in the span. Must implement the
-              trait `Representable`.
+                trait `Representable`.
 
         Returns:
             A string representation of the span.
@@ -707,3 +755,14 @@ struct Span[
         vectorize[do_count, simdwidth](length)
 
         return UInt(countv.reduce_add() + count)
+
+    @always_inline
+    fn _as_dtype_span(self) -> Self._dtype_Span:
+        constrained[
+            Self._has_trivial_copy or Self._has_trivial_move,
+            "Type must be trivial in any way",
+        ]()
+        constrained[Self._can_use_span, "Data must fit in 256 bits"]()
+        return Self._dtype_Span(
+            ptr=self.unsafe_ptr().bitcast[Self._SIMD](), length=len(self)
+        )
