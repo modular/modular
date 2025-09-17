@@ -198,9 +198,7 @@ class SchedulerLogger:
 
             blocks_copied = paged_cache.num_blocks_copied
             if paged_cache.enable_kvcache_swapping_to_host:
-                blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D, {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
-            elif paged_cache.enable_prefix_caching:
-                blocks_copied_str = f"Blocks copied: {blocks_copied.d2d} D2D | "
+                blocks_copied_str = f"Blocks copied: {blocks_copied.h2d} H2D, {blocks_copied.d2h} D2H | "
             paged_cache.reset_num_blocks_copied()
 
         used_blocks = paged_cache.total_num_pages - paged_cache.num_free_blocks

@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-from collections import defaultdict
 
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
@@ -36,8 +35,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
     UpdateType,
 )
 
-from .block_utils import BlockHashType, FreeKVCacheBlockQueue, KVCacheBlock
-from .simple_trie import SimpleTrie
+from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock
 
 logger = logging.getLogger("max.pipelines")
 
@@ -49,13 +47,11 @@ class BlockPool:
         memory_tier: MemoryTier,
         total_num_blocks: int,
         enable_prefix_caching: bool,
-        enable_parent_to_child_mapping: bool = False,
         enable_runtime_checks: bool = False,
     ) -> None:
         self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
         self.enable_prefix_caching = enable_prefix_caching
-        self.enable_parent_to_child_mapping = enable_parent_to_child_mapping
         self.enable_runtime_checks = enable_runtime_checks
 
         # A Block pool of all kv-cache blocks.
@@ -75,12 +71,6 @@ class BlockPool:
         # be evicted.
         self.hash_to_committed_block: dict[int, KVCacheBlock] = {}
 
-        # Mapping from parent block hash to a trie of all child block hashes.
-        # This is only used to support COW for device blocks.
-        self.parent_hash_to_child_token_ids: dict[int, SimpleTrie] = (
-            defaultdict(SimpleTrie)
-        )
-
         # Queue for the KV Cache Agent updates
         self.kv_cache_agent_queue: (
             multiprocessing.Queue[KVCacheChangeMessage] | None
@@ -89,7 +79,7 @@ class BlockPool:
     @traced
     def commit_into_prefix_cache(
         self,
-        block_hash: BlockHashType,
+        block_hash: int,
         block: KVCacheBlock,
     ) -> None:
         """Commit a block into the prefix cache."""
@@ -97,15 +87,8 @@ class BlockPool:
         block.block_hash = block_hash
 
         # Commit the block into the prefix cache.
-        hash_value = block_hash.value
+        hash_value = block_hash
         self.hash_to_committed_block[hash_value] = block
-
-        # Update the parent hash to child token_ids trie.
-        parent_hash_value = block_hash.parent_hash_value
-        if self.enable_parent_to_child_mapping:
-            self.parent_hash_to_child_token_ids[parent_hash_value].insert(
-                block_hash.token_ids
-            )
 
         if self.kv_cache_agent_queue is None:
             return
@@ -123,7 +106,7 @@ class BlockPool:
 
     def get_or_commit_into_prefix_cache(
         self,
-        block_hash: BlockHashType,
+        block_hash: int,
         block: KVCacheBlock,
     ) -> None | KVCacheBlock:
         """Get or commit a block into the prefix cache.
@@ -132,7 +115,7 @@ class BlockPool:
         the already committed block. Otherwise, we commit the provided block
         into the prefix cache and return None.
         """
-        hash_value = block_hash.value
+        hash_value = block_hash
         if hash_value in self.hash_to_committed_block:
             # Check if a block with the same hash is already committed.
             # If so, we reuse the already committed block.
@@ -155,19 +138,13 @@ class BlockPool:
     def uncommit_block(self, block: KVCacheBlock) -> None:
         """Evict a block from the prefix cache."""
         assert block.block_hash is not None
-        hash_value = block.block_hash.value
+        hash_value = block.block_hash
 
         # Nothing to do if it is not committed.
         if hash_value not in self.hash_to_committed_block:
             return
 
-        # Delete the block from the prefix cache
-        parent_hash_value = block.block_hash.parent_hash_value
         del self.hash_to_committed_block[hash_value]
-        if self.enable_parent_to_child_mapping:
-            del self.parent_hash_to_child_token_ids[parent_hash_value][
-                block.block_hash.token_ids
-            ]
         block.block_hash = None
 
         if self.kv_cache_agent_queue is None:
@@ -186,7 +163,7 @@ class BlockPool:
         )
 
     @traced
-    def alloc_block(self) -> tuple[KVCacheBlock, BlockHashType | None]:
+    def alloc_block(self) -> tuple[KVCacheBlock, int | None]:
         """Allocate a block from the free block queue."""
 
         # First allocate block
@@ -248,7 +225,7 @@ class BlockPool:
             block,
         ) in self.hash_to_committed_block.items():
             assert block.block_hash is not None
-            assert block.block_hash.value == block_hash
+            assert block.block_hash == block_hash
 
         # Check that the total number of blocks is correct.
         free_blocks = len(self.free_block_queue)

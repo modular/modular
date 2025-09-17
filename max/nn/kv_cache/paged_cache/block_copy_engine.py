@@ -20,18 +20,15 @@ from max.driver import DeviceStream, Tensor
 
 class BlockCopyMetrics:
     def __init__(self) -> None:
-        self.d2d = 0
         self.h2d = 0
         self.d2h = 0
 
     def reset(self) -> None:
-        self.d2d = 0
         self.h2d = 0
         self.d2h = 0
 
     def __add__(self, other: BlockCopyMetrics) -> BlockCopyMetrics:
         new_metrics = BlockCopyMetrics()
-        new_metrics.d2d = self.d2d + other.d2d
         new_metrics.h2d = self.h2d + other.h2d
         new_metrics.d2h = self.d2h + other.d2h
         return new_metrics
@@ -89,26 +86,6 @@ class BlockCopyEngine:
 
     def supports_multistream(self) -> bool:
         return self.d2h_auxiliary_streams is not None
-
-    def memcpy_d2d(self, dst: int, src: int, num_tokens: int) -> None:
-        """Copy a block between two blocks on the same device.
-
-        This is primarily used for Copy-on-Write so a num_tokens argument can
-        be used to copy only the relevant portion of the block.
-        """
-        # No need to copy if dst and src are the same
-        if dst == src:
-            return
-        self.blocks_copied.d2d += 1
-
-        # Currently we ignore num_tokens and just copy the entire block
-        assert 0 < num_tokens <= self.block_size
-
-        # For each device, copy the block from src to dst
-        for device_tensor in self.device_tensors:
-            device_tensor[dst, :, :, :, :, :].inplace_copy_from(
-                device_tensor[src, :, :, :, :, :]
-            )
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
         if self.host_tensors is None:
