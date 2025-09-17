@@ -222,7 +222,7 @@ class PipelineModel(ABC, Generic[T]):
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
                 pipeline_config.lora_config,
-                pipeline_config.model_config.model_path,
+                pipeline_config.model_config.model_name,
                 self.dtype,
             )
             if pipeline_config.lora_config
