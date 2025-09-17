@@ -39,15 +39,14 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = Tr
 # TODO: Remove when >0.6.0 is released
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-1veTvab6zNPLf9MJc6OrqJ9ZBGeSX7/qS3dTaxYGRZ4=",
+    integrity = "sha256-zgnOpUJ8OY8T3lw2+x0wkXqtwKH5BH8BQPdn7pD7Pnc=",
     patch_strip = 1,
     patches = [
         "//bazel/public-patches:rules_mojo_version.patch",
-        "//open-source/max/bazel/internal:apple_gpu_detection.patch",
     ],
-    strip_prefix = "rules_mojo-dd5b6a241f68a05f7c04e719d03c3e63d178821b",
+    strip_prefix = "rules_mojo-355c0ebc7aa5cf40f21388309be89401bee42461",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/dd5b6a241f68a05f7c04e719d03c3e63d178821b.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/355c0ebc7aa5cf40f21388309be89401bee42461.tar.gz",
     ],
 )
 
