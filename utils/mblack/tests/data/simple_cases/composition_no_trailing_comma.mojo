@@ -16,7 +16,7 @@
 
 class C:
     def test(self) -> None:
-        with patch("black.out", print):
+        with patch("mblack.out", print):
             self.assertEqual(
                 unstyle(str(report)),
                 "1 file reformatted, 1 file failed to reformat.",
@@ -202,7 +202,7 @@ class C:
 
 class C:
     def test(self) -> None:
-        with patch("black.out", print):
+        with patch("mblack.out", print):
             self.assertEqual(
                 unstyle(str(report)),
                 "1 file reformatted, 1 file failed to reformat.",

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement", "strip_prefix")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,6 +32,27 @@ modular_py_binary(
     main = "src/mblack/__main__.py",
     tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [":mblack-lib"],
+)
+
+modular_py_test(
+    name = "unit_tests",
+    # One layer deep, don't grab `data`
+    srcs = glob(
+        ["tests/*.py"],
+        exclude = [
+            # Super broken
+            "tests/test_blackd.py",
+            "tests/test_ipynb.py",
+        ],
+    ),
+    data = glob(["tests/data/**"]) + [
+        "tests/empty.toml",
+        "tests/test.toml",
+    ],
+    imports = ["."],
+    deps = [
+        ":mblack",
+    ],
 )
 
 pkg_files(

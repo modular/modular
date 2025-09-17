@@ -21,12 +21,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Iterator, List, Optional, Tuple
 
-import black
+import mblack
 from mblack.debug import DebugVisitor
 from mblack.mode import TargetVersion
 from mblack.output import diff, err, out
 
-PYTHON_SUFFIX = ".py"
+PYTHON_SUFFIX = ".mojo"
 ALLOWED_SUFFIXES = (PYTHON_SUFFIX, ".pyi", ".out", ".diff", ".ipynb")
 
 THIS_DIR = Path(__file__).parent
@@ -42,9 +42,9 @@ PY36_VERSIONS = {
     TargetVersion.PY39,
 }
 
-DEFAULT_MODE = black.Mode()
-ff = partial(black.format_file_in_place, mode=DEFAULT_MODE, fast=True)
-fs = partial(black.format_str, mode=DEFAULT_MODE)
+DEFAULT_MODE = mblack.Mode()
+ff = partial(mblack.format_file_in_place, mode=DEFAULT_MODE, fast=True)
+fs = partial(mblack.format_str, mode=DEFAULT_MODE)
 
 
 def _assert_format_equal(expected: str, actual: str) -> None:
@@ -52,14 +52,14 @@ def _assert_format_equal(expected: str, actual: str) -> None:
         bdv: DebugVisitor[Any]
         out("Expected tree:", fg="green")
         try:
-            exp_node = black.lib2to3_parse(expected)
+            exp_node = mblack.lib2to3_parse(expected)
             bdv = DebugVisitor()
             list(bdv.visit(exp_node))
         except Exception as ve:
             err(str(ve))
         out("Actual tree:", fg="red")
         try:
-            exp_node = black.lib2to3_parse(actual)
+            exp_node = mblack.lib2to3_parse(actual)
             bdv = DebugVisitor()
             list(bdv.visit(exp_node))
         except Exception as ve:
@@ -74,7 +74,7 @@ def _assert_format_equal(expected: str, actual: str) -> None:
 def assert_format(
     source: str,
     expected: str,
-    mode: black.Mode = DEFAULT_MODE,
+    mode: mblack.Mode = DEFAULT_MODE,
     *,
     fast: bool = False,
     minimum_version: Optional[Tuple[int, int]] = None,
@@ -85,7 +85,7 @@ def assert_format(
     safety guards so they don't just crash with a SyntaxError. Please note this is
     separate from TargetVerson Mode configuration.
     """
-    actual = black.format_str(source, mode=mode)
+    actual = mblack.format_str(source, mode=mode)
     _assert_format_equal(expected, actual)
     # It's not useful to run safety checks if we're expecting no changes anyway. The
     # assertion right above will raise if reality does actually make changes. This just
@@ -95,8 +95,8 @@ def assert_format(
         # being able to parse the code being formatted. This doesn't always work out
         # when checking modern code on older versions.
         if minimum_version is None or sys.version_info >= minimum_version:
-            black.assert_equivalent(source, actual)
-        black.assert_stable(source, actual, mode=mode)
+            mblack.assert_equivalent(source, actual)
+        mblack.assert_stable(source, actual, mode=mode)
 
 
 def dump_to_stderr(*output: str) -> str:
