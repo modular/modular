@@ -191,7 +191,9 @@ async def lifespan(
 
             await exit_stack.enter_async_context(pipeline)
             logger.info(
-                f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
+                f"\n\n{'*' * 80}\n\n"
+                f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"
+                f"{'*' * 80}\n"
             )
             yield
     # TODO: Will we ever get here? KeyboardInterrupt is handled in the serve.py entrypoint.

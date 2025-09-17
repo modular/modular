@@ -8,6 +8,7 @@ modular_py_library(
         requirement("pydantic-settings"),
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
+        "//SDK/lib/API/python/max/support",
     ],
 )
 
@@ -46,6 +47,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/schemas",
         "//SDK/lib/API/python/max/serve/telemetry",
+        "//SDK/lib/API/python/max/support",
         requirement("fastapi"),
         requirement("opentelemetry-api"),
         requirement("prometheus-client"),

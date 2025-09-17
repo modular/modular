@@ -24,6 +24,7 @@ from typing import Optional, Union
 
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -120,7 +121,7 @@ class Settings(BaseSettings):
     )
     max_local_image_bytes: int = Field(
         description="Maximum size in bytes for local image files accessed via file:// URIs",
-        default=20_000_000,  # 20MB
+        default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
 
@@ -277,65 +278,60 @@ class Settings(BaseSettings):
             else "None"
         )
 
-        # Build log components string
-        log_components_str = (
-            self.logs_enable_components
-            if self.logs_enable_components
-            else "None"
-        )
-
         # Log Server Configuration
         logger.info("")
-        logger.info("Server Configuration")
+        logger.info("Server Config")
         logger.info("=" * 60)
-        logger.info(f"    host:                   {self.host}")
-        logger.info(f"    port:                   {self.port}")
-        logger.info(f"    metrics_port:           {self.metrics_port}")
-        logger.info(f"    api_types:              {api_types_str}")
-        logger.info(f"    operation_mode:         {mode_str}")
+        logger.info(f"    host                   : {self.host}")
+        logger.info(f"    port                   : {self.port}")
+        logger.info(f"    metrics_port           : {self.metrics_port}")
+        logger.info(f"    api_types              : {api_types_str}")
+        logger.info(f"    operation_mode         : {mode_str}")
         logger.info("")
 
         # File System Configuration
-        logger.info("File System Configuration")
+        logger.info("File System Config")
         logger.info("=" * 60)
-        logger.info(f"    allowed_image_roots:    {allowed_roots_str}")
+        logger.info(f"    allowed_image_roots    : {allowed_roots_str}")
         logger.info(
-            f"    max_local_image_bytes:  {self.max_local_image_bytes:,} bytes ({self.max_local_image_bytes / 1_000_000:.1f} MB)"
+            f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
         )
         logger.info("")
 
         # Metrics and Telemetry Configuration
-        logger.info("Metrics and Telemetry Configuration")
+        logger.info("Metrics and Telemetry Config")
         logger.info("=" * 60)
         logger.info(
-            f"    metric_recording:       {self.metric_recording.value}"
+            f"    metric_recording       : {self.metric_recording.value}"
         )
         logger.info(
-            f"    metric_level:           {self.metric_level.name} ({self.metric_level.value})"
+            f"    metric_level           : {self.metric_level.name} ({self.metric_level.value})"
         )
         logger.info(
-            f"    detailed_buffer_factor: {self.detailed_metric_buffer_factor}"
+            f"    detailed_buffer_factor : {self.detailed_metric_buffer_factor}"
         )
-        logger.info(f"    disable_telemetry:      {self.disable_telemetry}")
+        logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:
             logger.info(
-                f"    transaction_recording:  {self.transaction_recording_file}"
+                f"    transaction_recording  : {self.transaction_recording_file}"
             )
             logger.info(
-                f"    include_responses:      {self.transaction_recording_include_responses}"
+                f"    include_responses      : {self.transaction_recording_include_responses}"
             )
         else:
-            logger.info("    transaction_recording:  None")
+            logger.info("    transaction_recording  : None")
         logger.info("")
 
         # Model Worker Configuration
-        logger.info("Model Worker Configuration")
+        logger.info("Model Worker Config")
         logger.info("=" * 60)
-        logger.info(f"    use_heartbeat:          {self.use_heartbeat}")
-        logger.info(f"    timeout:                {self.mw_timeout_s:.1f}s")
-        logger.info(f"    health_fail_timeout:    {self.mw_health_fail_s:.1f}s")
+        logger.info(f"    use_heartbeat          : {self.use_heartbeat}")
+        logger.info(f"    timeout                : {self.mw_timeout_s:.1f}s")
+        logger.info(
+            f"    health_fail_timeout    : {self.mw_health_fail_s:.1f}s"
+        )
         logger.info(
             f"    telemetry_spawn_timeout: {self.telemetry_worker_spawn_timeout:.1f}s"
         )
