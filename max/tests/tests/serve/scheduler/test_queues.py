@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pickle
 import queue
 import time
 import uuid
@@ -19,42 +18,22 @@ from max.interfaces import (
 )
 from max.pipelines.core.context import TextAndVisionContext, TextContext
 from max.serve.queue.zmq_queue import (
+    ZmqConfig,
     ZmqPullSocket,
     ZmqPushSocket,
-    create_zmq_push_pull_queues,
     generate_zmq_ipc_path,
 )
-
-
-def test_serialization_and_deserialization_through_queue_with_pickle() -> None:
-    test_address = generate_zmq_ipc_path()
-    push_socket = ZmqPushSocket[tuple[int, TextContext]](
-        endpoint=test_address, serialize=pickle.dumps, lazy=False
-    )
-    pull_socket = ZmqPullSocket[tuple[int, TextContext]](
-        endpoint=test_address, deserialize=pickle.loads, lazy=False
-    )
-
-    context = (1, TextContext(max_length=15, tokens=np.ones(5, dtype=np.int32)))
-
-    push_socket.put_nowait(context)
-    time.sleep(1)
-    received_context = pull_socket.get_nowait()
-
-    assert context[0] == received_context[0]
-    assert msgpack_eq(context[1], received_context[1])
 
 
 def test_serialization_and_deserialization_through_queue_with_msgpack() -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[str, TextContext]](
-        endpoint=test_address, serialize=msgpack_numpy_encoder(), lazy=False
+        endpoint=test_address, payload_type=tuple[str, TextContext]
     )
 
     pull_socket = ZmqPullSocket[tuple[str, TextContext]](
         endpoint=test_address,
-        deserialize=msgpack_numpy_decoder(tuple[str, TextContext]),
-        lazy=False,
+        payload_type=tuple[str, TextContext],
     )
 
     context = (
@@ -139,10 +118,7 @@ def test_vision_context_shared_memory_fallback(mocker) -> None:  # noqa: ANN001
 
 def test_zmq_push_pull_queue_basic_functionality() -> None:
     """Test basic put_nowait and get_nowait functionality."""
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        payload_type=int,
-        lazy=False,
-    )
+    push_queue, pull_queue = ZmqConfig[int](int).pair()
 
     time.sleep(1)
     push_queue.put_nowait(42)
@@ -158,9 +134,9 @@ def test_zmq_push_pull_queue_with_complex_data() -> None:
     context = TextContext(max_length=15, tokens=np.array([1, 1, 1, 1, 1]))
     test_data = ("test_id", context)
 
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=tuple[str, TextContext]
-    )
+    push_queue, pull_queue = ZmqConfig[tuple[str, TextContext]](
+        tuple[str, TextContext]
+    ).pair()
 
     push_queue.put_nowait(test_data)
     time.sleep(1)
@@ -175,9 +151,9 @@ def test_zmq_push_pull_queue_with_custom_serialization() -> None:
     context = TextContext(max_length=10, tokens=np.array([1, 2, 3, 4, 5]))
     test_data = (str(uuid.uuid4()), context)
 
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=tuple[str, TextContext]
-    )
+    push_queue, pull_queue = ZmqConfig[tuple[str, TextContext]](
+        tuple[str, TextContext]
+    ).pair()
 
     try:
         push_queue.put_nowait(test_data)
@@ -193,7 +169,7 @@ def test_zmq_push_pull_queue_with_custom_serialization() -> None:
 
 def test_zmq_push_pull_queue_empty_queue_raises_exception() -> None:
     """Test that get_nowait raises queue.Empty when queue is empty."""
-    _, pull_queue = create_zmq_push_pull_queues(lazy=False, payload_type=str)
+    pull_queue = ZmqConfig[str](str).pull()
 
     with pytest.raises(queue.Empty):
         pull_queue.get_nowait()
@@ -203,9 +179,8 @@ def test_zmq_push_pull_queue_multiple_items() -> None:
     """Test queue with multiple items maintains order (FIFO)."""
     test_items = ["first", "second", "third", "fourth"]
 
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=str
-    )
+    push_queue, pull_queue = ZmqConfig[str](str).pair()
+
     # Put all items
     for item in test_items:
         push_queue.put_nowait(item)
@@ -221,9 +196,7 @@ def test_zmq_push_pull_queue_multiple_items() -> None:
 
 def test_zmq_push_pull_queue_closed_state() -> None:
     """Test that operations fail when queue is closed."""
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=str
-    )
+    push_queue, pull_queue = ZmqConfig[str](str).pair()
     push_queue.close()
     pull_queue.close()
 
@@ -237,10 +210,10 @@ def test_zmq_push_pull_queue_closed_state() -> None:
 def test_zmq_push_pull_queue_endpoint_validation() -> None:
     """Test that invalid endpoints raise ValueError."""
     with pytest.raises(ValueError, match="Invalid endpoint"):
-        ZmqPushSocket(endpoint="invalid://endpoint")
+        ZmqPushSocket(endpoint="invalid://endpoint", payload_type=int)
 
     with pytest.raises(ValueError, match="Invalid endpoint"):
-        ZmqPullSocket(endpoint="")
+        ZmqPullSocket(endpoint="", payload_type=int)
 
 
 def test_zmq_push_pull_queue_with_vision_context() -> None:
@@ -258,9 +231,9 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
 
     test_data = ("vision_test", context)
 
-    push_queue, pull_queue = create_zmq_push_pull_queues(
-        lazy=False, payload_type=tuple[str, TextAndVisionContext]
-    )
+    push_queue, pull_queue = ZmqConfig[tuple[str, TextAndVisionContext]](
+        tuple[str, TextAndVisionContext]
+    ).pair()
 
     push_queue.put_nowait(test_data)
     time.sleep(1)
@@ -270,94 +243,3 @@ def test_zmq_push_pull_queue_with_vision_context() -> None:
     assert result[1].request_id == test_data[1].request_id
     assert np.array_equal(result[1].tokens, test_data[1].tokens)
     assert np.allclose(result[1].pixel_values[0], test_data[1].pixel_values[0])
-
-
-def test_zmq_push_socket_timeout_fails_without_peer() -> None:
-    """Test that ZmqPushSocket timeout fails when no peer socket is connected."""
-
-    # Create push socket with short timeout but no peer socket
-    # The timeout should occur during __init__ due to lazy=False
-    with pytest.raises(
-        TimeoutError, match="PUSH socket peer connection timeout"
-    ):
-        ZmqPushSocket[str](
-            peer_timeout=0.5,  # 500ms timeout
-            lazy=False,  # Initialize immediately to trigger timeout
-        )
-
-
-def test_zmq_pull_socket_timeout_fails_without_peer() -> None:
-    """Test that ZmqPullSocket timeout fails when no peer socket is connected."""
-
-    # Create pull socket with short timeout but no peer socket
-    with pytest.raises(
-        TimeoutError, match="PULL socket peer connection timeout"
-    ):
-        ZmqPullSocket[str](
-            peer_timeout=0.5,  # 500ms timeout
-            lazy=False,  # Initialize immediately to trigger timeout
-        )
-
-
-def test_zmq_push_socket_timeout_passes_with_peer() -> None:
-    """Test that ZmqPushSocket timeout passes when peer socket is connected."""
-    test_address = generate_zmq_ipc_path()
-
-    # Create pull socket first (this will connect to the push socket's bind)
-    pull_socket = ZmqPullSocket[str](
-        endpoint=test_address,
-        lazy=False,  # Initialize immediately
-    )
-
-    # Give the pull socket a moment to fully initialize
-    time.sleep(0.1)
-
-    # Now create push socket with timeout - should succeed since pull socket is connected
-    push_socket = ZmqPushSocket[str](
-        endpoint=test_address,
-        peer_timeout=2.0,  # 2 second timeout - should be plenty
-        lazy=False,  # Initialize immediately
-    )
-
-    # If we get here without exception, the timeout passed successfully
-    # Verify the sockets can actually communicate
-    push_socket.put_nowait("test_message")
-    time.sleep(0.1)
-    result = pull_socket.get_nowait()
-    assert result == "test_message"
-
-    # Clean up
-    push_socket.close()
-    pull_socket.close()
-
-
-def test_zmq_pull_socket_timeout_passes_with_peer() -> None:
-    """Test that ZmqPullSocket timeout passes when peer socket is connected."""
-    test_address = generate_zmq_ipc_path()
-
-    # Create push socket first (this binds and waits for connections)
-    push_socket = ZmqPushSocket[str](
-        endpoint=test_address,
-        lazy=False,  # Initialize immediately
-    )
-
-    # Give the push socket a moment to fully initialize and bind
-    time.sleep(0.1)
-
-    # Now create pull socket with timeout - should succeed since push socket is bound
-    pull_socket = ZmqPullSocket[str](
-        endpoint=test_address,
-        peer_timeout=2.0,  # 2 second timeout - should be plenty
-        lazy=False,  # Initialize immediately
-    )
-
-    # If we get here without exception, the timeout passed successfully
-    # Verify the sockets can actually communicate
-    push_socket.put_nowait("test_message")
-    time.sleep(0.1)
-    result = pull_socket.get_nowait()
-    assert result == "test_message"
-
-    # Clean up
-    push_socket.close()
-    pull_socket.close()

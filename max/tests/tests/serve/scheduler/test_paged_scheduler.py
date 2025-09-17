@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import queue
 from dataclasses import dataclass
-from typing import Union
 
 import numpy as np
 import pytest
@@ -25,7 +24,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.serve.scheduler.text_batch_constructor import (
     BatchType,
     TokenGenerationSchedulerConfig,
@@ -34,8 +33,6 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
 from max.support.math import ceildiv
-
-ContextType = Union[TextContext, TextAndVisionContext]
 
 
 def rand(length: int) -> np.ndarray:
@@ -68,7 +65,7 @@ def create_paged_manager(
     enable_prefix_caching: bool = False,
     enable_kvcache_swapping_to_host: bool = False,
     device: Device = CPU(),
-) -> PagedKVCacheManager[ContextType]:
+) -> PagedKVCacheManager[TextContext]:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
     NUM_KV_HEADS = 1
@@ -104,7 +101,7 @@ def create_paged_manager(
 
     session = InferenceSession(devices=[device])
 
-    kv_manager = PagedKVCacheManager[ContextType](
+    kv_manager = PagedKVCacheManager[TextContext](
         params=kv_params,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -134,7 +131,7 @@ def create_paged_scheduler(
     device: Device = CPU(),
 ) -> tuple[
     TokenGenerationScheduler,
-    MAXPushQueue[tuple[RequestID, ContextType]],
+    MAXPushQueue[tuple[RequestID, TextContext]],
 ]:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -157,7 +154,7 @@ def create_paged_scheduler(
         enable_in_flight_batching=enable_in_flight_batching,
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
-    request_queue: queue.Queue[tuple[RequestID, ContextType]] = queue.Queue()
+    request_queue: queue.Queue[tuple[RequestID, TextContext]] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ] = queue.Queue()
@@ -312,7 +309,7 @@ def run_until_completion(
 
 
 def enqueue_request(
-    queue: MAXPushQueue[tuple[RequestID, ContextType]],
+    queue: MAXPushQueue[tuple[RequestID, TextContext]],
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
@@ -327,7 +324,7 @@ def enqueue_request(
 
 
 def enqueue_request_with_prompt(
-    queue: MAXPushQueue[tuple[RequestID, ContextType]],
+    queue: MAXPushQueue[tuple[RequestID, TextContext]],
     tokens: np.ndarray,
     max_seq_len: int,
 ) -> None:

@@ -6,7 +6,6 @@
 # Unit tests for model_worker
 from __future__ import annotations
 
-import multiprocessing
 import time
 from dataclasses import dataclass
 from unittest.mock import Mock
@@ -15,6 +14,7 @@ import pytest
 from max.interfaces import (
     GenerationStatus,
     Pipeline,
+    PipelineTask,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
@@ -23,6 +23,7 @@ from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
 
 
@@ -68,9 +69,9 @@ async def test_model_worker_propagates_exception(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            request_queue=multiprocessing.Manager().Queue(),
-            response_queue=multiprocessing.Manager().Queue(),
-            cancel_queue=multiprocessing.Manager().Queue(),
+            scheduler_zmq_configs=SchedulerZmqConfigs(
+                PipelineTask.TEXT_GENERATION
+            ),
         ):
             raise AssertionError
 
@@ -107,9 +108,9 @@ async def test_model_worker_propagates_construction_exception(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
             settings=settings,
-            request_queue=multiprocessing.Manager().Queue(),
-            response_queue=multiprocessing.Manager().Queue(),
-            cancel_queue=multiprocessing.Manager().Queue(),
+            scheduler_zmq_configs=SchedulerZmqConfigs(
+                PipelineTask.TEXT_GENERATION
+            ),
             metric_client=NoopClient(),
         ):
             pass
@@ -143,8 +144,8 @@ async def test_model_worker_start_timeout(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            request_queue=multiprocessing.Manager().Queue(),
-            response_queue=multiprocessing.Manager().Queue(),
-            cancel_queue=multiprocessing.Manager().Queue(),
+            scheduler_zmq_configs=SchedulerZmqConfigs(
+                PipelineTask.TEXT_GENERATION
+            ),
         ):
             pass

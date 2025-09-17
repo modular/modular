@@ -6,7 +6,7 @@
 
 import queue
 from collections import OrderedDict
-from typing import Union, cast
+from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -20,7 +20,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.serve.scheduler.text_batch_constructor import (
     BatchType,
     SchedulerOutput,
@@ -63,7 +63,7 @@ def create_mock_pipeline() -> Mock:
 
 def create_scheduler() -> tuple[
     TokenGenerationScheduler,
-    MAXPushQueue[tuple[RequestID, Union[TextContext, TextAndVisionContext]]],
+    MAXPushQueue[tuple[RequestID, TextContext]],
     MAXPullQueue[dict[RequestID, SchedulerResult[TextGenerationOutput]]],
     MAXPushQueue[list[RequestID]],
 ]:
@@ -74,9 +74,7 @@ def create_scheduler() -> tuple[
         target_tokens_per_batch_ce=32,
     )
 
-    request_queue: queue.Queue[
-        tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-    ] = queue.Queue()
+    request_queue: queue.Queue[tuple[RequestID, TextContext]] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ] = queue.Queue()
@@ -242,7 +240,7 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
+    batch_to_execute: dict[str, TextContext] = {
         mock_request.request_id: mock_request
     }
     sch_output = SchedulerOutput(
@@ -348,7 +346,7 @@ def test_schedule_tg() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
+    batch_to_execute: dict[str, TextContext] = {
         mock_request.request_id: mock_request
     }
     sch_output = SchedulerOutput(
