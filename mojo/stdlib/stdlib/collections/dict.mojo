@@ -38,8 +38,8 @@ See the `Dict` docs for more details.
 """
 
 from hashlib import Hasher, default_hasher, default_comp_time_hasher
-from sys.intrinsics import likely
-from memory import bitcast, memcpy
+from memory import memcpy
+from sys.intrinsics import likely, _type_is_eq
 
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
@@ -47,6 +47,48 @@ alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
 dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
 and EqualityComparable for a hash map. Until we have references
 they must also be copyable."""
+
+
+@always_inline("nodebug")
+fn _hash_str(s: String) -> UInt:
+    """Hash a string using the DJBX33A hash algorithm.
+
+    When the string is small, the default SIMD hash function is not as efficient
+    as the SIMD machinery has some overhead that is not worth it for small data.
+
+    Args:
+        s: The string to hash.
+
+    Returns:
+        A 64-bit hash value. This value is _not_ suitable for cryptographic
+        uses. Its intended usage is for data structures.
+    """
+    var hash = 5381  # typical starting value
+    for c in s.as_bytes():
+        hash = ((hash << 5) + hash) + Int(c)  # hash * 33 + ord(char)
+    return hash
+
+
+@always_inline("nodebug")
+fn _hash_key[K: KeyElement, H: Hasher](key: K) -> UInt64:
+    """Hash a key using the underlying hash function.
+
+    Parameters:
+        K: The type of the key to hash. Must implement the `KeyElement` trait.
+        H: The type of hasher to use. Must implement the `Hasher` trait.
+
+    Args:
+        key: The key to hash.
+
+    Returns:
+        A 64-bit hash value. This value is _not_ suitable for cryptographic
+        uses. Its intended usage is for data structures.
+    """
+
+    @parameter
+    if _type_is_eq[K, String]():
+        return _hash_str(rebind[String](key))
+    return hash[HasherType=H](key)
 
 
 @fieldwise_init
@@ -308,7 +350,7 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash[HasherType=H](key)
+        self.hash = _hash_key[H=H](key)
         self.key = key^
         self.value = value^
 
@@ -321,6 +363,18 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable, H: Hasher](
         self.hash = existing.hash
         self.key = existing.key.copy()
         self.value = existing.value.copy()
+
+    fn __init__(out self, var key: K, var value: V, var key_hash: UInt64):
+        """Create an entry from a key and value, computing the hash.
+
+        Args:
+            key: The key of the entry.
+            value: The value of the entry.
+            key_hash: The hash of the key.
+        """
+        self.key = key^
+        self.value = value^
+        self.hash = key_hash
 
     fn reap_value(deinit self) -> V:
         """Take the value from an owned entry.
@@ -817,7 +871,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             key: The key to associate with the specified value.
             value: The data to store in the dictionary.
         """
-        self._insert(key^, value^)
+        self._insert_with_hash(key^, value^, _hash_key[H=H](key))
 
     fn __contains__(self, key: K) -> Bool:
         """Check if a given key is in the dictionary or not.
@@ -828,7 +882,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        return self._find_index(hash[HasherType=H](key), key)[0]
+        return self._find_index(_hash_key[H=H](key), key)[0]
 
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
@@ -979,7 +1033,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        var hash = hash[HasherType=H](key)
+        var hash = _hash_key[H=H](key)
         var found, _, index = self._find_index(hash, key)
 
         if found:
@@ -1044,7 +1098,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
         Raises:
             "KeyError" if the key was not present in the dictionary.
         """
-        var hash = hash[HasherType=H](key)
+        var hash = _hash_key[H=H](key)
         var found, slot, index = self._find_index(hash, key)
         if found:
             var entry_value = self._unsafe_take_entry(slot, index)
@@ -1181,7 +1235,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             present.
         """
         self._maybe_resize()
-        var found, slot, index = self._find_index(hash[HasherType=H](key), key)
+        var found, slot, index = self._find_index(_hash_key[H=H](key), key)
         ref entry = self._entries[index]
         if not found:
             entry = DictEntry[H=H](key.copy(), default^)
@@ -1230,6 +1284,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable, H: Hasher = default_hasher](
             self._set_index(slot, index)
             self._len += 1
             self._n_entries += 1
+
+    @always_inline
+    fn _insert_with_hash(mut self, var key: K, var value: V, var hash: UInt64):
+        self._insert(DictEntry[K, V, H](key^, value^, hash))
 
     fn _get_index(self, slot: UInt64) -> Int:
         return self._index.get_index(self._reserved(), slot)
