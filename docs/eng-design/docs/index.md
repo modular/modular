@@ -29,6 +29,27 @@
     prompts, resulting in improved memory efficiency and faster
     time-to-first-token performance.
 
+- [Matrix Multiplication on Blackwell Part
+  1—Introduction](matmul-on-blackwell-part-1.md)
+
+    This document introduces matrix multiplication fundamentals for LLMs,
+    explains GPU architecture evolution from Ampere through Blackwell, and
+    implements a basic 4-line matmul kernel achieving 5 TFLOPs performance.
+
+- [Matrix Multiplication on Blackwell: Part 2—Using Hardware Features to
+  Optimize Matmul](matmul-on-blackwell-part-2.md)
+    This document demonstrates optimization techniques including TMA async
+    loading, tensor cores, shared memory tiling, and swizzling to achieve 58x
+    performance improvement over the naive implementation, reaching 293 TFLOPs.
+
+- [Matrix Multiplication on Blackwell: Part 3-The Optimizations Behind 85% of
+  SOTA Performance](matmul-on-blackwell-part-3.md)
+
+    This document implements advanced optimizations using 2SM MMA instructions,
+    CTA memory multicasting, warp specialization, and pipelined
+    double-buffering to achieve 85% of state-of-the-art performance at 1,493
+    TFLOPs.
+
 - [Matrix Multiplication to Flash Attention](matmul-to-flash-attention.md)
 
     This document explains how Flash Attention can be understood as an extension
