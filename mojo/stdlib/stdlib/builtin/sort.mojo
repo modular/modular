@@ -45,7 +45,7 @@ fn _insertion_sort[
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
         while j > 0 and cmp_fn(value, array[j - 1]):
-            (array + j - 1).move_pointee_into(array + j)
+            (array + j).init_pointee_move_from(array + j - 1)
             j -= 1
 
         (array + j).init_pointee_move(value^)
@@ -296,20 +296,20 @@ fn _merge[
     while i < span1_size:
         if j == span2_size:
             while i < span1_size:
-                (span1_ptr + i).move_pointee_into(res_ptr + k)
+                (res_ptr + k).init_pointee_move_from(span1_ptr + i)
                 k += 1
                 i += 1
             return
         if cmp_fn(span2[j], span1[i]):
-            (span2_ptr + j).move_pointee_into(res_ptr + k)
+            (res_ptr + k).init_pointee_move_from(span2_ptr + j)
             j += 1
         else:
-            (span1_ptr + i).move_pointee_into(res_ptr + k)
+            (res_ptr + k).init_pointee_move_from(span1_ptr + i)
             i += 1
         k += 1
 
     while j < span2_size:
-        (span2_ptr + j).move_pointee_into(res_ptr + k)
+        (res_ptr + k).init_pointee_move_from(span2_ptr + j)
         k += 1
         j += 1
 
@@ -337,8 +337,8 @@ fn _stable_sort_impl[
             var span2 = span[j + merge_size : min(size, j + 2 * merge_size)]
             _merge[cmp_fn](span1, span2, temp_buff)
             for i in range(merge_size + len(span2)):
-                UnsafePointer(to=temp_buff[i]).move_pointee_into(
-                    UnsafePointer(to=span[j + i])
+                UnsafePointer(to=span[j + i]).init_pointee_move_from(
+                    UnsafePointer(to=temp_buff[i])
                 )
             j += 2 * merge_size
         merge_size *= 2
