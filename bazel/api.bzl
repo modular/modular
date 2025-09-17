@@ -163,6 +163,7 @@ def _noop(**_kwargs):
     pass
 
 modular_py_test = _noop
+modular_multi_py_version_test = _noop
 mojo_kgen_lib = _noop
 pkg_attributes = _noop
 pkg_filegroup = _noop
