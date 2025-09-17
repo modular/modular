@@ -26,21 +26,20 @@ async def test_basic(
     block_utils.ENABLE_MOJO_BLOCK_HASHER = use_mojo_hasher
 
     prompt = np.arange(prompt_len, dtype=np.int64)
-    block_hashes = hash_request_tokens(prompt, block_size)
-    assert len(block_hashes) == prompt_len // block_size
+    hash_vals = hash_request_tokens(prompt, block_size)
+    assert len(hash_vals) == prompt_len // block_size
 
     # Check that they form a chain
-    for i in range(len(block_hashes)):
-        block_hash = block_hashes[i]
+    for i in range(1, len(hash_vals)):
+        block_hash = hash_vals[i]
         block_token_ids = prompt[i * block_size : (i + 1) * block_size]
-        expected_hash = block_hash.value
+        expected_hash = block_hash
+        parent_hash_value = hash_vals[i - 1]
         actual_hash = hash_block_tokens(
             block_token_ids,
-            block_hash.parent_hash_value,
-        ).value
+            parent_hash_value,
+        )
         assert expected_hash == actual_hash
-
-    hash_vals = [block_hash.value for block_hash in block_hashes]
 
     # Check that the hash values are non-zero.
     # Technically a 0 hash is possible, but it's extremely unlikely and usually
@@ -54,11 +53,8 @@ async def test_basic(
 def check_for_collisions(
     prompt_1: np.ndarray, prompt_2: np.ndarray, block_size: int
 ) -> None:
-    block_hashes_1 = hash_request_tokens(prompt_1, block_size, hash("None"))
-    block_hashes_2 = hash_request_tokens(prompt_2, block_size, hash("None"))
-
-    hash_vals_1 = [block_hash.value for block_hash in block_hashes_1]
-    hash_vals_2 = [block_hash.value for block_hash in block_hashes_2]
+    hash_vals_1 = hash_request_tokens(prompt_1, block_size, hash("None"))
+    hash_vals_2 = hash_request_tokens(prompt_2, block_size, hash("None"))
 
     for i, x in enumerate(hash_vals_1):
         if x in hash_vals_2:

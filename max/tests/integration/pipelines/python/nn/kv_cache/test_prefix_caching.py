@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any, Optional
 
 import numpy as np
 import pytest
@@ -434,37 +433,12 @@ class FakeModel:
             defaultdict(lambda: np.array([]))
         )
 
-        fake_model = self
-
-        # Monkey patch the memcpy_d2d method to use our mock method.
-        block_copy_engine = kv_manager.block_copy_engine
-        assert block_copy_engine is not None
-        orig_memcpy_d2d = block_copy_engine.memcpy_d2d
-
-        def mock_memcpy_d2d(
-            dst: int,
-            src: int,
-            num_tokens: int,
-        ) -> Any:
-            assert src in fake_model.block_projections
-            assert 0 < num_tokens < fake_model.page_size
-            for token in range(num_tokens):
-                fake_model.block_projections[dst][token] = (
-                    fake_model.block_projections[src][token]
-                )
-
-            orig_memcpy_d2d(dst, src, num_tokens)
-
-        block_copy_engine.memcpy_d2d = mock_memcpy_d2d  # type: ignore[method-assign]
-
     def run(
         self,
         request_ids_and_prompts: dict[RequestID, np.ndarray],
         fetch_kv_tuple: Sequence[RaggedKVCacheInputs],
         num_steps: int,
-        request_ids_and_new_tokens: Optional[
-            dict[RequestID, np.ndarray]
-        ] = None,
+        request_ids_and_new_tokens: dict[RequestID, np.ndarray] | None = None,
     ) -> dict[RequestID, np.ndarray]:
         """Given a batch and the fetch_kv_tuple, we `run` the model and check that
         the paged manager gave us valid blocks that contain the appropriate KV
@@ -707,35 +681,3 @@ async def test_prefix_caching_chunked_prefill() -> None:
 
     assert kv_manager.block_manager.cached_prompt_tokens == 6
     assert kv_manager.cache_hit_rate > 0.2
-
-
-@pytest.mark.asyncio
-async def test_prefix_caching_cow() -> None:
-    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
-    model = FakeModel(kv_manager)
-
-    ctx = create_text_context(np.array([]))
-    kv_manager.external_claim(ctx.request_id)
-    prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
-    run_forward(model, kv_manager, ctx, prompt_1, 42)
-
-    def run_forward_cow(prompt: np.ndarray, cache_idx: int) -> None:
-        ctx = create_text_context(np.array([]))
-        kv_manager.external_claim(ctx.request_id)
-        run_forward(
-            model,
-            kv_manager,
-            ctx,
-            prompt,
-            42,
-            run_fetch=True,
-            run_step=False,
-        )
-        assert ctx.start_idx == cache_idx
-
-    run_forward_cow(prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5)
-    assert kv_manager.num_blocks_copied.d2d == 1
-    run_forward_cow(prompt=np.array([10, 11, 22]), cache_idx=2)
-    assert kv_manager.num_blocks_copied.d2d == 2
-    run_forward_cow(prompt=np.array([10, 11, 12]), cache_idx=2)
-    assert kv_manager.num_blocks_copied.d2d == 3

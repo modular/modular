@@ -197,18 +197,14 @@ async def test_swapping_to_host_multi_gpu(
     if enable_swapping_to_host:
         # cache hit rates are high!
         expected_cache_hit_rates = np.array([0.0, 0.025, 0.49, 0.95, 0.95])
-        expected_blocks_copied = np.array([3, 199, 190])  # d2d, d2h, h2d
+        expected_blocks_copied = np.array([199, 190])  # d2h, h2d
     else:
         # cache hit rate are very low :(
         expected_cache_hit_rates = np.array([0.0, 0.02, 0.03, 0.02, 0.03])
-        expected_blocks_copied = np.array([11, 0, 0])  # d2d, d2h, h2d
+        expected_blocks_copied = np.array([0, 0])  # d2h, h2d
 
     blocks_copied = kv_manager.num_blocks_copied
-    print(
-        f"Blocks copied: D2D: {blocks_copied.d2d}, D2H: {blocks_copied.d2h}, H2D: {blocks_copied.h2d}"
-    )
-    blocks_copied_arr = np.array(
-        [blocks_copied.d2d, blocks_copied.d2h, blocks_copied.h2d]
-    )
+    print(f"Blocks copied: D2H: {blocks_copied.d2h}, H2D: {blocks_copied.h2d}")
+    blocks_copied_arr = np.array([blocks_copied.d2h, blocks_copied.h2d])
     assert np.allclose(blocks_copied_arr, expected_blocks_copied, atol=5)
     assert np.allclose(cache_hit_rates, expected_cache_hit_rates, atol=0.1)
