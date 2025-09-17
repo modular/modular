@@ -366,12 +366,13 @@ fn zip[
 struct _MapIterator[
     OutputType: Copyable & Movable,
     InnerIteratorType: Iterator, //,
-    function: fn (InnerIteratorType.Element) -> OutputType,
+    function: fn (var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator, Movable):
     alias Element = OutputType
     alias IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[iterable_mut]
     ]: Iterator = Self
+
     var _inner: InnerIteratorType
 
     fn __iter__(ref self) -> Self.IteratorType[__origin_of(self)]:
@@ -386,20 +387,23 @@ struct _MapIterator[
     fn copy(self) -> Self:
         return Self(self._inner.copy())
 
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._inner.bounds()
+
 
 @always_inline
 fn map[
     origin: ImmutableOrigin,
     IterableType: Iterable,
     ResultType: Copyable & Movable, //,
-    function: fn (IterableType.IteratorType[origin].Element) -> ResultType,
+    function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref [origin]iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function
 ]:
     """Returns an iterator applies `func` to each
     element of the input iterable.
 
-    # Examples
+    ### Examples
     ```mojo
     var l = [1, 2, 3]
     fn add_one(x: Int) -> Int:

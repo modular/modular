@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal
+from test_utils import CopyCounter
 
 
 fn test_map() raises:
@@ -36,9 +37,23 @@ fn test_map() raises:
     assert_equal(m2.__has_next__(), False)
 
 
-fn test_map_captures():
-    pass
+def test_map_function_can_take_owned_value():
+    fn report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
+        return counter.copy_count
+
+    fn report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
+        return counter.copy_count
+
+    var list = [CopyCounter(None)]
+
+    # ensure the number of copies are equal between an "owned" and
+    # "borrowed" mapping function.
+    var m1 = map[report_copies_owned](list)
+    var m2 = map[report_copies_ref](list)
+
+    assert_equal(next(m1), next(m2))
 
 
 def main():
     test_map()
+    test_map_function_can_take_owned_value()
