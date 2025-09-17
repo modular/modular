@@ -306,7 +306,7 @@ fn bindIt() -> Int:
 
 # CHECK: [[TRAIT:!None.*]] = !lit.trait<@"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None">
 
-# CHECK-LABEL: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper"
+# CHECK: lit.struct.decl @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None_wrapper"
 # CHECK-SAME: <impl: [[TRAIT]], origin_set: origin.set, |>([[TRAIT]]) attributes {synthetic} {
 
 # CHECK: kgen.conformance @"fn[lt: MutableOrigin](a: ref [lt] String, b: String) -> None" {
@@ -362,3 +362,15 @@ fn bindIt(z: Int):
         return z
 
     takeIt[__type_of(myclosure)](myclosure)
+
+
+# // -----
+
+# COM: Ensure that structs can conform to the closure trait
+
+
+# CHECK: [[TRAIT:!Int_AnyType.*]] = !lit.trait<@"fn(x: Int) -> Int"
+# CHECK: lit.struct.decl @custom([[TRAIT]])
+struct custom(fn (x: Int) unified -> Int):
+    fn __call__(self, x: Int) -> Int:
+        return x
