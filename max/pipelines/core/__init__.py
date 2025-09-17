@@ -11,16 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .context import (
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-    get_request_payload_from_pipeline_task,
-)
+from .context import TextAndVisionContext, TextContext, TTSContext
 
 __all__ = [
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "get_request_payload_from_pipeline_task",
 ]

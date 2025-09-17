@@ -31,20 +31,16 @@ from max.interfaces import (
     EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
-    MAXPullQueue,
-    MAXPushQueue,
     PipelineTokenizer,
-    RequestID,
-    SchedulerResult,
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.process_control import ProcessMonitor
 from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.queues import EngineQueue
+from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
@@ -67,22 +63,9 @@ class TokenGeneratorPipeline:
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[
-            TextContext | TextAndVisionContext, int, TextGenerationRequest
-        ],
+        tokenizer: PipelineTokenizer[TextContext, int, TextGenerationRequest],
         worker_monitor: ProcessMonitor,
-        request_queue: MAXPushQueue[
-            tuple[RequestID, TextContext | TextAndVisionContext]
-        ],
-        response_queue: MAXPullQueue[
-            dict[
-                RequestID,
-                SchedulerResult[
-                    EmbeddingsGenerationOutput | TextGenerationOutput
-                ],
-            ]
-        ],
-        cancel_queue: MAXPushQueue[list[RequestID]],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -97,14 +80,9 @@ class TokenGeneratorPipeline:
 
         self._background_tasks: set[asyncio.Task[object]] = set()
 
-        self.engine_queue = EngineQueue[
-            Any,
-            Any,
-        ](
+        self.engine_queue = EngineQueue[Any, Any](
             worker_monitor=worker_monitor,
-            request_queue=request_queue,
-            response_queue=response_queue,
-            cancel_queue=cancel_queue,
+            scheduler_zmq_configs=scheduler_zmq_configs,
         )
 
     async def _collect_log_probs(
@@ -351,11 +329,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             AudioGeneratorContext, object, AudioGenerationRequest
         ],
         worker_monitor: ProcessMonitor,
-        request_queue: MAXPushQueue[tuple[RequestID, AudioGeneratorContext]],
-        response_queue: MAXPullQueue[
-            dict[RequestID, SchedulerResult[AudioGeneratorOutput]]
-        ],
-        cancel_queue: MAXPushQueue[list[RequestID]],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         self.logger = logging.getLogger(
@@ -372,9 +346,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             AudioGeneratorContext, AudioGeneratorOutput
         ](
             worker_monitor=worker_monitor,
-            request_queue=request_queue,
-            response_queue=response_queue,
-            cancel_queue=cancel_queue,
+            scheduler_zmq_configs=scheduler_zmq_configs,
         )
 
     async def next_chunk(

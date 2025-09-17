@@ -25,15 +25,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Callable
 
 import uvloop
-from max.interfaces import (
-    AudioGenerator,
-    MAXPullQueue,
-    MAXPushQueue,
-    Pipeline,
-    PipelinesFactory,
-    RequestID,
-    SchedulerResult,
-)
+from max.interfaces import AudioGenerator, Pipeline, PipelinesFactory
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
@@ -42,6 +34,7 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
@@ -111,9 +104,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        request_queue: MAXPullQueue[tuple[RequestID, Any]],
-        response_queue: MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
-        cancel_queue: MAXPullQueue[list[RequestID]],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         """Runs a model worker process.
 
@@ -144,9 +135,7 @@ class ModelWorker:
                 pipeline,
                 pipeline_config,
                 settings,
-                request_queue=request_queue,
-                response_queue=response_queue,
-                cancel_queue=cancel_queue,
+                scheduler_zmq_configs,
             )
 
             # Maybe retrieve LoRA manager.
@@ -198,9 +187,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        request_queue: MAXPullQueue[tuple[RequestID, Any]],
-        response_queue: MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
-        cancel_queue: MAXPullQueue[list[RequestID]],
+        scheduler_zmq_configs: SchedulerZmqConfigs,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -224,9 +211,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
-                    request_queue,
-                    response_queue,
-                    cancel_queue,
+                    scheduler_zmq_configs,
                 )
             )
         except KeyboardInterrupt:
@@ -243,9 +228,7 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    request_queue: MAXPullQueue[tuple[RequestID, Any]],
-    response_queue: MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
-    cancel_queue: MAXPullQueue[list[RequestID]],
+    scheduler_zmq_configs: SchedulerZmqConfigs,
 ) -> AsyncGenerator[ProcessMonitor, None]:
     """Starts a model worker and associated process.
 
@@ -254,7 +237,6 @@ async def start_model_worker(
         pipeline_config: The config for the pipeline
         settings: Global server settings
         metric_client: Metric client for recording metrics
-        pipeline_task: The task for the pipeline
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -280,9 +262,7 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
-            request_queue,
-            response_queue,
-            cancel_queue,
+            scheduler_zmq_configs,
         ),
     )
     worker.start()

@@ -35,7 +35,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.kvcache_agent.dispatcher_v2 import ClientIdentity
+from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.di_dispatchers import PrefillDispatcherServerV2
 from max.serve.scheduler.text_batch_constructor import (
@@ -54,11 +54,11 @@ class PrefillScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[TextContext | TextAndVisionContext],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager[TextContext | TextAndVisionContext],
+        paged_cache: PagedKVCacheManager[TextContext],
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
@@ -282,7 +282,7 @@ class PrefillScheduler(Scheduler):
 
 def load_prefill_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[TextContext | TextAndVisionContext],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,

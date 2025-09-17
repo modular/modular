@@ -32,7 +32,11 @@ ReplyType = Union[PrefillResponse, KVTransferEngineMetadata]
 class PrefillDispatcherServerV2(DispatcherServerV2[RequestType, ReplyType]):
     def __init__(self, bind_addr: str):
         logger.info(f"Starting Prefill Dispatcher Server on {bind_addr}")
-        super().__init__(bind_addr, RequestType, ReplyType)
+        super().__init__(
+            endpoint=bind_addr,
+            request_type=RequestType,
+            reply_type=ReplyType,
+        )
 
 
 class DecodeDispatcherClientV2(DispatcherClientV2[RequestType, ReplyType]):
@@ -40,4 +44,9 @@ class DecodeDispatcherClientV2(DispatcherClientV2[RequestType, ReplyType]):
         logger.info(
             f"Starting Decode Dispatcher Client on {bind_addr} with default destination address {default_dest_addr}"
         )
-        super().__init__(bind_addr, default_dest_addr, RequestType, ReplyType)
+        super().__init__(
+            bind_addr=bind_addr,
+            default_dest_addr=default_dest_addr,
+            request_type=RequestType,
+            reply_type=ReplyType,
+        )

@@ -32,6 +32,7 @@ from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.pipelines.lib import PipelineConfig, PipelineRole
 from max.serve.config import Settings
+from max.serve.scheduler.queues import SchedulerZmqConfigs
 
 from .audio_generation_scheduler import (
     AudioGenerationScheduler,
@@ -61,10 +62,12 @@ def load_scheduler(
     | AudioGenerator[TTSContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
-    request_queue: MAXPullQueue[Any],
-    response_queue: MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
-    cancel_queue: MAXPullQueue[list[RequestID]],
+    scheduler_zmq_configs: SchedulerZmqConfigs,
 ) -> Scheduler:
+    request_queue, response_queue, cancel_queue = (
+        scheduler_zmq_configs.model_worker_queues()
+    )
+
     if pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size
@@ -74,7 +77,9 @@ def load_scheduler(
         return EmbeddingsScheduler[TextContext](
             scheduler_config=embeddings_scheduler_config,
             pipeline=pipeline,  # type: ignore
-            request_queue=request_queue,
+            request_queue=cast(
+                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
+            ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
         )
@@ -105,7 +110,9 @@ def load_scheduler(
         return AudioGenerationScheduler(
             scheduler_config=token_gen_config,
             pipeline=pipeline,
-            request_queue=request_queue,
+            request_queue=cast(
+                MAXPullQueue[tuple[RequestID, TTSContext]], request_queue
+            ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             paged_manager=paged_manager,
@@ -115,7 +122,7 @@ def load_scheduler(
         # At runtime, this should be a TextGenerationPipeline with the expected type parameters
         text_gen_pipeline = cast(
             Pipeline[
-                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationInputs[TextContext],
                 TextGenerationOutput,
             ],
             pipeline,
@@ -123,7 +130,9 @@ def load_scheduler(
         return load_text_generation_scheduler(
             text_gen_pipeline,
             pipeline_config,
-            request_queue=request_queue,
+            request_queue=cast(
+                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
+            ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
         )
@@ -132,7 +141,7 @@ def load_scheduler(
         # At runtime, this should be a TextGenerationPipeline with the expected type parameters
         text_gen_pipeline = cast(
             Pipeline[
-                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationInputs[TextContext],
                 TextGenerationOutput,
             ],
             pipeline,
@@ -140,7 +149,9 @@ def load_scheduler(
         return load_decode_scheduler(
             text_gen_pipeline,
             pipeline_config,
-            request_queue=request_queue,
+            request_queue=cast(
+                MAXPullQueue[tuple[RequestID, TextContext]], request_queue
+            ),
             response_queue=response_queue,
             cancel_queue=cancel_queue,
             settings=settings,
@@ -150,7 +161,7 @@ def load_scheduler(
         # At runtime, this should be a TextGenerationPipeline with the expected type parameters
         text_gen_pipeline = cast(
             Pipeline[
-                TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+                TextGenerationInputs[TextContext],
                 TextGenerationOutput,
             ],
             pipeline,

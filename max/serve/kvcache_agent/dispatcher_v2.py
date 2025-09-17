@@ -13,68 +13,30 @@
 from __future__ import annotations
 
 import queue
-from typing import Any, Generic, NewType, TypeVar, Union, cast
+from typing import Any, Generic, TypeVar
 
-import zmq
-from max.serve.queue.zmq_queue import (
-    ZmqDealerSocket,
-    ZmqRouterSocket,
-    msgpack_numpy_decoder,
-    msgpack_numpy_encoder,
-)
+from max.serve.queue.zmq_queue import ZmqDealerSocket, ZmqRouterSocket
 
 Request = TypeVar("Request")
 Reply = TypeVar("Reply")
 
-
-ClientIdentity = NewType("ClientIdentity", bytes)
-
-
-class DispatcherServerV2(Generic[Request, Reply]):
-    def __init__(
-        self,
-        bind_addr: str,
-        request_type: Any,
-        reply_type: Any,
-    ):
-        self.bind_addr = bind_addr
-
-        self._request_type = request_type
-        self._reply_type = reply_type
-
-        self._router = ZmqRouterSocket[Union[Request, Reply]](
-            bind_addr,
-            serialize=msgpack_numpy_encoder(),
-            deserialize=msgpack_numpy_decoder(Union[request_type, reply_type]),
-        )
-
-    def recv_request_nowait(self) -> tuple[Request, ClientIdentity]:
-        identity, request = self._router.recv_multipart_nowait()
-        if not isinstance(request, self._request_type):
-            raise ValueError(
-                f"Received request {request} is not of type {self._request_type}"
-            )
-        return cast(Request, request), ClientIdentity(identity)
-
-    def send_reply_nowait(self, reply: Reply, identity: ClientIdentity) -> None:
-        self._router.send_multipart(identity, reply, flags=zmq.NOBLOCK)
+DispatcherServerV2 = ZmqRouterSocket[Request, Reply]
 
 
 class DispatcherClientV2(Generic[Request, Reply]):
     def __init__(
         self,
+        *,
         bind_addr: str,
         default_dest_addr: str | None,
         request_type: Any,
         reply_type: Any,
     ):
-        self.bind_addr = bind_addr
-
         self._request_type = request_type
         self._reply_type = reply_type
 
         self._default_dest_address = default_dest_addr
-        self._dealers: dict[str, ZmqDealerSocket[Union[Request, Reply]]] = {}
+        self._dealers: dict[str, ZmqDealerSocket[Request, Reply]] = {}
 
     def send_request_nowait(
         self, request: Request, dest_addr: str | None = None
@@ -84,26 +46,19 @@ class DispatcherClientV2(Generic[Request, Reply]):
             raise ValueError("dest_addr is required")
 
         if dest_addr not in self._dealers:
-            self._dealers[dest_addr] = ZmqDealerSocket[Union[Request, Reply]](
-                dest_addr,
-                bind=False,
-                serialize=msgpack_numpy_encoder(),
-                deserialize=msgpack_numpy_decoder(
-                    Union[self._request_type, self._reply_type]
-                ),
+            self._dealers[dest_addr] = ZmqDealerSocket[Request, Reply](
+                endpoint=dest_addr,
+                request_type=self._request_type,
+                reply_type=self._reply_type,
             )
         dealer = self._dealers[dest_addr]
-        dealer.send_pyobj(request, flags=zmq.NOBLOCK)
+        dealer.send_request_nowait(request)
 
     def recv_reply_nowait(self) -> Reply:
         for dealer in self._dealers.values():
             try:
-                reply = dealer.recv_pyobj_nowait()
+                reply = dealer.recv_reply_nowait()
             except queue.Empty:
                 continue
-            if not isinstance(reply, self._reply_type):
-                raise ValueError(
-                    f"Received reply {reply} is not of type {self._reply_type}"
-                )
-            return cast(Reply, reply)
+            return reply
         raise queue.Empty()

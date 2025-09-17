@@ -18,19 +18,16 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import llguidance
 import msgspec
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
-    BaseContext,
     GenerationStatus,
     InputContext,
     LogProbabilities,
-    PipelineTask,
-    RequestID,
     SamplingParams,
     TextGenerationOutput,
 )
@@ -679,19 +676,3 @@ class TTSContext(TextContext):
         chunk = self._speech_tokens[start_idx:end_idx]
 
         return chunk, buffer or 0
-
-
-def get_request_payload_from_pipeline_task(
-    pipeline_task: PipelineTask,
-) -> type[tuple[RequestID, BaseContext]]:
-    if pipeline_task in [
-        PipelineTask.TEXT_GENERATION,
-        PipelineTask.EMBEDDINGS_GENERATION,
-    ]:
-        return tuple[RequestID, Union[TextContext, TextAndVisionContext]]
-    elif pipeline_task in [PipelineTask.AUDIO_GENERATION]:
-        return tuple[RequestID, TTSContext]
-    else:
-        raise ValueError(
-            f"no request payload for pipeline task ({pipeline_task})"
-        )

@@ -22,7 +22,6 @@ import os
 import queue
 from collections.abc import Generator
 
-import msgspec
 from max.interfaces import LoRARequest, LoRAResponse, RequestID
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -39,13 +38,11 @@ class LoRAQueue:
     ):
         self._request_socket = ZmqPushSocket[tuple[RequestID, LoRARequest]](
             endpoint=request_zmq_endpoint,
-            serialize=msgspec.msgpack.Encoder().encode,
+            payload_type=tuple[RequestID, LoRARequest],
         )
         self._response_socket = ZmqPullSocket[tuple[RequestID, LoRAResponse]](
             endpoint=response_zmq_endpoint,
-            deserialize=msgspec.msgpack.Decoder(
-                type=tuple[RequestID, LoRAResponse]
-            ).decode,
+            payload_type=tuple[RequestID, LoRAResponse],
         )
 
         self.pending_out_queues: dict[

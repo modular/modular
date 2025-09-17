@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union, final
+from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
 import numpy.typing as npt
@@ -43,7 +43,7 @@ from max.interfaces import (
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence, KVCacheManager
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -143,23 +143,21 @@ class SpeculativeDecodingMetrics:
 @final
 class SpeculativeDecodingTextGenerationPipeline(
     Pipeline[
-        TextGenerationInputs[Union[TextContext, TextAndVisionContext]],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
-    GenerateMixin[
-        Union[TextContext, TextAndVisionContext], TextGenerationRequest
-    ],
+    GenerateMixin[TextContext, TextGenerationRequest],
 ):
     """Generalized token generator pipeline with speculative decoding."""
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel[TextContext | TextAndVisionContext]],
+        pipeline_model: type[PipelineModel[TextContext]],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
         tokenizer: PipelineTokenizer[
-            Union[TextContext, TextAndVisionContext],
+            TextContext,
             npt.NDArray[np.integer[Any]],
             TextGenerationRequest,
         ],
@@ -399,7 +397,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
-        TextContext | TextAndVisionContext,
+        TextContext,
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
@@ -408,16 +406,16 @@ class SpeculativeDecodingTextGenerationPipeline(
     @property
     def kv_managers(
         self,
-    ) -> list[KVCacheManager[TextContext | TextAndVisionContext]]:
+    ) -> list[KVCacheManager[TextContext]]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @traced
     def calculate_num_steps(
         self,
-        model: PipelineModel[TextContext | TextAndVisionContext],
+        model: PipelineModel[TextContext],
         huggingface_config: AutoConfig,
         num_steps: int,
-        context: TextContext | TextAndVisionContext,
+        context: TextContext,
         is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
@@ -437,8 +435,8 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        model: PipelineModel[TextContext | TextAndVisionContext],
-        batch: list[TextContext | TextAndVisionContext],
+        model: PipelineModel[TextContext],
+        batch: list[TextContext],
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
@@ -492,7 +490,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def sample_draft_logits(
         self,
-        batch: list[TextContext | TextAndVisionContext],
+        batch: list[TextContext],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
@@ -521,7 +519,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def generate_draft_tokens(
         self,
-        batch: list[TextContext | TextAndVisionContext],
+        batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
     ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
@@ -629,7 +627,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     def verify_draft_tokens_with_target_model(
         self,
         draft_inputs: ModelInputs,
-        context_batch: list[TextContext | TextAndVisionContext],
+        context_batch: list[TextContext],
         num_draft_tokens_generated: int,
         draft_tokens: Tensor,
         draft_logits: Tensor,
@@ -680,7 +678,7 @@ class SpeculativeDecodingTextGenerationPipeline(
     @traced
     def execute(
         self,
-        inputs: TextGenerationInputs[TextContext | TextAndVisionContext],
+        inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
         """Provided a batch, execute both the draft model for num_steps and the target model for num_steps + 1 tokens, accepting final tokens via rejection sampling, returning the variable list of token integers."""
 
@@ -764,7 +762,7 @@ class SpeculativeDecodingTextGenerationPipeline(
 
     def update_contexts(
         self,
-        context_batch: list[TextContext | TextAndVisionContext],
+        context_batch: list[TextContext],
         first_rejected_tokens: npt.NDArray[np.integer[Any]],
         recovered_tokens: npt.NDArray[np.integer[Any]],
         bonus_tokens: npt.NDArray[np.integer[Any]],
@@ -825,7 +823,7 @@ class SpeculativeDecodingTextGenerationPipeline(
         )
 
     def build_response(
-        self, context_batch: list[TextContext | TextAndVisionContext]
+        self, context_batch: list[TextContext]
     ) -> dict[RequestID, TextGenerationOutput]:
         """Build response from updated contexts.
 

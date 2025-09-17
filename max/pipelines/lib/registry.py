@@ -18,14 +18,7 @@ from __future__ import annotations
 import functools
 import logging
 from dataclasses import dataclass, field
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Optional,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -37,7 +30,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -61,7 +54,7 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes = Union[
-    TextGenerationPipeline[Union[TextContext, TextAndVisionContext]],
+    TextGenerationPipeline[TextContext],
     EmbeddingsPipeline[TextContext],
     AudioGeneratorPipeline,
     SpeculativeDecodingTextGenerationPipeline,
@@ -72,7 +65,7 @@ PipelineTypes = Union[
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> (
-    type[TextGenerationPipeline[TextContext | TextAndVisionContext]]
+    type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline[TextContext]]
     | type[SpeculativeDecodingTextGenerationPipeline]
     | type[AudioGeneratorPipeline]

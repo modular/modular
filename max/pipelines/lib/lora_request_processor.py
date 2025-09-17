@@ -19,7 +19,6 @@ import logging
 import queue
 from typing import TYPE_CHECKING
 
-import msgspec
 from max.interfaces import RequestID
 from max.interfaces.lora import (
     LoRAOperation,
@@ -59,14 +58,12 @@ class LoRARequestProcessor:
 
         self._request_socket = ZmqPullSocket[tuple[RequestID, LoRARequest]](
             endpoint=zmq_request_endpoint,
-            deserialize=msgspec.msgpack.Decoder(
-                type=tuple[RequestID, LoRARequest]
-            ).decode,
+            payload_type=tuple[RequestID, LoRARequest],
         )
 
         self._response_socket = ZmqPushSocket[tuple[RequestID, LoRAResponse]](
             endpoint=zmq_response_endpoint,
-            serialize=msgspec.msgpack.Encoder().encode,
+            payload_type=tuple[RequestID, LoRAResponse],
         )
 
     def process_lora_requests(self):

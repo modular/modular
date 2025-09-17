@@ -34,7 +34,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     XferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Tracer, traced
@@ -62,15 +62,13 @@ class DecodeScheduler(Scheduler):
     def __init__(
         self,
         pipeline: Pipeline[
-            TextGenerationInputs[TextContext | TextAndVisionContext],
+            TextGenerationInputs[TextContext],
             TextGenerationOutput,
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager[TextContext | TextAndVisionContext],
+        paged_manager: PagedKVCacheManager[TextContext],
         *,
-        request_queue: MAXPullQueue[
-            tuple[RequestID, TextContext | TextAndVisionContext]
-        ],
+        request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
@@ -90,12 +88,8 @@ class DecodeScheduler(Scheduler):
         self.dispatcher = dispatcher
 
         # Initialize Scheduler state.
-        self.pending_reqs: OrderedDict[
-            RequestID, TextContext | TextAndVisionContext
-        ] = OrderedDict()
-        self.prefill_reqs: dict[
-            RequestID, TextContext | TextAndVisionContext
-        ] = {}
+        self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
+        self.prefill_reqs: dict[RequestID, TextContext] = {}
         self.inflight_transfers: dict[RequestID, XferReqData] = {}
 
         # Create Transfer Engine
@@ -141,7 +135,7 @@ class DecodeScheduler(Scheduler):
     def send_prefill_request(
         self,
         request_id: RequestID,
-        data: TextContext | TextAndVisionContext,
+        data: TextContext,
         dst_idxs: list[int],
     ) -> None:
         """Pushes a request to the prefill socket.
@@ -382,13 +376,11 @@ class DecodeScheduler(Scheduler):
 
 def load_decode_scheduler(
     pipeline: Pipeline[
-        TextGenerationInputs[TextContext | TextAndVisionContext],
+        TextGenerationInputs[TextContext],
         TextGenerationOutput,
     ],
     pipeline_config: PipelineConfig,
-    request_queue: MAXPullQueue[
-        tuple[RequestID, TextContext | TextAndVisionContext]
-    ],
+    request_queue: MAXPullQueue[tuple[RequestID, TextContext]],
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
