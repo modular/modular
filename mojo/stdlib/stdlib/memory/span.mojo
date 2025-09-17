@@ -537,9 +537,9 @@ struct Span[
 
         var ptr = self.unsafe_ptr()
         var tmp = InlineArray[T, 1](uninitialized=True)
-        ptr.offset(a).move_pointee_into(tmp.unsafe_ptr())
-        ptr.offset(b).move_pointee_into(ptr.offset(a))
-        tmp.unsafe_ptr().move_pointee_into(ptr.offset(b))
+        tmp.unsafe_ptr().init_pointee_move_from(ptr.offset(a))
+        ptr.offset(a).init_pointee_move_from(ptr.offset(b))
+        ptr.offset(b).init_pointee_move_from(tmp.unsafe_ptr())
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -600,7 +600,7 @@ struct Span[
 
         if is_odd:
             var value = ptr[middle + 1]
-            (ptr + middle - 1).move_pointee_into(ptr + middle + 1)
+            (ptr + middle + 1).init_pointee_move_from(ptr + middle - 1)
             (ptr + middle - 1).init_pointee_move(value)
 
     fn apply[

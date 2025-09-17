@@ -176,7 +176,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Args:
             other: The pointer to the object to move.
         """
-        other.move_pointee_into(self.unsafe_ptr())
+        self.unsafe_ptr().init_pointee_move_from(other)
 
     @always_inline
     fn write[

@@ -648,7 +648,7 @@ struct List[T: Copyable & Movable](
             memcpy(new_data, self._data, len(self))
         else:
             for i in range(len(self)):
-                (self._data + i).move_pointee_into(new_data + i)
+                (new_data + i).init_pointee_move_from(self._data + i)
 
         if self._data:
             self._data.free()
@@ -693,7 +693,7 @@ struct List[T: Copyable & Movable](
             var later_ptr = self._data + later_idx
 
             var tmp = earlier_ptr.take_pointee()
-            later_ptr.move_pointee_into(earlier_ptr)
+            earlier_ptr.init_pointee_move_from(later_ptr)
             later_ptr.init_pointee_move(tmp^)
 
             earlier_idx -= 1
@@ -719,11 +719,7 @@ struct List[T: Copyable & Movable](
             memcpy(dest_ptr, src_ptr, other_len)
         else:
             for _ in range(other_len):
-                # This (TODO: optimistically) moves an element directly from the
-                # `other` list into this list using a single `T.__moveinit()__`
-                # call, without moving into an intermediate temporary value
-                # (avoiding an extra redundant move constructor call).
-                src_ptr.move_pointee_into(dest_ptr)
+                dest_ptr.init_pointee_move_from(src_ptr)
                 src_ptr += 1
                 dest_ptr += 1
 
@@ -838,7 +834,7 @@ struct List[T: Copyable & Movable](
 
         var ret_val = (self._data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
-            (self._data + j).move_pointee_into(self._data + j - 1)
+            (self._data + j - 1).init_pointee_move_from(self._data + j)
         self._len -= 1
 
         return ret_val^
@@ -933,7 +929,7 @@ struct List[T: Copyable & Movable](
             var later_ptr = self._data + later_idx
 
             var tmp = earlier_ptr.take_pointee()
-            later_ptr.move_pointee_into(earlier_ptr)
+            earlier_ptr.init_pointee_move_from(later_ptr)
             later_ptr.init_pointee_move(tmp^)
 
             earlier_idx += 1

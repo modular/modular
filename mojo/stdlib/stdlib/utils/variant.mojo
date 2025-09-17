@@ -189,7 +189,7 @@ struct Variant[*Ts: Copyable & Movable](ImplicitlyCopyable, Movable):
             alias T = Ts[i]
             if self._get_discr() == i:
                 # Calls the correct __moveinit__
-                other._get_ptr[T]().move_pointee_into(self._get_ptr[T]())
+                self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
                 return
 
     fn __del__(deinit self):

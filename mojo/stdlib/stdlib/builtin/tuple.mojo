@@ -128,8 +128,8 @@ struct Tuple[*element_types: Copyable & Movable](
 
         @parameter
         for i in range(Self.__len__()):
-            UnsafePointer(to=existing[i]).move_pointee_into(
-                UnsafePointer(to=self[i])
+            UnsafePointer(to=self[i]).init_pointee_move_from(
+                UnsafePointer(to=existing[i])
             )
         # Note: The destructor on `existing` is auto-disabled in a moveinit.
 

@@ -59,7 +59,7 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(1, ptr[].move_count)
 
     var ptr_2 = UnsafePointer[MoveCounter[Int]].alloc(1)
-    ptr.move_pointee_into(ptr_2)
+    ptr_2.init_pointee_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 

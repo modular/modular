@@ -318,6 +318,15 @@ language across multiple phases.
   - The `UnsafePointer.init_pointee_explicit_copy()` method has been removed.
     Please use `UnsafePointer.init_pointee_copy()` instead.
 
+  - `UnsafePointer.move_pointee_into()` has been deprecated.
+    Please use `UnsafePointer.init_pointee_move_from()`.
+
+    `src.move_pointee_into(dst)` used a reversed argument order from intuitive
+    `LHS = RHS` semantics for assignment, effectively `RHS -> LHS`. The new
+    function fixes this readability issue (`dst.init_pointee_move_from(src)`),
+    and additionally follows the `init_pointee_*()` naming convention of the
+    other existing methods for initializer a pointer memory location.
+
 - A new `Some` utility is introduced to reduce the syntactic load of declaring
   function arguments of a type that implements a given trait or trait
   composition. For example, instead of writing

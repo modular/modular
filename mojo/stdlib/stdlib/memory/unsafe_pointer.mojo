@@ -92,10 +92,13 @@ struct UnsafePointer[
       `alignment` when data is not naturally aligned.
     - `store()`: Stores `val: SIMD[dtype, width]` at `offset` into
       `UnsafePointer[Scalar[dtype]]`. Requires a mutable pointer.
-    - `destroy_pointee()` / `take_pointee()` / `move_pointee_into(dst)`:
-      Explicitly end the lifetime of the current pointee or move it out and
-      into another pointer without running an extra copy. Use these to manage
-      lifecycles when working with uninitialized memory patterns.
+    - `destroy_pointee()` / `take_pointee()`:
+      Explicitly end the lifetime of the current pointee, or move it out, taking
+      ownership.
+    - `init_pointee_move()` / `init_pointee_move_from()` / `init_pointee_copy()`
+      Initialize a pointee that is currently uninitialized, by moving an existing
+      value, moving from another pointee, or by copying an existing value.
+      Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
     pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
@@ -1178,6 +1181,74 @@ struct UnsafePointer[
         constrained[mut, _must_be_mut_err]()
         __get_address_as_uninit_lvalue(self.address) = value.copy()
 
+    @always_inline
+    fn init_pointee_move_from[
+        T: Movable, //,
+    ](
+        self: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+        src: UnsafePointer[T, address_space = AddressSpace.GENERIC, **_],
+    ):
+        """Moves the value `src` points to into the memory location pointed to
+        by `self`.
+
+        The `self` pointer memory location is assumed to contain uninitialized
+        data prior to this assignment, and consequently the current contents of
+        this pointer are not destructed before writing the value from the `src`
+        pointer.
+
+        Ownership of the value is logically transferred from `src` into `self`'s
+        pointer location.
+
+        After this call, the `src` pointee value should be treated as
+        uninitialized data. Subsequent reads of or destructor calls on the `src`
+        pointee value are invalid, unless and until a new valid value has been
+        moved into the `src` pointer's memory location using an
+        `init_pointee_*()` operation.
+
+        This transfers the value out of `src` and into `self` using at most one
+        `__moveinit__()` call.
+
+        ### Example
+
+        ```mojo
+        var a_ptr = UnsafePointer.alloc[String](1)
+        var b_ptr = UnsafePointer.alloc[String](2)
+
+        # Initialize A pointee
+        a_ptr.init_pointee_move("foo")
+
+        # Perform the move
+        b_ptr.init_pointee_move_from(a_ptr)
+
+        # Clean up
+        b_ptr.destroy_pointee()
+        a_ptr.free()
+        b_ptr.free()
+        ```
+
+        ### Safety
+
+        * `self` and `src` must be non-null
+        * `src` must contain a valid, initialized instance of `T`
+        * The pointee contents of `self` should be uninitialized. If `self` was
+          previously written with a valid value, that value will be be
+          overwritten and its destructor will NOT be run.
+
+        Parameters:
+            T: The type the pointer points to, which must be `Movable`.
+
+        Args:
+            src: Source pointer that the value will be moved from.
+        """
+        constrained[mut, _must_be_mut_err]()
+        __get_address_as_uninit_lvalue(
+            self.address
+        ) = __get_address_as_owned_value(src.address)
+
+    @deprecated(
+        "Use `lhs_ptr.init_pointee_move_from(rhs_ptr)` instead, which uses "
+        "`LHS = RHS` argument ordering for readability."
+    )
     @always_inline
     fn move_pointee_into[
         T: Movable, //,

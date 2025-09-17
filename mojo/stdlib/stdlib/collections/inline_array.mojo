@@ -159,8 +159,8 @@ struct InlineArray[
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         for i in range(Self.size):
-            unsafe_assume_initialized[i].unsafe_ptr().move_pointee_into(
-                self.unsafe_ptr() + i
+            (self.unsafe_ptr() + i).init_pointee_move_from(
+                unsafe_assume_initialized[i].unsafe_ptr()
             )
 
     @always_inline
@@ -272,7 +272,7 @@ struct InlineArray[
         # Move each element into the array storage.
         @parameter
         for i in range(size):
-            UnsafePointer(to=storage[i]).move_pointee_into(ptr)
+            ptr.init_pointee_move_from(UnsafePointer(to=storage[i]))
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
@@ -313,7 +313,7 @@ struct InlineArray[
 
         for idx in range(size):
             var other_ptr = other.unsafe_ptr() + idx
-            other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
+            (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
     fn __del__(deinit self):
         """Deallocates the array and destroys its elements.
