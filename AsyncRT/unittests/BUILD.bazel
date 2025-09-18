@@ -112,6 +112,9 @@ modular_cc_test(
     name = "MetalGPUDeviceContextTest",
     size = "small",
     srcs = ["GPUDeviceContextTest.cpp"],
+    env = {
+        "MOJO_ENABLE_HAS_GPU_FOR_APPLE": "1",
+    },
     gpu_constraints = ["//:apple_gpu"],
     tags = ["gpu"],
     target_compatible_with = select({
@@ -128,6 +131,9 @@ modular_cc_test(
     name = "MetalDeviceContextTest",
     size = "small",
     srcs = ["MetalDeviceContextTest.cpp"],
+    env = {
+        "MOJO_ENABLE_HAS_GPU_FOR_APPLE": "1",
+    },
     gpu_constraints = ["//:apple_gpu"],
     tags = ["gpu"],
     target_compatible_with = select({
