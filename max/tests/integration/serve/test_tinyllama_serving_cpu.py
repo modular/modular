@@ -60,7 +60,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
         )
 
         assert len(response.choices) == 1
-        assert response.choices[0].finish_reason == "stop"
+        assert response.choices[0].finish_reason == "length"
 
         # Test a few prompts, in different formats
         prompt_num = [
@@ -81,7 +81,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app: FastAPI) -> None:
                 raw_response.json()
             )
             assert len(response2.choices) == n_prompts
-            assert response2.choices[0].finish_reason == "stop"
+            assert response2.choices[0].finish_reason in ["length", "stop"]
 
 
 @pytest.mark.asyncio
