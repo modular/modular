@@ -14,6 +14,10 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.core.context_validators import (
+    validate_only_one_image,
+    validate_requires_vision_context,
+)
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
@@ -41,4 +45,8 @@ pixtral_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
+    context_validators=[
+        validate_requires_vision_context,
+        validate_only_one_image,
+    ],
 )

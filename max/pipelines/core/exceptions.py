@@ -11,26 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .context import (
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-)
-from .context_validators import (
-    validate_aspect_ratio_args,
-    validate_image_shape_5d,
-    validate_initial_prompt_has_image,
-    validate_only_one_image,
-    validate_requires_vision_context,
-)
+from __future__ import annotations
 
-__all__ = [
-    "TTSContext",
-    "TextAndVisionContext",
-    "TextContext",
-    "validate_aspect_ratio_args",
-    "validate_image_shape_5d",
-    "validate_initial_prompt_has_image",
-    "validate_only_one_image",
-    "validate_requires_vision_context",
-]
+
+class InputError(ValueError):
+    """Exception raised for input validation errors that should be shown to users.
+
+    This exception is specifically designed to provide user-friendly error messages
+    for invalid input data, such as missing images for vision models or incorrect
+    parameter combinations.
+    """
+
+    pass
