@@ -134,32 +134,31 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0
-        batch_to_execute = sch_output.batch_inputs
 
         # TODO(E2EOPT-399): Add proper data parallelism support. Currently
         # this naively splits the batch onto different devices.
         batches = split_by_replica_idx(
-            batch_to_execute,
+            sch_output.inputs.batch,
             self.scheduler_config.data_parallel_degree,
             self.batch_constructor.paged_cache,
         )
 
+        sch_output.inputs.batches = batches
+
         # execute the batch
-        responses = self.pipeline.execute(
-            TextGenerationInputs(
-                batches=batches, num_steps=sch_output.num_steps
+        responses = self.pipeline.execute(sch_output.inputs)
+
+        # Process each batch (usually just one unless using data parallelism)
+        for executed_batch in sch_output.inputs.batches:
+            # If there is a chunked request, we put it back into the request queue
+            maybe_restore_chunked_request(
+                executed_batch,
+                responses,
+                self.batch_constructor.ce_reqs,
             )
-        )
 
-        # If there is a chunked request, we put it back into the request queue
-        maybe_restore_chunked_request(
-            batch_to_execute,
-            responses,
-            self.batch_constructor.ce_reqs,
-        )
-
-        # add the encoded requests to the continuous batch
-        self.batch_constructor.tg_reqs |= batch_to_execute
+            # add the encoded requests to the continuous batch
+            self.batch_constructor.tg_reqs |= executed_batch
 
         # remove terminated requests from the batch
         release_terminated_requests(

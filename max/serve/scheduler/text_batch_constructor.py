@@ -19,7 +19,12 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from enum import Enum
 
-from max.interfaces import Pipeline, TextGenerationInputs, TextGenerationOutput
+from max.interfaces import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.nn.kv_cache import MultiPagedKVCacheManager, PagedKVCacheManager
 from max.pipelines.core.context import TextContext
 from max.pipelines.lib import LoRAManager, PipelineConfig
@@ -100,26 +105,26 @@ class BatchType(Enum):
     TG = "TG"
 
 
+@dataclass
 class SchedulerOutput:
     def __init__(
         self,
+        inputs: TextGenerationInputs[TextContext],
         batch_type: BatchType = BatchType.TG,
-        num_steps: int = 1,
-        batch_inputs: dict[str, TextContext] | None = None,
         input_tokens: int | None = None,
         cached_tokens: int | None = None,
     ) -> None:
-        if batch_inputs is None:
-            batch_inputs = {}
+        self.inputs = inputs
         self.batch_type = batch_type
-        self.num_steps = num_steps
-        self.batch_inputs = batch_inputs
-        self.batch_size = len(batch_inputs)
         self.input_tokens = (
             input_tokens if input_tokens is not None else self.batch_size
         )
         self.cached_tokens = cached_tokens if cached_tokens is not None else 0
         self.num_terminated = 0
+
+    @property
+    def batch_size(self) -> int:
+        return len(self.inputs.batch)
 
     @property
     def cache_hit_rate(self) -> float:
@@ -134,9 +139,8 @@ class SchedulerOutput:
     def __repr__(self) -> str:
         return (
             f"SchedulerOutput("
+            f"inputs: {self.inputs}"
             f"batch_type={self.batch_type.value}, "
-            f"batch_size={self.batch_size}, "
-            f"num_steps={self.num_steps}, "
             f"input_tokens={self.input_tokens}, "
             f"cache_hit_rate={self.cache_hit_rate:.2%})"
         )
@@ -160,8 +164,8 @@ class TextBatchConstructor:
             pipeline
         )
 
-        self.ce_reqs: OrderedDict[str, TextContext] = OrderedDict()
-        self.tg_reqs: OrderedDict[str, TextContext] = OrderedDict()
+        self.ce_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
+        self.tg_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
 
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
@@ -249,8 +253,10 @@ class TextBatchConstructor:
         if self.paged_cache is None:
             return SchedulerOutput(
                 batch_type=BatchType.TG,
-                batch_inputs=dict(self.tg_reqs),
-                num_steps=self.scheduler_config.max_forward_steps_tg,
+                inputs=TextGenerationInputs(
+                    batches=[dict(self.tg_reqs)],
+                    num_steps=self.scheduler_config.max_forward_steps_tg,
+                ),
             )
 
         num_steps = self.scheduler_config.max_forward_steps_tg
@@ -356,8 +362,9 @@ class TextBatchConstructor:
 
             return SchedulerOutput(
                 batch_type=BatchType.TG,
-                batch_inputs=dict(self.tg_reqs),
-                num_steps=num_steps,
+                inputs=TextGenerationInputs(
+                    batches=[dict(self.tg_reqs)], num_steps=num_steps
+                ),
             )
 
         # We have utterly failed to construct a TG batch.
@@ -383,7 +390,7 @@ class TextBatchConstructor:
 
         if self.scheduler_config.enable_in_flight_batching and self.tg_reqs:
             tg_batch = self._create_tg_batch()
-            ce_batch = tg_batch.batch_inputs
+            ce_batch = tg_batch.inputs.batch
             tot_input_tokens = tg_batch.input_tokens
             for ctx in ce_batch.values():
                 # active length should be 1 for TG requests
@@ -471,7 +478,7 @@ class TextBatchConstructor:
 
         return SchedulerOutput(
             batch_type=BatchType.CE,
-            batch_inputs=ce_batch,
+            inputs=TextGenerationInputs(batches=[ce_batch], num_steps=1),
             input_tokens=tot_input_tokens,
             cached_tokens=tot_cached_tokens,
         )
@@ -485,7 +492,9 @@ class TextBatchConstructor:
 
         # if there are no active requests, we can't create a TG batch
         if not self.tg_reqs:
-            return SchedulerOutput()
+            return SchedulerOutput(
+                inputs=TextGenerationInputs(batches=[], num_steps=1)
+            )
 
         tg_batch = self._create_tg_batch()
         return tg_batch

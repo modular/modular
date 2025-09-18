@@ -283,18 +283,15 @@ class DecodeScheduler(Scheduler):
             sch_output: The scheduler output containing the batch of requests to schedule.
         """
         assert sch_output.batch_size > 0
-        batch = sch_output.batch_inputs
-        responses = self.pipeline.execute(
-            TextGenerationInputs([batch], num_steps=sch_output.num_steps)
-        )
+        responses = self.pipeline.execute(sch_output.inputs)
 
         # Even though this is CE specific, it is possible for decode_scheduler
         # to execute CE if a request is preempted. We do not send such a preempted
         # request back to prefill. Instead the decode worker just runs CE on the
         # preempted request.
-        self.batch_constructor.tg_reqs |= batch
+        self.batch_constructor.tg_reqs |= sch_output.inputs.batch
         maybe_restore_chunked_request(
-            batch,
+            sch_output.inputs.batch,
             responses,
             self.batch_constructor.ce_reqs,
         )

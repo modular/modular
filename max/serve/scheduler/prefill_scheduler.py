@@ -156,18 +156,18 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert sch_output.batch_size > 0
-        batch = sch_output.batch_inputs
-        inputs = TextGenerationInputs(batches=[batch], num_steps=1)
+        batches = sch_output.inputs.batches
+        inputs = TextGenerationInputs(batches=batches, num_steps=1)
         responses = self.pipeline.execute(inputs)
 
         maybe_restore_chunked_request(
-            batch,
+            inputs.batch,
             responses,
             self.batch_constructor.ce_reqs,
         )
 
         # Send completed requests to decode queue.
-        for req_id, context in batch.items():
+        for req_id, context in inputs.batch.items():
             identity, transfer_engine_name, dst_idxs = (
                 self.request_id_to_reply_context.pop(req_id)
             )
