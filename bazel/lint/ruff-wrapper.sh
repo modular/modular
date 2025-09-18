@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
