@@ -673,11 +673,7 @@ def test_aligned() -> None:
 
 
 def test_unaligned_tensor_copy() -> None:
-    """Tests tensor copying and viewing with unaligned memory.
-
-    The tensor copying part of GENAI-110 has been fixed by GEX-2576 improvements,
-    but tensor viewing with unaligned data still has issues (view operation).
-    """
+    """Tests tensor copying and viewing with unaligned memory."""
     expected = np.array([1005, 2510, 1325], np.int32)
 
     # Construct a uint8 tensor so that when converted to int32, it becomes the
@@ -694,25 +690,18 @@ def test_unaligned_tensor_copy() -> None:
     # Should correctly preserve element values after copy
     assert tensor8_copy[0].item() == tensor8[1].item()
 
-    # View operation still has alignment issues (part of GENAI-110 still exists).
     tensor32 = tensor8[1:].view(DType.int32)
     assert not tensor8[1:]._aligned(DType.int32.align)
 
-    # This should actually return False, because `tensor32` should be using the
-    # same data as `tensor8[1:]`.
-    assert tensor32._aligned()
+    # The int32 view of unaligned data correctly reports as unaligned
+    assert not tensor32._aligned()
 
-    # TODO(GENAI-110): View operation still doesn't handle unaligned data correctly
-    # Tensor[0]'s value should be 1005, but view gives incorrect value due to alignment
-    with pytest.raises(AssertionError):
-        assert tensor32[0].item() == 1005
+    assert tensor32[0].item() == 1005
 
-    # However, copying the viewed tensor does work correctly now
     tensor32_copy = tensor32.copy()
     assert tensor32_copy._aligned()
-    # But this still fails because the source view has wrong data
-    with pytest.raises(AssertionError):
-        np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
+    # This now passes because the source view has correct data
+    np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
 
 
 def test_inplace_copy_from_raises() -> None:
